@@ -1,0 +1,48 @@
+# Release: build the compiler from source (full bootstrap) and attach the binary to a GitHub Release.
+# Triggered by pushing a tag v* (e.g. v0.5.0).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build stage1 (frozen Zig compiler)
+        run: cd src/stage1 && zig build
+
+      - name: Build stage2 (bootstrap chain)
+        run: scripts/stage2.sh
+
+      - name: Smoke test
+        run: |
+          out/stage2/sober2 build examples/hello.sober -o out/hello   # the default (= --emit=elf --passes) — what a user of the released binary types
+          ./out/hello > out/hello.got
+          diff examples/hello.out out/hello.got
+
+      - name: Package
+        run: |
+          mkdir -p dist/sober-${{ github.ref_name }}-x86_64-linux
+          cp out/stage2/sober2 dist/sober-${{ github.ref_name }}-x86_64-linux/sober
+          cp README.md LICENSE-MIT LICENSE-APACHE dist/sober-${{ github.ref_name }}-x86_64-linux/
+          tar -C dist -czf dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz sober-${{ github.ref_name }}-x86_64-linux
+          (cd dist && sha256sum sober-${{ github.ref_name }}-x86_64-linux.tar.gz > sober-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256)
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz
+            dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256

@@ -1,0 +1,64 @@
+package main
+
+// A2 の検証例: トップレベルの辞書 const（language.md 25 節）。
+// 持つのは可・呼ぶのは不可 — 要素は閉じたラムダ / 名前付き関数の参照 / int const / 入れ子の辞書。
+// 参照点で展開する（同一性は保証しない）
+type Ord[T] struct {
+    less func(T, T) bool
+}
+
+type Tok struct {
+    kind, start int
+}
+
+func byStart(a Tok, b Tok) bool {
+    return a.start < b.start
+}
+
+const Base = 10
+
+const IntOrd = Ord[int]{less: (a, b) => a < b}
+
+const TokOrd = Ord[Tok]{less: byStart}
+
+// 単相のネスト辞書: 辞書のフィールドに辞書 const と int const
+type Range struct {
+    ord Ord[int]
+    lo, hi int
+}
+
+const Digits = Range{ord: IntOrd, lo: 0, hi: Base}
+
+func sort[T](xs []T, ord Ord[T]) []T {
+    mut ys := mut []T{}
+    mut i := 0
+    while i < len(xs) {
+        ys = append(ys, xs[i])
+        mut j := len(ys) - 1
+        while j > 0 && ord.less(ys[j], ys[j - 1]) {
+            t := ys[j]
+            ys[j] = ys[j - 1]
+            ys[j - 1] = t
+            j -= 1
+        }
+        i += 1
+    }
+    return freeze(ys)
+}
+
+func smaller(a int, b int) int {
+    return if IntOrd.less(a, b) { a } else { b }
+}
+
+func inRange(r Range, n int) bool {
+    return !r.ord.less(n, r.lo) && r.ord.less(n, r.hi)
+}
+
+func main() {
+    xs := sort([]int{5, 2, 8, 1, 9}, IntOrd)
+    println(xs[0], xs[1], xs[2], xs[3], xs[4])
+    println(smaller(3, 7), smaller(9, 4))
+    ts := sort([]Tok{Tok{0, 7}, Tok{1, 3}, Tok{2, 5}}, TokOrd)
+    println(ts[0].kind, ts[1].kind, ts[2].kind)
+    println(if inRange(Digits, 7) { 1 } else { 0 }, if inRange(Digits, 12) { 1 } else { 0 }, Digits.hi)
+}

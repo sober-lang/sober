@@ -1,0 +1,190 @@
+package analyzer
+
+// acquire / release の局所照合（R-a — language.md 30 節。src/analyzer.zig の移植・文言も同じ）。
+// 規則: `h := pool.Acquire(mut p, v)` の直後の文は `defer pool.Release(mut p, h)` でなければならない（同じブロックの直後なので、
+// 間に脱出が挟まる漏れが形で起きない）。Acquire はこの束縛の形以外に書けず、Release はこの defer の形以外に書けない。
+// 対象の特定は std/pool の関数名に焼き込む（H1）: import の参照名が std/pool を指す `pool.X`・明示の型引数 `pool.X[T]`・std/pool 自身の裸の `X`
+
+import "ast"
+import "desugar"
+
+const KNone = 0
+const KAcquire = 1
+const KRelease = 2
+
+// 指摘の種類（文言は message — 走査は種類と節だけを記録し、綴りは Run の最後に組む）
+const MDefer = 1       // 直後の defer が別の Pool / Handle を返している（at = Release の呼び出し, s = Acquire の束縛）
+const MUnreleased = 2  // 直後の文が defer Release でない（at = Acquire の呼び出し, s = 束縛）
+const MAcquire = 3     // 規則外の位置の Acquire
+const MRelease = 4     // 規則外の位置の Release
+const MPipe = 5        // `|>` 経由の Acquire / Release
+
+// poolFn は callee が std/pool の Acquire / Release か（KNone / KAcquire / KRelease）
+func poolFn(az mut Az, callee desugar.NodeRef) int {
+    c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
+    x := node(mut az, c)
+    mut name := desugar.StrRef(-1)
+    if x.kind == ast.ESelector {
+        base := desugar.NodeRef(x.a)
+        if kind(mut az, base) != ast.EIdent {
+            return KNone
+        }
+        ref := desugar.StrRef(node(mut az, base).a)
+        pk := desugar.ImportOf(mut az.d, az.pk, ref, 0, desugar.Dat(mut az.d, int(ref)))
+        if pk == -1 || !desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/pool") {
+            return KNone
+        }
+        name = desugar.StrRef(x.b)
+    } else if x.kind == ast.EIdent {
+        if !desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, az.pk), "std/pool") {
+            return KNone
+        }
+        name = desugar.StrRef(x.a)
+    } else {
+        return KNone
+    }
+    if desugar.StrIs(mut az.d, name, "Acquire") {
+        return KAcquire
+    }
+    if desugar.StrIs(mut az.d, name, "Release") {
+        return KRelease
+    }
+    return KNone
+}
+
+// callKind は式 e が std/pool の Acquire / Release の呼び出しか
+func callKind(az mut Az, e desugar.NodeRef) int {
+    if e == -1 || kind(mut az, e) != ast.ECall {
+        return KNone
+    }
+    return poolFn(mut az, desugar.NodeRef(node(mut az, e).a))
+}
+
+// poolName は Pool の実引数の表記（`mut p` / `p`）の名前（比べられない形は "" — ok = false）
+func poolName(az mut Az, e desugar.NodeRef) (string, bool) {
+    k := kind(mut az, e)
+    if k == ast.EMutArg || k == ast.EIdent {
+        return str(mut az, desugar.StrRef(node(mut az, e).a)), true
+    }
+    return "", false
+}
+
+// releaseSpelling は callee の表記（診断の提示用 — `pool.Release` / `Release`）
+func releaseSpelling(az mut Az, callee desugar.NodeRef) string {
+    c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
+    x := node(mut az, c)
+    if x.kind == ast.ESelector {
+        base := str(mut az, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a))
+        return "${base}.Release"
+    }
+    return "Release"
+}
+
+// acquireBind は束縛 s が Acquire なら、直後の文 next を照合して両方の呼び出しを「規則どおり」に印をつける
+func acquireBind(az mut Az, s desugar.NodeRef, next desugar.NodeRef) {
+    b := node(mut az, s)
+    vals := desugar.ListRef(b.c)
+    if desugar.LenL(mut az.d, vals) != 1 {
+        return
+    }
+    mut v := nat(mut az, vals, 0)
+    if kind(mut az, v) == ast.ETry {
+        v = desugar.NodeRef(node(mut az, v).a)
+    }
+    if callKind(mut az, v) != KAcquire {
+        return
+    }
+    if desugar.LenL(mut az.d, desugar.ListRef(b.a)) != 1 || b.b != 0 {
+        // 形が違う — 走査が「規則外の Acquire」として拒否する
+        return
+    }
+    markOk(mut az, v)
+    if next != -1 && kind(mut az, next) == ast.SDefer {
+        d := desugar.NodeRef(node(mut az, next).a)
+        if callKind(mut az, d) == KRelease {
+            // 報告はここで 1 回（走査で重ねて言わない）
+            markOk(mut az, d)
+            if !samePair(mut az, s, v, d) {
+                report(mut az, MDefer, d, s)
+            }
+            return
+        }
+    }
+    report(mut az, MUnreleased, v, s)
+}
+
+// acqOf は Acquire の束縛 s の呼び出しの節（`?` は剥がす）
+func acqOf(az mut Az, s desugar.NodeRef) desugar.NodeRef {
+    v := nat(mut az, desugar.ListRef(node(mut az, s).c), 0)
+    return if kind(mut az, v) == ast.ETry { desugar.NodeRef(node(mut az, v).a) } else { v }
+}
+
+// handleOf は束縛 s の Handle の名前
+func handleOf(az mut Az, s desugar.NodeRef) string {
+    return str(mut az, desugar.StrRef(desugar.LatI(mut az.d, desugar.ListRef(node(mut az, s).a), 0)))
+}
+
+// poolArg は呼び出し c の先頭の実引数の Pool の名前（比べられない形は ok = false）
+func poolArg(az mut Az, c desugar.NodeRef) (string, bool) {
+    args := desugar.ListRef(node(mut az, c).b)
+    if desugar.LenL(mut az.d, args) == 0 {
+        return "", false
+    }
+    return poolName(mut az, nat(mut az, args, 0))
+}
+
+// samePair は defer の Release d が束縛 s（Acquire v）と同じ Pool と Handle を返しているか
+func samePair(az mut Az, s desugar.NodeRef, v desugar.NodeRef, d desugar.NodeRef) bool {
+    rargs := desugar.ListRef(node(mut az, d).b)
+    if desugar.LenL(mut az.d, rargs) != 2 {
+        return false
+    }
+    r1 := nat(mut az, rargs, 1)
+    if kind(mut az, r1) != ast.EIdent || str(mut az, desugar.StrRef(node(mut az, r1).a)) != handleOf(mut az, s) {
+        return false
+    }
+    p, hasP := poolArg(mut az, v)
+    rp, hasRp := poolArg(mut az, d)
+    return hasP && hasRp && rp == p
+}
+
+// want は束縛 s の直後に置くべき defer の綴り
+func want(az mut Az, s desugar.NodeRef) string {
+    v := acqOf(mut az, s)
+    args := desugar.ListRef(node(mut az, v).b)
+    pmut := if desugar.LenL(mut az.d, args) > 0 && kind(mut az, nat(mut az, args, 0)) == ast.EMutArg { "mut " } else { "" }
+    p, hasP := poolArg(mut az, v)
+    pshow := if hasP { p } else { "<pool>" }
+    return "defer ${releaseSpelling(mut az, desugar.NodeRef(node(mut az, v).a))}(${pmut}${pshow}, ${handleOf(mut az, s)})"
+}
+
+// poolMessage は指摘の種類 k（束縛 s）の本文（Zig 版と同じ文言）
+func poolMessage(az mut Az, k int, s desugar.NodeRef) string {
+    return switch k {
+    case MDefer: "this defer must release the handle just acquired: write `${want(mut az, s)}`"
+    case MUnreleased: "acquired handle '${handleOf(mut az, s)}' must be released by the next statement: insert `${want(mut az, s)}` right after this line"
+    case MAcquire: "Acquire must be bound by `h := ...Acquire(...)` as a statement of its own, and released by the next statement"
+    case MRelease: "Release may only appear as `defer ...Release(p, h)` right after the `h := ...Acquire(...)` it releases"
+    default: "Acquire / Release cannot be called through `|>` (write the call form so the pairing is checkable)"
+    }
+}
+
+// callSite は呼び出し e（callee）が規則外の位置の Acquire / Release なら拒否する
+func callSite(az mut Az, e desugar.NodeRef, callee desugar.NodeRef) {
+    k := poolFn(mut az, callee)
+    if k == KNone || isOk(mut az, e) {
+        return
+    }
+    if k == KAcquire {
+        report(mut az, MAcquire, e, -1)
+    } else {
+        report(mut az, MRelease, e, -1)
+    }
+}
+
+// pipeSite は `|>` 経由の Acquire / Release を拒否する（照合できる呼び出しの形で書かせる）
+func pipeSite(az mut Az, e desugar.NodeRef, callee desugar.NodeRef) {
+    if poolFn(mut az, callee) != KNone {
+        report(mut az, MPipe, e, -1)
+    }
+}

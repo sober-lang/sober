@@ -1,0 +1,453 @@
+package desugar
+
+// コア AST の JSON 印字（src/desugar.zig の JsonWriter と同じバイト列 — 1 行・空白なし）。
+// 式は明示スタックで印字する（let の鎖・文字列リテラルの append の鎖は深い — 再帰の実効上限を踏まない）。型は浅いので再帰
+
+// 作業の種類（スタックに (op, arg) で積む）
+const OE = 0   // 式を印字
+const OT = 1   // 型を印字
+const OS = 2   // 定型の断片（emitFrag の番号）
+const OPop = 3 // 印字中のラベルを 1 つ降ろす
+
+func lit(out mut []int, w string) {
+    b := bytes(w)
+    mut i := 0
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+}
+
+func putInt(out mut []int, n0 int) {
+    mut n := n0
+    if n < 0 {
+        out = append(out, 45)
+        if n == -9223372036854775807 - 1 {
+            lit(mut out, "9223372036854775808")
+            return
+        }
+        n = 0 - n
+    }
+    mut p := 1
+    while p <= n / 10 {
+        p = p * 10
+    }
+    while p > 0 {
+        out = append(out, 48 + n / p % 10)
+        p = p / 10
+    }
+}
+
+func putBool(out mut []int, b bool) {
+    if b {
+        lit(mut out, "true")
+    } else {
+        lit(mut out, "false")
+    }
+}
+
+func emitFrag(out mut []int, c int) {
+    if c == 1 {
+        out = append(out, 125)
+    } else if c == 2 {
+        lit(mut out, ",\"e\":")
+    } else if c == 3 {
+        lit(mut out, ",\"body\":")
+    } else if c == 4 {
+        lit(mut out, ",\"b\":")
+    } else if c == 5 {
+        lit(mut out, ",\"t\":")
+    } else if c == 6 {
+        lit(mut out, ",\"nil\":")
+    } else if c == 7 {
+        lit(mut out, ",\"some\":")
+    } else if c == 8 {
+        lit(mut out, ",\"l\":")
+    } else if c == 9 {
+        lit(mut out, ",\"r\":")
+    } else if c == 10 {
+        lit(mut out, ",\"i\":")
+    } else if c == 11 {
+        lit(mut out, ",\"v\":")
+    } else if c == 12 {
+        lit(mut out, ",\"a\":")
+    } else if c == 13 {
+        lit(mut out, ",\"key\":")
+    } else if c == 15 {
+        lit(mut out, ",\"body\":{\"k\":\"triv\"}}")
+    }
+}
+
+// tyJson は型 t を印字する
+func tyJson(st mut S, out mut []int, t int) {
+    k := st.h[t]
+    if k == TInt {
+        lit(mut out, "{\"k\":\"int\"}")
+    } else if k == TVar {
+        lit(mut out, "{\"k\":\"tvar\",\"i\":")
+        putInt(mut out, tA(mut st, t))
+        out = append(out, 125)
+    } else if k == TBool {
+        lit(mut out, "{\"k\":\"bool\"}")
+    } else if k == TUnit {
+        lit(mut out, "{\"k\":\"unit\"}")
+    } else if k == TSl || k == TRef {
+        lit(mut out, if k == TSl { "{\"k\":\"slice\",\"m\":" } else { "{\"k\":\"ref\",\"m\":" })
+        putBool(mut out, tA(mut st, t) != 0)
+        lit(mut out, ",\"r\":")
+        putInt(mut out, tB(mut st, t))
+        lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tC(mut st, t))
+        out = append(out, 125)
+    } else if k == TMp {
+        lit(mut out, "{\"k\":\"map\",\"m\":")
+        putBool(mut out, tA(mut st, t) != 0)
+        lit(mut out, ",\"r\":")
+        putInt(mut out, tB(mut st, t))
+        lit(mut out, ",\"key\":")
+        tyJson(mut st, mut out, tC(mut st, t))
+        lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tD(mut st, t))
+        out = append(out, 125)
+    } else if k == TOpt {
+        lit(mut out, "{\"k\":\"opt\",\"t\":")
+        tyJson(mut st, mut out, tA(mut st, t))
+        out = append(out, 125)
+    } else if k == TUn || k == TPr {
+        lit(mut out, if k == TUn { "{\"k\":\"union\",\"l\":" } else { "{\"k\":\"prod\",\"l\":" })
+        tyJson(mut st, mut out, tA(mut st, t))
+        lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, 125)
+    } else if k == TChan {
+        lit(mut out, "{\"k\":\"chan\",\"rc\":")
+        putInt(mut out, tA(mut st, t))
+        lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, 125)
+    } else if k == TFn {
+        lit(mut out, "{\"k\":\"fn\",\"p\":")
+        tyJson(mut st, mut out, tA(mut st, t))
+        lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, 125)
+    }
+}
+
+// tsJson は型引数の列（-1 か空なら何も書かない）
+func tsJson(st mut S, out mut []int, l int) {
+    if l < 0 || llen(mut st, l) == 0 {
+        return
+    }
+    lit(mut out, ",\"ts\":[")
+    mut i := 0
+    while i < llen(mut st, l) {
+        if i > 0 {
+            out = append(out, 44)
+        }
+        tyJson(mut st, mut out, lat(mut st, l, i))
+        i += 1
+    }
+    out = append(out, 93)
+}
+
+func binName(out mut []int, k int) {
+    if k == BSub {
+        lit(mut out, "sub")
+    } else if k == BMul {
+        lit(mut out, "mul")
+    } else if k == BDiv {
+        lit(mut out, "div")
+    } else if k == BMod {
+        lit(mut out, "mod")
+    } else if k == BEq {
+        lit(mut out, "eq")
+    } else if k == BNe {
+        lit(mut out, "ne")
+    } else if k == BLe {
+        lit(mut out, "le")
+    } else if k == BGt {
+        lit(mut out, "gt")
+    } else if k == BGe {
+        lit(mut out, "ge")
+    } else if k == BAnd {
+        lit(mut out, "and")
+    } else if k == BOr {
+        lit(mut out, "or")
+    } else if k == BXor {
+        lit(mut out, "xor")
+    } else if k == BShl {
+        lit(mut out, "shl")
+    } else if k == BShr {
+        lit(mut out, "shr")
+    }
+}
+
+// spush は作業スタック（ヒープの st.jstk から (op, arg) の対 — 先頭 sp 対が生きている）に 1 対積み、新しい深さを返す。
+// スタックを印字の関数の frame の mut slice に置くと、この関数は呼び手へ展開されるので出力 out と同じ region で交互に伸び、
+// 伸びるたびにコピーが走る（region の上限 64MB で exit 102 — selfhost-drafts F-16）
+func spush(st mut S, sp int, op int, x int) int {
+    st.h[st.jstk + 1 + sp * 2] = op
+    st.h[st.jstk + 2 + sp * 2] = x
+    return sp + 1
+}
+
+// exprJson は式 e0 を印字する（明示スタック）
+func exprJson(st mut S, out mut []int, e0 int) {
+    mut nl := 0
+    mut sp := spush(mut st, 0, OE, e0)
+    while sp > 0 {
+        sp -= 1
+        op := st.h[st.jstk + 1 + sp * 2]
+        x := st.h[st.jstk + 2 + sp * 2]
+        if op == OS {
+            emitFrag(mut out, x)
+            continue
+        }
+        if op == OT {
+            tyJson(mut st, mut out, x)
+            continue
+        }
+        if op == OPop {
+            nl -= 1
+            continue
+        }
+        k := st.h[x]
+        a := st.h[x + 1]
+        b := st.h[x + 2]
+        c := st.h[x + 3]
+        d := st.h[x + 4]
+        // 積む順は印字の逆
+        if k == CLit {
+            lit(mut out, "{\"k\":\"lit\",\"n\":")
+            putInt(mut out, a)
+            out = append(out, 125)
+        } else if k == CTT {
+            lit(mut out, "{\"k\":\"true\"}")
+        } else if k == CFF {
+            lit(mut out, "{\"k\":\"false\"}")
+        } else if k == CTriv {
+            lit(mut out, "{\"k\":\"triv\"}")
+        } else if k == CVar {
+            lit(mut out, "{\"k\":\"var\",\"i\":")
+            putInt(mut out, a)
+            out = append(out, 125)
+        } else if k == CLet || k == CAdd || k == CLt || k == CPair || k == CAssign || k == CWhile || k == CAppend || k == CEqs || k == CConcat || k == CCallv {
+            // node2
+            if k == CLet {
+                lit(mut out, "{\"k\":\"let\",\"e\":")
+            } else if k == CAdd {
+                lit(mut out, "{\"k\":\"add\",\"a\":")
+            } else if k == CLt {
+                lit(mut out, "{\"k\":\"lt\",\"a\":")
+            } else if k == CPair {
+                lit(mut out, "{\"k\":\"pair\",\"a\":")
+            } else if k == CAssign {
+                lit(mut out, "{\"k\":\"assign\",\"l\":")
+            } else if k == CWhile {
+                lit(mut out, "{\"k\":\"while\",\"c\":")
+            } else if k == CAppend {
+                lit(mut out, "{\"k\":\"append\",\"e\":")
+            } else if k == CEqs {
+                lit(mut out, "{\"k\":\"eqs\",\"a\":")
+            } else if k == CConcat {
+                lit(mut out, "{\"k\":\"concat\",\"a\":")
+            } else {
+                lit(mut out, "{\"k\":\"callv\",\"f\":")
+            }
+            f2 := if k == CLet { 3 } else if k == CAssign || k == CCallv { 2 } else if k == CWhile { 3 } else if k == CAppend { 11 } else { 4 }
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, f2)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CBin {
+            lit(mut out, "{\"k\":\"")
+            binName(mut out, a)
+            lit(mut out, "\",\"a\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, c)
+            sp = spush(mut st, sp, OS, 4)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CIte || k == CIfnil || k == CCase || k == CSetidx || k == CSubslice || k == CSetm {
+            // node3
+            if k == CIte {
+                lit(mut out, "{\"k\":\"if\",\"c\":")
+            } else if k == CIfnil {
+                lit(mut out, "{\"k\":\"ifnil\",\"e\":")
+            } else if k == CCase {
+                lit(mut out, "{\"k\":\"case\",\"e\":")
+            } else if k == CSetidx {
+                lit(mut out, "{\"k\":\"setidx\",\"e\":")
+            } else if k == CSubslice {
+                lit(mut out, "{\"k\":\"subslice\",\"e\":")
+            } else {
+                lit(mut out, "{\"k\":\"setm\",\"e\":")
+            }
+            f2 := if k == CIte { 5 } else if k == CIfnil { 6 } else if k == CCase { 8 } else if k == CSetidx { 10 } else if k == CSubslice { 12 } else { 13 }
+            f3 := if k == CIte { 2 } else if k == CIfnil { 7 } else if k == CCase { 9 } else if k == CSetidx || k == CSetm { 11 } else { 4 }
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, c)
+            sp = spush(mut st, sp, OS, f3)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, f2)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CNil {
+            lit(mut out, "{\"k\":\"nil\",\"t\":")
+            tyJson(mut st, mut out, a)
+            out = append(out, 125)
+        } else if k == CSome || k == CFst || k == CSnd || k == CBlock || k == CDeref || k == CFreeze || k == CLen || k == CLenm || k == CKeysm {
+            // node1
+            if k == CSome {
+                lit(mut out, "{\"k\":\"some\",\"e\":")
+            } else if k == CFst {
+                lit(mut out, "{\"k\":\"fst\",\"e\":")
+            } else if k == CSnd {
+                lit(mut out, "{\"k\":\"snd\",\"e\":")
+            } else if k == CBlock {
+                lit(mut out, "{\"k\":\"block\",\"e\":")
+            } else if k == CDeref {
+                lit(mut out, "{\"k\":\"deref\",\"e\":")
+            } else if k == CFreeze {
+                lit(mut out, "{\"k\":\"freeze\",\"e\":")
+            } else if k == CLen {
+                lit(mut out, "{\"k\":\"len\",\"e\":")
+            } else if k == CLenm {
+                lit(mut out, "{\"k\":\"lenm\",\"e\":")
+            } else {
+                lit(mut out, "{\"k\":\"keysm\",\"e\":")
+            }
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CAnn || k == CBlockR {
+            // {"k":"ann","e":E,"t":T} / {"k":"block","e":E,"t":T}（blockR は a = 型, b = e）
+            lit(mut out, if k == CAnn { "{\"k\":\"ann\",\"e\":" } else { "{\"k\":\"block\",\"e\":" })
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OT, if k == CAnn { b } else { a })
+            sp = spush(mut st, sp, OS, 5)
+            sp = spush(mut st, sp, OE, if k == CAnn { a } else { b })
+        } else if k == CInl || k == CInr {
+            lit(mut out, if k == CInl { "{\"k\":\"inl\",\"r\":" } else { "{\"k\":\"inr\",\"l\":" })
+            tyJson(mut st, mut out, a)
+            lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CCall {
+            lit(mut out, if d != 0 { "{\"k\":\"callm\",\"f\":" } else { "{\"k\":\"call\",\"f\":" })
+            putInt(mut out, a)
+            tsJson(mut st, mut out, c)
+            lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CFnref {
+            lit(mut out, "{\"k\":\"fnref\",\"f\":")
+            putInt(mut out, a)
+            tsJson(mut st, mut out, b)
+            out = append(out, 125)
+        } else if k == CAlloc {
+            lit(mut out, "{\"k\":\"alloc\",\"mut\":")
+            putBool(mut out, a != 0)
+            lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CStrlit {
+            lit(mut out, "{\"k\":\"strlit\",\"bs\":[")
+            mut i := 0
+            while i < st.h[a] {
+                if i > 0 {
+                    out = append(out, 44)
+                }
+                putInt(mut out, st.h[a + 1 + i])
+                i += 1
+            }
+            lit(mut out, "],\"r\":")
+            putInt(mut out, b)
+            out = append(out, 125)
+        } else if k == CMkslice {
+            lit(mut out, "{\"k\":\"mkslice\",\"m\":")
+            putBool(mut out, a != 0)
+            lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, b)
+            out = append(out, 125)
+        } else if k == CIndex {
+            lit(mut out, "{\"k\":\"index\",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            if c >= 0 {
+                sp = spush(mut st, sp, OT, c)
+                sp = spush(mut st, sp, OS, 5)
+            }
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, 10)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CMkmap {
+            lit(mut out, "{\"k\":\"mkmap\",\"m\":")
+            putBool(mut out, a != 0)
+            lit(mut out, ",\"key\":")
+            tyJson(mut st, mut out, b)
+            lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, c)
+            out = append(out, 125)
+        } else if k == CGetm || k == CDelm {
+            lit(mut out, if k == CGetm { "{\"k\":\"getm\",\"t\":" } else { "{\"k\":\"delm\",\"t\":" })
+            tyJson(mut st, mut out, a)
+            lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, c)
+            sp = spush(mut st, sp, OS, 13)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CLabel {
+            if st.h[a + LBUsed] == 0 {
+                sp = spush(mut st, sp, OE, c)
+            } else {
+                st.h[st.jlab + 1 + nl] = st.h[a]
+                nl += 1
+                lit(mut out, "{\"k\":\"label\",\"t\":")
+                tyJson(mut st, mut out, b)
+                lit(mut out, ",\"e\":")
+                sp = spush(mut st, sp, OS, 1)
+                sp = spush(mut st, sp, OPop, 0)
+                if d == WDiscard {
+                    lit(mut out, "{\"k\":\"let\",\"e\":")
+                    sp = spush(mut st, sp, OS, 15)
+                } else if d == WAnn {
+                    lit(mut out, "{\"k\":\"ann\",\"e\":")
+                    sp = spush(mut st, sp, OS, 1)
+                    sp = spush(mut st, sp, OT, b)
+                    sp = spush(mut st, sp, OS, 5)
+                }
+                sp = spush(mut st, sp, OE, c)
+            }
+        } else if k == CJump {
+            // 添字 = 印字中の囲むラベルのうち、目標より内側にある数
+            mut n := 0
+            mut j := nl - 1
+            while j >= 0 && st.h[st.jlab + 1 + j] != a {
+                n += 1
+                j -= 1
+            }
+            lit(mut out, "{\"k\":\"jump\",\"n\":")
+            putInt(mut out, n)
+            lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, b)
+            lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, 1)
+            sp = spush(mut st, sp, OE, c)
+        }
+    }
+}
+
+// defJson は Def 1 つ（[param, ret, body, tparams]）を印字する
+func defJson(st mut S, out mut []int, d int) {
+    out = append(out, 123)
+    if st.h[d + 3] > 0 {
+        lit(mut out, "\"tparams\":")
+        putInt(mut out, st.h[d + 3])
+        out = append(out, 44)
+    }
+    lit(mut out, "\"param\":")
+    tyJson(mut st, mut out, st.h[d])
+    lit(mut out, ",\"ret\":")
+    tyJson(mut st, mut out, st.h[d + 1])
+    lit(mut out, ",\"body\":")
+    exprJson(mut st, mut out, st.h[d + 2])
+    out = append(out, 125)
+}

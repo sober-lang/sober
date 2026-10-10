@@ -1,0 +1,27 @@
+package main
+
+// std/io.ReadFd: 開いている fd（0 = 標準入力）から chunk ずつ読む。空 = EOF。n = 0 は空（EOF と同じ形 — 読まない）。
+// 1 回の読みは n バイトまで（パイプ・ファイルでは短い読みもある — ここは入力の総量と chunk の上限だけを見る）
+
+import "std/io"
+
+func main() int {
+    z := io.ReadFd(0, 0) catch return 1
+    println("zero=${len(z)}")
+    mut total := 0
+    mut chunks := 0
+    mut maxc := 0
+    while true {
+        c := io.ReadFd(0, 7) catch return 2
+        if len(c) == 0 {
+            break
+        }
+        total += len(c)
+        chunks += 1
+        if len(c) > maxc {
+            maxc = len(c)
+        }
+    }
+    println("total=${total} max=${maxc} enough=${chunks >= (total + 6) / 7}")
+    return 0
+}

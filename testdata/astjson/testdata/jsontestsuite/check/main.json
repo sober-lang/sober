@@ -1,0 +1,485 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b",
+              "rerr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "io",
+                    "tok": 18
+                  },
+                  "field": "ReadStdin",
+                  "tok": 20
+                },
+                "args": [],
+                "tok": 21
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "rerr",
+                  "tok": 25
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 27
+                },
+                "tok": 26
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 29
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "read-error",
+                          "tok": 31
+                        }
+                      ],
+                      "tok": 30
+                    }
+                  },
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 34
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 24
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "d",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "json",
+                    "tok": 42
+                  },
+                  "field": "Parse",
+                  "tok": 44
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 46
+                  }
+                ],
+                "tok": 45
+              }
+            ],
+            "tok": 38
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 50
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "type",
+                      "bind": null,
+                      "variant": "json.InvalidJson",
+                      "fields": [
+                        {
+                          "name": "pos",
+                          "sub": null,
+                          "tok": 57
+                        },
+                        {
+                          "name": "kind",
+                          "sub": null,
+                          "tok": 59
+                        }
+                      ],
+                      "tok": 53
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "println",
+                            "tok": 62
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "reject",
+                              "tok": 64
+                            },
+                            {
+                              "k": "ident",
+                              "name": "pos",
+                              "tok": 66
+                            },
+                            {
+                              "k": "ident",
+                              "name": "kind",
+                              "tok": 68
+                            }
+                          ],
+                          "tok": 63
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 52
+                },
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "nil",
+                          "tok": 72
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "bind",
+                              "names": [
+                                "s"
+                              ],
+                              "mutable": false,
+                              "values": [
+                                {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "json",
+                                      "tok": 77
+                                    },
+                                    "field": "Format",
+                                    "tok": 79
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "ident",
+                                      "name": "d",
+                                      "tok": 81
+                                    },
+                                    {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "selector",
+                                        "base": {
+                                          "k": "ident",
+                                          "name": "json",
+                                          "tok": 83
+                                        },
+                                        "field": "Root",
+                                        "tok": 85
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "ident",
+                                          "name": "d",
+                                          "tok": 87
+                                        }
+                                      ],
+                                      "tok": 86
+                                    }
+                                  ],
+                                  "tok": 80
+                                }
+                              ],
+                              "tok": 75
+                            },
+                            {
+                              "k": "bind",
+                              "names": [
+                                "d2",
+                                "err2"
+                              ],
+                              "mutable": false,
+                              "values": [
+                                {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "selector",
+                                    "base": {
+                                      "k": "ident",
+                                      "name": "json",
+                                      "tok": 95
+                                    },
+                                    "field": "Parse",
+                                    "tok": 97
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "ident",
+                                        "name": "bytes",
+                                        "tok": 99
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "ident",
+                                          "name": "s",
+                                          "tok": 101
+                                        }
+                                      ],
+                                      "tok": 100
+                                    }
+                                  ],
+                                  "tok": 98
+                                }
+                              ],
+                              "tok": 91
+                            },
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "if",
+                                "cond": {
+                                  "k": "binary",
+                                  "op": "!=",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "err2",
+                                    "tok": 106
+                                  },
+                                  "rhs": {
+                                    "k": "nil",
+                                    "tok": 108
+                                  },
+                                  "tok": 107
+                                },
+                                "then": {
+                                  "stmts": [
+                                    {
+                                      "k": "expr",
+                                      "expr": {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "ident",
+                                          "name": "println",
+                                          "tok": 110
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "strlit",
+                                            "value": "roundtrip-reject",
+                                            "tok": 112
+                                          }
+                                        ],
+                                        "tok": 111
+                                      }
+                                    }
+                                  ]
+                                },
+                                "else": {
+                                  "k": "if",
+                                  "cond": {
+                                    "k": "binary",
+                                    "op": "!=",
+                                    "lhs": {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "selector",
+                                        "base": {
+                                          "k": "ident",
+                                          "name": "json",
+                                          "tok": 118
+                                        },
+                                        "field": "Format",
+                                        "tok": 120
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "ident",
+                                          "name": "d2",
+                                          "tok": 122
+                                        },
+                                        {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "json",
+                                              "tok": 124
+                                            },
+                                            "field": "Root",
+                                            "tok": 126
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "ident",
+                                              "name": "d2",
+                                              "tok": 128
+                                            }
+                                          ],
+                                          "tok": 127
+                                        }
+                                      ],
+                                      "tok": 121
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "s",
+                                      "tok": 132
+                                    },
+                                    "tok": 131
+                                  },
+                                  "then": {
+                                    "stmts": [
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "ident",
+                                            "name": "println",
+                                            "tok": 134
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "strlit",
+                                              "value": "roundtrip-differs",
+                                              "tok": 136
+                                            }
+                                          ],
+                                          "tok": 135
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "else": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "ident",
+                                            "name": "println",
+                                            "tok": 142
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "strlit",
+                                              "value": "ok",
+                                              "tok": 144
+                                            }
+                                          ],
+                                          "tok": 143
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "tok": 117
+                                },
+                                "tok": 105
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 71
+                }
+              ],
+              "default": null,
+              "tok": 49
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 155
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

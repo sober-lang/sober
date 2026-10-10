@@ -1,0 +1,2 @@
+sober: desugar error at testdata/vis_variant/app/main.sober:10:10 (UnknownName)
+exit=1

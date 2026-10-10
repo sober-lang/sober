@@ -1,0 +1,4754 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/utf8",
+      "tok": 4
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "$utf8",
+                    "tok": 19
+                  },
+                  "field": "Parse",
+                  "tok": 19
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 21
+                  }
+                ],
+                "tok": 20
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 25
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 27
+                },
+                "tok": 26
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "switch",
+                      "subjects": [
+                        {
+                          "k": "ident",
+                          "name": "err",
+                          "tok": 30
+                        }
+                      ],
+                      "cases": [
+                        {
+                          "patterns": [
+                            {
+                              "k": "type",
+                              "bind": null,
+                              "variant": "utf8.InvalidUtf8",
+                              "fields": [
+                                {
+                                  "name": "pos",
+                                  "sub": null,
+                                  "tok": 37
+                                }
+                              ],
+                              "tok": 33
+                            }
+                          ],
+                          "body": {
+                            "stmts": [
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "ident",
+                                    "name": "println",
+                                    "tok": 40
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "strlit",
+                                      "value": "bad",
+                                      "tok": 42
+                                    },
+                                    {
+                                      "k": "ident",
+                                      "name": "pos",
+                                      "tok": 44
+                                    }
+                                  ],
+                                  "tok": 41
+                                }
+                              }
+                            ]
+                          },
+                          "tok": 32
+                        }
+                      ],
+                      "default": null,
+                      "tok": 29
+                    }
+                  }
+                ]
+              },
+              "else": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 52
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "ok",
+                          "tok": 54
+                        },
+                        {
+                          "k": "ident",
+                          "name": "s",
+                          "tok": 56
+                        }
+                      ],
+                      "tok": 53
+                    }
+                  }
+                ]
+              },
+              "tok": 24
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 63
+      },
+      "sig_end": 14
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 68
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 70
+                    },
+                    "field": "Invalid",
+                    "tok": 72
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 74
+                    }
+                  ],
+                  "tok": 73
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 81
+                    },
+                    "field": "Valid",
+                    "tok": 83
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 85
+                    }
+                  ],
+                  "tok": 84
+                }
+              ],
+              "tok": 69
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 93
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [],
+                  "mut": false,
+                  "tok": 95
+                }
+              ],
+              "tok": 94
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 102
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 104
+                    },
+                    "field": "Invalid",
+                    "tok": 106
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 104,
+                          "tok": 112
+                        },
+                        {
+                          "k": "int",
+                          "value": 105,
+                          "tok": 114
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 108
+                    }
+                  ],
+                  "tok": 107
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 118
+                    },
+                    "field": "Valid",
+                    "tok": 120
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 104,
+                          "tok": 126
+                        },
+                        {
+                          "k": "int",
+                          "value": 105,
+                          "tok": 128
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 122
+                    }
+                  ],
+                  "tok": 121
+                }
+              ],
+              "tok": 103
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 133
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 104,
+                      "tok": 139
+                    },
+                    {
+                      "k": "int",
+                      "value": 105,
+                      "tok": 141
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 135
+                }
+              ],
+              "tok": 134
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 145
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 147
+                    },
+                    "field": "Invalid",
+                    "tok": 149
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 155
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 151
+                    }
+                  ],
+                  "tok": 150
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 159
+                    },
+                    "field": "Valid",
+                    "tok": 161
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 167
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 163
+                    }
+                  ],
+                  "tok": 162
+                }
+              ],
+              "tok": 146
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 172
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 178
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 174
+                }
+              ],
+              "tok": 173
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 182
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 184
+                    },
+                    "field": "Invalid",
+                    "tok": 186
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 127,
+                          "tok": 192
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 188
+                    }
+                  ],
+                  "tok": 187
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 196
+                    },
+                    "field": "Valid",
+                    "tok": 198
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 127,
+                          "tok": 204
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 200
+                    }
+                  ],
+                  "tok": 199
+                }
+              ],
+              "tok": 183
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 209
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 127,
+                      "tok": 215
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 211
+                }
+              ],
+              "tok": 210
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 219
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 221
+                    },
+                    "field": "Invalid",
+                    "tok": 223
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 195,
+                          "tok": 229
+                        },
+                        {
+                          "k": "int",
+                          "value": 169,
+                          "tok": 231
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 225
+                    }
+                  ],
+                  "tok": 224
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 235
+                    },
+                    "field": "Valid",
+                    "tok": 237
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 195,
+                          "tok": 243
+                        },
+                        {
+                          "k": "int",
+                          "value": 169,
+                          "tok": 245
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 239
+                    }
+                  ],
+                  "tok": 238
+                }
+              ],
+              "tok": 220
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 250
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 195,
+                      "tok": 256
+                    },
+                    {
+                      "k": "int",
+                      "value": 169,
+                      "tok": 258
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 252
+                }
+              ],
+              "tok": 251
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 262
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 264
+                    },
+                    "field": "Invalid",
+                    "tok": 266
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 272
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 274
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 268
+                    }
+                  ],
+                  "tok": 267
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 278
+                    },
+                    "field": "Valid",
+                    "tok": 280
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 286
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 288
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 282
+                    }
+                  ],
+                  "tok": 281
+                }
+              ],
+              "tok": 263
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 293
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 194,
+                      "tok": 299
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 301
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 295
+                }
+              ],
+              "tok": 294
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 305
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 307
+                    },
+                    "field": "Invalid",
+                    "tok": 309
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 223,
+                          "tok": 315
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 317
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 311
+                    }
+                  ],
+                  "tok": 310
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 321
+                    },
+                    "field": "Valid",
+                    "tok": 323
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 223,
+                          "tok": 329
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 331
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 325
+                    }
+                  ],
+                  "tok": 324
+                }
+              ],
+              "tok": 306
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 336
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 223,
+                      "tok": 342
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 344
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 338
+                }
+              ],
+              "tok": 337
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 348
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 350
+                    },
+                    "field": "Invalid",
+                    "tok": 352
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 192,
+                          "tok": 358
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 360
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 354
+                    }
+                  ],
+                  "tok": 353
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 364
+                    },
+                    "field": "Valid",
+                    "tok": 366
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 192,
+                          "tok": 372
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 374
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 368
+                    }
+                  ],
+                  "tok": 367
+                }
+              ],
+              "tok": 349
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 379
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 192,
+                      "tok": 385
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 387
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 381
+                }
+              ],
+              "tok": 380
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 391
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 393
+                    },
+                    "field": "Invalid",
+                    "tok": 395
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 193,
+                          "tok": 401
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 403
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 397
+                    }
+                  ],
+                  "tok": 396
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 407
+                    },
+                    "field": "Valid",
+                    "tok": 409
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 193,
+                          "tok": 415
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 417
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 411
+                    }
+                  ],
+                  "tok": 410
+                }
+              ],
+              "tok": 392
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 422
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 193,
+                      "tok": 428
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 430
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 424
+                }
+              ],
+              "tok": 423
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 434
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 436
+                    },
+                    "field": "Invalid",
+                    "tok": 438
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 444
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 440
+                    }
+                  ],
+                  "tok": 439
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 448
+                    },
+                    "field": "Valid",
+                    "tok": 450
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 456
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 452
+                    }
+                  ],
+                  "tok": 451
+                }
+              ],
+              "tok": 435
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 461
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 194,
+                      "tok": 467
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 463
+                }
+              ],
+              "tok": 462
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 471
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 473
+                    },
+                    "field": "Invalid",
+                    "tok": 475
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 481
+                        },
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 483
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 477
+                    }
+                  ],
+                  "tok": 476
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 487
+                    },
+                    "field": "Valid",
+                    "tok": 489
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 194,
+                          "tok": 495
+                        },
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 497
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 491
+                    }
+                  ],
+                  "tok": 490
+                }
+              ],
+              "tok": 472
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 502
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 194,
+                      "tok": 508
+                    },
+                    {
+                      "k": "int",
+                      "value": 65,
+                      "tok": 510
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 504
+                }
+              ],
+              "tok": 503
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 514
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 516
+                    },
+                    "field": "Invalid",
+                    "tok": 518
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 224,
+                          "tok": 524
+                        },
+                        {
+                          "k": "int",
+                          "value": 160,
+                          "tok": 526
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 528
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 520
+                    }
+                  ],
+                  "tok": 519
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 532
+                    },
+                    "field": "Valid",
+                    "tok": 534
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 224,
+                          "tok": 540
+                        },
+                        {
+                          "k": "int",
+                          "value": 160,
+                          "tok": 542
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 544
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 536
+                    }
+                  ],
+                  "tok": 535
+                }
+              ],
+              "tok": 515
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 549
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 224,
+                      "tok": 555
+                    },
+                    {
+                      "k": "int",
+                      "value": 160,
+                      "tok": 557
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 559
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 551
+                }
+              ],
+              "tok": 550
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 563
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 565
+                    },
+                    "field": "Invalid",
+                    "tok": 567
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 224,
+                          "tok": 573
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 575
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 577
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 569
+                    }
+                  ],
+                  "tok": 568
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 581
+                    },
+                    "field": "Valid",
+                    "tok": 583
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 224,
+                          "tok": 589
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 591
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 593
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 585
+                    }
+                  ],
+                  "tok": 584
+                }
+              ],
+              "tok": 564
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 598
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 224,
+                      "tok": 604
+                    },
+                    {
+                      "k": "int",
+                      "value": 159,
+                      "tok": 606
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 608
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 600
+                }
+              ],
+              "tok": 599
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 612
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 614
+                    },
+                    "field": "Invalid",
+                    "tok": 616
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 622
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 624
+                        },
+                        {
+                          "k": "int",
+                          "value": 130,
+                          "tok": 626
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 618
+                    }
+                  ],
+                  "tok": 617
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 630
+                    },
+                    "field": "Valid",
+                    "tok": 632
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 638
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 640
+                        },
+                        {
+                          "k": "int",
+                          "value": 130,
+                          "tok": 642
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 634
+                    }
+                  ],
+                  "tok": 633
+                }
+              ],
+              "tok": 613
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 647
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 227,
+                      "tok": 653
+                    },
+                    {
+                      "k": "int",
+                      "value": 129,
+                      "tok": 655
+                    },
+                    {
+                      "k": "int",
+                      "value": 130,
+                      "tok": 657
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 649
+                }
+              ],
+              "tok": 648
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 661
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 663
+                    },
+                    "field": "Invalid",
+                    "tok": 665
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 237,
+                          "tok": 671
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 673
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 675
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 667
+                    }
+                  ],
+                  "tok": 666
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 679
+                    },
+                    "field": "Valid",
+                    "tok": 681
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 237,
+                          "tok": 687
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 689
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 691
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 683
+                    }
+                  ],
+                  "tok": 682
+                }
+              ],
+              "tok": 662
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 696
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 237,
+                      "tok": 702
+                    },
+                    {
+                      "k": "int",
+                      "value": 159,
+                      "tok": 704
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 706
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 698
+                }
+              ],
+              "tok": 697
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 710
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 712
+                    },
+                    "field": "Invalid",
+                    "tok": 714
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 237,
+                          "tok": 720
+                        },
+                        {
+                          "k": "int",
+                          "value": 160,
+                          "tok": 722
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 724
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 716
+                    }
+                  ],
+                  "tok": 715
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 728
+                    },
+                    "field": "Valid",
+                    "tok": 730
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 237,
+                          "tok": 736
+                        },
+                        {
+                          "k": "int",
+                          "value": 160,
+                          "tok": 738
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 740
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 732
+                    }
+                  ],
+                  "tok": 731
+                }
+              ],
+              "tok": 711
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 745
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 237,
+                      "tok": 751
+                    },
+                    {
+                      "k": "int",
+                      "value": 160,
+                      "tok": 753
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 755
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 747
+                }
+              ],
+              "tok": 746
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 759
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 761
+                    },
+                    "field": "Invalid",
+                    "tok": 763
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 238,
+                          "tok": 769
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 771
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 773
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 765
+                    }
+                  ],
+                  "tok": 764
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 777
+                    },
+                    "field": "Valid",
+                    "tok": 779
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 238,
+                          "tok": 785
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 787
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 789
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 781
+                    }
+                  ],
+                  "tok": 780
+                }
+              ],
+              "tok": 760
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 794
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 238,
+                      "tok": 800
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 802
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 804
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 796
+                }
+              ],
+              "tok": 795
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 808
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 810
+                    },
+                    "field": "Invalid",
+                    "tok": 812
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 239,
+                          "tok": 818
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 820
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 822
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 814
+                    }
+                  ],
+                  "tok": 813
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 826
+                    },
+                    "field": "Valid",
+                    "tok": 828
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 239,
+                          "tok": 834
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 836
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 838
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 830
+                    }
+                  ],
+                  "tok": 829
+                }
+              ],
+              "tok": 809
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 843
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 239,
+                      "tok": 849
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 851
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 853
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 845
+                }
+              ],
+              "tok": 844
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 857
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 859
+                    },
+                    "field": "Invalid",
+                    "tok": 861
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 239,
+                          "tok": 867
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 869
+                        },
+                        {
+                          "k": "int",
+                          "value": 189,
+                          "tok": 871
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 863
+                    }
+                  ],
+                  "tok": 862
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 875
+                    },
+                    "field": "Valid",
+                    "tok": 877
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 239,
+                          "tok": 883
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 885
+                        },
+                        {
+                          "k": "int",
+                          "value": 189,
+                          "tok": 887
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 879
+                    }
+                  ],
+                  "tok": 878
+                }
+              ],
+              "tok": 858
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 892
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 239,
+                      "tok": 898
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 900
+                    },
+                    {
+                      "k": "int",
+                      "value": 189,
+                      "tok": 902
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 894
+                }
+              ],
+              "tok": 893
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 906
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 908
+                    },
+                    "field": "Invalid",
+                    "tok": 910
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 916
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 918
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 912
+                    }
+                  ],
+                  "tok": 911
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 922
+                    },
+                    "field": "Valid",
+                    "tok": 924
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 930
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 932
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 926
+                    }
+                  ],
+                  "tok": 925
+                }
+              ],
+              "tok": 907
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 937
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 227,
+                      "tok": 943
+                    },
+                    {
+                      "k": "int",
+                      "value": 129,
+                      "tok": 945
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 939
+                }
+              ],
+              "tok": 938
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 949
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 951
+                    },
+                    "field": "Invalid",
+                    "tok": 953
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 959
+                        },
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 961
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 963
+                        },
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 965
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 955
+                    }
+                  ],
+                  "tok": 954
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 969
+                    },
+                    "field": "Valid",
+                    "tok": 971
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 977
+                        },
+                        {
+                          "k": "int",
+                          "value": 227,
+                          "tok": 979
+                        },
+                        {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 981
+                        },
+                        {
+                          "k": "int",
+                          "value": 65,
+                          "tok": 983
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 973
+                    }
+                  ],
+                  "tok": 972
+                }
+              ],
+              "tok": 950
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 988
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 65,
+                      "tok": 994
+                    },
+                    {
+                      "k": "int",
+                      "value": 227,
+                      "tok": 996
+                    },
+                    {
+                      "k": "int",
+                      "value": 129,
+                      "tok": 998
+                    },
+                    {
+                      "k": "int",
+                      "value": 65,
+                      "tok": 1000
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 990
+                }
+              ],
+              "tok": 989
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1004
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1006
+                    },
+                    "field": "Invalid",
+                    "tok": 1008
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1014
+                        },
+                        {
+                          "k": "int",
+                          "value": 144,
+                          "tok": 1016
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1018
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1020
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1010
+                    }
+                  ],
+                  "tok": 1009
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1024
+                    },
+                    "field": "Valid",
+                    "tok": 1026
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1032
+                        },
+                        {
+                          "k": "int",
+                          "value": 144,
+                          "tok": 1034
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1036
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1038
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1028
+                    }
+                  ],
+                  "tok": 1027
+                }
+              ],
+              "tok": 1005
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1043
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 240,
+                      "tok": 1049
+                    },
+                    {
+                      "k": "int",
+                      "value": 144,
+                      "tok": 1051
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1053
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1055
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1045
+                }
+              ],
+              "tok": 1044
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1059
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1061
+                    },
+                    "field": "Invalid",
+                    "tok": 1063
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1069
+                        },
+                        {
+                          "k": "int",
+                          "value": 143,
+                          "tok": 1071
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1073
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1075
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1065
+                    }
+                  ],
+                  "tok": 1064
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1079
+                    },
+                    "field": "Valid",
+                    "tok": 1081
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1087
+                        },
+                        {
+                          "k": "int",
+                          "value": 143,
+                          "tok": 1089
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1091
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1093
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1083
+                    }
+                  ],
+                  "tok": 1082
+                }
+              ],
+              "tok": 1060
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1098
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 240,
+                      "tok": 1104
+                    },
+                    {
+                      "k": "int",
+                      "value": 143,
+                      "tok": 1106
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 1108
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 1110
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1100
+                }
+              ],
+              "tok": 1099
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1114
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1116
+                    },
+                    "field": "Invalid",
+                    "tok": 1118
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1124
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1126
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1128
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1130
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1120
+                    }
+                  ],
+                  "tok": 1119
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1134
+                    },
+                    "field": "Valid",
+                    "tok": 1136
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1142
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1144
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1146
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1148
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1138
+                    }
+                  ],
+                  "tok": 1137
+                }
+              ],
+              "tok": 1115
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1153
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 240,
+                      "tok": 1159
+                    },
+                    {
+                      "k": "int",
+                      "value": 159,
+                      "tok": 1161
+                    },
+                    {
+                      "k": "int",
+                      "value": 152,
+                      "tok": 1163
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1165
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1155
+                }
+              ],
+              "tok": 1154
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1169
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1171
+                    },
+                    "field": "Invalid",
+                    "tok": 1173
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 244,
+                          "tok": 1179
+                        },
+                        {
+                          "k": "int",
+                          "value": 143,
+                          "tok": 1181
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1183
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1185
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1175
+                    }
+                  ],
+                  "tok": 1174
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1189
+                    },
+                    "field": "Valid",
+                    "tok": 1191
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 244,
+                          "tok": 1197
+                        },
+                        {
+                          "k": "int",
+                          "value": 143,
+                          "tok": 1199
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1201
+                        },
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1203
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1193
+                    }
+                  ],
+                  "tok": 1192
+                }
+              ],
+              "tok": 1170
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1208
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 244,
+                      "tok": 1214
+                    },
+                    {
+                      "k": "int",
+                      "value": 143,
+                      "tok": 1216
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 1218
+                    },
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 1220
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1210
+                }
+              ],
+              "tok": 1209
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1224
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1226
+                    },
+                    "field": "Invalid",
+                    "tok": 1228
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 244,
+                          "tok": 1234
+                        },
+                        {
+                          "k": "int",
+                          "value": 144,
+                          "tok": 1236
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1238
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1240
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1230
+                    }
+                  ],
+                  "tok": 1229
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1244
+                    },
+                    "field": "Valid",
+                    "tok": 1246
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 244,
+                          "tok": 1252
+                        },
+                        {
+                          "k": "int",
+                          "value": 144,
+                          "tok": 1254
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1256
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1258
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1248
+                    }
+                  ],
+                  "tok": 1247
+                }
+              ],
+              "tok": 1225
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1263
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 244,
+                      "tok": 1269
+                    },
+                    {
+                      "k": "int",
+                      "value": 144,
+                      "tok": 1271
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1273
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1275
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1265
+                }
+              ],
+              "tok": 1264
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1279
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1281
+                    },
+                    "field": "Invalid",
+                    "tok": 1283
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 245,
+                          "tok": 1289
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1291
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1293
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1295
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1285
+                    }
+                  ],
+                  "tok": 1284
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1299
+                    },
+                    "field": "Valid",
+                    "tok": 1301
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 245,
+                          "tok": 1307
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1309
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1311
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1313
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1303
+                    }
+                  ],
+                  "tok": 1302
+                }
+              ],
+              "tok": 1280
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1318
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 245,
+                      "tok": 1324
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1326
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1328
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1330
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1320
+                }
+              ],
+              "tok": 1319
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1334
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1336
+                    },
+                    "field": "Invalid",
+                    "tok": 1338
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1344
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1346
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1348
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1340
+                    }
+                  ],
+                  "tok": 1339
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1352
+                    },
+                    "field": "Valid",
+                    "tok": 1354
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1360
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1362
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1364
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1356
+                    }
+                  ],
+                  "tok": 1355
+                }
+              ],
+              "tok": 1335
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1369
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 240,
+                      "tok": 1375
+                    },
+                    {
+                      "k": "int",
+                      "value": 159,
+                      "tok": 1377
+                    },
+                    {
+                      "k": "int",
+                      "value": 152,
+                      "tok": 1379
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1371
+                }
+              ],
+              "tok": 1370
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1383
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1385
+                    },
+                    "field": "Invalid",
+                    "tok": 1387
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 255,
+                          "tok": 1393
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1389
+                    }
+                  ],
+                  "tok": 1388
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1397
+                    },
+                    "field": "Valid",
+                    "tok": 1399
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 255,
+                          "tok": 1405
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1401
+                    }
+                  ],
+                  "tok": 1400
+                }
+              ],
+              "tok": 1384
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1410
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 255,
+                      "tok": 1416
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1412
+                }
+              ],
+              "tok": 1411
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1420
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1422
+                    },
+                    "field": "Invalid",
+                    "tok": 1424
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 254,
+                          "tok": 1430
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1426
+                    }
+                  ],
+                  "tok": 1425
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1434
+                    },
+                    "field": "Valid",
+                    "tok": 1436
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 254,
+                          "tok": 1442
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1438
+                    }
+                  ],
+                  "tok": 1437
+                }
+              ],
+              "tok": 1421
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1447
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 254,
+                      "tok": 1453
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1449
+                }
+              ],
+              "tok": 1448
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1457
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1459
+                    },
+                    "field": "Invalid",
+                    "tok": 1461
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1467
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1463
+                    }
+                  ],
+                  "tok": 1462
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1471
+                    },
+                    "field": "Valid",
+                    "tok": 1473
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1479
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1475
+                    }
+                  ],
+                  "tok": 1474
+                }
+              ],
+              "tok": 1458
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1484
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1490
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1486
+                }
+              ],
+              "tok": 1485
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1494
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1496
+                    },
+                    "field": "Invalid",
+                    "tok": 1498
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1504
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1500
+                    }
+                  ],
+                  "tok": 1499
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1508
+                    },
+                    "field": "Valid",
+                    "tok": 1510
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 191,
+                          "tok": 1516
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1512
+                    }
+                  ],
+                  "tok": 1511
+                }
+              ],
+              "tok": 1495
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1521
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 191,
+                      "tok": 1527
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1523
+                }
+              ],
+              "tok": 1522
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1531
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1533
+                    },
+                    "field": "Invalid",
+                    "tok": 1535
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 97,
+                          "tok": 1541
+                        },
+                        {
+                          "k": "int",
+                          "value": 195,
+                          "tok": 1543
+                        },
+                        {
+                          "k": "int",
+                          "value": 169,
+                          "tok": 1545
+                        },
+                        {
+                          "k": "int",
+                          "value": 226,
+                          "tok": 1547
+                        },
+                        {
+                          "k": "int",
+                          "value": 130,
+                          "tok": 1549
+                        },
+                        {
+                          "k": "int",
+                          "value": 172,
+                          "tok": 1551
+                        },
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1553
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1555
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1557
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1559
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1537
+                    }
+                  ],
+                  "tok": 1536
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1563
+                    },
+                    "field": "Valid",
+                    "tok": 1565
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 97,
+                          "tok": 1571
+                        },
+                        {
+                          "k": "int",
+                          "value": 195,
+                          "tok": 1573
+                        },
+                        {
+                          "k": "int",
+                          "value": 169,
+                          "tok": 1575
+                        },
+                        {
+                          "k": "int",
+                          "value": 226,
+                          "tok": 1577
+                        },
+                        {
+                          "k": "int",
+                          "value": 130,
+                          "tok": 1579
+                        },
+                        {
+                          "k": "int",
+                          "value": 172,
+                          "tok": 1581
+                        },
+                        {
+                          "k": "int",
+                          "value": 240,
+                          "tok": 1583
+                        },
+                        {
+                          "k": "int",
+                          "value": 159,
+                          "tok": 1585
+                        },
+                        {
+                          "k": "int",
+                          "value": 152,
+                          "tok": 1587
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1589
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1567
+                    }
+                  ],
+                  "tok": 1566
+                }
+              ],
+              "tok": 1532
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1594
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 97,
+                      "tok": 1600
+                    },
+                    {
+                      "k": "int",
+                      "value": 195,
+                      "tok": 1602
+                    },
+                    {
+                      "k": "int",
+                      "value": 169,
+                      "tok": 1604
+                    },
+                    {
+                      "k": "int",
+                      "value": 226,
+                      "tok": 1606
+                    },
+                    {
+                      "k": "int",
+                      "value": 130,
+                      "tok": 1608
+                    },
+                    {
+                      "k": "int",
+                      "value": 172,
+                      "tok": 1610
+                    },
+                    {
+                      "k": "int",
+                      "value": 240,
+                      "tok": 1612
+                    },
+                    {
+                      "k": "int",
+                      "value": 159,
+                      "tok": 1614
+                    },
+                    {
+                      "k": "int",
+                      "value": 152,
+                      "tok": 1616
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1618
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1596
+                }
+              ],
+              "tok": 1595
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 1622
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1624
+                    },
+                    "field": "Invalid",
+                    "tok": 1626
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 97,
+                          "tok": 1632
+                        },
+                        {
+                          "k": "int",
+                          "value": 98,
+                          "tok": 1634
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1636
+                        },
+                        {
+                          "k": "int",
+                          "value": 99,
+                          "tok": 1638
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1628
+                    }
+                  ],
+                  "tok": 1627
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 1642
+                    },
+                    "field": "Valid",
+                    "tok": 1644
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 97,
+                          "tok": 1650
+                        },
+                        {
+                          "k": "int",
+                          "value": 98,
+                          "tok": 1652
+                        },
+                        {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 1654
+                        },
+                        {
+                          "k": "int",
+                          "value": 99,
+                          "tok": 1656
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 1646
+                    }
+                  ],
+                  "tok": 1645
+                }
+              ],
+              "tok": 1623
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 1661
+              },
+              "args": [
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "int"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 97,
+                      "tok": 1667
+                    },
+                    {
+                      "k": "int",
+                      "value": 98,
+                      "tok": 1669
+                    },
+                    {
+                      "k": "int",
+                      "value": 128,
+                      "tok": 1671
+                    },
+                    {
+                      "k": "int",
+                      "value": 99,
+                      "tok": 1673
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 1663
+                }
+              ],
+              "tok": 1662
+            }
+          }
+        ]
+      },
+      "tok": 64,
+      "bodiless": false,
+      "span": {
+        "start": 63,
+        "end": 1679
+      },
+      "sig_end": 67
+    }
+  ],
+  "consts": []
+}

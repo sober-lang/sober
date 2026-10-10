@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_fields.sober:10:11: a panic label literal names every field of the label once (name: value)
+exit=1

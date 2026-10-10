@@ -1,0 +1,17 @@
+package model
+
+// json.Decode[T] の T が別 package の struct（欄の型も別 package の名前を含む — 合成ファイルは参照名 $jt<i> で import する）
+
+import "testdata/jsonpkg/geo"
+
+type User struct {
+    id int
+    name string
+    home geo.Pt
+    visits []geo.Pt
+    boss Ref?
+}
+
+type Ref struct {
+    id int
+}

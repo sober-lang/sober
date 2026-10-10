@@ -1,0 +1,220 @@
+package main
+
+// io-5: 検証例 errparse_file — ファイル（std/io）→ 行に分ける → ミニ lexer + 再帰下降 parser → path:line:col の診断。
+// errparse.sober の lexer / parser を、string でなくファイルのバイト列（[]byte）を受ける形にしたもの
+
+import "std/io"
+import "std/utf8"
+
+type UnexpectedChar error {
+    pos int
+}
+
+type UnexpectedEnd error {
+    pos int
+}
+
+// want はトークンの種類（0 = 項、5 = ')'、6 = 行の終わり）
+type Expected error {
+    pos int
+    want int
+}
+
+// 包み替えの行き先（K3 — 行番号だけが残る）
+type BadLine error {
+    line int
+}
+
+// kind: 0 = 数、1 = '+'、2 = '-'、3 = '*'、4 = '('、5 = ')'、6 = 入力の終わり
+type Token struct {
+    kind, pos, val int
+}
+
+func isDigit(c int) bool {
+    return c >= '0' && c <= '9'
+}
+
+func punct(c int, at int) (int, error?) {
+    if c == '+' { return 1, nil }
+    if c == '-' { return 2, nil }
+    if c == '*' { return 3, nil }
+    if c == '(' { return 4, nil }
+    if c == ')' { return 5, nil }
+    return 0, UnexpectedChar{pos: at}
+}
+
+// 1 行ぶんのバイト列を字句に分ける（位置は行の先頭からのオフセット）
+func lex(src []byte) ([]Token, error?) {
+    mut toks := mut []Token{}
+    mut i := 0
+    while i < len(src) {
+        c := int(src[i])
+        if c == ' ' || c == '\n' {
+            i += 1
+        } else if isDigit(c) {
+            mut j := i
+            mut v := 0
+            while j < len(src) && isDigit(int(src[j])) {
+                v = v * 10 + int(src[j]) - 48
+                j += 1
+            }
+            toks = append(toks, Token{0, i, v})
+            i = j
+        } else {
+            k := punct(c, i)?
+            toks = append(toks, Token{k, i, 0})
+            i += 1
+        }
+    }
+    toks = append(toks, Token{6, len(src), 0})
+    return freeze(toks), nil
+}
+
+// factor := 数 | '-' factor | '(' expr ')'。結果は（値, 次の位置, err）の 3 成分
+func factor(ts []Token, i int) (int, int, error?) {
+    t := ts[i]
+    if t.kind == 0 {
+        return t.val, i + 1, nil
+    }
+    if t.kind == 2 {
+        v, j := factor(ts, i + 1)?
+        return 0 - v, j, nil
+    }
+    if t.kind == 4 {
+        v, j := expr(ts, i + 1)?
+        if ts[j].kind != 5 {
+            return 0, 0, Expected{pos: ts[j].pos, want: 5}
+        }
+        return v, j + 1, nil
+    }
+    if t.kind == 6 {
+        return 0, 0, UnexpectedEnd{pos: t.pos}
+    }
+    return 0, 0, Expected{pos: t.pos, want: 0}
+}
+
+// term := factor ('*' factor)*
+func term(ts []Token, i int) (int, int, error?) {
+    v0, j0 := factor(ts, i)?
+    mut v := v0
+    mut j := j0
+    while ts[j].kind == 3 {
+        r, k := factor(ts, j + 1)?
+        v = v * r
+        j = k
+    }
+    return v, j, nil
+}
+
+// expr := term (('+' | '-') term)*
+func expr(ts []Token, i int) (int, int, error?) {
+    v0, j0 := term(ts, i)?
+    mut v := v0
+    mut j := j0
+    while ts[j].kind == 1 || ts[j].kind == 2 {
+        r, k := term(ts, j + 1)?
+        v = if ts[j].kind == 1 { v + r } else { v - r }
+        j = k
+    }
+    return v, j, nil
+}
+
+func run(src []byte) (int, error?) {
+    ts := lex(src)?
+    v, j := expr(ts, 0)?
+    if ts[j].kind != 6 {
+        return 0, Expected{pos: ts[j].pos, want: 6}
+    }
+    return v, nil
+}
+
+// 行の区切り: 各行の [開始, 終わり) を 2 語ずつ並べる（改行は含めない。末尾の改行の後の空行は数えない）
+func lines(b []byte) []int {
+    mut out := mut []int{}
+    mut start := 0
+    mut i := 0
+    while i < len(b) {
+        if b[i] == '\n' {
+            out = append(out, start)
+            out = append(out, i)
+            start = i + 1
+        }
+        i += 1
+    }
+    if start < len(b) {
+        out = append(out, start)
+        out = append(out, len(b))
+    }
+    return freeze(out)
+}
+
+func why(e error) string {
+    return switch e {
+    case UnexpectedChar{pos}: "unexpected char"
+    case UnexpectedEnd{pos}: "unexpected end"
+    case Expected{pos, want}: "expected kind ${want}"
+    case BadLine{line}: "bad line ${line}"
+    case io.NotFound{}: "not found"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    }
+}
+
+func col(e error) int {
+    return switch e {
+    case UnexpectedChar{pos}: pos + 1
+    case UnexpectedEnd{pos}: pos + 1
+    case Expected{pos, want}: pos + 1
+    }
+}
+
+// 行ごとに評価して診断を出す
+func report(path string) {
+    b, err := io.ReadFile(path)
+    if err != nil {
+        println("${path}: ${why(err)}")
+    } else {
+        ls := lines(b)
+        mut k := 0
+        while k < len(ls) {
+            n := k / 2 + 1
+            v, e := run(b[ls[k]:ls[k + 1]])
+            if e != nil {
+                println("${path}:${n}:${col(e)}: ${why(e)}")
+            } else {
+                println("${path}:${n}: = ${v}")
+            }
+            k += 2
+        }
+    }
+}
+
+// 全行の和。失敗は行番号に包み替える（トップの包み替え）
+func sumFile(path string) (int, error?) {
+    b := io.ReadFile(path)?
+    ls := lines(b)
+    mut total := 0
+    mut k := 0
+    while k < len(ls) {
+        v := run(b[ls[k]:ls[k + 1]])? BadLine{line: k / 2 + 1}
+        total += v
+        k += 2
+    }
+    return total, nil
+}
+
+func showSum(path string) {
+    v, err := sumFile(path)
+    if err != nil {
+        println("sum ${path}: ${why(err)}")
+    } else {
+        println("sum ${path} = ${v}")
+    }
+}
+
+func main() {
+    report("testdata/io/exprs.txt")
+    report("testdata/io/nope.txt")
+    showSum("testdata/io/exprs.txt")
+    showSum("testdata/io/ok.txt")
+}

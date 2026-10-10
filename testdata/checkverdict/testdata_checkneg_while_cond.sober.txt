@@ -1,0 +1,2 @@
+{"errors":[{"msg":"type error"}],"ok":false}
+exit=1

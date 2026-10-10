@@ -1,0 +1,74 @@
+package table
+
+// Table[T] は添字で読み書きできる可変長の列（language.md 21 節の緩和策 2 の添字版）。
+// 固定長の chunk の鎖に積み、Get / Set は O(1)（chunk = 添字 >> CHUNK_BITS、chunk の中 = 添字 & (CHUNK - 1)）。
+// 同じ region で他の割り当てと交錯して成長しても、成長のコピーによるゴミが出ない（chunk は一度確保したら動かない）。
+// std/builder の Builder（倍々の chunk・Get は O(log n)・Set なし）は小さな列を積んで Build する用途、Table は大きな表を
+// 添字で読み書きする用途（selfhost の脱糖器 / lower の記録 — reaudit ①）。
+//
+//     mut t := table.Table[int]{}
+//     table.Push(mut t, 7)
+//     table.Set(mut t, 0, table.Get(mut t, 0) + 1)
+//
+// 表現:
+// - chunks は chunk ヘッダの列。初回の Push で空ヘッダ seed の写しを DIR 本まとめて積む（連続した append なので先端一致 = コピーなし。
+//   列の長さは以後変わらない）
+// - chunk は CHUNK 要素ずつ、seed の写しへ連続 append して確保する（seed は Table の region にあるので、確保先は Push を呼んだ深さに
+//   依らない）。以降は添字で書く
+// - 容量は CHUNK × DIR 要素。超えると範囲外で panic する
+type Table[T] struct {
+    chunks mut []mut []T
+    // 空の mut ヘッダ。ゼロ値リテラル `Table[T]{}` が束縛の region に作る（Builder の seed と同じ理由 — 21 節）
+    seed mut []T
+    n int
+}
+
+const CHUNK_BITS = 13
+const CHUNK = 8192
+const DIR = 8192
+
+// Push は x を末尾に積む
+func Push[T](t mut Table[T], x T) {
+    if len(t.chunks) == 0 {
+        mut i := 0
+        while i < DIR {
+            t.chunks = append(t.chunks, t.seed)
+            i += 1
+        }
+    }
+    k := t.n >> CHUNK_BITS
+    j := t.n & (CHUNK - 1)
+    if j == 0 {
+        mut c := t.chunks[k]
+        mut m := 0
+        while m < CHUNK {
+            c = append(c, x)
+            m += 1
+        }
+        t.chunks[k] = c
+    } else {
+        mut c := t.chunks[k]
+        c[j] = x
+    }
+    t.n = t.n + 1
+}
+
+// Len は積んだ要素の個数
+func Len[T](t mut Table[T]) int {
+    return t.n
+}
+
+// Get は i 番目（0 起点）の要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
+func Get[T](t mut Table[T], i int) T {
+    // 範囲外は chunk の列の外を指させて境界検査に落とす（chunk の中身は確保時の写しで埋まっているので、Len 以降も読めてしまう）
+    k := if i >= 0 && i < t.n { i >> CHUNK_BITS } else { len(t.chunks) }
+    c := t.chunks[k]
+    return c[i & (CHUNK - 1)]
+}
+
+// Set は i 番目（0 起点）の要素を x にする。i が範囲外なら Get と同じく panic する
+func Set[T](t mut Table[T], i int, x T) {
+    k := if i >= 0 && i < t.n { i >> CHUNK_BITS } else { len(t.chunks) }
+    mut c := t.chunks[k]
+    c[i & (CHUNK - 1)] = x
+}

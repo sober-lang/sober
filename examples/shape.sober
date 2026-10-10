@@ -1,0 +1,38 @@
+package main
+
+type Shape union {
+    Circle { r int }
+    Rect { w, h int }
+    Empty {}
+}
+
+type Tagged struct {
+    id int
+    s Shape
+}
+
+func area(s Shape) int {
+    return switch s {
+    case Circle{r}: 3 * r * r
+    case Rect{w, h}: w * h
+    case Empty{}: 0
+    }
+}
+
+func describe(t Tagged, n int) int {
+    return switch t.s, n {
+    case Rect{w: 2, h}, _: 100 + h
+    case x Circle{}, 1 | 2: 200 + area(x)
+    case _, _: 300
+    }
+}
+
+func pick(n int) Shape {
+    return if n > 0 { Circle{r: n} } else { Empty{} }
+}
+
+func main() {
+    t := Tagged{7, Rect{2, 3}}
+    println(area(Rect{2, 3}), area(Circle{r: 1}), area(Empty{}))
+    println(describe(t, 9), describe(Tagged{1, Circle{2}}, 2), describe(Tagged{1, Circle{2}}, 5), area(pick(2)), area(pick(-1)))
+}

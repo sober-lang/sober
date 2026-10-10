@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_notlabel.sober:9:11: not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)
+exit=1

@@ -1,0 +1,3 @@
+# 建てた物は木の外（out/ は gitignore 済み）
+[build]
+target-dir = "../../out/rust"

@@ -1,0 +1,9 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 13）: ラムダの仮引数が外側のローカル束縛を隠す
+
+func main() {
+    x := 3
+    f := (x) => x + 1
+    println(f(x))
+}

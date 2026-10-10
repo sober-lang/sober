@@ -1,0 +1,10 @@
+package lib
+
+type Shape union {
+    Sq{s int}
+    circ{r int}
+}
+
+func Mk(n int) Shape {
+    return if n > 0 { Sq{s: n} } else { circ{r: 0} }
+}

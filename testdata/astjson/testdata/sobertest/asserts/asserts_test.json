@@ -1,0 +1,648 @@
+{
+  "package": "asserts",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$strings",
+      "path": "std/strings",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Pair",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 132
+          },
+          {
+            "name": "b",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 135
+          }
+        ]
+      },
+      "tok": 129,
+      "span": {
+        "start": 128,
+        "end": 140
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "TestPass",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 8
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Double",
+                      "tok": 10
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 12
+                      }
+                    ],
+                    "tok": 11
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 4,
+                    "tok": 15
+                  },
+                  "tok": 14
+                }
+              ],
+              "tok": 9
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 18
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Name",
+                      "tok": 20
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 22
+                      }
+                    ],
+                    "tok": 21
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "one",
+                    "tok": 25
+                  },
+                  "tok": 24
+                }
+              ],
+              "tok": 19
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Even",
+                    "tok": 30
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 32
+                    }
+                  ],
+                  "tok": 31
+                }
+              ],
+              "tok": 29
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 36
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Even",
+                      "tok": 39
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 41
+                      }
+                    ],
+                    "tok": 40
+                  },
+                  "tok": 38
+                }
+              ],
+              "tok": 37
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 47
+      },
+      "sig_end": 7
+    },
+    {
+      "name": "TestCompareFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 3,
+                "tok": 54
+              }
+            ],
+            "tok": 52
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 56
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Double",
+                      "tok": 58
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 60
+                      }
+                    ],
+                    "tok": 59
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 63
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 65
+                    },
+                    "tok": 64
+                  },
+                  "tok": 62
+                }
+              ],
+              "tok": 57
+            }
+          }
+        ]
+      },
+      "tok": 48,
+      "bodiless": false,
+      "span": {
+        "start": 47,
+        "end": 70
+      },
+      "sig_end": 51
+    },
+    {
+      "name": "TestStringFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 75
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Name",
+                      "tok": 77
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 79
+                      }
+                    ],
+                    "tok": 78
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "one",
+                    "tok": 82
+                  },
+                  "tok": 81
+                }
+              ],
+              "tok": 76
+            }
+          }
+        ]
+      },
+      "tok": 71,
+      "bodiless": false,
+      "span": {
+        "start": 70,
+        "end": 87
+      },
+      "sig_end": 74
+    },
+    {
+      "name": "TestCallFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 92
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Even",
+                    "tok": 94
+                  },
+                  "args": [
+                    {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "Double",
+                          "tok": 96
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 98
+                          }
+                        ],
+                        "tok": 97
+                      },
+                      "rhs": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 101
+                      },
+                      "tok": 100
+                    }
+                  ],
+                  "tok": 95
+                }
+              ],
+              "tok": 93
+            }
+          }
+        ]
+      },
+      "tok": 88,
+      "bodiless": false,
+      "span": {
+        "start": 87,
+        "end": 107
+      },
+      "sig_end": 91
+    },
+    {
+      "name": "TestBoolFails",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ok"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": ">",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "Double",
+                    "tok": 114
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 116
+                    }
+                  ],
+                  "tok": 115
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 5,
+                  "tok": 119
+                },
+                "tok": 118
+              }
+            ],
+            "tok": 112
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 121
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "ok",
+                  "tok": 123
+                }
+              ],
+              "tok": 122
+            }
+          }
+        ]
+      },
+      "tok": 108,
+      "bodiless": false,
+      "span": {
+        "start": 107,
+        "end": 128
+      },
+      "sig_end": 111
+    },
+    {
+      "name": "TestUnprintableSkipped",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "byte",
+                  "tok": 147
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 65,
+                    "tok": 149
+                  }
+                ],
+                "tok": 148
+              }
+            ],
+            "tok": 145
+          },
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Pair",
+                "elems": [
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 158
+                    }
+                  },
+                  {
+                    "key": "b",
+                    "value": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 162
+                    }
+                  }
+                ],
+                "tok": 154,
+                "type_args": []
+              }
+            ],
+            "tok": 152
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 5,
+                "tok": 167
+              }
+            ],
+            "tok": 165
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 169
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "&&",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 171
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 66,
+                      "char": true,
+                      "tok": 173
+                    },
+                    "tok": 172
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "p",
+                          "tok": 175
+                        },
+                        "field": "a",
+                        "tok": 177
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "n",
+                        "tok": 179
+                      },
+                      "tok": 178
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 6,
+                      "tok": 181
+                    },
+                    "tok": 180
+                  },
+                  "tok": 174
+                }
+              ],
+              "tok": 170
+            }
+          }
+        ]
+      },
+      "tok": 141,
+      "bodiless": false,
+      "span": {
+        "start": 140,
+        "end": 186
+      },
+      "sig_end": 144
+    }
+  ],
+  "consts": []
+}

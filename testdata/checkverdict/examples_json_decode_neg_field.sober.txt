@@ -1,0 +1,2 @@
+sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode / Encode support struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
+exit=1

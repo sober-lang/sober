@@ -1,0 +1,76 @@
+package checker
+
+import "std/iter"
+import "std/table"
+
+// 型検査器（lean/FeatherweightSober/Checker.lean の typecheck / checkDefs と Json.lean の境界の写し —
+// コア AST JSON → 判定 JSON。sober-check と同じバイト列を吐く）の状態と土台。
+//
+// 表現（仮決め R11-1 — selfhost-drafts）: 脱糖器と同じく状態は S 1 つ、記録は全部 1 本の int ヒープ st.h（std/table の Table — 添字で読み書きし、成長でコピーしない）に積む。
+// 記録はヒープの添字で指し、無し（Lean の none）は -1。
+// - 型 = 別の表 st.types の記録 {tag, a, b, c}（ty.sober — 参照 = TYBASE + 添字）
+// - 式 = 5 語 [kind, nc, a, b, c]（kind = 語の番号 — json.sober、nc = newchan を含むか）
+// - 文脈 Γ = cons [ty, next]、ラベル文脈 Λ = cons [ty, k, next]（末尾 -1）
+// 再帰する関数は `st mut S` を持ち回る Def（R2 の callM）で、渡す imm の値は int だけ（selfhost-drafts F-6 — frame で作った slice を
+// 渡せないため。string リテラルは strlit の段で渡せる）
+// ヒープの番地 0 は予約（記録は 1 以降に置く）
+
+type S struct {
+    h table.Table[int]
+    types table.Table[Ty]  // 型の表（ty.sober — 参照 = TYBASE + 添字）
+    tInt int      // int / bool / unit の型の記録
+    tBool int
+    tByte int
+    tUnit int
+    defFail int   // 開発用（DefFail）: def error の Def の添字
+    collect bool  // E2-S の逃げ（e2s.sober）: def error で止まらず、落ちた Def を全部集める
+    fails table.Table[int]
+    wtab int      // 語の表（ハッシュ → 語の番号）
+    pstk int      // JSON の parse の作業領域（深さごとの枠）
+    stamp int     // parse で開いた object の通し番号
+    cstk int      // 型検査の作業スタック
+    defs int      // 関数表（列 [n, 記録…]、記録 = [param, ret, body, tparams, mask]）
+    f int         // 型検査の床 f（main 本体 = 0、Def 本体 = 1）
+    maxDepth int  // convExpr が写した入れ子の深さの最大
+    xcap int      // convExpr の枠・値の作業域の段数（core.sober — コアの大きさで決める）
+    lcap int      // convExpr のラベルの作業域の段数
+}
+
+func put(st mut S, x int) {
+    table.Push(mut st.h, x)
+}
+
+func rec4(st mut S, a int, b int, c int, d int) int {
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, a)
+    table.Push(mut st.h, b)
+    table.Push(mut st.h, c)
+    table.Push(mut st.h, d)
+    return at
+}
+
+func rec5(st mut S, a int, b int, c int, d int, e int) int {
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, a)
+    table.Push(mut st.h, b)
+    table.Push(mut st.h, c)
+    table.Push(mut st.h, d)
+    table.Push(mut st.h, e)
+    return at
+}
+
+// block は n 語の 0 埋めの領域を取る
+func block(st mut S, n int) int {
+    at := table.Len(mut st.h)
+    for _ <- iter.Range(0, n) {
+        table.Push(mut st.h, 0)
+    }
+    return at
+}
+
+func b2i(b bool) int {
+    return if b { 1 } else { 0 }
+}
+
+// ── 出力（1 バイト 1 語）──
+

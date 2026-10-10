@@ -1,0 +1,11 @@
+package main
+
+// 負例（language.md 32 節）: struct の == は無い（X2 — 欄 1 本の struct もコアでは int に消えるが表層型で拒否）
+
+type Ref struct { v int }
+
+func main() {
+    a := Ref{v: 1}
+    b := Ref{v: 1}
+    println(a == b)
+}

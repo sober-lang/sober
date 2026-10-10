@@ -1,0 +1,23 @@
+# schedvec の対象（scripts/schedvec.sh — 1 行 1 例・小さい並列のプログラム）
+examples/par_chan.sober
+examples/par_chan_regions.sober
+examples/par_chan_def.sober
+examples/par_capture.sober
+examples/par_def.sober
+examples/par_try.sober
+examples/par_die.sober
+examples/par_deadlock.sober
+examples/par_chan_hold.sober
+examples/par_chan_fan.sober
+examples/par_result_string.sober
+examples/par_chan_string.sober
+examples/par_chan_down.sober
+examples/par_chan_close.sober
+examples/par_close_send.sober
+examples/par_task_err.sober
+examples/par_gather.sober
+examples/par_map.sober
+examples/par_gather_die.sober
+examples/par_scope_value.sober
+examples/par_gather_err.sober
+examples/par_gather_err_die.sober

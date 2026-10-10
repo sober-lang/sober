@@ -1,0 +1,12 @@
+ok 45 bad 33
+cut 0..1: a
+cut 0..2: invalid at 2
+cut 0..3: aé
+cut 0..4: aé;
+cut 0..5: invalid at 5
+cut 0..6: invalid at 6
+cut 0..7: aé;あ
+cut 0..8: aé;あb
+cut 0..9: aé;あb;
+cut 0..10: aé;あb;c
+cut 0..11: aé;あb;cd

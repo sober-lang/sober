@@ -1,0 +1,428 @@
+package lower
+
+// 型表（src/lower_types.zig の写し）: 型の記録とレイアウト（struct / union / T? の語オフセット）、型式の解決。
+// 型 = 4 語 [tag, a, b, c]。none / int / bool / never / nil は定数（L_T_*）。struct / union は情報の記録（番地）で同一性を持つ
+
+import "desugar"
+import "ast"
+
+const TNone = 0
+const TInt = 1
+const TBool = 2
+const TNever = 3
+const TNil = 4
+const TStruct = 5  // a = StructInfo
+const TUnion = 6   // a = UnionInfo
+const TOpt = 7     // a = 中身, b = 語数
+const TSlice = 8   // a = 要素, b = mut, c = string の印
+const TMap = 9     // a = キー, b = 値, c = mut
+const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
+const TFnv = 11    // a = FnType（関数値）
+
+// StructInfo / UnionInfo（L_TYPES の鎖）: [tag(TStruct / TUnion), decl, pkg, fields / variants（列）, words, state, next, 型]
+const SI_DECL = 1
+const SI_PKG = 2
+const SI_FIELDS = 3
+const SI_WORDS = 4
+const SI_STATE = 5
+const SI_NEXT = 6
+const SI_TY = 7
+const SI_KEY = 8    // 型表のキー（"pkg_path.Name"、インスタンスは "pkg_path.Name[型…]" — typeKey の綴り）
+const SI_ENV = 9    // ジェネリック struct のインスタンスの型環境（他は -1）
+const SI_TARGS = 10 // 具体型引数の列（単一化用 — 他は -1）
+const SISZ = 11
+// レイアウトの状態
+const LPending = 0
+const LLaying = 1
+const LDone = 2
+// フィールド [name, 型, offset]・variant [name, tag, fields（フィールドの列）]
+
+func tTag(st mut desugar.S, t int) int {
+    return st.h[t]
+}
+
+func tNone(st mut desugar.S) int {
+    return gv(mut st, L_T_NONE)
+}
+
+func tInt(st mut desugar.S) int {
+    return gv(mut st, L_T_INT)
+}
+
+func tBool(st mut desugar.S) int {
+    return gv(mut st, L_T_BOOL)
+}
+
+func tNever(st mut desugar.S) int {
+    return gv(mut st, L_T_NEVER)
+}
+
+func tNil(st mut desugar.S) int {
+    return gv(mut st, L_T_NIL)
+}
+
+func isTag(st mut desugar.S, t int, tag int) bool {
+    return st.h[t] == tag
+}
+
+// tWords は型の語数
+func tWords(st mut desugar.S, t int) int {
+    k := st.h[t]
+    if k == TInt || k == TBool || k == TFnv {
+        return 1
+    }
+    if k == TStruct || k == TUnion {
+        return st.h[st.h[t + 1] + SI_WORDS]
+    }
+    if k == TOpt {
+        return st.h[t + 2]
+    }
+    if k == TSlice || k == TMap {
+        return 3
+    }
+    return 0
+}
+
+// isScalar は 1 語の値（SSA の i64 で持つ）: int / bool / 関数値
+func isScalar(st mut desugar.S, t int) bool {
+    k := st.h[t]
+    return k == TInt || k == TBool || k == TFnv
+}
+
+func isAggregate(st mut desugar.S, t int) bool {
+    k := st.h[t]
+    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap
+}
+
+func isString(st mut desugar.S, t int) bool {
+    return st.h[t] == TSlice && st.h[t + 3] != 0
+}
+
+// irTy は値として IR に乗るときの型（値なしは -1）
+func irTy(st mut desugar.S, t int) int {
+    if isScalar(mut st, t) {
+        return TyI64
+    }
+    if isAggregate(mut st, t) {
+        return TyPtr
+    }
+    return -1
+}
+
+// tEql は型の等しさ（struct / union は情報の同一性、他は構造）
+func tEql(st mut desugar.S, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    k := st.h[a]
+    if st.h[b] != k {
+        return false
+    }
+    if k == TStruct || k == TUnion {
+        return st.h[a + 1] == st.h[b + 1]
+    }
+    if k == TOpt {
+        return tEql(mut st, st.h[a + 1], st.h[b + 1])
+    }
+    if k == TSlice {
+        return st.h[a + 2] == st.h[b + 2] && st.h[a + 3] == st.h[b + 3] && tEql(mut st, st.h[a + 1], st.h[b + 1])
+    }
+    if k == TMap {
+        return st.h[a + 3] == st.h[b + 3] && tEql(mut st, st.h[a + 1], st.h[b + 1]) && tEql(mut st, st.h[a + 2], st.h[b + 2])
+    }
+    if k == TFunc || k == TFnv {
+        return fnTypeEql(mut st, st.h[a + 1], st.h[b + 1])
+    }
+    return true
+}
+
+// FnType = [params（型の列）, results（型の列）]
+func fnTypeEql(st mut desugar.S, a int, b int) bool {
+    return tListEql(mut st, st.h[a], st.h[b]) && tListEql(mut st, st.h[a + 1], st.h[b + 1])
+}
+
+func tListEql(st mut desugar.S, a int, b int) bool {
+    n := st.h[a]
+    if st.h[b] != n {
+        return false
+    }
+    mut i := 0
+    while i < n {
+        if !tEql(mut st, st.h[a + 1 + i], st.h[b + 1 + i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// sretOf は結果の型の列が sret か（int / bool / 関数値 1 個以外）
+func sretOf(st mut desugar.S, rs int) bool {
+    n := st.h[rs]
+    return n > 1 || (n == 1 && !isScalar(mut st, st.h[rs + 1]))
+}
+
+// ── 型宣言の表 ──
+
+// registerTypes は全 package の非ジェネリックの struct / union を型表の鎖に積む（error ラベル・ジェネリックは未対応 — 使えば拒否）
+func registerTypes(st mut desugar.S) {
+    mut f := 0
+    while f < st.h[desugar.G_NFILE] {
+        pk := st.h[st.h[desugar.G_FILES] + f * 2 + 1]
+        tys := st.h[fileRoot(mut st, f) + NC]
+        mut i := 0
+        while i < llen(mut st, tys) {
+            td := lat(mut st, tys, i)
+            bk := kindOf(mut st, st.h[td + NC])
+            if llen(mut st, st.h[td + NB]) == 0 && (bk == ast.BStruct || bk == ast.BUnion) {
+                info := recN(mut st, SISZ)
+                st.h[info] = if bk == ast.BStruct { TStruct } else { TUnion }
+                st.h[info + SI_DECL] = td
+                st.h[info + SI_PKG] = pk
+                st.h[info + SI_WORDS] = 0
+                st.h[info + SI_STATE] = LPending
+                st.h[info + SI_NEXT] = gv(mut st, L_TYPES)
+                hv1 := rec4(mut st, st.h[info], info, 0, 0)
+                st.h[info + SI_TY] = hv1
+                hv2 := strDot(mut st, pkgPath(mut st, pk), st.h[td + NA])
+                st.h[info + SI_KEY] = hv2
+                gs(mut st, L_TYPES, info)
+            }
+            i += 1
+        }
+        f += 1
+    }
+}
+
+// infoOf は型宣言 td の StructInfo / UnionInfo（無ければ -1）
+func infoOf(st mut desugar.S, td int) int {
+    mut x := gv(mut st, L_TYPES)
+    while x >= 0 {
+        if st.h[x + SI_DECL] == td {
+            return x
+        }
+        x = st.h[x + SI_NEXT]
+    }
+    return -1
+}
+
+// lookupTypeDecl は型の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1）。pk は参照側の package
+func lookupTypeDecl(st mut desugar.S, pk int, name int) int {
+    mut from := pk
+    mut lo := 0
+    dot := dotAt(mut st, name)
+    if dot >= 0 {
+        from = importOf(mut st, pk, name, 0, dot)
+        if from < 0 {
+            return -1
+        }
+        lo = dot + 1
+    }
+    mut f := pkgFlo(mut st, from)
+    while f < pkgFhi(mut st, from) {
+        tys := st.h[fileRoot(mut st, f) + NC]
+        mut i := 0
+        while i < llen(mut st, tys) {
+            td := lat(mut st, tys, i)
+            if strEqPart(mut st, st.h[td + NA], name, lo, st.h[name]) {
+                return td
+            }
+            i += 1
+        }
+        f += 1
+    }
+    return -1
+}
+
+// resolveType は型式 te を package pk の文脈で解決する（in_container: slice / map の要素位置 — レイアウト中の型も受ける）
+func resolveType(st mut desugar.S, pk int, te int, inc bool) (int, error?) {
+    k := kindOf(mut st, te)
+    tok := tokOf(mut st, te)
+    if k == ast.TName {
+        n := st.h[te + NA]
+        bt := envLookup(mut st, gv(mut st, L_TENV), n)
+        if bt >= 0 {
+            return bt, nil
+        }
+        if strIs(mut st, n, "int") {
+            return tInt(mut st), nil
+        }
+        if strIs(mut st, n, "bool") {
+            return tBool(mut st), nil
+        }
+        if strIs(mut st, n, "string") {
+            return rec4(mut st, TSlice, tInt(mut st), 0, 1), nil
+        }
+        if strIs(mut st, n, "error") {
+            return errType(mut st)
+        }
+        if dotAt(mut st, n) >= 0 {
+            if importOf(mut st, pk, n, 0, dotAt(mut st, n)) < 0 {
+                return 0, LowerFail{k: KUndefined, tok: tok}
+            }
+            c := st.h[n + 2 + dotAt(mut st, n)]
+            if c < 65 || c > 90 {
+                return 0, LowerFail{k: KUndefined, tok: tok}
+            }
+        }
+        td := lookupTypeDecl(mut st, pk, n)
+        if td < 0 {
+            return 0, LowerFail{k: KUndefined, tok: tok}
+        }
+        info := infoOf(mut st, td)
+        if info < 0 {
+            return 0, LowerFail{k: KUnsupported, tok: tok}
+        }
+        if !(inc && st.h[info + SI_STATE] == LLaying) {
+            layoutInfo(mut st, info)?
+        }
+        return st.h[info + SI_TY], nil
+    }
+    if k == ast.TGeneric {
+        info := instStruct(mut st, pk, st.h[te + NA], st.h[te + NB], tok)?
+        if !(inc && st.h[info + SI_STATE] == LLaying) {
+            layoutInfo(mut st, info)?
+        }
+        return st.h[info + SI_TY], nil
+    }
+    if k == ast.TOpt {
+        payload := resolveType(mut st, pk, st.h[te + NA], false)?
+        if isTag(mut st, payload, TOpt) {
+            return 0, LowerFail{k: KUnsupported, tok: tok}
+        }
+        return rec4(mut st, TOpt, payload, 1 + tWords(mut st, payload), 0), nil
+    }
+    if k == ast.TSlice {
+        elem := resolveType(mut st, pk, st.h[te + NA], true)?
+        return rec4(mut st, TSlice, elem, st.h[te + NB], 0), nil
+    }
+    if k == ast.TMap {
+        kt := resolveType(mut st, pk, st.h[te + NA], false)?
+        if !isTag(mut st, kt, TInt) && !isString(mut st, kt) {
+            return 0, LowerFail{k: KUnsupported, tok: tok}
+        }
+        vt := resolveType(mut st, pk, st.h[te + NB], true)?
+        return rec4(mut st, TMap, kt, vt, st.h[te + NC]), nil
+    }
+    if k == ast.TFunc {
+        ps := st.h[te + NA]
+        rs := st.h[te + NB]
+        pl := listN(mut st, llen(mut st, ps))
+        mut i := 0
+        while i < llen(mut st, ps) {
+            t := resolveType(mut st, pk, lat(mut st, ps, i), false)?
+            st.h[pl + 1 + i] = t
+            i += 1
+        }
+        rl := listN(mut st, llen(mut st, rs))
+        i = 0
+        while i < llen(mut st, rs) {
+            t := resolveType(mut st, pk, lat(mut st, rs, i), false)?
+            st.h[rl + 1 + i] = t
+            i += 1
+        }
+        ft := rec4(mut st, pl, rl, 0, 0)
+        return rec4(mut st, TFunc, ft, 0, 0), nil
+    }
+    return 0, LowerFail{k: KUnsupported, tok: tok}
+}
+
+// layoutFields はフィールドの列（KField の列）を語オフセットつきで並べる（型は pk の文脈）。(フィールドの列, 語数)
+func layoutFields(st mut desugar.S, pk int, dfs int) (int, int, error?) {
+    n := llen(mut st, dfs)
+    out := listN(mut st, n)
+    mut off := 0
+    mut i := 0
+    while i < n {
+        df := lat(mut st, dfs, i)
+        mut j := 0
+        while j < i {
+            if strEq(mut st, st.h[lat(mut st, dfs, j) + NA], st.h[df + NA]) {
+                return 0, 0, LowerFail{k: KMismatch, tok: tokOf(mut st, df)}
+            }
+            j += 1
+        }
+        mut t := resolveType(mut st, pk, st.h[df + NB], false)?
+        if isTag(mut st, t, TFunc) {
+            t = rec4(mut st, TFnv, st.h[t + 1], 0, 0)
+        }
+        fr := rec4(mut st, st.h[df + NA], t, off, 0)
+        st.h[out + 1 + i] = fr
+        off += tWords(mut st, t)
+        i += 1
+    }
+    return out, off, nil
+}
+
+// layoutInfo は struct / union のレイアウト（済んでいれば何もしない。再帰は拒否）
+func layoutInfo(st mut desugar.S, info int) error? {
+    s := st.h[info + SI_STATE]
+    if s == LDone {
+        return nil
+    }
+    td := st.h[info + SI_DECL]
+    if td == -1 {
+        return layoutErrs(mut st, info)
+    }
+    if s == LLaying {
+        return LowerFail{k: KUnsupported, tok: tokOf(mut st, td)}
+    }
+    st.h[info + SI_STATE] = LLaying
+    pk := st.h[info + SI_PKG]
+    body := st.h[td + NC]
+    // 型式は自分の型環境（ジェネリック struct の束縛。他は空）で読む — 下ろし中の関数の型環境を持ち込まない
+    saved_env := gv(mut st, L_TENV)
+    gs(mut st, L_TENV, st.h[info + SI_ENV])
+    err := layoutBody(mut st, info, pk, body)
+    gs(mut st, L_TENV, saved_env)
+    if err != nil {
+        return err
+    }
+    st.h[info + SI_STATE] = LDone
+    return nil
+}
+
+func layoutBody(st mut desugar.S, info int, pk int, body int) error? {
+    if st.h[info] == TStruct {
+        fs, w := layoutFields(mut st, pk, st.h[body + NA])?
+        st.h[info + SI_FIELDS] = fs
+        st.h[info + SI_WORDS] = w
+    } else {
+        dvs := st.h[body + NA]
+        n := llen(mut st, dvs)
+        vs := listN(mut st, n)
+        mut mx := 0
+        mut i := 0
+        while i < n {
+            dv := lat(mut st, dvs, i)
+            fs, w := layoutFields(mut st, pk, st.h[dv + NB])?
+            vr := rec4(mut st, st.h[dv + NA], i, fs, 0)
+            st.h[vs + 1 + i] = vr
+            if w > mx {
+                mx = w
+            }
+            i += 1
+        }
+        st.h[info + SI_FIELDS] = vs
+        st.h[info + SI_WORDS] = 1 + mx
+    }
+    return nil
+}
+
+// findField はフィールドの列 fs の名前 name（文字列）の記録（無ければ -1）
+func findField(st mut desugar.S, fs int, name int) int {
+    mut i := 0
+    while i < llen(mut st, fs) {
+        f := lat(mut st, fs, i)
+        if strEq(mut st, st.h[f], name) {
+            return f
+        }
+        i += 1
+    }
+    return -1
+}
+
+// optOf は T? の型
+func optOf(st mut desugar.S, payload int) int {
+    return rec4(mut st, TOpt, payload, 1 + tWords(mut st, payload), 0)
+}

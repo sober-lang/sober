@@ -1,0 +1,14 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 13）: 内側のブロックの束縛が外側のローカル束縛を隠す。以前は check が受理し build が拒否していた
+
+func main() {
+    x := 3
+    y := if x > 0 {
+        x := 4
+        x
+    } else {
+        0
+    }
+    println(y)
+}

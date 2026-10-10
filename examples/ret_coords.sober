@@ -1,0 +1,63 @@
+package main
+
+// 戻り値の座標の 2 つの穴（selfhost-drafts F-24 / F-25 の回帰例）。どちらも健全に受理できる形だが、脱糖器の座標の読みがずれて def error になっていた:
+// F-24 戻り値型の map[string]V のキー型が自フレーム（r1）に付け替えられず、`map[string]int{}`（キーが r1）を返せない
+// F-25 入れ子のブロックの中で call の結果を return すると、結果型への ann が call の結果を署名の座標（浅い）で読み、実体（最内 region）を締めすぎる
+
+type Bad error {
+    at int
+}
+
+func counts() map[string]int {
+    return map[string]int{}
+}
+
+func lookup(k int) (map[string]int, []string, error?) {
+    if k == 3 {
+        return map[string]int{}, []string{}, Bad{at: k}
+    }
+    return map[string]int{}, []string{"a"}, nil
+}
+
+func mk(n int) []int {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i)
+        i += 1
+    }
+    return freeze(xs)
+}
+
+func named(n int) []int {
+    {
+        r := mk(n)
+        return r
+    }
+}
+
+func direct(n int) []int {
+    {
+        return mk(n)
+    }
+}
+
+func pair(n int) ([]int, error?) {
+    {
+        {
+            r := mk(n)
+            return r, nil
+        }
+    }
+}
+
+func main() {
+    println(len(counts()))
+    m, s, err := lookup(1)
+    println(len(m), len(s), err == nil)
+    m2, s2, err2 := lookup(3)
+    println(len(m2), len(s2), err2 != nil)
+    println(len(named(3)), len(direct(4)))
+    p, perr := pair(2)
+    println(len(p), p[1], perr == nil)
+}

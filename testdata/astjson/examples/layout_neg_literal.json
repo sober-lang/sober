@@ -1,0 +1,187 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/layout",
+      "tok": 7
+    }
+  ],
+  "types": [
+    {
+      "name": "H",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "k",
+            "type": {
+              "k": "name",
+              "name": "u16le"
+            },
+            "tok": 16
+          },
+          {
+            "name": "s",
+            "type": {
+              "k": "name",
+              "name": "i8"
+            },
+            "tok": 19
+          }
+        ]
+      },
+      "layout": true,
+      "tok": 13,
+      "span": {
+        "start": 9,
+        "end": 24
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "out"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "builder.Builder",
+                "elems": [],
+                "tok": 32,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "byte"
+                  }
+                ]
+              }
+            ],
+            "tok": 29
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "index",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "layout",
+                    "tok": 41
+                  },
+                  "field": "Encode",
+                  "tok": 43
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "H",
+                  "tok": 45
+                },
+                "tok": 44
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "out",
+                  "tok": 49
+                },
+                {
+                  "k": "composite",
+                  "type_name": "H",
+                  "elems": [
+                    {
+                      "key": "k",
+                      "value": {
+                        "k": "int",
+                        "value": 65536,
+                        "tok": 55
+                      }
+                    },
+                    {
+                      "key": "s",
+                      "value": {
+                        "k": "unary",
+                        "op": "-",
+                        "operand": {
+                          "k": "int",
+                          "value": 129,
+                          "tok": 60
+                        },
+                        "tok": 59
+                      }
+                    }
+                  ],
+                  "tok": 51,
+                  "type_args": []
+                }
+              ],
+              "tok": 47
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 64
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "builder",
+                      "tok": 66
+                    },
+                    "field": "Len",
+                    "tok": 68
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "out",
+                      "tok": 71
+                    }
+                  ],
+                  "tok": 69
+                }
+              ],
+              "tok": 65
+            }
+          }
+        ]
+      },
+      "tok": 25,
+      "bodiless": false,
+      "span": {
+        "start": 24,
+        "end": 77
+      },
+      "sig_end": 28
+    }
+  ],
+  "consts": []
+}

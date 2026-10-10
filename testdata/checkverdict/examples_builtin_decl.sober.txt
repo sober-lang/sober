@@ -1,0 +1,2 @@
+sober: load error at examples/builtin_decl.sober:5:6: a top-level declaration cannot reuse a builtin name
+exit=1

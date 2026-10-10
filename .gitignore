@@ -1,0 +1,17 @@
+NOTES.local.md
+zig-out/
+.zig-cache/
+
+# Lean
+lean/.lake/
+
+# scripts/gates.sh のキャッシュ（差分スキップの鍵・最後の実行のログ）
+scripts/.gatecache/
+NOTES.pitch.local.md
+NOTES.archive.local.md
+ROADMAP.local.md
+PINS.local.md
+FLEDGER.local.md
+
+# Sober 側の成果物（stage2 と鎖の boot のキャッシュ — 3''.5 で zig-out/stage2 から移した）
+out/

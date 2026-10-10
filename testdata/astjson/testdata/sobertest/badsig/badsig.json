@@ -1,0 +1,41 @@
+{
+  "package": "badsig",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Two",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 10
+              }
+            ],
+            "tok": 9
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 14
+      },
+      "sig_end": 8
+    }
+  ],
+  "consts": []
+}

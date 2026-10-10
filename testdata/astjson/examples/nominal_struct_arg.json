@@ -1,0 +1,173 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "A",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 11
+      }
+    },
+    {
+      "name": "B",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 15
+          }
+        ]
+      },
+      "tok": 12,
+      "span": {
+        "start": 11,
+        "end": 19
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "f",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "B"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 28
+                },
+                "field": "x",
+                "tok": 30
+              }
+            ],
+            "tok": 27
+          }
+        ]
+      },
+      "tok": 20,
+      "bodiless": false,
+      "span": {
+        "start": 19,
+        "end": 34
+      },
+      "sig_end": 26
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "A",
+                "elems": [
+                  {
+                    "key": "x",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 45
+                    }
+                  }
+                ],
+                "tok": 41,
+                "type_args": []
+              }
+            ],
+            "tok": 39
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 48
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "f",
+                    "tok": 50
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "a",
+                      "tok": 52
+                    }
+                  ],
+                  "tok": 51
+                }
+              ],
+              "tok": 49
+            }
+          }
+        ]
+      },
+      "tok": 35,
+      "bodiless": false,
+      "span": {
+        "start": 34,
+        "end": 58
+      },
+      "sig_end": 38
+    }
+  ],
+  "consts": []
+}

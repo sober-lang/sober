@@ -1,0 +1,493 @@
+package loader
+
+// 名前の検査（src/localnames.zig の写し + 決定 16・variant 名の一意 — loader で一度だけ走らせるので、脱糖器と lower は同じ規則を構成的に共有する）:
+// - ローカルの束縛（`:=`・仮引数・ラムダの仮引数・for の生成元の名前・型パターンの束縛・欄パターンの略記）は、同じ package の
+//   トップレベル名（const・func・型・variant）とも import の参照名とも同名にできない（syntax.md 決定 13 とその延長 — 裁定 2026-09-27）
+// - 型パラメータ（func / type の `[T]`）はトップレベルの型名と同名にできない（同上の追加裁定）
+// - ローカル束縛どうしのシャドーイングと同じスコープでの再宣言（決定 13 — shadowHit。以前は check が受理し lower が拒否していた）
+// - 組み込みの名前（len shape println await freeze keys bytes true false — 決定 16）は束縛にも、トップレベルの宣言の名前にも使えない
+// - variant 名（union の variant・error ラベル）は package のトップレベル名の中で一意（language.md 13 節「variant 名一意の規約」）
+// パターン位置の裸の識別子はトップレベル名に当たれば比較になる（syntax.md 9 節）ので見ない。
+// 走査は明示のスタック（木の深さに依らない）。違反はファイルごとに最も前の位置（字句の番号が最小）を返す
+
+import "ast"
+import "diag"
+import "std/iter"
+
+const NTop = 1      // const・func
+const NType = 2     // 型宣言（error ラベルを含む）
+const NVariant = 3  // union の variant
+const NImport = 4   // import の参照名
+
+// NameHit は検査の違反: ファイル file の字句 tok、拒否 err（diag のラベル — 違反なしは file = -1）
+type NameHit struct {
+    file int
+    tok int
+    err error?
+}
+
+// NameIx は package のトップレベル名と import の参照名の索引（鎖 — head[バケツ]・next[項]）
+type NameIx struct {
+    names [][]int
+    kinds []int
+    head []int
+    next []int
+    mask int
+}
+
+func noHit() NameHit {
+    return NameHit{0 - 1, 0, nil}
+}
+
+// reserved は決定 16 の組み込みの名前か
+func reserved(n []int) bool {
+    return EqLit(n, "len") || EqLit(n, "shape") || EqLit(n, "println") || EqLit(n, "await") || EqLit(n, "freeze") ||
+        EqLit(n, "keys") || EqLit(n, "bytes") || EqLit(n, "true") || EqLit(n, "false") || EqLit(n, "append") || EqLit(n, "delete")
+}
+
+// pkgNames は package pk の名前の索引
+func pkgNames(cx Cx, pk int) NameIx {
+    mut ns := mut [][]int{}
+    mut ks := mut []int{}
+    for f <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
+        t := cx.trees[f]
+        root := t.nodes[t.file]
+        for i <- iter.Range(0, ast.ListLen(t, root.e)) {
+            ns = append(ns, Str(t, t.nodes[ast.ListAt(t, root.e, i)].a))
+            ks = append(ks, NTop)
+        }
+        for i <- iter.Range(0, ast.ListLen(t, root.d)) {
+            ns = append(ns, Str(t, t.nodes[ast.ListAt(t, root.d, i)].a))
+            ks = append(ks, NTop)
+        }
+        for i <- iter.Range(0, ast.ListLen(t, root.c)) {
+            td := t.nodes[ast.ListAt(t, root.c, i)]
+            ns = append(ns, Str(t, td.a))
+            ks = append(ks, NType)
+            body := t.nodes[td.c]
+            if body.kind == ast.BUnion {
+                for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    ns = append(ns, Str(t, t.nodes[ast.ListAt(t, body.a, j)].a))
+                    ks = append(ks, NVariant)
+                }
+            }
+        }
+    }
+    for e <- iter.Range(0, len(cx.imp_pkg)) {
+        if cx.imp_pkg[e] == pk {
+            ns = append(ns, cx.imp_ref[e])
+            ks = append(ks, NImport)
+        }
+    }
+    names := freeze(ns)
+    mut mask := 255
+    while mask < len(names) * 2 {
+        mask = mask * 2 + 1
+    }
+    mut head := mut []int{}
+    for _ <- iter.Range(0, mask + 1) {
+        head = append(head, 0 - 1)
+    }
+    mut next := mut []int{}
+    for i <- iter.Range(0, len(names)) {
+        b := nameHash(names[i], mask)
+        next = append(next, head[b])
+        head[b] = i
+    }
+    return NameIx{names, freeze(ks), freeze(head), freeze(next), mask}
+}
+
+// kindOfName は名前 n の種類（無ければ 0。トップレベル名と import の参照名が同名なら先に積んだトップレベル名 — どちらも束縛に対しては違反）
+func kindOfName(ix NameIx, n []int) int {
+    mut h := ix.head[nameHash(n, ix.mask)]
+    mut k := 0
+    while h >= 0 {
+        if Eq(ix.names[h], n) && (k == 0 || ix.kinds[h] != NImport) {
+            k = ix.kinds[h]
+        }
+        h = ix.next[h]
+    }
+    return k
+}
+
+// countName は名前 n の項の数
+func countName(ix NameIx, n []int) int {
+    mut h := ix.head[nameHash(n, ix.mask)]
+    mut c := 0
+    while h >= 0 {
+        if Eq(ix.names[h], n) {
+            c += 1
+        }
+        h = ix.next[h]
+    }
+    return c
+}
+
+// earlier は同じファイルの違反のうち前の方（字句の番号が小さい方）
+func earlier(a NameHit, b NameHit) NameHit {
+    if a.file < 0 {
+        return b
+    }
+    if b.file < 0 || a.tok <= b.tok {
+        return a
+    }
+    return b
+}
+
+// bindHit はローカル束縛の名前 n の違反
+func bindHit(ix NameIx, n []int, f int, tok int) NameHit {
+    if reserved(n) {
+        return NameHit{f, tok, diag.LocalBuiltin{at: diag.Pos{f, tok}}}
+    }
+    k := kindOfName(ix, n)
+    if k == NImport {
+        return NameHit{f, tok, diag.LocalImport{at: diag.Pos{f, tok}}}
+    }
+    if k != 0 {
+        return NameHit{f, tok, diag.LocalTop{at: diag.Pos{f, tok}}}
+    }
+    return noHit()
+}
+
+// tparamsHit は型パラメータの列 l の違反
+func tparamsHit(t ast.Tree, ix NameIx, l int, f int, tok int) NameHit {
+    mut h := noHit()
+    for i <- iter.Range(0, ast.ListLen(t, l)) {
+        n := Str(t, ast.ListAt(t, l, i))
+        if reserved(n) {
+            h = earlier(h, NameHit{f, tok, diag.TParamBuiltin{at: diag.Pos{f, tok}}})
+        } else if kindOfName(ix, n) == NType {
+            h = earlier(h, NameHit{f, tok, diag.TParamTop{at: diag.Pos{f, tok}}})
+        }
+    }
+    return h
+}
+
+// declHit はトップレベルの宣言の名前 n の違反（組み込みの名前・variant 名の重複）
+func declHit(ix NameIx, n []int, variant bool, f int, tok int) NameHit {
+    if reserved(n) {
+        return NameHit{f, tok, diag.DeclBuiltin{at: diag.Pos{f, tok}}}
+    }
+    if variant && countName(ix, n) > 1 {
+        return NameHit{f, tok, diag.VariantDup{at: diag.Pos{f, tok}}}
+    }
+    return noHit()
+}
+
+// bodyHit は木の節 root から下のローカル束縛の違反（明示のスタックで全節を回る）
+func bodyHit(t ast.Tree, ix NameIx, root int, f int) NameHit {
+    mut h := noHit()
+    mut st := mut []int{}
+    mut sp := push(mut st, 0, root)
+    while sp > 0 {
+        sp -= 1
+        x := t.nodes[st[sp]]
+        k := x.kind
+        if k == ast.SBind || k == ast.KGen {
+            for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                h = earlier(h, bindHit(ix, Str(t, ast.ListAt(t, x.a, i)), f, x.tok))
+            }
+        } else if k == ast.ELambda {
+            // 仮引数の節は位置を持たない — ラムダの位置で報告する
+            for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                h = earlier(h, bindHit(ix, Str(t, t.nodes[ast.ListAt(t, x.a, i)].a), f, x.tok))
+            }
+        } else if k == ast.KPType && x.a >= 0 {
+            h = earlier(h, bindHit(ix, Str(t, x.a), f, x.tok))
+        } else if k == ast.KFieldPat && x.b < 0 {
+            h = earlier(h, bindHit(ix, Str(t, x.a), f, x.tok))
+        }
+        sp = pushKids(mut st, sp, t, x)
+    }
+    return h
+}
+
+// pushKids は式・文・パターンの節 x の子（名前でない欄）を積む
+func pushKids(st mut []int, sp0 int, t ast.Tree, x ast.Node) int {
+    mut sp := sp0
+    k := x.kind
+    if k == ast.ECall {
+        sp = push(mut st, sp, x.a)
+        sp = pushList(mut st, sp, t, x.b)
+    } else if k == ast.ETry || k == ast.EIndex || k == ast.KEntry || k == ast.SWhile {
+        sp = push(mut st, sp, x.a)
+        sp = push(mut st, sp, x.b)
+    } else if k == ast.EBinary {
+        sp = push(mut st, sp, x.b)
+        sp = push(mut st, sp, x.c)
+    } else if k == ast.ESlice3 || k == ast.EIf {
+        sp = push(mut st, sp, x.a)
+        sp = push(mut st, sp, x.b)
+        sp = push(mut st, sp, x.c)
+    } else if k == ast.EUnary || k == ast.KElem || k == ast.KFieldPat {
+        sp = push(mut st, sp, x.b)
+    } else if k == ast.EPipe {
+        sp = push(mut st, sp, x.a)
+        sp = push(mut st, sp, x.b)
+        sp = pushList(mut st, sp, t, x.c)
+    } else if k == ast.EInterp || k == ast.ESlicelit || k == ast.EComposite {
+        sp = pushList(mut st, sp, t, x.b)
+    } else if k == ast.EMaplit {
+        sp = pushList(mut st, sp, t, x.c)
+    } else if k == ast.ELambda {
+        sp = pushList(mut st, sp, t, x.a)
+        sp = push(mut st, sp, x.b)
+    } else if k == ast.ESelector || k == ast.EParen || k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+        sp = push(mut st, sp, x.a)
+    } else if k == ast.ESwitch {
+        sp = pushList(mut st, sp, t, x.a)
+        sp = pushList(mut st, sp, t, x.b)
+        sp = push(mut st, sp, x.c)
+    } else if k == ast.KCase {
+        sp = pushList(mut st, sp, t, x.a)
+        sp = push(mut st, sp, x.b)
+    } else if k == ast.EBlock || k == ast.KBlock || k == ast.KPConst || k == ast.SRet {
+        sp = pushList(mut st, sp, t, x.a)
+    } else if k == ast.KPType {
+        sp = pushList(mut st, sp, t, x.c)
+    } else if k == ast.EFor {
+        sp = pushList(mut st, sp, t, x.a)
+        if x.b == 0 {
+            sp = push(mut st, sp, x.c)
+        } else {
+            sp = pushList(mut st, sp, t, x.c)
+        }
+    } else if k == ast.KGen {
+        sp = push(mut st, sp, x.b)
+        sp = pushList(mut st, sp, t, x.c)
+    } else if k == ast.SBind {
+        sp = pushList(mut st, sp, t, x.c)
+    } else if k == ast.SAssign {
+        sp = pushList(mut st, sp, t, x.a)
+        sp = pushList(mut st, sp, t, x.c)
+    }
+    return sp
+}
+
+// namesHit は全 package の名前の検査の最初の違反（package の順 × ファイルの順。ファイルの中は最も前の位置）
+func namesHit(cx Cx) NameHit {
+    for pk <- iter.Range(0, len(cx.pkg_path)) {
+        ix := pkgNames(cx, pk)
+        for f <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
+            t := cx.trees[f]
+            root := t.nodes[t.file]
+            mut h := noHit()
+            for i <- iter.Range(0, ast.ListLen(t, root.c)) {
+                td := t.nodes[ast.ListAt(t, root.c, i)]
+                h = earlier(h, tparamsHit(t, ix, td.b, f, td.tok))
+                body := t.nodes[td.c]
+                h = earlier(h, declHit(ix, Str(t, td.a), body.kind == ast.BError, f, td.tok))
+                if body.kind == ast.BUnion {
+                    for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                        v := t.nodes[ast.ListAt(t, body.a, j)]
+                        h = earlier(h, declHit(ix, Str(t, v.a), true, f, v.tok))
+                    }
+                }
+            }
+            for i <- iter.Range(0, ast.ListLen(t, root.d)) {
+                fd := t.nodes[ast.ListAt(t, root.d, i)]
+                h = earlier(h, tparamsHit(t, ix, fd.b, f, fd.tok))
+                h = earlier(h, declHit(ix, Str(t, fd.a), false, f, fd.tok))
+                for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
+                    h = earlier(h, bindHit(ix, Str(t, t.nodes[ast.ListAt(t, fd.c, p)].a), f, fd.tok))
+                }
+                h = earlier(h, bodyHit(t, ix, fd.e, f))
+                if fd.e >= 0 {
+                    h = earlier(h, shadowHit(t, fd, f))
+                }
+            }
+            for i <- iter.Range(0, ast.ListLen(t, root.e)) {
+                c := t.nodes[ast.ListAt(t, root.e, i)]
+                h = earlier(h, declHit(ix, Str(t, c.a), false, f, c.tok))
+                h = earlier(h, bodyHit(t, ix, c.b, f))
+            }
+            if h.file >= 0 {
+                return h
+            }
+        }
+    }
+    return noHit()
+}
+
+// ── ローカル束縛どうしのシャドーイング（決定 13 — 同じスコープでの再宣言を含む）──
+// スコープ = 関数本体・ブロック（KBlock / EBlock）・ラムダ（仮引数 + 本体）・for（生成元の名前 + ガード + 本体）・case（パターンの束縛 + 腕）。
+// 兄弟のスコープで同じ名前を使うのはよい。パターン位置の裸の識別子は既知の名前（ローカル束縛）なら比較なので束縛に数えない（syntax.md 9 節）。
+// 走査は明示のスタック: 積むのは (節, 動作) の対 — 動作 = 訪問・スコープを閉じる（束縛の数を戻す — 節の欄に戻す数）・名前を足す
+
+const WVisit = 0
+const WPop = 1      // 節の欄の代わりに、戻す束縛の数を積む
+const WGen = 2      // KGen の名前を足す
+const WCase = 3     // KCase のパターンの束縛を足す
+
+// bindLocal は名前 x を束縛する（env[0:n] が見えている束縛。同名なら違反）。新しい束縛の数を返す
+func bindLocal(env mut [][]int, n int, x []int, f int, tok int) (int, NameHit) {
+    if EqLit(x, "_") {
+        return n, noHit()
+    }
+    for i <- iter.Range(0, n) {
+        if Eq(env[i], x) {
+            return n, NameHit{f, tok, diag.Shadow{at: diag.Pos{f, tok}}}
+        }
+    }
+    if n < len(env) {
+        env[n] = x
+    } else {
+        env = append(env, x)
+    }
+    return n + 1, noHit()
+}
+
+// patBinds はパターン p の束縛（型パターンの束縛名・欄パターンの略記・入れ子）を足す
+func patBinds(t ast.Tree, env mut [][]int, n0 int, p0 int, f int) (int, NameHit) {
+    mut n := n0
+    mut h := noHit()
+    mut st := mut []int{}
+    mut sp := push(mut st, 0, p0)
+    while sp > 0 {
+        sp -= 1
+        x := t.nodes[st[sp]]
+        if x.kind == ast.KPType {
+            if x.a >= 0 {
+                n1, h1 := bindLocal(mut env, n, Str(t, x.a), f, x.tok)
+                n = n1
+                h = earlier(h, h1)
+            }
+            sp = pushList(mut st, sp, t, x.c)
+        } else if x.kind == ast.KFieldPat {
+            if x.b < 0 {
+                n1, h1 := bindLocal(mut env, n, Str(t, x.a), f, x.tok)
+                n = n1
+                h = earlier(h, h1)
+            } else {
+                sp = push(mut st, sp, x.b)
+            }
+        }
+    }
+    return n, h
+}
+
+func pushW(st mut []int, sp int, x int, m int) int {
+    if x < 0 && m != WPop {
+        return sp
+    }
+    for v <- iter.Range(0, 2) {
+        w := if v == 0 { x } else { m }
+        if sp + v < len(st) {
+            st[sp + v] = w
+        } else {
+            st = append(st, w)
+        }
+    }
+    return sp + 2
+}
+
+// pushScope はスコープを開く: 閉じる印を先に積み、続けて中身を積む（中身が先に回る）
+func pushStmtsRev(st mut []int, sp0 int, t ast.Tree, l int) int {
+    mut sp := sp0
+    mut i := ast.ListLen(t, l)
+    while i > 0 {
+        i -= 1
+        sp = pushW(mut st, sp, ast.ListAt(t, l, i), WVisit)
+    }
+    return sp
+}
+
+// shadowHit は関数 fd（仮引数 + 本体）のシャドーイングの違反
+func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
+    mut h := noHit()
+    mut env := mut [][]int{}
+    mut en := 0
+    for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
+        n1, h1 := bindLocal(mut env, en, Str(t, t.nodes[ast.ListAt(t, fd.c, p)].a), f, fd.tok)
+        en = n1
+        h = earlier(h, h1)
+    }
+    mut st := mut []int{}
+    mut sp := pushW(mut st, 0, fd.e, WVisit)
+    while sp > 0 {
+        sp -= 2
+        n := st[sp]
+        m := st[sp + 1]
+        if m == WPop {
+            en = n
+        } else if m == WGen {
+            g := t.nodes[n]
+            for i <- iter.Range(0, ast.ListLen(t, g.a)) {
+                n1, h1 := bindLocal(mut env, en, Str(t, ast.ListAt(t, g.a, i)), f, g.tok)
+                en = n1
+                h = earlier(h, h1)
+            }
+        } else if m == WCase {
+            c := t.nodes[n]
+            for i <- iter.Range(0, ast.ListLen(t, c.a)) {
+                n1, h1 := patBinds(t, mut env, en, ast.ListAt(t, c.a, i), f)
+                en = n1
+                h = earlier(h, h1)
+            }
+        } else {
+            x := t.nodes[n]
+            k := x.kind
+            if k == ast.KBlock || k == ast.EBlock {
+                sp = pushW(mut st, sp, en, WPop)
+                sp = pushStmtsRev(mut st, sp, t, x.a)
+            } else if k == ast.SBind {
+                for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                    n1, h1 := bindLocal(mut env, en, Str(t, ast.ListAt(t, x.a, i)), f, x.tok)
+                    en = n1
+                    h = earlier(h, h1)
+                }
+                sp = pushStmtsRev(mut st, sp, t, x.c)
+            } else if k == ast.ELambda {
+                sp = pushW(mut st, sp, en, WPop)
+                sp = pushW(mut st, sp, x.b, WVisit)
+                for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                    lp := t.nodes[ast.ListAt(t, x.a, i)]
+                    n1, h1 := bindLocal(mut env, en, Str(t, lp.a), f, x.tok)
+                    en = n1
+                    h = earlier(h, h1)
+                }
+            } else if k == ast.EFor {
+                // 生成元は外のスコープ、名前・ガード・本体は内のスコープ（単一ジェネレータ — 多ジェネレータは順に入れ子）
+                sp = pushW(mut st, sp, en, WPop)
+                if x.b == 0 {
+                    sp = pushW(mut st, sp, x.c, WVisit)
+                } else {
+                    sp = pushW(mut st, sp, en, WPop)
+                    sp = pushStmtsRev(mut st, sp, t, x.c)
+                }
+                mut i := ast.ListLen(t, x.a)
+                while i > 0 {
+                    i -= 1
+                    g := t.nodes[ast.ListAt(t, x.a, i)]
+                    sp = pushStmtsRev(mut st, sp, t, g.c)
+                    sp = pushW(mut st, sp, ast.ListAt(t, x.a, i), WGen)
+                    sp = pushW(mut st, sp, g.b, WVisit)
+                }
+            } else if k == ast.KCase {
+                sp = pushW(mut st, sp, en, WPop)
+                sp = pushW(mut st, sp, x.b, WVisit)
+                sp = pushW(mut st, sp, n, WCase)
+            } else if k == ast.ESwitch {
+                sp = pushW(mut st, sp, x.c, WVisit)
+                sp = pushStmtsRev(mut st, sp, t, x.b)
+                sp = pushStmtsRev(mut st, sp, t, x.a)
+            } else {
+                sp = pushKidsW(mut st, sp, t, x)
+            }
+        }
+    }
+    return h
+}
+
+// pushKidsW は束縛を持たない節の子を積む（pushKids と同じ欄 — ただし束縛を持つ節は shadowHit が扱う）
+func pushKidsW(st mut []int, sp0 int, t ast.Tree, x ast.Node) int {
+    mut tmp := mut []int{}
+    n := pushKids(mut tmp, 0, t, x)
+    mut sp := sp0
+    mut i := n
+    while i > 0 {
+        i -= 1
+        sp = pushW(mut st, sp, tmp[i], WVisit)
+    }
+    return sp
+}

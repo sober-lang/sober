@@ -1,0 +1,131 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/vis_variant/lib",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "sh"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 13
+                  },
+                  "field": "Mk",
+                  "tok": 15
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 17
+                  }
+                ],
+                "tok": 16
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 20
+              },
+              "args": [
+                {
+                  "k": "switch",
+                  "subjects": [
+                    {
+                      "k": "ident",
+                      "name": "sh",
+                      "tok": 23
+                    }
+                  ],
+                  "cases": [
+                    {
+                      "patterns": [
+                        {
+                          "k": "type",
+                          "bind": null,
+                          "variant": "lib.circ",
+                          "fields": [
+                            {
+                              "name": "r",
+                              "sub": null,
+                              "tok": 30
+                            }
+                          ],
+                          "tok": 26
+                        }
+                      ],
+                      "body": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "ident",
+                              "name": "r",
+                              "tok": 33
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 25
+                    }
+                  ],
+                  "default": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 37
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 22
+                }
+              ],
+              "tok": 21
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 44
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

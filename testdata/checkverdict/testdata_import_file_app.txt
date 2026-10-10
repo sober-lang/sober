@@ -1,0 +1,2 @@
+sober: load error at testdata/import_file/app/helper.sober:5:19: this file does not import the package it names (imports are per file — add the import to this file)
+exit=1

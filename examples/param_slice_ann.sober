@@ -1,0 +1,59 @@
+package main
+
+// 仮引数由来の imm slice の 2 つの形（selfhost-drafts F-14 の回帰例）。どちらも imm の上界を緩めるだけで健全に受理できるが、
+// 脱糖器が結果型 / 要素型への ann を名前にしか付けず、def error になっていた:
+// (1) 名前でない式の return（`return p[0:k]`・`return s.a`・腕が一致する if 式）
+// (2) 局所の mut コンテナへの append（`append(out, p)`・`append(out, xs[i])`）
+
+type Pair struct {
+    a []int
+    b []int
+}
+
+func prefix(p []int, k int) []int {
+    return p[0:k]
+}
+
+func first(s Pair) []int {
+    return s.a
+}
+
+func clip(p []int, k int) []int {
+    return if k < 0 { p } else { p[0:k] }
+}
+
+func collect(p []int, xs [][]int) [][]int {
+    mut out := mut [][]int{}
+    out = append(out, p)
+    mut i := 0
+    while i < len(xs) {
+        out = append(out, xs[i])
+        i += 1
+    }
+    out = append(out, p[1:2])
+    return freeze(out)
+}
+
+func total(xs [][]int) int {
+    mut n := 0
+    mut i := 0
+    while i < len(xs) {
+        mut j := 0
+        while j < len(xs[i]) {
+            n += xs[i][j]
+            j += 1
+        }
+        i += 1
+    }
+    return n
+}
+
+func main() {
+    p := []int{1, 2, 3, 4}
+    println(len(prefix(p, 2)), prefix(p, 3)[2])
+    s := Pair{a: []int{7, 8}, b: []int{9}}
+    println(len(first(s)), first(s)[1])
+    println(len(clip(p, -1)), len(clip(p, 1)))
+    ys := collect(p, [][]int{[]int{10}, []int{20, 30}})
+    println(len(ys), total(ys))
+}

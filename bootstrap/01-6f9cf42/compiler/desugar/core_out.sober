@@ -1,0 +1,29 @@
+package desugar
+
+// 脱糖の結果をプロセス内で渡す口（Sober 版 `sober check` の直結 — compiler/tools/sobercheck。JSON を経ない）。
+// 意味は Json と同じ: run の結果（関数表・持ち上げたラムダの鎖・根の式）を、ヒープの読み出し専用の眺めとして受け手 k に渡す。
+// 記録の形（C* / T* / LB* と Def の [param, ret, body, tparams, next]）は json.sober の印字が読む形そのまま
+
+import "loader"
+
+// Core はヒープの眺め。Defs = 名前付き関数の列 [n, def…]、Lifted = 持ち上げたラムダの鎖の頭（def + 4 = 次、-1 = 終わり）
+type Core struct {
+    H []int
+    Defs int
+    Lifted int
+    Root int
+}
+
+// WithCore は p を脱糖して k に結果を渡す（失敗なら k を呼ばず ok = false）。
+// k を関数型引数にするのは、ヒープを返り値で持ち出さないため（Def の返り値は呼び手の region への境界コピーになる — ヒープは数十 MB）
+func WithCore(p loader.Program, k func(Core) []int) ([]int, bool) {
+    mut st := S{}
+    initState(mut st, p)
+    defs, root, err := run(mut st)
+    if err != nil {
+        return []int{}, false
+    }
+    lifted := st.liftedHead
+    h := freeze(st.h)
+    return k(Core{h, defs, lifted, root}), true
+}

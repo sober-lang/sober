@@ -1,0 +1,41 @@
+package main
+
+// std/os.WriteMode（ファイルの許可の bit を書く — chmod(2)）: シェルスクリプトを書き、実行の bit の有無で os.Run の結果が変わることを観測する。
+// 0o755 = 493・0o644 = 420。exec に失敗した子は 127（os.Run の契約）。無い path は io.NotFound
+
+import "std/io"
+import "std/os"
+
+func run(p string) int {
+    c, err := os.Run(p, []string{})
+    if err != nil {
+        return -1
+    }
+    return c
+}
+
+func main() int {
+    p := "out/os_writemode.sh"
+    if io.WriteFile(p, bytes("#!/bin/sh\necho hi from the script\nexit 3\n")) != nil {
+        println("cannot write")
+        return 1
+    }
+    // 書いたばかり（0644）は走らない
+    println(run(p))
+    e1 := os.WriteMode(p, 493)
+    println(e1 == nil)
+    println(run(p))
+    e2 := os.WriteMode(p, 420)
+    println(e2 == nil)
+    println(run(p))
+    e3 := os.WriteMode("out/no/such/file", 493)
+    switch e3 {
+    case nil:
+        println("unexpected")
+    case io.NotFound{}:
+        println("NotFound")
+    default:
+        println("other")
+    }
+    return 0
+}

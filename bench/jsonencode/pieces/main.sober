@@ -1,0 +1,206 @@
+package main
+
+// シリアライザの双子 (b) 素直な形: 各節が自分の JSON の文字列を作って返し、親が子の片を繋ぐ（返るバイトが段ごとに写る — 写しの量 ∝ 深さ）。
+// (a) = ../builder（mut builder を引き回す形）。出力は (a) と同じバイト列（長さと FNV で照合）
+import "std/builder"
+import "std/conv"
+import "std/iter"
+import "std/os"
+import "std/strings"
+
+type N0 struct {
+    id int
+    name string
+    score float
+    kids []N1
+}
+
+type N1 struct {
+    id int
+    name string
+    score float
+    kids []N2
+}
+
+type N2 struct {
+    id int
+    name string
+    score float
+    kids []N3
+}
+
+type N3 struct {
+    id int
+    name string
+    score float
+    kids []N4
+}
+
+type N4 struct {
+    id int
+    name string
+    score float
+    kids []N5
+}
+
+type N5 struct {
+    id int
+    name string
+    score float
+}
+
+func mkN0(id int, f int) N0 {
+    mut ks := mut []N1{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN1(id * f + i, f))
+    }
+    return N0{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN1(id int, f int) N1 {
+    mut ks := mut []N2{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN2(id * f + i, f))
+    }
+    return N1{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN2(id int, f int) N2 {
+    mut ks := mut []N3{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN3(id * f + i, f))
+    }
+    return N2{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN3(id int, f int) N3 {
+    mut ks := mut []N4{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN4(id * f + i, f))
+    }
+    return N3{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN4(id int, f int) N4 {
+    mut ks := mut []N5{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN5(id * f + i, f))
+    }
+    return N4{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN5(id int, f int) N5 {
+    return N5{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25}
+}
+
+func sN0(n N0) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(n.kids)) {
+        ps = append(ps, sN1(n.kids[i]))
+    }
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
+}
+
+func sN1(n N1) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(n.kids)) {
+        ps = append(ps, sN2(n.kids[i]))
+    }
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
+}
+
+func sN2(n N2) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(n.kids)) {
+        ps = append(ps, sN3(n.kids[i]))
+    }
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
+}
+
+func sN3(n N3) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(n.kids)) {
+        ps = append(ps, sN4(n.kids[i]))
+    }
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
+}
+
+func sN4(n N4) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(n.kids)) {
+        ps = append(ps, sN5(n.kids[i]))
+    }
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${join(freeze(ps))}]}"
+}
+
+func sN5(n N5) string {
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)}}"
+}
+
+// join は片を ',' で繋ぐ（std に strings.Join が無いので同じ形を書く — 片の長さの和を 1 回だけ写す。
+// `s = s + "," + p` の素直な繋ぎは先端一致の concat の in-place 成長が無いので 2 乗の写し — 深さ 2〔片 550 個〕で region 4 GB を溢れた）
+func join(ps []string) string {
+    mut o := builder.Builder[byte]{}
+    for i <- iter.Range(0, len(ps)) {
+        if i > 0 {
+            builder.Push(mut o, ',')
+        }
+        builder.PushStr(mut o, ps[i])
+    }
+    s, e := string(builder.Build(mut o))
+    return s
+}
+
+func topN0(f int) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, f) {
+        ps = append(ps, sN0(mkN0(i, f)))
+    }
+    return "[${join(freeze(ps))}]"
+}
+
+func topN2(f int) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, f) {
+        ps = append(ps, sN2(mkN2(i, f)))
+    }
+    return "[${join(freeze(ps))}]"
+}
+
+func topN4(f int) string {
+    mut ps := mut []string{}
+    for i <- iter.Range(0, f) {
+        ps = append(ps, sN4(mkN4(i, f)))
+    }
+    return "[${join(freeze(ps))}]"
+}
+
+// fanout は葉の数がほぼ同じ（30 万前後）になるように深さごとに選ぶ
+func fanout(d int) int {
+    return if d == 2 { 550 } else if d == 4 { 24 } else { 8 }
+}
+
+// fnv は出力の照合用（FNV-1a）
+func fnv(s string) int {
+    p := bytes(s)
+    mut h := -3750763034065230579
+    for i <- iter.Range(0, len(p)) {
+        h = (h ^ int(p[i])) * 1099511628211
+    }
+    return h
+}
+
+func main() {
+    args, aerr := os.Args()
+    if aerr != nil || len(args) < 2 {
+        return
+    }
+    d := if args[1] == "2" { 2 } else if args[1] == "4" { 4 } else { 6 }
+    f := fanout(d)
+    s := switch d {
+    case 2: topN4(f)
+    case 4: topN2(f)
+    default: topN0(f)
+    }
+    println(len(bytes(s)), fnv(s))
+}

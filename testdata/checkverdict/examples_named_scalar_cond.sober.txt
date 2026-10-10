@@ -1,0 +1,2 @@
+sober: desugar error at examples/named_scalar_cond.sober:9:8 (TypeMismatch)
+exit=1

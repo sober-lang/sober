@@ -1,0 +1,151 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "two",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        },
+        {
+          "k": "name",
+          "name": "Foo"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 20
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 22
+                  }
+                ],
+                "tok": 21
+              },
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 25
+              }
+            ],
+            "tok": 19
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 29
+      },
+      "sig_end": 18
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "a",
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "two",
+                  "tok": 39
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "y",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "ident",
+                      "name": "y",
+                      "tok": 45
+                    },
+                    "tok": 44
+                  }
+                ],
+                "tok": 40
+              }
+            ],
+            "tok": 35
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "a",
+                "tok": 49
+              }
+            ],
+            "tok": 48
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 53
+      },
+      "sig_end": 34
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/inline_unknown_mutparam.sober:6:12 (UnknownName)
+exit=1

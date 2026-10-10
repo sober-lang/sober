@@ -1,0 +1,6 @@
+package main
+
+// 負例: panic の実引数はラベルのリテラル 1 つ（language.md 27 節「panic ラベル」— loader の拒否）
+func main() {
+    panic("boom")
+}

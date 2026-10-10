@@ -1,0 +1,25 @@
+package main
+
+// @layout の書き込みの幅あふれは panic（language.md 36 節 Y5 ① — exit 101。標準エラーに欄と値と幅）。リテラル直書きでない値は実行時の検査
+
+import "std/builder"
+import "std/layout"
+
+@layout
+type H struct {
+    k u16le
+    s i8
+    a [2]u8
+}
+
+func big() int {
+    return 70000
+}
+
+func main() {
+    mut out := builder.Builder[byte]{}
+    layout.Encode[H](mut out, H{k: 65535, s: 0, a: bytes("ok")})
+    println(builder.Len(mut out))
+    layout.Encode[H](mut out, H{k: big(), s: 0, a: bytes("ok")})
+    println("unreachable")
+}

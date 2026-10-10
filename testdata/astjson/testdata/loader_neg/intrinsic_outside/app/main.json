@@ -1,0 +1,74 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$float",
+      "path": "std/floatfmt",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 24
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 28
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": [],
+  "intrinsics": [
+    {
+      "name": "mySqrt",
+      "key": "fsqrt",
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "tok": 10,
+      "span": {
+        "start": 3,
+        "end": 17
+      }
+    }
+  ]
+}

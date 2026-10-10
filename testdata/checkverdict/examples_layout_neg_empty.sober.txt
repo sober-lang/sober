@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_empty.sober:6:6: a @layout struct needs at least one field and no type parameters
+exit=1

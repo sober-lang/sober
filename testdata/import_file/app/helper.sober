@@ -1,0 +1,9 @@
+package main
+
+func sum(n int) int {
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        s += i
+    }
+    return s
+}

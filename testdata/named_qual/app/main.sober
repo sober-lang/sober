@@ -1,0 +1,7 @@
+package main
+
+import "testdata/named_qual/mid"
+
+func main() {
+    println(mid.F(40))
+}

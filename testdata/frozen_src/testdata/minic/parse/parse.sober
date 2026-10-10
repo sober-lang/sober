@@ -1,0 +1,139 @@
+package parse
+
+// minic の構文: expr := term (('+' | '-') term)*、term := unary (('*' | '/') unary)*、unary := '-' unary | 数 | '(' expr ')'。
+// 再帰下降でなく演算子順位法（明示のスタック）で読む — mut 引数の関数は展開されるので再帰に持ち込めない（26 節）うえ、
+// 再帰の深さ上限（1023 段）にも当たらない。木は []Node + 添字参照で、子が親より先に並ぶ（後置順 = そのままスタック機械の順）
+
+import "std/builder"
+import "testdata/frozen_src/testdata/minic/lex"
+import "testdata/frozen_src/testdata/minic/diag"
+
+// 節の種類
+const Lit = 0
+const Neg = 1
+const Add = 2
+const Sub = 3
+const Mul = 4
+const Div = 5
+
+// l / r は子の添字（無ければ -1）、pos は字句の位置（Div の実行時エラーの位置になる）
+type Node struct {
+    kind, val, pos, l, r int
+}
+
+// 演算子スタックの印: '(' は -1
+const paren = 0 - 1
+
+type Stack struct {
+    xs mut []int
+    n int
+}
+
+func push(s mut Stack, x int) {
+    if s.n == len(s.xs) {
+        s.xs = append(s.xs, x)
+    } else {
+        s.xs[s.n] = x
+    }
+    s.n = s.n + 1
+}
+
+func pop(s mut Stack) int {
+    s.n = s.n - 1
+    return s.xs[s.n]
+}
+
+func top(s mut Stack) int {
+    return s.xs[s.n - 1]
+}
+
+func prec(op int) int {
+    return switch op {
+    case 1: 3
+    case 4: 2
+    case 5: 2
+    case _: 1
+    }
+}
+
+func binop(k int) int {
+    return switch k {
+    case 1: Add
+    case 2: Sub
+    case 3: Mul
+    case 4: Div
+    case _: 0 - 1
+    }
+}
+
+// reduce は演算子を 1 つ取り、値スタックの子から節を作って積む
+func reduce(nb mut builder.Builder[Node], ops mut Stack, opos mut Stack, vals mut Stack) {
+    op := pop(mut ops)
+    p := pop(mut opos)
+    r := pop(mut vals)
+    l := if op == Neg { 0 - 1 } else { pop(mut vals) }
+    builder.Push(mut nb, Node{op, 0, p, l, r})
+    push(mut vals, builder.Len(mut nb) - 1)
+}
+
+// Parse は 1 行の字句列を木にする（根は最後の節）
+@errors(diag.UnexpectedEnd, diag.Expected, diag.Unbalanced)
+func Parse(ts []lex.Token) ([]Node, error?) {
+    mut nb := builder.Builder[Node]{}
+    mut ops := Stack{xs: mut []int{}, n: 0}
+    mut opos := Stack{xs: mut []int{}, n: 0}
+    mut vals := Stack{xs: mut []int{}, n: 0}
+    mut c := lex.Start(ts)
+    mut operand := true
+    mut done := false
+    while !done {
+        t := lex.Next(mut c)
+        if operand {
+            if t.kind == lex.Num {
+                builder.Push(mut nb, Node{Lit, t.val, t.pos, 0 - 1, 0 - 1})
+                push(mut vals, builder.Len(mut nb) - 1)
+                operand = false
+            } else if t.kind == lex.Minus {
+                push(mut ops, Neg)
+                push(mut opos, t.pos)
+            } else if t.kind == lex.LParen {
+                push(mut ops, paren)
+                push(mut opos, t.pos)
+            } else if t.kind == lex.End {
+                return []Node{}, diag.UnexpectedEnd{pos: t.pos}
+            } else {
+                return []Node{}, diag.Expected{pos: t.pos, want: 0}
+            }
+        } else {
+            b := binop(t.kind)
+            if b >= 0 {
+                while ops.n > 0 && top(mut ops) != paren && prec(top(mut ops)) >= prec(b) {
+                    reduce(mut nb, mut ops, mut opos, mut vals)
+                }
+                push(mut ops, b)
+                push(mut opos, t.pos)
+                operand = true
+            } else if t.kind == lex.RParen {
+                while ops.n > 0 && top(mut ops) != paren {
+                    reduce(mut nb, mut ops, mut opos, mut vals)
+                }
+                if ops.n == 0 {
+                    return []Node{}, diag.Unbalanced{pos: t.pos}
+                }
+                pop(mut ops)
+                pop(mut opos)
+            } else if t.kind == lex.End {
+                while ops.n > 0 {
+                    if top(mut ops) == paren {
+                        return []Node{}, diag.Expected{pos: t.pos, want: 5}
+                    }
+                    reduce(mut nb, mut ops, mut opos, mut vals)
+                }
+                done = true
+            } else {
+                return []Node{}, diag.Expected{pos: t.pos, want: 1}
+            }
+        }
+    }
+    return builder.Build(mut nb), nil
+}

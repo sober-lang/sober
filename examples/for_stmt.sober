@@ -1,0 +1,95 @@
+package main
+
+// 文形 for（language.md 7 節）: 文の位置のブロック形は消費。本体は inline ラムダの本体として展開されるので、
+// 外の mut への代入・mut 引数・囲みの関数からの return が書ける。呼び出し形の生成元 iter.Range も
+
+import "std/builder"
+import "std/iter"
+
+type S struct {
+    h mut []int
+}
+
+func put(st mut S, x int) {
+    st.h = append(st.h, x)
+}
+
+// find は最初の w の位置（ガードつき・本体から return）
+func find(xs []int, w int) int {
+    for i <- iter.Range(0, len(xs)) if xs[i] > 0 {
+        if xs[i] == w {
+            return i
+        }
+    }
+    return -1
+}
+
+// walk は再帰する mut 引数の Def の中で走査する
+func walk(st mut S, xs []int, d int) {
+    if d > 0 {
+        for x <- xs {
+            put(mut st, x * d)
+        }
+        walk(mut st, xs, d - 1)
+    }
+}
+
+// total は Iter の値を生成元に回す
+func total(it iter.Iter[int]) int {
+    mut n := 0
+    for x <- it {
+        n += x
+    }
+    return n
+}
+
+// grid は生成器の中の文形 for から外側へ yield する（入れ子の走査）
+func grid(xs []int, ys []int) int {
+    return iter.Sum(for x <- xs {
+        for y <- ys {
+            yield x * y
+        }
+    })
+}
+
+func main() {
+    xs := []int{3, 1, 4, 1, 5}
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    println(s)
+    mut b := builder.Builder[int]{}
+    for x <- xs if x > 1 {
+        builder.Push(mut b, x * 10)
+    }
+    ys := builder.Build(mut b)
+    println(len(ys), ys[0], ys[2])
+    println(find(xs, 4), find(xs, 9))
+    m := map[int]int{7: 1, 2: 1, 9: 1}
+    mut order := 0
+    for k <- m {
+        order = order * 10 + k
+    }
+    println(order)
+    mut st := S{}
+    walk(mut st, []int{1, 2}, 2)
+    println(len(st.h), st.h[0], st.h[3])
+    println(total(for i <- iter.Range(1, 5) yield i * i))
+    println(iter.Sum(for i <- iter.Range(0, 4) yield i))
+    mut c := 0
+    for i <- iter.Range(5, 5) {
+        c += 1
+    }
+    println(c)
+    println(grid([]int{1, 2}, []int{10, 20}))
+    mut pairs := 0
+    for x <- xs {
+        for y <- xs {
+            if x == y {
+                pairs += 1
+            }
+        }
+    }
+    println(pairs)
+}

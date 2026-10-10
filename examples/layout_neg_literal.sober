@@ -1,0 +1,18 @@
+package main
+
+// 負例: @layout の struct のリテラルの欄に直に書いた整数リテラルが幅に収まらなければコンパイルエラー（Y5 ②）（language.md 36 節 — loader の拒否 diag.Layout）
+
+import "std/builder"
+import "std/layout"
+
+@layout
+type H struct {
+    k u16le
+    s i8
+}
+
+func main() {
+    mut out := builder.Builder[byte]{}
+    layout.Encode[H](mut out, H{k: 65536, s: -129})
+    println(builder.Len(mut out))
+}

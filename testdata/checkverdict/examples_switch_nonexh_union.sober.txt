@@ -1,0 +1,2 @@
+sober: error at examples/switch_nonexh_union.sober:13:5 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: A)
+exit=1

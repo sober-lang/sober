@@ -1,0 +1,2 @@
+sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)
+exit=1

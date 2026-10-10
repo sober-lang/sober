@@ -1,0 +1,37 @@
+package main
+
+import "std/strings"
+
+// ラムダの実引数の結果の型から型引数を推論する（P3b 残穴2 — 決定 2026-10-06 で解禁。2026-09-30〜10-06 は負例として固定:
+// 表層型検査器の表と脱糖器の inferTs が同じ規則を持つまで、表に載せると build が check より広がった）。
+// 推論の順 = 値の実引数との単一化（型なしの定数の外し・入れ直しを含む）→ ラムダの仮引数を決まった型引数で束ねて本体の型を結果へ
+
+type P struct {
+    name string
+    age int
+}
+
+func ap[T, U](x T, f func(T) U) U {
+    return f(x)
+}
+
+func twice[T, U](x T, f func(T) U, g func(U) U) U {
+    return g(f(x))
+}
+
+func main() {
+    println(ap(3, (v) => v * 2))
+    println(ap(3, (v) => strings.FormatInt(v) + "!"))
+    n := ap("abc", (s) => len(bytes(s)))
+    println(n + 1)
+    p := ap(4, (v) => P{name: "n" + strings.FormatInt(v), age: v * 10})
+    println(p.name)
+    println(p.age)
+    println(ap(p, (q) => q.age > 30))
+    println(ap(p, (q) => {
+        a := q.age + 1
+        a * 2
+    }))
+    // 先のラムダが決めた型引数で後のラムダの仮引数を束ねる
+    println(twice(5, (v) => strings.FormatInt(v), (s) => s + s))
+}

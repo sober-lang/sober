@@ -1,0 +1,850 @@
+package printer
+
+// AST → Sober ソース（selfhost-report-7）。読める整形（4 スペースインデント・1 文 1 行）を出す — Zig 版 printer（cst.zig）との
+// バイト一致は求めない。正しさの基準は自己不動点（scripts/selfhost_fmt.sh: parse → print → 再 parse で AST が位置を除いて一致）。
+//
+// 印字の規則（parser の受理形との対応）:
+// - 改行は文の終わり・`{` の後・`}` の前だけに置く（セミコロンの自動挿入に任せる。式の途中では折らない）
+// - 補間の穴は 1 行でなければならない（字句の規則 — 文字列の中の改行は不可）ので、穴の中は flat（ブロックも `{ a; b; }` の 1 行）
+// - C1 の書き換えは逆に写す: 合成の暗黙 import（tok = 0）は印字しない、`$utf8.Parse(b)` は `string(b)` に戻す
+// - 括弧（EParen）は AST に残っているのでそのまま出す。優先順位から括弧を足す処理は要らない（AST は parse 由来）
+// - 情報の落ちるもの: コメント・`@errors(...)` の読めない項（"?" に潰れる — 印字の "?" は再 parse でまた "?"）、宣言の順序（types → consts → funcs に並べ替える）、
+//   `a, b int` のような名前の並び（1 名ずつに割る）
+//
+// 出力は Print の frame の mut slice に append で積む（json.sober と同じ理由 — F-9）
+
+import "ast"
+import "std/iter"
+import "obuf"
+
+// Print は t の根を 1 ファイル分のソースのバイト列にする
+func Print(t ast.Tree) []byte {
+    mut out := mut []byte{}
+    file(mut out, t)
+    return freeze(out)
+}
+
+// ── 整形の骨（再帰しない — 呼び出し点に展開される）──
+
+// newline は改行 + d 段のインデント（4 桁 — JSON の obuf.Nl は 2 桁）
+// TypeDeclText / FuncDeclText / ConstText は宣言 1 つの綴り（file と同じ印字 — .sobi の書き出し compiler/iface が宣言を選んで並べる）。
+// FuncDeclText の sig = 署名だけ（本体を書かない）・expand = `@expand` の行を足す
+func TypeDeclText(t ast.Tree, n int) []byte {
+    mut out := mut []byte{}
+    typeDecl(mut out, t, t.nodes[n])
+    return freeze(out)
+}
+
+func FuncDeclText(t ast.Tree, n int, sig bool, expand bool) []byte {
+    mut out := mut []byte{}
+    funcDeclX(mut out, t, t.nodes[n], sig, expand)
+    return freeze(out)
+}
+
+func ConstText(t ast.Tree, n int) []byte {
+    mut out := mut []byte{}
+    constLine(mut out, t, t.nodes[n])
+    return freeze(out)
+}
+
+// Expr は木 t の式の節 n の綴り（1 行 — assert の失敗の印字の式の綴り。loader/assert.sober）
+func Expr(t ast.Tree, n int) []byte {
+    mut out := mut []byte{}
+    expr(mut out, t, n, 0, true)
+    return freeze(out)
+}
+
+func newline(out mut []byte, d int) {
+    out = append(out, '\n')
+    mut i := 0
+    while i < d * 4 {
+        out = append(out, ' ')
+        i += 1
+    }
+}
+
+// raw は文字列 s（データプールの添字）をそのまま書く
+// charLit は文字リテラルの綴り（escape 6 種 — lexer.charLen の逆）
+// radixLit は n 進リテラルの綴り（`0x` / `0o` / `0b` + 桁 — 値は 0 以上・16 進の桁は小文字）
+func radixLit(out mut []byte, v int, r int) {
+    out = append(out, '0')
+    out = append(out, byte(if r == 16 { 'x' } else if r == 8 { 'o' } else { 'b' }))
+    // 最上位の桁の重み
+    mut w := 1
+    while w <= v / r {
+        w = w * r
+    }
+    mut x := v
+    while w > 0 {
+        d := x / w
+        out = append(out, byte(if d < 10 { '0' + d } else { 'a' + d - 10 }))
+        x = x - d * w
+        w = w / r
+    }
+}
+
+func charLit(out mut []byte, v int) {
+    out = append(out, '\'')
+    e := switch v {
+    case '\n': 'n'
+    case '\t': 't'
+    case '\r': 'r'
+    case '\0': '0'
+    case '\\': '\\'
+    case '\'': '\''
+    default: -1
+    }
+    if e >= 0 {
+        out = append(out, '\\')
+        out = append(out, byte(e))
+    } else {
+        out = append(out, byte(v))
+    }
+    out = append(out, '\'')
+}
+
+func raw(out mut []byte, t ast.Tree, s int) {
+    n := t.data[s]
+    for i <- iter.Range(0, n) {
+        out = append(out, byte(t.data[s + 1 + i]))
+    }
+}
+
+// quoted は文字列 s を文字列リテラルの中身として escape して書く（引用符は書かない）。
+// NUL と改行は字句の規則で生では書けない。`$` は常に `\$`（`${` を穴と読ませない）
+func quoted(out mut []byte, t ast.Tree, s int) {
+    n := t.data[s]
+    for i <- iter.Range(0, n) {
+        c := t.data[s + 1 + i]
+        if c == '\n' {
+            obuf.Lit(mut out, "\\n")
+        } else if c == '\t' {
+            obuf.Lit(mut out, "\\t")
+        } else if c == '\r' {
+            obuf.Lit(mut out, "\\r")
+        } else if c == 0 {
+            obuf.Lit(mut out, "\\0")
+        } else if c == '\\' {
+            obuf.Lit(mut out, "\\\\")
+        } else if c == '"' {
+            obuf.Lit(mut out, "\\\"")
+        } else if c == '$' {
+            obuf.Lit(mut out, "\\$")
+        } else {
+            out = append(out, byte(c))
+        }
+    }
+}
+
+// names は文字列の列を ", " でつなぐ
+func names(out mut []byte, t ast.Tree, l int) {
+    n := t.data[l]
+    for i <- iter.Range(0, n) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        raw(mut out, t, t.data[l + 1 + i])
+    }
+}
+
+// typeParams は `[T, U]`（空なら何も書かない）
+func typeParams(out mut []byte, t ast.Tree, l int) {
+    if t.data[l] > 0 {
+        out = append(out, '[')
+        names(mut out, t, l)
+        out = append(out, ']')
+    }
+}
+
+// ── ファイル・宣言 ──
+
+func file(out mut []byte, t ast.Tree) {
+    f := t.nodes[t.file]
+    obuf.Lit(mut out, "package ")
+    raw(mut out, t, f.a)
+    out = append(out, '\n')
+    // 暗黙 import（cst_to_ast の書き換え — tok = 0。明示の import は package より後ろなので tok > 0）は印字しない
+    mut first := true
+    mut i := 0
+    while i < t.data[f.b] {
+        im := t.nodes[t.data[f.b + 1 + i]]
+        if im.tok != 0 {
+            if first {
+                out = append(out, '\n')
+                first = false
+            }
+            obuf.Lit(mut out, "import ")
+            if im.a >= 0 {
+                raw(mut out, t, im.a)
+                out = append(out, ' ')
+            }
+            out = append(out, '"')
+            raw(mut out, t, im.b)
+            out = append(out, '"')
+            out = append(out, '\n')
+        }
+        i += 1
+    }
+    i = 0
+    while i < t.data[f.c] {
+        out = append(out, '\n')
+        typeDecl(mut out, t, t.nodes[t.data[f.c + 1 + i]])
+        out = append(out, '\n')
+        i += 1
+    }
+    if t.data[f.e] > 0 {
+        out = append(out, '\n')
+    }
+    i = 0
+    while i < t.data[f.e] {
+        constLine(mut out, t, t.nodes[t.data[f.e + 1 + i]])
+        out = append(out, '\n')
+        i += 1
+    }
+    i = 0
+    while i < t.data[f.d] {
+        out = append(out, '\n')
+        funcDecl(mut out, t, t.nodes[t.data[f.d + 1 + i]])
+        out = append(out, '\n')
+        i += 1
+    }
+}
+
+// fields は KField の列。flat なら `x int; y int`（union の variant の中）、そうでなければ 1 行 1 つ（d 段）
+func fields(out mut []byte, t ast.Tree, l int, d int, flat bool) {
+    n := t.data[l]
+    for i <- iter.Range(0, n) {
+        fd := t.nodes[t.data[l + 1 + i]]
+        if flat {
+            if i > 0 {
+                obuf.Lit(mut out, "; ")
+            }
+        } else {
+            newline(mut out, d)
+        }
+        raw(mut out, t, fd.a)
+        out = append(out, ' ')
+        typeExpr(mut out, t, fd.b)
+    }
+}
+
+func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
+    if x.f != 0 {
+        obuf.Lit(mut out, "@layout\n")
+    }
+    obuf.Lit(mut out, "type ")
+    raw(mut out, t, x.a)
+    typeParams(mut out, t, x.b)
+    out = append(out, ' ')
+    body := t.nodes[x.c]
+    k := body.kind
+    if k == ast.BStruct {
+        obuf.Lit(mut out, "struct {")
+        if t.data[body.a] > 0 {
+            fields(mut out, t, body.a, 1, false)
+            out = append(out, '\n')
+        }
+        out = append(out, '}')
+    } else if k == ast.BUnion {
+        obuf.Lit(mut out, "union {")
+        mut i := 0
+        while i < t.data[body.a] {
+            v := t.nodes[t.data[body.a + 1 + i]]
+            newline(mut out, 1)
+            raw(mut out, t, v.a)
+            if t.data[v.b] == 0 {
+                obuf.Lit(mut out, " {}")
+            } else {
+                obuf.Lit(mut out, " { ")
+                fields(mut out, t, v.b, 0, true)
+                obuf.Lit(mut out, " }")
+            }
+            i += 1
+        }
+        if t.data[body.a] > 0 {
+            out = append(out, '\n')
+        }
+        out = append(out, '}')
+    } else if k == ast.BError || k == ast.BPanic {
+        obuf.Lit(mut out, if k == ast.BError { "error" } else { "panic" })
+        if t.data[body.a] > 0 {
+            obuf.Lit(mut out, " {")
+            fields(mut out, t, body.a, 1, false)
+            obuf.Lit(mut out, "\n}")
+        }
+    } else if k == ast.BDefined {
+        typeExpr(mut out, t, body.a)
+    } else {
+        obuf.Lit(mut out, "func(")
+        funcTypeParams(mut out, t, body.a, body.c)
+        out = append(out, ')')
+        results(mut out, t, body.b)
+    }
+}
+
+// errorsAnnot は `@errors(A, ref.B)` の行（ラベル名の列 l — 読めなかった項 "?" もそのまま印字する: 再 parse で同じ "?" に戻る）
+func errorsAnnot(out mut []byte, t ast.Tree, l int) {
+    obuf.Lit(mut out, "@errors(")
+    for i <- iter.Range(0, t.data[l]) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        raw(mut out, t, t.data[l + 1 + i])
+    }
+    obuf.Lit(mut out, ")\n")
+}
+
+// constLine は const 宣言 1 つ（`@embed` の行つき・末尾の改行なし）
+func constLine(out mut []byte, t ast.Tree, c ast.Node) {
+    if c.f == 1 {
+        obuf.Lit(mut out, "@embed(\"")
+        quoted(mut out, t, c.e)
+        obuf.Lit(mut out, "\")\n")
+    }
+    obuf.Lit(mut out, "const ")
+    raw(mut out, t, c.a)
+    obuf.Lit(mut out, " = ")
+    expr(mut out, t, c.b, 0, false)
+}
+
+func funcDecl(out mut []byte, t ast.Tree, x ast.Node) {
+    funcDeclX(mut out, t, x, false, false)
+}
+
+// funcDeclX は func 宣言（sig = 署名だけ・expand = `@expand` の行を足す — .sobi の書き出し）
+func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
+    if t.data[x.f] >= 7 && t.data[x.f + 6] >= 0 {
+        errorsAnnot(mut out, t, t.data[x.f + 6])
+    }
+    if t.data[x.f] >= 5 && t.data[x.f + 5] != 0 {
+        obuf.Lit(mut out, "@noinline\n")
+    }
+    // .sobi の `@expand`（付加の列の 7 番 — parser の ParseIface）
+    if expand || (t.data[x.f] >= 8 && t.data[x.f + 8] != 0) {
+        obuf.Lit(mut out, "@expand\n")
+    }
+    obuf.Lit(mut out, "func ")
+    raw(mut out, t, x.a)
+    typeParams(mut out, t, x.b)
+    out = append(out, '(')
+    mut i := 0
+    while i < t.data[x.c] {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        p := t.nodes[t.data[x.c + 1 + i]]
+        raw(mut out, t, p.a)
+        out = append(out, ' ')
+        // mut 引数の印: コンテナ（slice / map）は型の mut と 1 つの `mut` を共有する（parser の typeOf の param 規則）
+        ty := t.nodes[p.b].kind
+        if p.c != 0 && ty != ast.TSlice && ty != ast.TMap {
+            obuf.Lit(mut out, "mut ")
+        }
+        typeExpr(mut out, t, p.b)
+        i += 1
+    }
+    out = append(out, ')')
+    results(mut out, t, x.d)
+    // .sobi の本体の無い宣言（付加の列の 0 番 = 1）は署名だけ
+    if sig || t.data[x.f + 1] != 0 {
+        return
+    }
+    out = append(out, ' ')
+    block(mut out, t, t.nodes[x.e].a, 0, false)
+}
+
+// ── 型 ──
+
+func typeList(out mut []byte, t ast.Tree, l int) {
+    n := t.data[l]
+    for i <- iter.Range(0, n) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        typeExpr(mut out, t, t.data[l + 1 + i])
+    }
+}
+
+// results は signature の result（0 個は何も書かない、1 個は裸、2 個以上は括弧）
+func results(out mut []byte, t ast.Tree, l int) {
+    n := t.data[l]
+    if n == 1 {
+        out = append(out, ' ')
+        typeExpr(mut out, t, t.data[l + 1])
+    } else if n > 1 {
+        obuf.Lit(mut out, " (")
+        typeList(mut out, t, l)
+        out = append(out, ')')
+    }
+}
+
+func typeExpr(out mut []byte, t ast.Tree, n int) {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.TName {
+        raw(mut out, t, x.a)
+    } else if k == ast.TArray {
+        out = append(out, '[')
+        obuf.Int(mut out, x.a)
+        out = append(out, ']')
+        typeExpr(mut out, t, x.b)
+    } else if k == ast.TGeneric {
+        raw(mut out, t, x.a)
+        out = append(out, '[')
+        typeList(mut out, t, x.b)
+        out = append(out, ']')
+    } else if k == ast.TOpt {
+        typeExpr(mut out, t, x.a)
+        out = append(out, '?')
+    } else if k == ast.TSlice {
+        if x.b != 0 {
+            obuf.Lit(mut out, "mut ")
+        }
+        obuf.Lit(mut out, "[]")
+        typeExpr(mut out, t, x.a)
+    } else if k == ast.TMap {
+        if x.c != 0 {
+            obuf.Lit(mut out, "mut ")
+        }
+        obuf.Lit(mut out, "map[")
+        typeExpr(mut out, t, x.a)
+        out = append(out, ']')
+        typeExpr(mut out, t, x.b)
+    } else {
+        obuf.Lit(mut out, "func(")
+        funcTypeParams(mut out, t, x.a, x.c)
+        out = append(out, ')')
+        results(mut out, t, x.b)
+    }
+}
+
+// funcTypeParams は関数型の仮引数（型の列 l・名前の列 pnames — 名前なしは -1 で型だけ）
+func funcTypeParams(out mut []byte, t ast.Tree, l int, pnames int) {
+    if pnames < 0 {
+        typeList(mut out, t, l)
+        return
+    }
+    for i <- iter.Range(0, t.data[l]) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        raw(mut out, t, t.data[pnames + 1 + i])
+        out = append(out, ' ')
+        typeExpr(mut out, t, t.data[l + 1 + i])
+    }
+}
+
+// ── 文・ブロック ──
+
+// block は文の列 l を `{ … }` で書く（d はブロックの開きの段。flat なら 1 行で `{ a; b; }`）
+func block(out mut []byte, t ast.Tree, l int, d int, flat bool) {
+    if t.data[l] == 0 {
+        obuf.Lit(mut out, "{}")
+    } else {
+        out = append(out, '{')
+        stmtLines(mut out, t, l, d + 1, flat)
+        if flat {
+            out = append(out, ' ')
+        } else {
+            newline(mut out, d)
+        }
+        out = append(out, '}')
+    }
+}
+
+// stmtLines は文の列を 1 行 1 文（d 段）で書く。flat なら ` a; b;`（文の終わりは明示の ';' — case の本体も次の case の前で閉じる）
+func stmtLines(out mut []byte, t ast.Tree, l int, d int, flat bool) {
+    n := t.data[l]
+    for i <- iter.Range(0, n) {
+        if flat {
+            out = append(out, ' ')
+        } else {
+            newline(mut out, d)
+        }
+        stmt(mut out, t, t.data[l + 1 + i], d, flat)
+        if flat {
+            out = append(out, ';')
+        }
+    }
+}
+
+func exprList(out mut []byte, t ast.Tree, l int, d int, flat bool) {
+    n := t.data[l]
+    for i <- iter.Range(0, n) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        e := t.data[l + 1 + i]
+        if e < 0 {
+            out = append(out, '_')
+        } else {
+            expr(mut out, t, e, d, flat)
+        }
+    }
+}
+
+func stmt(out mut []byte, t ast.Tree, n int, d int, flat bool) {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.SBind {
+        if x.b != 0 {
+            obuf.Lit(mut out, "mut ")
+        }
+        names(mut out, t, x.a)
+        obuf.Lit(mut out, " := ")
+        exprList(mut out, t, x.c, d, flat)
+    } else if k == ast.SAssign {
+        exprList(mut out, t, x.a, d, flat)
+        out = append(out, ' ')
+        obuf.Lit(mut out, ast.OpName(x.b))
+        out = append(out, ' ')
+        exprList(mut out, t, x.c, d, flat)
+    } else if k == ast.SRet {
+        obuf.Lit(mut out, "return")
+        if t.data[x.a] > 0 {
+            out = append(out, ' ')
+            exprList(mut out, t, x.a, d, flat)
+        }
+    } else if k == ast.SExpr {
+        expr(mut out, t, x.a, d, flat)
+    } else if k == ast.SWhile {
+        obuf.Lit(mut out, "while ")
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, ' ')
+        block(mut out, t, t.nodes[x.b].a, d, flat)
+    } else if k == ast.SBreak {
+        obuf.Lit(mut out, "break")
+    } else if k == ast.SContinue {
+        obuf.Lit(mut out, "continue")
+    } else if k == ast.SDefer {
+        obuf.Lit(mut out, "defer ")
+        expr(mut out, t, x.a, d, flat)
+    } else {
+        obuf.Lit(mut out, "yield ")
+        expr(mut out, t, x.a, d, flat)
+    }
+}
+
+// ── 式 ──
+
+func expr(out mut []byte, t ast.Tree, n int, d int, flat bool) {
+    x := t.nodes[n]
+    k := x.kind
+    if k == ast.EInt {
+        if x.b == 1 {
+            charLit(mut out, x.a)
+        } else if x.b != 0 {
+            radixLit(mut out, x.a, x.b)
+        } else {
+            obuf.Int(mut out, x.a)
+        }
+    } else if k == ast.EFloat {
+        raw(mut out, t, x.b)
+    } else if k == ast.ENil {
+        obuf.Lit(mut out, "nil")
+    } else if k == ast.EIdent {
+        raw(mut out, t, x.a)
+    } else if k == ast.EBinary {
+        expr(mut out, t, x.b, d, flat)
+        out = append(out, ' ')
+        obuf.Lit(mut out, ast.OpName(x.a))
+        out = append(out, ' ')
+        expr(mut out, t, x.c, d, flat)
+    } else if k == ast.EUnary {
+        obuf.Lit(mut out, ast.OpName(x.a))
+        // 単項の重ね（`- -x`）は空白で割る（`--` 等の字句に読ませない）
+        if t.nodes[x.b].kind == ast.EUnary {
+            out = append(out, ' ')
+        }
+        expr(mut out, t, x.b, d, flat)
+    } else if k == ast.ECall {
+        callee := t.nodes[x.a]
+        // `$utf8.Parse(b)` は `string(b)` の書き換え（C1）— 元の綴りに戻す
+        if callee.kind == ast.ESelector && t.nodes[callee.a].kind == ast.EUtf8Ref {
+            obuf.Lit(mut out, "string")
+        } else {
+            expr(mut out, t, x.a, d, flat)
+        }
+        out = append(out, '(')
+        exprList(mut out, t, x.b, d, flat)
+        out = append(out, ')')
+    } else if k == ast.EPipe {
+        expr(mut out, t, x.a, d, flat)
+        obuf.Lit(mut out, " |> ")
+        expr(mut out, t, x.b, d, flat)
+        if t.data[x.c] > 0 {
+            out = append(out, '(')
+            exprList(mut out, t, x.c, d, flat)
+            out = append(out, ')')
+        }
+    } else if k == ast.EIndex {
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, '[')
+        expr(mut out, t, x.b, d, flat)
+        out = append(out, ']')
+    } else if k == ast.ESlice3 {
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, '[')
+        expr(mut out, t, x.b, d, flat)
+        out = append(out, ':')
+        expr(mut out, t, x.c, d, flat)
+        out = append(out, ']')
+    } else if k == ast.EStrlit {
+        out = append(out, '"')
+        quoted(mut out, t, x.a)
+        out = append(out, '"')
+    } else if k == ast.EInterp {
+        out = append(out, '"')
+        quoted(mut out, t, t.data[x.a + 1])
+        mut i := 0
+        while i < t.data[x.b] {
+            obuf.Lit(mut out, "\${")
+            expr(mut out, t, t.data[x.b + 1 + i], 0, true)
+            out = append(out, '}')
+            quoted(mut out, t, t.data[x.a + 2 + i])
+            i += 1
+        }
+        out = append(out, '"')
+    } else if k == ast.ESlicelit {
+        if x.c != 0 {
+            obuf.Lit(mut out, "mut ")
+        }
+        obuf.Lit(mut out, "[]")
+        typeExpr(mut out, t, x.a)
+        out = append(out, '{')
+        exprList(mut out, t, x.b, d, flat)
+        out = append(out, '}')
+    } else if k == ast.EMaplit {
+        if x.d != 0 {
+            obuf.Lit(mut out, "mut ")
+        }
+        obuf.Lit(mut out, "map[")
+        typeExpr(mut out, t, x.a)
+        out = append(out, ']')
+        typeExpr(mut out, t, x.b)
+        out = append(out, '{')
+        mut i := 0
+        while i < t.data[x.c] {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            en := t.nodes[t.data[x.c + 1 + i]]
+            expr(mut out, t, en.a, d, flat)
+            obuf.Lit(mut out, ": ")
+            expr(mut out, t, en.b, d, flat)
+            i += 1
+        }
+        out = append(out, '}')
+    } else if k == ast.EComposite {
+        raw(mut out, t, x.a)
+        if t.data[x.c] > 0 {
+            out = append(out, '[')
+            typeList(mut out, t, x.c)
+            out = append(out, ']')
+        }
+        out = append(out, '{')
+        mut i := 0
+        while i < t.data[x.b] {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            el := t.nodes[t.data[x.b + 1 + i]]
+            if el.a >= 0 {
+                raw(mut out, t, el.a)
+                obuf.Lit(mut out, ": ")
+            }
+            expr(mut out, t, el.b, d, flat)
+            i += 1
+        }
+        out = append(out, '}')
+    } else if k == ast.ESelector {
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, '.')
+        raw(mut out, t, x.b)
+    } else if k == ast.ELambda {
+        lambda(mut out, t, x, d, flat)
+    } else if k == ast.EIf {
+        obuf.Lit(mut out, "if ")
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, ' ')
+        block(mut out, t, t.nodes[x.b].a, d, flat)
+        if x.c >= 0 {
+            obuf.Lit(mut out, " else ")
+            alt := t.nodes[x.c]
+            if alt.kind == ast.EIf {
+                expr(mut out, t, x.c, d, flat)
+            } else {
+                block(mut out, t, alt.a, d, flat)
+            }
+        }
+    } else if k == ast.ESwitch {
+        switchExpr(mut out, t, x, d, flat)
+    } else if k == ast.EBlock {
+        block(mut out, t, x.a, d, flat)
+    } else if k == ast.EFor {
+        forExpr(mut out, t, x, d, flat)
+    } else if k == ast.EMutArg {
+        obuf.Lit(mut out, "mut ")
+        raw(mut out, t, x.a)
+    } else if k == ast.KNamedArg {
+        raw(mut out, t, x.a)
+        obuf.Lit(mut out, ": ")
+        expr(mut out, t, x.b, d, flat)
+    } else if k == ast.ETry {
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, '?')
+        if x.b >= 0 {
+            out = append(out, ' ')
+            expr(mut out, t, x.b, d, flat)
+        }
+    } else if k == ast.ECatch {
+        expr(mut out, t, x.a, d, flat)
+        obuf.Lit(mut out, " catch ")
+        if t.nodes[x.b].kind == ast.SRet {
+            stmt(mut out, t, x.b, d, flat)
+        } else {
+            expr(mut out, t, x.b, d, flat)
+        }
+    } else if k == ast.EParen {
+        out = append(out, '(')
+        expr(mut out, t, x.a, d, flat)
+        out = append(out, ')')
+    } else {
+        // EUtf8Ref は ECall の callee の中でしか現れない（上で string に戻す）
+        obuf.Lit(mut out, "$utf8")
+    }
+}
+
+// lambda: 型なしの 1 引数は `x => …`、それ以外は `(x int, y) => …`
+func lambda(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
+    n := t.data[x.a]
+    if n == 1 && t.nodes[t.data[x.a + 1]].b < 0 {
+        raw(mut out, t, t.nodes[t.data[x.a + 1]].a)
+    } else {
+        out = append(out, '(')
+        for i <- iter.Range(0, n) {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            p := t.nodes[t.data[x.a + 1 + i]]
+            raw(mut out, t, p.a)
+            if p.b >= 0 {
+                out = append(out, ' ')
+                typeExpr(mut out, t, p.b)
+            }
+        }
+        out = append(out, ')')
+    }
+    obuf.Lit(mut out, " => ")
+    expr(mut out, t, x.b, d, flat)
+}
+
+func switchExpr(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
+    obuf.Lit(mut out, "switch ")
+    if t.data[x.a] > 0 {
+        exprList(mut out, t, x.a, d, flat)
+        out = append(out, ' ')
+    }
+    out = append(out, '{')
+    mut i := 0
+    while i < t.data[x.b] {
+        c := t.nodes[t.data[x.b + 1 + i]]
+        if flat {
+            out = append(out, ' ')
+        } else {
+            newline(mut out, d)
+        }
+        obuf.Lit(mut out, "case ")
+        mut j := 0
+        while j < t.data[c.a] {
+            if j > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            pattern(mut out, t, t.data[c.a + 1 + j], d, flat)
+            j += 1
+        }
+        out = append(out, ':')
+        stmtLines(mut out, t, t.nodes[c.b].a, d + 1, flat)
+        i += 1
+    }
+    if x.c >= 0 {
+        if flat {
+            out = append(out, ' ')
+        } else {
+            newline(mut out, d)
+        }
+        obuf.Lit(mut out, "default:")
+        stmtLines(mut out, t, t.nodes[x.c].a, d + 1, flat)
+    }
+    if flat {
+        out = append(out, ' ')
+    } else {
+        newline(mut out, d)
+    }
+    out = append(out, '}')
+}
+
+// pattern: 定数パターンの選択は ` | ` でつなぐ（parser が末尾の '|' の並びを選択に割るのと逆）、型パターンは `bind V{f, g: p}`
+func pattern(out mut []byte, t ast.Tree, n int, d int, flat bool) {
+    x := t.nodes[n]
+    if x.kind == ast.KPConst {
+        mut i := 0
+        while i < t.data[x.a] {
+            if i > 0 {
+                obuf.Lit(mut out, " | ")
+            }
+            expr(mut out, t, t.data[x.a + 1 + i], d, flat)
+            i += 1
+        }
+    } else {
+        if x.a >= 0 {
+            raw(mut out, t, x.a)
+            out = append(out, ' ')
+        }
+        raw(mut out, t, x.b)
+        out = append(out, '{')
+        mut i := 0
+        while i < t.data[x.c] {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            fp := t.nodes[t.data[x.c + 1 + i]]
+            raw(mut out, t, fp.a)
+            if fp.b >= 0 {
+                obuf.Lit(mut out, ": ")
+                pattern(mut out, t, fp.b, d, flat)
+            }
+            i += 1
+        }
+        out = append(out, '}')
+    }
+}
+
+// for: generator は `; ` でつなぐ（1 行 — parser は generator の間の ';' を明示でも自動挿入でも受ける）
+func forExpr(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
+    obuf.Lit(mut out, "for ")
+    mut i := 0
+    while i < t.data[x.a] {
+        if i > 0 {
+            obuf.Lit(mut out, "; ")
+        }
+        g := t.nodes[t.data[x.a + 1 + i]]
+        names(mut out, t, g.a)
+        obuf.Lit(mut out, " <- ")
+        expr(mut out, t, g.b, d, flat)
+        mut j := 0
+        while j < t.data[g.c] {
+            obuf.Lit(mut out, " if ")
+            expr(mut out, t, t.data[g.c + 1 + j], d, flat)
+            j += 1
+        }
+        i += 1
+    }
+    if x.b == 0 {
+        obuf.Lit(mut out, " yield ")
+        expr(mut out, t, x.c, d, flat)
+    } else {
+        out = append(out, ' ')
+        block(mut out, t, x.c, d, flat)
+    }
+}

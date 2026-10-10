@@ -1,0 +1,132 @@
+package edge
+
+// printer の自己不動点の追加コーパス（parse だけ — 型は通らなくてよい。拡張子を .sober にしないのは
+// astjson / hermetic / pkgcheck のコーパスに拾わせないため — R4-5 と同じ）
+import (
+    "std/builder"
+    s "std/strings"
+)
+import "std/io"
+
+type Pair[T] struct {
+    a, b T
+    c mut []T
+}
+
+type Shape union {
+    Circle { r int }
+    Rect { w int; h int }
+    Empty {}
+}
+
+type Oops error
+type Bad error { code int; msg string }
+type Fn func(int, string) (int, error?)
+type Cb func(a int, b int) func() int?
+
+const A, B = 1, 2
+const C = A + B * 3
+
+@errors(Bad, Oops)
+func escapes() string {
+    x := "tab\there\nnl \\ back \"q\" nul\0 dollar \$ { brace } $ plain"
+    return "${x} and ${if len(bytes(x)) > 3 { "long" } else { "short" }} ${{ a := 1; a + 1 }}"
+}
+
+func holes(n int) string {
+    return "${switch n { case 1: "one"; case 2, 3: "few"; default: { z := n; "many ${z}" } }} ${((x) => x + 1)(n)}"
+}
+
+func pipes(xs []int) int {
+    return xs |> sum |> s.Clamp(_, 0, 10) |> id() |> f(1, _)
+}
+
+func unary(x int, b bool) int {
+    y := - -x
+    z := ^ ^x
+    w := -(x + 1) * -x
+    return if !!b { y } else { z + w }
+}
+
+func lambdas(f func(int) int) int {
+    g := x => x
+    h := (x) => x * 2
+    k := () => 1
+    m := (a int, b) => {
+        c := a + b
+        return c
+    }
+    return g(h(k())) + m(1, 2) + f(3)
+}
+
+func pats(v Shape, n int) int {
+    a := switch v {
+    case c Circle{r}:
+        c.r
+    case Rect{w, h: 0}:
+        w
+    case r Rect{w: 1 | 2, h}:
+        h
+    case Empty{}:
+        0
+    }
+    b := switch n {
+    case 1 | 2 | 3:
+        1
+    case A | B == C:
+        2
+    case (A | B):
+        3
+    case x => x > 3:
+        4
+    default:
+    }
+    return switch {
+    default:
+        a + b
+    }
+}
+
+func tries(p mut builder.Builder[int], q mut []int) (int, error?) {
+    x := half(1)?
+    y := half(2)? Bad{code: 1, msg: "m"}
+    half(3)?
+    q = append(q, x)
+    return x + y, nil
+}
+
+func loops(xs []int, ys []int) []int {
+    zs := for x <- xs if x > 0 if x < 9; y <- ys yield x * y
+    for a, b <- pairs(xs) {
+        println(a, b)
+    }
+    mut i := 0
+    while (Pair[int]{1, 2, mut []int{}}).a > i {
+        i += 1
+        if i == 3 {
+            break
+        } else if i == 4 {
+            continue
+        }
+        defer println(i)
+    }
+    return zs[1:len(zs)]
+}
+
+func lits() int {
+    m := mut map[string]int{"a": 1, "b": 2}
+    e := map[int][]int{}
+    sl := mut []mut []int{}
+    p := Pair[int]{a: 1, b: 2, c: mut []int{}}
+    q := builder.Builder[int]{}
+    r := string(bytes("x")[0:1])
+    {
+        inner := 1
+    }
+    if true {}
+    return len(m) + len(e) + len(sl) + p.a
+}
+
+func noret() {
+    return
+}

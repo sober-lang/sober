@@ -1,0 +1,26 @@
+package lib
+
+// Twice は展開される（関数型引数）ので本体ごと .sobi に載り、非公開の helper がリンク可視になる
+func Twice(f func(int) int, x int) int {
+    return f(f(x)) + helper(x)
+}
+
+// Bump は mut 引数なので展開される。非公開 const step を参照する
+func Bump(x mut int) {
+    x = x + step
+}
+
+const step = 4
+
+func helper(x int) int {
+    return x * 100
+}
+
+// Decode の本体だけが `string(b)` で std/utf8 を暗黙に引く（.sobi では本体なし）
+func Decode(b []int) int {
+    s, err := string(b)
+    if err != nil {
+        return 0 - 1
+    }
+    return len(bytes(s))
+}

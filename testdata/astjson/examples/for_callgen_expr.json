@@ -1,0 +1,315 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "N",
+      "type_params": [],
+      "body": {
+        "k": "defined",
+        "type": {
+          "k": "name",
+          "name": "int"
+        }
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 10
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 15
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "iter",
+                      "tok": 17
+                    },
+                    "field": "Count",
+                    "tok": 19
+                  },
+                  "args": [
+                    {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "x"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 24
+                              },
+                              "field": "Range",
+                              "tok": 26
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 28
+                              },
+                              {
+                                "k": "int",
+                                "value": 5,
+                                "tok": 30
+                              }
+                            ],
+                            "tok": 27
+                          },
+                          "guards": [],
+                          "tok": 22
+                        }
+                      ],
+                      "body": {
+                        "k": "yield",
+                        "expr": {
+                          "k": "binary",
+                          "op": "*",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "x",
+                            "tok": 33
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 2,
+                            "tok": 35
+                          },
+                          "tok": 34
+                        }
+                      },
+                      "tok": 21
+                    }
+                  ],
+                  "tok": 20
+                }
+              ],
+              "tok": 16
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 39
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "iter",
+                      "tok": 41
+                    },
+                    "field": "Count",
+                    "tok": 43
+                  },
+                  "args": [
+                    {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "x"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 48
+                              },
+                              "field": "Range",
+                              "tok": 50
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 52
+                              },
+                              {
+                                "k": "int",
+                                "value": 5,
+                                "tok": 54
+                              }
+                            ],
+                            "tok": 51
+                          },
+                          "guards": [],
+                          "tok": 46
+                        }
+                      ],
+                      "body": {
+                        "k": "yield",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "N",
+                            "tok": 57
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "x",
+                              "tok": 59
+                            }
+                          ],
+                          "tok": 58
+                        }
+                      },
+                      "tok": 45
+                    }
+                  ],
+                  "tok": 44
+                }
+              ],
+              "tok": 40
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 64
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "iter",
+                      "tok": 66
+                    },
+                    "field": "Count",
+                    "tok": 68
+                  },
+                  "args": [
+                    {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "x"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 73
+                              },
+                              "field": "Range",
+                              "tok": 75
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 77
+                              },
+                              {
+                                "k": "int",
+                                "value": 3,
+                                "tok": 79
+                              }
+                            ],
+                            "tok": 76
+                          },
+                          "guards": [],
+                          "tok": 71
+                        }
+                      ],
+                      "body": {
+                        "k": "yield",
+                        "expr": {
+                          "k": "binary",
+                          "op": ">",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "x",
+                            "tok": 82
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 84
+                          },
+                          "tok": 83
+                        }
+                      },
+                      "tok": 70
+                    }
+                  ],
+                  "tok": 69
+                }
+              ],
+              "tok": 65
+            }
+          }
+        ]
+      },
+      "tok": 11,
+      "bodiless": false,
+      "span": {
+        "start": 10,
+        "end": 90
+      },
+      "sig_end": 14
+    }
+  ],
+  "consts": []
+}

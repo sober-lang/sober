@@ -1,0 +1,65 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/loader_neg/refcollide/x/util",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/loader_neg/refcollide/y/util",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 14
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "util",
+                      "tok": 16
+                    },
+                    "field": "F",
+                    "tok": 18
+                  },
+                  "args": [],
+                  "tok": 19
+                }
+              ],
+              "tok": 15
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 25
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,12 @@
+package main
+
+// 負例: ラベルは panic の実引数の外で使えない（language.md 27 節「panic ラベル」— loader の拒否）
+type L panic {
+    a int
+}
+
+func show(x L) {
+}
+
+func main() {
+}

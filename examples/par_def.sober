@@ -1,0 +1,42 @@
+package main
+
+// 段 6 P3a: 関数の本体の par（Def の本体の解禁 — Lean の noNewchan を緩めた便）。仮引数（imm）を子へ渡す・
+// mut の仮引数を持つ関数の中で scope を開く（mut は捕獲しない — 結果を親が書く）・再帰の中の scope
+
+import "std/par"
+
+func work(n int, name string) int {
+    r, e := par.Scope((s par.S) => {
+        a := par.Spawn(s, () => n * 10)
+        b := par.Spawn(s, () => len(bytes(name)))
+        par.Join(a) + par.Join(b)
+    })
+    if e != nil {
+        return -1
+    }
+    return r
+}
+
+func acc(xs mut []int, k int) {
+    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, () => k * k)))
+    if e == nil {
+        xs = append(xs, r)
+    }
+}
+
+func sum(n int) int {
+    if n == 0 {
+        return 0
+    }
+    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, () => n)))
+    return if e != nil { -1 } else { r + sum(n - 1) }
+}
+
+func main() {
+    println(work(4, "abc"))
+    mut xs := mut []int{}
+    acc(mut xs, 3)
+    acc(mut xs, 5)
+    println(xs[0] + xs[1])
+    println(sum(10))
+}

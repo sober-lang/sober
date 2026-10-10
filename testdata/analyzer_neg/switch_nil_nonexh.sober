@@ -1,0 +1,16 @@
+package main
+
+// 負例（analyzer — check が拒否・build は受理して外れた値で panic = E4-B）: nil の腕があっても、残りの腕が全ラベルを覆わなければ default が要る（language.md 13 節）
+type NotFound error
+type Bad error
+
+func find(k int) error? {
+    return if k == 0 { nil } else if k == 1 { NotFound{} } else { Bad{} }
+}
+
+func main() {
+    println(switch find(2) {
+    case nil: "ok"
+    case NotFound{}: "nf"
+    })
+}

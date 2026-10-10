@@ -1,0 +1,8 @@
+package main
+
+// R31: main の戻り値が 0〜255 の外なら panic 101（カーネルの下位 8 bit への黙った切り詰めを見せない — 到達 = バグ類、27 節）
+
+func main() int {
+    println("256")
+    return 256
+}

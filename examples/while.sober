@@ -1,0 +1,29 @@
+package main
+
+func gcd(a, b int) int {
+    mut x, y := a, b
+    while y != 0 {
+        x, y = y, x % y
+    }
+    return x
+}
+
+func count(n int) int {
+    mut i := 0
+    mut acc := 0
+    while i < n {
+        i += 1
+        if i % 2 == 0 {
+            continue
+        }
+        if acc > 100 {
+            break
+        }
+        acc += i
+    }
+    return acc
+}
+
+func main() {
+    println(gcd(48, 18), count(20))
+}

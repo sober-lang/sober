@@ -1,0 +1,34 @@
+package main
+
+type Shape union {
+    Circle { r int }
+    Rect { w, h int }
+    Empty {}
+}
+
+type NotFound error {
+    id int
+}
+
+type Timeout error
+
+func area(s Shape) int {
+    return switch s {
+    case Circle{r}: 3 * r * r
+    case Rect{w, h}: w * h
+    case Empty{}: 0
+    }
+}
+
+func describe(r Shape, e error) string {
+    return switch r, e {
+    case Circle{}, nil: "circle"
+    case _, NotFound{id}: "missing"
+    case _, t Timeout{}: "slow"
+    case _, _: "other"
+    }
+}
+
+func main() {
+    println(area(Rect{2, 3}), area(Circle{r: 1}))
+}

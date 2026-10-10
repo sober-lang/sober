@@ -1,0 +1,13 @@
+package main
+
+// 負例（build・check とも拒否 — language.md 20 節）: 他 package の非公開の variant を型パターンに書く。
+// 以前の lower は variant を subject の union の中で基底名だけで照合していた（修飾・公開を見ない）
+import "testdata/vis_variant/lib"
+
+func main() {
+    sh := lib.Mk(0)
+    println(switch sh {
+    case lib.circ{r}: r
+    default: 1
+    })
+}

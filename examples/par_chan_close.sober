@@ -1,0 +1,61 @@
+package main
+
+// 段 6 P3b-4 ③: Close と `T?` の nil と for-Recv。生産者の子は語を送って閉じ、消費者の子は for-Recv で閉じるまで受ける（continue つき）。
+// 親 → 子の向きも同じ（親が送って閉じ、子は for-Recv の途中で break）。閉じた後の受けは何度でも nil
+
+import "std/par"
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[string](cap: 2)
+        ux, uy := par.NewChan[int](cap: 1)
+        zx, zy := par.NewChan[int](cap: 1)
+        a := par.Spawn(s, (out) => {
+            mut i := 0
+            while i < 5 {
+                par.Send(out, "w${i}")
+                i += 1
+            }
+            par.Close(out)
+            i
+        }, give: tx)
+        b := par.Spawn(s, (inp) => {
+            mut acc := ""
+            for w <- par.Recv(inp) {
+                if w == "w2" {
+                    continue
+                }
+                acc = acc + w
+            }
+            acc
+        }, give: rx)
+        c := par.Spawn(s, (inp) => {
+            mut sum := 0
+            for v <- par.Recv(inp) {
+                if v > 30 {
+                    break
+                }
+                sum += v
+            }
+            sum
+        }, give: uy)
+        mut k := 1
+        while k <= 4 {
+            par.Send(ux, k * 10)
+            k += 1
+        }
+        par.Close(ux)
+        par.Send(zx, 7)
+        par.Close(zx)
+        first := par.Recv(zy)
+        last := par.Recv(zy)
+        again := par.Recv(zy)
+        f := if first != nil { first } else { 0 }
+        tail := if last == nil && again == nil { "nil nil" } else { "?" }
+        "${par.Join(a)} ${par.Join(b)} ${par.Join(c)} ${f} ${tail}"
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

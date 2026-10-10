@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_runtime.sober:5:11: RegionExceeded is raised by the runtime only
+exit=1

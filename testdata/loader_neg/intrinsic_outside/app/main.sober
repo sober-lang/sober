@@ -1,0 +1,9 @@
+package main
+
+// `@intrinsic("鍵")` は std の中だけ（息継ぎ ③ — diag.Intrinsic kind 1）
+@intrinsic("fsqrt")
+func mySqrt(x float) float
+
+func main() int {
+    return 0
+}

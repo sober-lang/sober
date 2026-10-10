@@ -1,0 +1,405 @@
+package lower
+
+// 制御の流れの掃除（性能投資 第二便 M8 — rtlower / inline の後・最適化のバックエンドの経路だけ。IR テキストと --backend=copy は掛けない形のまま）:
+//   ① 死んだ仮引数の除去（攻撃的な dead phi 除去）: ブロックの仮引数は、命令・条件・戻り値に使われるか、生きた仮引数へ辺で渡るときだけ生きている。
+//      それ以外（仮引数どうしの輪の中を回るだけ — mem2reg がループの外へ持ち越した変数の版）は仮引数ごと消し、辺の実引数も消す。
+//      区間の hull がループの後ろまで延びて latch の合流の mov が残る原因（fannkuch の lo / hi — report-200）
+//   ② 直列のブロックの併合: 唯一の後続へ引数なしの br で飛び、その後続の前任がこのブロックだけ・後続が仮引数を持たないなら、後続の命令と終端を
+//      このブロックへ寄せる（bce の後に残る直列の鎖 — gep と load / store が別ブロックに分かれて番地の融合〔M7〕が効かない・jmp が増える）
+//   ②' 短絡（&& / ||）の合流の飛び越し（ccThread — 第三便）
+//   ③ 定数の畳み込み（既存の P2 — インラインした本体の定数の実引数）
+// 後始末は既存の P4（到達しないブロックを消して番号を振り直す）・P3（死んだ純粋命令）・値の振り直し
+
+import "std/iter"
+
+// cfgCleanModule はモジュールの全関数に掛ける
+func cfgCleanModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            cfgCleanFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func cfgCleanFunc(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        b = irBlkNext(mut st, b)
+    }
+    removed := ccDeadParams(mut st, f, nv, nb, mut blk)
+    // 連なった短絡（a && b && c）は外側の合流を飛び越すと内側の合流の辺の実引数が消えて次の回で飛び越せる — 変わらなくなるまで（4 回まで）
+    mut threaded := false
+    mut rounds := 0
+    while rounds < 4 && ccThread(mut st, f) {
+        threaded = true
+        rounds += 1
+    }
+    if threaded {
+        recountPreds(mut st, f)
+    }
+    merged := ccMerge(mut st, f)
+    // ③ 定数の畳み込み（P2 — インラインした rt の本体の定数の実引数〔n = 1 の確保の n * 8 等〕が畳める）と P3・振り直し
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    if removed || merged || threaded {
+        optBlocks(mut st, f)
+    }
+    optFold(mut st, f)
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+    // ④ GVN（インラインで入った rt の本体の meta の読み直し・同じ番地の計算 — gvn.sober をそのまま）
+    gvnFunc(mut st, f)
+}
+
+// ccDeadParams は死んだ仮引数を消す（消したら true）
+func ccDeadParams(st mut St, f FnRef, nv int, nb int, blk mut []int) bool {
+    // 仮引数の値 → (ブロックの番号, 何番目)
+    mut pb := mut []int{}
+    xFill(mut pb, nv, -1)
+    mut pk := mut []int{}
+    xFill(mut pk, nv, 0)
+    mut np := 0
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            mut k := 0
+            mut p := irBlkPHead(mut st, BlkRef(blk[bi]))
+            while p >= 0 {
+                pb[hget(mut st, p + 1)] = bi
+                pk[hget(mut st, p + 1)] = k
+                k += 1
+                np += 1
+                p = hget(mut st, p)
+            }
+        }
+    }
+    if np == 0 {
+        return false
+    }
+    // 入る辺（ブロックごとの実引数の列 — CSR）
+    mut icnt := mut []int{}
+    xFill(mut icnt, nb + 1, 0)
+    for pass <- iter.Range(0, 2) {
+        mut fill := mut []int{}
+        if pass == 1 {
+            for i <- iter.Range(0, nb) {
+                icnt[i + 1] = icnt[i + 1] + icnt[i]
+            }
+            xFill(mut fill, nb, 0)
+        }
+        mut ins := mut []int{}
+        if pass == 1 {
+            xFill(mut ins, icnt[nb], 0)
+        }
+        for bi <- iter.Range(0, nb) {
+            if blk[bi] >= 0 {
+                bb := BlkRef(blk[bi])
+                t := irBlkTerm(mut st, bb)
+                for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+                    to := irBlkId(mut st, if t == TmBr { irBrTo(mut st, bb) } else if e == 0 { irCondThen(mut st, bb) } else { irCondElse(mut st, bb) })
+                    args := if t == TmBr { irBlkX2(mut st, bb) } else if e == 0 { irBlkX3(mut st, bb) } else { irBlkX5(mut st, bb) }
+                    if pass == 0 {
+                        icnt[to + 1] = icnt[to + 1] + 1
+                    } else {
+                        ins[icnt[to] + fill[to]] = args
+                        fill[to] = fill[to] + 1
+                    }
+                }
+            }
+        }
+        if pass == 1 {
+            return ccDeadParamsFrom(mut st, f, nv, nb, mut blk, mut pb, mut pk, mut icnt, freeze(ins))
+        }
+    }
+    return false
+}
+
+func ccDeadParamsFrom(st mut St, f FnRef, nv int, nb int, blk mut []int, pb mut []int, pk mut []int, icnt mut []int, ins []int) bool {
+    mut live := mut []int{}
+    xFill(mut live, nv, 0)
+    mut work := mut []int{}
+    xFill(mut work, nv, 0)
+    mut nw := 0
+    // 種: 命令の被演算子・条件・戻り値（辺の実引数は種にしない）
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            bb := BlkRef(blk[bi])
+            mut i := irBlkIHead(mut st, bb)
+            while i != -1 {
+                if irInsOp(mut st, i) != OpDead {
+                    for k <- iter.Range(0, xNOps(mut st, i)) {
+                        v := xOpnd(mut st, i, k)
+                        if live[v] == 0 {
+                            live[v] = 1
+                            work[nw] = v
+                            nw += 1
+                        }
+                    }
+                }
+                i = irInsNext(mut st, i)
+            }
+            t := irBlkTerm(mut st, bb)
+            x := irBlkX1(mut st, bb)
+            if (t == TmCondbr || t == TmRet) && x >= 0 && live[x] == 0 {
+                live[x] = 1
+                work[nw] = x
+                nw += 1
+            }
+        }
+    }
+    // 生きた仮引数へ渡る実引数を生かす
+    while nw > 0 {
+        nw -= 1
+        v := work[nw]
+        bi := pb[v]
+        if bi >= 0 {
+            for j <- iter.Range(icnt[bi], icnt[bi + 1]) {
+                l := ins[j]
+                a := hget(mut st, l + 1 + pk[v])
+                if live[a] == 0 {
+                    live[a] = 1
+                    work[nw] = a
+                    nw += 1
+                }
+            }
+        }
+    }
+    // 消す: 仮引数の鎖と、入る辺の実引数の列（新しい列に組み直す）
+    mut any := false
+    for v <- iter.Range(0, nv) {
+        if pb[v] >= 0 && live[v] == 0 {
+            any = true
+        }
+    }
+    if !any {
+        return false
+    }
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            bb := BlkRef(blk[bi])
+            t := irBlkTerm(mut st, bb)
+            for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+                to := if t == TmBr { irBrTo(mut st, bb) } else if e == 0 { irCondThen(mut st, bb) } else { irCondElse(mut st, bb) }
+                args := if t == TmBr { irBlkX2(mut st, bb) } else if e == 0 { irBlkX3(mut st, bb) } else { irBlkX5(mut st, bb) }
+                if args >= 0 {
+                    nl := ccKeepArgs(mut st, to, args, mut live)
+                    if t == TmBr {
+                        irSetBlkX2(mut st, bb, nl)
+                    } else if e == 0 {
+                        irSetBlkX3(mut st, bb, nl)
+                    } else {
+                        irSetBlkX5(mut st, bb, nl)
+                    }
+                }
+            }
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            bb := BlkRef(blk[bi])
+            mut p := irBlkPHead(mut st, bb)
+            irSetBlkPHead(mut st, bb, -1)
+            irSetBlkPTail(mut st, bb, -1)
+            while p >= 0 {
+                nx := hget(mut st, p)
+                if live[hget(mut st, p + 1)] == 1 {
+                    hset(mut st, p, -1)
+                    if irBlkPHead(mut st, bb) < 0 {
+                        irSetBlkPHead(mut st, bb, p)
+                    } else {
+                        hset(mut st, irBlkPTail(mut st, bb), p)
+                    }
+                    irSetBlkPTail(mut st, bb, p)
+                }
+                p = nx
+            }
+        }
+    }
+    return true
+}
+
+// ccThread は短絡（&& / ||）の合流を飛び越す（第三便 — ベクトル化の判定の素直な形と、分岐 1 つ・真偽値の受け渡しの節約）:
+// J = 仮引数 q が 1 つ・命令なし・終端 condbr q, T, E（実引数なし）で、q を他に使わないブロック。J へ入る辺ごとに
+//   `br J(a)` → `condbr a, T, E`・`condbr c, …J(c)…`（実引数が分岐自身の条件）→ その側の真偽で T / E へ直に・実引数が定数 → T / E へ直に。
+// 入る辺が全部付け替われば J は到達しなくなり P4 が消す（付け替えたら true）
+func ccThread(st mut St, f FnRef) bool {
+    mut any := false
+    // 値の使用の数（命令の被演算子 + 終端の被演算子 — J の条件の 1 回を含む）。q の数が 1 なら J の分岐の外では使っていない
+    mut uses := mut []int{}
+    xFill(mut uses, irFnNVal(mut st, f), 0)
+    mut ub := irFnBHead(mut st, f)
+    while ub != -1 {
+        mut i := irBlkIHead(mut st, ub)
+        while i != -1 {
+            if irInsOp(mut st, i) != OpDead {
+                for k <- iter.Range(0, xNOps(mut st, i)) {
+                    v := xOpnd(mut st, i, k)
+                    uses[v] = uses[v] + 1
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, ub)) {
+            v := xTermOpnd(mut st, ub, k)
+            uses[v] = uses[v] + 1
+        }
+        ub = irBlkNext(mut st, ub)
+    }
+    // 前任の表（並列 1.0× 段 4 — report-341: J ごとに全ブロックを走査する O(J × B) だった）: 行き先の番号 → 前任の鎖（ph = 頭・[ブロック, 次] の
+    // 2 語ずつ）。J の番は元と同じブロックの順で、候補の判定もその時点で（前の J の書き換えで br → condbr になった後ろのブロックが同じ周で候補に
+    // なる — 元の入れ子と同じ結果）。書き換えで増えた行き先は前任の鎖へ追記し、鎖の古い項は元と同じ条件で読み直して弾く
+    nbk := irFnNBlk(mut st, f)
+    mut ph := mut []int{}
+    xFill(mut ph, nbk, -1)
+    mut pe := mut []int{}
+    mut pb := irFnBHead(mut st, f)
+    while pb != -1 {
+        t := irBlkTerm(mut st, pb)
+        if t == TmBr {
+            ccPredAdd(mut ph, mut pe, irBlkId(mut st, irBrTo(mut st, pb)), int(pb))
+        } else if t == TmCondbr {
+            ccPredAdd(mut ph, mut pe, irBlkId(mut st, irCondThen(mut st, pb)), int(pb))
+            if irCondElse(mut st, pb) != irCondThen(mut st, pb) {
+                ccPredAdd(mut ph, mut pe, irBlkId(mut st, irCondElse(mut st, pb)), int(pb))
+            }
+        }
+        pb = irBlkNext(mut st, pb)
+    }
+    mut seen := mut []int{}
+    xFill(mut seen, nbk, -1)
+    mut j := irFnBHead(mut st, f)
+    while j != -1 {
+        p := irBlkPHead(mut st, j)
+        if p >= 0 && hget(mut st, p) < 0 && irBlkIHead(mut st, j) == -1 && irBlkTerm(mut st, j) == TmCondbr && irBlkX1(mut st, j) == hget(mut st, p + 1) &&
+            emptyArgs(mut st, irBlkX3(mut st, j)) && emptyArgs(mut st, irBlkX5(mut st, j)) && irCondThen(mut st, j) != j && irCondElse(mut st, j) != j {
+            q := hget(mut st, p + 1)
+            // q を J の分岐の外で使うなら飛び越さない（J を消すと q の定義が消える — progen の固定シード pg_32_3 が見つけた）
+            if uses[q] != 1 {
+                j = irBlkNext(mut st, j)
+                continue
+            }
+            tt := irCondThen(mut st, j)
+            te := irCondElse(mut st, j)
+            jid := irBlkId(mut st, j)
+            mut e := ph[jid]
+            while e >= 0 {
+                b := BlkRef(pe[e])
+                e = pe[e + 1]
+                if b == j || seen[irBlkId(mut st, b)] == jid {
+                    continue
+                }
+                seen[irBlkId(mut st, b)] = jid
+                t := irBlkTerm(mut st, b)
+                if t == TmBr && irBrTo(mut st, b) == j {
+                    a := xAt(mut st, irBlkX2(mut st, b), 0)
+                    if a != q {
+                        ilTerm(mut st, b, TmCondbr, a, int(tt), -1, int(te), -1)
+                        ccPredAdd(mut ph, mut pe, irBlkId(mut st, tt), int(b))
+                        ccPredAdd(mut ph, mut pe, irBlkId(mut st, te), int(b))
+                        any = true
+                    }
+                } else if t == TmCondbr {
+                    c := irBlkX1(mut st, b)
+                    for side <- iter.Range(0, 2) {
+                        to := if side == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+                        args := if side == 0 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+                        if to == j && !emptyArgs(mut st, args) && xAt(mut st, args, 0) == c {
+                            // then の側なら c は真・else の側なら偽
+                            dst := if side == 0 { tt } else { te }
+                            if side == 0 {
+                                irSetCondThen(mut st, b, dst)
+                                irSetBlkX3(mut st, b, -1)
+                            } else {
+                                irSetCondElse(mut st, b, dst)
+                                irSetBlkX5(mut st, b, -1)
+                            }
+                            ccPredAdd(mut ph, mut pe, irBlkId(mut st, dst), int(b))
+                            any = true
+                        }
+                    }
+                }
+            }
+        }
+        j = irBlkNext(mut st, j)
+    }
+    return any
+}
+
+// ccPredAdd は行き先の番号 to の前任の鎖の頭へ b を足す
+func ccPredAdd(ph mut []int, pe mut []int, to int, b int) {
+    pe = append(pe, b)
+    pe = append(pe, ph[to])
+    ph[to] = len(pe) - 2
+}
+
+// ccKeepArgs は行き先 to の仮引数のうち生きたものに対応する実引数だけの新しい列
+func ccKeepArgs(st mut St, to BlkRef, args int, live mut []int) int {
+    mut n := 0
+    mut p := irBlkPHead(mut st, to)
+    while p >= 0 {
+        if live[hget(mut st, p + 1)] == 1 {
+            n += 1
+        }
+        p = hget(mut st, p)
+    }
+    out := listN(mut st, n)
+    mut k := 0
+    mut j := 0
+    p = irBlkPHead(mut st, to)
+    while p >= 0 {
+        if live[hget(mut st, p + 1)] == 1 {
+            hset(mut st, out + 1 + j, hget(mut st, args + 1 + k))
+            j += 1
+        }
+        k += 1
+        p = hget(mut st, p)
+    }
+    return out
+}
+
+// ccMerge は直列のブロックを併合する（併合したら true）。前任の数は B_PREDS（各段の後に正しい — 検証器が見る）
+func ccMerge(st mut St, f FnRef) bool {
+    entry := irFnBHead(mut st, f)
+    mut any := false
+    mut b := entry
+    while b != -1 {
+        mut again := true
+        while again {
+            again = false
+            if irBlkTerm(mut st, b) == TmBr && emptyArgs(mut st, irBlkX2(mut st, b)) {
+                c := irBrTo(mut st, b)
+                if c != b && c != entry && irBlkPreds(mut st, c) == 1 && irBlkPHead(mut st, c) < 0 {
+                    // c の命令を b の末尾へ・c の終端を b へ（c は前任を失い P4 が消す）
+                    mut i := irBlkIHead(mut st, c)
+                    while i != -1 {
+                        nx := irInsNext(mut st, i)
+                        linkInst(mut st, b, i)
+                        i = nx
+                    }
+                    irSetBlkIHead(mut st, c, -1)
+                    irSetBlkITail(mut st, c, -1)
+                    irSetBlkTerm(mut st, b, irBlkTerm(mut st, c))
+                    irSetBlkX1(mut st, b, irBlkX1(mut st, c))
+                    irSetBlkX2(mut st, b, irBlkX2(mut st, c))
+                    irSetBlkX3(mut st, b, irBlkX3(mut st, c))
+                    irSetBlkX4(mut st, b, irBlkX4(mut st, c))
+                    irSetBlkX5(mut st, b, irBlkX5(mut st, c))
+                    // c を空の自己ループにして到達しない形に（P4 が鎖から外す）
+                    irSetBlkTerm(mut st, c, TmBr)
+                    irSetBlkX1(mut st, c, int(c))
+                    irSetBlkX2(mut st, c, -1)
+                    irSetBlkPreds(mut st, c, 0)
+                    any = true
+                    again = true
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return any
+}

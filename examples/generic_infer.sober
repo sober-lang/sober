@@ -1,0 +1,33 @@
+package main
+
+// ジェネリック関数の型引数の推論（C1 B2 — lower は表層型検査器の表を引く）: 明示の型引数・型なしの定数は外して推論し
+// 決まらなければ定数も入れて最初から（32 節 — 定数は相手の named scalar に合わせる）・for 式を Iter[T] の仮引数へ
+
+import "std/iter"
+
+type Id int
+
+func same[T](a T, b T) T {
+    return a
+}
+
+func pick[T](xs []T, d T) T {
+    return if len(xs) > 0 { xs[0] } else { d }
+}
+
+func zero[T]() int {
+    return 0
+}
+
+func main() {
+    x := Id(3)
+    println(int(same(1, x)))
+    println(int(same(x, 2)))
+    println(same(true, false))
+    println(same(4, 5))
+    println(pick([]int{}, 7))
+    println(pick([]Id{Id(8)}, 9) == Id(8))
+    println(zero[bool]())
+    ks := []int{1, 2, 3}
+    println(iter.Count(for k <- ks if k > 1 yield Id(k)))
+}

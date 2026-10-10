@@ -1,0 +1,86 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "L",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "b",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "panic",
+                "tok": 20
+              },
+              "args": [
+                {
+                  "k": "composite",
+                  "type_name": "L",
+                  "elems": [
+                    {
+                      "key": "a",
+                      "value": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 26
+                      }
+                    }
+                  ],
+                  "tok": 22,
+                  "type_args": []
+                }
+              ],
+              "tok": 21
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 32
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": []
+}

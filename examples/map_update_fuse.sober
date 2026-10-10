@@ -1,0 +1,63 @@
+package main
+
+// map の引きの融合（M16 ② — lower/mapfuse.sober）の回帰例: `c := m[k]; m[k] = <c の式>` の 2 回の引きを 1 回に畳むのは、間で map が
+// 変わらないときだけ。融合してよい形（数え上げ）と、間に書き込み・削除・成長が挟まって融合してはいけない形を並べる
+// （誤って畳むと古いセルに書く — 重複のキー・消えたキーの復活・成長前のセル列への書き込みとして len / 値に出る）
+
+import "std/iter"
+
+func count(xs []string) map[string]int {
+    mut m := mut map[string]int{}
+    for i <- iter.Range(0, len(xs)) {
+        c := m[xs[i]]
+        m[xs[i]] = if c != nil { c + 1 } else { 1 }
+    }
+    return freeze(m)
+}
+
+func get(m map[string]int, k string) int {
+    v := m[k]
+    return if v != nil { v } else { -1 }
+}
+
+func main() int {
+    m := count([]string{"a", "b", "a", "c", "a", "b"})
+    println(len(m), get(m, "a"), get(m, "b"), get(m, "c"))
+
+    // 間に同じキーへの書き込み（別の名前のキー）: 1 回目は不在・2 回目は在る
+    mut m2 := mut map[string]int{}
+    k := "x"
+    k2 := "x"
+    c := m2[k]
+    m2[k2] = 5
+    m2[k] = if c != nil { c + 100 } else { 1 }
+    println(len(m2), get(freeze(m2), "x"))
+
+    // 間に削除: 1 回目は在る・2 回目は墓石
+    mut m3 := mut map[string]int{"y": 7}
+    c3 := m3["y"]
+    delete(m3, "y")
+    m3["y"] = if c3 != nil { c3 + 1 } else { 0 }
+    println(len(m3), get(freeze(m3), "y"))
+
+    // 間に成長（索引の閾値を越える挿入 — セル列が写る）: 1 回目のセルは古いセル列
+    mut m4 := mut map[int]int{0: 1}
+    c4 := m4[0]
+    for i <- iter.Range(1, 40) {
+        m4[i] = i
+    }
+    m4[0] = if c4 != nil { c4 + 1000 } else { 0 }
+    println(len(m4), m4[0] != nil, sum(freeze(m4)))
+    return 0
+}
+
+func sum(m map[int]int) int {
+    mut s := 0
+    for i <- iter.Range(0, 40) {
+        v := m[i]
+        if v != nil {
+            s += v
+        }
+    }
+    return s
+}

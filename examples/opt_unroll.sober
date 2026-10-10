@@ -1,0 +1,67 @@
+package main
+
+// 定数上限のループの全展開（unroll.sober）の網（scripts/optdiff.sh --mut の代表）:
+//   tri: 入れ子（内側の入りが外側の i + 1 — 外側を展開して定数を畳み、内側を展開）・最後の i で内側が 0 回
+//   acc: 積算をループの後で使う（外の頭の値の使い道を最後の頭の写しへ付け替え）
+//   early: break（頭以外の出口 — ループの後で頭の値を使わない形）
+//   words: 本体が region の op を持つ（文字列の連結）
+//   mix: シフトの検査の panic の点がループの値を使う（写しごとに一緒に写す）
+
+import "std/iter"
+
+const N = 5
+
+func tri(a mut []int) {
+    for i <- iter.Range(0, N) {
+        for j <- iter.Range(i + 1, N) {
+            a[i] = a[i] * 3 + a[j] - j
+            a[j] = a[j] + i
+        }
+    }
+}
+
+func acc(a mut []int) int {
+    mut s := 0
+    mut t := 1
+    for k <- iter.Range(2, 7) {
+        s = s + a[k] * k
+        t = t * 2 + s % 5
+    }
+    return s * 100 + t
+}
+
+func early(a mut []int) {
+    for k <- iter.Range(0, 8) {
+        if a[k] > 20 {
+            break
+        }
+        a[k] = a[k] + 7
+    }
+}
+
+func words() string {
+    mut s := ""
+    for k <- iter.Range(0, 4) {
+        s = s + "w${k}-"
+    }
+    return s
+}
+
+func mix(x0 int) int {
+    mut x := x0
+    for k <- iter.Range(1, 6) {
+        x = (x ^ (x >> k)) + k * 17
+    }
+    return x
+}
+
+func main() {
+    mut a := mut []int{3, 1, 4, 1, 5, 9, 2, 6, 5, 3}
+    tri(mut a)
+    println(a[0], a[1], a[2], a[3], a[4])
+    println(acc(mut a))
+    early(mut a)
+    println(a[5], a[6], a[7], a[8], a[9])
+    println(words())
+    println(mix(123456789))
+}

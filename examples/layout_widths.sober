@@ -1,0 +1,64 @@
+package main
+
+// @layout の幅の語の網羅（language.md 36 節 Y1・Y2・Y7）: LE / BE・符号つきは符号拡張・u64le は int の全域（上位ビットはそのまま負の int）・
+// [N]u8 は []byte・[N]幅は []int。書いたバイト列を 1 バイトずつ印字して読み戻す
+
+import "std/builder"
+import "std/iter"
+import "std/layout"
+
+@layout
+type W struct {
+    a u8
+    b i8
+    c u16le
+    d u16be
+    e i16le
+    f i16be
+    g u32le
+    h u32be
+    i i32le
+    j i32be
+    k u64le
+    l u64be
+    m i64le
+    n i64be
+    tag [3]u8
+    xs [2]i16be
+}
+
+func main() {
+    v := W{a: 255, b: -128, c: 258, d: 258, e: -2, f: -2, g: 16909060, h: 16909060, i: -2147483648, j: 2147483647,
+        k: 1 << 63, l: 1, m: -1, n: 72623859790382856, tag: bytes("abc"), xs: []int{-32768, 32767}}
+    mut out := builder.Builder[byte]{}
+    layout.Encode[W](mut out, v)
+    b := builder.Build(mut out)
+    println(len(b))
+    println(layout.Size[W])
+    for i <- iter.Range(0, len(b)) {
+        println(int(b[i]))
+    }
+    r := layout.Decode[W](b, 0)
+    if r != nil {
+        println(r.a)
+        println(r.b)
+        println(r.c)
+        println(r.d)
+        println(r.e)
+        println(r.f)
+        println(r.g)
+        println(r.h)
+        println(r.i)
+        println(r.j)
+        println(r.k)
+        println(r.l)
+        println(r.m)
+        println(r.n)
+        println(int(r.tag[2]))
+        println(r.xs[0])
+        println(r.xs[1])
+    }
+    // 1 バイト足りない → nil・負の off → nil
+    println(layout.Decode[W](b[0:len(b) - 1], 0) == nil)
+    println(layout.Decode[W](b, -1) == nil)
+}

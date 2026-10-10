@@ -1,0 +1,2 @@
+sober: desugar error at examples/pipe.sober:9:66 (CoreFragment)
+exit=1

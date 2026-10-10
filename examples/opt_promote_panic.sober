@@ -1,0 +1,26 @@
+package main
+
+// ループの中のメモリの積算のレジスタ昇格（promote.sober）の網: 不変の番地 a[o + 3] が i = 3 で範囲外（長さ 14）になり、内側が 1 回以上回る
+// （a[p] の書き込みは条件の中 — 実行されない）。前置きの読み込みは範囲外を読まず（遅い道）、ループの中の検査が元と同じ点で panic する
+// （その前の書き込みは panic の出口で書き戻さない — 観測されない）。run は呼び出しを持たない（前検査の条件）
+
+import "std/iter"
+
+func run(a mut []int) {
+    for i <- iter.Range(0, 4) {
+        o := i * 4
+        for j <- iter.Range(i + 1, 5) {
+            p := j * 4
+            a[o + 3] = a[o + 3] + a[o] + 1
+            if a[o + 3] > 1000 {
+                a[p] = 0
+            }
+        }
+    }
+}
+
+func main() {
+    mut a := mut []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
+    run(mut a)
+    println(a[3], a[7])
+}

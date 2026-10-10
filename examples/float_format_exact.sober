@@ -1,0 +1,27 @@
+package main
+
+// float の最短表現の速い道（正確な 10 進展開が 15 桁以下なら多倍長なし — floatfmt.exactShort）の差分: scripts/oracles/float_format_exact.go の Go の答えと照合
+
+import "std/conv"
+import "std/io"
+import "std/math"
+
+func main() int {
+    b := io.ReadStdin() catch return 1
+    mut i := 0
+    while i < len(b) {
+        mut neg := false
+        if b[i] == '-' {
+            neg = true
+            i += 1
+        }
+        mut v := 0
+        while b[i] != '\n' {
+            v = v * 10 + (int(b[i]) - 48)
+            i += 1
+        }
+        println(conv.FormatFloat(math.FromBits(if neg { 0 - v } else { v })))
+        i += 1
+    }
+    return 0
+}

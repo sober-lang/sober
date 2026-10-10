@@ -1,0 +1,71 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/sobertest/calc",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "calc",
+                      "tok": 13
+                    },
+                    "field": "Add",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 20,
+                      "tok": 17
+                    },
+                    {
+                      "k": "int",
+                      "value": 22,
+                      "tok": 19
+                    }
+                  ],
+                  "tok": 16
+                }
+              ],
+              "tok": 12
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 25
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

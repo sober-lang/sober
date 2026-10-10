@@ -1,0 +1,2 @@
+sober: desugar error at examples/generic_union_arity.sober:11:10 (Malformed)
+exit=1

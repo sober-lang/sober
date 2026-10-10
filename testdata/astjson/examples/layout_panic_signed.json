@@ -1,0 +1,356 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/layout",
+      "tok": 7
+    }
+  ],
+  "types": [
+    {
+      "name": "H",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "k",
+            "type": {
+              "k": "name",
+              "name": "u16le"
+            },
+            "tok": 16
+          },
+          {
+            "name": "s",
+            "type": {
+              "k": "name",
+              "name": "i8"
+            },
+            "tok": 19
+          },
+          {
+            "name": "a",
+            "type": {
+              "k": "array_of",
+              "len": 2,
+              "elem": {
+                "k": "name",
+                "name": "u8"
+              }
+            },
+            "tok": 22
+          }
+        ]
+      },
+      "layout": true,
+      "tok": 13,
+      "span": {
+        "start": 9,
+        "end": 30
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "small",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "unary",
+                "op": "-",
+                "operand": {
+                  "k": "int",
+                  "value": 129,
+                  "tok": 38
+                },
+                "tok": 37
+              }
+            ],
+            "tok": 36
+          }
+        ]
+      },
+      "tok": 31,
+      "bodiless": false,
+      "span": {
+        "start": 30,
+        "end": 42
+      },
+      "sig_end": 35
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "out"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "builder.Builder",
+                "elems": [],
+                "tok": 50,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "byte"
+                  }
+                ]
+              }
+            ],
+            "tok": 47
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "index",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "layout",
+                    "tok": 59
+                  },
+                  "field": "Encode",
+                  "tok": 61
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "H",
+                  "tok": 63
+                },
+                "tok": 62
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "out",
+                  "tok": 67
+                },
+                {
+                  "k": "composite",
+                  "type_name": "H",
+                  "elems": [
+                    {
+                      "key": "k",
+                      "value": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 73
+                      }
+                    },
+                    {
+                      "key": "s",
+                      "value": {
+                        "k": "unary",
+                        "op": "-",
+                        "operand": {
+                          "k": "int",
+                          "value": 128,
+                          "tok": 78
+                        },
+                        "tok": 77
+                      }
+                    },
+                    {
+                      "key": "a",
+                      "value": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "bytes",
+                          "tok": 82
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "ok",
+                            "tok": 84
+                          }
+                        ],
+                        "tok": 83
+                      }
+                    }
+                  ],
+                  "tok": 69,
+                  "type_args": []
+                }
+              ],
+              "tok": 65
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 89
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "builder",
+                      "tok": 91
+                    },
+                    "field": "Len",
+                    "tok": 93
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "out",
+                      "tok": 96
+                    }
+                  ],
+                  "tok": 94
+                }
+              ],
+              "tok": 90
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "index",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "layout",
+                    "tok": 100
+                  },
+                  "field": "Encode",
+                  "tok": 102
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "H",
+                  "tok": 104
+                },
+                "tok": 103
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "out",
+                  "tok": 108
+                },
+                {
+                  "k": "composite",
+                  "type_name": "H",
+                  "elems": [
+                    {
+                      "key": "k",
+                      "value": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 114
+                      }
+                    },
+                    {
+                      "key": "s",
+                      "value": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "small",
+                          "tok": 118
+                        },
+                        "args": [],
+                        "tok": 119
+                      }
+                    },
+                    {
+                      "key": "a",
+                      "value": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "bytes",
+                          "tok": 124
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "ok",
+                            "tok": 126
+                          }
+                        ],
+                        "tok": 125
+                      }
+                    }
+                  ],
+                  "tok": 110,
+                  "type_args": []
+                }
+              ],
+              "tok": 106
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 131
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "unreachable",
+                  "tok": 133
+                }
+              ],
+              "tok": 132
+            }
+          }
+        ]
+      },
+      "tok": 43,
+      "bodiless": false,
+      "span": {
+        "start": 42,
+        "end": 138
+      },
+      "sig_end": 46
+    }
+  ],
+  "consts": []
+}

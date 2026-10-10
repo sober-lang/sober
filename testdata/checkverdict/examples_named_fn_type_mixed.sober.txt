@@ -1,0 +1,2 @@
+sober: load error at examples/named_fn_type_mixed.sober:4:29: source does not match the grammar
+exit=1

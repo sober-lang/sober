@@ -1,0 +1,76 @@
+package main
+
+// spectral-norm（benchmarks game — docs/bench.md）: A(i, j) = 1 / ((i+j)(i+j+1)/2 + i + 1) の AᵀA に冪乗法を 10 回、√(vBv / vv) を小数 9 桁で。
+// 素直な形・逐次（Go の双子 bench/spectralnorm/go と同じアルゴリズム・同じ演算の順）
+
+import "std/conv"
+import "std/iter"
+import "std/math"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func evalA(i int, j int) float {
+    return 1.0 / float((i + j) * (i + j + 1) / 2 + i + 1)
+}
+
+func times(v mut []float, u mut []float) {
+    for i <- iter.Range(0, len(v)) {
+        mut a := 0.0
+        for j <- iter.Range(0, len(u)) {
+            a += evalA(i, j) * u[j]
+        }
+        v[i] = a
+    }
+}
+
+func timesTransp(v mut []float, u mut []float) {
+    for i <- iter.Range(0, len(v)) {
+        mut a := 0.0
+        for j <- iter.Range(0, len(u)) {
+            a += evalA(j, i) * u[j]
+        }
+        v[i] = a
+    }
+}
+
+func aTimesTransp(v mut []float, u mut []float, x mut []float) {
+    times(mut x, mut u)
+    timesTransp(mut v, mut x)
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) > 1 { atoi(args[1]) } else { 100 }
+    mut u := mut []float{}
+    mut v := mut []float{}
+    mut x := mut []float{}
+    for i <- iter.Range(0, n) {
+        u = append(u, 1.0)
+    }
+    for i <- iter.Range(0, n) {
+        v = append(v, 0.0)
+    }
+    for i <- iter.Range(0, n) {
+        x = append(x, 0.0)
+    }
+    for k <- iter.Range(0, 10) {
+        aTimesTransp(mut v, mut u, mut x)
+        aTimesTransp(mut u, mut v, mut x)
+    }
+    mut vBv := 0.0
+    mut vv := 0.0
+    for i <- iter.Range(0, n) {
+        vBv += u[i] * v[i]
+        vv += v[i] * v[i]
+    }
+    println(conv.FormatFixed(math.Sqrt(vBv / vv), 9))
+    return 0
+}

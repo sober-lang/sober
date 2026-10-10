@@ -1,0 +1,7 @@
+package lib
+
+const small = 3
+
+func F() int {
+    return small
+}

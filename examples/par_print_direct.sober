@@ -1,0 +1,28 @@
+package main
+
+// 段 6 P4-2: stdout の直書き（io.WriteStdout — fd 1 へ直に write）は (O1) の先行順の対象外（io の順はタイミング — language.md 11 節 P4 の裁定）。
+// 子と親が直書きするので出力の順はスケジュールで決まる（既定のスケジュール = 子を先に — この黄金）。scripts/schedfuzz.list の自己検査の証人
+// （split — 乱択のスケジュールで割れること = 網がスケジュールを動かしていること）
+
+import "std/io"
+import "std/par"
+
+func work(tag string, n int) int {
+    mut i := 0
+    while i < n {
+        e := io.WriteStdout(bytes("${tag} ${i}\n"))
+        i += 1
+    }
+    return n
+}
+
+func main() {
+    e0 := io.WriteStdout(bytes("start\n"))
+    r, e := par.Scope((s par.S) => {
+        a := par.Spawn(s, () => work("a", 2))
+        b := par.Spawn(s, () => work("b", 2))
+        e1 := io.WriteStdout(bytes("parent\n"))
+        par.Join(a) + par.Join(b)
+    })
+    println(r)
+}

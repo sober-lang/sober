@@ -1,0 +1,2 @@
+sober: desugar error at examples/try.sober:7:17 (UnknownName)
+exit=1

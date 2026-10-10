@@ -1,0 +1,52 @@
+package main
+
+// float のレジスタクラス（第二便 — opt のバックエンドの xmm8〜15）の回帰例: ①8 本を越える float の運搬値（spill）②ループの辺で値を回す
+// （並行コピーの循環 — xmm 同士・r11 の中継）③呼び出しをまたいで生きる float（callee-saved — 呼ばれる側も xmm を使う）④float と int の行き来
+// （ビット列の読み替え・変換）。期待値は Go の双子 scripts/oracles/float_regs.go
+
+import "std/iter"
+import "std/math"
+
+func mix(x float, y float) float {
+    a := x * 1.5 + y
+    b := a * a - x
+    c := math.Sqrt(b * b + 1.0)
+    return c - a * 0.25
+}
+
+func main() int {
+    mut a0 := 1.0
+    mut a1 := 2.0
+    mut a2 := 3.0
+    mut a3 := 4.0
+    mut a4 := 5.0
+    mut a5 := 6.0
+    mut a6 := 7.0
+    mut a7 := 8.0
+    mut a8 := 9.0
+    mut a9 := 10.0
+    for i <- iter.Range(0, 1000) {
+        t := a0
+        a0 = a1 + 0.5
+        a1 = a2 * 0.999
+        a2 = a3 - 0.25
+        a3 = a4
+        a4 = mix(a5, a6) * 0.001 + a4 * 0.5
+        a5 = a6
+        a6 = a7 + float(i % 7)
+        a7 = a8 * 0.5
+        a8 = a9
+        a9 = t
+    }
+    println(a0, a1, a2, a3, a4)
+    println(a5, a6, a7, a8, a9)
+    mut s := 0.0
+    mut k := 0
+    for i <- iter.Range(0, 200) {
+        x := float(i) / 7.0
+        s = s * 0.5 + mix(x, s * 0.001)
+        k = k + (math.Bits(x) & 255)
+    }
+    println(s, k, int(s * 1000.0))
+    return 0
+}

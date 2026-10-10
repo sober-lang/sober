@@ -1,0 +1,31 @@
+package main
+
+func isEven(n int) bool {
+    return n % 2 == 0
+}
+
+func main() {
+    t := true
+    f := !t
+    println(t, f, t && f, t || f)
+    mut n := 0
+    mut evens := 0
+    while n < 10 {
+        if isEven(n) {
+            evens += 1
+        }
+        n += 1
+    }
+    println(evens)
+    b := 3 < 4
+    println(switch b {
+    case false: 0
+    case _: 1
+    })
+    println(b == true, b != true, isEven(3) == isEven(5))
+    println(switch {
+    case isEven(7): 7
+    case isEven(8): 8
+    case _: 0
+    })
+}

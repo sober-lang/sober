@@ -1,0 +1,2 @@
+# scripts/sobi.sh の G-b（stage1 の .sobi ≡ stage2 の .sobi）の既知の食い違い（docs/oracles.md「黙って合わせない」— entry と .sobi のパス、タブ区切りで理由）
+# 今は無い（M1 では @embed の const 2 本があった — M2 で .sobi を loader の写しの前の生の木から書くようにして消えた）

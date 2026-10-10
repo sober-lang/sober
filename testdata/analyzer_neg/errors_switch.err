@@ -1,0 +1,5 @@
+testdata/analyzer_neg/errors_switch.sober:46:14: error: case D is unreachable: the subject never carries it (it may carry: A, B, C) — remove the case (Analyzer)
+testdata/analyzer_neg/errors_switch.sober:48:14: error: the default of this switch is unreachable: its cases cover every error label the subject may carry (A, B, C) — remove the default (Analyzer)
+testdata/analyzer_neg/errors_switch.sober:62:9: error: switch does not cover B (error labels the subject may carry): add cases or a default (Analyzer)
+testdata/analyzer_neg/errors_switch.sober:69:9: error: the error labels this switch may see cannot be derived (a call through a function value or an element read): add a default (Analyzer)
+testdata/analyzer_neg/errors_switch.sober:75:9: error: switch does not cover B (error labels the subject may carry): add cases or a default (Analyzer)

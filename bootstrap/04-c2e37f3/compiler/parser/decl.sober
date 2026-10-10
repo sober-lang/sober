@@ -1,0 +1,473 @@
+package parser
+
+// 宣言と型（grammar.zig の 5.1 / 5.2 節、cst_to_ast.zig の funcDecl / typeDecl / typeExpr）
+
+import "std/builder"
+import "ast"
+import "lexer"
+
+// import_spec <- IDENT? STR（別名 "_" は拒否 — 決定 14）。path は引用符を剥がしただけ（escape は解かない）
+func importSpec(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut p := p0
+    mut alias := -1
+    if tg(cx, p) == lexer.Identifier {
+        if textIs(cx, p, "_") {
+            return -1, p
+        }
+        alias = name(mut db, cx, p)
+        p += 1
+    }
+    if tg(cx, p) != lexer.StringLiteral {
+        return -1, p
+    }
+    t := cx.ts[p]
+    path := ast.PutBytes(mut db, cx.src, t.start + 1, t.end - 1)
+    return node(mut nb, ast.KImport, tk(cx, p), alias, path, 0, 0, 0, 0), p + 1
+}
+
+// typeParams: '[' IDENT (',' IDENT)* ']'（文字列の列）
+func typeParams(db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut names := mut []int{}
+    mut p := p0 + 1
+    mut more := true
+    while more {
+        if tg(cx, p) != lexer.Identifier {
+            return -1, p
+        }
+        names = append(names, name(mut db, cx, p))
+        p += 1
+        more = tg(cx, p) == lexer.Comma
+        if more {
+            p += 1
+        }
+    }
+    if tg(cx, p) != lexer.RBracket {
+        return -1, p
+    }
+    return ast.PutList(mut db, freeze(names)), p + 1
+}
+
+// func_decl <- 'func' IDENT type_params? signature block?（本体なしは .sobi だけ — ここでは拒否）
+// noinl: 直前に `@noinline` があったか（付加の列の 5 番目 — loader が mut_def の判定に使う）
+func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, start int, noinl int) (int, int) {
+    if tg(cx, p0 + 1) != lexer.Identifier {
+        return -1, p0
+    }
+    fname := name(mut db, cx, p0 + 1)
+    mut p := p0 + 2
+    mut tps := ast.PutList(mut db, []int{})
+    if tg(cx, p) == lexer.LBracket {
+        l, q := typeParams(mut db, cx, p)
+        if l < 0 {
+            return -1, p
+        }
+        tps = l
+        p = q
+    }
+    params, q1 := parameters(mut nb, mut db, cx, p, 0)
+    if params < 0 {
+        return -1, p
+    }
+    results, sig_end := resultOpt(mut nb, mut db, cx, q1)
+    if tg(cx, sig_end) != lexer.LBrace {
+        return -1, sig_end
+    }
+    body, q2 := block(mut nb, mut db, cx, sig_end)
+    if body < 0 || tg(cx, q2) != lexer.Semicolon {
+        return -1, q2
+    }
+    ext := ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl})
+    return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
+}
+
+// parameters <- '(' (parameter_decl (',' parameter_decl)* ','?)? ')'。
+// mode 0 = 宣言（名前つき必須、KParam の列）/ 1 = 関数型（型の列 — 名前つきなら名前の数だけ型を並べる）/
+// 2 = lambda（KLParam の列 — 型だけの parameter_decl は名前として読む）
+func parameters(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, mode int) (int, int) {
+    if tg(cx, p0) != lexer.LParen {
+        return -1, p0
+    }
+    mut out := mut []int{}
+    mut p := p0 + 1
+    mut going := tg(cx, p) != lexer.RParen
+    while going {
+        // parameter_decl <- identifier_list '...'? type / '...'? type
+        mut names := mut []int{}
+        mut q := p
+        mut more := true
+        while more && tg(cx, q) == lexer.Identifier {
+            names = append(names, q)
+            q += 1
+            more = tg(cx, q) == lexer.Comma && tg(cx, q + 1) == lexer.Identifier
+            if more {
+                q += 1
+            }
+        }
+        if tg(cx, q) == lexer.Ellipsis {
+            return -1, q
+        }
+        mut done := false
+        if len(names) > 0 {
+            // 宣言の仮引数の先頭の mut は mut 引数の印
+            pm := mode == 0 && tg(cx, q) == lexer.KwMut
+            ty, r := typeOf(mut nb, mut db, cx, q, mode == 0)
+            if ty >= 0 {
+                mut k := 0
+                while k < len(names) {
+                    if mode == 0 {
+                        out = append(out, node(mut nb, ast.KParam, 0, name(mut db, cx, names[k]), ty, if pm { 1 } else { 0 }, 0, 0, 0))
+                    } else if mode == 1 {
+                        out = append(out, ty)
+                    } else {
+                        out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, names[k]), ty, 0, 0, 0, 0))
+                    }
+                    k += 1
+                }
+                p = r
+                done = true
+            }
+        }
+        if !done {
+            // 型だけの parameter_decl（宣言では拒否、lambda では名前）
+            if mode == 0 {
+                return -1, p
+            }
+            if mode == 2 {
+                if tg(cx, p) != lexer.Identifier {
+                    return -1, p
+                }
+                out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, p), -1, 0, 0, 0, 0))
+                p += 1
+            } else {
+                ty, r := typeOf(mut nb, mut db, cx, p, false)
+                if ty < 0 {
+                    return -1, p
+                }
+                out = append(out, ty)
+                p = r
+            }
+        }
+        if tg(cx, p) == lexer.Comma {
+            p += 1
+            going = tg(cx, p) != lexer.RParen
+        } else {
+            going = false
+        }
+    }
+    if tg(cx, p) != lexer.RParen {
+        return -1, p
+    }
+    return ast.PutList(mut db, freeze(out)), p + 1
+}
+
+// typeStart は型を始めうる字句か（result? の試し読みの入口）
+func typeStart(t int) bool {
+    return t == lexer.Identifier || t == lexer.KwError || t == lexer.KwMut || t == lexer.LBracket ||
+        t == lexer.KwMap || t == lexer.KwFunc || t == lexer.Star || t == lexer.LParen
+}
+
+// resultOpt: result?（result <- '(' type (',' type)* ')' / type）。結果は（型の列, signature の終わり）
+func resultOpt(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    if tg(cx, p) == lexer.LParen {
+        mut out := mut []int{}
+        mut q := p + 1
+        mut more := true
+        mut ok := true
+        while more && ok {
+            ty, r := typeOf(mut nb, mut db, cx, q, false)
+            if ty < 0 {
+                ok = false
+            } else {
+                out = append(out, ty)
+                q = r
+                more = tg(cx, q) == lexer.Comma
+                if more {
+                    q += 1
+                }
+            }
+        }
+        if ok && tg(cx, q) == lexer.RParen {
+            return ast.PutList(mut db, freeze(out)), q + 1
+        }
+    }
+    if typeStart(tg(cx, p)) {
+        ty, r := typeOf(mut nb, mut db, cx, p, false)
+        if ty >= 0 {
+            return ast.PutList(mut db, []int{ty}), r
+        }
+    }
+    return ast.PutList(mut db, []int{}), p
+}
+
+// qualName: type_name の綴り（IDENT ('.' IDENT)? / 'error'）。結果は（文字列, 次の位置）
+func qualName(db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    if tg(cx, p) == lexer.KwError {
+        return ast.PutLit(mut db, "error"), p + 1
+    }
+    if tg(cx, p) != lexer.Identifier {
+        return -1, p
+    }
+    if tg(cx, p + 1) == lexer.Dot && tg(cx, p + 2) == lexer.Identifier {
+        a := cx.ts[p]
+        b := cx.ts[p + 2]
+        at := builder.Len(mut db)
+        builder.Push(mut db, a.end - a.start + 1 + b.end - b.start)
+        mut i := a.start
+        while i < a.end {
+            builder.Push(mut db, cx.src[i])
+            i += 1
+        }
+        builder.Push(mut db, 46)
+        i = b.start
+        while i < b.end {
+            builder.Push(mut db, cx.src[i])
+            i += 1
+        }
+        return at, p + 3
+    }
+    return name(mut db, cx, p), p + 1
+}
+
+// typeArgs: '[' type (',' type)* ']'（型の列、失敗は -1）
+func typeArgs(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut out := mut []int{}
+    mut p := p0 + 1
+    mut more := true
+    while more {
+        ty, r := typeOf(mut nb, mut db, cx, p, false)
+        if ty < 0 {
+            return -1, p
+        }
+        out = append(out, ty)
+        p = r
+        more = tg(cx, p) == lexer.Comma
+        if more {
+            p += 1
+        }
+    }
+    if tg(cx, p) != lexer.RBracket {
+        return -1, p
+    }
+    return ast.PutList(mut db, freeze(out)), p + 1
+}
+
+// typeOf: type <- 'mut'? (type_name type_args? / type_lit / '(' type ')') '?'?。
+// param なら先頭の mut は mut 引数の印（呼び手が字句で読む — parameters）で、型の mut はコンテナ（slice / map）だけに残す。
+// それ以外の位置の mut はコンテナ限定（他は拒否）
+func typeOf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, param bool) (int, int) {
+    mut p := p0
+    mut m := false
+    if tg(cx, p) == lexer.KwMut {
+        m = true
+        p += 1
+    }
+    t := tg(cx, p)
+    // base の種類: 0 = 名前, 1 = generic, 2 = slice, 3 = map, 4 = func
+    mut kind := 0
+    mut x := -1
+    mut y := -1
+    if t == lexer.Identifier || t == lexer.KwError {
+        n, q := qualName(mut db, cx, p)
+        x = n
+        p = q
+        if tg(cx, p) == lexer.LBracket {
+            args, r := typeArgs(mut nb, mut db, cx, p)
+            if args >= 0 {
+                kind = 1
+                y = args
+                p = r
+            }
+        }
+    } else if t == lexer.LBracket {
+        if tg(cx, p + 1) != lexer.RBracket {
+            return -1, p
+        }
+        el, q := typeOf(mut nb, mut db, cx, p + 2, false)
+        if el < 0 {
+            return -1, p
+        }
+        kind = 2
+        x = el
+        p = q
+    } else if t == lexer.KwMap {
+        if tg(cx, p + 1) != lexer.LBracket {
+            return -1, p
+        }
+        k, q := typeOf(mut nb, mut db, cx, p + 2, false)
+        if k < 0 || tg(cx, q) != lexer.RBracket {
+            return -1, p
+        }
+        v, r := typeOf(mut nb, mut db, cx, q + 1, false)
+        if v < 0 {
+            return -1, p
+        }
+        kind = 3
+        x = k
+        y = v
+        p = r
+    } else if t == lexer.KwFunc {
+        ps, q := parameters(mut nb, mut db, cx, p + 1, 1)
+        if ps < 0 {
+            return -1, p
+        }
+        rs, r := resultOpt(mut nb, mut db, cx, q)
+        kind = 4
+        x = ps
+        y = rs
+        p = r
+    } else {
+        return -1, p
+    }
+    opt := tg(cx, p) == lexer.Question
+    if opt {
+        p += 1
+    }
+    container := kind == 2 || kind == 3
+    if param && !container {
+        m = false
+    }
+    if m && (!container || opt) {
+        return -1, p
+    }
+    mv := if m { 1 } else { 0 }
+    base := switch kind {
+    case 0: node(mut nb, ast.TName, 0, x, 0, 0, 0, 0, 0)
+    case 1: node(mut nb, ast.TGeneric, 0, x, y, 0, 0, 0, 0)
+    case 2: node(mut nb, ast.TSlice, 0, x, mv, 0, 0, 0, 0)
+    case 3: node(mut nb, ast.TMap, 0, x, y, mv, 0, 0, 0)
+    case _: node(mut nb, ast.TFunc, 0, x, y, 0, 0, 0, 0)
+    }
+    if opt {
+        return node(mut nb, ast.TOpt, 0, base, 0, 0, 0, 0, 0), p
+    }
+    return base, p
+}
+
+// fieldList: (field_decl (';' / &'}'))*（field_decl <- identifier_list type — 後置注釈は拒否）。p は '{' の次
+func fieldList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut out := mut []int{}
+    mut p := p0
+    while tg(cx, p) == lexer.Identifier {
+        mut names := mut []int{}
+        mut more := true
+        while more {
+            names = append(names, p)
+            p += 1
+            more = tg(cx, p) == lexer.Comma && tg(cx, p + 1) == lexer.Identifier
+            if more {
+                p += 1
+            }
+        }
+        ty, q := typeOf(mut nb, mut db, cx, p, false)
+        if ty < 0 {
+            return -1, p
+        }
+        mut k := 0
+        while k < len(names) {
+            out = append(out, node(mut nb, ast.KField, tk(cx, names[k]), name(mut db, cx, names[k]), ty, 0, 0, 0, 0))
+            k += 1
+        }
+        p = q
+        if tg(cx, p) == lexer.Semicolon {
+            p += 1
+        } else if tg(cx, p) != lexer.RBrace {
+            return -1, p
+        }
+    }
+    return ast.PutList(mut db, freeze(out)), p
+}
+
+// type_decl <- 'type' IDENT type_params? type_spec_body（struct / union / error / 関数型 / 定義型 — 定義型の下地の制限は脱糖器。型パラメータつきの定義型は拒否）
+func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, start int) (int, int) {
+    if tg(cx, p0 + 1) != lexer.Identifier {
+        return -1, p0
+    }
+    tname := name(mut db, cx, p0 + 1)
+    mut p := p0 + 2
+    mut tps := ast.PutList(mut db, []int{})
+    generic := tg(cx, p) == lexer.LBracket
+    if generic {
+        l, q := typeParams(mut db, cx, p)
+        if l < 0 {
+            return -1, p
+        }
+        tps = l
+        p = q
+    }
+    t := tg(cx, p)
+    mut body := -1
+    if t == lexer.KwStruct {
+        if tg(cx, p + 1) != lexer.LBrace {
+            return -1, p
+        }
+        fs, q := fieldList(mut nb, mut db, cx, p + 2)
+        if fs < 0 || tg(cx, q) != lexer.RBrace {
+            return -1, q
+        }
+        body = node(mut nb, ast.BStruct, 0, fs, 0, 0, 0, 0, 0)
+        p = q + 1
+    } else if t == lexer.KwUnion {
+        if generic || tg(cx, p + 1) != lexer.LBrace {
+            return -1, p
+        }
+        mut vs := mut []int{}
+        mut q := p + 2
+        while tg(cx, q) == lexer.Identifier {
+            if tg(cx, q + 1) != lexer.LBrace {
+                return -1, q
+            }
+            fs, r := fieldList(mut nb, mut db, cx, q + 2)
+            if fs < 0 || tg(cx, r) != lexer.RBrace {
+                return -1, r
+            }
+            vs = append(vs, node(mut nb, ast.KVariant, tk(cx, q), name(mut db, cx, q), fs, 0, 0, 0, 0))
+            q = r + 1
+            if tg(cx, q) == lexer.Semicolon {
+                q += 1
+            } else if tg(cx, q) != lexer.RBrace {
+                return -1, q
+            }
+        }
+        if tg(cx, q) != lexer.RBrace {
+            return -1, q
+        }
+        body = node(mut nb, ast.BUnion, 0, ast.PutList(mut db, freeze(vs)), 0, 0, 0, 0, 0)
+        p = q + 1
+    } else if t == lexer.KwError {
+        if generic {
+            return -1, p
+        }
+        if tg(cx, p + 1) == lexer.LBrace {
+            fs, q := fieldList(mut nb, mut db, cx, p + 2)
+            if fs < 0 || tg(cx, q) != lexer.RBrace {
+                return -1, q
+            }
+            body = node(mut nb, ast.BError, 0, fs, 0, 0, 0, 0, 0)
+            p = q + 1
+        } else {
+            body = node(mut nb, ast.BError, 0, ast.PutList(mut db, []int{}), 0, 0, 0, 0, 0)
+            p += 1
+        }
+    } else if t == lexer.KwFunc {
+        ps, q := parameters(mut nb, mut db, cx, p + 1, 1)
+        if ps < 0 {
+            return -1, p
+        }
+        rs, r := resultOpt(mut nb, mut db, cx, q)
+        body = node(mut nb, ast.BFunc, 0, ps, rs, 0, 0, 0, 0)
+        p = r
+    } else if !generic && typeStart(t) {
+        te, q := typeOf(mut nb, mut db, cx, p, false)
+        if te < 0 {
+            return -1, p
+        }
+        body = node(mut nb, ast.BDefined, 0, te, 0, 0, 0, 0, 0)
+        p = q
+    } else {
+        return -1, p
+    }
+    if tg(cx, p) != lexer.Semicolon {
+        return -1, p
+    }
+    return node(mut nb, ast.KTypeDecl, tk(cx, p0 + 1), tname, tps, body, start, p + 1, 0), p + 1
+}

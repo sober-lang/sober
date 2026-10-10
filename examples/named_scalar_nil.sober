@@ -1,0 +1,21 @@
+package main
+
+// 回帰例（language.md 32 節）: nil は named scalar の T? にも置ける（C1 B3 の途中で check が誤拒否した形 — 表の nil の型は照合しない）
+
+type N int
+
+func find(k int) N? {
+    return if k == 7 { N(42) } else { nil }
+}
+
+func main() {
+    mut a := find(7)
+    a = nil
+    b := find(3)
+    if b == nil {
+        println(1)
+    }
+    if a == nil {
+        println(2)
+    }
+}

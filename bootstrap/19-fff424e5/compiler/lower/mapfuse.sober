@@ -1,0 +1,239 @@
+package lower
+
+import "std/iter"
+
+// map の引きの融合（M16 ② — イディオムギャップ「map 更新」・最適化のバックエンドの経路だけ・cfgclean の後）:
+// `c := m[k]; m[k] = <c の式>` は lower で rt.map_find を 2 回呼ぶ（読みの index と set の mapSet）。同じ実引数の map_find が 2 回目を支配し、
+// その間に map を変えうる命令が無ければ 2 回目は 1 回目と同じセルを返す（map_find の副作用は索引の作成・追いつきだけで冪等）ので、
+// 2 回目の結果を 1 回目の結果に付け替えて呼び出しを消す。構文は足さない（綴りは今のまま速くする）。
+// 間の命令の条件（保守的）: 純粋な命令（const・算術・比較・gep・ptoi / itop・load・番地）と、スロットへの store（map のヘッダのスロット・キーの
+// スロットは除く — ただしキーのスロットへ 1 回目の直前と同じ値を書き直す store は可: lower がキーを置き直す形）。呼び出し・それ以外の store は不可。
+// 支配と経路: 2 回目のブロックから前任を逆に辿り、1 回目のブロックで止まる。入口に届けば支配していない・2 回目のブロックに戻れば輪を挟む — どちらも諦める。
+// 辿れたブロック（1 回目から 2 回目への全経路）の命令と、1 回目の後ろ・2 回目の前の命令を検査する。panic の点（exit）は 2 回目へ届かないので入らない
+func mapFuseModule(st mut St) {
+    if st.rtMapfind == -1 {
+        return
+    }
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            mfFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func mfFunc(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    // map_find の呼び出し（命令・ブロックの番号）
+    mut calls := mut []int{}
+    mut cblk := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall && irInsFn(mut st, i) == st.rtMapfind && irInsRes(mut st, i) >= 0 {
+                calls = append(calls, int(i))
+                cblk = append(cblk, irBlkId(mut st, b))
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if len(calls) < 2 {
+        return
+    }
+    // ブロックの番号 → 記録・値 → 定義の命令・前任の表（詰めた列 + 先頭の添字）
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut def := mut []int{}
+    xFill(mut def, nv, -1)
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 {
+                def[r] = int(i)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut pc := mut []int{}
+    xFill(mut pc, nb + 1, 0)
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            for j <- iter.Range(0, xNSucc(mut st, BlkRef(blk[bi]))) {
+                s := xSucc(mut st, BlkRef(blk[bi]), j)
+                pc[s + 1] = pc[s + 1] + 1
+            }
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        pc[bi + 1] = pc[bi + 1] + pc[bi]
+    }
+    mut fill := mut []int{}
+    xFill(mut fill, nb, 0)
+    for bi <- iter.Range(0, nb) {
+        fill[bi] = pc[bi]
+    }
+    mut pl := mut []int{}
+    xFill(mut pl, pc[nb] + 1, 0)
+    for bi <- iter.Range(0, nb) {
+        if blk[bi] >= 0 {
+            for j <- iter.Range(0, xNSucc(mut st, BlkRef(blk[bi]))) {
+                s := xSucc(mut st, BlkRef(blk[bi]), j)
+                pl[fill[s]] = bi
+                fill[s] = fill[s] + 1
+            }
+        }
+    }
+    entry := irBlkId(mut st, irFnBHead(mut st, f))
+    mut mark := mut []int{}
+    xFill(mut mark, nb, 0)
+    mut stack := mut []int{}
+    xFill(mut stack, nb + 1, 0)
+    mut epoch := 0
+    optReset(mut st, nv, nb)
+    mut any := false
+    for k2 <- iter.Range(1, len(calls)) {
+        mut k1 := k2 - 1
+        mut done := false
+        while k1 >= 0 && !done {
+            if mfSameArgs(mut st, InsRef(calls[k1]), InsRef(calls[k2])) {
+                epoch += 1
+                if mfClear(mut st, mut blk, mut def, mut pc, mut pl, mut mark, mut stack, epoch, entry, InsRef(calls[k1]), cblk[k1], InsRef(calls[k2]), cblk[k2]) {
+                    aliasTo(mut st, InsRef(calls[k2]), irInsRes(mut st, InsRef(calls[k2])), irInsRes(mut st, InsRef(calls[k1])))
+                    any = true
+                    done = true
+                }
+            }
+            k1 -= 1
+        }
+    }
+    if any {
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// mfSameArgs は 2 つの map_find の実引数が同じ値か
+func mfSameArgs(st mut St, a InsRef, b InsRef) bool {
+    la := irInsB(mut st, a)
+    lb := irInsB(mut st, b)
+    if hget(mut st, la) != hget(mut st, lb) {
+        return false
+    }
+    for j <- iter.Range(0, hget(mut st, la)) {
+        if hget(mut st, la + 1 + j) != hget(mut st, lb + 1 + j) {
+            return false
+        }
+    }
+    return true
+}
+
+// mfClear は c1 が c2 を支配し、c1 から c2 への全経路の命令が map を変えないか
+func mfClear(st mut St, blk mut []int, def mut []int, pc mut []int, pl mut []int, mark mut []int, stack mut []int, epoch int, entry int,
+    c1 InsRef, b1 int, c2 InsRef, b2 int) bool {
+    args := irInsB(mut st, c1)
+    h := hget(mut st, args + 1)
+    kp := hget(mut st, args + 2)
+    if b1 == b2 {
+        // 同じブロック: c1 が先にあって間が無害か
+        mut i := irInsNext(mut st, c1)
+        while i != -1 && i != c2 {
+            if !mfHarmless(mut st, mut def, i, h, kp, c1, b1, mut blk) {
+                return false
+            }
+            i = irInsNext(mut st, i)
+        }
+        return i == c2
+    }
+    // 2 回目のブロックの前任から逆に辿る（1 回目のブロックで止まる）
+    mut sp := 0
+    for q <- iter.Range(pc[b2], pc[b2 + 1]) {
+        p := pl[q]
+        if p != b1 && mark[p] != epoch {
+            mark[p] = epoch
+            stack[sp] = p
+            sp += 1
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        x := stack[sp]
+        if x == b2 || x == entry {
+            return false
+        }
+        // x の命令は全部無害でなければならない
+        mut i := irBlkIHead(mut st, BlkRef(blk[x]))
+        while i != -1 {
+            if !mfHarmless(mut st, mut def, i, h, kp, c1, b1, mut blk) {
+                return false
+            }
+            i = irInsNext(mut st, i)
+        }
+        for q <- iter.Range(pc[x], pc[x + 1]) {
+            p := pl[q]
+            if p != b1 && mark[p] != epoch {
+                mark[p] = epoch
+                stack[sp] = p
+                sp += 1
+            }
+        }
+    }
+    // 1 回目の後ろと 2 回目の前
+    mut i := irInsNext(mut st, c1)
+    while i != -1 {
+        if !mfHarmless(mut st, mut def, i, h, kp, c1, b1, mut blk) {
+            return false
+        }
+        i = irInsNext(mut st, i)
+    }
+    i = irBlkIHead(mut st, BlkRef(blk[b2]))
+    while i != -1 && i != c2 {
+        if !mfHarmless(mut st, mut def, i, h, kp, c1, b1, mut blk) {
+            return false
+        }
+        i = irInsNext(mut st, i)
+    }
+    return true
+}
+
+// mfHarmless は命令 i が map（ヘッダ h のスロット・セル・キー kp）を変えないか
+func mfHarmless(st mut St, def mut []int, i InsRef, h int, kp int, c1 InsRef, b1 int, blk mut []int) bool {
+    op := irInsOp(mut st, i)
+    if op == OpDead || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB ||
+        op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr {
+        return true
+    }
+    if op != OpStore && op != OpStore8 {
+        return false
+    }
+    a := irInsA(mut st, i)
+    if def[a] < 0 || irInsOp(mut st, InsRef(def[a])) != OpSlotaddr || a == h {
+        return false
+    }
+    if a != kp {
+        return true
+    }
+    // キーのスロットへの書き直し: 1 回目の直前（同じブロック）の同じ欄への最後の store と同じ値なら可
+    if op != OpStore {
+        return false
+    }
+    mut last := -1
+    mut j := irBlkIHead(mut st, BlkRef(blk[b1]))
+    while j != -1 && j != c1 {
+        if irInsOp(mut st, j) == OpStore && irInsA(mut st, j) == kp && irInsB(mut st, j) == irInsB(mut st, i) {
+            last = irInsC(mut st, j)
+        } else if irInsOp(mut st, j) == OpStore8 && irInsA(mut st, j) == kp {
+            // バイトの書き込みは欄の境界が読めないので打ち消す
+            last = -1
+        }
+        j = irInsNext(mut st, j)
+    }
+    return last >= 0 && last == irInsC(mut st, i)
+}

@@ -1,0 +1,48 @@
+package main
+
+// Tour 5: errors — labels, ?, catch, switch (docs/guide/tour.md)
+
+type Empty error
+
+type BadDigit error {
+    at int
+}
+
+func parse(s []byte) (int, error?) {
+    if len(s) == 0 {
+        return 0, Empty{}
+    }
+    mut n := 0
+    mut i := 0
+    while i < len(s) {
+        c := int(s[i])
+        if c < 48 || c > 57 {
+            return 0, BadDigit{at: i}
+        }
+        n = n * 10 + c - 48
+        i += 1
+    }
+    return n, nil
+}
+
+// ? returns an error to the caller as is
+func sum2(a []byte, b []byte) (int, error?) {
+    x := parse(a)?
+    y := parse(b)?
+    return x + y, nil
+}
+
+func main() int {
+    // catch supplies a default value
+    println(parse(bytes("42")) catch -1)
+    println(parse(bytes("4x2")) catch -1)
+    // handle each label with switch (the analyzer checks exhaustiveness)
+    _, err := sum2(bytes("12"), bytes(""))
+    if err != nil {
+        switch err {
+        case Empty{}: println("empty input")
+        case BadDigit{at}: println("bad digit at ${at}")
+        }
+    }
+    return 0
+}

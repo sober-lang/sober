@@ -1,0 +1,2 @@
+sober: load error at examples/par_neg_chan_handle.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+exit=1

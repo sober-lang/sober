@@ -1,0 +1,37 @@
+package main
+
+import "std/iter"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+// 1 本ずつ順に挿入する（双子 (a) — 交互を避ける回避術の形）
+func main() int {
+    args := os.Args() catch return 2
+    n := atoi(args[1])
+    mut m1 := mut map[int]int{}
+    mut m2 := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m1[i] = i
+    }
+    for i <- iter.Range(0, n) {
+        m2[i * 3] = i
+    }
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        a := m1[i]
+        b := m2[i * 3]
+        if a != nil && b != nil {
+            s += a + b
+        }
+    }
+    println(s)
+    return 0
+}

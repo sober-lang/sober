@@ -1,0 +1,8 @@
+package main
+
+// 負例: byte に複合代入は無い（算術なし — b = byte(int(b) + 1) と書く。language.md 33 節）
+func main() {
+    mut b := byte(1)
+    b += 1
+    println(b)
+}

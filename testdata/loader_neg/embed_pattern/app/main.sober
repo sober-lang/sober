@@ -1,0 +1,9 @@
+package main
+
+// ルートの外・. / .. のセグメントは拒否
+@embed("testdata/../testdata/embed/*.txt")
+const X = map[string]string{}
+
+func main() {
+    println(len(X))
+}

@@ -1,0 +1,8 @@
+testdata/io/exprs.txt:1: = 7
+testdata/io/exprs.txt:2: = -18
+testdata/io/exprs.txt:3:9: unexpected end
+testdata/io/exprs.txt:4:3: unexpected char
+testdata/io/exprs.txt:5: = 3
+testdata/io/nope.txt: not found
+sum testdata/io/exprs.txt: bad line 3
+sum testdata/io/ok.txt = 11

@@ -1,0 +1,90 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "Foo"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "P",
+                "elems": [
+                  {
+                    "key": "x",
+                    "value": {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 24
+                    }
+                  }
+                ],
+                "tok": 20,
+                "type_args": []
+              }
+            ],
+            "tok": 18
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 28
+              }
+            ],
+            "tok": 27
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 32
+      },
+      "sig_end": 17
+    }
+  ],
+  "consts": []
+}

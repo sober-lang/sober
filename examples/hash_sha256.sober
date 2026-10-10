@@ -1,0 +1,46 @@
+package main
+
+// std/hash（SHA-256 — FIPS 180-4）と std/hex（16 進の綴り）の検証例。Go の双子 scripts/oracles/hash_sha256.go（crypto/sha256）が .out を作り、
+// NIST の公式テストベクタ（FIPS 180-2 付録 B / CAVP の短いメッセージ — 双子が標準エラーで照合）を含む。
+// ブロック境界（パディングが 1 ブロックに収まる 55・2 ブロックに割れる 56・ちょうど 64 等）と長入力（100 万バイト）を通す
+
+import "std/hash"
+import "std/hex"
+import "std/iter"
+
+// pattern は長さ n のバイト列（i 番目は (i × 31 + 7) mod 256 — 全バイト値を通る）
+func pattern(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte((i * 31 + 7) % 256))
+    }
+    return freeze(b)
+}
+
+// repeat は c を n 個並べたバイト列
+func repeat(c byte, n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, c)
+    }
+    return freeze(b)
+}
+
+func main() {
+    // NIST のベクタ
+    println("empty", hex.Encode(hash.Sha256(bytes(""))))
+    println("abc", hex.Encode(hash.Sha256(bytes("abc"))))
+    println("448bit", hex.Encode(hash.Sha256(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))))
+    println("896bit", hex.Encode(hash.Sha256(bytes("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"))))
+    println("million-a", hex.Encode(hash.Sha256(repeat(byte(97), 1000000))))
+    // ブロック境界
+    lens := []int{1, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129}
+    for i <- iter.Range(0, len(lens)) {
+        println("pattern", lens[i], hex.Encode(hash.Sha256(pattern(lens[i]))))
+    }
+    // 長入力（全バイト値の並び）
+    println("pattern", 100003, hex.Encode(hash.Sha256(pattern(100003))))
+    // 生の 32 バイト
+    sum := hash.Sha256(bytes("abc"))
+    println(len(sum), int(sum[0]), int(sum[31]))
+}

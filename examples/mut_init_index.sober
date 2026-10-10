@@ -1,0 +1,16 @@
+package main
+
+// F-af の修理（check ⊂ build — 2026-10-04 掃除枠 E）: 仮引数の slice の要素で初期化した mut 局所に後から代入する
+// （mutInitAnn が添字の初期値もセルを束縛点の点座標へ緩める — F-q〔欄読み〕の添字版）
+
+func pick(xs []string, i int, alt bool) string {
+    mut p := xs[i]
+    if alt {
+        p = "z"
+    }
+    return p
+}
+
+func main() {
+    println(pick([]string{"a", "b"}, 1, false), pick([]string{"a"}, 0, true))
+}

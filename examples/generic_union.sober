@@ -1,0 +1,55 @@
+package main
+
+// ジェネリック union（language.md 25 節 — 2026-09-30 の段 (1): 明示の型引数）: 型式 Opt[int]・variant のリテラル Some[int]{…} / None[int]{}・
+// switch の型パターン（欄の型は subject の型引数で代入）・2 引数の Pair[A, B]・struct の欄・ジェネリック関数の仮引数 Opt[T]
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+type Pair[A, B] union {
+    L { a A }
+    R { b B }
+}
+
+type Box struct {
+    o Opt[int]
+    n int
+}
+
+func getInt(o Opt[int], d int) int {
+    return switch o {
+    case Some{v}: v
+    case None{}: d
+    }
+}
+
+func flag(o Opt[bool]) int {
+    return switch o {
+    case Some{v}: if v { 1 } else { 2 }
+    default: 0
+    }
+}
+
+func side(p Pair[int, bool]) int {
+    return switch p {
+    case L{a}: a
+    case R{b}: if b { 100 } else { 200 }
+    }
+}
+
+func pick[T](o Opt[T], d T) T {
+    return switch o {
+    case Some{v}: v
+    default: d
+    }
+}
+
+func main() {
+    b := Box{o: Some[int]{v: 5}, n: 1}
+    println(getInt(b.o, 0), getInt(None[int]{}, 9))
+    println(flag(Some[bool]{v: true}), flag(None[bool]{}))
+    println(side(L[int, bool]{a: 7}), side(R[int, bool]{b: false}))
+    println(pick(Some[int]{v: 4}, 0), pick(None[bool]{}, true))
+}

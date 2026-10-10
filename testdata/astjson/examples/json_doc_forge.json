@@ -1,0 +1,210 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "d"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "json.Doc",
+                "elems": [
+                  {
+                    "key": "src",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 19
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "1",
+                          "tok": 21
+                        }
+                      ],
+                      "tok": 20
+                    }
+                  },
+                  {
+                    "key": "esc",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "byte"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 26
+                    }
+                  },
+                  {
+                    "key": "kind",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 38
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 34
+                    }
+                  },
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 47
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 43
+                    }
+                  },
+                  {
+                    "key": "b",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 56
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 52
+                    }
+                  },
+                  {
+                    "key": "pos",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 65
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 61
+                    }
+                  },
+                  {
+                    "key": "kids",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 70
+                    }
+                  }
+                ],
+                "tok": 13,
+                "type_args": []
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 77
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "json",
+                      "tok": 79
+                    },
+                    "field": "Pos",
+                    "tok": 81
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "d",
+                      "tok": 83
+                    },
+                    {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 85
+                    }
+                  ],
+                  "tok": 82
+                }
+              ],
+              "tok": 78
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 91
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

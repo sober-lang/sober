@@ -1,0 +1,16 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 13）: 型パターンの欄の束縛が subject のローカル束縛を隠す。以前は check が受理し build が拒否していた
+
+type U union {
+    A{s int}
+    B{}
+}
+
+func main() {
+    s := A{s: 4}
+    println(switch s {
+    case A{s}: s
+    default: 0
+    })
+}

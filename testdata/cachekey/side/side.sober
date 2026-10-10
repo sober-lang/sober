@@ -1,0 +1,8 @@
+package side
+
+// leaf に依らない package（scripts/cachekey.sh の G-g — leaf の署名を変えても外れない側）
+
+// Half は 2 で割る
+func Half(x int) int {
+    return x / 2
+}

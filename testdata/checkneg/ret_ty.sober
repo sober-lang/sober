@@ -1,0 +1,9 @@
+package main
+
+func f(x int) bool {
+    return x
+}
+
+func main() {
+    println(1)
+}

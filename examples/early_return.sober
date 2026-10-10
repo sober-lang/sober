@@ -1,0 +1,110 @@
+package main
+
+// V4-3: 途中 return / if 腕の return / ループ内の return / break / continue と defer の出口展開。
+// 評価順は「値確定 → defer → 脱出」（codegen の runDefers と desugar の出口展開が同じ順を踏む）
+
+func trace(n int) int {
+    println(n)
+    return n
+}
+
+// 値は defer より先に確定する: 100 を返してから 1 を印字
+func order() int {
+    defer println(1)
+    return trace(100)
+}
+
+// 途中 return（後続の文は走らない）と if 腕の return
+func sign(x int) int {
+    if x < 0 {
+        return -1
+    }
+    if x == 0 {
+        return 0
+    } else {
+        return 1
+    }
+}
+
+// ループ内の return: region を開いた式ブロックの中から抜ける + 越える defer を内側から展開
+func firstOver(limit int) int {
+    defer println(2)
+    mut i := 0
+    while i < 10 {
+        defer println(20)
+        i += 1
+        v := {
+            xs := append([]int{}, i * i)
+            xs[0]
+        }
+        if v > limit {
+            return i
+        }
+    }
+    return -1
+}
+
+// 入れ子のループ: break は内側だけ、continue は本体の defer を展開して次の周回
+func grid() int {
+    mut acc := 0
+    mut i := 0
+    while i < 3 {
+        i += 1
+        mut j := 0
+        while j < 5 {
+            j += 1
+            if j == 2 {
+                continue
+            }
+            if j == 4 {
+                break
+            }
+            acc += i * 10 + j
+        }
+    }
+    return acc
+}
+
+func each(n int, f func(int)) {
+    defer println(3)
+    mut i := 0
+    while i < n {
+        f(i)
+        i += 1
+    }
+}
+
+// ラムダの非局所 return: inline 関数 each の defer（3）を越えて find へ
+func find(limit int) int {
+    each(10, i => {
+        if i * i > limit {
+            return i
+        }
+    })
+    return -1
+}
+
+// inline 関数の途中 return（展開範囲の末尾へ）
+func pick(c bool, a, b int) int {
+    if c {
+        return a
+    }
+    return b
+}
+
+func main() {
+    println(order())
+    println(sign(-5), sign(0), sign(7))
+    println(firstOver(20))
+    println(grid())
+    println(find(10))
+    println(pick(true, 4, 5) + pick(false, 4, 5))
+    mut k := 0
+    while true {
+        k += 1
+        if k > 2 {
+            break
+        }
+    }
+    println(k)
+}

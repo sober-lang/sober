@@ -1,0 +1,355 @@
+package lexer
+
+// 字句解析器（src/lexer.zig の移植）。Go 式のセミコロン自動挿入を行う（docs/syntax.md 1 節）。
+// ソースはバイト列（bytes(s) か io.ReadFile の []int）。末尾より先は 0 として読む — Zig 版の番兵 0 と同じ扱いで、
+// 途中の NUL バイトも終わりとして読む。
+// 読み飛ばしの補助は (b, 位置) を取って新しい位置を返す純関数に割る（mut な読み手の状態を持ち回らない）
+
+import "std/builder"
+
+// at は b[i]。範囲外は 0（番兵）
+func at(b []int, i int) int {
+    return if i < len(b) { b[i] } else { 0 }
+}
+
+func isIdentStart(c int) bool {
+    return c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 95
+}
+
+func isDigit(c int) bool {
+    return c >= 48 && c <= 57
+}
+
+func isIdentCont(c int) bool {
+    return isIdentStart(c) || isDigit(c)
+}
+
+// Lex は b 全体を字句に分ける（末尾は必ず Eof）
+func Lex(b []int) []Token {
+    mut tb := builder.Builder[Token]{}
+    mut i := 0
+    mut last := Eof
+    mut done := false
+    while !done {
+        t, next := lexOne(b, i, last)
+        builder.Push(mut tb, t)
+        i = next
+        last = t.tag
+        done = t.tag == Eof
+    }
+    return builder.Build(mut tb)
+}
+
+// lexOne は位置 i から字句を 1 つ読む。last は直前の字句の種類（改行でのセミコロン挿入の判定）。
+// 結果は（字句, 次の読み位置）
+func lexOne(b []int, i0 int, last int) (Token, int) {
+    insert := EndsStatement(last)
+    i, nl := skipTrivia(b, i0, insert)
+    if nl >= 0 {
+        return Token{Semicolon, nl, nl}, i
+    }
+    c := at(b, i)
+    if c == 0 {
+        return if insert { Token{Semicolon, i, i} } else { Token{Eof, i, i} }, i
+    }
+    if c == 34 {
+        end, ok := skipString(b, i)
+        return Token{if ok { StringLiteral } else { Invalid }, i, end}, end
+    }
+    if c == 96 {
+        return lexRawString(b, i)
+    }
+    if isIdentStart(c) {
+        mut j := i
+        while isIdentCont(at(b, j)) {
+            j += 1
+        }
+        return Token{keyword(b, i, j), i, j}, j
+    }
+    if isDigit(c) {
+        mut j := i
+        while isDigit(at(b, j)) {
+            j += 1
+        }
+        return Token{IntegerLiteral, i, j}, j
+    }
+    return lexSymbol(b, i)
+}
+
+// skipTrivia は空白とコメントを飛ばす。セミコロンを挿入すべき改行に当たったらその位置を返す（無ければ -1）。
+// 結果は（次の読み位置, 改行の位置 or -1）
+func skipTrivia(b []int, i0 int, insert bool) (int, int) {
+    mut i := i0
+    while true {
+        c := at(b, i)
+        if c == 32 || c == 9 || c == 13 {
+            i += 1
+        } else if c == 10 {
+            nl := i
+            i += 1
+            if insert {
+                return i, nl
+            }
+        } else if c == 47 && at(b, i + 1) == 47 {
+            while at(b, i) != 10 && at(b, i) != 0 {
+                i += 1
+            }
+        } else if c == 47 && at(b, i + 1) == 42 {
+            // 改行を含むブロックコメントは改行として扱う（Go 仕様）
+            start := i
+            i += 2
+            mut has_newline := false
+            mut closed := false
+            while !closed && at(b, i) != 0 {
+                if at(b, i) == 42 && at(b, i + 1) == 47 {
+                    i += 2
+                    closed = true
+                } else {
+                    if at(b, i) == 10 {
+                        has_newline = true
+                    }
+                    i += 1
+                }
+            }
+            if has_newline && insert {
+                return i, start
+            }
+        } else {
+            return i, -1
+        }
+    }
+    return i, -1
+}
+
+// skipString は `"..."` を読み飛ばす（i0 は開きの `"`）。補間 `${ 式 }` は 1 字句のまま中を読み飛ばし、
+// 式の中の入れ子の文字列（補間込み）・raw 文字列・`{ }` の対応を追う。改行は補間の中でも不可。
+// 結果は（止まった位置, 閉じたか）— 閉じなければ止まった位置までが Invalid の字句
+func skipString(b []int, i0 int) (int, bool) {
+    mut i := i0 + 1
+    while true {
+        c := at(b, i)
+        if c == 0 || c == 10 {
+            return i, false
+        }
+        if c == 92 {
+            i += 1
+            if at(b, i) != 0 {
+                i += 1
+            }
+        } else if c == 34 {
+            return i + 1, true
+        } else if c == 36 {
+            i += 1
+            if at(b, i) == 123 {
+                j, ok := skipInterp(b, i)
+                if !ok {
+                    return j, false
+                }
+                i = j
+            }
+        } else {
+            i += 1
+        }
+    }
+    return i, false
+}
+
+// skipInterp は `${ ... }` を読み飛ばす（i0 は `{`）。閉じれば位置は閉じの `}` の直後
+func skipInterp(b []int, i0 int) (int, bool) {
+    mut i := i0 + 1
+    mut depth := 1
+    while depth > 0 {
+        c := at(b, i)
+        if c == 0 || c == 10 {
+            return i, false
+        }
+        if c == 123 {
+            depth += 1
+            i += 1
+        } else if c == 125 {
+            depth -= 1
+            i += 1
+        } else if c == 34 {
+            j, ok := skipString(b, i)
+            if !ok {
+                return j, false
+            }
+            i = j
+        } else if c == 96 {
+            i += 1
+            while at(b, i) != 96 {
+                if at(b, i) == 0 {
+                    return i, false
+                }
+                i += 1
+            }
+            i += 1
+        } else {
+            i += 1
+        }
+    }
+    return i, true
+}
+
+func lexRawString(b []int, start int) (Token, int) {
+    mut i := start + 1
+    while at(b, i) != 96 {
+        if at(b, i) == 0 {
+            return Token{Invalid, start, i}, i
+        }
+        i += 1
+    }
+    return Token{RawStringLiteral, start, i + 1}, i + 1
+}
+
+// wordIs は b[s:e] が w と同じ綴りか
+func wordIs(b []int, s int, e int, w string) bool {
+    wb := bytes(w)
+    if e - s != len(wb) {
+        return false
+    }
+    mut k := 0
+    while k < len(wb) {
+        if b[s + k] != wb[k] {
+            return false
+        }
+        k += 1
+    }
+    return true
+}
+
+// keyword は b[s:e] の単語の種類（キーワードでなければ Identifier）
+func keyword(b []int, s int, e int) int {
+    return switch {
+    case wordIs(b, s, e, "package"): KwPackage
+    case wordIs(b, s, e, "import"): KwImport
+    case wordIs(b, s, e, "const"): KwConst
+    case wordIs(b, s, e, "type"): KwType
+    case wordIs(b, s, e, "func"): KwFunc
+    case wordIs(b, s, e, "struct"): KwStruct
+    case wordIs(b, s, e, "map"): KwMap
+    case wordIs(b, s, e, "if"): KwIf
+    case wordIs(b, s, e, "else"): KwElse
+    case wordIs(b, s, e, "switch"): KwSwitch
+    case wordIs(b, s, e, "case"): KwCase
+    case wordIs(b, s, e, "default"): KwDefault
+    case wordIs(b, s, e, "return"): KwReturn
+    case wordIs(b, s, e, "break"): KwBreak
+    case wordIs(b, s, e, "continue"): KwContinue
+    case wordIs(b, s, e, "defer"): KwDefer
+    case wordIs(b, s, e, "for"): KwFor
+    case wordIs(b, s, e, "mut"): KwMut
+    case wordIs(b, s, e, "union"): KwUnion
+    case wordIs(b, s, e, "error"): KwError
+    case wordIs(b, s, e, "yield"): KwYield
+    case wordIs(b, s, e, "while"): KwWhile
+    case wordIs(b, s, e, "scope"): KwScope
+    case wordIs(b, s, e, "parallel"): KwParallel
+    case wordIs(b, s, e, "spawn"): KwSpawn
+    case wordIs(b, s, e, "shield"): KwShield
+    case _: Identifier
+    }
+}
+
+// symAt は b の位置 i から w の綴りが続くか（範囲外は 0 なので、末尾で切れた記号には一致しない）
+func symAt(b []int, i int, w string) bool {
+    wb := bytes(w)
+    mut k := 0
+    while k < len(wb) {
+        if at(b, i + k) != wb[k] {
+            return false
+        }
+        k += 1
+    }
+    return true
+}
+
+// sym3 / sym2 / sym1 は長さごとの記号表（一致しなければ -1）。lexSymbol が最長一致で引く
+func sym3(b []int, i int) int {
+    return switch {
+    case symAt(b, i, "..."): Ellipsis
+    case symAt(b, i, "<<="): ShlEqual
+    case symAt(b, i, ">>="): ShrEqual
+    case _: -1
+    }
+}
+
+func sym2(b []int, i int) int {
+    return switch {
+    case symAt(b, i, ":="): ColonEqual
+    case symAt(b, i, "<<"): Shl
+    case symAt(b, i, ">>"): Shr
+    case symAt(b, i, "&&"): AmpersandAmpersand
+    case symAt(b, i, "||"): PipePipe
+    case symAt(b, i, "=="): EqualEqual
+    case symAt(b, i, "!="): BangEqual
+    case symAt(b, i, "<="): LessEqual
+    case symAt(b, i, ">="): GreaterEqual
+    case symAt(b, i, "+="): PlusEqual
+    case symAt(b, i, "-="): MinusEqual
+    case symAt(b, i, "*="): StarEqual
+    case symAt(b, i, "/="): SlashEqual
+    case symAt(b, i, "%="): PercentEqual
+    case symAt(b, i, "&="): AmpersandEqual
+    case symAt(b, i, "|="): PipeEqual
+    case symAt(b, i, "^="): CaretEqual
+    case symAt(b, i, "|>"): PipeGreater
+    case symAt(b, i, "=>"): FatArrow
+    case symAt(b, i, "<-"): LeftArrow
+    case _: -1
+    }
+}
+
+func sym1(c int) int {
+    return switch c {
+    case 40: LParen
+    case 41: RParen
+    case 123: LBrace
+    case 125: RBrace
+    case 91: LBracket
+    case 93: RBracket
+    case 44: Comma
+    case 46: Dot
+    case 59: Semicolon
+    case 58: Colon
+    case 64: At
+    case 63: Question
+    case 43: Plus
+    case 45: Minus
+    case 42: Star
+    case 47: Slash
+    case 37: Percent
+    case 38: Ampersand
+    case 124: Pipe
+    case 94: Caret
+    case 33: Bang
+    case 61: Equal
+    case 60: Less
+    case 62: Greater
+    case _: -1
+    }
+}
+
+// lexSymbol は記号を最長一致（3 文字 → 2 文字 → 1 文字）で読む。どれでもなければ 1 バイトの Invalid
+func lexSymbol(b []int, i int) (Token, int) {
+    t3 := sym3(b, i)
+    if t3 >= 0 {
+        return Token{t3, i, i + 3}, i + 3
+    }
+    t2 := sym2(b, i)
+    if t2 >= 0 {
+        return Token{t2, i, i + 2}, i + 2
+    }
+    t1 := sym1(at(b, i))
+    if t1 >= 0 {
+        return Token{t1, i, i + 1}, i + 1
+    }
+    return Token{Invalid, i, i + 1}, i + 1
+}
+
+// InterpEnd は、字句済みの文字列リテラル内の `${` の `{`（位置 pos）に対応する閉じ `}` の直後の位置（閉じなければ -1）。
+// parser が補間の式を切り出すのに使う（字句と同じ読み飛ばし規則を共有する — Zig 版の Lexer.interpEnd）
+func InterpEnd(b []int, pos int) int {
+    j, ok := skipInterp(b, pos)
+    return if ok { j } else { -1 }
+}

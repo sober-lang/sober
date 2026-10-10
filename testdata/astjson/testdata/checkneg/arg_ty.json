@@ -1,0 +1,117 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "f",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 12
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 14
+                },
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 18
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "f",
+                    "tok": 25
+                  },
+                  "args": [
+                    {
+                      "k": "binary",
+                      "op": "<",
+                      "lhs": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 27
+                      },
+                      "rhs": {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 29
+                      },
+                      "tok": 28
+                    }
+                  ],
+                  "tok": 26
+                }
+              ],
+              "tok": 24
+            }
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 35
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": []
+}

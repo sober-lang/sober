@@ -1,0 +1,387 @@
+package desugar
+
+// 脱糖器（src/desugar.zig の写し — AST → コア AST（Lean の Json.lean スキーマ）→ JSON）の状態と土台。
+//
+// 表現（仮決め R10-1 — selfhost-drafts）: 状態は S 1 つ。スカラーは S の欄、記録は全部 1 本の int ヒープ st.h に積む
+// （Zig 版のポインタの木・ArrayList・HashMap の代わり）。記録は「ヒープの添字」で指し、無しは -1。
+// - 表層 AST: loader の木を初期化でヒープへ移す（節 = 8 語 [kind, tok, a..f]。子の添字・文字列・列をヒープの添字へ付け替え、
+//   括弧 EParen は透過（Zig の AST は括弧を持たない）、`$utf8` の書き換え先 EUtf8Ref は名前 `$utf8` の EIdent にする）。
+//   補間・for 式の書き換え（Zig の interp.zig / forexpand.zig）が作る節も同じ形でヒープへ足す
+// - 列 = [n, 要素…]、文字列 = [n, バイト…]
+// - 型・コア式 = 5 語 [tag, a, b, c, d]
+// 再帰する関数は `st mut S` を持ち回る（Def として呼ぶ mut 引数の関数 — R2）。その関数に渡す imm の値は int だけにする
+// （frame の中で作った slice を渡すと検査が拒否する — language.md 31 節の anchor 1 slot、selfhost-drafts F-6。string リテラルは
+// strlit の段で渡せる）
+
+import "ast"
+import "loader"
+
+// Fail は脱糖の拒否（Zig 版の error.CoreFragment / UnknownName / Malformed）。k は種類、tok は位置
+type Fail error {
+    k int
+    tok int
+}
+
+const KFrag = 1
+const KUnknown = 2
+const KMalformed = 3
+
+// 状態のスカラーは src/desugar.zig の Desugarer の欄と同じ名前・意味（bool は 0 / 1）。表（pkgs / files / fns / cons / errv）と
+// 作業スタック（lstk / sstk / jstk）はヒープの添字
+type S struct {
+    h mut []int
+    npkg int
+    pkgs int
+    nfile int
+    files int
+    nfn int
+    fns int
+    ndef int
+    ncon int
+    cons int
+    errv int
+    mainPkg int
+    tInt int
+    tBool int
+    tUnit int
+    curPkg int
+    curRtys int
+    tenv int
+    curTparams int
+    liftedHead int
+    liftedTail int
+    nlifted int
+    hasOuter int
+    outerB int
+    outerF int
+    inlining int
+    inDict int
+    dictConst int
+    dictLifts int
+    liftHint int
+    rdepth int
+    lstk int
+    nlab int
+    sstk int
+    nscope int
+    nextLabel int
+    retTarget int
+    trySkip int
+    stmtIf int
+    loopFloor int
+    tailWant int
+    swWant int
+    hasErrSw int
+    errLevel int
+    errTy int
+    jstk int
+    jlab int
+    // 再帰展開の検査に使う展開中の関数の鎖（inlining と同じ形）。ラムダの本体を展開する間は、閉包が定義時に持った鎖へ差し替える
+    // （本体は字句的に callee の外 — `iter.Slice` の中のラムダが `iter.Slice` を呼ぶのは再帰でない。lower の CL_INL と同じ方式）
+    inlrec int
+}
+
+// ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
+
+func put(st mut S, x int) {
+    st.h = append(st.h, x)
+}
+
+func top(st mut S) int {
+    return len(st.h)
+}
+
+func rec5(st mut S, tag int, a int, b int, c int, d int) int {
+    at := len(st.h)
+    st.h = append(st.h, tag)
+    st.h = append(st.h, a)
+    st.h = append(st.h, b)
+    st.h = append(st.h, c)
+    st.h = append(st.h, d)
+    return at
+}
+
+func rec8(st mut S, k int, tok int, a int, b int, c int, d int, e int, f int) int {
+    at := len(st.h)
+    st.h = append(st.h, k)
+    st.h = append(st.h, tok)
+    st.h = append(st.h, a)
+    st.h = append(st.h, b)
+    st.h = append(st.h, c)
+    st.h = append(st.h, d)
+    st.h = append(st.h, e)
+    st.h = append(st.h, f)
+    return at
+}
+
+// strLit は綴り w をヒープの文字列にする
+func strLit(st mut S, w string) int {
+    b := bytes(w)
+    at := len(st.h)
+    st.h = append(st.h, len(b))
+    mut i := 0
+    while i < len(b) {
+        st.h = append(st.h, b[i])
+        i += 1
+    }
+    return at
+}
+
+// strOf はバイト列 b をヒープの文字列にする
+func strOf(st mut S, b []int) int {
+    at := len(st.h)
+    st.h = append(st.h, len(b))
+    mut i := 0
+    while i < len(b) {
+        st.h = append(st.h, b[i])
+        i += 1
+    }
+    return at
+}
+
+// strPart は文字列 s のバイト [a, b) を新しい文字列にする
+func strPart(st mut S, s int, a int, b int) int {
+    at := len(st.h)
+    st.h = append(st.h, b - a)
+    mut i := a
+    while i < b {
+        st.h = append(st.h, st.h[s + 1 + i])
+        i += 1
+    }
+    return at
+}
+
+// list0 / list1 / list2 は要素 0〜2 個の列
+func list0(st mut S) int {
+    at := len(st.h)
+    st.h = append(st.h, 0)
+    return at
+}
+
+func list1(st mut S, x int) int {
+    at := len(st.h)
+    st.h = append(st.h, 1)
+    st.h = append(st.h, x)
+    return at
+}
+
+func list2(st mut S, x int, y int) int {
+    at := len(st.h)
+    st.h = append(st.h, 2)
+    st.h = append(st.h, x)
+    st.h = append(st.h, y)
+    return at
+}
+
+// listN は長さ n の列を確保する（中身は 0 — 呼び手が埋める）
+func listN(st mut S, n int) int {
+    at := len(st.h)
+    st.h = append(st.h, n)
+    mut i := 0
+    while i < n {
+        st.h = append(st.h, 0)
+        i += 1
+    }
+    return at
+}
+
+// ── 文字列の比較 ──
+
+func strEq(st mut S, a int, b int) bool {
+    n := st.h[a]
+    if st.h[b] != n {
+        return false
+    }
+    mut i := 1
+    while i <= n {
+        if st.h[a + i] != st.h[b + i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func strIs(st mut S, a int, w string) bool {
+    b := bytes(w)
+    if st.h[a] != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(b) {
+        if st.h[a + 1 + i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// strEqPart は文字列 a と、文字列 s のバイト [lo, hi) の一致
+func strEqPart(st mut S, a int, s int, lo int, hi int) bool {
+    if st.h[a] != hi - lo {
+        return false
+    }
+    mut i := 0
+    while i < hi - lo {
+        if st.h[a + 1 + i] != st.h[s + 1 + lo + i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// dotAt は文字列 s の最初の '.' の位置（無ければ -1）
+func dotAt(st mut S, s int) int {
+    mut i := 0
+    while i < st.h[s] {
+        if st.h[s + 1 + i] == 46 {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// ── 表層 AST の読み出し（節 = [kind, tok, a, b, c, d, e, f]）──
+
+const NA = 2
+const NB = 3
+const NC = 4
+const ND = 5
+const NE = 6
+const NF = 7
+
+func kindOf(st mut S, n int) int {
+    return st.h[n]
+}
+
+func tokOf(st mut S, n int) int {
+    return if n < 0 { 0 } else { st.h[n + 1] }
+}
+
+func llen(st mut S, l int) int {
+    return st.h[l]
+}
+
+func lat(st mut S, l int, i int) int {
+    return st.h[l + 1 + i]
+}
+
+// ── 表: package（6 語 [path, name, flo, fhi, imports（列 [n, (ref, pkg)…]）, 0]）──
+
+const PKSZ = 6
+
+func pkgRec(st mut S, pk int) int {
+    return st.pkgs + pk * PKSZ
+}
+
+func pkgPath(st mut S, pk int) int {
+    return st.h[st.pkgs + pk * PKSZ]
+}
+
+func pkgFlo(st mut S, pk int) int {
+    return st.h[st.pkgs + pk * PKSZ + 2]
+}
+
+func pkgFhi(st mut S, pk int) int {
+    return st.h[st.pkgs + pk * PKSZ + 3]
+}
+
+// fileRoot はファイル f の KFile 節
+func fileRoot(st mut S, f int) int {
+    return st.h[st.files + f * 2]
+}
+
+// importOf は package pk の import の参照名（文字列 s のバイト [lo, hi)）の行き先 package（無ければ -1）
+func importOf(st mut S, pk int, s int, lo int, hi int) int {
+    im := st.h[st.pkgs + pk * PKSZ + 4]
+    mut i := 0
+    while i < st.h[im] {
+        if strEqPart(mut st, st.h[im + 1 + i * 2], s, lo, hi) {
+            return st.h[im + 2 + i * 2]
+        }
+        i += 1
+    }
+    return -1
+}
+
+// isStdPkg は std/ 配下の package か
+func isStdPkg(st mut S, pk int) bool {
+    p := pkgPath(mut st, pk)
+    return st.h[p] >= 4 && st.h[p + 1] == 115 && st.h[p + 2] == 116 && st.h[p + 3] == 100 && st.h[p + 4] == 47
+}
+
+// ── 表: 関数（6 語 [node, pkg, expands, mut_def, has_try, def の添字（展開される・main は -1）]）──
+
+const FNSZ = 6
+
+func fnNode(st mut S, i int) int {
+    return st.h[st.fns + i * FNSZ]
+}
+
+func fnPkg(st mut S, i int) int {
+    return st.h[st.fns + i * FNSZ + 1]
+}
+
+func fnExpands(st mut S, i int) bool {
+    return st.h[st.fns + i * FNSZ + 2] != 0
+}
+
+func fnMutDef(st mut S, i int) bool {
+    return st.h[st.fns + i * FNSZ + 3] != 0
+}
+
+func fnHasTry(st mut S, i int) bool {
+    return st.h[st.fns + i * FNSZ + 4] != 0
+}
+
+func fnDef(st mut S, i int) int {
+    return st.h[st.fns + i * FNSZ + 5]
+}
+
+// 関数宣言の欄（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body）
+func fnName(st mut S, i int) int {
+    return st.h[fnNode(mut st, i) + NA]
+}
+
+func fnTParams(st mut S, i int) int {
+    return st.h[fnNode(mut st, i) + NB]
+}
+
+func fnParams(st mut S, i int) int {
+    return st.h[fnNode(mut st, i) + NC]
+}
+
+func fnResults(st mut S, i int) int {
+    return st.h[fnNode(mut st, i) + ND]
+}
+
+func fnBody(st mut S, i int) int {
+    return st.h[fnNode(mut st, i) + NE]
+}
+
+// ── 表: const（5 語 [node, pkg, value, has, dict]）──
+
+const CNSZ = 5
+
+func conNode(st mut S, i int) int {
+    return st.h[st.cons + i * CNSZ]
+}
+
+func conValue(st mut S, i int) int {
+    return st.h[st.cons + i * CNSZ + 2]
+}
+
+func conDict(st mut S, i int) bool {
+    return st.h[st.cons + i * CNSZ + 4] != 0
+}
+
+// ── 初期化: loader の Program をヒープへ ──
+
+// d6 は 6 欄の付け替えの種類（8 進 1 桁ずつ）: 0 = 値、1 = 節、2 = 文字列、3 = 節の列、4 = 文字列の列、5 = 値の列
+func d6(a int, b int, c int, d int, e int, f int) int {
+    return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
+}
+

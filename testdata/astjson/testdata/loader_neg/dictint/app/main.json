@@ -1,0 +1,115 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "D",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 34
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "B",
+                  "tok": 36
+                }
+              ],
+              "tok": 35
+            }
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 41
+      },
+      "sig_end": 33
+    }
+  ],
+  "consts": [
+    {
+      "name": "A",
+      "expr": {
+        "k": "composite",
+        "type_name": "D",
+        "elems": [
+          {
+            "key": "n",
+            "value": {
+              "k": "int",
+              "value": 1,
+              "tok": 19
+            }
+          }
+        ],
+        "tok": 15,
+        "type_args": []
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 22
+      }
+    },
+    {
+      "name": "B",
+      "expr": {
+        "k": "binary",
+        "op": "+",
+        "lhs": {
+          "k": "ident",
+          "name": "A",
+          "tok": 25
+        },
+        "rhs": {
+          "k": "int",
+          "value": 1,
+          "tok": 27
+        },
+        "tok": 26
+      },
+      "tok": 23,
+      "span": {
+        "start": 22,
+        "end": 29
+      }
+    }
+  ]
+}

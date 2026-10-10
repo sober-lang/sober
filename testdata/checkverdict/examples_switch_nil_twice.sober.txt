@@ -1,0 +1,2 @@
+sober: load error at examples/switch_nil_twice.sober:13:5: case nil appears more than once in the switch
+exit=1

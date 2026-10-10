@@ -1,0 +1,237 @@
+package loader
+
+// flow typing の連鎖と早期脱出（language.md 427 行の flow typing の改訂 — F-w / F-y・ユーザー裁定 2026-10-04）を脱糖の固定テンプレートで if の入れ子に写す。
+// 以降の層（desugar・lower・typer・analyzer）は写した後の木（単独の `x != nil` / `x == nil` を条件に持つ if）だけを読む — コア・Lean は無変更。
+//
+// ① `&&` の連鎖の中の `x != nil`（F-w — 右辺と本体で x は T）— else の無い if だけ:
+//        if A && x != nil && B { T }   →   if A { if x != nil { if B { T } } }
+//     （else のある形は else の腕の複製が lower の展開で膨らむので写さない — 自己 build の RSS 479 → 2248 MB を実測。需要が出たら旗の変数で再訪）
+// ② `||` の連鎖の中の `x == nil` で、then が脱出（return / break / continue）1 文だけ（否定側 = else で x は T）:
+//        if A || x == nil || B { T } else { E }
+//     →  if A { T } else { if x == nil { T } else { if B { T } else { E } } }
+//     （then は脱出なので複製しても x を絞った形で値として読まれない — 脱出で終わらない then は写さない）
+// ③ 早期脱出（F-y）: 文の列の中の else の無い `if C { …; return }`（C は `x == nil` か ② の連鎖）の後ろの文を else に入れる:
+//        if x == nil { return … }  rest…   →   if x == nil { return … } else { rest… }
+//     （rest の中で x は T。defer・束縛の見える範囲は列の終わりと同じ — else の腕は region 境界ではない）
+// 写しは固定点まで回す（写した後の入れ子にまた連鎖が残る）。名前の判定は字面だけ（x の型は見ない — 型が T? でなくても写しは意味を変えない）
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "lexer"
+
+// flowAll は全ファイルの木の flow typing の連鎖と早期脱出を写す
+func flowAll(ts []ast.Tree) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        mut t := ts[i]
+        mut round := 0
+        mut going := true
+        while going && round < 16 {
+            t2, changed := flowRound(t)
+            t = t2
+            going = changed
+            round += 1
+        }
+        out = append(out, t)
+    }
+    return freeze(out)
+}
+
+// nilTestKind は節 n が `x != nil`（1）/ `x == nil`（2）/ どちらでもない（0）か（x は名前）
+func nilTestKind(t ast.Tree, n0 int) int {
+    n := unparen(t, n0)
+    if n < 0 || t.nodes[n].kind != ast.EBinary {
+        return 0
+    }
+    x := t.nodes[n]
+    l := unparen(t, x.b)
+    r := unparen(t, x.c)
+    named := (t.nodes[l].kind == ast.EIdent && t.nodes[r].kind == ast.ENil) || (t.nodes[l].kind == ast.ENil && t.nodes[r].kind == ast.EIdent)
+    if !named {
+        return 0
+    }
+    return if x.a == lexer.BangEqual { 1 } else if x.a == lexer.EqualEqual { 2 } else { 0 }
+}
+
+// chainOf は op（&& / ||）の連鎖を左から平らにした項の列
+func chainOf(t ast.Tree, n0 int, op int) []int {
+    n := unparen(t, n0)
+    if t.nodes[n].kind == ast.EBinary && t.nodes[n].a == op {
+        l := chainOf(t, t.nodes[n].b, op)
+        r := chainOf(t, t.nodes[n].c, op)
+        mut out := mut []int{}
+        for i <- iter.Range(0, len(l)) {
+            out = append(out, l[i])
+        }
+        for i <- iter.Range(0, len(r)) {
+            out = append(out, r[i])
+        }
+        return freeze(out)
+    }
+    return []int{n0}
+}
+
+// diverges は KBlock の文の列が脱出（return / break / continue）で終わるか
+func diverges(t ast.Tree, blk int) bool {
+    l := t.nodes[blk].a
+    k := ast.ListLen(t, l)
+    if k == 0 {
+        return false
+    }
+    s := t.nodes[ast.ListAt(t, l, k - 1)].kind
+    return s == ast.SRet || s == ast.SBreak || s == ast.SContinue
+}
+
+// Fx は写しの作業場（足す節・データ）
+type Fx struct {
+    n0 int
+    nb builder.Builder[ast.Node]
+    db builder.Builder[int]
+}
+
+// fxNode は節を足してその添字
+func fxNode(x mut Fx, n ast.Node) int {
+    at := x.n0 + builder.Len(mut x.nb)
+    builder.Push(mut x.nb, n)
+    return at
+}
+
+// fxJoin は項の列 cs[lo:hi] を op の左結合の連鎖に（1 項ならその項）
+func fxJoin(x mut Fx, cs []int, lo int, hi int, op int, tok int) int {
+    mut acc := cs[lo]
+    for i <- iter.Range(lo + 1, hi) {
+        acc = fxNode(mut x, ast.Node{ast.EBinary, tok, op, acc, cs[i], 0, 0, 0})
+    }
+    return acc
+}
+
+// fxBlock は式 e を唯一の文に持つ KBlock
+func fxBlock(x mut Fx, e int, tok int) int {
+    s := fxNode(mut x, ast.Node{ast.SExpr, tok, e, 0, 0, 0, 0, 0})
+    return fxNode(mut x, ast.Node{ast.KBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
+}
+
+// flowRound は木を 1 周写す（写したら changed）
+func flowRound(t ast.Tree) (ast.Tree, bool) {
+    n0 := len(t.nodes)
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut x := Fx{n0: n0, nb: builder.Builder[ast.Node]{}, db: builder.Builder[int]{}}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut x.db, t.data[j])
+    }
+    mut changed := false
+    for i <- iter.Range(0, n0) {
+        nd := t.nodes[i]
+        tok := nd.tok
+        if nd.kind == ast.EIf {
+            // ① && の連鎖の中の x != nil
+            ands := chainOf(t, nd.a, lexer.AmpersandAmpersand)
+            mut p := -1
+            for q <- iter.Range(0, len(ands)) {
+                if p < 0 && nilTestKind(t, ands[q]) == 1 {
+                    p = q
+                }
+            }
+            // else のある if は写さない（else の腕〔else-if の連鎖ごと〕の複製が lower の展開で膨らむ — 自己 build の RSS 479 → 2248 MB の実測）
+            if p >= 0 && len(ands) > 1 && nd.c < 0 {
+                els := nd.c
+                // 中: x != nil の then = 残りの連鎖の if（無ければ元の then）
+                inner := if p + 1 < len(ands) {
+                    fxBlock(mut x, fxNode(mut x, ast.Node{ast.EIf, tok, fxJoin(mut x, ands, p + 1, len(ands), lexer.AmpersandAmpersand, tok), nd.b, els, 0, 0, 0}), tok)
+                } else {
+                    nd.b
+                }
+                mid := ast.Node{ast.EIf, tok, ands[p], inner, els, 0, 0, 0}
+                if p == 0 {
+                    ns[i] = mid
+                } else {
+                    m := fxNode(mut x, mid)
+                    ns[i] = ast.Node{ast.EIf, tok, fxJoin(mut x, ands, 0, p, lexer.AmpersandAmpersand, tok), fxBlock(mut x, m, tok), els, 0, 0, 0}
+                }
+                changed = true
+                continue
+            }
+            // ② || の連鎖の中の x == nil（then が脱出のときだけ）
+            ors := chainOf(t, nd.a, lexer.PipePipe)
+            mut r := -1
+            for q <- iter.Range(0, len(ors)) {
+                if r < 0 && nilTestKind(t, ors[q]) == 2 {
+                    r = q
+                }
+            }
+            // then は 1 文（脱出だけ）のときだけ複製する（大きい then の複製は膨らむ）
+            if r >= 0 && len(ors) > 1 && diverges(t, nd.b) && ast.ListLen(t, t.nodes[nd.b].a) == 1 {
+                els := nd.c
+                // x == nil の else = 残りの連鎖の if（無ければ元の else）
+                after := if r + 1 < len(ors) {
+                    fxNode(mut x, ast.Node{ast.EIf, tok, fxJoin(mut x, ors, r + 1, len(ors), lexer.PipePipe, tok), nd.b, els, 0, 0, 0})
+                } else {
+                    els
+                }
+                mid := ast.Node{ast.EIf, tok, ors[r], nd.b, after, 0, 0, 0}
+                if r == 0 {
+                    ns[i] = mid
+                } else {
+                    m := fxNode(mut x, mid)
+                    ns[i] = ast.Node{ast.EIf, tok, fxJoin(mut x, ors, 0, r, lexer.PipePipe, tok), nd.b, m, 0, 0, 0}
+                }
+                changed = true
+                continue
+            }
+        }
+        if nd.kind == ast.KBlock || nd.kind == ast.EBlock {
+            // ③ 早期脱出の後ろの文を else へ
+            l := nd.a
+            k := ast.ListLen(t, l)
+            mut at0 := -1
+            for q <- iter.Range(0, k) {
+                s := t.nodes[ast.ListAt(t, l, q)]
+                if at0 < 0 && q + 1 < k && s.kind == ast.SExpr {
+                    e := t.nodes[s.a]
+                    if e.kind == ast.EIf && e.c < 0 && diverges(t, e.b) {
+                        ors := chainOf(t, e.a, lexer.PipePipe)
+                        mut neg := false
+                        for w <- iter.Range(0, len(ors)) {
+                            if nilTestKind(t, ors[w]) == 2 {
+                                neg = true
+                            }
+                        }
+                        if neg {
+                            at0 = q
+                        }
+                    }
+                }
+            }
+            if at0 >= 0 {
+                s := t.nodes[ast.ListAt(t, l, at0)]
+                e := t.nodes[s.a]
+                mut rest := mut []int{}
+                for q <- iter.Range(at0 + 1, k) {
+                    rest = append(rest, ast.ListAt(t, l, q))
+                }
+                eb := fxNode(mut x, ast.Node{ast.EBlock, e.tok, ast.PutList(mut x.db, freeze(rest)), 0, 0, 0, 0, 0})
+                ni := fxNode(mut x, ast.Node{ast.EIf, e.tok, e.a, e.b, eb, 0, 0, 0})
+                ns2 := fxNode(mut x, ast.Node{ast.SExpr, s.tok, ni, 0, 0, 0, 0, 0})
+                mut head := mut []int{}
+                for q <- iter.Range(0, at0) {
+                    head = append(head, ast.ListAt(t, l, q))
+                }
+                head = append(head, ns2)
+                ns[i] = ast.Node{nd.kind, tok, ast.PutList(mut x.db, freeze(head)), nd.b, nd.c, nd.d, nd.e, nd.f}
+                changed = true
+            }
+        }
+    }
+    if !changed {
+        return t, false
+    }
+    added := builder.Build(mut x.nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut x.db), t.file}, true
+}

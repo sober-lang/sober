@@ -1,0 +1,1086 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "get",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "int"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "ident",
+                "name": "b",
+                "tok": 22
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 25
+                      }
+                    ],
+                    "tok": 24
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 21
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 30
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 34
+      },
+      "sig_end": 20
+    },
+    {
+      "name": "fail",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "ident",
+                "name": "b",
+                "tok": 44
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "Bad",
+                        "elems": [
+                          {
+                            "key": "n",
+                            "value": {
+                              "k": "int",
+                              "value": 7,
+                              "tok": 51
+                            }
+                          }
+                        ],
+                        "tok": 47,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 46
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 43
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 57
+              }
+            ],
+            "tok": 56
+          }
+        ]
+      },
+      "tok": 35,
+      "bodiless": false,
+      "span": {
+        "start": 34,
+        "end": 61
+      },
+      "sig_end": 42
+    },
+    {
+      "name": "size",
+      "type_params": [],
+      "params": [
+        {
+          "name": "m",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "int"
+            }
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "m",
+                    "tok": 74
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 76
+                  },
+                  "tok": 75
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 78
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 80
+                  },
+                  "tok": 79
+                },
+                "tok": 77
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 83
+                      }
+                    ],
+                    "tok": 82
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 73
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 88
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 90
+                },
+                "tok": 89
+              }
+            ],
+            "tok": 87
+          }
+        ]
+      },
+      "tok": 62,
+      "bodiless": false,
+      "span": {
+        "start": 61,
+        "end": 94
+      },
+      "sig_end": 72
+    },
+    {
+      "name": "code",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "fail",
+                  "tok": 104
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 106
+                  }
+                ],
+                "tok": 105
+              }
+            ],
+            "tok": 102
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 110
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 112
+                },
+                "tok": 111
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 115
+                      }
+                    ],
+                    "tok": 114
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 109
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "err",
+                    "tok": 121
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Bad",
+                        "fields": [
+                          {
+                            "name": "n",
+                            "sub": null,
+                            "tok": 126
+                          }
+                        ],
+                        "tok": 124
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "ident",
+                            "name": "n",
+                            "tok": 129
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 123
+                  }
+                ],
+                "default": null,
+                "tok": 120
+              }
+            ],
+            "tok": 119
+          }
+        ]
+      },
+      "tok": 95,
+      "bodiless": false,
+      "span": {
+        "start": 94,
+        "end": 135
+      },
+      "sig_end": 101
+    },
+    {
+      "name": "name",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "string"
+          }
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "ident",
+                "name": "b",
+                "tok": 150
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "x",
+                        "tok": 153
+                      },
+                      {
+                        "k": "nil",
+                        "tok": 155
+                      }
+                    ],
+                    "tok": 152
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 149
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 160
+              },
+              {
+                "k": "composite",
+                "type_name": "Bad",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 166
+                    }
+                  }
+                ],
+                "tok": 162,
+                "type_args": []
+              }
+            ],
+            "tok": 159
+          }
+        ]
+      },
+      "tok": 136,
+      "bodiless": false,
+      "span": {
+        "start": 135,
+        "end": 171
+      },
+      "sig_end": 148
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "get",
+                  "tok": 178
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "true",
+                    "tok": 180
+                  }
+                ],
+                "tok": 179
+              }
+            ],
+            "tok": 176
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "&&",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "true",
+                    "tok": 184
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "!=",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 186
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 188
+                    },
+                    "tok": 187
+                  },
+                  "tok": 185
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 190
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 192
+                  },
+                  "tok": 191
+                },
+                "tok": 189
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 194
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "v",
+                            "tok": 196
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 198
+                          },
+                          "tok": 197
+                        }
+                      ],
+                      "tok": 195
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 183
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "w"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "get",
+                  "tok": 205
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "false",
+                    "tok": 207
+                  }
+                ],
+                "tok": 206
+              }
+            ],
+            "tok": 203
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "&&",
+                "lhs": {
+                  "k": "binary",
+                  "op": "!=",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 211
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 213
+                  },
+                  "tok": 212
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 215
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 217
+                  },
+                  "tok": 216
+                },
+                "tok": 214
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 219
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "w",
+                          "tok": 221
+                        }
+                      ],
+                      "tok": 220
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 210
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 226
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "none",
+                  "tok": 228
+                }
+              ],
+              "tok": 227
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 231
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "size",
+                    "tok": 233
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 235
+                    },
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 237
+                    }
+                  ],
+                  "tok": 234
+                }
+              ],
+              "tok": 232
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 241
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "size",
+                    "tok": 243
+                  },
+                  "args": [
+                    {
+                      "k": "nil",
+                      "tok": 245
+                    },
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 247
+                    }
+                  ],
+                  "tok": 244
+                }
+              ],
+              "tok": 242
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 251
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 253
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 255
+                    }
+                  ],
+                  "tok": 254
+                }
+              ],
+              "tok": 252
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 259
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "code",
+                    "tok": 261
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 263
+                    }
+                  ],
+                  "tok": 262
+                }
+              ],
+              "tok": 260
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 269
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "false",
+                      "tok": 271
+                    }
+                  ],
+                  "tok": 270
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 274
+                },
+                "tok": 273
+              }
+            ],
+            "tok": 267
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 276
+              },
+              "args": [
+                {
+                  "k": "if",
+                  "cond": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "s",
+                      "tok": 279
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 281
+                    },
+                    "tok": 280
+                  },
+                  "then": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "strlit",
+                          "value": "nil",
+                          "tok": 283
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "ident",
+                          "name": "s",
+                          "tok": 287
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 278
+                }
+              ],
+              "tok": 277
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 293
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 295
+                    }
+                  ],
+                  "tok": 294
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 298
+                },
+                "tok": 297
+              }
+            ],
+            "tok": 291
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "t",
+                  "tok": 301
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 303
+                },
+                "tok": 302
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 305
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "t",
+                          "tok": 307
+                        }
+                      ],
+                      "tok": 306
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 300
+            }
+          }
+        ]
+      },
+      "tok": 172,
+      "bodiless": false,
+      "span": {
+        "start": 171,
+        "end": 314
+      },
+      "sig_end": 175
+    }
+  ],
+  "consts": []
+}

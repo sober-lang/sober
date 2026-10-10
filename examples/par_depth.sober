@@ -1,0 +1,37 @@
+package main
+
+// 段 6 P3a: region の深度の上限で死んだ子（102）の後にも、同じ scope で子を生める（罠の後で深度を戻す — lower/par.sober。
+// 最適化器は trap を「深度を変えない呼び出し」として扱わない — depth.sober / opt.sober。最適化あり・なしの観測一致が網）
+
+import "std/par"
+
+func deep(n int) int {
+    return deep(n + 1) + 1
+}
+
+func pick(xs []int, i int) int {
+    return xs[i]
+}
+
+func main() {
+    xs := []int{1, 2, 3}
+    r, e := par.Scope((s par.S) => {
+        h1 := par.Spawn(s, () => deep(0))
+        h2 := par.Spawn(s, () => pick(xs, 2) * 10)
+        h3 := par.Spawn(s, () => {
+            v, ve := par.Scope((s2 par.S) => par.Join(par.Spawn(s2, () => pick(xs, 1))))
+            v
+        })
+        a := switch par.Try(h1) {
+        case par.Ok{v}: v
+        case par.Failed{}: 100
+        case par.Died{cause}: 100
+        }
+        println(a + par.Join(h2) + par.Join(h3))
+        1
+    })
+    if e != nil {
+        println(-1)
+    }
+    println(r)
+}

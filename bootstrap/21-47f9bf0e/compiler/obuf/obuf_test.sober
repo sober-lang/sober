@@ -1,0 +1,51 @@
+package obuf
+
+// obuf の単体テスト（`cd compiler && ../bin/sober test obuf` — compiler/ の最初の単体テスト。失敗 = panic）。
+// Int は負数・最小値で符号を反転しない書き方（C8 で写しの食い違いを畳んだ箇所）なので、境界の値を並べる。失敗の印字は power assert（T5）
+
+// text は out の中身の string（UTF-8 の検査に落ちたら panic — ここに来るのは ASCII だけ）
+func text(out []byte) string {
+    s := string(out) catch panic(Unreachable{})
+    return s
+}
+
+func intText(n int) string {
+    mut out := mut []byte{}
+    Int(mut out, n)
+    return text(freeze(out))
+}
+
+func TestInt() {
+    assert(intText(0) == "0")
+    assert(intText(7) == "7")
+    assert(intText(10) == "10")
+    assert(intText(1234567) == "1234567")
+    assert(intText(0 - 1) == "-1")
+    assert(intText(0 - 90) == "-90")
+}
+
+func TestIntExtremes() {
+    assert(intText(9223372036854775807) == "9223372036854775807")
+    assert(intText(0 - 9223372036854775807 - 1) == "-9223372036854775808")
+}
+
+func TestLitBool() {
+    mut out := mut []byte{}
+    Lit(mut out, "x=")
+    Bool(mut out, true)
+    Lit(mut out, ",")
+    Bool(mut out, false)
+    assert(text(freeze(out)) == "x=true,false")
+}
+
+func TestKey() {
+    mut out := mut []byte{}
+    out = append(out, '{')
+    Key(mut out, 1, true, "a")
+    Int(mut out, 1)
+    Key(mut out, 1, false, "b")
+    Int(mut out, 2)
+    Nl(mut out, 0)
+    out = append(out, '}')
+    assert(text(freeze(out)) == "{\n  \"a\": 1,\n  \"b\": 2\n}")
+}

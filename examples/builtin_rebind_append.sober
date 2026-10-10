@@ -1,0 +1,13 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 16）: append は組み込みの名前で再束縛できない（2026-09-30 に追加 — 以前は局所に束縛すると
+// build は組み込みの append、check は束縛の関数値と読んで食い違いうる形だった）
+
+func twice(xs []int, x int) []int {
+    return xs
+}
+
+func main() {
+    append := twice
+    println(len(append([]int{1}, 2)))
+}

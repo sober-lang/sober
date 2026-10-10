@@ -1,0 +1,256 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/par",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "W",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "s",
+            "type": {
+              "k": "name",
+              "name": "par.S"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "par",
+                    "tok": 26
+                  },
+                  "field": "Scope",
+                  "tok": 28
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "par.S"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "w"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "composite",
+                              "type_name": "W",
+                              "elems": [
+                                {
+                                  "key": "s",
+                                  "value": {
+                                    "k": "ident",
+                                    "name": "s",
+                                    "tok": 44
+                                  }
+                                }
+                              ],
+                              "tok": 40,
+                              "type_args": []
+                            }
+                          ],
+                          "tok": 38
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "h"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "par",
+                                  "tok": 49
+                                },
+                                "field": "Spawn",
+                                "tok": 51
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 53
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "par",
+                                        "tok": 58
+                                      },
+                                      "field": "Join",
+                                      "tok": 60
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "selector",
+                                          "base": {
+                                            "k": "ident",
+                                            "name": "par",
+                                            "tok": 62
+                                          },
+                                          "field": "Spawn",
+                                          "tok": 64
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "w",
+                                              "tok": 66
+                                            },
+                                            "field": "s",
+                                            "tok": 68
+                                          },
+                                          {
+                                            "k": "lambda",
+                                            "params": [],
+                                            "body": {
+                                              "k": "int",
+                                              "value": 2,
+                                              "tok": 73
+                                            },
+                                            "tok": 72
+                                          }
+                                        ],
+                                        "tok": 65
+                                      }
+                                    ],
+                                    "tok": 61
+                                  },
+                                  "tok": 57
+                                }
+                              ],
+                              "tok": 52
+                            }
+                          ],
+                          "tok": 47
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "par",
+                                "tok": 78
+                              },
+                              "field": "Join",
+                              "tok": 80
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "h",
+                                "tok": 82
+                              }
+                            ],
+                            "tok": 81
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 36
+                  }
+                ],
+                "tok": 29
+              }
+            ],
+            "tok": 22
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 88
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 90
+                }
+              ],
+              "tok": 89
+            }
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 95
+      },
+      "sig_end": 21
+    }
+  ],
+  "consts": []
+}

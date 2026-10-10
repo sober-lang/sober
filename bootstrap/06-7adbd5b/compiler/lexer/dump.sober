@@ -1,0 +1,49 @@
+package lexer
+
+// Dump は b を字句に分け、Zig 版 `sober lex` と同じ形（1 行 1 字句: 種類 開始 終わり 綴り）のバイト列にする。
+// `sober lex`（compiler/app）と lexer の差分オラクルの Sober 側（compiler/tools/lexdump）が共有する。
+// 出力は 1 本のバイト列に積む（string を字句ごとに作らない — ソースはバイト列のまま扱う）
+
+import "std/builder"
+import "std/iter"
+
+// putStr は s のバイトを積む
+func putStr(out mut builder.Builder[int], s string) {
+    b := bytes(s)
+    for k <- iter.Range(0, len(b)) {
+        builder.Push(mut out, b[k])
+    }
+}
+
+// putUint は n >= 0 の 10 進表記を積む
+func putUint(out mut builder.Builder[int], n int) {
+    mut p := 1
+    while p <= n / 10 {
+        p = p * 10
+    }
+    while p > 0 {
+        builder.Push(mut out, n / p % 10 + 48)
+        p = p / 10
+    }
+}
+
+func Dump(src []int) []int {
+    ts := Lex(src)
+    mut out := builder.Builder[int]{}
+    for i <- iter.Range(0, len(ts)) {
+        t := ts[i]
+        putStr(mut out, TagName(t.tag))
+        builder.Push(mut out, 32)
+        putUint(mut out, t.start)
+        builder.Push(mut out, 32)
+        putUint(mut out, t.end)
+        builder.Push(mut out, 32)
+        mut k := t.start
+        while k < t.end {
+            builder.Push(mut out, src[k])
+            k += 1
+        }
+        builder.Push(mut out, 10)
+    }
+    return builder.Build(mut out)
+}

@@ -1,0 +1,58 @@
+[package]
+name = "sober-bench-twins"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Rust の双子（bench/<題材>/rust/main.rs）。
+# rust/ = 素直縛り: --release の既定のまま（opt-level 3・lto なし・codegen-units 既定）・明示 SIMD / unsafe / rayon なし・
+#         依存の crate なし（std だけ — --offline で建つ）。建て方 = bench/rust/build.sh
+# rustopt/ = 慣用縛り（負け題材だけの慣用チューニング版 — 定義は各 bench/<題材>/rustopt/main.rs 冒頭）
+
+[[bin]]
+name = "1brc"
+path = "../1brc/rust/main.rs"
+
+[[bin]]
+name = "1brc-opt"
+path = "../1brc/rustopt/main.rs"
+
+[[bin]]
+name = "binarytrees"
+path = "../binarytrees/rust/main.rs"
+
+[[bin]]
+name = "fannkuch"
+path = "../fannkuch/rust/main.rs"
+
+[[bin]]
+name = "fasta"
+path = "../fasta/rust/main.rs"
+
+[[bin]]
+name = "revcomp"
+path = "../revcomp/rust/main.rs"
+
+[[bin]]
+name = "knucleotide"
+path = "../knucleotide/rust/main.rs"
+
+[[bin]]
+name = "knucleotide-opt"
+path = "../knucleotide/rustopt/main.rs"
+
+[[bin]]
+name = "nbody"
+path = "../nbody/rust/main.rs"
+
+[[bin]]
+name = "nbody-opt"
+path = "../nbody/rustopt/main.rs"
+
+[[bin]]
+name = "spectralnorm"
+path = "../spectralnorm/rust/main.rs"
+
+[[bin]]
+name = "mandelbrot"
+path = "../mandelbrot/rust/main.rs"

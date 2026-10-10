@@ -1,0 +1,78 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "pt",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "X",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "pt"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "p",
+                  "tok": 21
+                },
+                "field": "x",
+                "tok": 23
+              }
+            ],
+            "tok": 20
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 27
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": []
+}

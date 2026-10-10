@@ -1,0 +1,11 @@
+package main
+
+func mk() mut []int {
+    mut xs := mut []int{}
+    xs = append(xs, 1)
+    return xs
+}
+
+func main() {
+    println(len(mk()))
+}

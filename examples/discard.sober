@@ -1,0 +1,54 @@
+package main
+
+import "std/io"
+
+// 明示の黙殺 `_ = expr`（language.md 11 節「defer 内のエラー」・決定 — 2026-10-02 実装）: 値を評価して捨てる。捨てた事実が字面に残る。
+// 多値の呼び出しは 1 つの `_` では捨てられない — `_` を結果の数だけ並べる（`?` 付きはエラーを除いた数。数が合わなければ check・build とも拒否）
+
+type Bad error {
+    code int
+}
+
+func run(ok bool) (int, string, error?) {
+    if !ok {
+        return 0, "", Bad{code: 1}
+    }
+    return 1, "x", nil
+}
+
+func pair() (int, string) {
+    return 2, "y"
+}
+
+// 値を捨てて伝播（`_, _ = run(ok)?` — 結果の値は要らず、エラーだけ上へ）
+func step(ok bool) (int, error?) {
+    _, _ = run(ok)?
+    _, _ = pair()
+    return 10, nil
+}
+
+func report(msg string) int {
+    _ = io.WriteStderr(bytes(msg + "\n"))
+    return len(bytes(msg))
+}
+
+func closing() int {
+    defer {
+        _ = io.WriteStderr(bytes("closed\n"))
+    }
+    return 7
+}
+
+func main() {
+    x := 3
+    _ = x + 1
+    mut n := 0
+    _ = {
+        n = n + 1
+        n
+    }
+    println(report("hello"), closing(), x, n)
+    a, e1 := step(true)
+    b, e2 := step(false)
+    println(a, e1 == nil, b, e2 == nil)
+}

@@ -1,0 +1,8 @@
+package main
+
+// 負例: byte と int の式の比較は型エラー — 暗黙変換は無い（int(b) == n と書く）（language.md 33 節）
+func main() {
+    b := byte(65)
+    n := 65
+    println(b == n)
+}

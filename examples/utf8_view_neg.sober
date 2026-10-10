@@ -1,0 +1,10 @@
+package main
+
+// 負例: utf8 の証人 View は Check だけが作る — 外の package は検査を経ずに証人を作れない（非公開の型の封の欄 seal が書けない — 部分リテラルは拒否）
+
+import "std/utf8"
+
+func main() {
+    v := utf8.View{b: []byte{255}}
+    println(len(utf8.Bytes(v)))
+}

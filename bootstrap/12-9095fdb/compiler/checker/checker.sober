@@ -1,0 +1,122 @@
+package checker
+
+import "std/table"
+import "obuf"
+
+// 入口: コア AST JSON のバイト列 → 判定 JSON のバイト列（sober-check の stdout と同じ — Json.lean の checkInput + IO.println）。
+// parse error の文言だけは写さない（Lean の Json.parse / fromJson の文言 — 差分オラクルは "parse error" までで比べる。仮決め R11-2）
+
+// defRec は Def の記録 [param, ret, body, tparams, mask] を 1 つ組む（g = defs の要素の汎用の記録）。
+// parts = 部分検査の封筒（body の無い Def は署名だけ — 本体 triv・mask 0）。組めなければ -1
+func defRec(st mut S, g int, parts bool, triv int) int {
+    fp := gField(mut st, g, W_PARAM)
+    fr := gField(mut st, g, W_RET)
+    fb := gField(mut st, g, W_BODY)
+    ft := gField(mut st, g, W_TPARAMS)
+    if fp < 0 || fr < 0 || table.Get(mut st.h, fp) != V_TY || table.Get(mut st.h, fr) != V_TY {
+        return -1
+    }
+    // tparams は getObjValAs? Nat の失敗を 0 に読む（toOption.getD 0）
+    tp := if ft >= 0 && table.Get(mut st.h, ft) == V_NUM && table.Get(mut st.h, ft + 1) >= 0 { table.Get(mut st.h, ft + 1) } else { 0 }
+    mut body := triv
+    mut mask := 1
+    if fb < 0 {
+        if !parts {
+            return -1
+        }
+        mask = 0
+    } else if table.Get(mut st.h, fb) != V_EXPR {
+        return -1
+    } else {
+        body = table.Get(mut st.h, fb + 1)
+    }
+    return rec5(mut st, table.Get(mut st.h, fp + 1), table.Get(mut st.h, fr + 1), body, tp, mask)
+}
+
+// program は根の値から関数表（st.defs）を組み、根の式を返す。-1 = 根の式なし（部分検査）、-2 = parse error
+func program(st mut S, p Parsed) int {
+    if !isObjTag(p.tag) || p.gen < 0 {
+        return -2
+    }
+    g := p.gen
+    fparts := gField(mut st, g, W_PARTS)
+    parts := fparts >= 0 && table.Get(mut st.h, fparts) == V_TRUE
+    fd := gField(mut st, g, W_DEFS)
+    if fd < 0 {
+        if parts || p.tag != V_EXPR {
+            return -2
+        }
+        st.defs = rec4(mut st, 0, 0, 0, 0)
+        return p.val
+    }
+    if table.Get(mut st.h, fd) != V_ARR {
+        return -2
+    }
+    triv := node(mut st, W_TRIV, 0, 0, 0, 0)
+    arr := table.Get(mut st.h, fd + 1)
+    n := table.Get(mut st.h, arr)
+    ds := block(mut st, n + 1)
+    table.Set(mut st.h, ds, n)
+    mut c := table.Get(mut st.h, arr + 1)
+    mut i := 0
+    while c >= 0 {
+        if !isObjTag(table.Get(mut st.h, c)) || table.Get(mut st.h, c + 2) < 0 {
+            return -2
+        }
+        dr := defRec(mut st, table.Get(mut st.h, c + 2), parts, triv)
+        if dr < 0 {
+            return -2
+        }
+        table.Set(mut st.h, ds + 1 + i, dr)
+        i += 1
+        c = table.Get(mut st.h, c + 3)
+    }
+    st.defs = ds
+    fe := gField(mut st, g, W_E)
+    if fe < 0 {
+        return if parts { -1 } else { -2 }
+    }
+    if table.Get(mut st.h, fe) != V_EXPR {
+        return -2
+    }
+    return table.Get(mut st.h, fe + 1)
+}
+
+// Check は src（コア AST JSON）を検査し、判定 JSON（改行つき）を返す
+func Check(src []byte) []byte {
+    mut st := S{}
+    table.Push(mut st.h, 0)
+    st.tInt = mk(mut st, TInt, 0, 0, 0)
+    st.tBool = mk(mut st, TBool, 0, 0, 0)
+    st.tUnit = mk(mut st, TUnit, 0, 0, 0)
+    st.tByte = mk(mut st, TByte, 0, 0, 0)
+    initWords(mut st)
+    md := maxDepth(src)
+    st.pstk = block(mut st, (md + 1) * FS)
+    st.cstk = block(mut st, (md + 2) * CF)
+    p := parseJson(mut st, src)
+    root := if p.ok { program(mut st, p) } else { -2 }
+    if root == -2 {
+        return bytes("{\"errors\":[{\"msg\":\"parse error\"}],\"ok\":false}\n")
+    }
+    return verdict(mut st, root)
+}
+
+// verdict は checkAll の判定を JSON（改行つき）にする（Json.lean の checkToJson / checkPartsToJson の形）
+func verdict(st mut S, root int) []byte {
+    mut out := mut []byte{}
+    r := checkAll(mut st, root)
+    if r == R_TYPE {
+        obuf.Lit(mut out, "{\"errors\":[{\"msg\":\"type error\"}],\"ok\":false}")
+    } else if r == R_DEF {
+        obuf.Lit(mut out, "{\"errors\":[{\"msg\":\"def error\"}],\"ok\":false}")
+    } else if r == R_NOTY {
+        obuf.Lit(mut out, "{\"ok\":true}")
+    } else {
+        obuf.Lit(mut out, "{\"ok\":true,\"ty\":")
+        tyJson(mut st, mut out, r)
+        out = append(out, '}')
+    }
+    out = append(out, '\n')
+    return freeze(out)
+}

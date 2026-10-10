@@ -1,0 +1,734 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Point",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "y",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 9
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 14
+      }
+    },
+    {
+      "name": "Line",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "from",
+            "type": {
+              "k": "name",
+              "name": "Point"
+            },
+            "tok": 18
+          },
+          {
+            "name": "to",
+            "type": {
+              "k": "name",
+              "name": "Point"
+            },
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 15,
+      "span": {
+        "start": 14,
+        "end": 26
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "length2",
+      "type_params": [],
+      "params": [
+        {
+          "name": "l",
+          "type": {
+            "k": "name",
+            "name": "Line"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "dx"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 36
+                    },
+                    "field": "to",
+                    "tok": 38
+                  },
+                  "field": "x",
+                  "tok": 40
+                },
+                "rhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 42
+                    },
+                    "field": "from",
+                    "tok": 44
+                  },
+                  "field": "x",
+                  "tok": 46
+                },
+                "tok": 41
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "bind",
+            "names": [
+              "dy"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 50
+                    },
+                    "field": "to",
+                    "tok": 52
+                  },
+                  "field": "y",
+                  "tok": 54
+                },
+                "rhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 56
+                    },
+                    "field": "from",
+                    "tok": 58
+                  },
+                  "field": "y",
+                  "tok": 60
+                },
+                "tok": 55
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "dx",
+                    "tok": 63
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "dx",
+                    "tok": 65
+                  },
+                  "tok": 64
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "dy",
+                    "tok": 67
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "dy",
+                    "tok": 69
+                  },
+                  "tok": 68
+                },
+                "tok": 66
+              }
+            ],
+            "tok": 62
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 26,
+        "end": 73
+      },
+      "sig_end": 33
+    },
+    {
+      "name": "shift",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "Point"
+          },
+          "mutable": false
+        },
+        {
+          "name": "d",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Point"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Point",
+                "elems": [
+                  {
+                    "key": null,
+                    "value": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "p",
+                          "tok": 87
+                        },
+                        "field": "x",
+                        "tok": 89
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "d",
+                        "tok": 91
+                      },
+                      "tok": 90
+                    }
+                  },
+                  {
+                    "key": null,
+                    "value": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "p",
+                          "tok": 93
+                        },
+                        "field": "y",
+                        "tok": 95
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "d",
+                        "tok": 97
+                      },
+                      "tok": 96
+                    }
+                  }
+                ],
+                "tok": 85,
+                "type_args": []
+              }
+            ],
+            "tok": 84
+          }
+        ]
+      },
+      "tok": 74,
+      "bodiless": false,
+      "span": {
+        "start": 73,
+        "end": 102
+      },
+      "sig_end": 83
+    },
+    {
+      "name": "ends",
+      "type_params": [],
+      "params": [
+        {
+          "name": "l",
+          "type": {
+            "k": "name",
+            "name": "Line"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Point"
+        },
+        {
+          "k": "name",
+          "name": "Point"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "l",
+                  "tok": 115
+                },
+                "field": "from",
+                "tok": 117
+              },
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "l",
+                  "tok": 119
+                },
+                "field": "to",
+                "tok": 121
+              }
+            ],
+            "tok": 114
+          }
+        ]
+      },
+      "tok": 103,
+      "bodiless": false,
+      "span": {
+        "start": 102,
+        "end": 125
+      },
+      "sig_end": 113
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Point",
+                "elems": [
+                  {
+                    "key": null,
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 134
+                    }
+                  },
+                  {
+                    "key": null,
+                    "value": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 136
+                    }
+                  }
+                ],
+                "tok": 132,
+                "type_args": []
+              }
+            ],
+            "tok": 130
+          },
+          {
+            "k": "bind",
+            "names": [
+              "q"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Point",
+                "elems": [
+                  {
+                    "key": "y",
+                    "value": {
+                      "k": "int",
+                      "value": 6,
+                      "tok": 145
+                    }
+                  },
+                  {
+                    "key": "x",
+                    "value": {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 149
+                    }
+                  }
+                ],
+                "tok": 141,
+                "type_args": []
+              }
+            ],
+            "tok": 139
+          },
+          {
+            "k": "bind",
+            "names": [
+              "l"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Line",
+                "elems": [
+                  {
+                    "key": "from",
+                    "value": {
+                      "k": "ident",
+                      "name": "p",
+                      "tok": 158
+                    }
+                  },
+                  {
+                    "key": "to",
+                    "value": {
+                      "k": "ident",
+                      "name": "q",
+                      "tok": 162
+                    }
+                  }
+                ],
+                "tok": 154,
+                "type_args": []
+              }
+            ],
+            "tok": 152
+          },
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Line",
+                "elems": [
+                  {
+                    "key": "from",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "Point",
+                      "elems": [],
+                      "tok": 172,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "to",
+                    "value": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "shift",
+                        "tok": 178
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "q",
+                          "tok": 180
+                        },
+                        {
+                          "k": "int",
+                          "value": 10,
+                          "tok": 182
+                        }
+                      ],
+                      "tok": 179
+                    }
+                  }
+                ],
+                "tok": 168,
+                "type_args": []
+              }
+            ],
+            "tok": 165
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "m",
+                    "tok": 186
+                  },
+                  "field": "from",
+                  "tok": 188
+                },
+                "field": "x",
+                "tok": 190
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 3,
+                "tok": 192
+              }
+            ],
+            "tok": 186
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a",
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "ends",
+                  "tok": 198
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "m",
+                    "tok": 200
+                  }
+                ],
+                "tok": 199
+              }
+            ],
+            "tok": 194
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 203
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "length2",
+                    "tok": 205
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 207
+                    }
+                  ],
+                  "tok": 206
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "shift",
+                      "tok": 210
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "p",
+                        "tok": 212
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 214
+                      }
+                    ],
+                    "tok": 211
+                  },
+                  "field": "y",
+                  "tok": 217
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "m",
+                      "tok": 219
+                    },
+                    "field": "from",
+                    "tok": 221
+                  },
+                  "field": "x",
+                  "tok": 223
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "m",
+                      "tok": 225
+                    },
+                    "field": "from",
+                    "tok": 227
+                  },
+                  "field": "y",
+                  "tok": 229
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "a",
+                    "tok": 231
+                  },
+                  "field": "x",
+                  "tok": 233
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 235
+                  },
+                  "field": "x",
+                  "tok": 237
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 239
+                  },
+                  "field": "y",
+                  "tok": 241
+                }
+              ],
+              "tok": 204
+            }
+          }
+        ]
+      },
+      "tok": 126,
+      "bodiless": false,
+      "span": {
+        "start": 125,
+        "end": 246
+      },
+      "sig_end": 129
+    }
+  ],
+  "consts": []
+}

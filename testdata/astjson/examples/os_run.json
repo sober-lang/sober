@@ -1,0 +1,420 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/os",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "before",
+                  "tok": 13
+                }
+              ],
+              "tok": 12
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "os",
+                    "tok": 20
+                  },
+                  "field": "Run",
+                  "tok": 22
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/bin/sh",
+                    "tok": 24
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "string"
+                    },
+                    "elems": [
+                      {
+                        "k": "strlit",
+                        "value": "-c",
+                        "tok": 30
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "echo child; exit 3",
+                        "tok": 32
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 26
+                  }
+                ],
+                "tok": 23
+              }
+            ],
+            "tok": 16
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 37
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 39
+                },
+                "tok": 38
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 41
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 43
+                        }
+                      ],
+                      "tok": 42
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 36
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k",
+              "kerr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "os",
+                    "tok": 52
+                  },
+                  "field": "Run",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/bin/sh",
+                    "tok": 56
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "string"
+                    },
+                    "elems": [
+                      {
+                        "k": "strlit",
+                        "value": "-c",
+                        "tok": 62
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "kill -9 $$",
+                        "tok": 64
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 58
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "kerr",
+                  "tok": 69
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 71
+                },
+                "tok": 70
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 73
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 75
+                        }
+                      ],
+                      "tok": 74
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 68
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n",
+              "nerr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "os",
+                    "tok": 84
+                  },
+                  "field": "Run",
+                  "tok": 86
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/nonexistent",
+                    "tok": 88
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "string"
+                    },
+                    "elems": [],
+                    "mut": false,
+                    "tok": 90
+                  }
+                ],
+                "tok": 87
+              }
+            ],
+            "tok": 80
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "nerr",
+                  "tok": 98
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 100
+                },
+                "tok": 99
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 102
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 104
+                        }
+                      ],
+                      "tok": 103
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 97
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "z",
+              "zerr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "os",
+                    "tok": 113
+                  },
+                  "field": "Run",
+                  "tok": 115
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/bin/true",
+                    "tok": 117
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "string"
+                    },
+                    "elems": [],
+                    "mut": false,
+                    "tok": 119
+                  }
+                ],
+                "tok": 116
+              }
+            ],
+            "tok": 109
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "zerr",
+                  "tok": 127
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 129
+                },
+                "tok": 128
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 131
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "z",
+                          "tok": 133
+                        }
+                      ],
+                      "tok": 132
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 126
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 140
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

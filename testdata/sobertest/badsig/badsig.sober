@@ -1,0 +1,6 @@
+package badsig
+
+// T3 の負例（scripts/sobertest.sh）: テスト関数は引数・戻りなし
+func Two() int {
+    return 2
+}

@@ -1,0 +1,73 @@
+package lexer
+
+// lexer の単体テスト（`cd compiler && ../bin/sober test lexer`）: 字句の種類の列・セミコロン自動挿入・文字リテラル・補間の切り出し
+
+import "std/iter"
+
+// kinds は src の字句の種類の名前を空白でつないだもの（Eof まで）
+func kinds(src string) string {
+    ts := Lex(bytes(src))
+    mut s := ""
+    for i <- iter.Range(0, len(ts)) {
+        s = if i == 0 { TagName(ts[i].tag) } else { s + " " + TagName(ts[i].tag) }
+    }
+    return s
+}
+
+func TestBind() {
+    assert(kinds("x := 1") == "identifier colon_equal integer_literal semicolon eof")
+}
+
+func TestKeywords() {
+    assert(kinds("func f() int {") == "keyword_func identifier l_paren r_paren identifier l_brace eof")
+    assert(kinds("mut while for yield") == "keyword_mut keyword_while keyword_for keyword_yield eof")
+}
+
+// 改行の前（とファイルの末尾）が文を終える字句ならセミコロンを挿入する（Go と同じ規則）
+func TestSemicolonInsertion() {
+    assert(kinds("return x\ny") == "keyword_return identifier semicolon identifier semicolon eof")
+    assert(kinds("a +\nb") == "identifier plus identifier semicolon eof")
+}
+
+func TestComments() {
+    assert(kinds("a // note\nb") == "identifier semicolon identifier semicolon eof")
+    assert(kinds("a /* x */ b") == "identifier identifier semicolon eof")
+}
+
+func TestStrings() {
+    assert(kinds("\"a \${b} c\"") == "string_literal semicolon eof")
+    assert(kinds("`raw \${x}`") == "raw_string_literal semicolon eof")
+}
+
+func TestCharValue() {
+    b := bytes("'a' '\\n' '\\''")
+    assert(CharValue(b, 0, 3) == 97)
+    assert(CharValue(b, 4, 8) == 10)
+    assert(CharValue(b, 9, 13) == 39)
+}
+
+// InterpEnd は `${` の `{` から対応する `}` の直後（入れ子の波括弧・文字列を数える）
+func TestInterpEnd() {
+    b := bytes("\"x \${f({1})} y\"")
+    assert(InterpEnd(b, 4) == 12)
+    assert(InterpEnd(bytes("\"\${a\""), 2) == 0 - 1)
+}
+
+// synthKinds は LexSynth の字句の種類（kinds の合成ソース版）
+func synthKinds(src string) string {
+    ts := LexSynth(bytes(src))
+    mut s := ""
+    for i <- iter.Range(0, len(ts)) {
+        s = if i == 0 { TagName(ts[i].tag) } else { s + " " + TagName(ts[i].tag) }
+    }
+    return s
+}
+
+func TestLexSynth() {
+    // 合成ソースでは `$x` が 1 つの名前・利用者のソースでは `$` が Invalid のまま
+    assert(synthKinds("$x := 1") == "identifier colon_equal integer_literal semicolon eof")
+    assert(kinds("$x") == "invalid identifier semicolon eof")
+    // 間に空白があれば繋げない・`$` の後が名前でなければそのまま
+    assert(synthKinds("$ x") == "invalid identifier semicolon eof")
+    assert(synthKinds("$1") == "invalid integer_literal semicolon eof")
+}

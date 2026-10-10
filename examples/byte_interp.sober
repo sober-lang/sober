@@ -1,0 +1,7 @@
+package main
+
+// 負例: byte は補間の穴に置けない（最初の版 — B9。${int(b)} と書く）（language.md 33 節）
+func main() {
+    b := byte(65)
+    println("${b}")
+}

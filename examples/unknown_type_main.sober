@@ -1,0 +1,7 @@
+package main
+
+// 負例（診断の位置）: main の結果の型名が引けなければ、型式の位置で UnknownName
+
+func main() Foo {
+    return 0
+}

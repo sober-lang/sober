@@ -1,0 +1,22 @@
+package main
+
+// mut 実引数の排他（diag.MutAlias）: パイプの段の実引数も同じ規則（欄とその欄 — `mut t.p` と `mut t.p.y`）
+type P struct {
+    x int
+    y int
+}
+
+type T struct {
+    p P
+}
+
+func part(p mut P, y mut int, k int) {
+    p.x += y + k
+    y += 1
+}
+
+func main() {
+    mut t := T{p: P{x: 0, y: 0}}
+    5 |> part(mut t.p, mut t.p.y, _)
+    println(t.p.x)
+}

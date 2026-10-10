@@ -1,0 +1,1172 @@
+package lower
+
+// IR → x86_64 機械語 → 静的 ELF（正規バックエンド — src/ir_x86.zig・ir_x86_ra.zig・ir_live.zig・ir_cfg.zig の写し。B-1d）。
+// 入力は rtlower を通した IR（region op を含まない）。ランタイムは IR の関数としてほかと同じに下ろす。
+// 照合 = stage1 が同じ IR テキストから建てた ELF とのバイト一致（elfeq）— 中間成分（区間・置き場）の Zig との照合は無い（src/ 凍結）。
+//
+// 呼び出し規約（自前 — ABI は揃えない）: 引数は全部スタック（呼び手が後ろから push、callee は [rbp + 16 + 8k]、call の後に呼び手が add rsp, 8n）・
+// 戻り値は rax・割り当て可能な 10 本はすべて callee-saved・一時は rax / rcx / rdx / r11（割り当てない）。
+// フレーム: push rbp; mov rbp, rsp; sub rsp, F。[rbp - …] に IR スロット（入口で rep stosq のゼロ初期化）→ 退避域 → spill の順。
+// 命令選択はオペランドを全部読んでから結果を書く（割り当て器が同じ位置で終わる区間のレジスタを始まる区間へ渡す前提）。
+// 到達しないブロックは吐かない。ブロックは後続を後ろから辿る逆後順に並べる。番地は 0x400000 帯の imm32 の絶対値、call / jmp は rel32 — 配置の後で埋める。
+//
+// IR の読み口（xBlk 等）はこのファイルの先頭に集める — 記録の形（ir.sober の F_* / B_* / I_*）を知るのはここだけ（C7 の Table 化は読み口の中身の差し替えで済む）。
+//
+// 置き場 Loc は int に詰める: レジスタ r = r × 2 + 1（奇数）、フレームの変位 d = d × 2（偶数）
+
+import "desugar"
+import "elf"
+import "std/iter"
+import "std/table"
+import "x86"
+
+// ── IR の読み口 ──
+
+func xFnNext(st mut St, f int) int { return hget(mut st, f + F_NEXT) }
+func xFnNVal(st mut St, f int) int { return hget(mut st, f + F_NVAL) }
+func xFnNParam(st mut St, f int) int { return hget(mut st, hget(mut st, f + F_PTYS)) }
+func xFnNBlk(st mut St, f int) int { return hget(mut st, f + F_NBLK) }
+func xFnBlk0(st mut St, f int) int { return hget(mut st, f + F_BHEAD) }
+func xFnSlot0(st mut St, f int) int { return hget(mut st, f + F_SHEAD) }
+func xSlotNext(st mut St, s int) int { return hget(mut st, s) }
+func xSlotWords(st mut St, s int) int { return hget(mut st, s + 1) }
+func xBlkNext(st mut St, b int) int { return hget(mut st, b + B_NEXT) }
+func xBlkId(st mut St, b int) int { return hget(mut st, b + B_ID) }
+func xBlkParam0(st mut St, b int) int { return hget(mut st, b + B_PHEAD) }
+func xParamNext(st mut St, p int) int { return hget(mut st, p) }
+func xParamVal(st mut St, p int) int { return hget(mut st, p + 1) }
+func xBlkIns0(st mut St, b int) int { return hget(mut st, b + B_IHEAD) }
+func xInsNext(st mut St, i int) int { return hget(mut st, i + I_NEXT) }
+func xInsRes(st mut St, i int) int { return hget(mut st, i + I_RES) }
+func xInsOp(st mut St, i int) int { return hget(mut st, i + I_OP) }
+func xInsA(st mut St, i int) int { return hget(mut st, i + I_A) }
+func xInsB(st mut St, i int) int { return hget(mut st, i + I_B) }
+func xInsC(st mut St, i int) int { return hget(mut st, i + I_C) }
+func xTerm(st mut St, b int) int { return hget(mut st, b + B_TERM) }
+func xTermX(st mut St, b int, k int) int { return hget(mut st, b + B_X1 + k - 1) }
+func xGlobNext(st mut St, g int) int { return hget(mut st, g + G_NEXT) }
+func xGlobWords(st mut St, g int) int { return hget(mut st, g + G_WORDS) }
+func xGlobInit(st mut St, g int) int { return hget(mut st, g + G_INIT) }
+
+// 値の列（-1 は空）
+func xLen(st mut St, l int) int { return if l < 0 { 0 } else { hget(mut st, l) } }
+func xAt(st mut St, l int, k int) int { return hget(mut st, l + 1 + k) }
+
+// xIsEntry は関数の名前が sober_entry か
+func xIsEntry(st mut St, f int) bool {
+    s := hget(mut st, f + F_NAME)
+    w := bytes("sober_entry")
+    if dat(mut st, s) != len(w) {
+        return false
+    }
+    for i <- iter.Range(0, len(w)) {
+        if dat(mut st, s + 1 + i) != int(w[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// 命令のオペランド（値）の数と k 番目（ir_live.operands と同じ集合 — region op の分は rtlower の前に掛ける mem2reg が使う）
+func xNOps(st mut St, i int) int {
+    op := xInsOp(mut st, i)
+    return if op == OpBin || op == OpCmp || op == OpStore || op == OpStore8 || op == OpGepW || op == OpGepB { 2 } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump { 1 } else if op == OpRAlloc || op == OpRReloc { 2 } else if op == OpCall { xLen(mut st, xInsB(mut st, i)) } else if op == OpCallI { 1 + xLen(mut st, xInsB(mut st, i)) } else if op == OpSyscall { xLen(mut st, xInsA(mut st, i)) } else { 0 }
+}
+
+func xOpnd(st mut St, i int, k int) int {
+    op := xInsOp(mut st, i)
+    return if op == OpBin || op == OpCmp { if k == 0 { xInsB(mut st, i) } else { xInsC(mut st, i) } } else if op == OpStore || op == OpStore8 { if k == 0 { xInsA(mut st, i) } else { xInsC(mut st, i) } } else if op == OpGepW || op == OpGepB || op == OpRAlloc { if k == 0 { xInsA(mut st, i) } else { xInsB(mut st, i) } } else if op == OpRReloc { if k == 0 { xInsA(mut st, i) } else { xInsC(mut st, i) } } else if op == OpCall { xAt(mut st, xInsB(mut st, i), k) } else if op == OpCallI { if k == 0 { xInsA(mut st, i) } else { xAt(mut st, xInsB(mut st, i), k - 1) } } else if op == OpSyscall { xAt(mut st, xInsA(mut st, i), k) } else { xInsA(mut st, i) }
+}
+
+// 終端のオペランド（条件・戻り値・辺の実引数）
+func xNTermOps(st mut St, b int) int {
+    t := xTerm(mut st, b)
+    return if t == TmBr { xLen(mut st, xTermX(mut st, b, 2)) } else if t == TmCondbr { 1 + xLen(mut st, xTermX(mut st, b, 3)) + xLen(mut st, xTermX(mut st, b, 5)) } else if t == TmRet { if xTermX(mut st, b, 1) >= 0 { 1 } else { 0 } } else { 0 }
+}
+
+func xTermOpnd(st mut St, b int, k int) int {
+    t := xTerm(mut st, b)
+    if t == TmBr {
+        return xAt(mut st, xTermX(mut st, b, 2), k)
+    }
+    if t == TmCondbr {
+        if k == 0 {
+            return xTermX(mut st, b, 1)
+        }
+        nt := xLen(mut st, xTermX(mut st, b, 3))
+        return if k - 1 < nt { xAt(mut st, xTermX(mut st, b, 3), k - 1) } else { xAt(mut st, xTermX(mut st, b, 5), k - 1 - nt) }
+    }
+    return xTermX(mut st, b, 1)
+}
+
+// 後続（br は 1 本、condbr は then・else の 2 本 — 同じ先でも 2 本）: 記録 → 番号
+func xNSucc(st mut St, b int) int {
+    t := xTerm(mut st, b)
+    return if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }
+}
+
+func xSucc(st mut St, b int, k int) int {
+    t := xTerm(mut st, b)
+    to := if t == TmBr { xTermX(mut st, b, 1) } else if k == 0 { xTermX(mut st, b, 2) } else { xTermX(mut st, b, 4) }
+    return xBlkId(mut st, to)
+}
+
+// ── 置き場 ──
+
+func xLocReg(r int) int { return r * 2 + 1 }
+func xLocFrame(d int) int { return d * 2 }
+func xIsReg(l int) bool { return l & 1 == 1 }
+func xLocVal(l int) int { return l >> 1 }
+
+const xNone = -1
+const xSpill = 1099511627776 // 割り当て中の「spill の置き場（未定）」の印（偶数 — どの変位とも重ならない）
+const xPanic = 101
+
+// 割り当て可能なレジスタ（割り当てる順 — syscall の引数に使う rsi / rdi / r8〜r10 は後ろ）
+func xAllocReg(k int) int {
+    regs := []int{x86.Rbx, x86.R12, x86.R13, x86.R14, x86.R15, x86.Rsi, x86.Rdi, x86.R8, x86.R9, x86.R10}
+    return regs[k]
+}
+
+const xNAlloc = 10
+
+func xParamDisp(k int) int { return 16 + 8 * k }
+
+// xFill は a に v を n 個積む（作業域の確保 — 1 本ずつ連続に積むので先端一致でコピーしない）
+func xFill(a mut []int, n int, v int) {
+    for i <- iter.Range(0, n) {
+        a = append(a, v)
+    }
+}
+
+// ── モジュール ──
+
+// 後埋め: 表に 3 語ずつ [位置, 種類, 相手の番号]（種類 0 = call rel32 → 関数・1 = 関数の番地 imm32・2 = global の番地 imm32）。
+// struct の表（Table[xFix]）にしないのは、総称の Get の結果の欄読みを check が CoreFragment で拒否するため（F-d の形）
+func xFixAdd(fx mut table.Table[int], at int, kind int, id int) {
+    table.Push(mut fx, at)
+    table.Push(mut fx, kind)
+    table.Push(mut fx, id)
+}
+
+// xModule は rtlower を通したモジュールの ELF
+func xModule(st mut St) []byte {
+    // 関数・global の記録 → 番号（鎖は追加順 = 記録の番地の昇順 — 二分探索で引く）
+    mut frecs := mut []int{}
+    mut f := st.fhead
+    while f >= 0 {
+        frecs = append(frecs, f)
+        f = xFnNext(mut st, f)
+    }
+    nf := len(frecs)
+    mut grecs := mut []int{}
+    mut g := st.ghead
+    while g >= 0 {
+        grecs = append(grecs, g)
+        g = xGlobNext(mut st, g)
+    }
+    ng := len(grecs)
+    fr := freeze(frecs)
+    gr0 := freeze(grecs)
+    // global の配置: init ありは rodata、無しは .bss（各 8 × 語数バイト）
+    mut goff := mut []int{}
+    xFill(mut goff, ng, 0)
+    mut gro := mut []int{}
+    xFill(mut gro, ng, 0)
+    mut rodata := mut []byte{}
+    mut bss := 0
+    for i <- iter.Range(0, ng) {
+        gr := gr0[i]
+        init := xGlobInit(mut st, gr)
+        words := xGlobWords(mut st, gr)
+        if init >= 0 {
+            goff[i] = len(rodata)
+            gro[i] = 1
+            n := xLen(mut st, init)
+            for k <- iter.Range(0, words) {
+                w := if k < n { xAt(mut st, init, k) } else { 0 }
+                for j <- iter.Range(0, 8) {
+                    rodata = append(rodata, byte(w >> (8 * j) & 255))
+                }
+            }
+        } else {
+            goff[i] = bss
+            bss = bss + 8 * words
+        }
+    }
+    mut entry := -1
+    for i <- iter.Range(0, nf) {
+        if entry < 0 && xIsEntry(mut st, fr[i]) {
+            entry = i
+        }
+    }
+    if entry < 0 {
+        none := []int{}
+        println(none[0])
+    }
+    mut c := table.Table[byte]{}
+    mut fx := table.Table[int]{}
+    // _start: mov rax, rsp; and rsp, -16; sub rsp, 8; push rax; call sober_entry; ud2
+    x86.MovRegReg(mut c, x86.Rax, x86.Rsp)
+    x86.AndRegImm(mut c, x86.Rsp, -16)
+    x86.SubRegImm(mut c, x86.Rsp, 8)
+    x86.PushReg(mut c, x86.Rax)
+    xFixAdd(mut fx, x86.CallRel32(mut c), 0, entry)
+    x86.Ud2(mut c)
+    mut fstart := mut []int{}
+    xFill(mut fstart, nf, 0)
+    for i <- iter.Range(0, nf) {
+        fstart[i] = x86.Here(mut c)
+        xFunc(mut st, mut c, mut fx, fr[i], fr, gr0)
+    }
+    lay := elf.LayoutOf(x86.Here(mut c), len(rodata))
+    for k <- iter.Range(0, table.Len(mut fx) / 3) {
+        at := table.Get(mut fx, 3 * k)
+        kind := table.Get(mut fx, 3 * k + 1)
+        id := table.Get(mut fx, 3 * k + 2)
+        if kind == 0 {
+            x86.PatchRel32(mut c, at, fstart[id])
+        } else if kind == 1 {
+            x86.PatchImm32(mut c, at, lay.Code + fstart[id])
+        } else {
+            x86.PatchImm32(mut c, at, (if gro[id] == 1 { lay.Rodata } else { lay.Bss }) + goff[id])
+        }
+    }
+    return elf.Executable(mut c, freeze(rodata), if bss > 8 { bss } else { 8 })
+}
+
+// xIndex は昇順の recs で r の添字
+func xIndex(recs []int, r int) int {
+    mut lo := 0
+    mut hi := len(recs) - 1
+    while lo < hi {
+        m := (lo + hi) / 2
+        if recs[m] < r {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    if recs[lo] != r {
+        none := []int{}
+        println(none[0])
+    }
+    return lo
+}
+
+// ── 関数 ──
+
+// 関数ごとの作業域（値・ブロックの番号で引く表）
+type xF struct {
+    f int
+    nv int
+    np int
+    nb int
+    blk mut []int        // 番号 → 記録
+    order mut []int      // 吐く順（到達するブロックだけ）
+    norder int
+    bpos mut []int       // ブロックの頭の位置（到達しないブロックは -1）
+    ivS mut []int        // 値 → 区間の始まり（無しは -1）
+    ivE mut []int
+    loc mut []int        // 値 → 置き場
+    slotDisp mut []int
+    isConst mut []int
+    constV mut []int
+    saveReg mut []int
+    saveDisp mut []int
+    nsave int
+    blockAt mut []int
+    jAt mut []int        // ブロックへの jmp / jcc の rel32（関数の末尾で埋める）
+    jTo mut []int
+    nj int
+    div0 mut []int       // ゼロ除算（exit 101）への jcc
+    nd int
+    pos int              // 今の命令の位置（syscall の周りで生きている値を引く）
+    mvD mut []int        // 並行コピーの作業域
+    mvS mut []int
+    mvLive mut []int
+}
+
+func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], f int, frecs []int, grecs []int) {
+    mut e := xF{f: f, nv: xFnNVal(mut st, f), np: xFnNParam(mut st, f), nb: xFnNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
+        ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
+        nsave: 0, blockAt: mut []int{}, jAt: mut []int{}, jTo: mut []int{}, nj: 0, div0: mut []int{}, nd: 0, pos: 0, mvD: mut []int{}, mvS: mut []int{}, mvLive: mut []int{}}
+    xFill(mut e.blk, e.nb, -1)
+    mut b := xFnBlk0(mut st, f)
+    mut ninst := 0
+    mut maxArgs := 7
+    while b >= 0 {
+        e.blk[xBlkId(mut st, b)] = b
+        mut np := 0
+        mut p := xBlkParam0(mut st, b)
+        while p >= 0 {
+            np += 1
+            p = xParamNext(mut st, p)
+        }
+        if np > maxArgs {
+            maxArgs = np
+        }
+        mut i := xBlkIns0(mut st, b)
+        while i >= 0 {
+            ninst += 1
+            i = xInsNext(mut st, i)
+        }
+        b = xBlkNext(mut st, b)
+    }
+    // 定数（div / rem のガード省略）
+    xFill(mut e.isConst, e.nv, 0)
+    xFill(mut e.constV, e.nv, 0)
+    for k <- iter.Range(0, e.nb) {
+        mut i := xBlkIns0(mut st, e.blk[k])
+        while i >= 0 {
+            if xInsOp(mut st, i) == OpConst {
+                r := xInsRes(mut st, i)
+                e.isConst[r] = 1
+                e.constV[r] = xInsA(mut st, i)
+            }
+            i = xInsNext(mut st, i)
+        }
+    }
+    // スロット → フレームの先頭側
+    mut slotWords := 0
+    mut s := xFnSlot0(mut st, f)
+    while s >= 0 {
+        w := xSlotWords(mut st, s)
+        slotWords = slotWords + (if w > 1 { w } else { 1 })
+        e.slotDisp = append(e.slotDisp, -8 * slotWords)
+        s = xSlotNext(mut st, s)
+    }
+    xOrder(mut st, mut e)
+    xLive(mut st, mut e)
+    bottom := xAlloc(mut st, mut e, -8 * slotWords)
+    frame := (0 - bottom + 15) / 16 * 16
+    xFill(mut e.blockAt, e.nb, 0)
+    xFill(mut e.jAt, 3 * e.nb, 0)
+    xFill(mut e.jTo, 3 * e.nb, 0)
+    xFill(mut e.div0, ninst, 0)
+    xFill(mut e.mvD, maxArgs, 0)
+    xFill(mut e.mvS, maxArgs, 0)
+    xFill(mut e.mvLive, maxArgs, 0)
+
+    // prologue: フレーム → 使う callee-saved の退避 → スロットのゼロ初期化（rdi / rcx / rax を壊す）→ レジスタに載る引数
+    x86.PushReg(mut c, x86.Rbp)
+    x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
+    if frame > 0 {
+        x86.SubRegImm(mut c, x86.Rsp, frame)
+    }
+    for k <- iter.Range(0, e.nsave) {
+        x86.MovMemReg(mut c, x86.Rbp, e.saveDisp[k], e.saveReg[k])
+    }
+    if slotWords > 0 {
+        x86.LeaRegMem(mut c, x86.Rdi, x86.Rbp, -8 * slotWords)
+        x86.MovRegImm32(mut c, x86.Rcx, slotWords)
+        x86.XorRegReg(mut c, x86.Rax, x86.Rax)
+        x86.RepStosq(mut c)
+    }
+    for k <- iter.Range(0, e.np) {
+        if xIsReg(e.loc[k]) {
+            x86.MovRegMem(mut c, xLocVal(e.loc[k]), x86.Rbp, xParamDisp(k))
+        }
+    }
+    for k <- iter.Range(0, e.norder) {
+        bi := e.order[k]
+        blk := e.blk[bi]
+        e.blockAt[bi] = x86.Here(mut c)
+        mut i := xBlkIns0(mut st, blk)
+        mut n := 0
+        while i >= 0 {
+            e.pos = e.bpos[bi] + 2 * (n + 1)
+            xInst(mut st, mut e, mut c, mut fx, i, frecs, grecs)
+            n += 1
+            i = xInsNext(mut st, i)
+        }
+        xTermEmit(mut st, mut e, mut c, blk)
+    }
+    if e.nd > 0 {
+        at := x86.Here(mut c)
+        for k <- iter.Range(0, e.nd) {
+            x86.PatchRel32(mut c, e.div0[k], at)
+        }
+        xExit(mut c, xPanic)
+    }
+    for k <- iter.Range(0, e.nj) {
+        x86.PatchRel32(mut c, e.jAt[k], e.blockAt[e.jTo[k]])
+    }
+}
+
+// ── 並べる順（ir_live.linearOrder — 後続を後ろから辿る反復 DFS の逆後順）──
+
+func xOrder(st mut St, e mut xF) {
+    mut seen := mut []int{}
+    xFill(mut seen, e.nb, 0)
+    mut post := mut []int{}
+    xFill(mut post, e.nb, 0)
+    mut stB := mut []int{}
+    xFill(mut stB, e.nb, 0)
+    mut stN := mut []int{}
+    xFill(mut stN, e.nb, 0)
+    mut sp := 1
+    mut np := 0
+    stB[0] = 0
+    stN[0] = 0
+    seen[0] = 1
+    while sp > 0 {
+        topB := stB[sp - 1]
+        ns := xNSucc(mut st, e.blk[topB])
+        if stN[sp - 1] < ns {
+            s := xSucc(mut st, e.blk[topB], ns - 1 - stN[sp - 1])
+            stN[sp - 1] = stN[sp - 1] + 1
+            if seen[s] == 0 {
+                seen[s] = 1
+                stB[sp] = s
+                stN[sp] = 0
+                sp += 1
+            }
+        } else {
+            post[np] = topB
+            np += 1
+            sp -= 1
+        }
+    }
+    for k <- iter.Range(0, np) {
+        e.order = append(e.order, post[np - 1 - k])
+    }
+    e.norder = np
+    xFill(mut e.bpos, e.nb, -1)
+    mut pos := 0
+    for k <- iter.Range(0, np) {
+        bi := e.order[k]
+        e.bpos[bi] = pos
+        mut n := 0
+        mut i := xBlkIns0(mut st, e.blk[bi])
+        while i >= 0 {
+            n += 1
+            i = xInsNext(mut st, i)
+        }
+        pos = pos + 2 * (n + 2)
+    }
+}
+
+// ── 生存区間（ir_live.analyze と同じ区間 — 集合の不動点の代わりに、上向きに露出した使用から前任へ辿る（SSA の経路探索）。
+// 到達するブロックの live-in / live-out は最小不動点と一致する）──
+
+func xTouch(e mut xF, v int, p int) {
+    if e.ivS[v] < 0 {
+        e.ivS[v] = p
+        e.ivE[v] = p
+    } else {
+        if p < e.ivS[v] {
+            e.ivS[v] = p
+        }
+        if p > e.ivE[v] {
+            e.ivE[v] = p
+        }
+    }
+}
+
+// xBlkEnd は到達するブロック b の終端の位置
+func xBlkEnd(st mut St, e mut xF, bi int) int {
+    mut n := 0
+    mut i := xBlkIns0(mut st, e.blk[bi])
+    while i >= 0 {
+        n += 1
+        i = xInsNext(mut st, i)
+    }
+    return e.bpos[bi] + 2 * (n + 1)
+}
+
+func xLive(st mut St, e mut xF) {
+    nv := e.nv
+    nb := e.nb
+    xFill(mut e.ivS, nv, -1)
+    xFill(mut e.ivE, nv, -1)
+    // 定義のブロック（関数の引数は入口）
+    mut defB := mut []int{}
+    xFill(mut defB, nv, -1)
+    for v <- iter.Range(0, e.np) {
+        defB[v] = 0
+    }
+    mut bend := mut []int{}
+    xFill(mut bend, nb, -1)
+    for bi <- iter.Range(0, nb) {
+        b := e.blk[bi]
+        mut p := xBlkParam0(mut st, b)
+        while p >= 0 {
+            defB[xParamVal(mut st, p)] = bi
+            p = xParamNext(mut st, p)
+        }
+        mut i := xBlkIns0(mut st, b)
+        while i >= 0 {
+            r := xInsRes(mut st, i)
+            if r >= 0 {
+                defB[r] = bi
+            }
+            i = xInsNext(mut st, i)
+        }
+        if e.bpos[bi] >= 0 {
+            bend[bi] = xBlkEnd(mut st, mut e, bi)
+        }
+    }
+    // 前任（到達するものだけ — CSR）
+    mut pcnt := mut []int{}
+    xFill(mut pcnt, nb + 1, 0)
+    for bi <- iter.Range(0, nb) {
+        if e.bpos[bi] >= 0 {
+            for k <- iter.Range(0, xNSucc(mut st, e.blk[bi])) {
+                s := xSucc(mut st, e.blk[bi], k)
+                pcnt[s + 1] = pcnt[s + 1] + 1
+            }
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        pcnt[bi + 1] = pcnt[bi + 1] + pcnt[bi]
+    }
+    mut preds := mut []int{}
+    xFill(mut preds, pcnt[nb], 0)
+    mut pfill := mut []int{}
+    xFill(mut pfill, nb, 0)
+    for bi <- iter.Range(0, nb) {
+        if e.bpos[bi] >= 0 {
+            for k <- iter.Range(0, xNSucc(mut st, e.blk[bi])) {
+                s := xSucc(mut st, e.blk[bi], k)
+                preds[pcnt[s] + pfill[s]] = bi
+                pfill[s] = pfill[s] + 1
+            }
+        }
+    }
+    // 上向きに露出した使用 (値, ブロック) — 値ごとの CSR
+    mut ucnt := mut []int{}
+    xFill(mut ucnt, nv + 1, 0)
+    for pass <- iter.Range(0, 2) {
+        mut ufill := mut []int{}
+        if pass == 1 {
+            for v <- iter.Range(0, nv) {
+                ucnt[v + 1] = ucnt[v + 1] + ucnt[v]
+            }
+            xFill(mut ufill, nv, 0)
+        }
+        mut uses := mut []int{}
+        if pass == 1 {
+            xFill(mut uses, ucnt[nv], 0)
+        }
+        for bi <- iter.Range(0, nb) {
+            if e.bpos[bi] >= 0 {
+                b := e.blk[bi]
+                mut i := xBlkIns0(mut st, b)
+                while i >= 0 {
+                    for k <- iter.Range(0, xNOps(mut st, i)) {
+                        v := xOpnd(mut st, i, k)
+                        if defB[v] != bi {
+                            if pass == 0 {
+                                ucnt[v + 1] = ucnt[v + 1] + 1
+                            } else {
+                                uses[ucnt[v] + ufill[v]] = bi
+                                ufill[v] = ufill[v] + 1
+                            }
+                        }
+                    }
+                    i = xInsNext(mut st, i)
+                }
+                for k <- iter.Range(0, xNTermOps(mut st, b)) {
+                    v := xTermOpnd(mut st, b, k)
+                    if defB[v] != bi {
+                        if pass == 0 {
+                            ucnt[v + 1] = ucnt[v + 1] + 1
+                        } else {
+                            uses[ucnt[v] + ufill[v]] = bi
+                            ufill[v] = ufill[v] + 1
+                        }
+                    }
+                }
+            }
+        }
+        if pass == 1 {
+            // 値ごとに live-in を前任へ辿る（印 = v + 1）
+            mut mark := mut []int{}
+            xFill(mut mark, nb, 0)
+            mut work := mut []int{}
+            xFill(mut work, nb, 0)
+            for v <- iter.Range(0, nv) {
+                mut nw := 0
+                for k <- iter.Range(ucnt[v], ucnt[v + 1]) {
+                    bi := uses[k]
+                    if mark[bi] != v + 1 {
+                        mark[bi] = v + 1
+                        xTouch(mut e, v, e.bpos[bi])
+                        work[nw] = bi
+                        nw += 1
+                    }
+                }
+                while nw > 0 {
+                    nw -= 1
+                    bi := work[nw]
+                    for k <- iter.Range(pcnt[bi], pcnt[bi + 1]) {
+                        pb := preds[k]
+                        xTouch(mut e, v, bend[pb])
+                        if defB[v] != pb && mark[pb] != v + 1 {
+                            mark[pb] = v + 1
+                            xTouch(mut e, v, e.bpos[pb])
+                            work[nw] = pb
+                            nw += 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 定義・使用の位置
+    for k <- iter.Range(0, e.norder) {
+        bi := e.order[k]
+        b := e.blk[bi]
+        bs := e.bpos[bi]
+        be := bend[bi]
+        if bi == 0 {
+            for v <- iter.Range(0, e.np) {
+                xTouch(mut e, v, bs)
+            }
+        }
+        mut p := xBlkParam0(mut st, b)
+        while p >= 0 {
+            xTouch(mut e, xParamVal(mut st, p), bs)
+            p = xParamNext(mut st, p)
+        }
+        mut i := xBlkIns0(mut st, b)
+        mut n := 0
+        while i >= 0 {
+            ip := bs + 2 * (n + 1)
+            for j <- iter.Range(0, xNOps(mut st, i)) {
+                xTouch(mut e, xOpnd(mut st, i, j), ip)
+            }
+            r := xInsRes(mut st, i)
+            if r >= 0 {
+                xTouch(mut e, r, ip)
+            }
+            n += 1
+            i = xInsNext(mut st, i)
+        }
+        for j <- iter.Range(0, xNTermOps(mut st, b)) {
+            xTouch(mut e, xTermOpnd(mut st, b, j), be)
+        }
+        // 辺の並行コピーは前任の終端で後続の仮引数の置き場へ書く — 仮引数はそこでも生きている
+        for j <- iter.Range(0, xNSucc(mut st, b)) {
+            mut q := xBlkParam0(mut st, e.blk[xSucc(mut st, b, j)])
+            while q >= 0 {
+                xTouch(mut e, xParamVal(mut st, q), be)
+                q = xParamNext(mut st, q)
+            }
+        }
+    }
+}
+
+// ── 割り当て（ir_x86_ra.allocate の linear scan）。フレームの最も低い変位を返す ──
+
+func xAlloc(st mut St, e mut xF, frameTop int) int {
+    nv := e.nv
+    xFill(mut e.loc, nv, xSpill)
+    // 区間を持つ値を (start, 番号) の順に（数え上げの安定な並べ替え）
+    mut maxp := 0
+    for v <- iter.Range(0, nv) {
+        if e.ivS[v] >= 0 && e.ivS[v] > maxp {
+            maxp = e.ivS[v]
+        }
+    }
+    mut cnt := mut []int{}
+    xFill(mut cnt, maxp + 2, 0)
+    mut nivs := 0
+    for v <- iter.Range(0, nv) {
+        if e.ivS[v] >= 0 {
+            cnt[e.ivS[v] + 1] = cnt[e.ivS[v] + 1] + 1
+            nivs += 1
+        }
+    }
+    for k <- iter.Range(0, maxp + 1) {
+        cnt[k + 1] = cnt[k + 1] + cnt[k]
+    }
+    mut ivs := mut []int{}
+    xFill(mut ivs, nivs, 0)
+    for v <- iter.Range(0, nv) {
+        if e.ivS[v] >= 0 {
+            ivs[cnt[e.ivS[v]]] = v
+            cnt[e.ivS[v]] = cnt[e.ivS[v]] + 1
+        }
+    }
+    // 空き（割り当て順の添字）・使った・生きている区間
+    mut free := mut []int{}
+    xFill(mut free, 16, 0)
+    for k <- iter.Range(0, xNAlloc) {
+        free[xAllocReg(k)] = 1
+    }
+    mut used := mut []int{}
+    xFill(mut used, 16, 0)
+    mut active := mut []int{}
+    xFill(mut active, xNAlloc + 1, 0)
+    mut na := 0
+    mut spills := mut []int{}
+    xFill(mut spills, nivs, 0)
+    mut nsp := 0
+    for k <- iter.Range(0, nivs) {
+        v := ivs[k]
+        cs := e.ivS[v]
+        // 終わった区間のレジスタを返す（end ≤ start — 同じ位置の受け渡しを許す。swapRemove と同じ並びの変化）
+        mut i := 0
+        while i < na {
+            w := active[i]
+            if e.ivE[w] <= cs {
+                free[xLocVal(e.loc[w])] = 1
+                active[i] = active[na - 1]
+                na -= 1
+            } else {
+                i += 1
+            }
+        }
+        mut r := -1
+        for j <- iter.Range(0, xNAlloc) {
+            if r < 0 && free[xAllocReg(j)] == 1 {
+                r = xAllocReg(j)
+            }
+        }
+        if r >= 0 {
+            free[r] = 0
+            used[r] = 1
+            e.loc[v] = xLocReg(r)
+            active[na] = v
+            na += 1
+        } else {
+            // 空きが無い: end がいちばん遠い区間を落とす（同点は値の番号の大きい方）
+            mut far := v
+            for j <- iter.Range(0, na) {
+                w := active[j]
+                if e.ivE[w] > e.ivE[far] || (e.ivE[w] == e.ivE[far] && w > far) {
+                    far = w
+                }
+            }
+            if far == v {
+                e.loc[v] = xSpill
+                spills[nsp] = v
+                nsp += 1
+            } else {
+                e.loc[v] = e.loc[far]
+                e.loc[far] = xSpill
+                spills[nsp] = far
+                nsp += 1
+                for j <- iter.Range(0, na) {
+                    if active[j] == far {
+                        active[j] = v
+                    }
+                }
+            }
+        }
+    }
+    // 割り当てに使わなくても壊すレジスタも退避する: スロットのゼロ初期化の rdi と syscall の引数レジスタ（rdx は割り当てない）
+    if xFnSlot0(mut st, e.f) >= 0 {
+        used[x86.Rdi] = 1
+    }
+    sysRegs := []int{x86.Rdi, x86.Rsi, x86.Rdx, x86.R10, x86.R8, x86.R9}
+    for bi <- iter.Range(0, e.nb) {
+        mut i := xBlkIns0(mut st, e.blk[bi])
+        while i >= 0 {
+            if xInsOp(mut st, i) == OpSyscall {
+                for k <- iter.Range(0, xLen(mut st, xInsA(mut st, i)) - 1) {
+                    if sysRegs[k] != x86.Rdx {
+                        used[sysRegs[k]] = 1
+                    }
+                }
+            }
+            i = xInsNext(mut st, i)
+        }
+    }
+    // フレーム: [frameTop) の下に退避域、その下に spill
+    mut d := frameTop
+    for k <- iter.Range(0, xNAlloc) {
+        r := xAllocReg(k)
+        if used[r] == 1 {
+            d = d - 8
+            e.saveReg = append(e.saveReg, r)
+            e.saveDisp = append(e.saveDisp, d)
+            e.nsave = e.nsave + 1
+        }
+    }
+    for k <- iter.Range(0, nsp) {
+        v := spills[k]
+        if v < e.np {
+            e.loc[v] = xLocFrame(xParamDisp(v))
+        } else {
+            d = d - 8
+            e.loc[v] = xLocFrame(d)
+        }
+    }
+    // 区間を持たない値（到達しないブロックでだけ定義）は使われない — 番地は有効にしておく
+    for v <- iter.Range(0, nv) {
+        if e.loc[v] == xSpill {
+            e.loc[v] = if v < e.np { xLocFrame(xParamDisp(v)) } else { xLocFrame(frameTop - 8) }
+        }
+    }
+    return if d < frameTop - 8 { d } else { frameTop - 8 }
+}
+
+// ── 値の出し入れ（置き場を問わない）──
+
+// xGet は v をレジスタに載せる（置き場がレジスタならそれ、フレームなら scratch に読む）
+func xGet(e mut xF, c mut table.Table[byte], v int, scratch int) int {
+    l := e.loc[v]
+    if xIsReg(l) {
+        return xLocVal(l)
+    }
+    x86.MovRegMem(mut c, scratch, x86.Rbp, xLocVal(l))
+    return scratch
+}
+
+// xGetInto は v を dst へ
+func xGetInto(e mut xF, c mut table.Table[byte], v int, dst int) {
+    l := e.loc[v]
+    if xIsReg(l) {
+        if xLocVal(l) != dst {
+            x86.MovRegReg(mut c, dst, xLocVal(l))
+        }
+    } else {
+        x86.MovRegMem(mut c, dst, x86.Rbp, xLocVal(l))
+    }
+}
+
+// xPut は src にある結果を v の置き場へ
+func xPut(e mut xF, c mut table.Table[byte], v int, src int) {
+    l := e.loc[v]
+    if xIsReg(l) {
+        if xLocVal(l) != src {
+            x86.MovRegReg(mut c, xLocVal(l), src)
+        }
+    } else {
+        x86.MovMemReg(mut c, x86.Rbp, xLocVal(l), src)
+    }
+}
+
+func xCond(op int) int {
+    return if op == CEq { x86.CondE } else if op == CNe { x86.CondNe } else if op == CLt { x86.CondL } else if op == CLe { x86.CondLe } else if op == CGt { x86.CondG } else if op == CGe { x86.CondGe } else if op == CUlt { x86.CondB } else { x86.CondAe }
+}
+
+func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int], i int, frecs []int, grecs []int) {
+    op := xInsOp(mut st, i)
+    res := xInsRes(mut st, i)
+    a := xInsA(mut st, i)
+    b := xInsB(mut st, i)
+    cc := xInsC(mut st, i)
+    if op == OpConst {
+        if a >= -2147483648 && a <= 2147483647 {
+            l := e.loc[res]
+            if xIsReg(l) {
+                x86.MovRegImm32(mut c, xLocVal(l), a)
+            } else {
+                x86.MovMemImm32(mut c, x86.Rbp, xLocVal(l), a)
+            }
+        } else {
+            x86.MovRegImm64(mut c, x86.Rax, a)
+            xPut(mut e, mut c, res, x86.Rax)
+        }
+    } else if op == OpBin {
+        if a == BDiv || a == BRem {
+            xDivRem(mut e, mut c, res, a, b, cc)
+        } else if a == BShl || a == BSar {
+            xGetInto(mut e, mut c, b, x86.Rax)
+            xGetInto(mut e, mut c, cc, x86.Rcx)
+            if a == BShl {
+                x86.ShlRegCl(mut c, x86.Rax)
+            } else {
+                x86.SarRegCl(mut c, x86.Rax)
+            }
+            xPut(mut e, mut c, res, x86.Rax)
+        } else {
+            xGetInto(mut e, mut c, b, x86.Rax)
+            y := xGet(mut e, mut c, cc, x86.Rcx)
+            if a == BAdd {
+                x86.AddRegReg(mut c, x86.Rax, y)
+            } else if a == BSub {
+                x86.SubRegReg(mut c, x86.Rax, y)
+            } else if a == BMul {
+                x86.ImulRegReg(mut c, x86.Rax, y)
+            } else if a == BAnd {
+                x86.AndRegReg(mut c, x86.Rax, y)
+            } else if a == BOr {
+                x86.OrRegReg(mut c, x86.Rax, y)
+            } else {
+                x86.XorRegReg(mut c, x86.Rax, y)
+            }
+            xPut(mut e, mut c, res, x86.Rax)
+        }
+    } else if op == OpCmp {
+        x := xGet(mut e, mut c, b, x86.Rax)
+        y := xGet(mut e, mut c, cc, x86.Rcx)
+        x86.CmpRegReg(mut c, x, y)
+        x86.SetccAl(mut c, xCond(a))
+        x86.MovzxRaxAl(mut c)
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpLoad {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        x86.MovRegMem(mut c, x86.Rax, p, 8 * b)
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpStore {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        v := xGet(mut e, mut c, cc, x86.Rcx)
+        x86.MovMemReg(mut c, p, 8 * b, v)
+    } else if op == OpLoad8 {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        x86.MovzxRegMem8(mut c, x86.Rax, p, b)
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpStore8 {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        v := xGet(mut e, mut c, cc, x86.Rcx)
+        x86.MovMem8Reg(mut c, p, b, v)
+    } else if op == OpGepW || op == OpGepB {
+        p := xGet(mut e, mut c, a, x86.Rax)
+        ix := xGet(mut e, mut c, b, x86.Rcx)
+        x86.LeaRegSib(mut c, x86.Rax, p, ix, if op == OpGepW { x86.Scale8 } else { x86.Scale1 })
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpPtoi || op == OpItop {
+        x := xGet(mut e, mut c, a, x86.Rax)
+        xPut(mut e, mut c, res, x)
+    } else if op == OpSlotaddr {
+        x86.LeaRegMem(mut c, x86.Rax, x86.Rbp, e.slotDisp[a])
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpGlobal {
+        xAbs(mut e, mut c, mut fx, res, 2, xIndex(grecs, a))
+    } else if op == OpFuncaddr {
+        xAbs(mut e, mut c, mut fx, res, 1, xIndex(frecs, a))
+    } else if op == OpCall {
+        xPushArgs(mut st, mut e, mut c, b, -1)
+        xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
+        xAfterCall(mut e, mut c, res, xLen(mut st, b))
+    } else if op == OpCallI {
+        xPushArgs(mut st, mut e, mut c, b, -1)
+        xGetInto(mut e, mut c, a, x86.R11)
+        x86.CallReg(mut c, x86.R11)
+        xAfterCall(mut e, mut c, res, xLen(mut st, b))
+    } else if op == OpSyscall {
+        xSyscall(mut st, mut e, mut c, res, a)
+    } else {
+        // region op は rtlower の後には無い
+        none := []int{}
+        println(none[op])
+    }
+}
+
+// xAbs は番地の imm32（配置の後で埋める）
+func xAbs(e mut xF, c mut table.Table[byte], fx mut table.Table[int], r int, kind int, id int) {
+    l := e.loc[r]
+    if xIsReg(l) {
+        x86.MovRegImm32(mut c, xLocVal(l), 0)
+    } else {
+        x86.MovMemImm32(mut c, x86.Rbp, xLocVal(l), 0)
+    }
+    xFixAdd(mut fx, x86.Here(mut c) - 4, kind, id)
+}
+
+func xPushArgs(st mut St, e mut xF, c mut table.Table[byte], args int, unused int) {
+    mut k := xLen(mut st, args)
+    while k > 0 {
+        k -= 1
+        x := xGet(mut e, mut c, xAt(mut st, args, k), x86.Rax)
+        x86.PushReg(mut c, x)
+    }
+}
+
+func xAfterCall(e mut xF, c mut table.Table[byte], res int, nargs int) {
+    if nargs > 0 {
+        x86.AddRegImm(mut c, x86.Rsp, 8 * nargs)
+    }
+    if res >= 0 {
+        xPut(mut e, mut c, res, x86.Rax)
+    }
+}
+
+// xDivRem は div / rem（IR の全域の意味: b == 0 → exit 101、b == -1 → div は 0 - a・rem は 0、それ以外は idiv）
+func xDivRem(e mut xF, c mut table.Table[byte], r int, op int, a int, b int) {
+    xGetInto(mut e, mut c, a, x86.Rax)
+    xGetInto(mut e, mut c, b, x86.Rcx)
+    known := e.isConst[b] == 1
+    kb := e.constV[b]
+    mut done := -1
+    if !known || kb == 0 {
+        x86.CmpRegImm(mut c, x86.Rcx, 0)
+        e.div0[e.nd] = x86.JccRel32(mut c, x86.CondE)
+        e.nd = e.nd + 1
+    }
+    if !known || kb == -1 {
+        x86.CmpRegImm(mut c, x86.Rcx, -1)
+        normal := x86.JccRel32(mut c, x86.CondNe)
+        if op == BDiv {
+            x86.NegReg(mut c, x86.Rax)
+        } else {
+            x86.XorRegReg(mut c, x86.Rax, x86.Rax)
+        }
+        done = x86.JmpRel32(mut c)
+        x86.PatchRel32(mut c, normal, x86.Here(mut c))
+    }
+    x86.Cqo(mut c)
+    x86.IdivReg(mut c, x86.Rcx)
+    if op == BRem {
+        x86.MovRegReg(mut c, x86.Rax, x86.Rdx)
+    }
+    if done >= 0 {
+        x86.PatchRel32(mut c, done, x86.Here(mut c))
+    }
+    xPut(mut e, mut c, r, x86.Rax)
+}
+
+func xTermEmit(st mut St, e mut xF, c mut table.Table[byte], b int) {
+    t := xTerm(mut st, b)
+    if t == TmBr {
+        xJumpEdge(mut st, mut e, mut c, xTermX(mut st, b, 1), xTermX(mut st, b, 2))
+    } else if t == TmCondbr {
+        x := xGet(mut e, mut c, xTermX(mut st, b, 1), x86.Rax)
+        x86.CmpRegImm(mut c, x, 0)
+        toElse := x86.JccRel32(mut c, x86.CondE)
+        xJumpEdge(mut st, mut e, mut c, xTermX(mut st, b, 2), xTermX(mut st, b, 3))
+        x86.PatchRel32(mut c, toElse, x86.Here(mut c))
+        xJumpEdge(mut st, mut e, mut c, xTermX(mut st, b, 4), xTermX(mut st, b, 5))
+    } else if t == TmRet {
+        v := xTermX(mut st, b, 1)
+        if v >= 0 {
+            xGetInto(mut e, mut c, v, x86.Rax)
+        }
+        for k <- iter.Range(0, e.nsave) {
+            x86.MovRegMem(mut c, e.saveReg[k], x86.Rbp, e.saveDisp[k])
+        }
+        x86.Leave(mut c)
+        x86.Ret(mut c)
+    } else if t == TmExit {
+        xExit(mut c, xTermX(mut st, b, 1))
+    } else {
+        none := []int{}
+        println(none[0])
+    }
+}
+
+// xJumpEdge は辺の実引数を仮引数へ並行コピーして飛ぶ
+func xJumpEdge(st mut St, e mut xF, c mut table.Table[byte], to int, args int) {
+    mut n := 0
+    mut p := xBlkParam0(mut st, to)
+    while p >= 0 {
+        e.mvD[n] = e.loc[xParamVal(mut st, p)]
+        e.mvS[n] = e.loc[xAt(mut st, args, n)]
+        n += 1
+        p = xParamNext(mut st, p)
+    }
+    xParallelMove(mut e, mut c, n)
+    e.jAt[e.nj] = x86.JmpRel32(mut c)
+    e.jTo[e.nj] = xBlkId(mut st, to)
+    e.nj = e.nj + 1
+}
+
+// xSyscall: 引数レジスタ（rdi / rsi / r8〜r10）に載っていて syscall の後も生きている値を積んで退避し、
+// 引数を並行コピーで番号 + 6 本へ入れる（rcx / r11 は syscall が壊すが割り当てていない）
+func xSyscall(st mut St, e mut xF, c mut table.Table[byte], res int, args int) {
+    regs := []int{x86.Rax, x86.Rdi, x86.Rsi, x86.Rdx, x86.R10, x86.R8, x86.R9}
+    mut saved := mut []int{}
+    for v <- iter.Range(0, e.nv) {
+        l := e.loc[v]
+        if xIsReg(l) && e.ivS[v] >= 0 && e.ivS[v] < e.pos && e.ivE[v] > e.pos {
+            r := xLocVal(l)
+            mut isArg := false
+            for k <- iter.Range(1, 7) {
+                if regs[k] == r {
+                    isArg = true
+                }
+            }
+            mut dup := false
+            for k <- iter.Range(0, len(saved)) {
+                if saved[k] == r {
+                    dup = true
+                }
+            }
+            if isArg && !dup {
+                saved = append(saved, r)
+            }
+        }
+    }
+    for k <- iter.Range(0, len(saved)) {
+        x86.PushReg(mut c, saved[k])
+    }
+    n := xLen(mut st, args)
+    for k <- iter.Range(0, n) {
+        e.mvD[k] = xLocReg(regs[k])
+        e.mvS[k] = e.loc[xAt(mut st, args, k)]
+    }
+    xParallelMove(mut e, mut c, n)
+    x86.Syscall(mut c)
+    mut k := len(saved)
+    while k > 0 {
+        k -= 1
+        x86.PopReg(mut c, saved[k])
+    }
+    xPut(mut e, mut c, res, x86.Rax)
+}
+
+// xParallelMove は e.mvD / e.mvS の先頭 n 本の並行コピー: 書き先が他の移動の読み元でない移動から順に出す。全部が循環なら
+// 先頭の書き先を r11 に逃がしてその読み元を付け替える。フレーム同士は rax を中継（並びは ir_x86 の orderedRemove と同じ）
+func xParallelMove(e mut xF, c mut table.Table[byte], n int) {
+    mut alive := 0
+    for k <- iter.Range(0, n) {
+        if e.mvD[k] == e.mvS[k] {
+            e.mvLive[k] = 0
+        } else {
+            e.mvLive[k] = 1
+            alive += 1
+        }
+    }
+    r11 := xLocReg(x86.R11)
+    while alive > 0 {
+        mut ready := -1
+        for k <- iter.Range(0, n) {
+            if ready < 0 && e.mvLive[k] == 1 {
+                mut blocked := false
+                for j <- iter.Range(0, n) {
+                    if j != k && e.mvLive[j] == 1 && e.mvS[j] == e.mvD[k] {
+                        blocked = true
+                    }
+                }
+                if !blocked {
+                    ready = k
+                }
+            }
+        }
+        if ready >= 0 {
+            xMove(mut c, e.mvD[ready], e.mvS[ready])
+            e.mvLive[ready] = 0
+            alive -= 1
+        } else {
+            mut first := -1
+            for k <- iter.Range(0, n) {
+                if first < 0 && e.mvLive[k] == 1 {
+                    first = k
+                }
+            }
+            d := e.mvD[first]
+            xMove(mut c, r11, d)
+            for k <- iter.Range(0, n) {
+                if e.mvLive[k] == 1 && e.mvS[k] == d {
+                    e.mvS[k] = r11
+                }
+            }
+        }
+    }
+}
+
+func xMove(c mut table.Table[byte], dst int, src int) {
+    if xIsReg(dst) {
+        if xIsReg(src) {
+            x86.MovRegReg(mut c, xLocVal(dst), xLocVal(src))
+        } else {
+            x86.MovRegMem(mut c, xLocVal(dst), x86.Rbp, xLocVal(src))
+        }
+    } else if xIsReg(src) {
+        x86.MovMemReg(mut c, x86.Rbp, xLocVal(dst), xLocVal(src))
+    } else {
+        x86.MovRegMem(mut c, x86.Rax, x86.Rbp, xLocVal(src))
+        x86.MovMemReg(mut c, x86.Rbp, xLocVal(dst), x86.Rax)
+    }
+}
+
+func xExit(c mut table.Table[byte], code int) {
+    x86.MovRegImm32(mut c, x86.Rax, 60)
+    x86.MovRegImm32(mut c, x86.Rdi, code)
+    x86.Syscall(mut c)
+}

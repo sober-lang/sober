@@ -1,0 +1,114 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "y",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "P",
+                "elems": [
+                  {
+                    "key": "x",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 26
+                    }
+                  },
+                  {
+                    "key": "x",
+                    "value": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 30
+                    }
+                  }
+                ],
+                "tok": 22,
+                "type_args": []
+              }
+            ],
+            "tok": 20
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 33
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "p",
+                    "tok": 35
+                  },
+                  "field": "x",
+                  "tok": 37
+                }
+              ],
+              "tok": 34
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 42
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,9 @@
+package main
+
+// 中身は string — 不正な UTF-8 のファイルは拒否
+@embed("testdata/embed_bad/*.bin")
+const X = map[string]string{}
+
+func main() {
+    println(len(X))
+}

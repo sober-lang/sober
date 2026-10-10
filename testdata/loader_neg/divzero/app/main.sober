@@ -1,0 +1,9 @@
+package main
+
+// loader の負例: const 式のゼロ除算
+const Z = 0
+const X = 10 / Z
+
+func main() {
+    println(X)
+}

@@ -1,0 +1,35 @@
+package main
+
+// 段 6 P3b: 関数の本体のチャネル（Def の本体の newch の解禁）と受け端の引き渡し — 子が受け手、親が送り手
+
+import "std/par"
+
+func sumVia(n int) int {
+    r, e := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[int](cap: 3)
+        h := par.Spawn(s, (inp) => {
+            mut t := 0
+            mut i := 0
+            while i < n {
+                v := par.Recv(inp)
+                if v != nil {
+                    t += v
+                }
+                i += 1
+            }
+            t
+        }, give: rx)
+        mut k := 1
+        while k <= n {
+            par.Send(tx, k)
+            k += 1
+        }
+        par.Join(h)
+    })
+    return if e != nil { -1 } else { r }
+}
+
+func main() {
+    println(sumVia(10))
+    println(sumVia(100))
+}

@@ -1,0 +1,25 @@
+package main
+
+// std/os.Run（テスト基盤 T1 — fork + execve + wait4 の最小面）: 終了コード・シグナル（128 + 番号）・exec の失敗（127）。
+// 子の出力は親の標準出力をそのまま継ぐ（親は fork の前に行バッファを flush するので順序は書いたとおり）
+import "std/os"
+
+func main() {
+    println("before")
+    c, err := os.Run("/bin/sh", []string{"-c", "echo child; exit 3"})
+    if err == nil {
+        println(c)
+    }
+    k, kerr := os.Run("/bin/sh", []string{"-c", "kill -9 $$"})
+    if kerr == nil {
+        println(k)
+    }
+    n, nerr := os.Run("/nonexistent", []string{})
+    if nerr == nil {
+        println(n)
+    }
+    z, zerr := os.Run("/bin/true", []string{})
+    if zerr == nil {
+        println(z)
+    }
+}

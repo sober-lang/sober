@@ -1,0 +1,176 @@
+package main
+
+// k-nucleotide（benchmarks game — docs/bench.md）: fasta の出力から ">THREE" の配列を大文字で取り出し、長さ k の部分列ごとの出現数を
+// map[string]int で数える。k = 1, 2 は頻度の降順（同数はキーの昇順）に百分率（小数 3 桁）・指定の 5 本は出現数。
+// 素直な形（Go の双子 bench/knucleotide/go と同じアルゴリズム）。キーは配列の部分列のビュー（utf8.Str — 写さない）。
+// **イディオム双子の (b) 作って返す形**（frequencies が map を作って返す — 戻りで呼び手の region へ写る）。(a) mut out 引数の回避術形は
+// bench/knucleotide/mutout（docs/bench.md「イディオムギャップ」— 宛先構築〔RVO〕が入ったら (b) ≒ (a) になるのを追う計器）。
+// 百分率は整数で: 100000 × 数 / 総数 を四捨五入（Sober にはまだ float が無い — Go の %.3f と出力は一致・公式の n=1000 とも一致）
+
+import "std/io"
+import "std/os"
+import "std/utf8"
+
+// frequencies は seq の長さ k の部分列ごとの出現数
+func frequencies(seq []byte, k int) map[string]int {
+    v := utf8.Check(seq) catch panic(Unreachable{})
+    mut m := mut map[string]int{}
+    mut i := 0
+    while i + k <= len(seq) {
+        key := utf8.Str(v, i, i + k) catch panic(Unreachable{})
+        c := m[key]
+        m[key] = if c != nil { c + 1 } else { 1 }
+        i += 1
+    }
+    return freeze(m)
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 2 {
+        return 2
+    }
+    b := io.ReadFile(args[1]) catch return 1
+    seq := three(b)
+    mut out := mut []byte{}
+    mut k := 1
+    while k <= 2 {
+        m := frequencies(seq, k)
+        putFreq(mut out, m, len(seq) - k + 1)
+        k += 1
+    }
+    targets := []string{"GGT", "GGTA", "GGTATT", "GGTATTTTAATT", "GGTATTTTAATTTATAGT"}
+    mut t := 0
+    while t < len(targets) {
+        m := frequencies(seq, len(bytes(targets[t])))
+        putCount(mut out, m, targets[t])
+        t += 1
+    }
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}
+
+// three は ">THREE" の見出しの次の行から次の見出し（か終わり）までの配列を、改行を除いて大文字で
+func three(b []byte) []byte {
+    mut i := 0
+    while !startsWith(b, i, bytes(">THREE")) {
+        while b[i] != '\n' {
+            i += 1
+        }
+        i += 1
+    }
+    while b[i] != '\n' {
+        i += 1
+    }
+    i += 1
+    mut seq := mut []byte{}
+    while i < len(b) && b[i] != '>' {
+        c := b[i]
+        if c != '\n' {
+            seq = append(seq, if c >= 'a' && c <= 'z' { byte(int(c) - 32) } else { c })
+        }
+        i += 1
+    }
+    return freeze(seq)
+}
+
+func startsWith(b []byte, at int, p []byte) bool {
+    if at + len(p) > len(b) {
+        return false
+    }
+    mut j := 0
+    while j < len(p) {
+        if b[at + j] != p[j] {
+            return false
+        }
+        j += 1
+    }
+    return true
+}
+
+// putFreq は m のキーを頻度の降順（同数はキーの昇順）に「キー 百分率」で書き、空行で閉じる
+func putFreq(out mut []byte, m map[string]int, total int) {
+    ks := keys(m)
+    mut xs := mut []string{}
+    mut i := 0
+    while i < len(ks) {
+        xs = append(xs, ks[i])
+        mut j := len(xs) - 1
+        while j > 0 && before(m, xs[j], xs[j - 1]) {
+            tmp := xs[j]
+            xs[j] = xs[j - 1]
+            xs[j - 1] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+    i = 0
+    while i < len(xs) {
+        putStr(mut out, xs[i])
+        out = append(out, ' ')
+        c := count(m, xs[i])
+        // 小数 3 桁の四捨五入（100000 × c / total）
+        q := c * 100000 / total
+        r := c * 100000 % total
+        p := if 2 * r >= total { q + 1 } else { q }
+        putInt(mut out, p / 1000)
+        out = append(out, '.')
+        out = append(out, byte('0' + p / 100 % 10))
+        out = append(out, byte('0' + p / 10 % 10))
+        out = append(out, byte('0' + p % 10))
+        out = append(out, '\n')
+        i += 1
+    }
+    out = append(out, '\n')
+}
+
+// putCount は「出現数 TAB キー」
+func putCount(out mut []byte, m map[string]int, s string) {
+    putInt(mut out, count(m, s))
+    out = append(out, '\t')
+    putStr(mut out, s)
+    out = append(out, '\n')
+}
+
+func count(m map[string]int, s string) int {
+    c := m[s]
+    return if c != nil { c } else { 0 }
+}
+
+// before は x が y より前か（頻度の降順・同数はキーの昇順）
+func before(m map[string]int, x string, y string) bool {
+    cx := count(m, x)
+    cy := count(m, y)
+    if cx != cy {
+        return cx > cy
+    }
+    return less(x, y)
+}
+
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+        i += 1
+    }
+    return len(x) < len(y)
+}
+
+func putStr(out mut []byte, s string) {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+}
+
+func putInt(out mut []byte, v int) {
+    if v >= 10 {
+        putInt(mut out, v / 10)
+    }
+    out = append(out, byte('0' + v % 10))
+}

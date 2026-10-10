@@ -1,0 +1,28 @@
+package calc
+
+// white-box: 非公開の half も呼べる（同じ package）。失敗 = panic（assert はまだ無い — 範囲外の添字で落とす）
+
+func must(ok bool) {
+    if !ok {
+        none := []int{}
+        println(none[0])
+    }
+}
+
+func TestAdd() {
+    must(Add(2, 3) == 5)
+}
+
+func TestHalf() {
+    must(half(7) == 3)
+}
+
+func TestBroken() {
+    println("about to fail")
+    must(Add(1, 1) == 3)
+}
+
+// 名前の規則の外（Test の後が小文字）— 列挙されない
+func Testify() {
+    must(false)
+}

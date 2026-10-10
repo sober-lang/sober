@@ -1,0 +1,91 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 11
+              }
+            ],
+            "tok": 8
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "ident",
+              "name": "i",
+              "tok": 14
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 16
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 18
+                    }
+                  ],
+                  "tok": 16
+                }
+              ]
+            },
+            "tok": 13
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 22
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "i",
+                  "tok": 24
+                }
+              ],
+              "tok": 23
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 29
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

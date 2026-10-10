@@ -1,0 +1,6 @@
+package main
+
+// 負例: assert は _test.sober だけの語彙（T7 — loader の拒否）
+func main() {
+    assert(1 + 1 == 2)
+}

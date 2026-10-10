@@ -1,0 +1,36 @@
+package main
+
+// 束縛つき型パターン（`case e UA{}:` — syntax.md 決定 3）と欄の `_`（`c: _`）。以前は build だけが受理し check は断片外だった（p14c・p14e）
+
+type U union {
+    UA { a, c int }
+    UB{}
+}
+
+func f(u U) int {
+    return switch u {
+    case e UA{}: g(e)
+    default: 0
+    }
+}
+
+func g(u U) int {
+    return switch u {
+    case UA{a, c: _}: a
+    case UB{}: 1
+    }
+}
+
+func h(u U) int {
+    return switch u {
+    case UA{c: _}: 7
+    case w UB{}: g(w) + 1
+    }
+}
+
+func main() {
+    println(f(UA{a: 6, c: 2}))
+    println(g(UA{a: 5, c: 2}))
+    println(h(UA{a: 5, c: 2}))
+    println(h(UB{}))
+}

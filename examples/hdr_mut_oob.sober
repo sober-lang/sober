@@ -1,0 +1,18 @@
+package main
+
+import "std/iter"
+
+// hdr の網: u が v より短いとき、v の長さで u を引く — 境界検査は消してはいけない（panic の位置が opt / no-opt で一致する）
+
+func dot(v mut []int, u mut []int) {
+    for i <- iter.Range(0, len(v)) {
+        v[i] = u[i] * 2
+    }
+}
+
+func main() {
+    mut v := mut []int{0, 0, 0, 0}
+    mut u := mut []int{1, 2, 3}
+    dot(mut v, mut u)
+    println(v[0])
+}

@@ -1,0 +1,11 @@
+package main
+
+// 負例（check が名指して拒否 — diag.LenString）: string に len は無い（language.md 33 節）。バイト数は len(bytes(s))
+
+func size(s string) int {
+    return len(s)
+}
+
+func main() {
+    println(size("ab"))
+}

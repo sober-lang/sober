@@ -1,0 +1,66 @@
+package main
+
+// 宛先構築レーン M1（顧客 ② return）: return に流れ着くリテラル・補間・連結は関数の入口の深度（呼び手の region）に作られ、
+// 戻りの境界コピーが消える（意味論は不変 — 寿命が延びるだけ）。main は印を使わない（入口の深度 0 は確保の場所にならない — 印で死んだ実績の回帰）
+
+import "std/io"
+import "std/iter"
+
+type Pair struct {
+    xs []int
+    tag string
+}
+
+// 名前の閉包: ys → xs（ys := freeze(xs)）→ リテラル
+func squares(n int) []int {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, i * i)
+    }
+    ys := freeze(xs)
+    return ys
+}
+
+// 構造体の欄に入れて返す・補間を返す
+func pair(n int, name string) Pair {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, i)
+    }
+    return Pair{xs: freeze(xs), tag: "${name}#${n}"}
+}
+
+// 関数またぎ（M1c）: 呼び出しの結果が return に流れ着く — 呼び手の宛先の深度をレジスタで渡し、squares のリテラルは outer の呼び手の region に作られる
+func outer(n int) []int {
+    return squares(n)
+}
+
+func outerLabel(n int) string {
+    return label(n)
+}
+
+func label(n int) string {
+    return "n=${n}/${n * 2}"
+}
+
+// map のリテラル（キーも値もスカラー）
+func counts(n int) map[int]int {
+    mut m := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m[i % 3] = i
+    }
+    return freeze(m)
+}
+
+func main() int {
+    s := squares(5)
+    p := pair(3, "p")
+    c := counts(10)
+    println(len(s), s[4], len(p.xs), p.tag, len(keys(c)))
+    o := outer(4)
+    println(len(o), o[3], outerLabel(7))
+    // main の中の return に流れ着くリテラル（印は使わない）
+    mut out := mut []byte{'o', 'k'}
+    out = append(out, '\n')
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}

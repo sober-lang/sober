@@ -1,0 +1,47 @@
+package main
+
+// 閉包の本体の `{ }` は region を開かない（while 本体・if の腕と同じ — 脱糖器の lambdaCall の scoped）。本体で確保した値を外の可変 slice へ
+// 書き戻しても宙吊りにならない。lower が本体を式位置の `{ }` として region で囲んでいた穴の回帰例（c04ffd4 で修正 — 修正前は 38980 などの誤った値）
+
+import "std/iter"
+
+type T struct {
+    xs []int
+}
+
+func mk(k int) T {
+    mut b := mut []int{}
+    mut i := 0
+    while i < 50 {
+        b = append(b, k * 100 + i)
+        i += 1
+    }
+    return T{xs: freeze(b)}
+}
+
+func sumLast(ts []T) int {
+    mut s := 0
+    mut j := 0
+    while j < len(ts) {
+        s += ts[j].xs[49]
+        j += 1
+    }
+    return s
+}
+
+func main() {
+    // 文形 for の本体
+    mut ts := mut []T{}
+    for q <- iter.Range(0, 20) {
+        t := mk(q)
+        ts = append(ts, t)
+    }
+    println(sumLast(freeze(ts)))
+    // パイプに渡すブロック本体のラムダ
+    ks := []int{3, 1, 4, 1, 5}
+    mut us := mut []T{}
+    ks |> iter.Slice(_, (k) => {
+        us = append(us, mk(k))
+    })
+    println(sumLast(freeze(us)))
+}

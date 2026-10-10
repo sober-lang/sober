@@ -1,0 +1,6 @@
+testdata/analyzer_neg/errors_annot.sober:16:1: error: @errors: 'NoSuch' is not an error label (Analyzer)
+testdata/analyzer_neg/errors_annot.sober:16:1: error: @errors: 'io.Missing' is not an error label (Analyzer)
+testdata/analyzer_neg/errors_annot.sober:16:1: error: @errors: 'Plain' is not an error label (Analyzer)
+testdata/analyzer_neg/errors_annot.sober:24:1: error: @errors lists the labels the function may return: the negated form '!A' is not allowed (Analyzer)
+testdata/analyzer_neg/errors_annot.sober:29:1: error: @errors expects error label names (`L` or `pkg.L`) (Analyzer)
+testdata/analyzer_neg/errors_annot.sober:29:1: error: @errors expects error label names (`L` or `pkg.L`) (Analyzer)

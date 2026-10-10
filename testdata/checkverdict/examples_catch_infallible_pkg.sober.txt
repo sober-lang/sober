@@ -1,0 +1,2 @@
+sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
+exit=1

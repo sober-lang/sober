@@ -1,0 +1,81 @@
+package main
+
+// fannkuch-redux（benchmarks game — docs/bench.md）: n 個の順列を全部列挙し、先頭の値 k ぶんの反転を先頭が 0 になるまで繰り返した回数の最大と
+// チェックサム（偶奇で符号を交互に足す）を出す。整数の配列の添字アクセスとループだけ（境界検査の消去・ループ最適化の物差し）。逐次版
+
+import "std/iter"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) > 1 { atoi(args[1]) } else { 7 }
+    mut perm1 := mut []int{}
+    mut perm := mut []int{}
+    mut count := mut []int{}
+    for i <- iter.Range(0, n) {
+        perm1 = append(perm1, i)
+        perm = append(perm, 0)
+        count = append(count, 0)
+    }
+    mut maxFlips := 0
+    mut checksum := 0
+    mut permCount := 0
+    mut r := n
+    while true {
+        while r != 1 {
+            count[r - 1] = r
+            r -= 1
+        }
+        for i <- iter.Range(0, n) {
+            perm[i] = perm1[i]
+        }
+        mut flips := 0
+        mut k := perm[0]
+        while k != 0 {
+            mut lo := 0
+            mut hi := k
+            while lo < hi {
+                t := perm[lo]
+                perm[lo] = perm[hi]
+                perm[hi] = t
+                lo += 1
+                hi -= 1
+            }
+            flips += 1
+            k = perm[0]
+        }
+        if flips > maxFlips {
+            maxFlips = flips
+        }
+        checksum += if permCount % 2 == 0 { flips } else { 0 - flips }
+        // 次の順列
+        while true {
+            if r == n {
+                println(checksum)
+                println("Pfannkuchen(${n}) = ${maxFlips}")
+                return 0
+            }
+            p0 := perm1[0]
+            for i <- iter.Range(0, r) {
+                perm1[i] = perm1[i + 1]
+            }
+            perm1[r] = p0
+            count[r] = count[r] - 1
+            if count[r] > 0 {
+                break
+            }
+            r += 1
+        }
+        permCount += 1
+    }
+    return 0
+}

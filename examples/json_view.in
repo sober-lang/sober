@@ -1,0 +1,7 @@
+{
+  "name": "sober — \"json\"",
+  "tags": ["a", "b\tc", []],
+  "n": [0, -1.5e-3, 12345678901234567890123],
+  "ok": true, "nothing": null,
+  "nested": {"x": {"y": {}}}
+}

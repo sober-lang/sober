@@ -1,0 +1,10 @@
+package main
+
+// loader の負例: 非公開の const を修飾参照する
+import "testdata/loader_neg/unexported/lib"
+
+const X = lib.small + 1
+
+func main() {
+    println(X)
+}

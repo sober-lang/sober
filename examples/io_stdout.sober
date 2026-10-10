@@ -1,0 +1,25 @@
+package main
+
+// R31: io.WriteStdout / WriteStderr — 開いている fd へ直接書く（WriteFile("/dev/stdout") は O_TRUNC で開き直すので
+// stdout がファイルだと前の出力を消す — F-20）。println の行バッファは書く前に flush される（出る順 = 呼んだ順）
+
+import "std/io"
+
+func main() {
+    println("line 1 (println)")
+    e := io.WriteStdout(bytes("line 2 (WriteStdout)\n"))
+    if e != nil {
+        println("stdout error")
+    }
+    println("line 3 (println)")
+    // 標準エラーは照合しない（ハーネスは stdout だけを見る）— 書けることだけ確かめる
+    e2 := io.WriteStderr(bytes("to stderr\n"))
+    if e2 != nil {
+        println("stderr error")
+    }
+    e3 := io.WriteStdout(bytes("line 4, no newline"))
+    if e3 != nil {
+        println("stdout error")
+    }
+    println(" / line 4 continued")
+}

@@ -1,0 +1,20 @@
+package main
+
+// bytes ビュー（imm []int）を slice 引数の def に渡す形 — std/strings の下回り
+func hasPrefixAt(b []int, at int, p []int) bool {
+    mut i := 0
+    while i < len(p) && b[at + i] == p[i] {
+        i += 1
+    }
+    return i == len(p)
+}
+
+func count(text string) int {
+    return len(bytes(text))
+}
+
+func main() {
+    s := bytes("hello world")
+    println(hasPrefixAt(s, 0, bytes("hello")), hasPrefixAt(s, 6, bytes("world")), hasPrefixAt(s, 1, bytes("hello")))
+    println(count("abc"), s[4])
+}

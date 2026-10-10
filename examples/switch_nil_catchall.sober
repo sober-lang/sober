@@ -1,0 +1,14 @@
+package main
+
+// 負例: nil の腕より前に名前のパターン（`_`・束縛）があると、nil にも当たりうるので写さない — loader の拒否（language.md 15 節・D1）
+func pick(k int) int? {
+    return if k > 0 { k } else { nil }
+}
+
+func main() {
+    x := pick(3)
+    println(switch x {
+    case v: v
+    case nil: 0
+    })
+}

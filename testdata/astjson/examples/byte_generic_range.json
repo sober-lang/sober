@@ -1,0 +1,117 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "bb"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "builder.Builder",
+                "elems": [],
+                "tok": 14,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "byte"
+                  }
+                ]
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "builder",
+                  "tok": 23
+                },
+                "field": "Push",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "bb",
+                  "tok": 28
+                },
+                {
+                  "k": "int",
+                  "value": 300,
+                  "tok": 30
+                }
+              ],
+              "tok": 26
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 33
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "builder",
+                      "tok": 35
+                    },
+                    "field": "Len",
+                    "tok": 37
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "bb",
+                      "tok": 40
+                    }
+                  ],
+                  "tok": 38
+                }
+              ],
+              "tok": 34
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 46
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,2 @@
+sober: error at examples/switch_nested_uncovered.sober:20:12 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default
+exit=1

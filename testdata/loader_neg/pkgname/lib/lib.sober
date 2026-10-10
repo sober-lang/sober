@@ -1,0 +1,5 @@
+package other
+
+func F() int {
+    return 1
+}

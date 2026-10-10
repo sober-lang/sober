@@ -1,0 +1,91 @@
+package loader
+
+// バイト列の名前（[]int）の小道具。名前・パスは string にしない — データプールやソースの部分列のまま持つ
+// （string 化は UTF-8 の検査とコピーが毎回走る — selfhost-drafts の F-4）
+
+import "ast"
+
+// Eq はバイト列の一致
+func Eq(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Less はバイト順（辞書式）で a < b か
+func Less(a []int, b []int) bool {
+    mut i := 0
+    while i < len(a) && i < len(b) {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+        i += 1
+    }
+    return len(a) < len(b)
+}
+
+// EqLit はバイト列が綴り w と一致するか
+func EqLit(a []int, w string) bool {
+    return Eq(a, bytes(w))
+}
+
+// HasPrefix は a が綴り w で始まるか
+func HasPrefix(a []int, w string) bool {
+    p := bytes(w)
+    return len(a) >= len(p) && Eq(a[0:len(p)], p)
+}
+
+// HasSuffix は a が綴り w で終わるか
+func HasSuffix(a []int, w string) bool {
+    p := bytes(w)
+    return len(a) >= len(p) && Eq(a[len(a) - len(p):len(a)], p)
+}
+
+// Str はデータプールの文字列 s（t.data[s] = バイト数、続く n 個がバイト）の中身（部分列 — コピーしない）
+func Str(t ast.Tree, s int) []int {
+    return t.data[s + 1:s + 1 + t.data[s]]
+}
+
+// lastSlash は最後の '/' の位置（無ければ -1）
+func lastSlash(p []int) int {
+    mut i := len(p) - 1
+    while i >= 0 && p[i] != 47 {
+        i -= 1
+    }
+    return i
+}
+
+// Dirname はパスの親（'/' が無ければ空）
+func Dirname(p []int) []int {
+    k := lastSlash(p)
+    return if k < 0 { p[0:0] } else { p[0:k] }
+}
+
+// Basename はパスの末尾の要素
+func Basename(p []int) []int {
+    return p[lastSlash(p) + 1:len(p)]
+}
+
+// cat は a と b をつないだ新しい列
+func cat(a []int, b []int) []int {
+    mut out := mut []int{}
+    mut i := 0
+    while i < len(a) {
+        out = append(out, a[i])
+        i += 1
+    }
+    i = 0
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+    return freeze(out)
+}

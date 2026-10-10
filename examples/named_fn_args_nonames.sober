@@ -1,0 +1,12 @@
+package main
+
+// 負例（syntax.md 決定 7 の kind 1）: 仮引数名を持たない名前付き関数型の値に名前付き実引数
+type Pair func(int, int?) int
+
+func apply(f Pair) int {
+    return f(3, b: 4)
+}
+
+func main() {
+    println(apply((p, q) => p))
+}

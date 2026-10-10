@@ -1,0 +1,6 @@
+package main
+
+// tyvecdump の口（生成物 — readAs の m は bool）
+func readAsB(st mut S, m bool, ot int, t int) int {
+    return readAs(mut st, m, ot, t)
+}

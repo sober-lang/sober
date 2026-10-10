@@ -1,0 +1,33 @@
+package main
+
+// 補間の穴が型パラメータ型（language.md 24 節 — 2026-09-30）: インスタンスの型引数（int / bool）で種類が決まる。
+// 検査器は show / fact / twice（show に T を渡す — 印の伝播）をインスタンスごとの Def に、apply（展開される）は展開の型環境で決める。
+// 再帰（fact）は同じ型引数のインスタンスを 1 つだけ作る
+
+func show[T](x T) string {
+    return "v=${x}"
+}
+
+func twice[T](x T) string {
+    return "${show(x)}/${show(x)}"
+}
+
+func fact[T](n int, x T) string {
+    if n == 0 {
+        return "${x}"
+    }
+    return "${n}:${fact(n - 1, x)}"
+}
+
+func apply[T](x T, f func(T) int) string {
+    return "${x}->${f(x)}"
+}
+
+func main() {
+    println(show(3))
+    println(show(true))
+    println(twice(7))
+    println(fact(2, false))
+    println(apply(4, (v) => v * 10))
+    println(apply(true, (b) => if b { 1 } else { 0 }))
+}

@@ -1,0 +1,685 @@
+package x86
+
+// x86_64 の命令エンコーダ（legacy/zig/arch/x86_64.zig の写し — 正規バックエンドの Sober 化 B-1b）。IR を知らない。
+// 書き先はバイトの表（table.Table[byte] — 追記と、call / jmp の rel32・番地の imm32 の後埋め）。
+// 正しさは GNU as との照合（scripts/x86enc.sh — 全レジスタの組み合わせ）と、ELF のバイト一致（elfeq）で見る。
+// ビットの詰め（REX・ModRM・SIB・opcode | reg）は int のシフトで書く — @layout のビット粒度（Y9）は入れない裁定（report-115 §1）。
+// オペコードは 16 進のリテラル（`0x89` — 注釈の綴り `REX.W 89 /r` と同じ字面。n 進リテラルの導入 6658636 で 10 進から直した）
+
+import "std/table"
+
+// レジスタ（番号 = エンコードの値。r8〜r15 は REX の拡張 bit で届く）
+const Rax = 0
+const Rcx = 1
+const Rdx = 2
+const Rbx = 3
+const Rsp = 4
+const Rbp = 5
+const Rsi = 6
+const Rdi = 7
+const R8 = 8
+const R9 = 9
+const R10 = 10
+const R11 = 11
+const R12 = 12
+const R13 = 13
+const R14 = 14
+const R15 = 15
+
+// 条件コード（jcc / setcc の下位 4 bit）
+const CondE = 4
+const CondNe = 5
+const CondL = 12
+const CondGe = 13
+const CondLe = 14
+const CondG = 15
+const CondB = 2  // 符号なし <
+const CondAe = 3 // 符号なし >=
+const CondA = 7  // 符号なし >
+const CondP = 10  // パリティ（ucomisd の unordered — float の段）
+const CondNp = 11
+
+// SIB の倍率（2 bit）
+const Scale1 = 0
+const Scale8 = 3
+
+const rexW = 0x48
+
+func lo(r int) int {
+    return r & 7
+}
+
+func hi(r int) int {
+    return r >> 3
+}
+
+func modrm(mod int, reg int, rm int) byte {
+    return byte(mod << 6 | reg << 3 | rm)
+}
+
+func put(c mut table.Table[byte], b int) {
+    table.Push(mut c, byte(b))
+}
+
+// Here は今のコードの位置（ラベル・後埋めの位置）
+func Here(c mut table.Table[byte]) int {
+    return table.Len(mut c)
+}
+
+// rex は REX 接頭辞（W = 64 bit、r = ModRM.reg の拡張、x = SIB.index の拡張、b = ModRM.rm / SIB.base / opcode の拡張）。
+// 0x40 だけのとき（W も拡張も無い）は force のときだけ出す（spl / bpl / sil / dil のバイトレジスタ）
+func rex(c mut table.Table[byte], w bool, r int, x int, b int, force bool) {
+    v := 0x40 | (if w { 8 } else { 0 }) | r << 2 | x << 1 | b
+    if v != 0x40 || force {
+        put(mut c, v)
+    }
+}
+
+func imm32(c mut table.Table[byte], v int) {
+    put(mut c, v & 255)
+    put(mut c, v >> 8 & 255)
+    put(mut c, v >> 16 & 255)
+    put(mut c, v >> 24 & 255)
+}
+
+// opRR は REX.W op /r のレジスタ形（reg = ModRM.reg、rm = ModRM.rm）。op2 は 2 バイト目（無ければ -1）
+func opRR(c mut table.Table[byte], op1 int, op2 int, reg int, rm int) {
+    rex(mut c, true, hi(reg), 0, hi(rm), false)
+    put(mut c, op1)
+    if op2 != -1 {
+        put(mut c, op2)
+    }
+    table.Push(mut c, modrm(3, lo(reg), lo(rm)))
+}
+
+// opExt は REX.W op /ext のレジスタ形
+func opExt(c mut table.Table[byte], op int, ext int, rm int) {
+    rex(mut c, true, 0, 0, hi(rm), false)
+    put(mut c, op)
+    table.Push(mut c, modrm(3, ext, lo(rm)))
+}
+
+// memOperand は ModRM(+SIB)(+disp) のメモリオペランド [base + disp]。as と同じく disp は 0 / disp8 / disp32 の最短を選ぶ。
+// 下位 3 bit が 5（rbp / r13）は mod=00 が RIP 相対になるので disp8 以上、4（rsp / r12）は SIB（0x24）が要る
+func memOperand(c mut table.Table[byte], reg int, base int, disp int) {
+    rm := lo(base)
+    mod := if disp == 0 && rm != 5 { 0 } else if disp >= -128 && disp <= 127 { 1 } else { 2 }
+    table.Push(mut c, modrm(mod, reg, rm))
+    if rm == 4 {
+        put(mut c, 0x24)
+    }
+    if mod == 1 {
+        put(mut c, disp & 255)
+    } else if mod == 2 {
+        imm32(mut c, disp)
+    }
+}
+
+// opMem は op のメモリ形 [base + disp]。w = REX.W、reg は ModRM.reg に入るレジスタ番号（/ext なら ext）。op2 は 2 バイト目（無ければ -1）
+func opMem(c mut table.Table[byte], w bool, op1 int, op2 int, reg int, base int, disp int, force bool) {
+    rex(mut c, w, hi(reg), 0, hi(base), force)
+    put(mut c, op1)
+    if op2 != -1 {
+        put(mut c, op2)
+    }
+    memOperand(mut c, lo(reg), base, disp)
+}
+
+// ── mov ──────────────────────────────────────────────────────────
+
+// MovRegImm32 は mov reg, imm32（64 bit に符号拡張）— REX.W C7 /0 id
+func MovRegImm32(c mut table.Table[byte], reg int, imm int) {
+    opExt(mut c, 0xc7, 0, reg)
+    imm32(mut c, imm)
+}
+
+// MovRegImm64 は movabs reg, imm64 — REX.W B8+r io
+func MovRegImm64(c mut table.Table[byte], reg int, imm int) {
+    rex(mut c, true, 0, 0, hi(reg), false)
+    put(mut c, 0xb8 | lo(reg))
+    imm32(mut c, imm)
+    imm32(mut c, imm >> 32)
+}
+
+// MovRegReg は mov dst, src — REX.W 89 /r（reg = src, rm = dst）
+func MovRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x89, -1, src, dst)
+}
+
+// MovRegMem は mov dst, [base + disp] — REX.W 8B /r
+func MovRegMem(c mut table.Table[byte], dst int, base int, disp int) {
+    opMem(mut c, true, 0x8b, -1, dst, base, disp, false)
+}
+
+// MovRegFs は mov dst, qword ptr fs:[disp] — 64 REX.W 8B /r + SIB（base も index も無い disp32 の形）。ワーカーの記録の表を引く（段 6 P4-3 — IR の fsaddr）
+func MovRegFs(c mut table.Table[byte], dst int, disp int) {
+    put(mut c, 0x64)
+    rex(mut c, true, hi(dst), 0, 0, false)
+    put(mut c, 0x8b)
+    table.Push(mut c, modrm(0, lo(dst), 4))
+    put(mut c, 0x25)
+    imm32(mut c, disp)
+}
+
+// ── 原子の op（段 6 P4-4 — IR の atomic。rt の中だけ）──
+// LockXaddMemReg は lock xadd qword ptr [base + disp], src — F0 REX.W 0F C1 /r（src = 古い値）
+func LockXaddMemReg(c mut table.Table[byte], base int, disp int, src int) {
+    put(mut c, 0xf0)
+    opMem(mut c, true, 0x0f, 0xc1, src, base, disp, false)
+}
+
+// XchgMemReg は xchg qword ptr [base + disp], src — REX.W 87 /r（メモリとの xchg は暗黙に lock — 全順序の柵）
+func XchgMemReg(c mut table.Table[byte], base int, disp int, src int) {
+    opMem(mut c, true, 0x87, -1, src, base, disp, false)
+}
+
+// LockCmpxchgMemReg は lock cmpxchg qword ptr [base + disp], src — F0 REX.W 0F B1 /r（rax と比べて等しければ src を書く・rax = 古い値）
+func LockCmpxchgMemReg(c mut table.Table[byte], base int, disp int, src int) {
+    put(mut c, 0xf0)
+    opMem(mut c, true, 0x0f, 0xb1, src, base, disp, false)
+}
+
+// Mfence は mfence — 0F AE F0
+func Mfence(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0xae)
+    put(mut c, 0xf0)
+}
+
+// Pause は pause — F3 90（スピンの待ちの 1 回）
+func Pause(c mut table.Table[byte]) {
+    put(mut c, 0xf3)
+    put(mut c, 0x90)
+}
+
+// LeaRegMem は lea dst, [base + disp] — REX.W 8D /r
+func LeaRegMem(c mut table.Table[byte], dst int, base int, disp int) {
+    opMem(mut c, true, 0x8d, -1, dst, base, disp, false)
+}
+
+// MovMemReg は mov [base + disp], src — REX.W 89 /r
+func MovMemReg(c mut table.Table[byte], base int, disp int, src int) {
+    opMem(mut c, true, 0x89, -1, src, base, disp, false)
+}
+
+// MovMemImm32 は mov qword ptr [base + disp], imm32（符号拡張）— REX.W C7 /0 id
+func MovMemImm32(c mut table.Table[byte], base int, disp int, imm int) {
+    opMem(mut c, true, 0xc7, -1, 0, base, disp, false)
+    imm32(mut c, imm)
+}
+
+// LeaRegSib は lea dst, [base + index * scale] — REX.W 8D /r + SIB（gep）。index に rsp は置けない。
+// base の下位 3 bit が 5（rbp / r13）は mod=00 が「base 無し + disp32」になるので disp8 = 0 を付ける
+func LeaRegSib(c mut table.Table[byte], dst int, base int, index int, scale int) {
+    rex(mut c, true, hi(dst), hi(index), hi(base), false)
+    put(mut c, 0x8d)
+    sib := scale << 6 | lo(index) << 3 | lo(base)
+    if lo(base) == 5 {
+        table.Push(mut c, modrm(1, lo(dst), 4))
+        put(mut c, sib)
+        put(mut c, 0)
+    } else {
+        table.Push(mut c, modrm(0, lo(dst), 4))
+        put(mut c, sib)
+    }
+}
+
+// opSib は op のメモリ形 [base + index * scale + disp]（ModRM rm=100 + SIB — gep と load / store の融合。性能投資 第二便 M7）。
+// index に rsp は置けない（SIB.index=100 + REX.X=0 が「index 無し」）。disp は as と同じく 0 / disp8 / disp32 の最短 —
+// base の下位 3 bit が 5（rbp / r13）は mod=00 が「base 無し + disp32」なので disp8 以上
+func opSib(c mut table.Table[byte], w bool, op1 int, op2 int, reg int, base int, index int, scale int, disp int, force bool) {
+    rex(mut c, w, hi(reg), hi(index), hi(base), force)
+    put(mut c, op1)
+    if op2 != -1 {
+        put(mut c, op2)
+    }
+    mod := if disp == 0 && lo(base) != 5 { 0 } else if disp >= -128 && disp <= 127 { 1 } else { 2 }
+    table.Push(mut c, modrm(mod, lo(reg), 4))
+    put(mut c, scale << 6 | lo(index) << 3 | lo(base))
+    if mod == 1 {
+        put(mut c, disp & 255)
+    } else if mod == 2 {
+        imm32(mut c, disp)
+    }
+}
+
+// MovRegMemSib は mov dst, qword ptr [base + index * scale + disp] — REX.W 8B /r + SIB
+func MovRegMemSib(c mut table.Table[byte], dst int, base int, index int, scale int, disp int) {
+    opSib(mut c, true, 0x8b, -1, dst, base, index, scale, disp, false)
+}
+
+// MovMemRegSib は mov qword ptr [base + index * scale + disp], src — REX.W 89 /r + SIB
+func MovMemRegSib(c mut table.Table[byte], base int, index int, scale int, disp int, src int) {
+    opSib(mut c, true, 0x89, -1, src, base, index, scale, disp, false)
+}
+
+// MovzxRegMem8Sib は movzx dst, byte ptr [base + index * scale + disp] — REX.W 0F B6 /r + SIB
+func MovzxRegMem8Sib(c mut table.Table[byte], dst int, base int, index int, scale int, disp int) {
+    opSib(mut c, true, 0x0f, 0xb6, dst, base, index, scale, disp, false)
+}
+
+// MovMem8RegSib は mov byte ptr [base + index * scale + disp], src8 — 88 /r + SIB（spl / bpl / sil / dil は REX 付き）
+func MovMem8RegSib(c mut table.Table[byte], base int, index int, scale int, disp int, src int) {
+    opSib(mut c, false, 0x88, -1, src, base, index, scale, disp, src >= 4 && src < 8)
+}
+
+// MovMem8Reg は mov byte ptr [base + disp], src8 — 88 /r。spl / bpl / sil / dil と r8b〜 は REX 付き（as と同じ）
+func MovMem8Reg(c mut table.Table[byte], base int, disp int, src int) {
+    opMem(mut c, false, 0x88, -1, src, base, disp, src >= 4 && src < 8)
+}
+
+// MovzxRegMem8 は movzx dst, byte ptr [base + disp] — REX.W 0F B6 /r
+func MovzxRegMem8(c mut table.Table[byte], dst int, base int, disp int) {
+    opMem(mut c, true, 0x0f, 0xb6, dst, base, disp, false)
+}
+
+// RepStosq は rep stosq — F3 48 AB（rcx 語を rdi から rax で埋める。フレームスロットの入口ゼロ初期化）
+func RepStosq(c mut table.Table[byte]) {
+    put(mut c, 0xf3)
+    put(mut c, rexW)
+    put(mut c, 0xab)
+}
+
+// RepMovsb は rep movsb — F3 A4（rcx バイトを rsi から rdi へ。rt.copy8 の呼び出しの代わり — 1.0× アタック便）
+func RepMovsb(c mut table.Table[byte]) {
+    put(mut c, 0xf3)
+    put(mut c, 0xa4)
+}
+
+// RepMovsq は rep movsq — F3 48 A5（rcx 語を rsi から rdi へ。rt.copy の呼び出しの代わり）
+func RepMovsq(c mut table.Table[byte]) {
+    put(mut c, 0xf3)
+    put(mut c, rexW)
+    put(mut c, 0xa5)
+}
+
+// ── スタック ─────────────────────────────────────────────────────
+
+// PushReg は push reg — 50+r
+func PushReg(c mut table.Table[byte], reg int) {
+    rex(mut c, false, 0, 0, hi(reg), false)
+    put(mut c, 0x50 | lo(reg))
+}
+
+// PopReg は pop reg — 58+r
+func PopReg(c mut table.Table[byte], reg int) {
+    rex(mut c, false, 0, 0, hi(reg), false)
+    put(mut c, 0x58 | lo(reg))
+}
+
+// ── 算術・論理（reg, reg。REX.W op /r、reg = src rm = dst） ──────
+
+// AddRegReg は add dst, src — 01 /r
+func AddRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x01, -1, src, dst)
+}
+
+// SubRegReg は sub dst, src — 29 /r
+func SubRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x29, -1, src, dst)
+}
+
+// AndRegReg は and dst, src — 21 /r
+func AndRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x21, -1, src, dst)
+}
+
+// OrRegReg は or dst, src — 09 /r
+func OrRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x09, -1, src, dst)
+}
+
+// XorRegReg は xor dst, src — 31 /r
+func XorRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x31, -1, src, dst)
+}
+
+// CmpRegReg は cmp dst, src — 39 /r
+func CmpRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x39, -1, src, dst)
+}
+
+// ImulRegReg は imul dst, src — REX.W 0F AF /r（reg = dst, rm = src）
+func ImulRegReg(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x0f, 0xaf, dst, src)
+}
+
+// aluRegImm は op reg, imm — as と同じ最短形を選ぶ:
+// imm8 に収まれば 83 /ext ib、rax なら短縮形（ext × 8 + 5）id、それ以外は 81 /ext id
+func aluRegImm(c mut table.Table[byte], ext int, reg int, imm int) {
+    if imm >= -128 && imm <= 127 {
+        opExt(mut c, 0x83, ext, reg)
+        put(mut c, imm & 255)
+    } else {
+        if reg == Rax {
+            put(mut c, rexW)
+            put(mut c, ext * 8 + 5)
+        } else {
+            opExt(mut c, 0x81, ext, reg)
+        }
+        imm32(mut c, imm)
+    }
+}
+
+// AddRegImm は add reg, imm
+func AddRegImm(c mut table.Table[byte], reg int, imm int) {
+    aluRegImm(mut c, 0, reg, imm)
+}
+
+// SubRegImm は sub reg, imm
+func SubRegImm(c mut table.Table[byte], reg int, imm int) {
+    aluRegImm(mut c, 5, reg, imm)
+}
+
+// CmpRegImm は cmp reg, imm
+func CmpRegImm(c mut table.Table[byte], reg int, imm int) {
+    aluRegImm(mut c, 7, reg, imm)
+}
+
+// AndRegImm は and reg, imm
+func AndRegImm(c mut table.Table[byte], reg int, imm int) {
+    aluRegImm(mut c, 4, reg, imm)
+}
+
+// NegReg は neg reg — REX.W F7 /3
+func NegReg(c mut table.Table[byte], reg int) {
+    opExt(mut c, 0xf7, 3, reg)
+}
+
+// ShlRegCl は shl reg, cl — REX.W D3 /4（量は cl の下位 6 bit — IR の shl と同じ意味）
+func ShlRegCl(c mut table.Table[byte], reg int) {
+    opExt(mut c, 0xd3, 4, reg)
+}
+
+// SarRegCl は sar reg, cl — REX.W D3 /7（算術右シフト）
+func SarRegCl(c mut table.Table[byte], reg int) {
+    opExt(mut c, 0xd3, 7, reg)
+}
+
+// SarRegImm は sar reg, imm8 — REX.W C1 /7 ib（量 1 は as と同じく REX.W D1 /7）（2 のべき乗の定数での div / rem のシフト列 — 第二便 M10）
+func SarRegImm(c mut table.Table[byte], reg int, imm int) {
+    if imm == 1 {
+        opExt(mut c, 0xd1, 7, reg)
+        return
+    }
+    opExt(mut c, 0xc1, 7, reg)
+    put(mut c, imm & 255)
+}
+
+// ── SSE2（整数 — 性能投資 第三便のベクトル化スパイク。xmm の番号 0〜15・8 以上は REX の拡張）──
+
+// sseRR は [pre] [REX] 0F op /r のレジスタ形（reg = ModRM.reg・rm = ModRM.rm — どちらも xmm か汎用の番号）。w = REX.W
+func sseRR(c mut table.Table[byte], pre int, w bool, op int, reg int, rm int) {
+    put(mut c, pre)
+    rex(mut c, w, hi(reg), 0, hi(rm), false)
+    put(mut c, 0x0f)
+    put(mut c, op)
+    table.Push(mut c, modrm(3, lo(reg), lo(rm)))
+}
+
+// MovdqaXX は movdqa x, y — 66 0F 6F /r
+func MovdqaXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x6f, x, y)
+}
+
+// PcmpeqbXX は pcmpeqb x, y — 66 0F 74 /r
+func PcmpeqbXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x74, x, y)
+}
+
+// PcmpgtbXX は pcmpgtb x, y（符号つき）— 66 0F 64 /r
+func PcmpgtbXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x64, x, y)
+}
+
+// PxorXX は pxor x, y — 66 0F EF /r
+func PxorXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0xef, x, y)
+}
+
+// PorXX は por x, y — 66 0F EB /r
+func PorXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0xeb, x, y)
+}
+
+// PunpcklqdqXX は punpcklqdq x, y — 66 0F 6C /r
+func PunpcklqdqXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x6c, x, y)
+}
+
+// PmovmskbRX は pmovmskb r32, x（各バイトの最上位 bit → 下位 16 bit）— 66 0F D7 /r（reg = 汎用・rm = xmm）
+func PmovmskbRX(c mut table.Table[byte], r int, x int) {
+    sseRR(mut c, 0x66, false, 0xd7, r, x)
+}
+
+// MovqXR は movq x, r64 — 66 REX.W 0F 6E /r（reg = xmm・rm = 汎用）
+func MovqXR(c mut table.Table[byte], x int, r int) {
+    sseRR(mut c, 0x66, true, 0x6e, x, r)
+}
+
+// ── SSE2 scalar double（float の段 — language.md 37 節。値は汎用レジスタの binary64 のビット列 ⇄ xmm を movq で行き来）──
+
+// MovqRX は movq r64, x — 66 REX.W 0F 7E /r（reg = xmm・rm = 汎用）
+func MovqRX(c mut table.Table[byte], r int, x int) {
+    sseRR(mut c, 0x66, true, 0x7e, x, r)
+}
+
+// MovapdXX は movapd x, y（xmm の値の写し — opt バックエンドの float のレジスタ同士）— 66 0F 28 /r
+func MovapdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x28, x, y)
+}
+
+// AddsdXX は addsd x, y — F2 0F 58 /r
+func AddsdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0xf2, false, 0x58, x, y)
+}
+
+// SubsdXX は subsd x, y — F2 0F 5C /r
+func SubsdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0xf2, false, 0x5c, x, y)
+}
+
+// MulsdXX は mulsd x, y — F2 0F 59 /r
+func MulsdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0xf2, false, 0x59, x, y)
+}
+
+// DivsdXX は divsd x, y — F2 0F 5E /r
+func DivsdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0xf2, false, 0x5e, x, y)
+}
+
+// SqrtsdXX は sqrtsd x, y — F2 0F 51 /r
+func SqrtsdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0xf2, false, 0x51, x, y)
+}
+
+// UcomisdXX は ucomisd x, y（unordered なら ZF = PF = CF = 1）— 66 0F 2E /r
+func UcomisdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x2e, x, y)
+}
+
+// Cvtsi2sdXR は cvtsi2sd x, r64 — F2 REX.W 0F 2A /r（reg = xmm・rm = 汎用）
+func Cvtsi2sdXR(c mut table.Table[byte], x int, r int) {
+    sseRR(mut c, 0xf2, true, 0x2a, x, r)
+}
+
+// Cvttsd2siRX は cvttsd2si r64, x（0 方向の切り捨て・NaN と範囲外は i64 の最小値）— F2 REX.W 0F 2C /r（reg = 汎用・rm = xmm）
+func Cvttsd2siRX(c mut table.Table[byte], r int, x int) {
+    sseRR(mut c, 0xf2, true, 0x2c, r, x)
+}
+
+// SetccCl は setcc cl — 0F 9x C1
+func SetccCl(c mut table.Table[byte], cond int) {
+    put(mut c, 0x0f)
+    put(mut c, 144 | cond)
+    put(mut c, 0xc1)
+}
+
+// AndAlCl は and al, cl — 20 C8
+func AndAlCl(c mut table.Table[byte]) {
+    put(mut c, 0x20)
+    put(mut c, 0xc8)
+}
+
+// OrAlCl は or al, cl — 08 C8
+func OrAlCl(c mut table.Table[byte]) {
+    put(mut c, 0x08)
+    put(mut c, 0xc8)
+}
+
+// sseMem は [pre] [REX] 0F op /r のメモリ形 [base + disp]（reg = xmm）
+func sseMem(c mut table.Table[byte], pre int, op int, reg int, base int, disp int) {
+    put(mut c, pre)
+    rex(mut c, false, hi(reg), 0, hi(base), false)
+    put(mut c, 0x0f)
+    put(mut c, op)
+    memOperand(mut c, lo(reg), base, disp)
+}
+
+// sseSib は [pre] [REX] 0F op /r のメモリ形 [base + index * scale + disp]（opSib と同じ ModRM + SIB + disp の最短）
+func sseSib(c mut table.Table[byte], pre int, op int, reg int, base int, index int, scale int, disp int) {
+    put(mut c, pre)
+    rex(mut c, false, hi(reg), hi(index), hi(base), false)
+    put(mut c, 0x0f)
+    put(mut c, op)
+    mod := if disp == 0 && lo(base) != 5 { 0 } else if disp >= -128 && disp <= 127 { 1 } else { 2 }
+    table.Push(mut c, modrm(mod, lo(reg), 4))
+    put(mut c, scale << 6 | lo(index) << 3 | lo(base))
+    if mod == 1 {
+        put(mut c, disp & 255)
+    } else if mod == 2 {
+        imm32(mut c, disp)
+    }
+}
+
+// MovsdXMem は movsd x, qword ptr [base + disp] — F2 0F 10 /r（float の load を xmm へ直に — 1.0× アタック便）
+func MovsdXMem(c mut table.Table[byte], x int, base int, disp int) {
+    sseMem(mut c, 0xf2, 0x10, x, base, disp)
+}
+
+// MovsdMemX は movsd qword ptr [base + disp], x — F2 0F 11 /r
+func MovsdMemX(c mut table.Table[byte], base int, disp int, x int) {
+    sseMem(mut c, 0xf2, 0x11, x, base, disp)
+}
+
+// MovsdXMemSib は movsd x, qword ptr [base + index * scale + disp] — F2 0F 10 /r + SIB
+func MovsdXMemSib(c mut table.Table[byte], x int, base int, index int, scale int, disp int) {
+    sseSib(mut c, 0xf2, 0x10, x, base, index, scale, disp)
+}
+
+// MovsdMemXSib は movsd qword ptr [base + index * scale + disp], x — F2 0F 11 /r + SIB
+func MovsdMemXSib(c mut table.Table[byte], base int, index int, scale int, disp int, x int) {
+    sseSib(mut c, 0xf2, 0x11, x, base, index, scale, disp)
+}
+
+// MovdquXMemSib は movdqu x, xmmword ptr [base + index * 1] — F3 0F 6F /r + SIB
+func MovdquXMemSib(c mut table.Table[byte], x int, base int, index int) {
+    put(mut c, 0xf3)
+    rex(mut c, false, hi(x), hi(index), hi(base), false)
+    put(mut c, 0x0f)
+    put(mut c, 0x6f)
+    mod := if lo(base) == 5 { 1 } else { 0 }
+    table.Push(mut c, modrm(mod, lo(x), 4))
+    put(mut c, lo(index) << 3 | lo(base))
+    if mod == 1 {
+        put(mut c, 0)
+    }
+}
+
+// BsfRR は bsf dst, src — REX.W 0F BC /r
+func BsfRR(c mut table.Table[byte], dst int, src int) {
+    opRR(mut c, 0x0f, 0xbc, dst, src)
+}
+
+// Cqo は rax を rdx:rax に符号拡張（idiv の前）— 48 99
+func Cqo(c mut table.Table[byte]) {
+    put(mut c, rexW)
+    put(mut c, 0x99)
+}
+
+// IdivReg は idiv reg — rdx:rax / reg → 商 rax、余り rdx — REX.W F7 /7
+func IdivReg(c mut table.Table[byte], reg int) {
+    opExt(mut c, 0xf7, 7, reg)
+}
+
+// SetccAl は setcc al — 0F 9x C0（比較結果を 0 / 1 に）
+func SetccAl(c mut table.Table[byte], cond int) {
+    put(mut c, 0x0f)
+    put(mut c, 144 | cond)
+    put(mut c, 0xc0)
+}
+
+// MovzxRaxAl は movzx rax, al — 48 0F B6 C0
+func MovzxRaxAl(c mut table.Table[byte]) {
+    put(mut c, rexW)
+    put(mut c, 0x0f)
+    put(mut c, 0xb6)
+    put(mut c, 0xc0)
+}
+
+// ── 制御 ─────────────────────────────────────────────────────────
+
+// JmpRel32 は jmp rel32 — E9 cd。rel32 の位置（後埋め用）を返す
+func JmpRel32(c mut table.Table[byte]) int {
+    put(mut c, 0xe9)
+    imm32(mut c, 0)
+    return Here(mut c) - 4
+}
+
+// JccRel32 は jcc rel32 — 0F 8x cd。rel32 の位置を返す
+func JccRel32(c mut table.Table[byte], cond int) int {
+    put(mut c, 0x0f)
+    put(mut c, 128 | cond)
+    imm32(mut c, 0)
+    return Here(mut c) - 4
+}
+
+// CallRel32 は call rel32 — E8 cd。rel32 の位置を返す
+func CallRel32(c mut table.Table[byte]) int {
+    put(mut c, 0xe8)
+    imm32(mut c, 0)
+    return Here(mut c) - 4
+}
+
+// CallReg は call r64 — FF /2（間接呼び出し）
+func CallReg(c mut table.Table[byte], reg int) {
+    rex(mut c, false, 0, 0, hi(reg), false)
+    put(mut c, 0xff)
+    put(mut c, 0xd0 | lo(reg))
+}
+
+// Leave は leave — C9（mov rsp, rbp; pop rbp）
+func Leave(c mut table.Table[byte]) {
+    put(mut c, 0xc9)
+}
+
+// Ret は ret — C3
+func Ret(c mut table.Table[byte]) {
+    put(mut c, 0xc3)
+}
+
+// Syscall は syscall — 0F 05
+func Syscall(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0x05)
+}
+
+// Ud2 は ud2 — 0F 0B（到達しない印。_start の入口呼び出しの後ろ）
+func Ud2(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0x0b)
+}
+
+// PatchImm32 は位置 at の 4 バイトを v（下位 32 bit・リトルエンディアン）で書き換える
+func PatchImm32(c mut table.Table[byte], at int, v int) {
+    table.Set(mut c, at, byte(v & 255))
+    table.Set(mut c, at + 1, byte(v >> 8 & 255))
+    table.Set(mut c, at + 2, byte(v >> 16 & 255))
+    table.Set(mut c, at + 3, byte(v >> 24 & 255))
+}
+
+// PatchRel32 は位置 at の rel32 を target への相対値（at + 4 からの差）で埋める
+func PatchRel32(c mut table.Table[byte], at int, target int) {
+    PatchImm32(mut c, at, target - (at + 4))
+}

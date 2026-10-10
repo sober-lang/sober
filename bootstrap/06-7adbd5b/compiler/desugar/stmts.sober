@@ -1,0 +1,671 @@
+package desugar
+
+// 文列 → letE の鎖、脱出（label / jump）と defer の出口展開、代入（src/desugar.zig の stmts / seq / exitStmt / withDefers /
+// assignExpr 一族の写し）。Zig 版は文列を再帰で降りるが、ここでは反復で let の値を積み、末尾から被せる（再帰の実効上限を踏まない —
+// 文の数だけ深くならない）。let の値の脱糖は文の順で行うので、持ち上げたラムダの順・ラベルの番号は Zig 版と同じ
+
+import "diag"
+import "ast"
+import "lexer"
+import "std/iter"
+import "std/table"
+
+// ── ラベル（st.labels の要素 — 積んだ順の添字で指す。添字 = id）──
+
+// Label は label / jump の行き先 1 つ。used / rtys / ann は後から決まる（setLabel* で丸ごと書き替える）
+type Label struct {
+    id int
+    kind int      // LRet / LBrk / LCont
+    scopeDepth int  // 作った時点の defer スコープの深さ
+    t TyRef       // 値の型（-1 = 未定）
+    used bool     // jump が 1 本でもあるか（無ければ label を透過）
+    rtys ListRef      // return の行き先なら結果の型の列（-1 = 無し）
+    ann bool      // jump の値を t で ann するか
+    res ListRef       // return の行き先なら結果の型式の列（表層型の照合 — 作った時点の st.curRes。-1 = 無し）
+    resPkg int
+}
+
+const LRet = 0
+const LBrk = 1
+const LCont = 2
+
+func newLabel(st mut S, kind int, t TyRef) int {
+    at := table.Len(mut st.labels)
+    table.Push(mut st.labels, Label{id: st.nextLabel, kind: kind, scopeDepth: st.nscope, t: t, used: false, rtys: -1, ann: false, res: st.curRes, resPkg: st.curResPkg})
+    st.nextLabel = st.nextLabel + 1
+    return at
+}
+
+// lab はラベル lb の記録（非ジェネリックの包み — F-10）
+func lab(st mut S, lb int) Label {
+    return table.Get(mut st.labels, lb)
+}
+
+func setLabelUsed(st mut S, lb int) {
+    x := lab(mut st, lb)
+    table.Set(mut st.labels, lb, Label{id: x.id, kind: x.kind, scopeDepth: x.scopeDepth, t: x.t, used: true, rtys: x.rtys, ann: x.ann, res: x.res, resPkg: x.resPkg})
+}
+
+func setLabelRtys(st mut S, lb int, rtys ListRef) {
+    x := lab(mut st, lb)
+    table.Set(mut st.labels, lb, Label{id: x.id, kind: x.kind, scopeDepth: x.scopeDepth, t: x.t, used: x.used, rtys: rtys, ann: x.ann, res: x.res, resPkg: x.resPkg})
+}
+
+func setLabelAnn(st mut S, lb int, ann bool) {
+    x := lab(mut st, lb)
+    table.Set(mut st.labels, lb, Label{id: x.id, kind: x.kind, scopeDepth: x.scopeDepth, t: x.t, used: x.used, rtys: x.rtys, ann: ann, res: x.res, resPkg: x.resPkg})
+}
+
+func pushLabel(st mut S, lb int) int {
+    lset(mut st, st.lstk, st.nlab, lb)
+    st.nlab = st.nlab + 1
+    return st.nlab - 1
+}
+
+func labelAt(st mut S, i int) int {
+    return hget(mut st, st.lstk + 1 + i)
+}
+
+func labelNode(st mut S, lb int, body CoreRef, wrap int) CoreRef {
+    t := lab(mut st, lb).t
+    return cLabel(mut st, lb, if t == -1 { st.tUnit } else { t }, body, wrap)
+}
+
+// ── defer ──
+
+// scoped は文列のブロック 1 つを 1 つの defer スコープで脱糖する
+func scoped(st mut S, l ListRef, eb int, ef int, depth int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
+    lset(mut st, st.sstk, st.nscope, -1)
+    st.nscope = st.nscope + 1
+    r := stmts(mut st, l, eb, ef, depth, ra, dis, want)?
+    st.nscope = st.nscope - 1
+    return r, nil
+}
+
+// withDefers は値 v（深さ depth）を束縛し、scopes[from..] の defer を内側から（各スコープは登録の逆順に）評価してから v を返す
+func withDefers(st mut S, v CoreRef, from int, depth int) (CoreRef, error?) {
+    mut n := 0
+    mut i := st.nscope - 1
+    while i >= from {
+        mut d := hget(mut st, st.sstk + 1 + i)
+        while d >= 0 {
+            n += 1
+            d = hget(mut st, d + 5)
+        }
+        i -= 1
+    }
+    if n == 0 {
+        return v, nil
+    }
+    cores := ListRef(listN(mut st, n))
+    saved_pkg := st.curPkg
+    saved_tenv := st.tenv
+    mut k := 0
+    i = st.nscope - 1
+    while i >= from {
+        mut d := hget(mut st, st.sstk + 1 + i)
+        while d >= 0 {
+            st.curPkg = hget(mut st, d + 3)
+            st.tenv = hget(mut st, d + 4)
+            hsetCore(mut st, int(cores) + 1 + k, expr(mut st, hgetN(mut st, d), hget(mut st, d + 1), hget(mut st, d + 2), depth + 1 + k)?)
+            k += 1
+            d = hget(mut st, d + 5)
+        }
+        i -= 1
+    }
+    st.curPkg = saved_pkg
+    st.tenv = saved_tenv
+    mut body := cVar(mut st, n)
+    k = n - 1
+    while k >= 0 {
+        body = cLet(mut st, latCore(mut st, cores, k), body)
+        k -= 1
+    }
+    return cLet(mut st, v, body), nil
+}
+
+// finish は文列の末尾の値: 最内スコープの defer を展開して締める
+func finish(st mut S, v CoreRef, depth int) (CoreRef, error?) {
+    if st.nscope == 0 {
+        return v, nil
+    }
+    return withDefers(mut st, v, st.nscope - 1, depth)
+}
+
+// loopTarget は break / continue の行き先（床より上で最内のループのラベル）
+func loopTarget(st mut S, kind int, at NodeRef) (int, error?) {
+    mut i := st.nlab
+    while i > st.loopFloor {
+        i -= 1
+        if lab(mut st, labelAt(mut st, i)).kind == kind {
+            return i, nil
+        }
+    }
+    return 0, diag.Malformed{at: posOf(mut st, at)}
+}
+
+// exitJump は脱出（return / break / continue）の jump。want は位置の期待型
+func exitJump(st mut S, target int, payload CoreRef, depth int, want TyRef) (CoreRef, error?) {
+    lb := labelAt(mut st, target)
+    setLabelUsed(mut st, lb)
+    p := if lab(mut st, lb).ann { cAnn(mut st, payload, lab(mut st, lb).t) } else { payload }
+    v := withDefers(mut st, p, lab(mut st, lb).scopeDepth, depth)?
+    return cJump(mut st, lab(mut st, lb).id, want, v), nil
+}
+
+// yieldCall は `yield(v)` の呼び出し式（for 式を書き換えたラムダの引数 `yield` — forexpand.zig）
+func yieldCall(st mut S, v int, at NodeRef) NodeRef {
+    callee := rec8(mut st, ast.EIdent, at, int(strLit(mut st, "yield")), 0, 0, 0, 0, 0)
+    return NodeRef(rec8(mut st, ast.ECall, at, callee, list1(mut st, v), 0, 0, 0, 0))
+}
+
+// ── 文列 ──
+
+// stmts は文の列 l を脱糖する。ra = 末尾の `return e` を値として受ける（関数本体の最上段）、dis = 値を捨てて unit で終える、
+// want = 末尾の値の期待型（-1 = 不明）
+func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, want TyRef) (CoreRef, error?) {
+    mut lets := mut []CoreRef{}
+    mut eb := eb0
+    mut depth := depth0
+    n := lenL(mut st, l)
+    mut i := 0
+    mut term := CoreRef(-1)
+    while term == -1 {
+        if i == n {
+            term = finish(mut st, cTriv(mut st), depth)?
+            break
+        }
+        s0 := latN(mut st, l, i)
+        s := if kindN(mut st, s0) == ast.SYield { NodeRef(rec8(mut st, ast.SExpr, s0, int(yieldCall(mut st, nodeOf(mut st, s0).a, s0)), 0, 0, 0, 0, 0)) } else { s0 }
+        k := kindN(mut st, s)
+        at := s
+        last := i + 1 == n
+        // seq の値（-1 = この文は seq でない）
+        mut sv := CoreRef(-1)
+        if k == ast.SBind {
+            names := lA(nodeOf(mut st, s))
+            vals := lC(nodeOf(mut st, s))
+            mutable := nodeOf(mut st, s).b != 0
+            nn := lenL(mut st, names)
+            if nn > 1 && lenL(mut st, vals) == 1 {
+                // 多値呼び出しの分解 `x, y := g(...)`: call を匿名束縛し、射影で名前を付ける
+                v0e := latN(mut st, vals, 0)
+                v0 := expr(mut st, v0e, eb, ef, depth)?
+                cr := calleeRes(mut st, v0e, eb)
+                rtys := cr.rtys
+                rpk := cr.pk
+                rgen := cr.generic
+                lets = append(lets, v0)
+                mut bd := depth + 1
+                mut j := 0
+                while j < nn {
+                    tuple := cVar(mut st, bd - (depth + 1))
+                    mut v := projection(mut st, tuple, j, nn)
+                    has := rtys != -1 && j < lenL(mut st, rtys)
+                    d := if has { declOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
+                    split := mutable && has && !rgen && teSplits(mut st, rpk, -1, latN(mut st, rtys, j))
+                    if split {
+                        v = cLet(mut st, v, cellsOf(mut st, cVar(mut st, 0), d))
+                    } else if mutable {
+                        v = cAlloc(mut st, 1, v)
+                    }
+                    lets = append(lets, v)
+                    el := if has { elemDeclOfTypeExpr(mut st, rpk, latN(mut st, rtys, j)) } else { -1 }
+                    mut ty := TyRef(-1)
+                    if has && !rgen {
+                        rt := tyOf(mut st, rpk, latN(mut st, rtys, j), at, TYFUEL)?
+                        ty = callResultTop(mut st, rt)
+                    }
+                    eb = bind(mut st, eb, latS(mut st, names, j), bd, mutable, d, ty, el, st.rdepth - 1, -1, split, if has && !rgen { SurfaceOf(mut st, rpk, latN(mut st, rtys, j)) } else { SUNK })
+                    bd += 1
+                    j += 1
+                }
+                depth = bd
+                i += 1
+                continue
+            }
+            // 同時束縛 `x, y := a, b`。値は元の env（新しい名前が見えない）で左から右へ
+            if nn != lenL(mut st, vals) {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            env0 := eb
+            mut j := 0
+            while j < nn {
+                ve := latN(mut st, vals, j)
+                mut v := expr(mut st, ve, env0, ef, depth + j)?
+                d := declOfExpr(mut st, ve, env0, ef)
+                split := mutable && structFields(mut st, d) != -1 && !isOptValue(mut st, ve, env0, ef)
+                if split {
+                    // mut struct の束縛は欄ごとのセルに割る（F-17 案 2α）: `let t = v in CELLS(t)`
+                    v = cLet(mut st, mutInitAnn(mut st, ve, v, env0, ef), cellsOf(mut st, cVar(mut st, 0), d))
+                } else if mutable {
+                    ann := mutInitAnn(mut st, ve, v, env0, ef)
+                    v = cAlloc(mut st, 1, ann)
+                }
+                lets = append(lets, v)
+                ty := computeTy(mut st, ve, env0, ef)
+                el := elemDeclOfExpr(mut st, ve, env0, ef)
+                eb = bind(mut st, eb, latS(mut st, names, j), depth + j, mutable, d, ty, el, st.rdepth - 1, -1, split, bindSty(mut st, ve, env0, ef))
+                if !mutable && isTag(mut st, ty, TFn) {
+                    // imm の関数値は結果の型式の列を持ち回る（後置 `?` の形 — tryExpr）。mut は別の関数を代入できるので持たない
+                    fr := fnResOf(mut st, ve, env0)
+                    if fr != -1 {
+                        setFres(mut st, eb, fr)
+                    }
+                }
+                j += 1
+            }
+            depth += nn
+            i += 1
+            continue
+        } else if k == ast.SAssign {
+            sv = assignExpr(mut st, s, eb, ef, depth)?
+        } else if k == ast.SRet {
+            vals := lA(nodeOf(mut st, s))
+            nv := lenL(mut st, vals)
+            if last && ra {
+                if nv == 0 {
+                    term = finish(mut st, cTriv(mut st), depth)?
+                    break
+                }
+                vs := ListRef(listN(mut st, nv))
+                nr := if st.curRtys == -1 { 0 } else { lenL(mut st, st.curRtys) }
+                mut j := 0
+                while j < nv {
+                    ve := latN(mut st, vals, j)
+                    wantAssignable(mut st, retSty(mut st, j, nv), ve, eb, ef)?
+                    hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, st.curRtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
+                    j += 1
+                }
+                v := pairChain(mut st, vs)
+                if dis {
+                    term = finish(mut st, cLet(mut st, v, cTriv(mut st)), depth)?
+                } else {
+                    term = finish(mut st, v, depth)?
+                }
+                break
+            }
+            // それ以外の return は関数ラベルへの jump（V4）
+            rtys := retRtys(mut st, nv, at)?
+            nr := if rtys == -1 { 0 } else { lenL(mut st, rtys) }
+            vs := ListRef(listN(mut st, nv))
+            mut j := 0
+            while j < nv {
+                ve := latN(mut st, vals, j)
+                wantAssignable(mut st, retSty(mut st, j, nv), ve, eb, ef)?
+                hsetCore(mut st, int(vs) + 1 + j, if nr == nv { retValue(mut st, ve, latTy(mut st, rtys, j), eb, ef, depth, at)? } else { expr(mut st, ve, eb, ef, depth)? })
+                j += 1
+            }
+            payload := if nv == 0 { cTriv(mut st) } else { pairChain(mut st, vs) }
+            w := exitWant(mut st, last, dis, want, at)?
+            jv := exitJump(mut st, st.retTarget, payload, depth, w)?
+            if last {
+                term = jv
+                break
+            }
+            sv = jv
+        } else if k == ast.SExpr {
+            e := nA(nodeOf(mut st, s))
+            if isForStmt(mut st, e) {
+                // 文形 for: `label brk (GEN(src, k))`。k の本体の break は brk へ、continue は本体を包む cont へ（lambdaCall が積む）
+                gen := forStmt(mut st, e, eb, ef)?
+                brk := newLabel(mut st, LBrk, st.tUnit)
+                bi := pushLabel(mut st, brk)
+                ga := lB(nodeOf(mut st, gen))
+                lam := latN(mut st, ga, lenL(mut st, ga) - 1)
+                mut ln := nodeOf(mut st, lam)
+                ln.c = bi + 1
+                synSet(mut st, int(lam), ln)
+                v := expr(mut st, gen, eb, ef, depth)?
+                st.nlab = st.nlab - 1
+                fv := labelNode(mut st, brk, v, WNone)
+                if last && !dis {
+                    term = finish(mut st, fv, depth)?
+                    break
+                }
+                sv = fv
+            } else if last && !dis {
+                st.tailWant = want
+                v := expr(mut st, e, eb, ef, depth)?
+                term = finish(mut st, v, depth)?
+                break
+            } else {
+                st.stmtIf = b2i(kindN(mut st, e) == ast.EIf)
+                sv = expr(mut st, e, eb, ef, depth)?
+            }
+        } else if k == ast.SWhile {
+            // `label brk (while c (label cont body))`
+            notNamed(mut st, nA(nodeOf(mut st, s)), eb, ef)?
+            cond := expr(mut st, nA(nodeOf(mut st, s)), eb, ef, depth)?
+            brk := newLabel(mut st, LBrk, st.tUnit)
+            cont := newLabel(mut st, LCont, st.tUnit)
+            lset(mut st, st.lstk, st.nlab, brk)
+            lset(mut st, st.lstk, st.nlab + 1, cont)
+            st.nlab = st.nlab + 2
+            body := scoped(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, s)))), eb, ef, depth, false, true, -1)?
+            st.nlab = st.nlab - 2
+            loop := c2(mut st, CWhile, cond, labelNode(mut st, cont, body, WNone))
+            sv = labelNode(mut st, brk, loop, WNone)
+        } else if k == ast.SBreak || k == ast.SContinue {
+            target := loopTarget(mut st, if k == ast.SBreak { LBrk } else { LCont }, at)?
+            w := exitWant(mut st, last, dis, want, at)?
+            jv := exitJump(mut st, target, cTriv(mut st), depth, w)?
+            if last {
+                term = jv
+                break
+            }
+            sv = jv
+        } else if k == ast.SDefer {
+            deferReg(mut st, s, eb, ef)
+            i += 1
+            continue
+        } else {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        // seq: 続きがあれば匿名束縛、末尾なら unit で締める
+        if last {
+            term = finish(mut st, cLet(mut st, sv, cTriv(mut st)), depth)?
+            break
+        }
+        lets = append(lets, sv)
+        depth += 1
+        i += 1
+    }
+    mut out := term
+    mut j := len(lets) - 1
+    while j >= 0 {
+        out = cLet(mut st, lets[j], out)
+        j -= 1
+    }
+    return out, nil
+}
+
+// CalleeRes は多値の分解の右辺の呼び出し先の結果の型式（rtys — 分からなければ -1）・その package・ジェネリックか
+type CalleeRes struct {
+    rtys ListRef
+    pk int
+    generic bool
+}
+
+// calleeRes は右辺 v0e（呼び出し・pipe・`f()?`）の呼び出し先の名前付き関数の結果の型式
+func calleeRes(st mut S, v0e NodeRef, eb int) CalleeRes {
+    mut callee0 := NodeRef(-1)
+    vk := kindN(mut st, v0e)
+    if vk == ast.ECall || vk == ast.EPipe {
+        callee0 = if vk == ast.ECall { nA(nodeOf(mut st, v0e)) } else { nB(nodeOf(mut st, v0e)) }
+    } else if vk == ast.ETry && kindN(mut st, nA(nodeOf(mut st, v0e))) == ast.ECall {
+        callee0 = nA(nodeOf(mut st, nA(nodeOf(mut st, v0e))))
+    }
+    if callee0 != -1 {
+        fi := findFn(mut st, callee0, eb)
+        if fi >= 0 {
+            return CalleeRes{rtys: fnResults(mut st, fi), pk: fnPkg(mut st, fi), generic: lenL(mut st, fnTParams(mut st, fi)) > 0}
+        }
+    }
+    return CalleeRes{rtys: -1, pk: st.curPkg, generic: false}
+}
+
+// deferReg は defer 文 s の登録（コアには現れない — 出口（末尾・jump）ごとに展開する）: 式・束縛の環境・package・型環境・前の登録を記録に積む
+func deferReg(st mut S, s NodeRef, eb int, ef int) {
+    sc := top(mut st)
+    put(mut st, nodeOf(mut st, s).a)
+    put(mut st, eb)
+    put(mut st, ef)
+    put(mut st, st.curPkg)
+    put(mut st, st.tenv)
+    put(mut st, hget(mut st, st.sstk + st.nscope))
+    lset(mut st, st.sstk, st.nscope - 1, sc)
+}
+
+// retRtys は関数ラベルへの jump になる return（値 nv 個）の行き先の結果の型の列（無ければ -1 — 行き先が無い・値を持てないなら拒否）
+func retRtys(st mut S, nv int, at NodeRef) (ListRef, error?) {
+    if st.retTarget < 0 {
+        return -1, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    lb := labelAt(mut st, st.retTarget)
+    if lab(mut st, lb).t == -1 {
+        return -1, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    rtys := lab(mut st, lb).rtys
+    nr := if rtys == -1 { 0 } else { lenL(mut st, rtys) }
+    if nr == 0 && nv > 0 {
+        return -1, diag.Malformed{at: posOf(mut st, at)}
+    }
+    return rtys, nil
+}
+
+// exitWant は脱出の jump の結果型の注釈: 文位置（続きがある・値を捨てる）は unit、値を使う末尾は want（不明なら断片外）
+func exitWant(st mut S, last bool, dis bool, want TyRef, at NodeRef) (TyRef, error?) {
+    if !last || dis {
+        return st.tUnit, nil
+    }
+    if want == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    return want, nil
+}
+
+// ── 代入 ──
+
+func assignExpr(st mut S, s NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    targets := lA(nodeOf(mut st, s))
+    op := nodeOf(mut st, s).b
+    vals := lC(nodeOf(mut st, s))
+    at := s
+    nt := lenL(mut st, targets)
+    if nt != lenL(mut st, vals) {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    // 表層型の照合（language.md 32 節）: `=` は場所の表層型へ代入可能か、複合代入は算術なので named scalar を取らない
+    for j <- iter.Range(0, nt) {
+        tx := latN(mut st, targets, j)
+        vx := latN(mut st, vals, j)
+        if op == lexer.Equal {
+            wantAssignable(mut st, exprSty(mut st, tx, eb, ef), vx, eb, ef)?
+        } else {
+            notNamed(mut st, tx, eb, ef)?
+            notNamed(mut st, vx, eb, ef)?
+        }
+    }
+    if nt == 1 && kindN(mut st, latN(mut st, targets, 0)) == ast.EIndex {
+        if op != lexer.Equal {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        ix := latN(mut st, targets, 0)
+        base0 := nA(nodeOf(mut st, ix))
+        // map: `m[k] = v` は mut 束縛への再代入 `m = setm(m, k, v)`
+        bt := computeTy(mut st, base0, eb, ef)
+        if isTag(mut st, bt, TMp) {
+            if kindN(mut st, base0) != ast.EIdent {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            base := expr(mut st, base0, eb, ef, depth)?
+            // キー・値の型は mut 束縛のセル型 = 束縛点の点座標（V3-5 — appendValueAnn と同じ不変条件。F-26）
+            kt := atBinding(mut st, base0, tKey(mut st, bt), eb)
+            vt := atBinding(mut st, base0, tVal(mut st, bt), eb)
+            idx := mapKey(mut st, nB(nodeOf(mut st, ix)), kt, eb, ef, depth)?
+            v0 := coerceExpr(mut st, latN(mut st, vals, 0), vt, eb, ef, depth, at)?
+            v := looserAnn(mut st, latN(mut st, vals, 0), v0, vt, eb, ef)
+            nm := c3(mut st, CSetm, base, idx, v)
+            return assignTarget(mut st, base0, nm, eb, depth, at)
+        }
+        base := expr(mut st, base0, eb, ef, depth)?
+        idx := expr(mut st, nB(nodeOf(mut st, ix)), eb, ef, depth)?
+        v := expr(mut st, latN(mut st, vals, 0), eb, ef, depth)?
+        return c3(mut st, CSetidx, base, idx, v), nil
+    }
+    if nt == 1 {
+        target := latN(mut st, targets, 0)
+        if kindN(mut st, target) == ast.EIdent && op != lexer.Equal {
+            return compoundAssign(mut st, target, op, latN(mut st, vals, 0), eb, ef, depth, at)
+        }
+        if kindN(mut st, target) == ast.ESelector && op != lexer.Equal {
+            // 割った mut 束縛の葉への複合代入 `x.f op= v` → `assign p (op (deref p) v)`（p = 葉の ref）
+            pl := placeOfExpr(mut st, target, eb, depth)
+            if !pl.ok || pl.dr >= 0 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            return compoundCore(mut st, pl.refs, op, latN(mut st, vals, 0), eb, ef, depth, at)
+        }
+        if op != lexer.Equal {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        w := targetTy(mut st, target, eb, ef)
+        v0 := if w != -1 { coerceExpr(mut st, latN(mut st, vals, 0), w, eb, ef, depth, at)? } else { expr(mut st, latN(mut st, vals, 0), eb, ef, depth)? }
+        if kindN(mut st, target) == ast.EIdent {
+            return assignTarget(mut st, target, v0, eb, depth, at)
+        }
+        v := fieldValueAnn(mut st, target, latN(mut st, vals, 0), v0, eb, ef)
+        // フィールドパス: 値を先に束縛してから代入（再構築が値を var 0 で参照する）
+        a := assignTarget(mut st, target, cVar(mut st, 0), eb, depth + 1, at)?
+        return cLet(mut st, v, a), nil
+    }
+    // 同時代入 `x, y = y, x % y`: 全値を評価してから順に代入
+    if op != lexer.Equal {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    vs := ListRef(listN(mut st, nt))
+    mut i := 0
+    while i < nt {
+        hsetCore(mut st, int(vs) + 1 + i, expr(mut st, latN(mut st, vals, i), eb, ef, depth + i)?)
+        i += 1
+    }
+    mut body := cTriv(mut st)
+    mut j := nt - 1
+    while j >= 0 {
+        a := assignTarget(mut st, latN(mut st, targets, j), cVar(mut st, nt - 1), eb, depth + nt + j, at)?
+        body = cLet(mut st, a, body)
+        j -= 1
+    }
+    i = nt - 1
+    while i >= 0 {
+        body = cLet(mut st, latCore(mut st, vs, i), body)
+        i -= 1
+    }
+    return body, nil
+}
+
+// compoundAssign は複合代入（名前のみ）: `x op= v` → `assign x (op (deref x) v)`
+func compoundAssign(st mut S, target NodeRef, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    b := lookup(mut st, eb, sA(nodeOf(mut st, target)))
+    if b < 0 {
+        return 0, diag.UnknownName{at: posOf(mut st, target)}
+    }
+    if !bnd(mut st, b).mutable {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    if isSplitB(mut st, b) {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    return compoundCore(mut st, cVar(mut st, depth - 1 - bnd(mut st, b).level), op, value, eb, ef, depth, at)
+}
+
+// compoundCore は ref lref への複合代入 `assign lref (op (deref lref) v)`
+func compoundCore(st mut S, lref CoreRef, op int, value NodeRef, eb int, ef int, depth int, at NodeRef) (CoreRef, error?) {
+    cur := c1(mut st, CDeref, lref)
+    mut v := expr(mut st, value, eb, ef, depth)?
+    if op == lexer.PlusEqual {
+        v = c2(mut st, CAdd, cur, v)
+    } else {
+        bk := if op == lexer.MinusEqual { BSub } else if op == lexer.StarEqual { BMul } else if op == lexer.SlashEqual { BDiv } else if op == lexer.AmpersandEqual { BAnd } else if op == lexer.PipeEqual { BOr } else if op == lexer.CaretEqual { BXor } else if op == lexer.ShlEqual { BShl } else if op == lexer.ShrEqual { BShr } else if op == lexer.PercentEqual { BMod } else { 0 }
+        if bk == 0 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        v = cBin(mut st, bk, cur, v)
+    }
+    return c2(mut st, CAssign, lref, v), nil
+}
+
+// assignTarget は代入先 1 つ（名前は素の assign、フィールドパスは struct の再構築）
+func assignTarget(st mut S, target NodeRef, nv CoreRef, eb int, depth int, at NodeRef) (CoreRef, error?) {
+    k := kindN(mut st, target)
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, target)))
+        if b < 0 {
+            return 0, diag.UnknownName{at: posOf(mut st, target)}
+        }
+        if !bnd(mut st, b).mutable {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        if isSplitB(mut st, b) {
+            // 割った束縛への丸ごとの代入: 値を束縛してから葉ごとに書く
+            refs := cVar(mut st, depth - bnd(mut st, b).level)
+            return cLet(mut st, nv, cLet(mut st, assignAll(mut st, refs, cVar(mut st, 0), bnd(mut st, b).decl), cTriv(mut st))), nil
+        }
+        return c2(mut st, CAssign, cVar(mut st, depth - 1 - bnd(mut st, b).level), nv), nil
+    }
+    if k == ast.ESelector {
+        // 割った mut 束縛の中の場所（F-17 案 2α）: 葉は `assign p v`、struct の場所は葉ごとに
+        pl := placeOfExpr(mut st, target, eb, depth)
+        if pl.ok {
+            if pl.dr < 0 {
+                return c2(mut st, CAssign, pl.refs, nv), nil
+            }
+            p1 := placeOfExpr(mut st, target, eb, depth + 1)
+            return cLet(mut st, nv, cLet(mut st, assignAll(mut st, p1.refs, cVar(mut st, 0), pl.dr), cTriv(mut st))), nil
+        }
+        if isSplitB(mut st, pl.b) {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        // フィールドパスを外側から並べる（path = フィールド名の列、外側が先頭）
+        mut cnt := 0
+        mut cur := target
+        while kindN(mut st, cur) == ast.ESelector {
+            cnt += 1
+            cur = nA(nodeOf(mut st, cur))
+        }
+        path := ListRef(listN(mut st, cnt))
+        cur = target
+        mut j := cnt - 1
+        while kindN(mut st, cur) == ast.ESelector {
+            lput(mut st, path, j, nodeOf(mut st, cur).b)
+            j -= 1
+            cur = nA(nodeOf(mut st, cur))
+        }
+        if kindN(mut st, cur) != ast.EIdent {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        b := lookup(mut st, eb, sA(nodeOf(mut st, cur)))
+        if b < 0 {
+            return 0, diag.UnknownName{at: posOf(mut st, cur)}
+        }
+        if !bnd(mut st, b).mutable {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        lref := cVar(mut st, depth - 1 - bnd(mut st, b).level)
+        whole := c1(mut st, CDeref, lref)
+        rebuilt := rebuildPath(mut st, whole, bnd(mut st, b).decl, path, 0, nv, at)?
+        return c2(mut st, CAssign, lref, rebuilt), nil
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// rebuildPath はパス（path の p 番目から）のフィールドだけ nv に置き換えた struct 値を組み直す
+func rebuildPath(st mut S, cur CoreRef, decl int, path ListRef, p int, nv CoreRef, at NodeRef) (CoreRef, error?) {
+    if p == lenL(mut st, path) {
+        return nv, nil
+    }
+    if decl < 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    fs := structFields(mut st, decl)
+    if fs == -1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    idx := fieldIndex(mut st, fs, latS(mut st, path, p))
+    if idx < 0 {
+        return 0, diag.UnknownName{at: posOf(mut st, at)}
+    }
+    n := lenL(mut st, fs)
+    comps := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        proj := projection(mut st, cur, i, n)
+        if i == idx {
+            fd := declOfTypeExpr(mut st, hget(mut st, decl + 1), nB(nodeOf(mut st, latN(mut st, fs, i))))
+            hsetCore(mut st, int(comps) + 1 + i, rebuildPath(mut st, proj, fd, path, p + 1, nv, at)?)
+        } else {
+            hsetCore(mut st, int(comps) + 1 + i, proj)
+        }
+    }
+    return pairChain(mut st, comps), nil
+}

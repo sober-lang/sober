@@ -1,0 +1,199 @@
+package desugar
+
+// E2-S（docs/formal.md「check の callM の段」— ユーザー裁定 2026-10-02）: check の経路だけで、δ の対象（関数型の引数が無く mut 引数だけが
+// 展開の理由の非再帰関数 — loader の closed）のうち次を満たす関数を、展開でなく既存の callM（R2 の anchor つき呼び出し）の Def として出す。
+//   1. mut 仮引数がちょうど 1 つ（anchor が 1 slot で足りる）
+//   2. 他の仮引数が region を持たない型（imm 実引数の「anchor 以下」が呼び出し点に依らない）
+//   5. 本体の中で、callM で呼ぶ関数（再帰する mut 関数・@noinline・上げる候補）へ mut 実引数を 2 つ以上渡さない（anchor 1 slot — 2 つの mut 実引数が
+//      別の region から来ると callM の規則が落ちる。保守的に「2 つ以上」で外す）
+// 上げる判定は関数の署名と本体だけで決まる（package の中で閉じる — 3'' M3・判定 D'）。呼び出し点の形に依る 2 つは、関数の印でなく呼び出し点ごとに選ぶ
+// （e2sSiteInline — 形が合わない呼び出し点だけ展開する。展開は inline の許容性の論証の向き〔callM で型付く ⇒ 展開でも型付く〕に倒すだけ）:
+//   3. 型引数が region を持つ（tyArgOk でない）呼び出し点（R3 の門）
+//   4. 欄の経路の mut 実引数（`mut x.f`）を渡す呼び出し点
+// 本体が Def として型付かなかった関数は、呼び手（checker の CheckE2 等）が検査器の判定で集めて e2sExcl に入れて脱糖し直す（逃げ — 展開へ戻すのは
+// 型付けを緩めるだけなので単調に収束）。lower の経路（Init）は触らない — build は今どおり δ。
+
+import "ast"
+import "std/iter"
+import "std/table"
+
+// e2sPrepare は表層型検査器より前に、上げない印の表を用意する（条件 5 — e2sScanCalls）
+func e2sPrepare(st mut S) {
+    st.e2sBad = ListRef(listN(mut st, st.nfn))
+}
+
+// e2sPromote は条件 1・2・5 を満たし、逃げ（e2sExcl）に入っていない関数を callM の Def に上げる（表層型検査器の後・Def の番号の振り直しの前）
+func e2sPromote(st mut S) {
+    cand := ListRef(listN(mut st, st.nfn))
+    for i <- iter.Range(0, st.nfn) {
+        x := FnAt(mut st, i)
+        if x.closed && !x.mutDef && latI(mut st, st.e2sBad, i) == 0 && !e2sExcluded(st.e2sExcl, i) && e2sSig(mut st, i) {
+            lput(mut st, cand, i, 1)
+        }
+    }
+    e2sScanCalls(mut st, cand)
+    for i <- iter.Range(0, st.nfn) {
+        if latI(mut st, cand, i) != 0 && latI(mut st, st.e2sBad, i) == 0 {
+            mut x := FnAt(mut st, i)
+            x.expands = false
+            x.mutDef = true
+            x.def = st.ndef
+            st.ndef = st.ndef + 1
+            table.Set(mut st.fns, i, x)
+        }
+    }
+}
+
+func e2sExcluded(xs []int, i int) bool {
+    for k <- iter.Range(0, len(xs)) {
+        if xs[k] == i {
+            return true
+        }
+    }
+    return false
+}
+
+// e2sSig は条件 1・2（mut 仮引数がちょうど 1 つ・他の仮引数が region を持たない — 型パラメータそのものは条件 3 が見る）
+func e2sSig(st mut S, i int) bool {
+    ps := fnParams(mut st, i)
+    tps := fnTParams(mut st, i)
+    mut nm := 0
+    for k <- iter.Range(0, lenL(mut st, ps)) {
+        prm := nodeOf(mut st, latN(mut st, ps, k))
+        if ast.ParamIsMut(prm) {
+            nm += 1
+        } else {
+            te := nB(prm)
+            mut isTp := false
+            if kindN(mut st, te) == ast.TName {
+                for q <- iter.Range(0, lenL(mut st, tps)) {
+                    isTp = isTp || StrEq(mut st, sA(nodeOf(mut st, te)), latS(mut st, tps, q))
+                }
+            }
+            if !isTp {
+                t, err := tyOf(mut st, fnPkg(mut st, i), te, fnNode(mut st, i), TYFUEL)
+                if err != nil || tyHasRegion(mut st, t) {
+                    return false
+                }
+            }
+        }
+    }
+    return nm == 1
+}
+
+// tyHasRegion はコア型 t が region を持つか（slice / map / ref — opt・union・prod の中も）
+func tyHasRegion(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    return switch k {
+    case TSl | TMp | TRef: true
+    case TPr | TUn: tyHasRegion(mut st, tLeft(mut st, t)) || tyHasRegion(mut st, tRight(mut st, t))
+    case TOpt: tyHasRegion(mut st, tInner(mut st, t))
+    default: false
+    }
+}
+
+// e2sScanCalls は全ファイルの呼び出しを見て条件 5 の印を付ける（呼び手 g の本体の中の、mut 実引数 2 つ以上の callM の呼び出し）
+func e2sScanCalls(st mut S, cand ListRef) {
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        pk := FilePkg(mut st, f)
+        for n <- iter.Range(0, len(t.nodes)) {
+            k := t.nodes[n].kind
+            if k == ast.ECall || k == ast.EPipe {
+                x := nodeOf(mut st, NodeRef(ABASE + f * FW + n))
+                callee := if k == ast.ECall { NodeRef(x.a) } else { NodeRef(x.b) }
+                args := if k == ast.ECall { ListRef(x.b) } else { ListRef(x.c) }
+                ci := e2sCallee(mut st, pk, callee)
+                if ci >= 0 {
+                    mut nmut := 0
+                    for q <- iter.Range(0, lenL(mut st, args)) {
+                        a := latN(mut st, args, q)
+                        if a != -1 && kindN(mut st, a) == ast.EMutArg {
+                            nmut += 1
+                        }
+                    }
+                    if nmut >= 2 && (fnMutDef(mut st, ci) || latI(mut st, cand, ci) != 0) {
+                        g := e2sEnclosing(mut st, f, t.nodes[n].tok)
+                        if g >= 0 {
+                            lput(mut st, st.e2sBad, g, 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// e2sCallee は package pk のファイルに書いた callee の節の指す関数（直接呼び出しでなければ -1）
+func e2sCallee(st mut S, pk int, c NodeRef) int {
+    b := if kindN(mut st, c) == ast.EIndex { nA(nodeOf(mut st, c)) } else { c }
+    if kindN(mut st, b) == ast.EIdent {
+        return ResolveFn(mut st, pk, sA(nodeOf(mut st, b)))
+    }
+    if kindN(mut st, b) == ast.ESelector && kindN(mut st, nA(nodeOf(mut st, b))) == ast.EIdent {
+        return ResolveSelFn(mut st, pk, sA(nodeOf(mut st, nA(nodeOf(mut st, b)))), sB(nodeOf(mut st, b)))
+    }
+    return -1
+}
+
+// e2sEnclosing はファイル f の字句 tok を本体に含む関数（無ければ -1）
+func e2sEnclosing(st mut S, f int, tok int) int {
+    for i <- iter.Range(0, st.nfn) {
+        nd := fnNode(mut st, i)
+        if fileOf(mut st, nd) == f {
+            ext := nodeOf(mut st, nd).f
+            if ext >= 0 && tok >= latI(mut st, ListRef(ext), 1) && tok < latI(mut st, ListRef(ext), 2) {
+                return i
+            }
+        }
+    }
+    return -1
+}
+
+// E2Map は Def の添字 → 関数表の添字（上げた関数だけ。他は -1）— 逃げの判定で、検査器が落とした Def を関数へ引く
+func E2Map(st mut S) []int {
+    mut out := mut []int{}
+    for j <- iter.Range(0, st.ndef) {
+        out = append(out, -1)
+    }
+    for i <- iter.Range(0, st.nfn) {
+        x := FnAt(mut st, i)
+        if x.def >= 0 && x.def < st.ndef && x.closed && x.mutDef {
+            out[x.def] = i
+        }
+    }
+    return freeze(out)
+}
+
+// fnPromoted は関数 i が callM の Def に上げた関数か（check の経路だけ — lower の経路では closed の関数は展開のまま）
+func fnPromoted(st mut S, i int) bool {
+    x := FnAt(mut st, i)
+    return x.closed && x.mutDef
+}
+
+// e2sSiteInline は上げた関数 fi の呼び出し点が callM で出せない形か（条件 3・4 — 呼び出し点ごとの選択。真ならその呼び出し点だけ展開する）
+func e2sSiteInline(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef) bool {
+    if !fnPromoted(mut st, fi) {
+        return false
+    }
+    for q <- iter.Range(0, lenL(mut st, args)) {
+        a := latN(mut st, args, q)
+        if a != -1 && kindN(mut st, a) == ast.EMutArg && isDotted(mut st, a) {
+            return true
+        }
+    }
+    if lenL(mut st, fnTParams(mut st, fi)) == 0 {
+        return false
+    }
+    // 型引数は展開の許す範囲で推論して（推論の失敗は callM の経路の inferTs が診断する）、Def の型引数の門を見る
+    ts, err := inferTs0(mut st, fi, explicit, args, eb, ef, at, true)
+    if err != nil {
+        return false
+    }
+    for i <- iter.Range(0, lenL(mut st, ts)) {
+        if !tyArgOk(mut st, latTy(mut st, ts, i)) {
+            return true
+        }
+    }
+    return false
+}

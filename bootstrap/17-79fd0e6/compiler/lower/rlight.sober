@@ -1,0 +1,205 @@
+package lower
+
+// 軽い region.enter（性能投資 第二便 M9 — 最適化のバックエンドの経路だけ・rtlower の手前。IR テキストと --backend=copy は掛けない形のまま）:
+// 自分の深度で何も確保しないと構造で示せる関数の `region.enter` を `call @rt.region_enter_light()`（深度 +1・上限の検査〔exit 102〕・深度と
+// その深度の bump の初期化だけ — 深い region の返却〔madvise〕のループと W_MAXD の更新を省く）に置き換える。
+// 的 = 再帰で深度の契約（1023 段 — 27 節）のためだけに region を開く関数（binary-trees の bottomUp / check — P0 は再帰の輪を外す）。
+// 観測は同じ: 深度と上限の検査は同じ・bump を初期化するので exit 102 の高水位の印字も同じ。返却は次の full の enter まで遅れるだけ（RSS の振る舞い）
+// 自分の深度で確保しないことの構造の条件（保守的）:
+//   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度 — 出口の setdepth 用）にしか無い
+//   ② スロットなし（呼び出しの結果の集約の置き場 = 自分の深度のヘッダを受け取る口が無い）・ptr を返す呼び出しなし・間接呼び出しなし・region.relocate なし
+//   ③ 直に呼ぶ関数は入口で region.enter（か軽い enter）をするか、P0 の region を使わない関数（region 透過の関数は呼び手の今の深度 = 自分の深度で確保しうる）
+// ①②から、確保の深度の被演算子は仮引数か呼び手のメモリから読んだヘッダの深度だけ（どちらも呼び手以下の深度）
+
+import "desugar"
+
+// regionLightModule は条件を満たす関数の region.enter を軽い enter に置き換える
+func regionLightModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && rlEligible(mut st, f) {
+            rlRewrite(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// rlEnters は入口で region に入る関数か（region.enter か、置き換え済みの軽い enter の呼び出しが入口のブロックにある）
+func rlEnters(st mut St, g FnRef) bool {
+    b := irFnBHead(mut st, g)
+    if b == -1 {
+        return false
+    }
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        op := irInsOp(mut st, i)
+        if op == OpREnter || (op == OpCall && st.rtRenterL != -1 && irInsFn(mut st, i) == st.rtRenterL) {
+            return true
+        }
+        i = irInsNext(mut st, i)
+    }
+    return false
+}
+
+func rlEligible(st mut St, f FnRef) bool {
+    if irFnSHead(mut st, f) >= 0 {
+        return false
+    }
+    entry := irFnBHead(mut st, f)
+    mut enters := 0
+    mut b := entry
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        mut seenEnter := false
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter {
+                if b != entry {
+                    return false
+                }
+                enters += 1
+                seenEnter = true
+            } else if op == OpRDepth {
+                // 呼び手の深度（enter より前・入口のブロック）だけ
+                if b != entry || seenEnter {
+                    return false
+                }
+            } else if op == OpRReloc || op == OpCallI || op == OpSlotaddr {
+                return false
+            } else if op == OpCall {
+                g := irInsFn(mut st, i)
+                if irFnRet(mut st, g) == TyPtr {
+                    return false
+                }
+                r := irFnRFree(mut st, g)
+                free := r >= 0 && hget(mut st, r) == 1
+                if !free && !rlEnters(mut st, g) {
+                    return false
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return enters == 1
+}
+
+// rlRewrite は f の region.enter を軽い enter の呼び出しに置き換える
+func rlRewrite(st mut St, f FnRef) {
+    rlNeed(mut st)
+    mut i := irBlkIHead(mut st, irFnBHead(mut st, f))
+    while i != -1 {
+        if irInsOp(mut st, i) == OpREnter {
+            irSetInsOp(mut st, i, OpCall)
+            irSetInsRes(mut st, i, -1)
+            irSetInsA(mut st, i, int(st.rtRenterL))
+            irSetInsB(mut st, i, list0(mut st))
+            irSetInsC(mut st, i, 0)
+        }
+        i = irInsNext(mut st, i)
+    }
+}
+
+// rlNeed は rt.region_enter_light を（初出なら）宣言して本体を組む
+func rlNeed(st mut St) {
+    if st.rtRenterL != -1 {
+        return
+    }
+    st.rtRenterL = addFunc(mut st, int(strLit(mut st, "rt.region_enter_light")), desugar.ListRef(list0(mut st)), -1)
+    saved := st.fn
+    savedCur := st.cur
+    begin(mut st, st.rtRenterL)
+    meta := globaladdr(mut st, st.meta)
+    d := bin(mut st, BAdd, load(mut st, meta, W_DEPTH), iconst(mut st, 1))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, d, iconst(mut st, MAX_DEPTH)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_DEPTH)
+    setCur(mut st, ok)
+    store(mut st, meta, W_DEPTH, d)
+    bump := bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, d, load(mut st, meta, W_SLOT_SIZE)))
+    store(mut st, gepWord(mut st, meta, d), W_BUMP, bump)
+    ret(mut st, -1)
+    st.fn = saved
+    st.cur = savedCur
+}
+
+// 葉の region の省略（第三便 M15 — 最適化のバックエンドの経路だけ・regionLightModule の手前）: 自分の深度で何も確保しない葉の関数の
+// `region.enter` を消す（深度を進めない）。的 = 可謬の葉（utf8.Str 等 — 結果の集約の置き場〔スロット〕と出口の relocate があるので M9 の軽い enter の対象外）。
+// 条件（保守的）:
+//   ① region.enter がちょうど 1 つで入口のブロックにあり、region.depth は enter より前（呼び手の深度）にしか無い — 確保の深度の被演算子は呼び手以下だけ
+//   ② 直に呼ぶのは P0 の region を使わない関数と、今の深度に確保しない rt（panic・relocate・str_eq）だけ・間接呼び出しなし
+//      — region を使わない関数は region を使う関数を呼ばないので f へ戻る路が無い（再帰に関与しない・深度の加算は静的に 0 段で有界）
+// 書き換え = enter を消し、relocate（宛先 = 呼び手の深度 = 省略後の今の深度。値は全部それ以下に住むので空振り）と出口の setdepth（同じ深度へ戻すだけ）も消す。
+// 観測: 深度の上限（27 節 — 実装の限界であって意味ではない）に届く段数が葉の分だけ遅れる方向にしか動かない（再帰の資源の有界性は再帰の輪の中の enter が守る）
+func regionElideModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 && reEligible(mut st, f) {
+            reRewrite(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// reRtOk は今の深度に確保しない rt の関数か
+func reRtOk(st mut St, g FnRef) bool {
+    return g == st.rtPanic || g == st.rtPanicMem || g == st.rtReloc || g == st.rtReloc8 || g == st.rtStreq
+}
+
+func reEligible(st mut St, f FnRef) bool {
+    entry := irFnBHead(mut st, f)
+    mut enters := 0
+    mut b := entry
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        mut seenEnter := false
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter {
+                if b != entry {
+                    return false
+                }
+                enters += 1
+                seenEnter = true
+            } else if op == OpRDepth {
+                if b != entry || seenEnter {
+                    return false
+                }
+            } else if op == OpCallI {
+                return false
+            } else if op == OpCall {
+                g := irInsFn(mut st, i)
+                r := irFnRFree(mut st, g)
+                free := r >= 0 && hget(mut st, r) == 1
+                if !free && !reRtOk(mut st, g) {
+                    return false
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return enters == 1
+}
+
+// reRewrite は f の region.enter と relocate を消す
+func reRewrite(st mut St, f FnRef) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpREnter || op == OpRSetDepth || op == OpRReloc || (op == OpCall && (irInsFn(mut st, i) == st.rtReloc || irInsFn(mut st, i) == st.rtReloc8)) {
+                irSetInsOp(mut st, i, OpDead)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 消した命令を鎖から外して番号を詰める（depth.sober と同じ後始末）
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+}

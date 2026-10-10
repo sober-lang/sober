@@ -1,0 +1,17 @@
+package main
+
+// 負例（握り潰しの棚卸し）: mut 仮引数の型名が引けなければ型式の位置で拒否（旧: 呼び出しの位置の CoreFragment）
+
+type S struct {
+    n int
+}
+
+func bump(x mut Foo) {
+    x.n += 1
+}
+
+func main() int {
+    mut s := S{n: 3}
+    bump(mut s)
+    return s.n
+}

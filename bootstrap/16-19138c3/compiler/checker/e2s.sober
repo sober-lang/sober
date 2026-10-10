@@ -1,0 +1,136 @@
+package checker
+
+// E2-S の逃げ（docs/formal.md「check の callM の段」の条件 6）: 脱糖器が callM へ上げた関数のうち、本体が Def として型付かなかったものを
+// 検査器の判定で集め、展開へ戻して脱糖し直す（周回）。展開へ戻すのは型付けを緩めるだけなので単調に収束する。最後の周回の判定をそのまま使う
+// （落ちた上げた関数が無い周回 = 判定が確定した周回）。周回 1 回は 1 つの関数（Def）に割る — 脱糖器のヒープの region を周回ごとに捨てるため
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+
+// Round は 1 周の結果: out = 判定 JSON・def = 最初の def error の Def の添字・back = 展開へ戻す関数（上げた関数のうち Def として落ちたもの）
+type Round struct {
+    out []byte
+    def int
+    back []int
+}
+
+func roundOf(c desugar.Core, m []int, idx bool) Round {
+    r := checkCoreX(c, idx, true)
+    mut back := mut []int{}
+    for k <- iter.Range(0, len(r.fails)) {
+        j := r.fails[k]
+        if j >= 0 && j < len(m) && m[j] >= 0 {
+            back = append(back, m[j])
+        }
+    }
+    return Round{r.out, r.def, freeze(back)}
+}
+
+func checkRound(p loader.Program, excl []int, idx bool, only int, trust bool) (Round, error?) {
+    return desugar.WithCoreOpt(p, excl, only, trust, Round{[]byte{}, -1, []int{}}, (c, m) => roundOf(c, m, idx))
+}
+
+// E2Out は周回の最後の結果と逃げの集合
+type E2Out struct {
+    round Round
+    excl []int
+    rounds int
+}
+
+func runE2(p loader.Program, idx bool) (E2Out, error?) {
+    return runE2X(p, idx, -1, false, []int{})
+}
+
+func runE2Pkg(p loader.Program, idx bool, only int) (E2Out, error?) {
+    return runE2X(p, idx, only, false, []int{})
+}
+
+// runE2Pkg は runE2 の部分検査版（only = package の添字 — 逃げの周回は only の Def の判定だけで回る。-1 = 全体）
+// 逃げの初期集合 = 視点の .sobi の `@expand`（依存の package の check が確定した逃げ — 判定 D'。ソースだけの全体の check では空）
+// trust = std の Def を署名だけで（L0）・excl0 = 焼き込みの .sobi の `@expand`（std の逃げ — std の Def を検査しないので周回では見つけられない）
+func runE2X(p loader.Program, idx bool, only int, trust bool, excl0 []int) (E2Out, error?) {
+    mut excl := mut []int{}
+    for k <- iter.Range(0, len(excl0)) {
+        excl = append(excl, excl0[k])
+    }
+    marked := loader.ExpandMarked(p)
+    for k <- iter.Range(0, len(marked)) {
+        excl = append(excl, marked[k])
+    }
+    mut going := true
+    mut last := Round{[]byte{}, -1, []int{}}
+    mut n := 0
+    while going {
+        n += 1
+        r := checkRound(p, freeze(excl), idx, only, trust)?
+        for k <- iter.Range(0, len(r.back)) {
+            excl = append(excl, r.back[k])
+        }
+        going = len(r.back) > 0
+        last = r
+    }
+    return E2Out{last, freeze(excl), n}, nil
+}
+
+// CheckE2 は p を（E2-S の逃げの周回込みで）脱糖して検査した判定 JSON（`sober check`）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func CheckE2(p loader.Program) ([]byte, error?) {
+    r := runE2(p, false)?
+    return r.round.out, nil
+}
+
+// CheckE2Trust は CheckE2 の L0 版（std の受理印が焼き込まれているとき — std の Def は検査しない。excl0 = 焼き込みの std の逃げ）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func CheckE2Trust(p loader.Program, excl0 []int) ([]byte, error?) {
+    r := runE2X(p, false, -1, true, excl0)?
+    return r.round.out, nil
+}
+
+// CheckPkgE2 は package only の部分検査（`sober check <entry> --pkg P --iface D` — 3'' M2）の判定 JSON:
+// p は LoadView の視点（P はソース・他は .sobi）。P の Def は本体つき・他は署名だけ（合成定理 defsOk_of_linked の hchk — formal.md V5-6）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func CheckPkgE2(p loader.Program, only int) ([]byte, error?) {
+    r := runE2Pkg(p, false, only)?
+    return r.round.out, nil
+}
+
+// PkgE2 は CheckPkgE2 の判定と逃げの集合（小分けの check — 3'' M3。逃げは iface.Emit が `@expand` に書く）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func PkgE2(p loader.Program, only int) (E2Out, error?) {
+    return runE2Pkg(p, false, only)
+}
+
+// Out は E2Out の確定した周回の判定 JSON
+func Out(r E2Out) []byte {
+    return r.round.out
+}
+
+// DefFailE2 は開発用（`sober check --def-index`）: 逃げの集合と、確定した周回の最初の def error の Def の添字（無ければ -1）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func DefFailE2(p loader.Program) (E2Out, error?) {
+    return runE2(p, true)
+}
+
+// ExclE2 は逃げの集合（`sober check --core-json` — 判定と同じコアを出すため）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil)
+func ExclE2(p loader.Program) ([]int, error?) {
+    r := runE2(p, true)?
+    return r.excl, nil
+}
+
+// Def は E2Out の確定した周回の最初の def error の Def の添字
+func Def(r E2Out) int {
+    return r.round.def
+}
+
+// Excl は E2Out の逃げの集合
+func Excl(r E2Out) []int {
+    return r.excl
+}
+
+// Rounds は E2Out の周回の数（開発用 — `--def-index` が印字する）
+func Rounds(r E2Out) int {
+    return r.rounds
+}

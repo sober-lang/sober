@@ -1,0 +1,2 @@
+sober: load error at examples/switch_nil_alt.sober:10:5: case nil cannot be combined with other alternatives (nil | …)
+exit=1

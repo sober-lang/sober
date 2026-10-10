@@ -1,0 +1,8 @@
+package main
+
+// loader の負例: 無い std package の import
+import "std/nope"
+
+func main() {
+    println(nope.F())
+}

@@ -1,0 +1,34 @@
+package main
+
+// string キーの map（随時回収 R3）。キーの比較は長さ + バイト列（Lean の keyEq）。
+// Examples.lean の ex25s と同じ筋を含む
+func count(m map[string]int, k string) int {
+    v := m[k]
+    return if v != nil { v } else { 0 }
+}
+
+func main() {
+    mut m := mut map[string]int{"ab": 1, "cd": 2}
+    m["ab"] = 7
+    a := m["ab"]
+    z := m["zz"]
+    println((if a != nil { a } else { 0 }) + (if z != nil { z } else { 100 }) + len(m))
+    // 同じ綴りの別の string（連結で作った別セル列）でも同じキー
+    k := "a" + "b"
+    b := m[k]
+    if b != nil {
+        println(b)
+    }
+    m["e"] = 5
+    delete(m, "cd")
+    println(len(m))
+    c := m["cd"]
+    if c == nil {
+        println(0 - 1)
+    }
+    // 長さ違い・接頭辞一致は別キー
+    m["abc"] = 9
+    println(count(freeze(m), "ab"), count(freeze(m), "abc"), count(freeze(m), "a"))
+    words := map[string]int{"go": 1, "rust": 2, "sober": 3}
+    println(count(words, "sober"), len(words))
+}

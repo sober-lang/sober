@@ -1,0 +1,276 @@
+package loader
+
+// トップレベル const の確定（language.md 14 / 25 節 — legacy/zig/loader.zig の resolveConst / foldConst / checkDict の写し）:
+// struct リテラルなら辞書 const として検査し（value 無し・dict）、他は int の const 式として畳む。
+// 畳み込みは純関数の再帰（覚えておく表を持たず、参照のたびに畳み直す）。燃料は Zig 版と同じく const の参照 1 段で 1 減り、尽きれば循環として拒否
+
+import "std/builder"
+import "ast"
+import "diag"
+import "lexer"
+
+type Consts struct {
+    file []int
+    node []int
+    value []int
+    has []bool
+    dict []bool
+    ok bool
+    // 畳めなかった最初の const の位置（ok のときは file = -1）
+    bad diag.Pos
+}
+
+const fuel0 = 32
+
+// foldConsts は const の表を組む（列は std/builder で積む — scanFuncs と同じく 5 本が交互に伸びるため）
+func foldConsts(cx Cx, fs Funcs) Consts {
+    mut cfile := builder.Builder[int]{}
+    mut cnode := builder.Builder[int]{}
+    mut cval := builder.Builder[int]{}
+    mut chas := builder.Builder[bool]{}
+    mut cdict := builder.Builder[bool]{}
+    mut f := 0
+    while f < len(cx.trees) {
+        t := cx.trees[f]
+        cl := t.nodes[t.file].e
+        mut k := 0
+        while k < ast.ListLen(t, cl) {
+            c := ast.ListAt(t, cl, k)
+            d := isDict(t, c)
+            v, ok := resolveConst(cx, fs, f, c, fuel0)
+            if !ok {
+                return Consts{[]int{}, []int{}, []int{}, []bool{}, []bool{}, false, diag.Pos{file: f, tok: t.nodes[c].tok}}
+            }
+            builder.Push(mut cfile, f)
+            builder.Push(mut cnode, c)
+            builder.Push(mut cval, if d { 0 } else { v })
+            builder.Push(mut chas, !d)
+            builder.Push(mut cdict, d)
+            k += 1
+        }
+        f += 1
+    }
+    return Consts{builder.Build(mut cfile), builder.Build(mut cnode), builder.Build(mut cval), builder.Build(mut chas), builder.Build(mut cdict), true, diag.None()}
+}
+
+// isDict は const 宣言 c の式が struct リテラルか、`@embed` で畳んだ map リテラルか
+func isDict(t ast.Tree, c int) bool {
+    return t.nodes[unparen(t, t.nodes[c].b)].kind == ast.EComposite || t.nodes[c].f == 1
+}
+
+// lookupConst は package pk の const name（(ファイル, 宣言の節)。無ければファイル -1）
+func lookupConst(cx Cx, pk int, name string) (int, int) {
+    mut f := cx.pkg_lo[pk]
+    while f < cx.pkg_hi[pk] {
+        t := cx.trees[f]
+        cl := t.nodes[t.file].e
+        mut k := 0
+        while k < ast.ListLen(t, cl) {
+            c := ast.ListAt(t, cl, k)
+            if StrIs(t, t.nodes[c].a, name) {
+                return f, c
+            }
+            k += 1
+        }
+        f += 1
+    }
+    return 0 - 1, 0
+}
+
+// lookupFunc は package pk の関数 name の関数表の番号（無ければ -1）
+func lookupFunc(cx Cx, fs Funcs, pk int, name string) int {
+    mut i := 0
+    while i < len(fs.file) {
+        if cx.file_pkg[fs.file[i]] == pk && fnIs(cx, fs.file, fs.node, i, name) {
+            return i
+        }
+        i += 1
+    }
+    return 0 - 1
+}
+
+// funcRefOk は辞書に置ける関数参照か（単相かつ非 inline — 関数値になれるもの）
+func funcRefOk(cx Cx, fs Funcs, i int) bool {
+    t := cx.trees[fs.file[i]]
+    return ast.ListLen(t, t.nodes[fs.node[i]].b) == 0 && !fs.expands[i]
+}
+
+// isUpper は先頭が ASCII の大文字か（公開名）
+func isUpper(name string) bool {
+    b := bytes(name)
+    return len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z'
+}
+
+// resolveConst は const（ファイル f の宣言 c）の確定: 辞書なら検査だけ（値は 0）、他は畳む
+func resolveConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
+    if fuel == 0 {
+        return 0, false
+    }
+    t := cx.trees[f]
+    // `@embed` の const は embedAll が畳み済み（検査も済み）
+    if t.nodes[c].f == 1 {
+        return 0, true
+    }
+    e := unparen(t, t.nodes[c].b)
+    if t.nodes[e].kind == ast.EComposite {
+        return 0, checkDict(cx, fs, f, e, fuel)
+    }
+    return foldExpr(cx, fs, f, e, fuel)
+}
+
+// foldConst は int const の値（辞書 const は拒否）
+func foldConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
+    if fuel == 0 {
+        return 0, false
+    }
+    t := cx.trees[f]
+    e := unparen(t, t.nodes[c].b)
+    if t.nodes[e].kind == ast.EComposite {
+        return 0, false
+    }
+    return foldExpr(cx, fs, f, e, fuel)
+}
+
+// qualified は selector `ref.Name` の参照先 package（base が import の参照名の裸の名前で、Name が公開名のとき。他は -1）
+func qualified(cx Cx, f int, x ast.Node) int {
+    t := cx.trees[f]
+    b := t.nodes[unparen(t, x.a)]
+    if b.kind != ast.EIdent {
+        return 0 - 1
+    }
+    dep := fileImportOf(cx, f, Name(t, b.a))
+    if dep < 0 || !isUpper(Name(t, x.b)) {
+        return 0 - 1
+    }
+    return dep
+}
+
+// checkDict は辞書 const の struct リテラル e の要素を検査する
+func checkDict(cx Cx, fs Funcs, f int, e int, fuel int) bool {
+    t := cx.trees[f]
+    els := t.nodes[e].b
+    mut i := 0
+    while i < ast.ListLen(t, els) {
+        if !dictElem(cx, fs, f, t.nodes[ast.ListAt(t, els, i)].b, fuel) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// dictElem: 許すのは int const 式・閉じたラムダ・名前付き関数の参照・他の辞書 const・入れ子の struct リテラルだけ（呼び出しは拒否）
+func dictElem(cx Cx, fs Funcs, f int, e0 int, fuel int) bool {
+    t := cx.trees[f]
+    e := unparen(t, e0)
+    x := t.nodes[e]
+    k := x.kind
+    switch k {
+    case ast.EComposite:
+        return checkDict(cx, fs, f, e, fuel)
+    case ast.ELambda:
+        return true
+    case ast.EIdent:
+        pk := cx.file_pkg[f]
+        cf, cn := lookupConst(cx, pk, Name(t, x.a))
+        if cf >= 0 {
+            v, ok := resolveConst(cx, fs, cf, cn, fuel - 1)
+            return ok
+        }
+        fi := lookupFunc(cx, fs, pk, Name(t, x.a))
+        return fi >= 0 && funcRefOk(cx, fs, fi)
+    case ast.ESelector:
+        dep := qualified(cx, f, x)
+        if dep < 0 {
+            return false
+        }
+        cf, cn := lookupConst(cx, dep, Name(t, x.b))
+        if cf >= 0 {
+            v, ok := resolveConst(cx, fs, cf, cn, fuel - 1)
+            return ok
+        }
+        fi := lookupFunc(cx, fs, dep, Name(t, x.b))
+        return fi >= 0 && funcRefOk(cx, fs, fi)
+    case ast.EInt | ast.EUnary | ast.EBinary:
+        v, ok := foldExpr(cx, fs, f, e, fuel)
+        return ok
+    }
+    return false
+}
+
+// foldExpr は int の const 式（リテラル・算術・単項・const 参照）を畳む。算術は 2 の補数の wrap（Zig の +% 等と同じ）
+func foldExpr(cx Cx, fs Funcs, f int, e0 int, fuel int) (int, bool) {
+    t := cx.trees[f]
+    e := unparen(t, e0)
+    x := t.nodes[e]
+    k := x.kind
+    switch k {
+    case ast.EInt:
+        return x.a, true
+    case ast.EIdent:
+        cf, cn := lookupConst(cx, cx.file_pkg[f], Name(t, x.a))
+        if cf < 0 {
+            return 0, false
+        }
+        return foldConst(cx, fs, cf, cn, fuel - 1)
+    case ast.ESelector:
+        dep := qualified(cx, f, x)
+        if dep < 0 {
+            return 0, false
+        }
+        cf, cn := lookupConst(cx, dep, Name(t, x.b))
+        if cf < 0 {
+            return 0, false
+        }
+        return foldConst(cx, fs, cf, cn, fuel - 1)
+    case ast.EUnary:
+        v, ok := foldExpr(cx, fs, f, x.b, fuel)
+        if !ok {
+            return 0, false
+        }
+        if x.a == lexer.Minus {
+            return 0 - v, true
+        }
+        if x.a == lexer.Caret {
+            return ^v, true
+        }
+        return 0, false
+    case ast.EBinary:
+        l, lok := foldExpr(cx, fs, f, x.b, fuel)
+        if !lok {
+            return 0, false
+        }
+        r, rok := foldExpr(cx, fs, f, x.c, fuel)
+        if !rok {
+            return 0, false
+        }
+        op := x.a
+        switch op {
+        case lexer.Plus:
+            return l + r, true
+        case lexer.Minus:
+            return l - r, true
+        case lexer.Star:
+            return l * r, true
+        case lexer.Slash | lexer.Percent:
+            if r == 0 {
+                return 0, false
+            }
+            return if op == lexer.Slash { l / r } else { l % r }, true
+        case lexer.Ampersand:
+            return l & r, true
+        case lexer.Pipe:
+            return l | r, true
+        case lexer.Caret:
+            return l ^ r, true
+        // シフト（Go 準拠 — 量 ≥ 64 は << = 0・>> = 0 / -1）。負の量は const の段で拒否
+        case lexer.Shl | lexer.Shr:
+            if r < 0 {
+                return 0, false
+            }
+            return if op == lexer.Shl { l << r } else { l >> r }, true
+        }
+        return 0, false
+    }
+    return 0, false
+}

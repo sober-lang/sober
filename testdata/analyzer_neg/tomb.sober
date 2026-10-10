@@ -1,0 +1,23 @@
+package main
+
+// 墓標 lint（宛先構築レーン M6）: `_ = { …; 0 }` は何もしていない（ループ本体・関数の本体は自分の region を持つ）。値を使うブロック式は正当
+func work(xs mut []int, i int) {
+    xs = append(xs, i)
+}
+
+func main() {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < 3 {
+        _ = {
+            work(mut xs, i)
+            0
+        }
+        i += 1
+    }
+    n := {
+        work(mut xs, 9)
+        len(xs)
+    }
+    println(n)
+}

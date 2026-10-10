@@ -1,0 +1,140 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/cachekey/leaf",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/cachekey/mid",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "testdata/cachekey/side",
+      "tok": 10
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 17
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "mid",
+                      "tok": 19
+                    },
+                    "field": "Twice",
+                    "tok": 21
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 23
+                    }
+                  ],
+                  "tok": 22
+                }
+              ],
+              "tok": 18
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 27
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "leaf",
+                      "tok": 29
+                    },
+                    "field": "Count",
+                    "tok": 31
+                  },
+                  "args": [],
+                  "tok": 32
+                }
+              ],
+              "tok": 28
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 36
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "side",
+                      "tok": 38
+                    },
+                    "field": "Half",
+                    "tok": 40
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 10,
+                      "tok": 42
+                    }
+                  ],
+                  "tok": 41
+                }
+              ],
+              "tok": 37
+            }
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 48
+      },
+      "sig_end": 16
+    }
+  ],
+  "consts": []
+}

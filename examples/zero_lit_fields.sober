@@ -1,0 +1,22 @@
+package main
+
+// ゼロ値リテラル `T{}` の slice / map / Builder の欄は空ヘッダ（使える — 旧 partial_lit の見張りを `T{}` の形で引き継ぐ。
+// reaudit round 6 の穴: 省いた欄が 0 語のまま残り、使うと実行時に落ちていた）
+
+import "std/builder"
+
+type St struct {
+    nodes builder.Builder[int]
+    xs mut []int
+    m map[int]int
+    name string
+    n int
+}
+
+func main() {
+    mut s := St{}
+    s.name = "x"
+    builder.Push(mut s.nodes, 7)
+    s.xs = append(s.xs, 3)
+    println(builder.Len(mut s.nodes), len(s.xs), len(s.m), s.name, s.n)
+}

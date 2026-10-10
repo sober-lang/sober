@@ -1,0 +1,564 @@
+package desugar
+
+import "std/iter"
+import "std/table"
+
+// コアの型（Lean の Ty と同形 — [tag, a, b, c, d]）と、src/desugar.zig の型の小道具の写し。
+// 型は st.types（Ty の表）に intern する — 同じ形の型は同じ参照（mkTy）。型の記録は作ったら変えない。
+// 型の参照 = TyRef（TBASE + 添字。ヒープの番地と取り違えて hget すると範囲外で panic する — 音を立てる）。無しは -1（`!= -1` で見る）
+
+const TInt = 1
+const TVar = 2   // a = 添字
+const TBool = 3
+const TUnit = 4
+const TOpt = 5   // a = 中身
+const TSl = 6    // a = m, b = r, c = 要素, d = str（string の印）
+const TMp = 7    // a = m, b = r, c = キー, d = 値
+const TUn = 8    // a = l, b = r
+const TPr = 9    // a = l, b = r
+const TRef = 10  // a = m, b = r, c = 中身
+const TChan = 11 // a = rc, b = 中身
+const TFn = 12   // a = p, b = r
+// byte の段で足した種類（Lean の Ty.byte — language.md 33 節。区域系の述語は int と同じ扱い）
+const TByte = 13
+
+// 推論用のプレースホルダ tvar の底
+const PH = 1048576
+
+// TyRef は型の参照（language.md 32 節の named scalar — 式・節・ヒープの番地の int と取り違えない）
+type TyRef int
+
+// Ty は型 1 つ（st.types の要素）。欄の意味は種類ごとに違う（上の表）— 読むのは下の型付きの読み口から
+type Ty struct {
+    tag int
+    a int
+    b int
+    c int
+    d int
+}
+
+const TBASE = 1099511627776
+const TBUCKETS = 65536
+
+// tyAt は型 t の記録（非ジェネリックの包み — F-10）
+func tyAt(st mut S, t TyRef) Ty {
+    return table.Get(mut st.types, int(t) - TBASE)
+}
+
+func tyHash(x int) int {
+    return (x % 1000003 + 1000003) % 1000003
+}
+
+// mkTy は型 [tag, a, b, c, d] の参照（同じ形が既にあればそれ — intern。表の鎖 = st.tyBucket の頭 → st.tyNext）。
+// 欄は生の int（子の型は int(t)）— 外からは下の種類つきの構築子で作る
+func mkTy(st mut S, tag int, a int, b int, c int, d int) TyRef {
+    if table.Len(mut st.tyBucket) == 0 {
+        for _ <- iter.Range(0, TBUCKETS) {
+            table.Push(mut st.tyBucket, -1)
+        }
+    }
+    hb := (((((tyHash(tag) * 31 + tyHash(a)) % 1000003) * 31 + tyHash(b)) % 1000003 * 31 + tyHash(c)) % 1000003 * 31 + tyHash(d)) % TBUCKETS
+    mut i := table.Get(mut st.tyBucket, hb)
+    while i >= 0 {
+        x := tyAt(mut st, TyRef(TBASE + i))
+        if x.tag == tag && x.a == a && x.b == b && x.c == c && x.d == d {
+            return TyRef(TBASE + i)
+        }
+        i = table.Get(mut st.tyNext, i)
+    }
+    n := table.Len(mut st.types)
+    table.Push(mut st.types, Ty{tag: tag, a: a, b: b, c: c, d: d})
+    table.Push(mut st.tyNext, table.Get(mut st.tyBucket, hb))
+    table.Set(mut st.tyBucket, hb, n)
+    return TyRef(TBASE + n)
+}
+
+func b2i(b bool) int {
+    return if b { 1 } else { 0 }
+}
+
+func tg(st mut S, t TyRef) int {
+    return tyAt(mut st, t).tag
+}
+
+// ── 種類つきの構築子（m / str は 0 / 1 の印、r は region の添字）──
+
+func tSliceOf(st mut S, m int, r int, e TyRef, str int) TyRef {
+    return mkTy(mut st, TSl, m, r, int(e), str)
+}
+
+func tSlice(st mut S, m bool, r int, t TyRef, str bool) TyRef {
+    return tSliceOf(mut st, b2i(m), r, t, b2i(str))
+}
+
+func tMapOf(st mut S, m int, r int, k TyRef, v TyRef) TyRef {
+    return mkTy(mut st, TMp, m, r, int(k), int(v))
+}
+
+func tMap(st mut S, m bool, r int, k TyRef, t TyRef) TyRef {
+    return tMapOf(mut st, b2i(m), r, k, t)
+}
+
+func tRefOf(st mut S, m int, r int, t TyRef) TyRef {
+    return mkTy(mut st, TRef, m, r, int(t), 0)
+}
+
+func tChanOf(st mut S, rc int, t TyRef) TyRef {
+    return mkTy(mut st, TChan, rc, int(t), 0, 0)
+}
+
+func tOpt(st mut S, t TyRef) TyRef {
+    return mkTy(mut st, TOpt, int(t), 0, 0, 0)
+}
+
+// tPair は二項の型（k = TUn / TPr / TFn）
+func tPair(st mut S, k int, l TyRef, r TyRef) TyRef {
+    return mkTy(mut st, k, int(l), int(r), 0, 0)
+}
+
+func tProd(st mut S, l TyRef, r TyRef) TyRef {
+    return tPair(mut st, TPr, l, r)
+}
+
+func tUnion(st mut S, l TyRef, r TyRef) TyRef {
+    return tPair(mut st, TUn, l, r)
+}
+
+func tFn(st mut S, p TyRef, r TyRef) TyRef {
+    return tPair(mut st, TFn, p, r)
+}
+
+func tVar(st mut S, i int) TyRef {
+    return mkTy(mut st, TVar, i, 0, 0, 0)
+}
+
+// tByte は byte の型（language.md 33 節 — intern なので作るたびに同じ参照）
+func tByte(st mut S) TyRef {
+    return mkTy(mut st, TByte, 0, 0, 0, 0)
+}
+
+func tString(st mut S) TyRef {
+    return tSlice(mut st, false, 0, tByte(mut st), true)
+}
+
+// ── ヒープ越しの型（型の列・型環境の欄 — ヒープは int の表なので出し入れで変換する）──
+
+func hgetTy(st mut S, i int) TyRef {
+    return TyRef(hget(mut st, i))
+}
+
+func hsetTy(st mut S, i int, t TyRef) {
+    hset(mut st, i, int(t))
+}
+
+func latTy(st mut S, l ListRef, i int) TyRef {
+    return TyRef(latI(mut st, l, i))
+}
+
+// ── 型付きの読み口 ──
+
+// tInner は T? の中身
+func tInner(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).a)
+}
+
+// tLeft / tRight は二項の型（union / prod / 関数 = 引数と結果）の左右
+func tLeft(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).a)
+}
+
+func tRight(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).b)
+}
+
+// tElem は slice の要素・ref の中身
+func tElem(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).c)
+}
+
+// tKey / tVal は map のキーと値
+func tKey(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).c)
+}
+
+func tVal(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).d)
+}
+
+// tChanElem はチャネルの中身
+func tChanElem(st mut S, t TyRef) TyRef {
+    return TyRef(tyAt(mut st, t).b)
+}
+
+// tMutBit は slice / map / ref の m（0 = imm、1 = mut）、tRegion はその region
+func tMutBit(st mut S, t TyRef) int {
+    return tyAt(mut st, t).a
+}
+
+func tRegion(st mut S, t TyRef) int {
+    return tyAt(mut st, t).b
+}
+
+// tStrBit は slice の string の印
+func tStrBit(st mut S, t TyRef) int {
+    return tyAt(mut st, t).d
+}
+
+// tVarIdx は tvar の添字、tChanRc はチャネルの rc
+func tVarIdx(st mut S, t TyRef) int {
+    return tyAt(mut st, t).a
+}
+
+func tChanRc(st mut S, t TyRef) int {
+    return tyAt(mut st, t).a
+}
+
+// isStringTy は t（-1 可）が string か
+func isStringTy(st mut S, t TyRef) bool {
+    return t != -1 && tg(mut st, t) == TSl && tStrBit(mut st, t) != 0
+}
+
+func isTag(st mut S, t TyRef, k int) bool {
+    return t != -1 && tg(mut st, t) == k
+}
+
+// isPair は二項の型（union / prod / 関数）の種類か
+func isPair(k int) bool {
+    return k == TUn || k == TPr || k == TFn
+}
+
+// tyEql は構造一致（region・mut・string の印も見る）
+func tyEql(st mut S, a TyRef, b TyRef) bool {
+    k := tg(mut st, a)
+    if k != tg(mut st, b) {
+        return false
+    }
+    if k == TInt || k == TBool || k == TUnit || k == TByte {
+        return true
+    }
+    if k == TVar {
+        return tVarIdx(mut st, a) == tVarIdx(mut st, b)
+    }
+    if k == TOpt {
+        return tyEql(mut st, tInner(mut st, a), tInner(mut st, b))
+    }
+    if isPair(k) {
+        return tyEql(mut st, tLeft(mut st, a), tLeft(mut st, b)) && tyEql(mut st, tRight(mut st, a), tRight(mut st, b))
+    }
+    if k == TRef {
+        return tMutBit(mut st, a) == tMutBit(mut st, b) && tRegion(mut st, a) == tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b))
+    }
+    if k == TSl {
+        return tMutBit(mut st, a) == tMutBit(mut st, b) && tRegion(mut st, a) == tRegion(mut st, b) && tStrBit(mut st, a) == tStrBit(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b))
+    }
+    if k == TMp {
+        return tMutBit(mut st, a) == tMutBit(mut st, b) && tRegion(mut st, a) == tRegion(mut st, b) && tyEql(mut st, tKey(mut st, a), tKey(mut st, b)) && tyEql(mut st, tVal(mut st, a), tVal(mut st, b))
+    }
+    if k == TChan {
+        return tChanRc(mut st, a) == tChanRc(mut st, b) && tyEql(mut st, tChanElem(mut st, a), tChanElem(mut st, b))
+    }
+    return false
+}
+
+// tyLooser は a を b へ緩められるか（Lean の Ty.sub の鏡）
+func tyLooser(st mut S, a TyRef, b TyRef) bool {
+    k := tg(mut st, a)
+    if k != tg(mut st, b) {
+        return false
+    }
+    if k == TOpt {
+        return tyLooser(mut st, tInner(mut st, a), tInner(mut st, b))
+    }
+    if k == TUn || k == TPr {
+        return tyLooser(mut st, tLeft(mut st, a), tLeft(mut st, b)) && tyLooser(mut st, tRight(mut st, a), tRight(mut st, b))
+    }
+    if k == TSl {
+        return tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tElem(mut st, a), tElem(mut st, b))
+    }
+    if k == TMp {
+        return tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyLooser(mut st, tKey(mut st, a), tKey(mut st, b)) && tyLooser(mut st, tVal(mut st, a), tVal(mut st, b))
+    }
+    if k == TRef {
+        return tMutBit(mut st, a) == 0 && tMutBit(mut st, b) == 0 && tRegion(mut st, a) <= tRegion(mut st, b) && tyEql(mut st, tElem(mut st, a), tElem(mut st, b))
+    }
+    return tyEql(mut st, a, b)
+}
+
+// tyEqlLoose は region を見ない構造一致
+func tyEqlLoose(st mut S, a TyRef, b TyRef) bool {
+    k := tg(mut st, a)
+    if k != tg(mut st, b) {
+        return false
+    }
+    if k == TInt || k == TBool || k == TUnit || k == TByte {
+        return true
+    }
+    if k == TVar {
+        return tVarIdx(mut st, a) == tVarIdx(mut st, b)
+    }
+    if k == TOpt {
+        return tyEqlLoose(mut st, tInner(mut st, a), tInner(mut st, b))
+    }
+    if isPair(k) {
+        return tyEqlLoose(mut st, tLeft(mut st, a), tLeft(mut st, b)) && tyEqlLoose(mut st, tRight(mut st, a), tRight(mut st, b))
+    }
+    if k == TSl || k == TRef {
+        return tMutBit(mut st, a) == tMutBit(mut st, b) && tyEqlLoose(mut st, tElem(mut st, a), tElem(mut st, b))
+    }
+    if k == TMp {
+        return tMutBit(mut st, a) == tMutBit(mut st, b) && tyEqlLoose(mut st, tKey(mut st, a), tKey(mut st, b)) && tyEqlLoose(mut st, tVal(mut st, a), tVal(mut st, b))
+    }
+    if k == TChan {
+        return tyEqlLoose(mut st, tChanElem(mut st, a), tChanElem(mut st, b))
+    }
+    return false
+}
+
+// pointTy は base 座標の型を今の点座標（最内 region = rdepth - 1）へ写す
+func pointTy(st mut S, t TyRef) TyRef {
+    k := tg(mut st, t)
+    r := st.rdepth - 1
+    if k == TOpt {
+        return tOpt(mut st, pointTy(mut st, tInner(mut st, t)))
+    }
+    if k == TUn || k == TPr {
+        l := pointTy(mut st, tLeft(mut st, t))
+        return tPair(mut st, k, l, pointTy(mut st, tRight(mut st, t)))
+    }
+    if k == TSl {
+        return tSliceOf(mut st, tMutBit(mut st, t), r, pointTy(mut st, tElem(mut st, t)), tStrBit(mut st, t))
+    }
+    if k == TMp {
+        kk := pointTy(mut st, tKey(mut st, t))
+        return tMapOf(mut st, tMutBit(mut st, t), r, kk, pointTy(mut st, tVal(mut st, t)))
+    }
+    if k == TRef {
+        return tRefOf(mut st, tMutBit(mut st, t), r, pointTy(mut st, tElem(mut st, t)))
+    }
+    return t
+}
+
+// tyClamp は imm の region を k へ締める（Lean の Ty.clampR）
+func tyClamp(st mut S, t TyRef, k int) TyRef {
+    x := tg(mut st, t)
+    if x == TOpt {
+        return tOpt(mut st, tyClamp(mut st, tInner(mut st, t), k))
+    }
+    if x == TUn || x == TPr {
+        l := tyClamp(mut st, tLeft(mut st, t), k)
+        return tPair(mut st, x, l, tyClamp(mut st, tRight(mut st, t), k))
+    }
+    if x == TSl {
+        if tMutBit(mut st, t) != 0 {
+            return t
+        }
+        return tSliceOf(mut st, 0, minI(tRegion(mut st, t), k), tyClamp(mut st, tElem(mut st, t), k), tStrBit(mut st, t))
+    }
+    if x == TMp {
+        if tMutBit(mut st, t) != 0 {
+            return t
+        }
+        kk := tyClamp(mut st, tKey(mut st, t), k)
+        return tMapOf(mut st, 0, minI(tRegion(mut st, t), k), kk, tyClamp(mut st, tVal(mut st, t), k))
+    }
+    if x == TRef {
+        if tMutBit(mut st, t) != 0 {
+            return t
+        }
+        return tRefOf(mut st, 0, minI(tRegion(mut st, t), k), tyClamp(mut st, tElem(mut st, t), k))
+    }
+    return t
+}
+
+func minI(a int, b int) int {
+    return if a < b { a } else { b }
+}
+
+// retTy は戻り値の最上段（値ラッパを分配した位置）の slice / map を自フレーム（r = 1）へ付け替える
+func retTy(st mut S, t TyRef) TyRef {
+    k := tg(mut st, t)
+    if k == TSl {
+        m := tMutBit(mut st, t) != 0
+        return tSliceOf(mut st, tMutBit(mut st, t), 1, if m { tElem(mut st, t) } else { retTy(mut st, tElem(mut st, t)) }, tStrBit(mut st, t))
+    }
+    if k == TMp {
+        m := tMutBit(mut st, t) != 0
+        // キー型も中身（string キーの map — 値型と同じく自フレーム可。F-24）
+        return tMapOf(mut st, tMutBit(mut st, t), 1, if m { tKey(mut st, t) } else { retTy(mut st, tKey(mut st, t)) }, if m { tVal(mut st, t) } else { retTy(mut st, tVal(mut st, t)) })
+    }
+    if !wrapsContainer(mut st, t) {
+        return t
+    }
+    if k == TOpt {
+        return tOpt(mut st, retTy(mut st, tInner(mut st, t)))
+    }
+    if k == TUn || k == TPr {
+        l := retTy(mut st, tLeft(mut st, t))
+        return tPair(mut st, k, l, retTy(mut st, tRight(mut st, t)))
+    }
+    return t
+}
+
+// tyChain は型の列（ヒープの列 — 要素は int(TyRef)）→ 右結合の prod 鎖（0 は unit、1 は素の型）
+func tyChain(st mut S, l ListRef) TyRef {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return st.tUnit
+    }
+    mut acc := latTy(mut st, l, n - 1)
+    mut i := n - 2
+    while i >= 0 {
+        acc = tProd(mut st, latTy(mut st, l, i), acc)
+        i -= 1
+    }
+    return acc
+}
+
+// hasZero はゼロ値を持つ型か（language.md 15 節）
+func hasZero(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TInt || k == TBool || k == TUnit || k == TByte || k == TOpt || k == TSl || k == TMp {
+        return true
+    }
+    if k == TPr {
+        return hasZero(mut st, tLeft(mut st, t)) && hasZero(mut st, tRight(mut st, t))
+    }
+    return false
+}
+
+// wrapsContainer は値ラッパ越しに最上段の slice / map を持つか
+func wrapsContainer(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TSl || k == TMp {
+        return true
+    }
+    if k == TOpt {
+        return wrapsContainer(mut st, tInner(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return wrapsContainer(mut st, tLeft(mut st, t)) || wrapsContainer(mut st, tRight(mut st, t))
+    }
+    return false
+}
+
+func hasRegion(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TSl || k == TMp {
+        return true
+    }
+    if k == TPr {
+        return hasRegion(mut st, tLeft(mut st, t)) || hasRegion(mut st, tRight(mut st, t))
+    }
+    return false
+}
+
+// tyAnnFree は値が型注釈を持たない型か（Lean の Ty.annFree）
+func tyAnnFree(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TVar || k == TOpt || k == TUn {
+        return false
+    }
+    if k == TPr {
+        return tyAnnFree(mut st, tLeft(mut st, t)) && tyAnnFree(mut st, tRight(mut st, t))
+    }
+    if k == TSl {
+        return tMutBit(mut st, t) != 0 || tyAnnFree(mut st, tElem(mut st, t))
+    }
+    if k == TMp {
+        return tMutBit(mut st, t) != 0
+    }
+    return true
+}
+
+// tyRegionAbove は k より深い region を指すか
+func tyRegionAbove(st mut S, t TyRef, k int) bool {
+    x := tg(mut st, t)
+    if x == TChan {
+        return tChanRc(mut st, t) > k + 1 || tyRegionAbove(mut st, tChanElem(mut st, t), k)
+    }
+    if x == TOpt {
+        return tyRegionAbove(mut st, tInner(mut st, t), k)
+    }
+    if x == TUn || x == TPr {
+        return tyRegionAbove(mut st, tLeft(mut st, t), k) || tyRegionAbove(mut st, tRight(mut st, t), k)
+    }
+    if x == TSl || x == TRef {
+        return tRegion(mut st, t) > k || tyRegionAbove(mut st, tElem(mut st, t), k)
+    }
+    if x == TMp {
+        return tRegion(mut st, t) > k || tyRegionAbove(mut st, tKey(mut st, t), k) || tyRegionAbove(mut st, tVal(mut st, t), k)
+    }
+    return false
+}
+
+// tyArgValueOk は展開されるジェネリック・ジェネリック struct の型引数（チャネル・参照を含まない値の型）
+func tyArgValueOk(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TRef || k == TChan {
+        return false
+    }
+    if k == TOpt {
+        return tyArgValueOk(mut st, tInner(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return tyArgValueOk(mut st, tLeft(mut st, t)) && tyArgValueOk(mut st, tRight(mut st, t))
+    }
+    if k == TSl {
+        return tyArgValueOk(mut st, tElem(mut st, t))
+    }
+    if k == TMp {
+        return tyArgValueOk(mut st, tKey(mut st, t)) && tyArgValueOk(mut st, tVal(mut st, t))
+    }
+    return true
+}
+
+// tyArgOk は Def として呼ぶジェネリックの型引数（region もチャネルも持たない）
+func tyArgOk(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    if k == TSl || k == TMp || k == TRef || k == TChan {
+        return false
+    }
+    if k == TOpt {
+        return tyArgOk(mut st, tInner(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return tyArgOk(mut st, tLeft(mut st, t)) && tyArgOk(mut st, tRight(mut st, t))
+    }
+    return true
+}
+
+// unifyTy は pat のプレースホルダ tvar を act の対応部分に束縛する（binds = 型の列 — 要素は int(TyRef)、未定は -1）。衝突は false
+func unifyTy(st mut S, pat TyRef, act TyRef, binds ListRef) bool {
+    k := tg(mut st, pat)
+    if k == TVar && tVarIdx(mut st, pat) >= PH {
+        i := tVarIdx(mut st, pat) - PH
+        if i >= lenL(mut st, binds) {
+            return true
+        }
+        b := latTy(mut st, binds, i)
+        if b != -1 {
+            return tyEqlLoose(mut st, b, act)
+        }
+        hsetTy(mut st, int(binds) + 1 + i, act)
+        return true
+    }
+    if k != tg(mut st, act) {
+        return true
+    }
+    if k == TOpt {
+        return unifyTy(mut st, tInner(mut st, pat), tInner(mut st, act), binds)
+    }
+    if isPair(k) {
+        return unifyTy(mut st, tLeft(mut st, pat), tLeft(mut st, act), binds) && unifyTy(mut st, tRight(mut st, pat), tRight(mut st, act), binds)
+    }
+    if k == TSl || k == TRef {
+        return unifyTy(mut st, tElem(mut st, pat), tElem(mut st, act), binds)
+    }
+    if k == TMp {
+        return unifyTy(mut st, tKey(mut st, pat), tKey(mut st, act), binds) && unifyTy(mut st, tVal(mut st, pat), tVal(mut st, act), binds)
+    }
+    if k == TChan {
+        return unifyTy(mut st, tChanElem(mut st, pat), tChanElem(mut st, act), binds)
+    }
+    return true
+}

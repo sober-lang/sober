@@ -1,0 +1,32 @@
+package main
+
+import "std/io"
+
+import (
+    "std/strconv"
+    t "std/time"
+)
+
+const Limit, Step = 100, 5
+
+@layout(c)
+type Header struct {
+    magic uint32 @json(name: "m")
+    size uint32
+}
+
+type Handler func(Req) Resp @pure
+
+@pure
+@errors(NotFound, Timeout)
+@recursion(depth: 8)
+func lookup(id int, sep string?) (Profile, error) {
+    @noblock {
+        io.println(id, sep: sep)
+    }
+    return find(id, cache: true)? , nil
+}
+
+func main() {
+    println(lookup(1, sep: ","), strconv.itoa(Limit), t.now())
+}

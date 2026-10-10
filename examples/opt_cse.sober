@@ -1,0 +1,64 @@
+package main
+
+// 最適化の網（性能投資 M1 — SROA / GVN の観測の固定）: 同じ式・逆順の非可換な式・同じ番地の load と store の挟み込み・
+// 集約（slice のヘッダ・struct）のコピーとその後の書き換え・ゼロ除算の panic の点を、最適化あり / なしで同じ観測にする（scripts/optdiff.sh --mut の代表）
+
+import "std/iter"
+
+type P struct {
+    x int
+    y int
+    tag string
+}
+
+func sub2(a int, b int) int {
+    d1 := a - b
+    d2 := b - a
+    q1 := a / (b + 1)
+    q2 := a / (b + 1)
+    s1 := a << 2
+    s2 := a >> 1
+    return d1 * 1000 + d2 * 100 + q1 + q2 + s1 - s2
+}
+
+// bump は xs[0] を読み、mut の仮引数を通して書き換えてから同じ添字をもう一度読む（store を跨いだ load は付け替えない）
+func bump(xs mut []int) int {
+    a := xs[0]
+    xs[0] = a + 10
+    b := xs[0]
+    xs[1] = b * 2
+    return a + b + xs[0] + xs[1]
+}
+
+func shift(p P) P {
+    mut q := p
+    q.x = p.y
+    q.y = p.x
+    return q
+}
+
+func main() {
+    println(sub2(7, 3), sub2(3, 7), sub2(-5, 2))
+    mut xs := mut []int{1, 2, 3}
+    println(bump(mut xs), xs[0], xs[1], xs[2])
+    ys := xs
+    xs[2] = 99
+    println(ys[2], xs[2], len(ys))
+    p := P{x: 1, y: 2, tag: "t"}
+    q := shift(p)
+    println(p.x, p.y, q.x, q.y, q.tag)
+    mut acc := 0
+    for i <- iter.Range(0, 5) {
+        acc += sub2(i, i + 1) - sub2(i + 1, i)
+    }
+    println(acc)
+    // 回らないループの中のループ不変な割り算（LICM が巻き上げてはいけない — 巻き上げるとゼロ除算の panic が出る）
+    zero := len(xs) - 3
+    big := len(xs) * 25
+    mut never := 0
+    for i <- iter.Range(0, zero) {
+        never += big / zero + i
+    }
+    println(never)
+    println(sub2(1, -1))
+}

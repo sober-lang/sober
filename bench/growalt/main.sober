@@ -1,0 +1,31 @@
+package main
+
+import "std/iter"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+// 交互に 2 本の mut []int と 2 本の mut []byte を伸ばす（素直な形 — データ構造便の双子 (b)。成長が先端の奪い合いで 2 乗だった形・rtgrow.sober で償却 O(1)）
+func main() int {
+    args := os.Args() catch return 2
+    n := atoi(args[1])
+    mut xs := mut []int{}
+    mut ys := mut []int{}
+    mut bs := mut []byte{}
+    mut cs := mut []byte{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, i)
+        ys = append(ys, i * 2)
+        bs = append(bs, byte(i & 127))
+        cs = append(cs, byte(i & 63))
+    }
+    println(len(xs) + len(ys) + len(bs) + len(cs) + xs[n - 1] + ys[n / 2] + int(bs[n - 1]) + int(cs[1]))
+    return 0
+}

@@ -1,0 +1,97 @@
+package main
+
+// n-body（benchmarks game — docs/bench.md）: 5 天体〔太陽・木星・土星・天王星・海王星〕の重力の時間発展、前後のエネルギーを小数 9 桁で。
+// 素直な形（Go の双子 bench/nbody/go と同じアルゴリズム・同じ演算の順 — float は IEEE 754 binary64 で同じビット）。
+// 天体は 7 欄（x y z vx vy vz 質量）を詰めた 1 本の mut []float（struct の slice の欄の書き換えの代わり）
+
+import "std/conv"
+import "std/iter"
+import "std/math"
+import "std/os"
+
+const NB = 5
+const W = 7
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func energy(b mut []float) float {
+    mut e := 0.0
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        e += 0.5 * b[o + 6] * (b[o + 3] * b[o + 3] + b[o + 4] * b[o + 4] + b[o + 5] * b[o + 5])
+        for j <- iter.Range(i + 1, NB) {
+            p := j * W
+            dx := b[o] - b[p]
+            dy := b[o + 1] - b[p + 1]
+            dz := b[o + 2] - b[p + 2]
+            e -= (b[o + 6] * b[p + 6]) / math.Sqrt(dx * dx + dy * dy + dz * dz)
+        }
+    }
+    return e
+}
+
+func advance(b mut []float, dt float) {
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        for j <- iter.Range(i + 1, NB) {
+            p := j * W
+            dx := b[o] - b[p]
+            dy := b[o + 1] - b[p + 1]
+            dz := b[o + 2] - b[p + 2]
+            dsq := dx * dx + dy * dy + dz * dz
+            mag := dt / (dsq * math.Sqrt(dsq))
+            b[o + 3] = b[o + 3] - dx * b[p + 6] * mag
+            b[o + 4] = b[o + 4] - dy * b[p + 6] * mag
+            b[o + 5] = b[o + 5] - dz * b[p + 6] * mag
+            b[p + 3] = b[p + 3] + dx * b[o + 6] * mag
+            b[p + 4] = b[p + 4] + dy * b[o + 6] * mag
+            b[p + 5] = b[p + 5] + dz * b[o + 6] * mag
+        }
+    }
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        b[o] = b[o] + dt * b[o + 3]
+        b[o + 1] = b[o + 1] + dt * b[o + 4]
+        b[o + 2] = b[o + 2] + dt * b[o + 5]
+    }
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) > 1 { atoi(args[1]) } else { 1000 }
+    pi := 3.141592653589793
+    solarMass := 4.0 * pi * pi
+    dpy := 365.24
+    mut b := mut []float{
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, solarMass,
+        4.84143144246472090e+00, -1.16032004402742839e+00, -1.03622044471123109e-01, 1.66007664274403694e-03 * dpy, 7.69901118419740425e-03 * dpy, -6.90460016972063023e-05 * dpy, 9.54791938424326609e-04 * solarMass,
+        8.34336671824457987e+00, 4.12479856412430479e+00, -4.03523417114321381e-01, -2.76742510726862411e-03 * dpy, 4.99852801234917238e-03 * dpy, 2.30417297573763929e-05 * dpy, 2.85885980666130812e-04 * solarMass,
+        1.28943695621391310e+01, -1.51111514016986312e+01, -2.23307578892655734e-01, 2.96460137564761618e-03 * dpy, 2.37847173959480950e-03 * dpy, -2.96589568540237556e-05 * dpy, 4.36624404335156298e-05 * solarMass,
+        1.53796971148509165e+01, -2.59193146099879641e+01, 1.79258772950371181e-01, 2.68067772490389322e-03 * dpy, 1.62824170038242295e-03 * dpy, -9.51592254519715870e-05 * dpy, 5.15138902046611451e-05 * solarMass,
+    }
+    mut px := 0.0
+    mut py := 0.0
+    mut pz := 0.0
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        px += b[o + 3] * b[o + 6]
+        py += b[o + 4] * b[o + 6]
+        pz += b[o + 5] * b[o + 6]
+    }
+    b[3] = -px / solarMass
+    b[4] = -py / solarMass
+    b[5] = -pz / solarMass
+    println(conv.FormatFixed(energy(mut b), 9))
+    for k <- iter.Range(0, n) {
+        advance(mut b, 0.01)
+    }
+    println(conv.FormatFixed(energy(mut b), 9))
+    return 0
+}

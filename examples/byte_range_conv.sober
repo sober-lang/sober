@@ -1,0 +1,7 @@
+package main
+
+// 負例: 定数の範囲外はコンパイルエラー — byte(-1)（language.md 33 節）
+func main() {
+    b := byte(-1)
+    println(b)
+}

@@ -1,0 +1,704 @@
+package desugar
+
+// 名前解決と型式 → コアの型（src/desugar.zig の resolveIn / lookupType / findFn / findVariant / tyOf 一族の写し）
+
+import "ast"
+import "std/iter"
+import "std/table"
+
+// 組み込み error の宣言（Zig の prog.errors）を指す印。variant の列はヒープの errv
+const ERRS = -2
+
+// ── 記録の形 ──
+// 関数型の束縛（3 語）: [parent, name, closure]
+// 型宣言の参照（3 語）: [decl（型宣言の節か ERRS）, pkg, tenv]
+// 型パラメータの束縛の列: [n, (name, ty, decl)…]
+
+// Binding は値の束縛（st.binds の要素 — 積んだ順の添字で指し、無しは -1。積んだ後は変えない）
+type Binding struct {
+    parent int    // 外側の束縛
+    name int      // 名前（ヒープの文字列）
+    level int     // de Bruijn の絶対レベル
+    mutable bool
+    decl int      // 型宣言の参照（-1 = 不明）
+    ty int        // 核の型（-1 = 不明）
+    elem int      // 要素の型宣言の参照
+    region int    // 束縛点の region
+    core int      // ann した核の型（-1 = 無し）
+    split bool    // 割った mut 束縛（split.sober）
+    sty int       // 表層型（surface.sober — SUNK = 不明）
+}
+
+// bind は束縛を積む。split = 割る場所か（呼び手の判定）— 宣言が struct のときだけ割った束縛になる
+func bind(st mut S, eb int, name int, level int, mutable bool, decl int, ty int, elem int, region int, core int, split bool, sty int) int {
+    sp := split && structFields(mut st, decl) >= 0
+    at := table.Len(mut st.binds)
+    table.Push(mut st.binds, Binding{parent: eb, name: name, level: level, mutable: mutable, decl: decl, ty: ty, elem: elem, region: region, core: core, split: sp, sty: sty})
+    return at
+}
+
+// bnd は束縛 b の記録（非ジェネリックの包み — ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない F-10）
+func bnd(st mut S, b int) Binding {
+    return table.Get(mut st.binds, b)
+}
+
+func lookup(st mut S, eb int, name int) int {
+    mut b := eb
+    while b >= 0 {
+        x := bnd(mut st, b)
+        if strEq(mut st, x.name, name) {
+            return b
+        }
+        b = x.parent
+    }
+    return -1
+}
+
+func bindF(st mut S, ef int, name int, cl int, sty int) int {
+    at := top(mut st)
+    put(mut st, ef)
+    put(mut st, name)
+    put(mut st, cl)
+    put(mut st, sty)
+    return at
+}
+
+// lookupFSty は閉包の束縛 name の表層型（無ければ SUNK — 名前付き関数型の仮引数に束縛した閉包はその型、ラムダ・for 式は SFREE）
+func lookupFSty(st mut S, ef int, name int) int {
+    mut b := ef
+    while b >= 0 {
+        if strEq(mut st, hget(mut st, b + 1), name) {
+            return hget(mut st, b + 3)
+        }
+        b = hget(mut st, b)
+    }
+    return SUNK
+}
+
+func lookupF(st mut S, ef int, name int) int {
+    mut b := ef
+    while b >= 0 {
+        if strEq(mut st, hget(mut st, b + 1), name) {
+            return hget(mut st, b + 2)
+        }
+        b = hget(mut st, b)
+    }
+    return -1
+}
+
+func declRef(st mut S, decl int, pk int, env int) int {
+    at := top(mut st)
+    put(mut st, decl)
+    put(mut st, pk)
+    put(mut st, env)
+    return at
+}
+
+// tbindLookup は型パラメータの束縛の列 env の name（無ければ -1 — 見つかれば束縛の位置）
+func tbindAt(st mut S, env int, name int) int {
+    if env < 0 {
+        return -1
+    }
+    mut i := 0
+    while i < hget(mut st, env) {
+        if strEq(mut st, hget(mut st, env + 1 + i * 3), name) {
+            return env + 1 + i * 3
+        }
+        i += 1
+    }
+    return -1
+}
+
+// ── 名前解決 ──
+
+// resolveIn は参照名（"N" か "ref.N"）→ (宣言を探す package, 基底名の開始位置)。解決できなければ package -1。
+// 修飾参照は from の import 表で解決し、公開（大文字）を検査する（language.md 20 節）
+func resolveIn(st mut S, from int, name int) (int, int) {
+    dot := dotAt(mut st, name)
+    if dot < 0 {
+        return from, 0
+    }
+    pk := ImportOf(mut st, from, name, 0, dot)
+    if pk < 0 {
+        return -1, 0
+    }
+    if dot + 1 >= dat(mut st, name) {
+        return -1, 0
+    }
+    c := dat(mut st, name + 2 + dot)
+    if c < 65 || c > 90 {
+        return -1, 0
+    }
+    return pk, dot + 1
+}
+
+// lookupType は型名の型宣言の参照（無ければ -1）
+func lookupType(st mut S, from int, name int) int {
+    pk, lo := resolveIn(mut st, from, name)
+    if pk < 0 {
+        return -1
+    }
+    mut f := PkgFlo(mut st, pk)
+    while f < PkgFhi(mut st, pk) {
+        tys := nodeAt(mut st, FileRoot(mut st, f)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            d := lat(mut st, tys, i)
+            if strEqPart(mut st, nodeAt(mut st, d).a, name, lo, dat(mut st, name)) {
+                return declRef(mut st, d, pk, -1)
+            }
+        }
+        f += 1
+    }
+    return -1
+}
+
+// lookupConst は package pk の const（名前は文字列 name のバイト [lo, 末尾)）の表の添字（無ければ -1）
+func lookupConst(st mut S, pk int, name int, lo int) int {
+    mut i := 0
+    while i < st.ncon {
+        if ConPkg(mut st, i) == pk && strEqPart(mut st, nodeAt(mut st, ConNode(mut st, i)).a, name, lo, dat(mut st, name)) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// importRef は名前 name が package pk の import の参照名か
+func importRef(st mut S, pk int, name int) bool {
+    return ImportOf(mut st, pk, name, 0, dat(mut st, name)) >= 0
+}
+
+// qualName は selector `ref.N`（base が名前で、束縛に無く、import の参照名）の綴り "ref.N"（そうでなければ -1）
+func qualName(st mut S, sel int, eb int) int {
+    base := nodeAt(mut st, sel).a
+    if kindOf(mut st, base) != ast.EIdent {
+        return -1
+    }
+    bn := nodeAt(mut st, base).a
+    if lookup(mut st, eb, bn) >= 0 || !importRef(mut st, st.curPkg, bn) {
+        return -1
+    }
+    fld := nodeAt(mut st, sel).b
+    at := top(mut st)
+    put(mut st, dat(mut st, bn) + 1 + dat(mut st, fld))
+    mut i := 0
+    while i < dat(mut st, bn) {
+        put(mut st, dat(mut st, bn + 1 + i))
+        i += 1
+    }
+    put(mut st, 46)
+    i = 0
+    while i < dat(mut st, fld) {
+        put(mut st, dat(mut st, fld + 1 + i))
+        i += 1
+    }
+    return at
+}
+
+// findFn は callee 式（名前か `pkg.Fn`）の関数（関数の表の添字。無ければ -1）
+func findFn(st mut S, callee int, eb int) int {
+    k := kindOf(mut st, callee)
+    mut name := -1
+    if k == ast.EIdent {
+        name = nodeAt(mut st, callee).a
+    } else if k == ast.ESelector {
+        name = qualName(mut st, callee, eb)
+        if name < 0 {
+            return -1
+        }
+    } else {
+        return -1
+    }
+    pk, lo := resolveIn(mut st, st.curPkg, name)
+    if pk < 0 {
+        return -1
+    }
+    // 索引の鎖は添字の小さい順（全関数の線形探索と同じ — 最初に一致した関数）
+    if table.Len(mut st.fnBucket) == 0 {
+        buildFnIndex(mut st)
+    }
+    mut i := table.Get(mut st.fnBucket, fnHash(mut st, pk, name, lo))
+    while i >= 0 {
+        if fnPkg(mut st, i) == pk && strEqPart(mut st, fnName(mut st, i), name, lo, dat(mut st, name)) {
+            return i
+        }
+        i = table.Get(mut st.fnNext, i)
+    }
+    return -1
+}
+
+const FNBUCKETS = 4096
+
+// fnHash は (package pk, 文字列 s のバイト [lo, 長さ)) のハッシュ
+func fnHash(st mut S, pk int, s int, lo int) int {
+    mut h := pk % 1000003
+    for i <- iter.Range(lo, dat(mut st, s)) {
+        h = (h * 31 + dat(mut st, s + 1 + i)) % 1000003
+    }
+    return h % FNBUCKETS
+}
+
+// buildFnIndex は関数の索引を組む（関数の表は init の後は変わらない）。鎖の先頭が添字の小さい方になるよう大きい方から積む
+func buildFnIndex(st mut S) {
+    for _ <- iter.Range(0, FNBUCKETS) {
+        table.Push(mut st.fnBucket, -1)
+    }
+    for _ <- iter.Range(0, st.nfn) {
+        table.Push(mut st.fnNext, -1)
+    }
+    mut i := st.nfn - 1
+    while i >= 0 {
+        h := fnHash(mut st, fnPkg(mut st, i), fnName(mut st, i), 0)
+        table.Set(mut st.fnNext, i, table.Get(mut st.fnBucket, h))
+        table.Set(mut st.fnBucket, h, i)
+        i -= 1
+    }
+}
+
+// ── variant ──
+
+// declBody は型宣言の本体の種類（ERRS は union 扱い）
+func declKind(st mut S, decl int) int {
+    if decl == ERRS {
+        return ast.BUnion
+    }
+    return kindOf(mut st, nodeAt(mut st, decl).c)
+}
+
+func vcount(st mut S, decl int) int {
+    if decl == ERRS {
+        return NErr(mut st)
+    }
+    return llen(mut st, nodeAt(mut st, nodeAt(mut st, decl).c).a)
+}
+
+// vat は i 番目の variant（union の KVariant か、error ラベルの型宣言）
+func vat(st mut S, decl int, i int) int {
+    if decl == ERRS {
+        return ErrNode(mut st, i)
+    }
+    return lat(mut st, nodeAt(mut st, nodeAt(mut st, decl).c).a, i)
+}
+
+func vfields(st mut S, v int) int {
+    if kindOf(mut st, v) == ast.KTypeDecl {
+        return nodeAt(mut st, nodeAt(mut st, v).c).a
+    }
+    return nodeAt(mut st, v).b
+}
+
+// vpkgOr は variant の宣言側 package（error ラベルは自分の package、union の variant は dflt）
+func vpkgOr(st mut S, v int, dflt int) int {
+    if kindOf(mut st, v) != ast.KTypeDecl {
+        return dflt
+    }
+    mut i := 0
+    while i < NErr(mut st) {
+        if ErrNode(mut st, i) == v {
+            return ErrPkg(mut st, i)
+        }
+        i += 1
+    }
+    return dflt
+}
+
+// VariantRef は variant の参照: 型宣言 decl（error ラベルは ERRS、無ければ -1）・package pkg・variant の添字 idx
+type VariantRef struct {
+    decl int
+    pkg int
+    idx int
+}
+
+// findVariant は variant 名（"V" か "ref.V"）→ VariantRef（宣言, package, 添字）。無ければ宣言 -1。error ラベルは ERRS の variant
+func findVariant(st mut S, from int, name int) VariantRef {
+    pk, lo := resolveIn(mut st, from, name)
+    if pk < 0 {
+        return VariantRef{decl: -1, pkg: 0, idx: 0}
+    }
+    mut f := PkgFlo(mut st, pk)
+    while f < PkgFhi(mut st, pk) {
+        tys := nodeAt(mut st, FileRoot(mut st, f)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            d := lat(mut st, tys, i)
+            bk := kindOf(mut st, nodeAt(mut st, d).c)
+            if bk == ast.BError {
+                if strEqPart(mut st, nodeAt(mut st, d).a, name, lo, dat(mut st, name)) {
+                    mut j := 0
+                    while j < NErr(mut st) {
+                        v := ErrNode(mut st, j)
+                        if ErrPkg(mut st, j) == pk && strEqPart(mut st, nodeAt(mut st, v).a, name, lo, dat(mut st, name)) {
+                            return VariantRef{decl: ERRS, pkg: pk, idx: j}
+                        }
+                        j += 1
+                    }
+                    return VariantRef{decl: -1, pkg: 0, idx: 0}
+                }
+            } else if bk == ast.BUnion {
+                vs := nodeAt(mut st, nodeAt(mut st, d).c).a
+                mut j := 0
+                while j < llen(mut st, vs) {
+                    if strEqPart(mut st, nodeAt(mut st, lat(mut st, vs, j)).a, name, lo, dat(mut st, name)) {
+                        return VariantRef{decl: d, pkg: pk, idx: j}
+                    }
+                    j += 1
+                }
+            }
+        }
+        f += 1
+    }
+    return VariantRef{decl: -1, pkg: 0, idx: 0}
+}
+
+// ── 型式 → コアの型 ──
+
+// TyMemo は名前付き型（宣言の節 decl）の解決の記録: 型環境なし（tenv = -1 — env = -1）の参照か、ジェネリック struct の型引数の束縛 env
+// （genericEnv の平坦な列 — 欄の型名はこの束縛と宣言の package だけで引かれる）のもとで、fuel 以下の燃料で解けた型 ty。
+// 型は intern されるので同じ解決は同じ参照になり、燃料は「解けたときの燃料以上なら同じく解ける」ので memo は元の判定と同じ結果を返す
+type TyMemo struct {
+    decl int
+    env int
+    fuel int
+    ty int
+    next int
+}
+
+const MEMOBUCKETS = 4096
+
+// memoAt は memo の i 番（非ジェネリックの包み — F-10）
+func memoAt(st mut S, i int) TyMemo {
+    return table.Get(mut st.tyMemo, i)
+}
+
+// envSame は束縛の列 a と b が同じ型引数か（-1 どうしは同じ。名前は宣言の型パラメータで同じなので型だけ比べる）
+func envSame(st mut S, a int, b int) bool {
+    if a < 0 || b < 0 {
+        return a == b
+    }
+    n := hget(mut st, a)
+    if n != hget(mut st, b) {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if hget(mut st, a + 2 + i * 3) != hget(mut st, b + 2 + i * 3) {
+            return false
+        }
+    }
+    return true
+}
+
+// noTenv は型環境が無いか（-1 か空の束縛列）— 型名が型パラメータに引かれない
+func noTenv(st mut S) bool {
+    return st.tenv < 0 || hget(mut st, st.tenv) == 0
+}
+
+func memoGet(st mut S, decl int, env int, fuel int) int {
+    if table.Len(mut st.tyMemoBucket) == 0 {
+        return -1
+    }
+    mut i := table.Get(mut st.tyMemoBucket, decl % MEMOBUCKETS)
+    while i >= 0 {
+        m := memoAt(mut st, i)
+        if m.decl == decl && fuel >= m.fuel && envSame(mut st, m.env, env) {
+            return m.ty
+        }
+        i = m.next
+    }
+    return -1
+}
+
+func memoPut(st mut S, decl int, env int, fuel int, ty int) {
+    if table.Len(mut st.tyMemoBucket) == 0 {
+        for _ <- iter.Range(0, MEMOBUCKETS) {
+            table.Push(mut st.tyMemoBucket, -1)
+        }
+    }
+    b := decl % MEMOBUCKETS
+    table.Push(mut st.tyMemo, TyMemo{decl: decl, env: env, fuel: fuel, ty: ty, next: table.Get(mut st.tyMemoBucket, b)})
+    table.Set(mut st.tyMemoBucket, b, table.Len(mut st.tyMemo) - 1)
+}
+
+// tyOf は package pk の文脈で書かれた型式 te を断片の型へ
+func tyOf(st mut S, pk int, te int, tok int, fuel int) (int, error?) {
+    if fuel == 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        name := nodeAt(mut st, te).a
+        b := tbindAt(mut st, st.tenv, name)
+        if b >= 0 {
+            return hget(mut st, b + 1), nil
+        }
+        if strIs(mut st, name, "int") {
+            return st.tInt, nil
+        }
+        if strIs(mut st, name, "bool") {
+            return st.tBool, nil
+        }
+        if strIs(mut st, name, "string") {
+            return tString(mut st), nil
+        }
+        if strIs(mut st, name, "error") {
+            return errTy(mut st, pk, tok, fuel - 1)
+        }
+        dr := lookupType(mut st, pk, name)
+        if dr < 0 {
+            return 0, Fail{k: KFrag, tok: tok}
+        }
+        decl := hget(mut st, dr)
+        dpk := hget(mut st, dr + 1)
+        bk := kindOf(mut st, nodeAt(mut st, decl).c)
+        if bk == ast.BStruct || bk == ast.BUnion {
+            // 型環境なしの参照は memo する（欄の型名は今の型環境で引くので、型環境つきの参照は結果が環境に依る — 対象外）
+            if noTenv(mut st) {
+                m := memoGet(mut st, decl, -1, fuel)
+                if m >= 0 {
+                    return m, nil
+                }
+            }
+            mut t := 0
+            if bk == ast.BStruct {
+                t = fieldsTy(mut st, dpk, nodeAt(mut st, nodeAt(mut st, decl).c).a, tok, fuel - 1)?
+            } else {
+                t = unionTreeTy(mut st, dpk, decl, 0, tok, fuel - 1)?
+            }
+            if noTenv(mut st) {
+                memoPut(mut st, decl, -1, fuel, t)
+            }
+            return t, nil
+        }
+        if bk == ast.BDefined {
+            // named scalar は下地のコア型に消える（language.md 32 節 — 区別は表層型の照合）。下地は int / bool に限る
+            u := namedUnder(mut st, decl)
+            if u < 0 {
+                return 0, Fail{k: KNominal, tok: tok}
+            }
+            return if u == 0 { st.tInt } else { st.tBool }, nil
+        }
+        return 0, Fail{k: if bk == ast.BFunc { KFrag } else { KMalformed }, tok: tok}
+    }
+    if k == ast.TGeneric {
+        dr := lookupType(mut st, pk, nodeAt(mut st, te).a)
+        if dr < 0 {
+            return 0, Fail{k: KFrag, tok: tok}
+        }
+        env := genericEnv(mut st, pk, dr, nodeAt(mut st, te).b, tok)?
+        decl := hget(mut st, dr)
+        bk := kindOf(mut st, nodeAt(mut st, decl).c)
+        if bk != ast.BStruct {
+            return 0, Fail{k: if bk == ast.BError { KMalformed } else { KFrag }, tok: tok}
+        }
+        m := memoGet(mut st, decl, env, fuel)
+        if m >= 0 {
+            return m, nil
+        }
+        saved := st.tenv
+        st.tenv = env
+        t, err := fieldsTy(mut st, hget(mut st, dr + 1), nodeAt(mut st, nodeAt(mut st, decl).c).a, tok, fuel - 1)
+        st.tenv = saved
+        if err != nil {
+            return 0, err
+        }
+        memoPut(mut st, decl, env, fuel, t)
+        return t, nil
+    }
+    if k == ast.TFunc {
+        pl := nodeAt(mut st, te).a
+        ps := listN(mut st, llen(mut st, pl))
+        for i <- iter.Range(0, llen(mut st, pl)) {
+            hv367 := tyOf(mut st, pk, lat(mut st, pl, i), tok, fuel - 1)?
+            hset(mut st, ps + 1 + i, hv367)
+        }
+        rl := nodeAt(mut st, te).b
+        rs := listN(mut st, llen(mut st, rl))
+        for i <- iter.Range(0, llen(mut st, rl)) {
+            rt := tyOf(mut st, pk, lat(mut st, rl, i), tok, fuel - 1)?
+            hv375 := retTy(mut st, rt)
+            hset(mut st, rs + 1 + i, hv375)
+        }
+        p := tyChain(mut st, ps)
+        return tFn(mut st, p, tyChain(mut st, rs)), nil
+    }
+    if k == ast.TOpt {
+        x := tyOf(mut st, pk, nodeAt(mut st, te).a, tok, fuel - 1)?
+        return tOpt(mut st, x), nil
+    }
+    if k == ast.TSlice {
+        x := tyOf(mut st, pk, nodeAt(mut st, te).a, tok, fuel - 1)?
+        return tSlice(mut st, nodeAt(mut st, te).b != 0, 0, x, false), nil
+    }
+    if k == ast.TMap {
+        k0 := tyOf(mut st, pk, nodeAt(mut st, te).a, tok, fuel - 1)?
+        key := mapKeyTy(mut st, k0, tok)?
+        v := tyOf(mut st, pk, nodeAt(mut st, te).b, tok, fuel - 1)?
+        return tMap(mut st, nodeAt(mut st, te).c != 0, 0, key, v), nil
+    }
+    return 0, Fail{k: KFrag, tok: tok}
+}
+
+// mapKeyTy は map のキー型（int | string）
+func mapKeyTy(st mut S, k int, tok int) (int, error?) {
+    if tg(mut st, k) == TInt || isStringTy(mut st, k) {
+        return k, nil
+    }
+    return 0, Fail{k: KFrag, tok: tok}
+}
+
+// genericEnv はジェネリック struct の型引数（型式の列 args — 呼び手の文脈 = 今の tenv で解決）→ 束縛の列
+func genericEnv(st mut S, pk int, dr int, args int, tok int) (int, error?) {
+    tps := nodeAt(mut st, hget(mut st, dr)).b
+    n := llen(mut st, args)
+    if n != llen(mut st, tps) {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    env := listN(mut st, n * 3)
+    for i <- iter.Range(0, n) {
+        t := tyOf(mut st, pk, lat(mut st, args, i), tok, 32)?
+        if !tyArgValueOk(mut st, t) {
+            return 0, Fail{k: KFrag, tok: tok}
+        }
+        hv420 := lat(mut st, tps, i)
+        hset(mut st, env + 1 + i * 3, hv420)
+        hset(mut st, env + 2 + i * 3, t)
+        hset(mut st, env + 3 + i * 3, -1)
+    }
+    hset(mut st, env, n)
+    return env, nil
+}
+
+// tyIn は束縛 env のもとで te を解決する
+func tyIn(st mut S, pk int, env int, te int, tok int) (int, error?) {
+    saved := st.tenv
+    st.tenv = env
+    t, err := tyOf(mut st, pk, te, tok, 32)
+    st.tenv = saved
+    if err != nil {
+        return 0, err
+    }
+    return t, nil
+}
+
+// fieldsTy はフィールドの列 → 右結合の prod 鎖（0 は unit、1 は素の型）
+func fieldsTy(st mut S, pk int, fs int, tok int, fuel int) (int, error?) {
+    n := llen(mut st, fs)
+    if n == 0 {
+        return st.tUnit, nil
+    }
+    ts := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        hv450 := tyOf(mut st, pk, nodeAt(mut st, lat(mut st, fs, i)).b, tok, fuel)?
+        hset(mut st, ts + 1 + i, hv450)
+    }
+    return tyChain(mut st, ts), nil
+}
+
+// payloadTy は variant のペイロード型
+func payloadTy(st mut S, pk int, v int, fuel int) (int, error?) {
+    return fieldsTy(mut st, vpkgOr(mut st, v, pk), vfields(mut st, v), tokOf(mut st, v), fuel)
+}
+
+// isErrors は variant の列（decl の start 番目から）が組み込み error のラベル列全体か
+func isErrors(decl int, start int) bool {
+    return decl == ERRS && start == 0
+}
+
+// unionTreeTy は variant の列（decl の start 番目から）→ 右結合の union の入れ子
+func unionTreeTy(st mut S, pk int, decl int, start int, tok int, fuel int) (int, error?) {
+    n := vcount(mut st, decl) - start
+    if isErrors(decl, start) {
+        if n == 0 {
+            return st.tUnit, nil
+        }
+        if n == 1 {
+            return payloadTy(mut st, pk, vat(mut st, decl, 0), fuel)
+        }
+    }
+    if n < 2 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    l := payloadTy(mut st, pk, vat(mut st, decl, start), fuel)?
+    r := if n == 2 { payloadTy(mut st, pk, vat(mut st, decl, start + 1), fuel)? } else { unionTreeTy(mut st, pk, decl, start + 1, tok, fuel)? }
+    return tUnion(mut st, l, r), nil
+}
+
+// errTy は組み込み error の型（prod L []L — L は全ラベルの閉じた union、鎖は imm slice の base 座標 r0）
+func errTy(st mut S, pk int, tok int, fuel int) (int, error?) {
+    l := unionTreeTy(mut st, pk, ERRS, 0, tok, fuel)?
+    chain := tSlice(mut st, false, 0, l, false)
+    return tProd(mut st, l, chain), nil
+}
+
+// ── 型宣言の参照 ──
+
+// declOfTypeExpr は型式（pk の文脈）の型宣言の参照（struct / union の名前なら。無ければ -1）
+func declOfTypeExpr(st mut S, pk int, te int) int {
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        b := tbindAt(mut st, st.tenv, nodeAt(mut st, te).a)
+        if b >= 0 {
+            return hget(mut st, b + 2)
+        }
+        return lookupType(mut st, pk, nodeAt(mut st, te).a)
+    }
+    if k == ast.TGeneric {
+        dr := lookupType(mut st, pk, nodeAt(mut st, te).a)
+        if dr < 0 {
+            return -1
+        }
+        env, err := genericEnv(mut st, pk, dr, nodeAt(mut st, te).b, 0)
+        if err != nil {
+            return -1
+        }
+        return declRef(mut st, hget(mut st, dr), hget(mut st, dr + 1), env)
+    }
+    if k == ast.TOpt {
+        return declOfTypeExpr(mut st, pk, nodeAt(mut st, te).a)
+    }
+    return -1
+}
+
+// elemDeclOfTypeExpr は slice 型注釈の要素型の宣言
+func elemDeclOfTypeExpr(st mut S, pk int, te int) int {
+    if kindOf(mut st, te) == ast.TSlice {
+        return declOfTypeExpr(mut st, pk, nodeAt(mut st, te).a)
+    }
+    return -1
+}
+
+// structFields は型宣言の参照が struct ならフィールドの列（でなければ -1）
+func structFields(st mut S, dr int) int {
+    if dr < 0 || hget(mut st, dr) == ERRS {
+        return -1
+    }
+    body := nodeAt(mut st, hget(mut st, dr)).c
+    if kindOf(mut st, body) != ast.BStruct {
+        return -1
+    }
+    return nodeAt(mut st, body).a
+}
+
+// fieldIndex はフィールドの列 fs の名前 name の位置（無ければ -1）
+func fieldIndex(st mut S, fs int, name int) int {
+    for i <- iter.Range(0, llen(mut st, fs)) {
+        if strEq(mut st, nodeAt(mut st, lat(mut st, fs, i)).a, name) {
+            return i
+        }
+    }
+    return -1
+}
+
+// tvarEnv は型パラメータ名の列 → tvar(base + i) の束縛の列
+func tvarEnv(st mut S, names int, base int) int {
+    n := llen(mut st, names)
+    env := listN(mut st, n * 3)
+    for i <- iter.Range(0, n) {
+        hv559 := lat(mut st, names, i)
+        hset(mut st, env + 1 + i * 3, hv559)
+        hv560 := tVar(mut st, base + i)
+        hset(mut st, env + 2 + i * 3, hv560)
+        hset(mut st, env + 3 + i * 3, -1)
+    }
+    hset(mut st, env, n)
+    return env
+}

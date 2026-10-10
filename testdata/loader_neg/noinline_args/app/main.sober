@@ -1,0 +1,13 @@
+package main
+
+// @noinline は引数を取らない
+@noinline(1)
+func push(xs mut []int, x int) {
+    xs = append(xs, x)
+}
+
+func main() {
+    mut xs := mut []int{}
+    push(mut xs, 1)
+    println(len(xs))
+}

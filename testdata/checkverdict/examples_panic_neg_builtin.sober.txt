@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_builtin.sober:4:6: Unreachable, InvariantBroken and RegionExceeded are built-in panic labels
+exit=1

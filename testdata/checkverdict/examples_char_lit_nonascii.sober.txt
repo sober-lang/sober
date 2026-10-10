@@ -1,0 +1,2 @@
+sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
+exit=1

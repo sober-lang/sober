@@ -1,0 +1,64 @@
+package main
+
+// analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_decl.err）: `@errors` の宣言と導出の照合（error 網羅 analyzer A4 — 裁定 M-a）。
+// 公開関数は宣言が必須・漏れ（導出 ⊄ 宣言）は拒否・公開関数の余分な宣言（宣言 ⊋ 導出）は拒否。内部関数の宣言は上界の検査だけ。
+// package をまたぐ呼び出しは呼び先の宣言を読む（io.ReadFile の宣言 = NotFound / Denied / Other）
+
+import "std/io"
+
+type A error {
+    n int
+}
+
+type B error
+
+func inner(n int) (int, error?) {
+    if n < 0 {
+        return 0, A{n: n}
+    }
+    return n, nil
+}
+
+// 公開・宣言なし
+func Missing(n int) (int, error?) {
+    return inner(n)
+}
+
+// 公開・漏れ（B を返しうる）
+@errors(A)
+func Leaky(n int) (int, error?) {
+    if n == 0 {
+        return 0, B{}
+    }
+    return inner(n)
+}
+
+// 公開・余分（B は返らない）
+@errors(A, B)
+func Stale(n int) (int, error?) {
+    return inner(n)
+}
+
+// 公開・ちょうど（package をまたぐ呼び出しは宣言を読む）
+@errors(io.NotFound, io.Denied, io.Other, A)
+func Exact(p string, n int) ([]int, error?) {
+    m := inner(n)?
+    b := io.ReadFile(p)?
+    return b, nil
+}
+
+// 内部・上界として広い宣言は許す
+@errors(A, B)
+func loose(n int) (int, error?) {
+    return inner(n)
+}
+
+// 内部・漏れは拒否
+@errors(B)
+func tight(n int) (int, error?) {
+    return inner(n)
+}
+
+func main() {
+    println(1)
+}

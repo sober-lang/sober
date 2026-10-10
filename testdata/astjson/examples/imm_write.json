@@ -1,0 +1,118 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "seen"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "maplit",
+                "key": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "value": {
+                  "k": "name",
+                  "name": "bool"
+                },
+                "entries": [],
+                "mut": false,
+                "tok": 11
+              }
+            ],
+            "tok": 8
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "seen",
+                  "tok": 19
+                },
+                "idx": {
+                  "k": "strlit",
+                  "value": "a",
+                  "tok": 21
+                },
+                "tok": 20
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "true",
+                "tok": 24
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 26
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 28
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "keys",
+                        "tok": 30
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "seen",
+                          "tok": 32
+                        }
+                      ],
+                      "tok": 31
+                    }
+                  ],
+                  "tok": 29
+                }
+              ],
+              "tok": 27
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 39
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

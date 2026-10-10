@@ -1,0 +1,40 @@
+package main
+
+// mut map の string キーへの代入（selfhost-drafts F-26）: キーの文字列リテラル・仮引数のキー・仮引数の値を、
+// mut 束縛のセル型（束縛点の点座標）で ann する。修正前は Def の中で def error（リテラルのキーを r0 へ締めていた）
+
+func build(k string, v string) map[string]string {
+    mut m := mut map[string]string{}
+    m["a"] = "x"
+    m[k] = "y"
+    m["b"] = v
+    if len(bytes(k)) > 1 {
+        m[k] = v
+    }
+    return freeze(m)
+}
+
+func counts(k string) map[string]int {
+    mut m := mut map[string]int{}
+    m["one"] = 1
+    m[k] = 2
+    return freeze(m)
+}
+
+func main() {
+    m := build("kk", "vv")
+    println(len(m))
+    a := m["a"]
+    if a != nil {
+        println(a)
+    }
+    kk := m["kk"]
+    if kk != nil {
+        println(kk)
+    }
+    c := counts("two")
+    n := c["two"]
+    if n != nil {
+        println(n)
+    }
+}

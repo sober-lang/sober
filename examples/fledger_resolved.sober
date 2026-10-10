@@ -1,0 +1,43 @@
+package main
+
+// F 台帳の古参のうち、今の木で再現しなくなった形の回帰例（掃除枠 E 2026-10-04 の掛け直し）:
+// F-a（error? 仮引数を struct の欄に入れて返す）・F-b（error ラベルの string 欄の束縛を return）・F-c（bytes(if …)）・
+// F-i（Def の中で呼び出し結果の []byte を string(…) にして string 仮引数と比べる）
+
+type Bad error {
+    msg string
+}
+
+type R struct {
+    v int
+    e error?
+}
+
+func mk(e error?) R {
+    return R{v: 1, e: e}
+}
+
+func why(e error?) string {
+    switch e {
+    case Bad{msg}: return msg
+    case nil: return "-"
+    }
+}
+
+func raw() []byte {
+    return bytes("ab")
+}
+
+func same(s string) bool {
+    t, err := string(raw())
+    return err == nil && t == s
+}
+
+func main() {
+    r := mk(Bad{msg: "m"})
+    println(r.v, r.e != nil)
+    println(why(Bad{msg: "x"}), why(nil))
+    c := true
+    println(len(bytes(if c { "ab" } else { "c" })))
+    println(same("ab"), same("x"))
+}

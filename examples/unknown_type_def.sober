@@ -1,0 +1,12 @@
+package main
+
+// 負例（診断の位置）: Def の結果の型名が引けなければ、型式の位置で UnknownName（check）/ Undefined（build）
+
+func g() (int, Foo) {
+    return 1, 2
+}
+
+func main() int {
+    a, b := g()
+    return a
+}

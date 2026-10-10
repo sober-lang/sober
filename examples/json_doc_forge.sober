@@ -1,0 +1,11 @@
+package main
+
+// 負例（check が拒否）: json.Doc は Parse だけが作る証人 — 外から composite で偽造できない（非公開の型の封の欄 seal が書けない。
+// 欄を全部書いても seal が欠けた部分リテラルになる — language.md 16 節）
+
+import "std/json"
+
+func main() {
+    d := json.Doc{src: bytes("1"), esc: []byte{}, kind: []int{3}, a: []int{0}, b: []int{1}, pos: []int{0}, kids: []int{}}
+    println(json.Pos(d, 0))
+}

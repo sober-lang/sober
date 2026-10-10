@@ -1,0 +1,31 @@
+package main
+
+// @noinline: 非再帰の mut 引数関数を呼び出し点に展開せず Def として呼ぶ。
+// 観測不能 — 付けても外しても出力は同じ（IR の大きさと check の座標条件だけが変わる）
+
+type Acc struct {
+    xs mut []int
+    n int
+}
+
+@noinline
+func push(a mut Acc, x int) {
+    a.xs = append(a.xs, x)
+    a.n = a.n + x
+}
+
+@noinline
+func bump(n mut int, by int) int {
+    n += by
+    return n
+}
+
+func main() {
+    mut a := Acc{}
+    push(mut a, 3)
+    push(mut a, 4)
+    push(mut a, 5)
+    mut k := 10
+    r := bump(mut k, 7)
+    println(len(a.xs), a.n, r, k)
+}

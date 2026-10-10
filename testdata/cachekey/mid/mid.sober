@@ -1,0 +1,8 @@
+package mid
+
+import "testdata/cachekey/leaf"
+
+// Twice は leaf.Inc を 2 度
+func Twice(x int) int {
+    return leaf.Inc(leaf.Inc(x))
+}

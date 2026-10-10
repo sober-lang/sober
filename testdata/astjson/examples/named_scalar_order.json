@@ -1,0 +1,123 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "NodeRef",
+      "type_params": [],
+      "body": {
+        "k": "defined",
+        "type": {
+          "k": "name",
+          "name": "int"
+        }
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "NodeRef",
+                  "tok": 14
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 16
+                  }
+                ],
+                "tok": 15
+              }
+            ],
+            "tok": 12
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "NodeRef",
+                  "tok": 21
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 23
+                  }
+                ],
+                "tok": 22
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 26
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "a",
+                    "tok": 28
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 30
+                  },
+                  "tok": 29
+                }
+              ],
+              "tok": 27
+            }
+          }
+        ]
+      },
+      "tok": 8,
+      "bodiless": false,
+      "span": {
+        "start": 7,
+        "end": 35
+      },
+      "sig_end": 11
+    }
+  ],
+  "consts": []
+}

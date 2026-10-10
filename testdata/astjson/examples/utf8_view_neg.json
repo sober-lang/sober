@@ -1,0 +1,114 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/utf8",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "utf8.View",
+                "elems": [
+                  {
+                    "key": "b",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "byte"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 255,
+                          "tok": 23
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 19
+                    }
+                  }
+                ],
+                "tok": 13,
+                "type_args": []
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 27
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 29
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "utf8",
+                          "tok": 31
+                        },
+                        "field": "Bytes",
+                        "tok": 33
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 35
+                        }
+                      ],
+                      "tok": 34
+                    }
+                  ],
+                  "tok": 30
+                }
+              ],
+              "tok": 28
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 42
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

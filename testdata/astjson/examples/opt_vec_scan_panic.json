@@ -1,0 +1,353 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "scanSemi",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "i0",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "ident",
+                "name": "i0",
+                "tok": 22
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "!=",
+              "lhs": {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 25
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "i",
+                  "tok": 27
+                },
+                "tok": 26
+              },
+              "rhs": {
+                "k": "int",
+                "value": 59,
+                "char": true,
+                "tok": 30
+              },
+              "tok": 29
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 32
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 34
+                    }
+                  ],
+                  "tok": 32
+                }
+              ]
+            },
+            "tok": 24
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "i",
+                "tok": 39
+              }
+            ],
+            "tok": 38
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 43
+      },
+      "sig_end": 18
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "byte"
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 53
+              }
+            ],
+            "tok": 49
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "k"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 62
+                      },
+                      "field": "Range",
+                      "tok": 64
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 66
+                      },
+                      {
+                        "k": "int",
+                        "value": 37,
+                        "tok": 68
+                      }
+                    ],
+                    "tok": 65
+                  },
+                  "guards": [],
+                  "tok": 60
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "b",
+                        "tok": 71
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "append",
+                          "tok": 73
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "b",
+                            "tok": 75
+                          },
+                          {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "byte",
+                              "tok": 77
+                            },
+                            "args": [
+                              {
+                                "k": "binary",
+                                "op": "+",
+                                "lhs": {
+                                  "k": "int",
+                                  "value": 97,
+                                  "char": true,
+                                  "tok": 79
+                                },
+                                "rhs": {
+                                  "k": "binary",
+                                  "op": "%",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "k",
+                                    "tok": 81
+                                  },
+                                  "rhs": {
+                                    "k": "int",
+                                    "value": 26,
+                                    "tok": 83
+                                  },
+                                  "tok": 82
+                                },
+                                "tok": 80
+                              }
+                            ],
+                            "tok": 78
+                          }
+                        ],
+                        "tok": 74
+                      }
+                    ],
+                    "tok": 71
+                  }
+                ]
+              },
+              "tok": 59
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 89
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "scanSemi",
+                    "tok": 91
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "freeze",
+                        "tok": 93
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 95
+                        }
+                      ],
+                      "tok": 94
+                    },
+                    {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 98
+                    }
+                  ],
+                  "tok": 92
+                }
+              ],
+              "tok": 90
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 103
+              }
+            ],
+            "tok": 102
+          }
+        ]
+      },
+      "tok": 44,
+      "bodiless": false,
+      "span": {
+        "start": 43,
+        "end": 107
+      },
+      "sig_end": 48
+    }
+  ],
+  "consts": []
+}

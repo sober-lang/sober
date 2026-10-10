@@ -1,0 +1,24 @@
+package main
+
+import "std/json"
+import "testdata/jsonpkg/model"
+
+func main() {
+    d, err := json.Parse(bytes("{\"id\": 7, \"name\": \"ann\", \"home\": {\"lat\": 35, \"lon\": 139}, \"visits\": [{\"lat\": 1, \"lon\": 2}], \"boss\": {\"id\": 1}}"))
+    if err != nil {
+        return
+    }
+    u, derr := json.Decode[model.User](d, json.Root(d))
+    if derr != nil {
+        println("decode error")
+        return
+    }
+    println(u.id, u.name, u.home.lat, u.home.lon, len(u.visits))
+    showBoss(u.boss)
+}
+
+func showBoss(b model.Ref?) {
+    if b != nil {
+        println("boss", b.id)
+    }
+}

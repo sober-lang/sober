@@ -1,0 +1,2 @@
+# Sober は文法が Go の EBNF 差分なので、Linguist 登録まで Go としてハイライトする
+*.sober linguist-language=Go

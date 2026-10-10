@@ -1,0 +1,39 @@
+# elfeq の追加の列（観測の期待値 .out を持たない entry — 1 行 1 entry [フラグ…]。obs の列は scripts/elfeq.sh が自動で入れる）。
+# B-2（2026-10-02）: 凍結コーパス（scripts/frozen/entries.list）と testdata の entry のうち、今の stage2 が受理するもので obs の列に無いもの。
+# 受理しないもの（frozen_src の byte 段より前の言語・負例・ライブラリの部分 package）は入れない
+examples/union.sober
+testdata/analyzer_neg/errors_cause.sober
+testdata/analyzer_neg/errors_decl.sober
+testdata/analyzer_neg/errors_switch.sober
+testdata/analyzer_neg/switch_nil_nonexh.sober
+testdata/checkneg/ret_mut.sober
+testdata/checkneg/ret_ty.sober
+testdata/constpkg/app
+testdata/errpkg/app
+testdata/errtrace/field.sober
+testdata/errtrace/param.sober
+testdata/errtrace/slice.sober
+testdata/frozen_src/examples/io_readdir.sober
+testdata/pkgdemo/app
+testdata/pool/exits.sober
+testdata/pool/nested.sober
+testdata/sobertest/app
+# compiler/tools のうち stage1 の build x.ir が数秒で済むもの（stage1 の ir_live は「ブロック数 × 値の数」のビット集合で、巨大な関数を持つ
+# desugardump / sobercheck / lowerdump / lldump / app は 100〜600 s・7〜29 GB — 列に入れない。B-2 で一度だけバイト一致を確認した）
+src/compiler/tools/lexdump/main.sober
+src/compiler/tools/x86encdump/main.sober
+src/compiler/tools/parsedump/main.sober
+src/compiler/tools/fmtdump/main.sober
+src/compiler/tools/loaderdump/main.sober
+src/compiler/tools/checkdump/main.sober
+# テストのビルド（_test.sober + 合成の main — loader.LoadTestFs）: compiler/ の単体テストの package と std の black-box テスト
+src/compiler/diag --test
+src/compiler/elf --test
+src/compiler/lexer --test
+src/compiler/loader --test
+src/compiler/obuf --test
+src/compiler/parser --test
+src/compiler/printer --test
+src/compiler/x86 --test
+testdata/stdtest/stdstrings --test
+testdata/stdtest/stdutf8 --test

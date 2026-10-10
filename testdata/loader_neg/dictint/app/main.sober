@@ -1,0 +1,13 @@
+package main
+
+// loader の負例: 辞書 const を int の const 式で使う
+type D struct {
+    n int
+}
+
+const A = D{n: 1}
+const B = A + 1
+
+func main() {
+    println(B)
+}

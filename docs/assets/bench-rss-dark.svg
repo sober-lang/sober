@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="480" viewBox="0 0 760 480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<text x="150.0" y="22.0" fill="#f0f6fc" font-size="15" text-anchor="start" font-weight="600">Relative peak memory — Rust = 1.0 (lower is smaller)</text>
+<rect x="150" y="34" width="12" height="12" rx="2" fill="#4493f8"/>
+<text x="167.0" y="44.0" fill="#9198a1" font-size="12" text-anchor="start" >Sober</text>
+<rect x="219" y="34" width="12" height="12" rx="2" fill="#768390"/>
+<text x="236.0" y="44.0" fill="#9198a1" font-size="12" text-anchor="start" >Go</text>
+<line x1="150.0" y1="54" x2="150.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="150.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >0.0</text>
+<line x1="240.0" y1="54" x2="240.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="240.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >0.5</text>
+<line x1="330.0" y1="54" x2="330.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="330.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.0</text>
+<line x1="420.0" y1="54" x2="420.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="420.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.5</text>
+<line x1="510.0" y1="54" x2="510.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="510.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >2.0</text>
+<line x1="600.0" y1="54" x2="600.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="600.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >2.5</text>
+<line x1="690.0" y1="54" x2="690.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="690.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >3.0</text>
+<text x="420.0" y="476.0" fill="#9198a1" font-size="11" text-anchor="middle" >max RSS relative to the straightforward Rust twin (labels: absolute MB)</text>
+<line x1="330.0" y1="52" x2="330.0" y2="446" stroke="#f0f6fc" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="334.0" y="50.0" fill="#f0f6fc" font-size="11" text-anchor="start" >Rust = 1.0</text>
+<text x="140.0" y="81.0" fill="#f0f6fc" font-size="12" text-anchor="end" >1BRC</text>
+<rect x="150" y="64" width="177.8" height="11" rx="2" fill="#4493f8"/>
+<text x="332.8" y="73.5" fill="#9198a1" font-size="11" text-anchor="start" >134 MB (0.99×)</text>
+<rect x="150" y="78" width="319.3" height="11" rx="2" fill="#768390"/>
+<text x="474.3" y="87.5" fill="#9198a1" font-size="11" text-anchor="start" >240 MB (1.77×)</text>
+<text x="140.0" y="123.0" fill="#f0f6fc" font-size="12" text-anchor="end" >binary-trees</text>
+<rect x="150" y="106" width="84.4" height="11" rx="2" fill="#4493f8"/>
+<text x="239.4" y="115.5" fill="#9198a1" font-size="11" text-anchor="start" >16 MB (0.47×)</text>
+<rect x="150" y="120" width="255.1" height="11" rx="2" fill="#768390"/>
+<text x="410.1" y="129.5" fill="#9198a1" font-size="11" text-anchor="start" >48 MB (1.42×)</text>
+<text x="140.0" y="165.0" fill="#f0f6fc" font-size="12" text-anchor="end" >fannkuch-redux</text>
+<rect x="150" y="148" width="33.3" height="11" rx="2" fill="#4493f8"/>
+<text x="188.3" y="157.5" fill="#9198a1" font-size="11" text-anchor="start" >0.42 MB (0.18×)</text>
+<rect x="150" y="162" width="297.5" height="11" rx="2" fill="#768390"/>
+<text x="452.5" y="171.5" fill="#9198a1" font-size="11" text-anchor="start" >3.7 MB (1.65×)</text>
+<text x="140.0" y="207.0" fill="#f0f6fc" font-size="12" text-anchor="end" >fasta</text>
+<rect x="150" y="190" width="32.6" height="11" rx="2" fill="#4493f8"/>
+<text x="187.6" y="199.5" fill="#9198a1" font-size="11" text-anchor="start" >0.41 MB (0.18×)</text>
+<rect x="150" y="204" width="438.3" height="11" rx="2" fill="#768390"/>
+<text x="593.3" y="213.5" fill="#9198a1" font-size="11" text-anchor="start" >5.6 MB (2.44×)</text>
+<text x="140.0" y="249.0" fill="#f0f6fc" font-size="12" text-anchor="end" >k-nucleotide</text>
+<rect x="150" y="232" width="298.7" height="11" rx="2" fill="#4493f8"/>
+<text x="453.7" y="241.5" fill="#9198a1" font-size="11" text-anchor="start" >86 MB (1.66×)</text>
+<rect x="150" y="246" width="345.9" height="11" rx="2" fill="#768390"/>
+<text x="500.9" y="255.5" fill="#9198a1" font-size="11" text-anchor="start" >100 MB (1.92×)</text>
+<text x="140.0" y="291.0" fill="#f0f6fc" font-size="12" text-anchor="end" >mandelbrot</text>
+<rect x="150" y="274" width="160.5" height="11" rx="2" fill="#4493f8"/>
+<text x="315.5" y="283.5" fill="#9198a1" font-size="11" text-anchor="start" >2.0 MB (0.89×)</text>
+<rect x="150" y="288" width="462.3" height="11" rx="2" fill="#768390"/>
+<text x="617.3" y="297.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.57×)</text>
+<text x="140.0" y="333.0" fill="#f0f6fc" font-size="12" text-anchor="end" >n-body</text>
+<rect x="150" y="316" width="32.7" height="11" rx="2" fill="#4493f8"/>
+<text x="187.7" y="325.5" fill="#9198a1" font-size="11" text-anchor="start" >0.42 MB (0.18×)</text>
+<rect x="150" y="330" width="448.9" height="11" rx="2" fill="#768390"/>
+<text x="603.9" y="339.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.49×)</text>
+<text x="140.0" y="375.0" fill="#f0f6fc" font-size="12" text-anchor="end" >reverse-complement</text>
+<rect x="150" y="358" width="330.1" height="11" rx="2" fill="#4493f8"/>
+<text x="485.1" y="367.5" fill="#9198a1" font-size="11" text-anchor="start" >49 MB (1.83×)</text>
+<rect x="150" y="372" width="203.0" height="11" rx="2" fill="#768390"/>
+<text x="358.0" y="381.5" fill="#9198a1" font-size="11" text-anchor="start" >30 MB (1.13×)</text>
+<text x="140.0" y="417.0" fill="#f0f6fc" font-size="12" text-anchor="end" >spectral-norm</text>
+<rect x="150" y="400" width="32.0" height="11" rx="2" fill="#4493f8"/>
+<text x="187.0" y="409.5" fill="#9198a1" font-size="11" text-anchor="start" >0.42 MB (0.18×)</text>
+<rect x="150" y="414" width="440.3" height="11" rx="2" fill="#768390"/>
+<text x="595.3" y="423.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.45×)</text>
+</svg>

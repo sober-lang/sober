@@ -1,0 +1,303 @@
+package lower
+
+// IR の検証器（src/ir_verify.zig の写し — 正規バックエンドの Sober 化 B-3）: 構造（定義の一意・終端・入口・前任数・辺の引数の数）と、命令ごとの
+// オペランドの型・参照の範囲、定義が使用を支配すること（同じブロックなら先に、他のブロックなら支配するブロックで定義）を検査する。
+// 辺の引数の使用点は前任ブロックの末尾。到達しないブロックの中は型と範囲だけを見る（支配は定義されない）。
+// 値の型は記録から導く（valueTypes — Sober の IR は値の型の表を持たない）ので、結果の型の検査は Zig 版より弱い（オペランドの型・数・範囲・支配は同じ）。
+// 正規バックエンドの経路（lower.Elf*）で lower の出力・設計整合パス・mem2reg・rtlower の後に掛ける。違反は内部エラー（標準エラーに 1 行 + panic）
+
+import "obuf"
+import "std/io"
+import "std/iter"
+
+// vfyModule はモジュールの全関数を検査する（after = どの段の後か — 診断の文言）
+func vfyModule(st mut St, after string) {
+    nf := xCountFuncs(mut st)
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            msg := vfyFunc(mut st, f, nf)
+            if msg != "" {
+                mut out := mut []byte{}
+                obuf.Lit(mut out, "sober: internal error: invalid IR after ${after}: func ")
+                printName(mut st, mut out, irFnName(mut st, f))
+                obuf.Lit(mut out, ": ${msg}\n")
+                _ = io.WriteStderr(freeze(out))
+                panic()
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func xCountFuncs(st mut St) int {
+    mut n := 0
+    mut f := st.fhead
+    while f != -1 {
+        n += 1
+        f = irFnNext(mut st, f)
+    }
+    return n
+}
+
+// 検査の状態（関数ごと）
+type vfyS struct {
+    vt int              // 値の型の列（valueTypes）
+    nv int
+    defB mut []int      // 値 → 定義ブロック（-1 = 未定義）
+    defI mut []int      // 値 → ブロック内の位置（引数は -1）
+    curB int
+    curI int
+}
+
+func vfyFunc(st mut St, f FnRef, nf int) string {
+    nb := irFnNBlk(mut st, f)
+    if nb == 0 {
+        return "no blocks"
+    }
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    entry := BlkRef(w.blk[0])
+    if irBlkPreds(mut st, entry) != 0 || irBlkPHead(mut st, entry) >= 0 {
+        return "the entry block has predecessors or parameters"
+    }
+    mut v := vfyS{vt: valueTypes(mut st, f), nv: nv, defB: mut []int{}, defI: mut []int{}, curB: 0, curI: 0}
+    xFill(mut v.defB, nv, -1)
+    xFill(mut v.defI, nv, 0)
+    np := hget(mut st, irFnPtys(mut st, f))
+    for p <- iter.Range(0, np) {
+        if !vfyDef(mut v, p, 0, -1) {
+            return "%${p} is defined twice or out of range"
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        if irBlkTerm(mut st, b) == TmNone {
+            return "b${bi} is not terminated"
+        }
+        mut p := irBlkPHead(mut st, b)
+        while p >= 0 {
+            if !vfyDef(mut v, hget(mut st, p + 1), bi, -1) {
+                return "b${bi}: %${hget(mut st, p + 1)} is defined twice or out of range"
+            }
+            p = hget(mut st, p)
+        }
+        mut ins := irBlkIHead(mut st, b)
+        mut k := 0
+        while ins != -1 {
+            r := irInsRes(mut st, ins)
+            if r >= 0 && !vfyDef(mut v, r, bi, k) {
+                return "b${bi}: %${r} is defined twice or out of range"
+            }
+            k += 1
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    for x <- iter.Range(0, nv) {
+        if v.defB[x] < 0 {
+            return "%${x} is never defined"
+        }
+    }
+    // 前任数（組み立てが数えたもの）が辺と合うこと
+    for bi <- iter.Range(0, nb) {
+        if irBlkPreds(mut st, BlkRef(w.blk[bi])) != w.pcnt[bi + 1] - w.pcnt[bi] {
+            return "b${bi} records ${irBlkPreds(mut st, BlkRef(w.blk[bi]))} predecessors but has ${w.pcnt[bi + 1] - w.pcnt[bi]} incoming edges"
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        v.curB = bi
+        mut ins := irBlkIHead(mut st, b)
+        mut k := 0
+        while ins != -1 {
+            v.curI = k
+            m := vfyInst(mut st, mut v, mut w, f, ins, nf)
+            if m != "" {
+                return "b${bi}: ${m}"
+            }
+            k += 1
+            ins = irInsNext(mut st, ins)
+        }
+        v.curI = 1 << 40
+        m := vfyTerm(mut st, mut v, mut w, f, b)
+        if m != "" {
+            return "b${bi}: ${m}"
+        }
+    }
+    return ""
+}
+
+func vfyDef(v mut vfyS, x int, b int, k int) bool {
+    if x < 0 || x >= v.nv || v.defB[x] >= 0 {
+        return false
+    }
+    v.defB[x] = b
+    v.defI[x] = k
+    return true
+}
+
+func vfyDominates(w mut m2rW, a int, b int) bool {
+    mut x := b
+    mut done := false
+    mut res := false
+    while !done {
+        if x == a {
+            res = true
+            done = true
+        } else {
+            up := w.idom[x]
+            if up == x {
+                done = true
+            } else {
+                x = up
+            }
+        }
+    }
+    return res
+}
+
+// vfyUse は x の使用（wantTy = 型、-1 なら問わない）: 範囲・型・到達するブロックなら支配
+func vfyUse(st mut St, v mut vfyS, w mut m2rW, x int, wantTy int, what string) string {
+    if x < 0 || x >= v.nv {
+        return "${what} uses undefined %${x}"
+    }
+    t := hget(mut st, v.vt + 1 + x)
+    if wantTy >= 0 && t != wantTy {
+        return "${what} wants ${if wantTy == TyPtr { "ptr" } else { "i64" }} but %${x} is ${if t == TyPtr { "ptr" } else { "i64" }}"
+    }
+    if w.rpoIx[v.curB] < 0 {
+        return ""
+    }
+    db := v.defB[x]
+    ok := if db == v.curB { v.defI[x] < v.curI } else { w.rpoIx[db] >= 0 && vfyDominates(mut w, db, v.curB) }
+    return if ok { "" } else { "${what} uses %${x} whose definition (b${db}) does not dominate the use" }
+}
+
+func vfyList(st mut St, v mut vfyS, w mut m2rW, l int, wantTy int, what string) string {
+    for k <- iter.Range(0, xLen(mut st, l)) {
+        m := vfyUse(mut st, mut v, mut w, xAt(mut st, l, k), wantTy, what)
+        if m != "" {
+            return m
+        }
+    }
+    return ""
+}
+
+func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) string {
+    op := irInsOp(mut st, ins)
+    a := irInsA(mut st, ins)
+    b := irInsB(mut st, ins)
+    c := irInsC(mut st, ins)
+    hasRes := irInsRes(mut st, ins) >= 0
+    if op == OpConst || op == OpSlotaddr || op == OpGlobal || op == OpFuncaddr || op == OpRDepth || op == OpRAlloc || op == OpRBump || op == OpBin || op == OpCmp ||
+        op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSyscall {
+        if !hasRes {
+            return "the result is missing"
+        }
+    } else if op == OpStore || op == OpStore8 || op == OpREnter || op == OpRSetDepth || op == OpRReloc {
+        if hasRes {
+            return "an unexpected result"
+        }
+    }
+    switch op {
+    case OpBin | OpCmp:
+        m := vfyUse(mut st, mut v, mut w, b, TyI64, "bin / cmp")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "bin / cmp") }
+    case OpLoad | OpLoad8:
+        return vfyUse(mut st, mut v, mut w, a, TyPtr, "load")
+    case OpStore:
+        m := vfyUse(mut st, mut v, mut w, a, TyPtr, "store")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, -1, "store") }
+    case OpStore8:
+        m := vfyUse(mut st, mut v, mut w, a, TyPtr, "store8")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "store8") }
+    case OpGepW | OpGepB:
+        m := vfyUse(mut st, mut v, mut w, a, TyPtr, "gep")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, b, TyI64, "gep") }
+    case OpPtoi:
+        return vfyUse(mut st, mut v, mut w, a, TyPtr, "ptoi")
+    case OpItop | OpRSetDepth | OpRBump:
+        return vfyUse(mut st, mut v, mut w, a, TyI64, "itop / region")
+    case OpSlotaddr:
+        return if a < 0 || a >= irFnNSlot(mut st, f) { "undefined slot s${a}" } else { "" }
+    case OpCall:
+        n := xLen(mut st, b)
+        ptys := irFnPtys(mut st, FnRef(a))
+        if n != hget(mut st, ptys) {
+            return "call with ${n} arguments for ${hget(mut st, ptys)}"
+        }
+        for k <- iter.Range(0, n) {
+            m := vfyUse(mut st, mut v, mut w, xAt(mut st, b, k), hget(mut st, ptys + 1 + k), "call argument")
+            if m != "" {
+                return m
+            }
+        }
+        return if hasRes != (irFnRet(mut st, FnRef(a)) >= 0) { "call result presence is wrong" } else { "" }
+    case OpCallI:
+        m := vfyUse(mut st, mut v, mut w, a, TyI64, "call.indirect callee")
+        if m != "" {
+            return m
+        }
+        m2 := vfyList(mut st, mut v, mut w, b, -1, "call.indirect argument")
+        return if m2 != "" { m2 } else if hasRes != (c >= 0) { "call.indirect result presence is wrong" } else { "" }
+    case OpSyscall:
+        n := xLen(mut st, a)
+        if n < 1 || n > 7 {
+            return "syscall with ${n} arguments"
+        }
+        return vfyList(mut st, mut v, mut w, a, TyI64, "syscall")
+    case OpRAlloc:
+        m := vfyUse(mut st, mut v, mut w, a, TyI64, "region.alloc")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, b, TyI64, "region.alloc") }
+    case OpRReloc:
+        m := vfyUse(mut st, mut v, mut w, a, TyPtr, "region.relocate")
+        return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "region.relocate") }
+    case OpConst | OpGlobal | OpFuncaddr | OpREnter | OpRDepth:
+        return ""
+    }
+    return "unknown op ${op}"
+}
+
+func vfyEdge(st mut St, v mut vfyS, w mut m2rW, to BlkRef, args int) string {
+    tid := irBlkId(mut st, to)
+    if tid == 0 {
+        return "branch to the entry block"
+    }
+    mut n := 0
+    mut p := irBlkPHead(mut st, to)
+    while p >= 0 {
+        if n < xLen(mut st, args) {
+            m := vfyUse(mut st, mut v, mut w, xAt(mut st, args, n), hget(mut st, p + 2), "edge argument")
+            if m != "" {
+                return m
+            }
+        }
+        n += 1
+        p = hget(mut st, p)
+    }
+    return if n != xLen(mut st, args) { "edge to b${tid} passes ${xLen(mut st, args)} arguments for ${n}" } else { "" }
+}
+
+func vfyTerm(st mut St, v mut vfyS, w mut m2rW, f FnRef, b BlkRef) string {
+    t := irBlkTerm(mut st, b)
+    switch t {
+    case TmBr:
+        return vfyEdge(mut st, mut v, mut w, irBrTo(mut st, b), irBlkX2(mut st, b))
+    case TmCondbr:
+        m := vfyUse(mut st, mut v, mut w, irBlkX1(mut st, b), TyI64, "condbr")
+        if m != "" {
+            return m
+        }
+        m2 := vfyEdge(mut st, mut v, mut w, irCondThen(mut st, b), irBlkX3(mut st, b))
+        return if m2 != "" { m2 } else { vfyEdge(mut st, mut v, mut w, irCondElse(mut st, b), irBlkX5(mut st, b)) }
+    case TmRet:
+        x := irBlkX1(mut st, b)
+        rt := irFnRet(mut st, f)
+        if (x < 0) != (rt < 0) {
+            return "ret value presence differs from the signature"
+        }
+        return if x >= 0 { vfyUse(mut st, mut v, mut w, x, rt, "ret") } else { "" }
+    }
+    return ""
+}

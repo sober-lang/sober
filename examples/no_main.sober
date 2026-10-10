@@ -1,0 +1,7 @@
+package main
+
+// main が無いプログラムは拒否（位置 = main package の package 節）
+
+func helper() int {
+    return 1
+}

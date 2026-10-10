@@ -1,0 +1,36 @@
+package main
+
+// F-34: 関数の中で「値に region を持つ map」を引く — getm の注釈（と computeTy の m[k] の型）を、セルが組まれた点の座標で読む
+// （Def の値仮引数 = 署名の座標・局所の束縛 = 束縛点・辞書 const = 参照点）。修正前は def error
+
+@embed("testdata/embed/*.txt")
+const Files = map[string]string{}
+
+func viaParam(m map[string]string, k string) string? {
+    return m[k]
+}
+
+func local(k string) string? {
+    m := map[string]string{"a": "x"}
+    return m[k]
+}
+
+func dict(k string) int {
+    v := Files[k]
+    return if v != nil { len(bytes(v)) } else { 0 - 1 }
+}
+
+func bound(k string) int {
+    fs := Files
+    v := fs[k]
+    return if v != nil { len(bytes(v)) } else { 0 - 1 }
+}
+
+func main() {
+    a := viaParam(map[string]string{"q": "w"}, "q")
+    if a != nil { println(a) }
+    b := local("a")
+    if b != nil { println(b) }
+    println(dict("testdata/embed/a.txt"))
+    println(bound("testdata/embed/B.txt"))
+}

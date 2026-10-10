@@ -1,0 +1,12 @@
+package main
+
+// アリーナの溢れは exit 102（language.md 27 節 — 健全性の防衛類）。call ごとに region を
+// 1 段開くので、再帰の実効上限は当面 1023 段
+func down(n int) int {
+    return if n == 0 { 0 } else { 1 + down(n - 1) }
+}
+
+func main() {
+    println(down(1000))
+    println(down(5000))
+}

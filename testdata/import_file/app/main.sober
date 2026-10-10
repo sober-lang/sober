@@ -1,0 +1,12 @@
+package main
+
+// 負例（language.md 20 節 — import はファイルごと）: helper.sober は std/iter を import していない。同じ package の main.sober の
+// import は見えない（Go と同じ）— loader が NotImported で拒否する
+
+import "std/iter"
+
+func main() {
+    for i <- iter.Range(0, 3) {
+        println(sum(i))
+    }
+}

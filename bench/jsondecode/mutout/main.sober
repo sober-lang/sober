@@ -1,0 +1,135 @@
+package main
+
+// イディオム双子 jsondecode の (a) 回避術の形: 呼び手が置き場 r を mut で渡し、手書きの読み（std/json の部品 — shape[T] の写しの関数と同じ手順）が
+// そこへ書く（mut 引数の関数は region 透過 — tags の slice も呼び手の region に直に作られ、戻りの写しが無い）。(b) = ../main.sober（json.Decode[Rec] — 作って返す）
+
+import "std/conv"
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/os"
+
+type Pos struct {
+    x int
+    y int
+}
+
+type Rec struct {
+    id int
+    name string
+    active bool
+    score float
+    pos Pos
+    tags []string
+    note string?
+}
+
+// decodeInto は節 n のレコードを out へ（shape[T] の写しの関数と同じ規則 — 欠けた欄は Missing・note だけ欠けと null を nil）
+func decodeInto(d json.Doc, n int, out mut Rec) error? {
+    o, e0 := json.Object(d, n)
+    if e0 != nil {
+        return e0
+    }
+    out.id = need(d, o, "id", 0)?
+    out.name = needStr(d, o, "name")?
+    ab, e1 := json.Need(d, o, "active")
+    if e1 != nil {
+        return e1
+    }
+    out.active = json.DecBool(d, ab)?
+    sc, e2 := json.Need(d, o, "score")
+    if e2 != nil {
+        return e2
+    }
+    out.score = json.DecFloat(d, sc)?
+    pn, e3 := json.Need(d, o, "pos")
+    if e3 != nil {
+        return e3
+    }
+    po, e4 := json.Object(d, pn)
+    if e4 != nil {
+        return e4
+    }
+    out.pos.x = need(d, po, "x", 0)?
+    out.pos.y = need(d, po, "y", 0)?
+    tn, e5 := json.Need(d, o, "tags")
+    if e5 != nil {
+        return e5
+    }
+    it, e6 := json.Items(d, tn)
+    if e6 != nil {
+        return e6
+    }
+    mut ts := mut []string{}
+    for i <- iter.Range(0, len(it)) {
+        s, e7 := json.DecString(d, it[i])
+        if e7 != nil {
+            return e7
+        }
+        ts = append(ts, s)
+    }
+    out.tags = freeze(ts)
+    out.note = nil
+    m := json.Get(d, o, "note")
+    if m != nil {
+        if !json.IsNull(d, m) {
+            s, e8 := json.DecString(d, m)
+            if e8 != nil {
+                return e8
+            }
+            out.note = s
+        }
+    }
+    return nil
+}
+
+func need(d json.Doc, o int, key string, z int) (int, error?) {
+    k := json.Need(d, o, key)?
+    return json.DecInt(d, k)
+}
+
+func needStr(d json.Doc, o int, key string) (string, error?) {
+    k := json.Need(d, o, key)?
+    return json.DecString(d, k)
+}
+
+func main() {
+    args, aerr := os.Args()
+    if aerr != nil || len(args) < 2 {
+        return
+    }
+    b, rerr := io.ReadFile(args[1])
+    if rerr != nil {
+        return
+    }
+    d, err := json.Parse(b)
+    if err != nil {
+        println("parse error")
+        return
+    }
+    xs := switch json.At(d, json.Root(d)) {
+    case json.Arr{items}: items
+    default: []int{}
+    }
+    mut ids := 0
+    mut active := 0
+    mut score := 0.0
+    mut xy := 0
+    mut tags := 0
+    mut notes := 0
+    mut r := Rec{}
+    for i <- iter.Range(0, len(xs)) {
+        derr := decodeInto(d, xs[i], mut r)
+        if derr != nil {
+            println("decode error at", i)
+            return
+        }
+        ids += r.id
+        active += if r.active { 1 } else { 0 }
+        score = score + r.score
+        xy += r.pos.x + r.pos.y
+        tags += len(r.tags)
+        notes += if r.note != nil { 1 } else { 0 }
+    }
+    println(len(xs), ids, active, conv.FormatFixed(score, 2), xy, tags, notes)
+}

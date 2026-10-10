@@ -1,0 +1,32 @@
+package main
+
+// R1（region 多相の裁定 ①s）の検証例: Builder[string]。
+// 交錯成長（Builder へ積む合間に別の string を作る）でも成長のコピーが出ない Builder に string を積む。
+// 深いブロックで作った string は strings.Clone で Builder と同じ region へ置き直す
+
+import "std/builder"
+import "std/strings"
+
+func main() {
+    mut b := builder.Builder[string]{}
+    mut a := strings.Arena{}
+    mut i := 0
+    while i < 12 {
+        w := {
+            s := "w" + strings.FormatInt(i)
+            strings.Clone(mut a, s + "!")
+        }
+        builder.Push(mut b, w)
+        i += 1
+    }
+    builder.Push(mut b, "end")
+    xs := builder.Build(mut b)
+    println("${len(xs)} ${xs[0]} ${xs[11]} ${xs[12]}")
+    mut total := 0
+    mut j := 0
+    while j < len(xs) {
+        total += len(bytes(xs[j]))
+        j += 1
+    }
+    println("${total}")
+}

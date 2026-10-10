@@ -1,0 +1,29 @@
+package main
+
+import "std/time"
+
+type Both struct {
+    x, y Blob
+}
+
+func fetchBoth(a, b Path) (Both, error) {
+    both := parallel scope(timeout: 200 * time.ms) {
+        ta := spawn read(a)
+        tb := spawn read(b)
+        defer shield {
+            log("done")
+        }
+        x := await(ta)?
+        y := await(tb)?
+        Both{x, y}
+    }
+    return both, nil
+}
+
+func main() {
+    f := open("x")
+    defer close(f)
+    scope {
+        println(fetchBoth(path("a"), path("b")))
+    }
+}

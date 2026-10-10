@@ -1,0 +1,8 @@
+package main
+
+// 負例: 幅の語（u16le 等）は @layout の struct の欄の型の位置の外では型名にならない（language.md 36 節 — loader の拒否 diag.Layout）
+
+func main() {
+    xs := []u16le{}
+    println(len(xs))
+}

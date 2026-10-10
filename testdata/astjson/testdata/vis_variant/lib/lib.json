@@ -1,0 +1,154 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "Shape",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Sq",
+            "fields": [
+              {
+                "name": "s",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 9
+              }
+            ],
+            "tok": 7
+          },
+          {
+            "name": "circ",
+            "fields": [
+              {
+                "name": "r",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 15
+              }
+            ],
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Mk",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Shape"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 31
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 33
+                  },
+                  "tok": 32
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "composite",
+                        "type_name": "Sq",
+                        "elems": [
+                          {
+                            "key": "s",
+                            "value": {
+                              "k": "ident",
+                              "name": "n",
+                              "tok": 39
+                            }
+                          }
+                        ],
+                        "tok": 35,
+                        "type_args": []
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "composite",
+                        "type_name": "circ",
+                        "elems": [
+                          {
+                            "key": "r",
+                            "value": {
+                              "k": "int",
+                              "value": 0,
+                              "tok": 48
+                            }
+                          }
+                        ],
+                        "tok": 44,
+                        "type_args": []
+                      }
+                    }
+                  ]
+                },
+                "tok": 30
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 54
+      },
+      "sig_end": 28
+    }
+  ],
+  "consts": []
+}

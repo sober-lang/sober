@@ -1,0 +1,45 @@
+package main
+
+// 多値呼び出しを subject に置く switch（随時回収 R4）。呼び出しは 1 回だけ評価し、
+// 各成分を位置ごとのパターンに照合する（分解 bind `q, r := divmod(a, b)` と同じ形）
+func divmod(a, b int) (int, int) {
+    println(a)
+    return a / b, a % b
+}
+
+func sign2(a, b int) (bool, bool) {
+    return a < 0, b < 0
+}
+
+func classify(a, b int) int {
+    return switch divmod(a, b) {
+    case 0, _: 0
+    case 1 | 2, 0: 10
+    case q, 0: q
+    case _, r: 100 + r
+    }
+}
+
+func quadrant(x, y int) int {
+    return switch sign2(x, y) {
+    case false, false: 1
+    case true, false: 2
+    case true, true: 3
+    default: 4
+    }
+}
+
+func main() {
+    // subject の呼び出しは 1 回だけ（divmod の trace が case ごとに増えない）
+    a := classify(1, 5)
+    b := classify(4, 2)
+    c := classify(9, 3)
+    d := classify(7, 3)
+    println(a, b, c, d)
+    println(quadrant(1, 1), quadrant(-1, 1), quadrant(-1, -1), quadrant(1, -1))
+    // pipe の subject も同じ（6 |> divmod(4) = divmod(6, 4)）
+    println(switch 6 |> divmod(4) {
+    case 1, r: r
+    default: 0 - 1
+    })
+}

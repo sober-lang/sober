@@ -1,0 +1,3 @@
+{"name":"tri \"A\"","closed":true,"scale":1.5,"points":[{"x":0,"y":0},{"x":3,"y":-4}],"tags":["a","b\nc"],"note":null,"origin":{"x":7,"y":9}}
+{"name":"tri \"A\"","closed":true,"scale":1.5,"pts":[{"lon":0,"lat":0},{"lon":3,"lat":-4}],"tags":["a","b\nc"],"note":null,"origin":{"lon":7,"lat":9}}
+true

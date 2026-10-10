@@ -1,0 +1,2 @@
+sober: desugar error at examples/inline_unknown_fnparam.sober:6:24 (UnknownName)
+exit=1

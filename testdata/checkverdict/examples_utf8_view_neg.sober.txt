@@ -1,0 +1,2 @@
+sober: desugar error at examples/utf8_view_neg.sober:8:10 (Malformed)
+exit=1

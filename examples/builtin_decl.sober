@@ -1,0 +1,11 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 16）: 組み込みの名前をトップレベルの宣言の名前にできない
+
+func keys(x int) int {
+    return x
+}
+
+func main() {
+    println(keys(3))
+}

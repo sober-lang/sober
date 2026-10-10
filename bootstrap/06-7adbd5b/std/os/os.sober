@@ -1,0 +1,25 @@
+package os
+
+import "std/utf8"
+
+// プロセスの属性（language.md 28 節の追記 — R31）。ファイルシステムの操作は std/io
+
+// Args はプログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。呼ぶたびに呼び手の region へ写す。
+// string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば全体が utf8.InvalidUtf8（入力次第で起きる = error — 27 節）
+@errors(utf8.InvalidUtf8)
+func Args() ([]string, error?) {
+    // 「各引数のバイト + 0」の連結（C 文字列は 0 を含まないので区切りは曖昧にならない）
+    b := sysArgs()
+    mut out := mut []string{}
+    mut start := 0
+    mut i := 0
+    while i < len(b) {
+        if b[i] == 0 {
+            s := string(b[start:i])?
+            out = append(out, s)
+            start = i + 1
+        }
+        i += 1
+    }
+    return freeze(out), nil
+}

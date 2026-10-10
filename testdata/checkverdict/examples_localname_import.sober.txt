@@ -1,0 +1,2 @@
+sober: load error at examples/localname_import.sober:8:5: a local binding cannot reuse an import reference name
+exit=1

@@ -1,0 +1,9 @@
+package main
+
+// 負例（check が拒否 — 位置つきの TypeMismatch）: float は map のキーにできない（language.md 37 節 — NaN ≠ NaN で入れたキーが引けない・+0 / -0 が同じキー）
+
+func main() {
+    mut m := mut map[float]int{}
+    m[1.5] = 1
+    println(len(m))
+}

@@ -1,0 +1,14 @@
+package main
+
+// 負例: layout.Decode[T] 等の T は @layout の struct（language.md 36 節 — loader の拒否 diag.Layout）
+
+import "std/layout"
+
+type P struct {
+    x int
+}
+
+func main() {
+    p := layout.Decode[P](bytes("ab"), 0)
+    println(p == nil)
+}

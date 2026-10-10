@@ -1,0 +1,25 @@
+package main
+
+// 負例（language.md 32 節）: ジェネリック union の型引数の named の区別（Opt[Meters] と Opt[int] は別の型。旧 check は型引数を捨てて受理 — build は拒否していた）
+
+type Meters int
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+func mk() Opt[Meters] {
+    return Some[Meters]{v: Meters(3)}
+}
+
+func getInt(o Opt[int]) int {
+    return switch o {
+    case Some{v}: v
+    case None{}: 0
+    }
+}
+
+func main() {
+    println(getInt(mk()))
+}

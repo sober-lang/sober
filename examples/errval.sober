@@ -1,0 +1,45 @@
+package main
+
+// V4-4a: error ラベルと値（組み込み error = 全ラベルの閉じた union）
+
+type NotFound error {
+    id int
+}
+
+type OutOfRange error {
+    lo int
+    hi int
+}
+
+type Empty error
+
+@errors(NotFound, OutOfRange, Empty)
+func lookup(k int) (int, error?) {
+    if k == 0 {
+        return 0, Empty{}
+    }
+    if k < 0 {
+        return 0, OutOfRange{lo: 1, hi: 9}
+    }
+    if k > 9 {
+        return 0, NotFound{id: k}
+    }
+    return k * 10, nil
+}
+
+func code(e error) int {
+    return switch e {
+    case NotFound{id}: 1000 + id
+    case OutOfRange{lo, hi}: 2000 + lo * 10 + hi
+    case Empty{}: 3000
+    }
+}
+
+func show(k int) int {
+    v, err := lookup(k)
+    return if err != nil { code(err) } else { v }
+}
+
+func main() {
+    println(show(3), show(0), show(-5), show(12))
+}

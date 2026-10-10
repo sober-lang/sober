@@ -1,0 +1,208 @@
+package lexer
+
+// トークンの種類（legacy/zig/token.zig の Tag と同じ並び — 字句の語彙は docs/syntax.md 1 節）
+
+const Identifier = 0
+const IntegerLiteral = 1
+const StringLiteral = 2
+const RawStringLiteral = 3
+
+// キーワード（Go 由来）
+const KwPackage = 4
+const KwImport = 5
+const KwConst = 6
+const KwType = 7
+const KwFunc = 8
+const KwStruct = 9
+const KwMap = 10
+const KwIf = 11
+const KwElse = 12
+const KwSwitch = 13
+const KwCase = 14
+const KwDefault = 15
+const KwReturn = 16
+const KwBreak = 17
+const KwContinue = 18
+const KwDefer = 19
+const KwFor = 20
+
+// キーワード（Sober 追加）
+const KwMut = 21
+const KwUnion = 22
+const KwError = 23
+const KwYield = 24
+const KwWhile = 25
+const KwScope = 26
+const KwParallel = 27
+const KwSpawn = 28
+const KwShield = 29
+
+// 区切り
+const LParen = 30
+const RParen = 31
+const LBrace = 32
+const RBrace = 33
+const LBracket = 34
+const RBracket = 35
+const Comma = 36
+const Dot = 37
+const Ellipsis = 38
+const Semicolon = 39
+const Colon = 40
+const ColonEqual = 41
+const At = 42
+const Question = 43
+
+// 演算子
+const Plus = 44
+const Minus = 45
+const Star = 46
+const Slash = 47
+const Percent = 48
+const Ampersand = 49
+const Pipe = 50
+const Caret = 51
+const Shl = 52
+const Shr = 53
+const AmpersandAmpersand = 54
+const PipePipe = 55
+const Bang = 56
+const Equal = 57
+const EqualEqual = 58
+const BangEqual = 59
+const Less = 60
+const LessEqual = 61
+const Greater = 62
+const GreaterEqual = 63
+const PlusEqual = 64
+const MinusEqual = 65
+const StarEqual = 66
+const SlashEqual = 67
+const PercentEqual = 68
+const AmpersandEqual = 69
+const PipeEqual = 70
+const CaretEqual = 71
+const ShlEqual = 72
+const ShrEqual = 73
+
+// Sober 追加
+const PipeGreater = 74
+const FatArrow = 75
+const LeftArrow = 76
+
+const Eof = 77
+const Invalid = 78
+
+// byte の段で足した種類（既存の番号を動かさないため末尾に置く — Zig 版の Tag には無い）
+const CharLiteral = 79
+
+// キーワード（catch 式 — 2026-10-02。番号は末尾に足す — 既存の番号を動かさない）
+const KwCatch = 80
+
+// キーワード（panic ラベル — 2026-10-03。language.md 27 節）
+const KwPanic = 81
+
+// 浮動小数のリテラル（float の段 — 2026-10-04。language.md 37 節。番号は末尾）
+const FloatLiteral = 82
+
+// Token は 1 つの字句。[start, end) はソースのバイトオフセット（自動挿入の ';' は幅 0）
+type Token struct {
+    tag, start, end int
+}
+
+// TagName は Zig 版の `sober lex` が印字する種類名（@tagName と同じ綴り）
+func TagName(tag int) string {
+    return switch tag {
+    case Identifier: "identifier"
+    case IntegerLiteral: "integer_literal"
+    case StringLiteral: "string_literal"
+    case RawStringLiteral: "raw_string_literal"
+    case KwPackage: "keyword_package"
+    case KwImport: "keyword_import"
+    case KwConst: "keyword_const"
+    case KwType: "keyword_type"
+    case KwFunc: "keyword_func"
+    case KwStruct: "keyword_struct"
+    case KwMap: "keyword_map"
+    case KwIf: "keyword_if"
+    case KwElse: "keyword_else"
+    case KwSwitch: "keyword_switch"
+    case KwCase: "keyword_case"
+    case KwDefault: "keyword_default"
+    case KwReturn: "keyword_return"
+    case KwBreak: "keyword_break"
+    case KwContinue: "keyword_continue"
+    case KwDefer: "keyword_defer"
+    case KwFor: "keyword_for"
+    case KwMut: "keyword_mut"
+    case KwUnion: "keyword_union"
+    case KwError: "keyword_error"
+    case KwYield: "keyword_yield"
+    case KwWhile: "keyword_while"
+    case KwScope: "keyword_scope"
+    case KwParallel: "keyword_parallel"
+    case KwSpawn: "keyword_spawn"
+    case KwShield: "keyword_shield"
+    case KwCatch: "keyword_catch"
+    case KwPanic: "keyword_panic"
+    case LParen: "l_paren"
+    case RParen: "r_paren"
+    case LBrace: "l_brace"
+    case RBrace: "r_brace"
+    case LBracket: "l_bracket"
+    case RBracket: "r_bracket"
+    case Comma: "comma"
+    case Dot: "dot"
+    case Ellipsis: "ellipsis"
+    case Semicolon: "semicolon"
+    case Colon: "colon"
+    case ColonEqual: "colon_equal"
+    case At: "at"
+    case Question: "question"
+    case Plus: "plus"
+    case Minus: "minus"
+    case Star: "star"
+    case Slash: "slash"
+    case Percent: "percent"
+    case Ampersand: "ampersand"
+    case Pipe: "pipe"
+    case Caret: "caret"
+    case Shl: "shl"
+    case Shr: "shr"
+    case AmpersandAmpersand: "ampersand_ampersand"
+    case PipePipe: "pipe_pipe"
+    case Bang: "bang"
+    case Equal: "equal"
+    case EqualEqual: "equal_equal"
+    case BangEqual: "bang_equal"
+    case Less: "less"
+    case LessEqual: "less_equal"
+    case Greater: "greater"
+    case GreaterEqual: "greater_equal"
+    case PlusEqual: "plus_equal"
+    case MinusEqual: "minus_equal"
+    case StarEqual: "star_equal"
+    case SlashEqual: "slash_equal"
+    case PercentEqual: "percent_equal"
+    case AmpersandEqual: "ampersand_equal"
+    case PipeEqual: "pipe_equal"
+    case CaretEqual: "caret_equal"
+    case ShlEqual: "shl_equal"
+    case ShrEqual: "shr_equal"
+    case PipeGreater: "pipe_greater"
+    case FatArrow: "fat_arrow"
+    case LeftArrow: "left_arrow"
+    case Eof: "eof"
+    case CharLiteral: "char_literal"
+    case FloatLiteral: "float_literal"
+    case _: "invalid"
+    }
+}
+
+// EndsStatement は、行末にこの種類があればセミコロンを自動挿入するか（Go 仕様 + `?`）。
+// `error` はキーワードだが型名として行末に立つ（`type Timeout error`）。`panic` も同じ（`type Done panic` — panic ラベル）
+func EndsStatement(tag int) bool {
+    return tag == Identifier || tag == IntegerLiteral || tag == FloatLiteral || tag == CharLiteral || tag == StringLiteral || tag == RawStringLiteral ||
+        tag == KwReturn || tag == KwBreak || tag == KwContinue || tag == KwError || tag == KwPanic ||
+        tag == RParen || tag == RBracket || tag == RBrace || tag == Question
+}

@@ -1,0 +1,29 @@
+package main
+
+import "std/io"
+import "std/iter"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+// 出力を溜めて最後に 1 回書く（息継ぎ ② の双子 (a) — 速いがメモリが出力の大きさに比例する形）
+func main() int {
+    args := os.Args() catch return 2
+    n := atoi(args[1])
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte('a' + i % 26))
+        if i % 60 == 59 {
+            out = append(out, '\n')
+        }
+    }
+    out = append(out, '\n')
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}

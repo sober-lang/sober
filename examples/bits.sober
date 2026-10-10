@@ -1,0 +1,20 @@
+package main
+
+func mask(x, m int) int {
+    return x & m
+}
+
+func main() {
+    println(12 & 10, 12 | 10, 12 ^ 10)
+    println(-7 & 3, -7 | 3, -7 ^ 3)
+    println(-7 & -3, -7 | -3, -7 ^ -3)
+    println(^0, ^5, ^-6)
+    mut x := 12
+    x &= 10
+    mut y := 12
+    y |= 10
+    mut z := 12
+    z ^= 10
+    println(x, y, z)
+    println(mask(255, 15))
+}

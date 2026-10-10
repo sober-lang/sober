@@ -1,0 +1,16 @@
+package main
+
+// 負例（language.md 7 節 — X4 の裁定 2026-09-30）: 名前つきで欄を省く部分フィールドの struct リテラルは build・check とも拒否。
+// 全部の欄をゼロ値にするのは `T{}`（examples/zero_lit_fields）、一部だけ値を置くなら残りの欄も名指しする
+// （旧: lower だけ省いた欄をゼロ値で埋めて受理していた — check は拒否。欄を足したとき既存のリテラルが黙って部分になるのを捕まえる側に揃えた）
+
+type St struct {
+    xs mut []int
+    name string
+    n int
+}
+
+func main() {
+    s := St{name: "x"}
+    println(s.name, s.n)
+}

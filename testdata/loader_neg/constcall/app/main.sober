@@ -1,0 +1,16 @@
+package main
+
+// loader の負例: 辞書 const の要素で関数を呼ぶ
+type D struct {
+    n int
+}
+
+func f() int {
+    return 1
+}
+
+const T = D{n: f()}
+
+func main() {
+    println(T.n)
+}

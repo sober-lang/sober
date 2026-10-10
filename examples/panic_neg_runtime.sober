@@ -1,0 +1,6 @@
+package main
+
+// 負例: RegionExceeded はランタイム専用（language.md 27 節「panic ラベル」— loader の拒否）
+func main() {
+    panic(RegionExceeded{})
+}

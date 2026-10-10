@@ -1,0 +1,11 @@
+package main
+
+// 段 6 P3a-1d: Spawn の実引数は生のラムダ（diag.Par kind 3 — check と build が同じ拒否。desugar/parcheck.sober）
+
+import "std/par"
+
+func main() {
+    g := () => 1
+    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, g)))
+    println(r)
+}

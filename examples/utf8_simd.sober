@@ -1,0 +1,85 @@
+package main
+
+// UTF-8 の SIMD 速い道（std/utf8.validPrefix — 最適化のバックエンドでは SSE2 の検査器）の網: 長い妥当な列（ASCII・2 / 3 / 4 バイト列が
+// 16 バイトの塊の境目をまたぐ）の 1 バイトを全部の位置で壊し、utf8.IndexInvalid の答えを例の中のスカラーの参照（std の本体と同じ判定の写し）と
+// 突き合わせる。食い違いの数（0）と答えの和を印字（scripts/optdiff.sh の代表 — 最適化なしの経路とも突き合わせる）
+
+import "std/iter"
+import "std/utf8"
+
+func cont(b mut []byte, i int, lo int, hi int) bool {
+    return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
+}
+
+func refSeq(b mut []byte, i int) int {
+    c := int(b[i])
+    if c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(mut b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(mut b, i + 1, lo, hi) && cont(mut b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(mut b, i + 1, lo, hi) && cont(mut b, i + 2, 128, 191) && cont(mut b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+func refInvalid(b mut []byte) int {
+    mut i := 0
+    while i < len(b) {
+        n := refSeq(mut b, i)
+        if n == 0 {
+            return i
+        }
+        i += n
+    }
+    return -1
+}
+
+func run(unit []byte) {
+    mut base := mut []byte{}
+    for r <- iter.Range(0, 9) {
+        for k <- iter.Range(0, len(unit)) {
+            base = append(base, unit[k])
+        }
+        base = append(base, byte(97 + r))
+    }
+    vals := []int{255, 128, 195, 227, 65, 237, 240, 224, 192, 244}
+    mut bad := 0
+    mut sum := 0
+    for p <- iter.Range(0, len(base)) {
+        for q <- iter.Range(0, len(vals)) {
+            mut b := mut []byte{}
+            for k <- iter.Range(0, len(base)) {
+                b = append(b, base[k])
+            }
+            b[p] = byte(vals[q])
+            got := utf8.IndexInvalid(freeze(b))
+            mut b2 := mut []byte{}
+            for k <- iter.Range(0, len(base)) {
+                b2 = append(b2, b[k])
+            }
+            want := refInvalid(mut b2)
+            if got != want {
+                bad += 1
+                println("mismatch", p, vals[q], got, want)
+            }
+            sum += got + 1
+        }
+    }
+    println(len(base), utf8.IndexInvalid(freeze(base)), bad, sum)
+}
+
+func main() {
+    // 特別な頭（E0・ED・F0 — 検査器がスカラーへ渡す）を含む列と、含まない列（検査器がベクトルのまま読む 2 / 3 バイト列だけ）
+    run(bytes("abéあx😀ün-कà한　z"))
+    run(bytes("abéあxün-àz　éé"))
+}

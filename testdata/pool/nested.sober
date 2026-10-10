@@ -1,0 +1,45 @@
+package main
+
+import "std/pool"
+
+// 入れ子のブロック・switch の腕・inline 展開される関数型引数の本体での acquire / release
+type Buf struct {
+    n int
+}
+
+func with(p mut pool.Pool[Buf], n int, f func(pool.Handle) int) int {
+    h := pool.Acquire(mut p, Buf{n: n})
+    defer pool.Release(mut p, h)
+    return f(h)
+}
+
+func arms(p mut pool.Pool[Buf], k int) int {
+    return switch k {
+    case 0: 10
+    case 1: {
+        h := pool.Acquire(mut p, Buf{n: 1})
+        defer pool.Release(mut p, h)
+        pool.Len(mut p)
+    }
+    default: {
+        h := pool.Acquire(mut p, Buf{n: 2})
+        defer pool.Release(mut p, h)
+        g := pool.Acquire(mut p, Buf{n: 3})
+        defer pool.Release(mut p, g)
+        pool.Len(mut p)
+    }
+    }
+}
+
+func main() {
+    mut p := pool.Pool[Buf]{}
+    println(arms(mut p, 0), arms(mut p, 1), arms(mut p, 2))
+    println(with(mut p, 7, (h) => h.gen))
+    k := {
+        h := pool.Acquire(mut p, Buf{n: 9})
+        defer pool.Release(mut p, h)
+        pool.Len(mut p)
+    }
+    println(k)
+    println("outstanding", pool.Len(mut p))
+}

@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_arg.sober:5:10: the argument of panic is a single panic label literal L{…}
+exit=1

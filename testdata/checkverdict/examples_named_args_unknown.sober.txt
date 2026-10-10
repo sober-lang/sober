@@ -1,0 +1,2 @@
+sober: load error at examples/named_args_unknown.sober:14:21: the function has no parameter with this name
+exit=1

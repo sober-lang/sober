@@ -1,0 +1,41 @@
+package main
+
+// analyzer の負例（scripts/analyzer_neg.sh — 期待の指摘は errors_annot.err）: `@errors` の項の解決（error 網羅 analyzer A3）。
+// 正の列挙だけ（否定形なし — 裁定 E5 = M-a）・ラベル名は `L` か `pkg.L`・存在するラベルだけ
+
+import "std/io"
+
+type A error {
+    n int
+}
+
+type Plain struct {
+    n int
+}
+
+@errors(A, io.NotFound, NoSuch, io.Missing, Plain)
+func f(n int) (int, error?) {
+    if n < 0 {
+        return 0, A{n: n}
+    }
+    return n, nil
+}
+
+@errors(!A)
+func g() error? {
+    return nil
+}
+
+@errors(A + 1, (A))
+func h() error? {
+    return nil
+}
+
+@errors()
+func k() error? {
+    return nil
+}
+
+func main() {
+    println(f(1))
+}

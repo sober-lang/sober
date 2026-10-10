@@ -1,0 +1,268 @@
+package desugar
+
+// mut struct の束縛を欄ごとのセルに割る（F-17 案 2α — formal.md「mut struct の欄ごとのセルの段」）。
+//
+// 割る場所 = 宣言の型が struct（型パラメータ・`T?` でない）の mut の場所（mut 束縛・mut 仮引数）。割った束縛の変数は
+// ref の prod 鎖（欄の数が 1 なら ref 1 つ、0 なら triv）を持ち、struct 型の欄はさらに同じ形に割る（木）。
+// 型パラメータで宣言した欄は葉（インスタンス化に依らない規則 — 呼び手と Def の本体で割り方が揃う）。
+// - 生成 `mut x := e` → `let t = e in CELLS(t)`（CELLS = 葉ごとに alloc）
+// - 読み `x.f` → `deref (proj x f)`、値としての `x` → 葉を deref して pair 鎖に組み直す
+// - 代入 `x.f = v` → `assign (proj x f) v`（旧: `assign x (pair … v …)` の丸ごと再構築 — 欄の数の 2 乗のコア）
+// - mut 実引数 `f(mut x)` / `f(mut x.g)` → 場所の ref（の木）をそのまま別名として渡す
+// 割った束縛は Binding.split
+
+import "ast"
+import "std/iter"
+
+// isSplitB は束縛 b が割った mut 束縛か
+func isSplitB(st mut S, b int) bool {
+    return b >= 0 && bnd(mut st, b).mutable && bnd(mut st, b).split
+}
+
+// teSplits は型式 te（package pk・型環境 env）が割る struct を名指すか（型パラメータ・`T?`・その他は割らない）
+func teSplits(st mut S, pk int, env int, te NodeRef) bool {
+    k := kindN(mut st, te)
+    if k == ast.TName {
+        if tbindAt(mut st, env, sA(nodeOf(mut st, te))) >= 0 {
+            return false
+        }
+    } else if k != ast.TGeneric {
+        return false
+    }
+    return structFields(mut st, teDecl(mut st, pk, env, te)) != -1
+}
+
+// teDecl は型式 te の宣言（型環境 env の下で）
+func teDecl(st mut S, pk int, env int, te NodeRef) int {
+    saved := st.tenv
+    st.tenv = env
+    d := declOfTypeExpr(mut st, pk, te)
+    st.tenv = saved
+    return d
+}
+
+// fieldTe / fieldSplits / fieldDecl は struct の宣言の参照 dr の i 番目の欄
+func fieldTe(st mut S, dr int, i int) NodeRef {
+    return nB(nodeOf(mut st, latN(mut st, structFields(mut st, dr), i)))
+}
+
+func fieldSplits(st mut S, dr int, i int) bool {
+    return teSplits(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), fieldTe(mut st, dr, i))
+}
+
+func fieldDecl(st mut S, dr int, i int) int {
+    return teDecl(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), fieldTe(mut st, dr, i))
+}
+
+// fieldTy は i 番目の欄のコアの型（宣言の型環境で）
+func fieldTy(st mut S, dr int, i int, at NodeRef) (TyRef, error?) {
+    saved := st.tenv
+    st.tenv = hget(mut st, dr + 2)
+    t, err := tyOf(mut st, hget(mut st, dr + 1), fieldTe(mut st, dr, i), at, TYFUEL)
+    st.tenv = saved
+    return t, err
+}
+
+// cellsOf は struct の値 v（純粋な式 — 変数か射影）から、葉ごとに alloc した ref の木を組む
+func cellsOf(st mut S, v CoreRef, dr int) CoreRef {
+    n := lenL(mut st, structFields(mut st, dr))
+    comps := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        p := projection(mut st, v, i, n)
+        hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { cellsOf(mut st, p, fieldDecl(mut st, dr, i)) } else { cAlloc(mut st, 1, p) })
+    }
+    return pairChain(mut st, comps)
+}
+
+// valueOf は ref の木 refs（純粋な式）から struct の値を組み直す（葉を deref して pair 鎖に）
+func valueOf(st mut S, refs CoreRef, dr int) CoreRef {
+    n := lenL(mut st, structFields(mut st, dr))
+    comps := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        p := projection(mut st, refs, i, n)
+        hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { valueOf(mut st, p, fieldDecl(mut st, dr, i)) } else { c1(mut st, CDeref, p) })
+    }
+    return pairChain(mut st, comps)
+}
+
+// assignAll は ref の木 refs の葉へ struct の値 v（純粋な式）の成分を書く — `pair(assign …, pair(…))` の 1 式（左から右に評価。値は捨てる）
+func assignAll(st mut S, refs CoreRef, v CoreRef, dr int) CoreRef {
+    n := lenL(mut st, structFields(mut st, dr))
+    comps := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        p := projection(mut st, refs, i, n)
+        q := projection(mut st, v, i, n)
+        hsetCore(mut st, int(comps) + 1 + i, if fieldSplits(mut st, dr, i) { assignAll(mut st, p, q, fieldDecl(mut st, dr, i)) } else { c2(mut st, CAssign, p, q) })
+    }
+    return pairChain(mut st, comps)
+}
+
+// splitTy は ref の木の型（葉 = ref true r（欄の型を束縛点の点座標で読む）、struct の欄 = 入れ子の木）。
+// point = false なら欄の型をそのまま（Def の仮引数の型 — 座標は Def の base）
+func splitTy(st mut S, dr int, r int, point bool, at NodeRef) (TyRef, error?) {
+    n := lenL(mut st, structFields(mut st, dr))
+    ts := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        if fieldSplits(mut st, dr, i) {
+            t := splitTy(mut st, fieldDecl(mut st, dr, i), r, point, at)?
+            hsetTy(mut st, int(ts) + 1 + i, t)
+        } else {
+            ft := fieldTy(mut st, dr, i, at)?
+            mut inner := ft
+            if point {
+                saved := st.rdepth
+                st.rdepth = r + 1
+                inner = pointTy(mut st, ft)
+                st.rdepth = saved
+            }
+            hsetTy(mut st, int(ts) + 1 + i, tRefOf(mut st, 1, r, inner))
+        }
+    }
+    return tyChain(mut st, ts), nil
+}
+
+// ── 場所 ──
+
+// DotParts は点つきの経路の文字列（`st.nodes` — mut 実引数の EMutArg の名前）を部分の文字列の列 [n, 文字列…] に割る
+func DotParts(st mut S, name int) ListRef {
+    n := dat(mut st, name)
+    mut k := 1
+    mut i := 0
+    while i < n {
+        if dat(mut st, name + 1 + i) == 46 {
+            k += 1
+        }
+        i += 1
+    }
+    out := ListRef(listN(mut st, k))
+    mut lo := 0
+    mut j := 0
+    i = 0
+    while i <= n {
+        if i == n || dat(mut st, name + 1 + i) == 46 {
+            at := top(mut st)
+            put(mut st, i - lo)
+            mut q := lo
+            while q < i {
+                put(mut st, dat(mut st, name + 1 + q))
+                q += 1
+            }
+            lput(mut st, out, j, at)
+            j += 1
+            lo = i + 1
+        }
+        i += 1
+    }
+    return out
+}
+
+// Place は割った束縛の中の場所: refs = ref（葉）か ref の木（struct の場所）、dr = 木なら struct の宣言（葉は -1）、
+// b = 根の束縛、ok = false なら割った場所でない（根が割った束縛でない・葉を越えて選ぶ等 — 呼び手は従来の経路へ）
+type Place struct {
+    refs CoreRef
+    dr int
+    b int
+    ok bool
+}
+
+// placeAt は根の名前 root と欄の名前の列 names（[n, 文字列…]、先頭 from から）の場所（深さ depth の変数で）
+func placeAt(st mut S, root StrRef, names ListRef, from int, eb int, depth int) Place {
+    b := lookup(mut st, eb, root)
+    if !isSplitB(mut st, b) {
+        return Place{refs: -1, dr: -1, b: b, ok: false}
+    }
+    mut refs := cVar(mut st, depth - 1 - bnd(mut st, b).level)
+    mut dr := bnd(mut st, b).decl
+    for i <- iter.Range(from, lenL(mut st, names)) {
+        if dr < 0 {
+            return Place{refs: -1, dr: -1, b: b, ok: false}
+        }
+        fs := structFields(mut st, dr)
+        idx := fieldIndex(mut st, fs, latS(mut st, names, i))
+        if idx < 0 {
+            return Place{refs: -1, dr: -1, b: b, ok: false}
+        }
+        refs = projection(mut st, refs, idx, lenL(mut st, fs))
+        dr = if fieldSplits(mut st, dr, idx) { fieldDecl(mut st, dr, idx) } else { -1 }
+    }
+    return Place{refs: refs, dr: dr, b: b, ok: true}
+}
+
+// placeOfExpr は表層の式（名前か selector の鎖）の場所
+func placeOfExpr(st mut S, e NodeRef, eb int, depth int) Place {
+    mut cnt := 0
+    mut cur := e
+    while kindN(mut st, cur) == ast.ESelector {
+        cnt += 1
+        cur = nA(nodeOf(mut st, cur))
+    }
+    if kindN(mut st, cur) != ast.EIdent {
+        return Place{refs: -1, dr: -1, b: -1, ok: false}
+    }
+    names := ListRef(listN(mut st, cnt))
+    cur = e
+    mut j := cnt - 1
+    while kindN(mut st, cur) == ast.ESelector {
+        lput(mut st, names, j, nodeOf(mut st, cur).b)
+        j -= 1
+        cur = nA(nodeOf(mut st, cur))
+    }
+    return placeAt(mut st, sA(nodeOf(mut st, cur)), names, 0, eb, depth)
+}
+
+// placeOfMutArg は mut 実引数 `mut x` / `mut x.f.g` の場所（割っていない束縛の `mut x` は ok = false）
+func placeOfMutArg(st mut S, arg NodeRef, eb int, depth int) Place {
+    parts := DotParts(mut st, nodeOf(mut st, arg).a)
+    return placeAt(mut st, latS(mut st, parts, 0), parts, 1, eb, depth)
+}
+
+// readPlace は場所の値（葉は deref、木は組み直し）
+func readPlace(st mut S, p Place) CoreRef {
+    return if p.dr >= 0 { valueOf(mut st, p.refs, p.dr) } else { c1(mut st, CDeref, p.refs) }
+}
+
+// placeTy は場所を mut 実引数として渡すときの ann の型（葉 = ref true r（欄の型を束縛点で）、木 = splitTy — 木は mutParamArg では組まない）。
+// 葉の欄の型は呼び手が知る（w — mut 仮引数の型）
+func placeTy(st mut S, p Place, w TyRef, at NodeRef) (TyRef, error?) {
+    r := bnd(mut st, p.b).region
+    if p.dr >= 0 {
+        return splitTy(mut st, p.dr, r, true, at)
+    }
+    saved := st.rdepth
+    st.rdepth = r + 1
+    inner := pointTy(mut st, w)
+    st.rdepth = saved
+    return tRefOf(mut st, 1, r, inner), nil
+}
+
+// isOptValue は式の値が `T?` か（`mut x := e` を割るかの判定 — 宣言が struct でも `S?` の値は割らない）
+func isOptValue(st mut S, e NodeRef, eb int, ef int) bool {
+    t := computeTy(mut st, e, eb, ef)
+    if t != -1 {
+        return isTag(mut st, t, TOpt)
+    }
+    if kindN(mut st, e) == ast.ECall {
+        fi := findFn(mut st, nA(nodeOf(mut st, e)), eb)
+        if fi >= 0 {
+            rs := fnResults(mut st, fi)
+            return lenL(mut st, rs) == 1 && kindN(mut st, latN(mut st, rs, 0)) == ast.TOpt
+        }
+    }
+    return false
+}
+
+// mutArgExpr は mut 実引数 `mut x.f.g` を同じ場所を読む表層の式（名前か selector の鎖）へ（型・宣言の追跡用）
+func mutArgExpr(st mut S, arg NodeRef) NodeRef {
+    parts := DotParts(mut st, nodeOf(mut st, arg).a)
+    at := arg
+    mut e := NodeRef(rec8(mut st, ast.EIdent, at, latI(mut st, parts, 0), 0, 0, 0, 0, 0))
+    for i <- iter.Range(1, lenL(mut st, parts)) {
+        e = NodeRef(rec8(mut st, ast.ESelector, at, int(e), latI(mut st, parts, i), 0, 0, 0, 0))
+    }
+    return e
+}
+
+// isDotted は mut 実引数が欄の経路か（`mut x.f`）
+func isDotted(st mut S, arg NodeRef) bool {
+    return lenL(mut st, DotParts(mut st, nodeOf(mut st, arg).a)) > 1
+}

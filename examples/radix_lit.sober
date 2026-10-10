@@ -1,0 +1,18 @@
+package main
+
+// n 進リテラル `0x` / `0o` / `0b`（syntax.md の字句 — 値は int に畳む。綴りは fmt と AST JSON が保つ）
+
+const Mask = 0xff
+const Perm = 0o755
+
+func main() {
+    println(0x10)
+    println(0o17)
+    println(0b1011)
+    println(Mask & 0x3c)
+    println(Perm)
+    println(0x7fffffffffffffff)
+    println(0b0)
+    x := 0
+    println(x + 0xA)
+}

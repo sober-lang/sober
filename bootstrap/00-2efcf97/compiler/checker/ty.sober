@@ -1,0 +1,507 @@
+package checker
+
+// コアの型（Lean の Ty — Syntax.lean）と型の関数の写し。型 = 4 語 [tag, a, b, c]。
+// 各関数は Syntax.lean / Typing.lean の同名の定義と 1:1（名前も揃える）。型は浅いので再帰で書く
+
+const TInt = 1
+const TVar = 2   // a = 添字
+const TBool = 3
+const TUnit = 4
+const TOpt = 5   // a = 中身
+const TUn = 6    // a = l, b = r
+const TPr = 7    // a = l, b = r
+const TRef = 8   // a = m（0 / 1）, b = r, c = 中身
+const TSl = 9    // a = m, b = r, c = 要素
+const TMp = 10   // a = m, b = r, c = セル型
+const TChan = 11 // a = rc, b = 中身
+const TFn = 12   // a = p, b = r
+
+func tg(st mut S, t int) int {
+    return st.h[t]
+}
+
+func tA(st mut S, t int) int {
+    return st.h[t + 1]
+}
+
+func tB(st mut S, t int) int {
+    return st.h[t + 2]
+}
+
+func tC(st mut S, t int) int {
+    return st.h[t + 3]
+}
+
+func mk(st mut S, k int, a int, b int, c int) int {
+    return rec4(mut st, k, a, b, c)
+}
+
+func tOpt(st mut S, t int) int {
+    return rec4(mut st, TOpt, t, 0, 0)
+}
+
+// isCont は ref / slice / map（m・r・中身の 3 欄を持つ型）
+func isCont(k int) bool {
+    return k == TRef || k == TSl || k == TMp
+}
+
+// tyEq は構造の等しさ（Lean の DecidableEq）
+func tyEq(st mut S, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    k := st.h[a]
+    if k != st.h[b] {
+        return false
+    }
+    if k == TInt || k == TBool || k == TUnit {
+        return true
+    }
+    if k == TVar {
+        return st.h[a + 1] == st.h[b + 1]
+    }
+    if k == TOpt {
+        return tyEq(mut st, st.h[a + 1], st.h[b + 1])
+    }
+    if k == TUn || k == TPr || k == TFn {
+        return tyEq(mut st, st.h[a + 1], st.h[b + 1]) && tyEq(mut st, st.h[a + 2], st.h[b + 2])
+    }
+    if isCont(k) {
+        return st.h[a + 1] == st.h[b + 1] && st.h[a + 2] == st.h[b + 2] && tyEq(mut st, st.h[a + 3], st.h[b + 3])
+    }
+    if k == TChan {
+        return st.h[a + 1] == st.h[b + 1] && tyEq(mut st, st.h[a + 2], st.h[b + 2])
+    }
+    return false
+}
+
+// regionsBelow: 型が言及する region がすべてレベル d 未満
+func regionsBelow(st mut S, d int, t int) bool {
+    k := st.h[t]
+    if k == TOpt {
+        return regionsBelow(mut st, d, st.h[t + 1])
+    }
+    if k == TUn || k == TPr {
+        return regionsBelow(mut st, d, st.h[t + 1]) && regionsBelow(mut st, d, st.h[t + 2])
+    }
+    if isCont(k) {
+        return st.h[t + 2] < d && regionsBelow(mut st, d, st.h[t + 3])
+    }
+    if k == TChan {
+        return st.h[t + 1] <= d && regionsBelow(mut st, st.h[t + 1], st.h[t + 2])
+    }
+    return true
+}
+
+func mutFree(st mut S, t int) bool {
+    k := st.h[t]
+    if k == TOpt {
+        return mutFree(mut st, st.h[t + 1])
+    }
+    if k == TUn || k == TPr {
+        return mutFree(mut st, st.h[t + 1]) && mutFree(mut st, st.h[t + 2])
+    }
+    if isCont(k) {
+        return st.h[t + 1] == 0 && mutFree(mut st, st.h[t + 3])
+    }
+    return true
+}
+
+func chanFree(st mut S, t int) bool {
+    k := st.h[t]
+    if k == TOpt {
+        return chanFree(mut st, st.h[t + 1])
+    }
+    if k == TUn || k == TPr {
+        return chanFree(mut st, st.h[t + 1]) && chanFree(mut st, st.h[t + 2])
+    }
+    if isCont(k) {
+        return chanFree(mut st, st.h[t + 3])
+    }
+    return k != TChan
+}
+
+// isImmStr は slice false _ int（imm string）
+func isImmStr(st mut S, t int) bool {
+    return st.h[t] == TSl && st.h[t + 1] == 0 && st.h[st.h[t + 3]] == TInt
+}
+
+func keyOk(st mut S, t int) bool {
+    return st.h[t] == TInt || isImmStr(mut st, t)
+}
+
+func keyCompat(st mut S, a int, b int) bool {
+    if st.h[a] == TInt && st.h[b] == TInt {
+        return true
+    }
+    return isImmStr(mut st, a) && isImmStr(mut st, b)
+}
+
+func shiftR(st mut S, rho int, t int) int {
+    k := st.h[t]
+    if k == TOpt {
+        x := shiftR(mut st, rho, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := shiftR(mut st, rho, st.h[t + 1])
+        r := shiftR(mut st, rho, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := shiftR(mut st, rho, st.h[t + 3])
+        return mk(mut st, k, st.h[t + 1], st.h[t + 2] + rho, x)
+    }
+    if k == TChan {
+        x := shiftR(mut st, rho, st.h[t + 2])
+        return mk(mut st, TChan, st.h[t + 1] + rho, x, 0)
+    }
+    return t
+}
+
+// relocR: imm の最上段の region を ρ へ（中身も relocR）、mut / chan は一様シフト
+func relocR(st mut S, rho int, t int) int {
+    k := st.h[t]
+    if k == TOpt {
+        x := relocR(mut st, rho, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := relocR(mut st, rho, st.h[t + 1])
+        r := relocR(mut st, rho, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        if st.h[t + 1] == 0 {
+            x := relocR(mut st, rho, st.h[t + 3])
+            return mk(mut st, k, 0, rho, x)
+        }
+        x := shiftR(mut st, rho, st.h[t + 3])
+        return mk(mut st, k, 1, st.h[t + 2] + rho, x)
+    }
+    if k == TChan {
+        x := shiftR(mut st, rho, st.h[t + 2])
+        return mk(mut st, TChan, st.h[t + 1] + rho, x, 0)
+    }
+    return t
+}
+
+func rmap(rho0 int, delta int, r int) int {
+    return if r == 0 { rho0 } else { r + delta }
+}
+
+func renR(st mut S, rho0 int, delta int, t int) int {
+    k := st.h[t]
+    if k == TOpt {
+        x := renR(mut st, rho0, delta, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := renR(mut st, rho0, delta, st.h[t + 1])
+        r := renR(mut st, rho0, delta, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := renR(mut st, rho0, delta, st.h[t + 3])
+        return mk(mut st, k, st.h[t + 1], rmap(rho0, delta, st.h[t + 2]), x)
+    }
+    if k == TChan {
+        x := renR(mut st, rho0, delta, st.h[t + 2])
+        return mk(mut st, TChan, rmap(rho0, delta, st.h[t + 1]), x, 0)
+    }
+    return t
+}
+
+func relocA(st mut S, rho0 int, d int, t int) int {
+    k := st.h[t]
+    if k == TOpt {
+        x := relocA(mut st, rho0, d, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := relocA(mut st, rho0, d, st.h[t + 1])
+        r := relocA(mut st, rho0, d, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        if st.h[t + 1] == 0 {
+            x := relocA(mut st, rho0, d, st.h[t + 3])
+            return mk(mut st, k, 0, if st.h[t + 2] == 0 { rho0 } else { d }, x)
+        }
+        x := renR(mut st, rho0, d, st.h[t + 3])
+        return mk(mut st, k, 1, rmap(rho0, d, st.h[t + 2]), x)
+    }
+    if k == TChan {
+        x := renR(mut st, rho0, d, st.h[t + 2])
+        return mk(mut st, TChan, rmap(rho0, d, st.h[t + 1]), x, 0)
+    }
+    return t
+}
+
+func clampR(st mut S, kk int, t int) int {
+    k := st.h[t]
+    if k == TOpt {
+        x := clampR(mut st, kk, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := clampR(mut st, kk, st.h[t + 1])
+        r := clampR(mut st, kk, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) && st.h[t + 1] == 0 {
+        x := clampR(mut st, kk, st.h[t + 3])
+        r := st.h[t + 2]
+        return mk(mut st, k, 0, if r < kk { r } else { kk }, x)
+    }
+    return t
+}
+
+func noClamp(st mut S, kk int, t int) bool {
+    k := st.h[t]
+    if k == TOpt {
+        return noClamp(mut st, kk, st.h[t + 1])
+    }
+    if k == TUn || k == TPr {
+        return noClamp(mut st, kk, st.h[t + 1]) && noClamp(mut st, kk, st.h[t + 2])
+    }
+    if isCont(k) && st.h[t + 1] == 0 {
+        return st.h[t + 2] <= kk && noClamp(mut st, kk, st.h[t + 3])
+    }
+    return true
+}
+
+func annFree(st mut S, t int) bool {
+    k := st.h[t]
+    if k == TVar || k == TOpt || k == TUn {
+        return false
+    }
+    if k == TPr {
+        return annFree(mut st, st.h[t + 1]) && annFree(mut st, st.h[t + 2])
+    }
+    if k == TSl || k == TMp {
+        return st.h[t + 1] != 0 || annFree(mut st, st.h[t + 3])
+    }
+    return true
+}
+
+func isMut0(st mut S, t int) bool {
+    return isCont(st.h[t]) && st.h[t + 1] != 0 && st.h[t + 2] == 0
+}
+
+// mutTop: mut コンテナ / 参照の最上段の region（無ければ -1）
+func mutTop(st mut S, t int) int {
+    if isCont(st.h[t]) && st.h[t + 1] != 0 {
+        return st.h[t + 2]
+    }
+    return -1
+}
+
+// anchorOf: 仮引数型 p の mut 位置に対応する実引数 ta の region（無ければ -1）
+func anchorOf(st mut S, p int, ta int) int {
+    if st.h[p] == TPr {
+        if st.h[ta] != TPr {
+            return -1
+        }
+        a := anchorOf(mut st, st.h[p + 1], st.h[ta + 1])
+        if a >= 0 {
+            return a
+        }
+        return anchorOf(mut st, st.h[p + 2], st.h[ta + 2])
+    }
+    if isMut0(mut st, p) {
+        return mutTop(mut st, ta)
+    }
+    return -1
+}
+
+// sub: 浅い imm 共変（Ty.sub）
+func sub(st mut S, a int, b int) bool {
+    k := st.h[a]
+    if k == st.h[b] {
+        if k == TOpt {
+            return sub(mut st, st.h[a + 1], st.h[b + 1])
+        }
+        if k == TUn || k == TPr {
+            return sub(mut st, st.h[a + 1], st.h[b + 1]) && sub(mut st, st.h[a + 2], st.h[b + 2])
+        }
+        if isCont(k) && st.h[a + 1] == 0 && st.h[b + 1] == 0 {
+            if st.h[a + 2] > st.h[b + 2] {
+                return false
+            }
+            if k == TRef {
+                return tyEq(mut st, st.h[a + 3], st.h[b + 3])
+            }
+            return sub(mut st, st.h[a + 3], st.h[b + 3])
+        }
+    }
+    return tyEq(mut st, a, b)
+}
+
+func jumpRel(st mut S, b int, kk int, tj int, tl int) bool {
+    c := clampR(mut st, kk, tj)
+    return sub(mut st, c, tl) && (noClamp(mut st, kk, tj) || (b <= kk && chanFree(mut st, tj)))
+}
+
+// readAs: ot = -1 は注釈なし。結果 -1 = none
+func readAs(st mut S, m int, ot int, t int) int {
+    if ot < 0 {
+        return if m != 0 || annFree(mut st, t) { t } else { -1 }
+    }
+    return if sub(mut st, t, ot) { ot } else { -1 }
+}
+
+func tyArgOk(st mut S, t int) bool {
+    return regionsBelow(mut st, 0, t) && chanFree(mut st, t)
+}
+
+// tyArgsOk: ts は型の列 [n, t…]（-1 = 空）
+func tyArgsOk(st mut S, ts int) bool {
+    if ts < 0 {
+        return true
+    }
+    mut i := 0
+    while i < st.h[ts] {
+        if !tyArgOk(mut st, st.h[ts + 1 + i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func tsLen(st mut S, ts int) int {
+    return if ts < 0 { 0 } else { st.h[ts] }
+}
+
+// tsubst: tvar i を ts[i] へ（範囲外は tvar のまま）。fn のシグネチャの中へも入る
+func tsubst(st mut S, ts int, t int) int {
+    if ts < 0 {
+        return t
+    }
+    k := st.h[t]
+    if k == TVar {
+        i := st.h[t + 1]
+        return if i < st.h[ts] { st.h[ts + 1 + i] } else { t }
+    }
+    if k == TOpt {
+        x := tsubst(mut st, ts, st.h[t + 1])
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr || k == TFn {
+        l := tsubst(mut st, ts, st.h[t + 1])
+        r := tsubst(mut st, ts, st.h[t + 2])
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := tsubst(mut st, ts, st.h[t + 3])
+        return mk(mut st, k, st.h[t + 1], st.h[t + 2], x)
+    }
+    if k == TChan {
+        x := tsubst(mut st, ts, st.h[t + 2])
+        return mk(mut st, TChan, st.h[t + 1], x, 0)
+    }
+    return t
+}
+
+func tvarsBelow(st mut S, n int, t int) bool {
+    k := st.h[t]
+    if k == TVar {
+        return st.h[t + 1] < n
+    }
+    if k == TOpt {
+        return tvarsBelow(mut st, n, st.h[t + 1])
+    }
+    if k == TUn || k == TPr || k == TFn {
+        return tvarsBelow(mut st, n, st.h[t + 1]) && tvarsBelow(mut st, n, st.h[t + 2])
+    }
+    if isCont(k) {
+        return tvarsBelow(mut st, n, st.h[t + 3])
+    }
+    if k == TChan {
+        return tvarsBelow(mut st, n, st.h[t + 2])
+    }
+    return true
+}
+
+// paramOk / retOk: Typing.lean の Def の境界の条件
+func paramOk(st mut S, t int) bool {
+    return regionsBelow(mut st, 1, t) && chanFree(mut st, t)
+}
+
+func retOk(st mut S, t int) bool {
+    k := st.h[t]
+    if k == TOpt {
+        return retOk(mut st, st.h[t + 1])
+    }
+    if k == TUn || k == TPr {
+        return retOk(mut st, st.h[t + 1]) && retOk(mut st, st.h[t + 2])
+    }
+    if isCont(k) {
+        return st.h[t + 1] == 0 && st.h[t + 2] < 2 && retOk(mut st, st.h[t + 3])
+    }
+    return k != TChan
+}
+
+// ── 型の印字（Json.lean の tyToJson + Lean の Json.compress — object のキーは辞書順）──
+
+func tyJson(st mut S, out mut []int, t int) {
+    k := st.h[t]
+    if k == TInt {
+        lit(mut out, "{\"k\":\"int\"}")
+    } else if k == TVar {
+        lit(mut out, "{\"i\":")
+        putInt(mut out, st.h[t + 1])
+        lit(mut out, ",\"k\":\"tvar\"}")
+    } else if k == TBool {
+        lit(mut out, "{\"k\":\"bool\"}")
+    } else if k == TUnit {
+        lit(mut out, "{\"k\":\"unit\"}")
+    } else if k == TOpt {
+        lit(mut out, "{\"k\":\"opt\",\"t\":")
+        tyJson(mut st, mut out, st.h[t + 1])
+        out = append(out, 125)
+    } else if k == TUn || k == TPr || k == TFn {
+        lit(mut out, if k == TUn { "{\"k\":\"union\",\"l\":" } else if k == TPr { "{\"k\":\"prod\",\"l\":" } else { "{\"k\":\"fn\",\"p\":" })
+        tyJson(mut st, mut out, st.h[t + 1])
+        lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, st.h[t + 2])
+        out = append(out, 125)
+    } else if k == TRef || k == TSl {
+        lit(mut out, if k == TRef { "{\"k\":\"ref\",\"m\":" } else { "{\"k\":\"slice\",\"m\":" })
+        putBool(mut out, st.h[t + 1] != 0)
+        lit(mut out, ",\"r\":")
+        putInt(mut out, st.h[t + 2])
+        lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, st.h[t + 3])
+        out = append(out, 125)
+    } else if k == TMp {
+        c := st.h[t + 3]
+        if st.h[c] == TPr && st.h[st.h[c + 2]] == TOpt {
+            // セル型 prod k (opt v) は key / t に分けて出す
+            lit(mut out, "{\"k\":\"map\",\"key\":")
+            tyJson(mut st, mut out, st.h[c + 1])
+            lit(mut out, ",\"m\":")
+            putBool(mut out, st.h[t + 1] != 0)
+            lit(mut out, ",\"r\":")
+            putInt(mut out, st.h[t + 2])
+            lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, st.h[st.h[c + 2] + 1])
+            out = append(out, 125)
+        } else {
+            lit(mut out, "{\"cell\":")
+            tyJson(mut st, mut out, c)
+            lit(mut out, ",\"k\":\"map\",\"m\":")
+            putBool(mut out, st.h[t + 1] != 0)
+            lit(mut out, ",\"r\":")
+            putInt(mut out, st.h[t + 2])
+            out = append(out, 125)
+        }
+    } else if k == TChan {
+        lit(mut out, "{\"k\":\"chan\",\"rc\":")
+        putInt(mut out, st.h[t + 1])
+        lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, st.h[t + 2])
+        out = append(out, 125)
+    }
+}

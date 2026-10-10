@@ -1,0 +1,26 @@
+package main
+
+// 軽い region.enter（性能投資 第二便 M9 — rlight.sober）の回帰例: 先に確保する再帰で深い region を使い（高水位が残る）、
+// 次に自分の深度で何も確保しない再帰（軽い enter になる）で深度の上限まで潜る → exit 102。印字の高水位は軽い enter が初期化した
+// bump から数える（前の命の残りを数えない）・上限の検査も同じ
+
+func fill(d int) int {
+    xs := append([]int{}, d)
+    if d == 0 {
+        return xs[0]
+    }
+    return fill(d - 1) + xs[0]
+}
+
+func dive(n int) int {
+    if n < 0 {
+        return 0
+    }
+    return dive(n + 1) + 1
+}
+
+func main() int {
+    println(fill(40))
+    println(dive(0))
+    return 0
+}

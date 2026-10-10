@@ -1,0 +1,29 @@
+package main
+
+import "std/iter"
+
+// 3 番地形（lea）と flags の流用の網（6.5 第 2 便 ③）: `y := x - 1` の y と x が両方生きている（別のレジスタ）ところで、
+// 直後の `y == 0` の分岐が sub の立てた ZF を読む（fuse 2）。lea は flags を立てないので、ここを lea にすると分岐が前の flags を読んで壊れる
+func step(x int, k int) int {
+    y := x - k
+    if y == 0 {
+        return x * 3
+    }
+    return x + y
+}
+
+func walk(x int, k int) int {
+    y := x + k
+    if y != 0 {
+        return x * 5 + y
+    }
+    return x - 7
+}
+
+func main() {
+    mut s := 0
+    for i <- iter.Range(0, 6) {
+        s = s * 31 + step(i, 1) + step(i, 3) + walk(i, 0 - i) + walk(i, 2)
+    }
+    println(s)
+}

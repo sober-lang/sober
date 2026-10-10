@@ -1,0 +1,9 @@
+package main
+
+// loader の負例: 別の path が同じ参照名（別名が要る）
+import "testdata/loader_neg/refcollide/x/util"
+import "testdata/loader_neg/refcollide/y/util"
+
+func main() {
+    println(util.F())
+}

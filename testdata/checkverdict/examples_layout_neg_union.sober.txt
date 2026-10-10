@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_union.sober:6:6: @layout applies only to a struct type declaration
+exit=1

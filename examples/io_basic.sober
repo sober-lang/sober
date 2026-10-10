@@ -1,0 +1,94 @@
+package main
+
+// io-3: std/io の ReadFile / WriteFile（同期 syscall の直呼び）と errno → ラベル、`string(b)` の検査。
+// リポジトリのルートを cwd にして実行する（gate・codegen.test と同じ）。書き込み先は out/ の下
+
+import "std/io"
+import "std/utf8"
+
+func why(p string, e error) string {
+    return switch e {
+    case io.NotFound{}: "${p}: not found"
+    case io.Denied{}: "${p}: denied"
+    case io.Other{errno}: "${p}: errno ${errno}"
+    case utf8.InvalidUtf8{pos}: "${p}: invalid utf-8 at ${pos}"
+    }
+}
+
+// 読んで text にする（2 段の ?: io の失敗と UTF-8 の失敗が同じ error? で上がる）
+func readText(p string) (string, error?) {
+    b := io.ReadFile(p)?
+    s := string(b)?
+    return s, nil
+}
+
+func showText(p string) {
+    s, err := readText(p)
+    if err != nil {
+        println(why(p, err))
+    } else {
+        println("${p}: ${len(bytes(s))} bytes, first line = ${firstLine(s)}")
+    }
+}
+
+func firstLine(s string) string {
+    b := bytes(s)
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(b) && b[i] != 10 {
+        out = append(out, b[i])
+        i += 1
+    }
+    t, err := string(freeze(out))
+    return if err != nil { "?" } else { t }
+}
+
+func check(p string, e error?) {
+    if e != nil {
+        println(why(p, e))
+    } else {
+        println("${p}: written")
+    }
+}
+
+func sum(b []byte) int {
+    mut s := 0
+    mut i := 0
+    while i < len(b) {
+        s += int(b[i])
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    showText("testdata/io/hello.txt")
+    showText("testdata/io/missing.txt")
+    showText("testdata/io")
+    // 書いて読み戻す（IO_BUF = 4096 を跨ぐ大きさ）
+    mut big := mut []byte{}
+    mut i := 0
+    while i < 10000 {
+        big = append(big, byte(97 + i % 26))
+        i += 1
+    }
+    p := "out/io_basic.tmp"
+    check(p, io.WriteFile(p, freeze(big)))
+    b, err := io.ReadFile(p)
+    if err != nil {
+        println(why(p, err))
+    } else {
+        println("read back ${len(b)} bytes, sum ${sum(b)}")
+    }
+    // 不正な UTF-8 を書いて text として読む
+    q := "out/io_basic_bad.tmp"
+    check(q, io.WriteFile(q, []byte{104, 105, 255, 10}))
+    showText(q)
+    // 空のファイル
+    z := "out/io_basic_empty.tmp"
+    check(z, io.WriteFile(z, []byte{}))
+    showText(z)
+    // 書けない場所
+    check("/proc/version", io.WriteFile("/proc/version", []byte{65}))
+    check("out/no/such/dir.tmp", io.WriteFile("out/no/such/dir.tmp", []byte{65}))
+}

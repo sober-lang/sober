@@ -1,0 +1,17 @@
+package main
+
+// flow typing の if（ifnil）の腕の region の合流（F-l — 2026-10-02 まで check が def error・build は受理）: `T?` の仮引数を絞った中身（呼び手の region）と
+// 本体のリテラルを同じ if で合流させる。脱糖器は素の if（F-g — if_region_join）と同じく、両腕を最内の region の型へ ann で緩める
+
+func sepOr(sep string?) string {
+    s := if sep != nil { sep } else { " " }
+    return s
+}
+
+func orDefault(sep string?) string {
+    return if sep == nil { "-" } else { sep }
+}
+
+func main() {
+    println(sepOr(","), sepOr(nil), orDefault("x"), orDefault(nil))
+}

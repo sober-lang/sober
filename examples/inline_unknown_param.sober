@@ -1,0 +1,12 @@
+package main
+
+// 負例（C4 の握り潰しの棚卸し）: inline 展開される関数の値の仮引数の型が引けなければ拒否
+// （旧: 型の失敗を -1 に化けさせて先へ進み、check が受理・build だけが拒否していた — check ⊃ build）
+
+func app(x Foo, f func(int) int) int {
+    return f(1)
+}
+
+func main() int {
+    return app(3, (y) => y)
+}

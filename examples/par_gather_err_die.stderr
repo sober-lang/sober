@@ -1,0 +1,2 @@
+panic: TaskDied{cause: index out of range} at std/par/par.sober:152:21
+  cause at par_gather_err_die.sober:13:14

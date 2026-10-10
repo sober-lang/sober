@@ -1,0 +1,95 @@
+package main
+
+import "std/builder"
+
+type Token struct {
+    kind, start, end int
+}
+
+type Node struct {
+    kind, a, b int
+}
+
+type Pair struct {
+    lhs, rhs int
+}
+
+func isDigit(c int) int {
+    return if c >= 48 && c <= 57 { 1 } else { 0 }
+}
+
+func lex(text string) []Token {
+    src := bytes(text)
+    mut toks := mut []Token{}
+    mut i := 0
+    while i < len(src) {
+        c := src[i]
+        if c == 32 {
+            i += 1
+        } else if isDigit(c) == 1 {
+            mut j := i
+            while j < len(src) && isDigit(src[j]) == 1 {
+                j += 1
+            }
+            toks = append(toks, Token{0, i, j})
+            i = j
+        } else {
+            toks = append(toks, Token{2, i, i + 1})
+            i += 1
+        }
+    }
+    return freeze(toks)
+}
+
+func numValue(text string, t Token) int {
+    src := bytes(text)
+    mut v := 0
+    mut i := t.start
+    while i < t.end {
+        v = v*10 + (src[i] - 48)
+        i += 1
+    }
+    return v
+}
+
+// Builder 形（V3-5 のゲート）: parser_x と同じ交錯成長（nodes と kids を同じ region で交互に積む）を
+// std/builder で書く。チャンク鎖はコピーせずに伸び、Build で連続 slice へ 1 回だけ写すので、
+// 交錯していても成長のゴミが出ない（--mem-trace で 20 → 40 項がほぼ 2 倍 = O(n)）
+func parse(src string) ([]Node, []Pair, int) {
+    toks := lex(src)
+    mut nb := builder.Builder[Node]{}
+    mut kb := builder.Builder[Pair]{}
+    mut last := 0 - 1
+    mut i := 0
+    while i < len(toks) {
+        t := toks[i]
+        if t.kind == 0 {
+            builder.Push(mut nb, Node{0, numValue(src, t), 0})
+            last = builder.Len(mut nb) - 1
+        } else {
+            i += 1
+            t2 := toks[i]
+            builder.Push(mut nb, Node{0, numValue(src, t2), 0})
+            builder.Push(mut kb, Pair{last, builder.Len(mut nb) - 1})
+            builder.Push(mut nb, Node{2, builder.Len(mut kb) - 1, 0})
+            last = builder.Len(mut nb) - 1
+        }
+        i += 1
+    }
+    nodes := builder.Build(mut nb)
+    kids := builder.Build(mut kb)
+    return nodes, kids, last
+}
+
+func eval(nodes []Node, kids []Pair, root int) int {
+    n := nodes[root]
+    return if n.kind == 0 { n.a } else {
+        p := kids[n.a]
+        eval(nodes, kids, p.lhs) + eval(nodes, kids, p.rhs)
+    }
+}
+
+func main() {
+    nodes, kids, root := parse("1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17+18+19+20")
+    println(len(nodes), len(kids), eval(nodes, kids, root))
+}

@@ -1,0 +1,14 @@
+package main
+
+// 負例（language.md 32 節）: named scalar と下地の混同（暗黙変換なし）
+
+type NodeRef int
+
+func use(r NodeRef) int {
+    return int(r)
+}
+
+func main() {
+    n := 3
+    println(use(n))
+}

@@ -1,0 +1,11 @@
+package main
+
+// 負例: 欄は名前つきで全部・1 回ずつ（language.md 27 節「panic ラベル」— loader の拒否）
+type L panic {
+    a int
+    b int
+}
+
+func main() {
+    panic(L{a: 1})
+}

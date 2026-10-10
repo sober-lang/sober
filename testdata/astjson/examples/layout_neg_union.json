@@ -1,0 +1,74 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "U",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "A",
+            "fields": [
+              {
+                "name": "x",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 10
+          }
+        ]
+      },
+      "layout": true,
+      "tok": 7,
+      "span": {
+        "start": 3,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 25
+                }
+              ],
+              "tok": 24
+            }
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 30
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": []
+}

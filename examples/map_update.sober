@@ -1,0 +1,67 @@
+package main
+
+// map の更新の引きの融合（mapfuse — M16 ②）の網: `c := m[k]; m[k] = <c の式>` の引きは 1 回（scripts/mapfuse.sh が
+// IR の map_find の呼び出しの数を関数ごとに照合する）。string の鍵（格納点の写しの対象 — 写しを引きの前に置くと融合が外れた退行）・
+// int の鍵・slice を含む値（値の格納点の写し）の 3 形（+ 値の式が確保を呼ぶ形は融合しない — 2 回）
+
+func updStr(m mut map[string]int, ks []string) {
+    for k <- ks {
+        c := m[k]
+        m[k] = if c != nil { c + 1 } else { 1 }
+    }
+}
+
+func updInt(m mut map[int]int, ks []int) {
+    for k <- ks {
+        c := m[k]
+        m[k] = if c != nil { c * 2 } else { 3 }
+    }
+}
+
+// updVal は値が string（値の格納点の写しの道）。今は 2 回（鍵のスロットの書き直しの同値の判定が SSA の値の一致だけ — 別のブロックで
+// 読み直した同じスロットの load を同じと見られない。広げるのは PINS — scripts/mapfuse.sh の期待値は 2）
+func updVal(m mut map[string]string, ks []string) {
+    for k <- ks {
+        c := m[k]
+        m[k] = if c != nil { c } else { k }
+    }
+}
+
+// updCat は値の式が確保の呼び出し（文字列の連結）を持つ形 — 2 回の引きの間に呼び出しが入るので融合しない（2 回 — 保守側の正しい拒否）
+func updCat(m mut map[string]string, ks []string) {
+    for k <- ks {
+        c := m[k]
+        m[k] = if c != nil { c + k } else { k }
+    }
+}
+
+func gs(m mut map[string]int, k string) int {
+    c := m[k]
+    return if c != nil { c } else { -1 }
+}
+
+func gi(m mut map[int]int, k int) int {
+    c := m[k]
+    return if c != nil { c } else { -1 }
+}
+
+func gv(m mut map[string]string, k string) string {
+    c := m[k]
+    return if c != nil { c } else { "-" }
+}
+
+func main() {
+    ws := []string{"ab", "cd", "ab", "ef", "cd", "ab"}
+    mut a := mut map[string]int{}
+    updStr(mut a, ws)
+    println(gs(mut a, "ab"), gs(mut a, "cd"), gs(mut a, "ef"))
+    mut b := mut map[int]int{}
+    updInt(mut b, []int{1, 2, 1, 1, 3})
+    println(gi(mut b, 1), gi(mut b, 2), gi(mut b, 3))
+    mut c := mut map[string]string{}
+    updVal(mut c, ws)
+    println(gv(mut c, "ab"), gv(mut c, "cd"), gv(mut c, "ef"))
+    mut d := mut map[string]string{}
+    updCat(mut d, ws)
+    println(gv(mut d, "ab"), gv(mut d, "cd"), gv(mut d, "ef"))
+}

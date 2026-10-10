@@ -1,0 +1,294 @@
+package lower
+
+// switch（src/lower_switch.zig の写し）: subject の評価、case の順次照合（定数・束縛・`_`・型パターン）、腕の合流
+
+import "desugar"
+import "ast"
+import "std/iter"
+
+// hasTopName は package pk のトップレベル名（const・関数・型・union の variant）か
+func hasTopName(st mut St, pk int, name int) bool {
+    return desugar.HasTopName(mut st.d, pk, name)
+}
+
+// isBindingPattern はパターン位置の裸の識別子が束縛か
+func isBindingPattern(st mut St, name int) bool {
+    return lookup(mut st, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !hasTopName(mut st, st.curPkg, name)
+}
+
+func hasWildcard(st mut St, alts int) bool {
+    for i <- iter.Range(0, llen(mut st, alts)) {
+        a := lat(mut st, alts, i)
+        if kindOf(mut st, a) == ast.EIdent && strIs(mut st, nodeAt(mut st, a).a, "_") {
+            return true
+        }
+    }
+    return false
+}
+
+// isBindAlt はパターンの選択が裸の束縛 1 つか
+func isBindAlt(st mut St, alts int) bool {
+    if llen(mut st, alts) != 1 {
+        return false
+    }
+    a := lat(mut st, alts, 0)
+    return kindOf(mut st, a) == ast.EIdent && isBindingPattern(mut st, nodeAt(mut st, a).a)
+}
+
+// baseAt は名前（文字列）の最後の要素の先頭（"ref.N" の N — Zig の baseName は最初の '.' の後）
+func baseAt(st mut St, name int) int {
+    d := dotAt(mut st, name)
+    return if d >= 0 { d + 1 } else { 0 }
+}
+
+// 束縛の鎖 = [head, tail]、項 = [next, name, 型, 値]
+func bindAdd(st mut St, bs int, name int, t int, v int) {
+    en := rec4(mut st, -1, name, t, v)
+    if hget(mut st, bs + 1) < 0 {
+        hset(mut st, bs, en)
+    } else {
+        hset(mut st, hget(mut st, bs + 1), en)
+    }
+    hset(mut st, bs + 1, en)
+}
+
+// switchExpr は subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
+func switchExpr(st mut St, sw int) (Val, error?) {
+    tok := tokOf(mut st, sw)
+    subjects := nodeAt(mut st, sw).a
+    cases := nodeAt(mut st, sw).b
+    dflt := nodeAt(mut st, sw).c
+    ns := llen(mut st, subjects)
+    mut subj := 0
+    if ns == 1 {
+        subj = evalMulti(mut st, lat(mut st, subjects, 0))?
+    } else {
+        subj = listN(mut st, ns * 2)
+        hset(mut st, subj, ns)
+        mut i := 0
+        while i < ns {
+            x := expr(mut st, lat(mut st, subjects, i))?
+            if isTag(mut st, x.t, TNever) {
+                return Val{t: x.t, v: 0}, nil
+            }
+            hset(mut st, subj + 1 + i * 2, x.t)
+            hset(mut st, subj + 2 + i * 2, x.v)
+            i += 1
+        }
+    }
+    if subj < 0 {
+        return Val{t: tNever(mut st), v: 0}, nil
+    }
+    nsub := hget(mut st, subj)
+    if ns > 0 && nsub == 0 {
+        return Val{}, LowerFail{k: KMismatch, tok: tok}
+    }
+    nc := llen(mut st, cases)
+    ends := endsNew(mut st, nc + 1)
+    mut t := -1
+    for ci <- iter.Range(0, nc) {
+        c := lat(mut st, cases, ci)
+        pats := nodeAt(mut st, c).a
+        np := llen(mut st, pats)
+        wantp := if nsub > 1 { nsub } else { 1 }
+        if np != wantp {
+            return Val{}, LowerFail{k: KMismatch, tok: tokOf(mut st, c)}
+        }
+        bs := rec4(mut st, -1, -1, 0, 0)
+        nx := newBlock(mut st)
+        mut i := 0
+        while i < np && cur(mut st) >= 0 {
+            if nsub == 0 {
+                matchPattern(mut st, lat(mut st, pats, i), -1, 0, nx, bs)?
+            } else {
+                matchPattern(mut st, lat(mut st, pats, i), hget(mut st, subj + 1 + i * 2), hget(mut st, subj + 2 + i * 2), nx, bs)?
+            }
+            i += 1
+        }
+        pushScope(mut st)
+        mut b := hget(mut st, bs)
+        while b >= 0 {
+            declareNew(mut st, hget(mut st, b + 1), LVal, hget(mut st, b + 2), hget(mut st, b + 3), tokOf(mut st, c))?
+            b = hget(mut st, b)
+        }
+        av := armTail(mut st, nodeAt(mut st, nodeAt(mut st, c).b).a)?
+        popScope(mut st)
+        t = joinType(mut st, t, if cur(mut st) < 0 { tNever(mut st) } else { av.t }, tokOf(mut st, c))?
+        if cur(mut st) >= 0 {
+            endsAdd(mut st, ends, cur(mut st), av.t, av.v)
+        }
+        setCur(mut st, nx)
+    }
+    if ns <= 1 && dflt < 0 {
+        mut cty := tNone(mut st)
+        if nsub == 1 {
+            cty = if isErr(mut st, hget(mut st, subj + 1)) { hget(mut st, errsInfo(mut st) + SI_TY) } else { hget(mut st, subj + 1) }
+        }
+        checkCover(mut st, sw, cty, t)?
+    }
+    if dflt >= 0 {
+        dv := armValue(mut st, nodeAt(mut st, dflt).a)?
+        t = joinType(mut st, t, if cur(mut st) < 0 { tNever(mut st) } else { dv.t }, tok)?
+        if cur(mut st) >= 0 {
+            endsAdd(mut st, ends, cur(mut st), dv.t, dv.v)
+        }
+    } else {
+        rt := if t < 0 { tNone(mut st) } else { t }
+        mut zv := 0
+        if isScalar(mut st, rt) {
+            zv = iconst(mut st, 0)
+        } else if isAggregate(mut st, rt) {
+            zv = newAgg(mut st, rt)
+        }
+        endsAdd(mut st, ends, cur(mut st), rt, zv)
+    }
+    jt, jv := joinArms(mut st, ends, if t < 0 { tNone(mut st) } else { t })
+    return Val{t: jt, v: jv}, nil
+}
+
+// checkCover は網羅の規則（check に揃える）: union の型パターンの switch は全 variant を覆うか `_` / default を持つ。
+// それ以外で default も全域の case（`_`・束縛）も無い switch は、値が unit でなければ拒否
+func checkCover(st mut St, sw int, sty int, t int) error? {
+    cases := nodeAt(mut st, sw).b
+    for ci <- iter.Range(0, llen(mut st, cases)) {
+        pats := nodeAt(mut st, lat(mut st, cases, ci)).a
+        for i <- iter.Range(0, llen(mut st, pats)) {
+            p := lat(mut st, pats, i)
+            if kindOf(mut st, p) == ast.KPConst && (hasWildcard(mut st, nodeAt(mut st, p).a) || isBindAlt(mut st, nodeAt(mut st, p).a)) {
+                return nil
+            }
+        }
+    }
+    if isTag(mut st, sty, TUnion) {
+        vs := hget(mut st, hget(mut st, sty + 1) + SI_FIELDS)
+        mut typed := false
+        for vi <- iter.Range(0, llen(mut st, vs)) {
+            vn := hget(mut st, lat(mut st, vs, vi))
+            mut hit := false
+            for ci <- iter.Range(0, llen(mut st, cases)) {
+                pats := nodeAt(mut st, lat(mut st, cases, ci)).a
+                if llen(mut st, pats) == 1 && kindOf(mut st, lat(mut st, pats, 0)) == ast.KPType {
+                    typed = true
+                    pn := nodeAt(mut st, lat(mut st, pats, 0)).b
+                    if strEqPart(mut st, vn, pn, baseAt(mut st, pn), dat(mut st, pn)) {
+                        hit = true
+                    }
+                }
+            }
+            if typed && !hit {
+                return LowerFail{k: KMismatch, tok: tokOf(mut st, sw)}
+            }
+        }
+        if typed {
+            return nil
+        }
+    }
+    if t < 0 {
+        return nil
+    }
+    if !isTag(mut st, t, TNone) && !isTag(mut st, t, TNever) {
+        return LowerFail{k: KMismatch, tok: tokOf(mut st, sw)}
+    }
+    return nil
+}
+
+// matchPattern はパターン 1 つを値 (sty, sv) に照合する（sty = -1 は subject 無し switch の bool 条件）。
+// 不一致なら nx へ跳び、一致なら続きのブロックを cur にする
+func matchPattern(st mut St, p int, sty int, sv int, nx int, bs int) error? {
+    if kindOf(mut st, p) == ast.KPConst {
+        alts := nodeAt(mut st, p).a
+        if hasWildcard(mut st, alts) {
+            return nil
+        }
+        // 裸の識別子でスコープに無い名前は値の束縛。既存の名前は比較
+        if isBindAlt(mut st, alts) {
+            if sty < 0 {
+                return LowerFail{k: KUndefined, tok: tokOf(mut st, lat(mut st, alts, 0))}
+            }
+            bindAdd(mut st, bs, nodeAt(mut st, lat(mut st, alts, 0)).a, sty, sv)
+            return nil
+        }
+        if sty >= 0 && !isScalar(mut st, sty) {
+            return LowerFail{k: KMismatch, tok: tokOf(mut st, lat(mut st, alts, 0))}
+        }
+        ok := newBlock(mut st)
+        n := llen(mut st, alts)
+        for i <- iter.Range(0, n) {
+            alt := lat(mut st, alts, i)
+            // 定数パターンは subject の型を期待型に（型なしの定数を named scalar の subject に合わせる — language.md 32 節）
+            ax := if sty >= 0 { exprExpecting(mut st, alt, sty, tokOf(mut st, alt))? } else { expr(mut st, alt)? }
+            if isTag(mut st, ax.t, TNever) {
+                return nil
+            }
+            mut c := ax.v
+            if sty >= 0 {
+                if !tEql(mut st, ax.t, sty) {
+                    return LowerFail{k: KMismatch, tok: tokOf(mut st, alt)}
+                }
+                c = cmp(mut st, CEq, sv, ax.v)
+            } else {
+                want(mut st, ax.t, tBool(mut st), tokOf(mut st, alt))?
+            }
+            miss := if i + 1 < n { newBlock(mut st) } else { nx }
+            condbr(mut st, c, ok, -1, miss, -1)
+            setCur(mut st, miss)
+        }
+        setCur(mut st, ok)
+        return nil
+    }
+    // 型パターン `[x] Variant{f, g: p}`: タグを比べ、フィールドを束縛か下位パターンで照合する
+    tok := tokOf(mut st, p)
+    if sty < 0 {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    // error: 先頭ラベル（語 0 から — 同じアドレス）で照合し、`cause` は鎖から作る 1 つ内側の error?
+    is_err := isErr(mut st, sty)
+    sty0 := sty
+    ut := if is_err { hget(mut st, errsInfo(mut st) + SI_TY) } else { sty0 }
+    if !isTag(mut st, ut, TUnion) {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    vn := nodeAt(mut st, p).b
+    vs := hget(mut st, hget(mut st, ut + 1) + SI_FIELDS)
+    mut vr := -1
+    for i <- iter.Range(0, llen(mut st, vs)) {
+        if strEqPart(mut st, hget(mut st, lat(mut st, vs, i)), vn, baseAt(mut st, vn), dat(mut st, vn)) {
+            vr = lat(mut st, vs, i)
+        }
+    }
+    if vr < 0 {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    ok := newBlock(mut st)
+    tagv := load(mut st, sv, 0)
+    condbr(mut st, cmp(mut st, CEq, tagv, iconst(mut st, hget(mut st, vr + 1))), ok, -1, nx, -1)
+    setCur(mut st, ok)
+    if nodeAt(mut st, p).a >= 0 {
+        bindAdd(mut st, bs, nodeAt(mut st, p).a, sty0, sv)
+    }
+    fps := nodeAt(mut st, p).c
+    for i <- iter.Range(0, llen(mut st, fps)) {
+        fp := lat(mut st, fps, i)
+        f := findField(mut st, hget(mut st, vr + 2), nodeAt(mut st, fp).a)
+        mut ft := 0
+        mut fv := 0
+        if f >= 0 {
+            ft = hget(mut st, f + 1)
+            fv = loadVal(mut st, sv, 1 + hget(mut st, f + 2), ft)
+        } else if is_err && strIs(mut st, nodeAt(mut st, fp).a, "cause") {
+            ft = optOf(mut st, sty0)
+            fv = causeOf(mut st, sv, sty0, ut)
+        } else {
+            return LowerFail{k: KUndefined, tok: tokOf(mut st, fp)}
+        }
+        if nodeAt(mut st, fp).b >= 0 {
+            matchPattern(mut st, nodeAt(mut st, fp).b, ft, fv, nx, bs)?
+            if cur(mut st) < 0 {
+                return nil
+            }
+        } else if !strIs(mut st, nodeAt(mut st, fp).a, "_") {
+            bindAdd(mut st, bs, nodeAt(mut st, fp).a, ft, fv)
+        }
+    }
+    return nil
+}

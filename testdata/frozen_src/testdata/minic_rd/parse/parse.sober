@@ -1,0 +1,118 @@
+package parse
+
+// minic の構文: expr := term (('+' | '-') term)*、term := unary (('*' | '/') unary)*、unary := '-' unary | 数 | '(' expr ')'。
+// 再帰下降版（region 多相の裁定 R2 の検証例 — testdata/minic の演算子順位法を書き直した形）。
+// expr / term / unary は相互再帰し、Builder と字句の Cursor を mut 引数で引き回す。mut 引数の関数でも
+// 再帰の輪に入るものは Def として呼ばれる（K-a — 呼び出しは anchor つき）。木は []Node + 添字参照で、
+// 子が親より先に並ぶ（後置順 = そのままスタック機械の順。演算子順位法版と同じ並びになる）
+
+import "std/builder"
+import "testdata/frozen_src/testdata/minic_rd/lex"
+import "testdata/frozen_src/testdata/minic_rd/diag"
+
+// 節の種類
+const Lit = 0
+const Neg = 1
+const Add = 2
+const Sub = 3
+const Mul = 4
+const Div = 5
+
+// l / r は子の添字（無ければ -1）、pos は字句の位置（Div の実行時エラーの位置になる）
+type Node struct {
+    kind, val, pos, l, r int
+}
+
+// peek は次の字句を読むだけ（Cursor の写しを進める）
+func peek(c mut lex.Cursor) lex.Token {
+    mut d := c
+    return lex.Next(mut d)
+}
+
+// node は節を積んで添字を返す
+func node(nb mut builder.Builder[Node], n Node) int {
+    builder.Push(mut nb, n)
+    return builder.Len(mut nb) - 1
+}
+
+// expr := term (('+' | '-') term)*
+func expr(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
+    mut l := term(mut nb, mut c)?
+    mut more := true
+    while more {
+        t := peek(mut c)
+        if t.kind == lex.Plus || t.kind == lex.Minus {
+            lex.Next(mut c)
+            r := term(mut nb, mut c)?
+            k := if t.kind == lex.Plus { Add } else { Sub }
+            l = node(mut nb, Node{k, 0, t.pos, l, r})
+        } else {
+            more = false
+        }
+    }
+    return l, nil
+}
+
+// term := unary (('*' | '/') unary)*
+func term(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
+    mut l := unary(mut nb, mut c)?
+    mut more := true
+    while more {
+        t := peek(mut c)
+        if t.kind == lex.Star || t.kind == lex.Slash {
+            lex.Next(mut c)
+            r := unary(mut nb, mut c)?
+            k := if t.kind == lex.Star { Mul } else { Div }
+            l = node(mut nb, Node{k, 0, t.pos, l, r})
+        } else {
+            more = false
+        }
+    }
+    return l, nil
+}
+
+// unary := '-' unary | 数 | '(' expr ')'
+func unary(nb mut builder.Builder[Node], c mut lex.Cursor) (int, error?) {
+    t := lex.Next(mut c)
+    if t.kind == lex.Minus {
+        v := unary(mut nb, mut c)?
+        return node(mut nb, Node{Neg, 0, t.pos, 0 - 1, v}), nil
+    }
+    if t.kind == lex.Num {
+        return node(mut nb, Node{Lit, t.val, t.pos, 0 - 1, 0 - 1}), nil
+    }
+    if t.kind == lex.LParen {
+        e := expr(mut nb, mut c)?
+        u := lex.Next(mut c)
+        if u.kind == lex.RParen {
+            return e, nil
+        }
+        if u.kind == lex.End {
+            return 0, diag.Expected{pos: u.pos, want: 5}
+        }
+        return 0, diag.Expected{pos: u.pos, want: 1}
+    }
+    if t.kind == lex.End {
+        return 0, diag.UnexpectedEnd{pos: t.pos}
+    }
+    return 0, diag.Expected{pos: t.pos, want: 0}
+}
+
+// Parse は 1 行の字句列を木にする（根は最後の節）
+@errors(diag.UnexpectedEnd, diag.Expected, diag.Unbalanced)
+func Parse(ts []lex.Token) ([]Node, error?) {
+    mut nb := builder.Builder[Node]{}
+    mut c := lex.Start(ts)
+    // 別 package の再帰する mut 関数（.sobi では本体なし）を写しの Cursor で呼ぶ — 結果は使わない（R2 の分割検査の経路）
+    mut d := c
+    lex.Remaining(mut d)
+    expr(mut nb, mut c)?
+    t := lex.Next(mut c)
+    if t.kind == lex.RParen {
+        return []Node{}, diag.Unbalanced{pos: t.pos}
+    }
+    if t.kind != lex.End {
+        return []Node{}, diag.Expected{pos: t.pos, want: 1}
+    }
+    return builder.Build(mut nb), nil
+}

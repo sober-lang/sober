@@ -1,0 +1,389 @@
+package desugar
+
+// switch（src/desugar.zig の switchExpr / constSwitch / unionSwitch / caseTree / caseArm の写し）
+
+import "ast"
+
+func switchExpr(st mut S, sw int, eb int, ef int, depth int, want int) (int, error?) {
+    saved := st.swWant
+    hv9 := if want >= 0 { want } else { switchTy(mut st, sw, eb, ef) }
+    st.swWant = hv9
+    cs := nodeAt(mut st, sw).b
+    mut typed := false
+    mut i := 0
+    while i < llen(mut st, cs) {
+        ps := nodeAt(mut st, lat(mut st, cs, i)).a
+        mut j := 0
+        while j < llen(mut st, ps) {
+            if kindOf(mut st, lat(mut st, ps, j)) == ast.KPType {
+                typed = true
+            }
+            j += 1
+        }
+        i += 1
+    }
+    r := if typed { unionSwitch(mut st, sw, eb, ef, depth)? } else { constSwitch(mut st, sw, eb, ef, depth)? }
+    st.swWant = saved
+    return r, nil
+}
+
+// hasWildcard は選択肢の列に `_` があるか
+func hasWildcard(st mut S, alts int) bool {
+    mut i := 0
+    while i < llen(mut st, alts) {
+        a := lat(mut st, alts, i)
+        if kindOf(mut st, a) == ast.EIdent && strIs(mut st, nodeAt(mut st, a).a, "_") {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// hasTopName は package pk のトップレベル名（const・関数・型・union の variant）か
+func hasTopName(st mut S, pk int, name int) bool {
+    mut f := pkgFlo(mut st, pk)
+    while f < pkgFhi(mut st, pk) {
+        root := fileRoot(mut st, f)
+        cl := nodeAt(mut st, root).e
+        mut i := 0
+        while i < llen(mut st, cl) {
+            if strEq(mut st, nodeAt(mut st, lat(mut st, cl, i)).a, name) {
+                return true
+            }
+            i += 1
+        }
+        fl := nodeAt(mut st, root).d
+        i = 0
+        while i < llen(mut st, fl) {
+            if strEq(mut st, nodeAt(mut st, lat(mut st, fl, i)).a, name) {
+                return true
+            }
+            i += 1
+        }
+        tl := nodeAt(mut st, root).c
+        i = 0
+        while i < llen(mut st, tl) {
+            d := lat(mut st, tl, i)
+            if strEq(mut st, nodeAt(mut st, d).a, name) {
+                return true
+            }
+            body := nodeAt(mut st, d).c
+            if kindOf(mut st, body) == ast.BUnion {
+                vs := nodeAt(mut st, body).a
+                mut j := 0
+                while j < llen(mut st, vs) {
+                    if strEq(mut st, nodeAt(mut st, lat(mut st, vs, j)).a, name) {
+                        return true
+                    }
+                    j += 1
+                }
+            }
+            i += 1
+        }
+        f += 1
+    }
+    return false
+}
+
+// isBindingPattern はパターン位置の裸の識別子が束縛か（未知なら束縛）
+func isBindingPattern(st mut S, eb int, name int) bool {
+    return lookup(mut st, eb, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !hasTopName(mut st, st.curPkg, name)
+}
+
+// multiResults は subject が結果 2 個以上の名前付き関数の呼び出しならその関数（でなければ -1）
+func multiResults(st mut S, subj int, eb int) int {
+    k := kindOf(mut st, subj)
+    mut callee := -1
+    if k == ast.ECall {
+        callee = nodeAt(mut st, subj).a
+    } else if k == ast.EPipe {
+        callee = nodeAt(mut st, subj).b
+    } else {
+        return -1
+    }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 || llen(mut st, fnResults(mut st, fi)) < 2 {
+        return -1
+    }
+    return fi
+}
+
+// constSwitch は定数パターン / subject 無し / 複数 subject の switch を eq + ite に脱糖する
+func constSwitch(st mut S, sw int, eb int, ef int, depth int) (int, error?) {
+    subs := nodeAt(mut st, sw).a
+    tok := tokOf(mut st, sw)
+    mut n := llen(mut st, subs)
+    mut sb := depth
+    mut tuple := -1
+    mut subjects := mut []int{}
+    mut sbool := mut []bool{}
+    if n == 1 {
+        fi := multiResults(mut st, lat(mut st, subs, 0), eb)
+        if fi >= 0 {
+            rs := fnResults(mut st, fi)
+            kk := llen(mut st, rs)
+            tuple = expr(mut st, lat(mut st, subs, 0), eb, ef, depth)?
+            sb = depth + 1
+            mut i := 0
+            while i < kk {
+                subjects = append(subjects, projection(mut st, cVar(mut st, i), i, kk))
+                rt, err := tyOf(mut st, fnPkg(mut st, fi), lat(mut st, rs, i), tok, 32)
+                sbool = append(sbool, err == nil && tg(mut st, rt) == TBool)
+                i += 1
+            }
+            n = kk
+        }
+    }
+    if tuple < 0 {
+        mut i := 0
+        while i < llen(mut st, subs) {
+            subjects = append(subjects, expr(mut st, lat(mut st, subs, i), eb, ef, depth + i)?)
+            i += 1
+        }
+        i = 0
+        while i < llen(mut st, subs) {
+            sbool = append(sbool, isTag(mut st, computeTy(mut st, lat(mut st, subs, i), eb, ef), TBool))
+            i += 1
+        }
+    }
+    d2 := sb + n
+    dflt := nodeAt(mut st, sw).c
+    mut acc := if dflt >= 0 { scoped(mut st, nodeAt(mut st, dflt).a, eb, ef, d2, false, false, st.swWant)? } else { cTriv(mut st) }
+    cs := nodeAt(mut st, sw).b
+    mut ci := llen(mut st, cs) - 1
+    while ci >= 0 {
+        c := lat(mut st, cs, ci)
+        pats := nodeAt(mut st, c).a
+        if llen(mut st, pats) != (if n > 1 { n } else { 1 }) {
+            return 0, Fail{k: KFrag, tok: tokOf(mut st, c)}
+        }
+        mut eb2 := eb
+        mut cond := -1
+        mut i := 0
+        while i < llen(mut st, pats) {
+            alts := nodeAt(mut st, lat(mut st, pats, i)).a
+            if hasWildcard(mut st, alts) {
+                i += 1
+                continue
+            }
+            if n > 0 && llen(mut st, alts) == 1 && kindOf(mut st, lat(mut st, alts, 0)) == ast.EIdent && isBindingPattern(mut st, eb, nodeAt(mut st, lat(mut st, alts, 0)).a) {
+                eb2 = bind(mut st, eb2, nodeAt(mut st, lat(mut st, alts, 0)).a, sb + i, false, -1, -1, -1, 0, -1, false)
+                i += 1
+                continue
+            }
+            // 選択肢の or 連鎖（ite 脱糖 = 短絡）
+            mut pcond := -1
+            mut j := 0
+            while j < llen(mut st, alts) {
+                alt := lat(mut st, alts, j)
+                mut one := -1
+                if n > 0 {
+                    subj := cVar(mut st, d2 - 1 - (sb + i))
+                    pv := expr(mut st, alt, eb, ef, d2)?
+                    one = if sbool[i] { boolEq(mut st, subj, pv, true) } else { cBin(mut st, BEq, subj, pv) }
+                } else {
+                    one = expr(mut st, alt, eb, ef, d2)?
+                }
+                pcond = if pcond >= 0 { cIte(mut st, pcond, cTT(mut st), one) } else { one }
+                j += 1
+            }
+            if pcond >= 0 {
+                cond = if cond >= 0 { cIte(mut st, cond, pcond, cFF(mut st)) } else { pcond }
+            }
+            i += 1
+        }
+        body := scoped(mut st, nodeAt(mut st, nodeAt(mut st, c).b).a, eb2, ef, d2, false, false, st.swWant)?
+        acc = if cond >= 0 { cIte(mut st, cond, body, acc) } else { body }
+        ci -= 1
+    }
+    mut i := len(subjects) - 1
+    while i >= 0 {
+        acc = cLet(mut st, subjects[i], acc)
+        i -= 1
+    }
+    if tuple >= 0 {
+        return cLet(mut st, tuple, acc), nil
+    }
+    return acc, nil
+}
+
+// unionSwitch は型パターンの switch（腕の列 arms[variant の添字] = (型パターン（-1 = `_`/default）, 本体)）
+func unionSwitch(st mut S, sw int, eb int, ef int, depth int) (int, error?) {
+    subs := nodeAt(mut st, sw).a
+    tok := tokOf(mut st, sw)
+    if llen(mut st, subs) != 1 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    mut decl := -1
+    mut dpk := 0
+    mut arms := -1
+    mut wild := nodeAt(mut st, sw).c
+    cs := nodeAt(mut st, sw).b
+    mut ci := 0
+    while ci < llen(mut st, cs) {
+        c := lat(mut st, cs, ci)
+        pats := nodeAt(mut st, c).a
+        if llen(mut st, pats) != 1 {
+            return 0, Fail{k: KMalformed, tok: tokOf(mut st, c)}
+        }
+        p := lat(mut st, pats, 0)
+        if kindOf(mut st, p) == ast.KPConst {
+            if hasWildcard(mut st, nodeAt(mut st, p).a) && wild < 0 {
+                wild = nodeAt(mut st, c).b
+                ci += 1
+                continue
+            }
+            return 0, Fail{k: KMalformed, tok: tokOf(mut st, c)}
+        }
+        ptok := tokOf(mut st, p)
+        if nodeAt(mut st, p).a >= 0 {
+            return 0, Fail{k: KFrag, tok: ptok}
+        }
+        vr := findVariant(mut st, st.curPkg, nodeAt(mut st, p).b)
+        if vr.decl == -1 {
+            return 0, Fail{k: KUnknown, tok: ptok}
+        }
+        if decl != -1 {
+            if decl != vr.decl {
+                return 0, Fail{k: KMalformed, tok: ptok}
+            }
+        } else {
+            decl = vr.decl
+            dpk = vr.pkg
+            nv := vcount(mut st, vr.decl)
+            arms = listN(mut st, nv * 2)
+            mut i := 0
+            while i < nv * 2 {
+                hset(mut st, arms + 1 + i, -2)
+                i += 1
+            }
+        }
+        if hget(mut st, arms + 1 + vr.idx * 2) != -2 {
+            return 0, Fail{k: KMalformed, tok: ptok}
+        }
+        hset(mut st, arms + 1 + vr.idx * 2, p)
+        hset(mut st, arms + 2 + vr.idx * 2, nodeAt(mut st, c).b)
+        ci += 1
+    }
+    if decl == -1 {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    nv := vcount(mut st, decl)
+    if wild >= 0 {
+        mut i := 0
+        while i < nv {
+            if hget(mut st, arms + 1 + i * 2) == -2 {
+                hset(mut st, arms + 1 + i * 2, -1)
+                hset(mut st, arms + 2 + i * 2, wild)
+            }
+            i += 1
+        }
+    }
+    mut i := 0
+    while i < nv {
+        if hget(mut st, arms + 1 + i * 2) == -2 {
+            return 0, Fail{k: KMalformed, tok: tok}
+        }
+        i += 1
+    }
+    s0 := lat(mut st, subs, 0)
+    subject := expr(mut st, s0, eb, ef, depth)?
+    if decl == ERRS {
+        // error（R4b K1''）: subject（先頭 + 鎖）を束縛し、先頭で分岐する。鎖は腕の `cause` が読む
+        saved_has := (st.hasErrSw != 0)
+        saved_lv := st.errLevel
+        saved_ty := st.errTy
+        st.hasErrSw = b2i(true)
+        st.errLevel = depth
+        hv298 := computeTy(mut st, s0, eb, ef)
+        st.errTy = hv298
+        topv := c1(mut st, CFst, cVar(mut st, 0))
+        tree := caseTree(mut st, topv, dpk, decl, 0, arms, eb, ef, depth + 1)?
+        st.hasErrSw = b2i(saved_has)
+        st.errLevel = saved_lv
+        st.errTy = saved_ty
+        return cLet(mut st, subject, tree), nil
+    }
+    return caseTree(mut st, subject, dpk, decl, 0, arms, eb, ef, depth)
+}
+
+// caseTree は右結合の union の入れ子に沿った case の入れ子（variant の列は decl の start 番目から）
+func caseTree(st mut S, subject int, pk int, decl int, start int, arms int, eb int, ef int, depth int) (int, error?) {
+    n := vcount(mut st, decl) - start
+    if n == 1 {
+        a := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
+        return cLet(mut st, subject, a), nil
+    }
+    l := caseArm(mut st, arms, start, pk, vat(mut st, decl, start), eb, ef, depth)?
+    r := if n == 2 { caseArm(mut st, arms, start + 1, pk, vat(mut st, decl, start + 1), eb, ef, depth)? } else { caseTree(mut st, cVar(mut st, 0), pk, decl, start + 1, arms, eb, ef, depth + 1)? }
+    return c3(mut st, CCase, subject, l, r), nil
+}
+
+// caseArm は case の腕: ペイロード（フィールドの pair 鎖）が var 0。パターンで名前の付いたフィールドを射影で束縛してから本体を脱糖する
+func caseArm(st mut S, arms int, ai int, union_pkg int, v int, eb int, ef int, depth int) (int, error?) {
+    tp := hget(mut st, arms + 1 + ai * 2)
+    blk := hget(mut st, arms + 2 + ai * 2)
+    pk := vpkgOr(mut st, v, union_pkg)
+    vfs := vfields(mut st, v)
+    nf := llen(mut st, vfs)
+    mut eb2 := eb
+    mut d := depth + 1
+    mut exs := mut []int{}
+    if tp >= 0 {
+        fps := nodeAt(mut st, tp).c
+        mut i := 0
+        while i < llen(mut st, fps) {
+            fp := lat(mut st, fps, i)
+            ftok := tokOf(mut st, fp)
+            if nodeAt(mut st, fp).b >= 0 {
+                return 0, Fail{k: KFrag, tok: ftok}
+            }
+            fname := nodeAt(mut st, fp).a
+            idx := fieldIndex(mut st, vfs, fname)
+            if idx < 0 {
+                // error ラベルの自動フィールド cause（R4b K1''）: 鎖が空なら nil、でなければ (鎖の末尾, 鎖の残り)
+                if strIs(mut st, fname, "cause") && (st.hasErrSw != 0) {
+                    et := st.errTy
+                    if et < 0 {
+                        return 0, Fail{k: KFrag, tok: ftok}
+                    }
+                    chain := c1(mut st, CSnd, cVar(mut st, d - 1 - st.errLevel))
+                    ln := c1(mut st, CLen, chain)
+                    last := cBin(mut st, BSub, ln, cLit(mut st, 1))
+                    ix := c3(mut st, CIndex, chain, last, if tg(mut st, et) == TPr { tA(mut st, et) } else { -1 })
+                    cause := c2(mut st, CPair, ix, c3(mut st, CSubslice, chain, cLit(mut st, 0), last))
+                    empty := cBin(mut st, BEq, ln, cLit(mut st, 0))
+                    value := cIte(mut st, empty, c1(mut st, CNil, et), c1(mut st, CSome, cause))
+                    exs = append(exs, value)
+                    eb2 = bind(mut st, eb2, fname, d, false, -1, tOpt(mut st, et), -1, 0, -1, false)
+                    d += 1
+                    i += 1
+                    continue
+                }
+                return 0, Fail{k: KMalformed, tok: ftok}
+            }
+            ft := nodeAt(mut st, lat(mut st, vfs, idx)).b
+            if nf == 1 {
+                // 射影が恒等なので case の束縛（var 0）にそのまま名前を付ける
+                dd := declOfTypeExpr(mut st, pk, ft)
+                eb2 = bind(mut st, eb2, fname, depth, false, dd, patFieldTy(mut st, pk, ft, ftok), -1, 0, -1, false)
+                i += 1
+                continue
+            }
+            payload := cVar(mut st, d - (depth + 1))
+            exs = append(exs, projection(mut st, payload, idx, nf))
+            dd := declOfTypeExpr(mut st, pk, ft)
+            eb2 = bind(mut st, eb2, fname, d, false, dd, patFieldTy(mut st, pk, ft, ftok), -1, 0, -1, false)
+            d += 1
+            i += 1
+        }
+    }
+    mut body := scoped(mut st, nodeAt(mut st, blk).a, eb2, ef, d, false, false, st.swWant)?
+    mut i := len(exs) - 1
+    while i >= 0 {
+        body = cLet(mut st, exs[i], body)
+        i -= 1
+    }
+    return body, nil
+}

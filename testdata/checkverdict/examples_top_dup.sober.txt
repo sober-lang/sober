@@ -1,0 +1,2 @@
+sober: load error at examples/top_dup.sober:10:6: a top-level name is declared more than once in the package
+exit=1

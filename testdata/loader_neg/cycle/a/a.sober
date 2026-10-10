@@ -1,0 +1,7 @@
+package a
+
+import "testdata/loader_neg/cycle/b"
+
+func F() int {
+    return b.G()
+}

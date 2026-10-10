@@ -1,0 +1,162 @@
+package lower
+
+import "desugar"
+
+// byte の列（[]byte — セル 1 バイト。language.md 21 / 33 節・段 B）のランタイム。string が imm []byte になった（段 C）ので
+// 事実上いつも要る（needByteRt が初出で宣言し、本体は program の最後に組む — 宣言の口は「使うときだけ」のまま）。
+//
+// 整列（P1）の実装: region の bump は**常に 8 整列のまま**にし、byte の列は 8 バイトの粒で確保する（語の確保・語の列の先端一致は今までと同じ命令列）。
+// 先端一致の判定をバイト単位で保つため、深度ごとに「最後に確保・伸長した byte の列の終わり」を @rt.btip に持つ:
+// append は btip == base + len のとき、粒の余り（(base + len) % 8 != 0）ならその場に書き、粒の境目なら bump == base + len のとき粒を 1 つ足す。
+// 同じセル列を指す 2 本のヘッダは、先に伸ばした側が btip を進めるので後の側は全コピーになる（語の列で bump が動くのと同じ）。
+// 棄てた案: region_alloc を語の確保の前に 8 へ切り上げる（草案 P1 の字面）— 空の語の列のヘッダが切り上げ前の bump を base に持つと、
+// 先端の伸長（grow）で確保したセルが base とずれる。直すには全 append 点の IR が変わる
+
+// needByteRt は byte の列のランタイムを（初出なら）宣言する
+func needByteRt(st mut St) {
+    if st.rtByte != 0 {
+        return
+    }
+    st.rtByte = 1
+    st.btip = addGlobalInit(mut st, int(strLit(mut st, "rt.btip")), MAX_DEPTH + 1, -1)
+    st.rtAlloc8 = addFunc(mut st, int(strLit(mut st, "rt.region_alloc8")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyPtr)
+    st.rtTip8 = addFunc(mut st, int(strLit(mut st, "rt.tip8")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
+    st.rtCopy8 = addFunc(mut st, int(strLit(mut st, "rt.copy8")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
+    st.rtReloc8 = addFunc(mut st, int(strLit(mut st, "rt.region_relocate8")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+    st.rtExtend8 = addFunc(mut st, int(strLit(mut st, "rt.extend8")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), -1)
+}
+
+// buildByteRt は宣言済みなら本体を組む（program の最後 — 関数の組み立ての途中で begin しない）
+func buildByteRt(st mut St) {
+    if st.rtByte == 0 {
+        return
+    }
+    buildAlloc8(mut st)
+    buildTip8(mut st)
+    buildCopy8(mut st)
+    buildReloc8(mut st)
+    buildExtend8(mut st)
+}
+
+// slotLimit は深度 d のスロットの末尾（バイト番地）
+func slotLimit(st mut St, meta int, d int) int {
+    return bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, d, iconst(mut st, 1)), load(mut st, meta, W_SLOT_SIZE)))
+}
+
+// buildAlloc8 は region_alloc8(d, n): 深度 d に n バイトの byte の列を確保する（bump は 8 の粒で進める）。btip = 先頭 + n。スロット超過は exit 102
+func buildAlloc8(st mut St) {
+    begin(mut st, st.rtAlloc8)
+    d := 0
+    n := 1
+    meta := globaladdr(mut st, st.meta)
+    bp := gepWord(mut st, meta, d)
+    old := load(mut st, bp, W_BUMP)
+    nw := bin(mut st, BAdd, old, bin(mut st, BAnd, bin(mut st, BAdd, n, iconst(mut st, 7)), iconst(mut st, -8)))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_SLOT)
+    setCur(mut st, ok)
+    store(mut st, bp, W_BUMP, nw)
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, bin(mut st, BAdd, old, n))
+    ret(mut st, itop(mut st, old))
+}
+
+// buildTip8 は tip8(d, end): 終わりが end の byte の列を深度 d でその場に 1 バイト伸ばせれば伸ばして 1（btip を進める）、でなければ 0
+func buildTip8(st mut St) {
+    begin(mut st, st.rtTip8)
+    d := 0
+    end := 1
+    bt := gepWord(mut st, globaladdr(mut st, st.btip), d)
+    no := newBlock(mut st)
+    last := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, bt, 0), end), no, -1, last, -1)
+    setCur(mut st, no)
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, last)
+    slack := newBlock(mut st)
+    edge := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, end, iconst(mut st, 7)), iconst(mut st, 0)), slack, -1, edge, -1)
+    setCur(mut st, slack)
+    store(mut st, bt, 0, bin(mut st, BAdd, end, iconst(mut st, 1)))
+    ret(mut st, iconst(mut st, 1))
+    // 粒の境目: bump が end なら粒を 1 つ足す
+    setCur(mut st, edge)
+    meta := globaladdr(mut st, st.meta)
+    bp := gepWord(mut st, meta, d)
+    more := newBlock(mut st)
+    no2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, bp, W_BUMP), end), more, -1, no2, -1)
+    setCur(mut st, no2)
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, more)
+    nw := bin(mut st, BAdd, end, iconst(mut st, 8))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_SLOT)
+    setCur(mut st, ok)
+    store(mut st, bp, W_BUMP, nw)
+    store(mut st, bt, 0, bin(mut st, BAdd, end, iconst(mut st, 1)))
+    ret(mut st, iconst(mut st, 1))
+}
+
+// buildCopy8 は copy8(dst, src, n): n バイトを写す
+func buildCopy8(st mut St) {
+    begin(mut st, st.rtCopy8)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, 2), body, -1, done, -1)
+    setCur(mut st, body)
+    store8(mut st, gepByte(mut st, 0, i), 0, load8(mut st, gepByte(mut st, 1, i), 0))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildReloc8 は region_relocate8(hdr, floor): byte の列のヘッダの depth が floor より深ければ、len バイトを深度 floor へ写して付け替える
+func buildReloc8(st mut St) {
+    begin(mut st, st.rtReloc8)
+    hdr := 0
+    floor := 1
+    move := newBlock(mut st)
+    done := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, load(mut st, hdr, 2), floor), move, -1, done, -1)
+    setCur(mut st, move)
+    n := load(mut st, hdr, 1)
+    dst := call(mut st, st.rtAlloc8, list2(mut st, floor, n))
+    call(mut st, st.rtCopy8, list3(mut st, dst, itop(mut st, load(mut st, hdr, 0)), n))
+    store(mut st, hdr, 0, ptoi(mut st, dst))
+    store(mut st, hdr, 2, floor)
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildExtend8 は extend8(d, end, n): 深度 d の先端にある byte の列（終わり = end — 作りかけの io の結果のように、先端から積んでいる列）を n バイト伸ばす。
+// bump = 新しい終わりを 8 へ切り上げ・btip = 新しい終わり。スロット超過は exit 102（呼び手が先端にいることを保証する — read_file / read_args / read_dir）
+func buildExtend8(st mut St) {
+    begin(mut st, st.rtExtend8)
+    d := 0
+    end := 1
+    n := 2
+    meta := globaladdr(mut st, st.meta)
+    bp := gepWord(mut st, meta, d)
+    ne := bin(mut st, BAdd, end, n)
+    nw := bin(mut st, BAnd, bin(mut st, BAdd, ne, iconst(mut st, 7)), iconst(mut st, -8))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nw, slotLimit(mut st, meta, d)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_SLOT)
+    setCur(mut st, ok)
+    store(mut st, bp, W_BUMP, nw)
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.btip), d), 0, ne)
+    ret(mut st, -1)
+}

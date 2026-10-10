@@ -1,0 +1,14 @@
+package main
+
+// 段 6 P3b: NewChan の容量が字面でない（diag.Par kind 13 — 容量は 1 以上の整数の字面）
+
+import "std/par"
+
+func main() {
+    n := 4
+    r, e := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[int](cap: n)
+        1
+    })
+    println(r)
+}

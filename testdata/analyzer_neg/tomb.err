@@ -1,0 +1,1 @@
+testdata/analyzer_neg/tomb.sober:12:9: error: this wrapper does nothing: `_ = { …; 0 }` — loop bodies and function bodies already have their own region (scopes are automatic). Write the statements directly (Analyzer)

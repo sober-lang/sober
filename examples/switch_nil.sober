@@ -1,0 +1,72 @@
+package main
+
+// `T?` の単値 subject の switch に `case nil:` の腕（language.md 13 / 22 節）。loader の固定テンプレートで
+// `if x != nil { switch x { …残りの腕… } } else { nil の腕 }` に写す — 網羅は内側の switch の検査（nil + 全ラベルなら default は要らない）
+
+import "std/iter"
+
+type NotFound error
+type Bad error {
+    at int
+}
+
+func find(k int) error? {
+    if k == 0 {
+        return nil
+    }
+    if k == 1 {
+        return NotFound{}
+    }
+    return Bad{at: k}
+}
+
+func age(k int) int? {
+    return if k < 0 { nil } else { k * 10 }
+}
+
+// 名前の subject・全ラベル（default なし）・値の switch
+func describe(err error?) string {
+    return switch err {
+    case nil: "ok"
+    case NotFound{}: "not found"
+    case Bad{at}: "bad ${at}"
+    }
+}
+
+func main() {
+    for k <- iter.Range(0, 3) {
+        println(describe(find(k)))
+    }
+    // 式の subject（束縛を置く）・nil の腕が後ろ・int? と default
+    for k <- iter.Range(-1, 3) {
+        v := switch age(k) {
+        case 0: 1
+        case nil: -1
+        default: 2
+        }
+        println(v)
+    }
+    // 文の switch（腕が文の列）
+    for k <- iter.Range(0, 3) {
+        switch find(k) {
+        case nil:
+            println("nil")
+        case NotFound{}:
+            println("nf")
+        case Bad{at}:
+            println("bad")
+            println(at)
+        }
+    }
+    // 入れ子（nil の腕の本体の中にもう 1 つ）。式の subject の値の switch は束縛のブロックになるので値は int
+    // （string を値に持つブロック式は check が拒否する既知の穴）
+    for k <- iter.Range(0, 2) {
+        println(switch find(k) {
+        case nil: switch age(k - 1) {
+            case nil: 11
+            default: 12
+            }
+        default: 13
+        })
+    }
+}

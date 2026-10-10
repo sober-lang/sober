@@ -1,0 +1,10 @@
+package main
+
+import "std/builder"
+
+// 負例: ジェネリックの型引数が byte の位置でも定数の範囲外はコンパイルエラー（language.md 33 節）
+func main() {
+    mut bb := builder.Builder[byte]{}
+    builder.Push(mut bb, 300)
+    println(builder.Len(mut bb))
+}

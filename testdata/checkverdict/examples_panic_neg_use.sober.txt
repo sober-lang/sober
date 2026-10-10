@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_use.sober:8:13: a panic label is only used as the argument of panic(L{…})
+exit=1

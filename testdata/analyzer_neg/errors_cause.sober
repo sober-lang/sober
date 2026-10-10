@@ -1,0 +1,96 @@
+package main
+
+// cause の入れ子のパターンの網羅と到達（error 網羅 analyzer A6 — language.md 13 節）: ラベル W の cause の領域は
+// W の wrap の地点の内側の合併（C-b）+ W のリテラルがあれば nil
+
+type A error {
+    n int
+}
+
+type B error {
+    m int
+}
+
+// W は wrap だけで作る（cause は A か B — nil にならない）
+type W error {
+    s int
+}
+
+// V はリテラルでも作る（cause は A か nil）
+type V error {
+    t int
+}
+
+func leaf(x int) error? {
+    if x == 0 {
+        return A{n: 1}
+    }
+    if x == 1 {
+        return B{m: 2}
+    }
+    return nil
+}
+
+func wrapW(x int) error? {
+    leaf(x)? W{s: x}
+    return nil
+}
+
+func wrapV(x int) error? {
+    if x == 5 {
+        return V{t: 0}
+    }
+    leaf(0)? V{t: x}
+    return nil
+}
+
+// 穴: W の cause の B を覆わない
+func gap(x int) int {
+    e := wrapW(x)
+    if e != nil {
+        return switch e {
+        case W{s, cause: A{n}}: s + n
+        }
+    }
+    return 0
+}
+
+// 到達しない入れ子の腕: W の cause は V を持ちえない
+func dead(x int) int {
+    e := wrapW(x)
+    if e != nil {
+        return switch e {
+        case W{s, cause: A{n}}: s + n
+        case W{s, cause: B{m}}: s + m
+        case W{s, cause: V{}}: s
+        }
+    }
+    return 0
+}
+
+// 穴: V はリテラルでも作る — cause が nil の V を覆わない
+func nilGap(x int) int {
+    e := wrapV(x)
+    if e != nil {
+        return switch e {
+        case V{t, cause: A{n}}: t + n
+        }
+    }
+    return 0
+}
+
+// 網羅: cause を束縛する腕が nil を含めて残りを覆う
+func covered(x int) int {
+    e := wrapV(x)
+    if e != nil {
+        return switch e {
+        case V{t, cause: A{n}}: t + n
+        case V{t}: 0 - t
+        }
+    }
+    return 0
+}
+
+func main() {
+    println(gap(0) + dead(1) + nilGap(5) + covered(5))
+}

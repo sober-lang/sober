@@ -1,0 +1,132 @@
+package utf8
+
+// UTF-8 の検査と bytes → string の戻し（language.md 27 節: 検査あり + (string, error?)）。
+// Go の unicode/utf8.Valid が仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` はこの Parse の呼び出しに
+// cst_to_ast が置き換える（予約参照名の暗黙 import — for の std/iter・補間の std/strings と同じ形）
+
+// pos = 最初の不正なシーケンスの先頭バイトのオフセット（b 上）
+type InvalidUtf8 error {
+    pos int
+}
+
+// cont は b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
+func cont(b []byte, i int, lo int, hi int) bool {
+    return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
+}
+
+// seqLen は b[i] から始まる妥当なシーケンスの長さ、不正なら 0
+func seqLen(b []byte, i int) int {
+    c := int(b[i])
+    if c >= 0 && c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) && cont(b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+// IndexInvalid は最初の不正なシーケンスの位置、妥当なら -1
+func IndexInvalid(b []byte) int {
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        // ASCII の区間を先に読み飛ばす（素直な走査のループ — 第三便のベクトル化の対象の形。短い区間でも 1 バイトごとの seqLen の呼び出しが消える）
+        while i < len(b) && b[i] < 128 {
+            i += 1
+        }
+        if i >= len(b) {
+            break
+        }
+        // 2 バイト列（C2..DF + 継続）と 3 バイト列の普通の形（E1..EC / EE..EF + 継続 2 つ — 範囲が狭まる E0 / ED は seqLen）は
+        // seqLen を呼ばずに読む（第三便 M14 — 非 ASCII が多い入力で 1 文字ごとの呼び出しの固定費が検査の大半だった）
+        c := int(b[i])
+        if c >= 194 && c <= 223 && i + 1 < len(b) && int(b[i + 1]) & 192 == 128 {
+            i += 2
+            continue
+        }
+        if c >= 225 && c <= 239 && c != 237 && i + 2 < len(b) && int(b[i + 1]) & 192 == 128 && int(b[i + 2]) & 192 == 128 {
+            i += 3
+            continue
+        }
+        n := seqLen(b, i)
+        if n == 0 {
+            at = i
+        } else {
+            i += n
+        }
+    }
+    return at
+}
+
+func Valid(b []byte) bool {
+    return IndexInvalid(b) < 0
+}
+
+// Parse は妥当な UTF-8 だけを string にする（`string(b)` の裏方 — 利用者は `string(b)` を書く。名前は変換の族 Parse — std 命名規則・裁定 N1）。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
+@errors(InvalidUtf8)
+func Parse(b []byte) (string, error?) {
+    at := IndexInvalid(b)
+    if at >= 0 {
+        return "", InvalidUtf8{pos: at}
+    }
+    s := bytesToString(b)
+    return s, nil
+}
+
+// View は中身が有効な UTF-8 と検査済みのバイト列（型つき証人 — 第三便 M13）。作れるのは Check だけ: 非公開の型の封の欄 seal があるので外からは composite に
+// 書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開（引数の型に utf8.View と書ける — json.Doc と同じ形・2026-10-04 掃除枠 E）。
+// 全体を 1 回検査すれば、文字境界で切った部分列は全部有効（有効な列を境界で切ると両側とも有効）なので、Str は境界の 2 バイトを読むだけで string を返す
+// — 行ごとに検査し直さない。棄てた案: 非公開の型 view（構築は塞げるが型の名前が書けず、View を受け渡す関数が書けない — 欄の読みはどちらでも塞げない）。
+// 再訪条件: 可視性の細分（構築のみ私有）が入ったら封を外す
+type View struct {
+    b []byte
+    seal sealed
+}
+
+// sealed は View の封（非公開 — 外で値を書けない）
+type sealed struct {
+}
+
+// Check は b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — Parse と同じ）
+@errors(InvalidUtf8)
+func Check(b []byte) (View, error?) {
+    at := IndexInvalid(b)
+    if at >= 0 {
+        return View{}, InvalidUtf8{pos: at}
+    }
+    return View{b: b, seal: sealed{}}, nil
+}
+
+// Bytes は View のバイト列（読むだけ）
+func Bytes(v View) []byte {
+    return v.b
+}
+
+// boundary は p が v の文字境界か（端か、継続バイト 10xxxxxx でない）
+func boundary(v View, p int) bool {
+    return p == 0 || p == len(v.b) || (p > 0 && p < len(v.b) && int(v.b[p]) & 192 != 128)
+}
+
+// Str は v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
+@errors(InvalidUtf8)
+func Str(v View, s int, i int) (string, error?) {
+    sub := v.b[s:i]
+    if !boundary(v, s) {
+        return "", InvalidUtf8{pos: s}
+    }
+    if !boundary(v, i) {
+        return "", InvalidUtf8{pos: i}
+    }
+    return bytesToString(sub), nil
+}

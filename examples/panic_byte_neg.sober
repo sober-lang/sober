@@ -1,0 +1,12 @@
+package main
+
+// byte(n) の範囲外（負の数）も panic — exit 101
+func toByte(n int) byte {
+    return byte(n)
+}
+
+func main() {
+    println("before", toByte(1))
+    println(toByte(0 - 1))
+    println("unreachable")
+}

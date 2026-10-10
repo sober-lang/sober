@@ -1,0 +1,120 @@
+{
+  "package": "calc",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Add",
+      "type_params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 15
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 17
+                },
+                "tok": 16
+              }
+            ],
+            "tok": 14
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 21
+      },
+      "sig_end": 13
+    },
+    {
+      "name": "half",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "/",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 30
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 32
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 36
+      },
+      "sig_end": 28
+    }
+  ],
+  "consts": []
+}

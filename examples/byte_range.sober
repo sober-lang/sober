@@ -1,0 +1,10 @@
+package main
+
+// 負例: 定数の範囲外はコンパイルエラー — byte の文脈に 256（language.md 33 節）
+func f(c byte) byte {
+    return c
+}
+
+func main() {
+    println(f(256))
+}

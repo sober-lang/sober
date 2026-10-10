@@ -1,0 +1,1468 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "$strings",
+          "path": "std/strings"
+        },
+        {
+          "ref": "$utf8",
+          "path": "std/utf8"
+        },
+        {
+          "ref": "diag",
+          "path": "testdata/minic_rd/diag"
+        },
+        {
+          "ref": "emit",
+          "path": "testdata/minic_rd/emit"
+        },
+        {
+          "ref": "io",
+          "path": "std/io"
+        },
+        {
+          "ref": "lex",
+          "path": "testdata/minic_rd/lex"
+        },
+        {
+          "ref": "parse",
+          "path": "testdata/minic_rd/parse"
+        },
+        {
+          "ref": "pool",
+          "path": "std/pool"
+        },
+        {
+          "ref": "strings",
+          "path": "std/strings"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "lines",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "compile",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "emit.Compile",
+            "emit.Run",
+            "len",
+            "lex.Lex",
+            "parse.Parse"
+          ]
+        },
+        {
+          "name": "ioWhy",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "show",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "println"
+          ]
+        },
+        {
+          "name": "run",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "$utf8.Parse",
+            "compile",
+            "diag.Render",
+            "io.ReadFile",
+            "ioWhy",
+            "len",
+            "lines",
+            "pool.Acquire",
+            "pool.Get",
+            "pool.Release",
+            "pool.Set",
+            "println",
+            "show",
+            "strings.Count",
+            "strings.HasSuffix"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "pool.Len",
+            "println",
+            "run"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/io",
+      "name": "io",
+      "imports": [
+        {
+          "ref": "$utf8",
+          "path": "std/utf8"
+        },
+        {
+          "ref": "utf8",
+          "path": "std/utf8"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "errOf",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "ReadFile",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysErrno",
+            "sysReadFile"
+          ]
+        },
+        {
+          "name": "WriteFile",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysWriteFile"
+          ]
+        },
+        {
+          "name": "WriteStdout",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysWriteFd"
+          ]
+        },
+        {
+          "name": "ReadFd",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysErrno",
+            "sysReadFd"
+          ]
+        },
+        {
+          "name": "ReadStdin",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysErrno",
+            "sysReadFd"
+          ]
+        },
+        {
+          "name": "WriteStderr",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysWriteFd"
+          ]
+        },
+        {
+          "name": "kindOf",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "dot",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "less",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "len"
+          ]
+        },
+        {
+          "name": "ReadDir",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "$utf8.Parse",
+            "append",
+            "dot",
+            "errOf",
+            "freeze",
+            "int",
+            "kindOf",
+            "len",
+            "less",
+            "sysErrno",
+            "sysReadDir"
+          ]
+        },
+        {
+          "name": "SetFd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "WriteByte",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len",
+            "writerByteSlow"
+          ]
+        },
+        {
+          "name": "writerByteSlow",
+          "expands": false,
+          "mut_def": true,
+          "has_try": false,
+          "callees": [
+            "writerRoom"
+          ]
+        },
+        {
+          "name": "WriteBytes",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len",
+            "writerRoom"
+          ]
+        },
+        {
+          "name": "WriteString",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "WriteBytes",
+            "bytes"
+          ]
+        },
+        {
+          "name": "Flush",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "writerSpill"
+          ]
+        },
+        {
+          "name": "writerRoom",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "len",
+            "writerSpill"
+          ]
+        },
+        {
+          "name": "writerSpill",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze",
+            "len",
+            "sysWriteFd"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "writerSize",
+          "value": 65536,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/pool",
+      "name": "pool",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Acquire",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "Release",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len",
+            "live"
+          ]
+        },
+        {
+          "name": "Get",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Set",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Len",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "live",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/strings",
+      "name": "strings",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "hasPrefixAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "indexAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "runeCount",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "HasPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "HasSuffix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "Index",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "indexAt"
+          ]
+        },
+        {
+          "name": "Contains",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Index"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "countFrom",
+            "len",
+            "runeCount"
+          ]
+        },
+        {
+          "name": "countFrom",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "IndexByte",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "len"
+          ]
+        },
+        {
+          "name": "utoa",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "FormatInt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "utoa"
+          ]
+        },
+        {
+          "name": "Clone",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "Join",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "testdata/minic_rd/lex",
+      "name": "lex",
+      "imports": [
+        {
+          "ref": "builder",
+          "path": "std/builder"
+        },
+        {
+          "ref": "diag",
+          "path": "testdata/minic_rd/diag"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "isDigit",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "punct",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Lex",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "builder.Build",
+            "builder.Push",
+            "int",
+            "isDigit",
+            "punct"
+          ]
+        },
+        {
+          "name": "Start",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Next",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "clamp",
+            "len"
+          ]
+        },
+        {
+          "name": "clamp",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Remaining",
+          "expands": false,
+          "mut_def": true,
+          "has_try": false,
+          "callees": [
+            "Next",
+            "Remaining"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "Num",
+          "value": 0,
+          "dict": false
+        },
+        {
+          "name": "Plus",
+          "value": 1,
+          "dict": false
+        },
+        {
+          "name": "Minus",
+          "value": 2,
+          "dict": false
+        },
+        {
+          "name": "Star",
+          "value": 3,
+          "dict": false
+        },
+        {
+          "name": "Slash",
+          "value": 4,
+          "dict": false
+        },
+        {
+          "name": "LParen",
+          "value": 5,
+          "dict": false
+        },
+        {
+          "name": "RParen",
+          "value": 6,
+          "dict": false
+        },
+        {
+          "name": "End",
+          "value": 7,
+          "dict": false
+        },
+        {
+          "name": "step",
+          "value": 1,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "testdata/minic_rd/parse",
+      "name": "parse",
+      "imports": [
+        {
+          "ref": "builder",
+          "path": "std/builder"
+        },
+        {
+          "ref": "diag",
+          "path": "testdata/minic_rd/diag"
+        },
+        {
+          "ref": "lex",
+          "path": "testdata/minic_rd/lex"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "peek",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "lex.Next"
+          ]
+        },
+        {
+          "name": "node",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "builder.Len",
+            "builder.Push"
+          ]
+        },
+        {
+          "name": "expr",
+          "expands": false,
+          "mut_def": true,
+          "has_try": true,
+          "callees": [
+            "lex.Next",
+            "node",
+            "peek",
+            "term"
+          ]
+        },
+        {
+          "name": "term",
+          "expands": false,
+          "mut_def": true,
+          "has_try": true,
+          "callees": [
+            "lex.Next",
+            "node",
+            "peek",
+            "unary"
+          ]
+        },
+        {
+          "name": "unary",
+          "expands": false,
+          "mut_def": true,
+          "has_try": true,
+          "callees": [
+            "expr",
+            "lex.Next",
+            "node",
+            "unary"
+          ]
+        },
+        {
+          "name": "Parse",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "builder.Build",
+            "expr",
+            "lex.Next",
+            "lex.Remaining",
+            "lex.Start"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "Lit",
+          "value": 0,
+          "dict": false
+        },
+        {
+          "name": "Neg",
+          "value": 1,
+          "dict": false
+        },
+        {
+          "name": "Add",
+          "value": 2,
+          "dict": false
+        },
+        {
+          "name": "Sub",
+          "value": 3,
+          "dict": false
+        },
+        {
+          "name": "Mul",
+          "value": 4,
+          "dict": false
+        },
+        {
+          "name": "Div",
+          "value": 5,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "testdata/minic_rd/emit",
+      "name": "emit",
+      "imports": [
+        {
+          "ref": "builder",
+          "path": "std/builder"
+        },
+        {
+          "ref": "diag",
+          "path": "testdata/minic_rd/diag"
+        },
+        {
+          "ref": "parse",
+          "path": "testdata/minic_rd/parse"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "Compile",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "builder.Build",
+            "builder.Push",
+            "len"
+          ]
+        },
+        {
+          "name": "Run",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "OpPush",
+          "value": 0,
+          "dict": false
+        },
+        {
+          "name": "OpNeg",
+          "value": 1,
+          "dict": false
+        },
+        {
+          "name": "OpAdd",
+          "value": 2,
+          "dict": false
+        },
+        {
+          "name": "OpSub",
+          "value": 3,
+          "dict": false
+        },
+        {
+          "name": "OpMul",
+          "value": 4,
+          "dict": false
+        },
+        {
+          "name": "OpDiv",
+          "value": 5,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "testdata/minic_rd/diag",
+      "name": "diag",
+      "imports": [
+        {
+          "ref": "$strings",
+          "path": "std/strings"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "Pos",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Why",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "wantName"
+          ]
+        },
+        {
+          "name": "wantName",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "LineCol",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "Render",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "LineCol",
+            "Pos",
+            "Why"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/utf8",
+      "name": "utf8",
+      "imports": [
+        {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
+          "ref": "iter#",
+          "path": "std/iter"
+        },
+        {
+          "ref": "par",
+          "path": "std/par"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "cont",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "seqLen",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "cont",
+            "int"
+          ]
+        },
+        {
+          "name": "IndexInvalid",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len",
+            "seqLen",
+            "validPrefix"
+          ]
+        },
+        {
+          "name": "validPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Valid",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid"
+          ]
+        },
+        {
+          "name": "Parse",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid",
+            "bytesToString"
+          ]
+        },
+        {
+          "name": "Check",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid",
+            "indexInvalidPar",
+            "len"
+          ]
+        },
+        {
+          "name": "Bytes",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "boundary",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "Str",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "boundary",
+            "bytesToString"
+          ]
+        },
+        {
+          "name": "indexInvalidPar",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid",
+            "append",
+            "chunkInvalid",
+            "freeze",
+            "int",
+            "iter.Range",
+            "len",
+            "par.Map"
+          ]
+        },
+        {
+          "name": "chunkInvalid",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "CHECK_GRAIN",
+          "value": 1048576,
+          "dict": false
+        },
+        {
+          "name": "CHECK_PAR_MIN",
+          "value": 2097152,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/builder",
+      "name": "builder",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Push",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "PushAll",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Push",
+            "len"
+          ]
+        },
+        {
+          "name": "PushStr",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "PushAll",
+            "bytes"
+          ]
+        },
+        {
+          "name": "Len",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Get",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "Build",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "seeds",
+          "value": 24,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/iter",
+      "name": "iter",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Slice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "Range",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k"
+          ]
+        },
+        {
+          "name": "Each",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Sum",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/par",
+      "name": "par",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Scope",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "fence",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Spawn",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "Join",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "Try",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "NewChan",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Send",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "Recv",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "RecvAll",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Recv",
+            "k"
+          ]
+        },
+        {
+          "name": "Close",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        },
+        {
+          "name": "SpawnGive",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "panic"
+          ]
+        },
+        {
+          "name": "Gather",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Join",
+            "append",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "gatherE",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Join",
+            "append",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "Map",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Scope",
+            "Spawn",
+            "Try",
+            "append",
+            "f",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "mapE",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Join",
+            "Scope",
+            "Spawn",
+            "Try",
+            "append",
+            "f",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "NewPool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "newPool",
+            "panic"
+          ]
+        },
+        {
+          "name": "Ledger",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze",
+            "ledgerWord"
+          ]
+        },
+        {
+          "name": "SpawnIn",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "fence",
+            "panic"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "KB",
+          "value": 1024,
+          "dict": false
+        },
+        {
+          "name": "MB",
+          "value": 1048576,
+          "dict": false
+        },
+        {
+          "name": "GB",
+          "value": 1073741824,
+          "dict": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "name": "NotFound",
+      "pkg": "std/io"
+    },
+    {
+      "name": "Denied",
+      "pkg": "std/io"
+    },
+    {
+      "name": "Other",
+      "pkg": "std/io"
+    },
+    {
+      "name": "UnexpectedChar",
+      "pkg": "testdata/minic_rd/diag"
+    },
+    {
+      "name": "UnexpectedEnd",
+      "pkg": "testdata/minic_rd/diag"
+    },
+    {
+      "name": "Expected",
+      "pkg": "testdata/minic_rd/diag"
+    },
+    {
+      "name": "Unbalanced",
+      "pkg": "testdata/minic_rd/diag"
+    },
+    {
+      "name": "DivByZero",
+      "pkg": "testdata/minic_rd/diag"
+    },
+    {
+      "name": "InvalidUtf8",
+      "pkg": "std/utf8"
+    },
+    {
+      "name": "TaskDied",
+      "pkg": "std/par"
+    },
+    {
+      "name": "Shed",
+      "pkg": "std/par"
+    }
+  ]
+}

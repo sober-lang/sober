@@ -1,0 +1,9 @@
+package main
+
+// @embed の受け皿は map[string]string{} だけ
+@embed("testdata/embed/*.txt")
+const X = map[string]int{}
+
+func main() {
+    println(len(X))
+}

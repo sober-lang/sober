@@ -1,0 +1,83 @@
+package main
+
+// 段 6 P5-3（language.md 11 節「予算と admission」）: budget: の宣言 — Spawn / Map / Scope の末尾の名前付き引数（省略可・値に出ない）。
+// Scope の budget: は天井の節（入れ子 — 各段が上限）・Spawn / Map の budget: はその子を逐次で走らせたときの上界（入場の見積もりの代わり）。
+// 天井を超える子はその場で縮退する（値・出力の順は子を先にのスケジュールと同じ）。give: の子は常に入場（超過を記帳）
+
+import "std/par"
+
+func fib(n int) int {
+    return if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+func main() {
+    // 宣言の効き: 外の天井 1 MiB の中で 300 KiB の子を 8 つ — 同時に入場できるのは 3 つまで（残りは縮退）。値は全部同じ
+    r, e := par.Scope((s par.S) => {
+        mut hs := mut []par.Task[int]{}
+        mut i := 0
+        while i < 8 {
+            k := i
+            hs = append(hs, par.Spawn(s, () => fib(15 + k % 3), budget: 300 * par.KB))
+            i += 1
+        }
+        vs := par.Gather(hs)
+        mut sum := 0
+        for v <- vs {
+            sum += v
+        }
+        sum
+    }, budget: 1 * par.MB)
+    println(r)
+    if e != nil {
+        println(-1)
+    }
+    // 入れ子の天井: 内の scope（64 KiB）の子は外（4 MiB）と内の両方に掛かる — 内で縮退
+    r2, e2 := par.Scope((s par.S) => {
+        inner, ie := par.Scope((t par.S) => {
+            a := par.Spawn(t, () => fib(10), budget: 48 * par.KB)
+            b := par.Spawn(t, () => fib(11), budget: 48 * par.KB)
+            par.Join(a) + par.Join(b)
+        }, budget: 64 * par.KB)
+        h := par.Spawn(s, () => fib(12))
+        inner + par.Join(h)
+    }, budget: 4 * par.MB)
+    println(r2)
+    // Map の budget: は要素ごとの子の上界
+    xs := []int{3, 4, 5, 6, 7}
+    ys, me := par.Map(xs, (x) => fib(x) * 10, budget: 2 * par.MB)
+    for y <- ys {
+        println(y)
+    }
+    // give: の子は縮退しない（端点を受け取る — 常に入場）
+    r3, e3 := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[int](cap: 1)
+        h := par.Spawn(s, (out) => {
+            par.Send(out, 7)
+            1
+        }, give: tx, budget: 16 * par.KB)
+        v := par.Recv(rx)
+        par.Join(h) + if v != nil { v } else { 0 }
+    }, budget: 1)
+    println(r3)
+    // 子が自分の子を待つ間は上界を持ち続ける（逐次の上界は子孫を含む）: 天井 100 KiB の中で 60 KiB の子が 60 KiB の孫を生む — 孫は縮退
+    // （ワーカー 1 でも決定的に踏む）
+    r4, e4 := par.Scope((s par.S) => {
+        h := par.Spawn(s, () => {
+            g, ge := par.Scope((t par.S) => par.Join(par.Spawn(t, () => fib(9), budget: 60 * par.KB)))
+            g + 1
+        }, budget: 60 * par.KB)
+        par.Join(h)
+    }, budget: 100 * par.KB)
+    println(r4)
+    // 宣言を超えて使った子（記帳だけ — 値は同じ）
+    r5, e5 := par.Scope((s par.S) => par.Join(par.Spawn(s, () => {
+        mut acc := mut []int{}
+        mut i := 0
+        while i < 1000 {
+            acc = append(acc, i)
+            i += 1
+        }
+        len(acc)
+    }, budget: 1)))
+    println(r5)
+}

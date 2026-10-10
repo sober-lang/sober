@@ -1,0 +1,2 @@
+sober: desugar error at examples/shape.sober:23:12 (CoreFragment)
+exit=1

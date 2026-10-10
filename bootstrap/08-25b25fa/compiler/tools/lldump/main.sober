@@ -1,0 +1,37 @@
+package main
+
+// lldump: 標準入力の Manifest から Program を load し、Sober 版 lower（compiler/lower）で下ろして rtlower → LLVM テキストにしたもの（Zig 版
+// `sober build --emit=ll` と同じバイト列）を標準出力に書く。selfhost の .ll の差分オラクル（scripts/selfhost_ll.sh）の Sober 側。
+// Manifest の形は loaderdump と同じ
+
+import "std/io"
+import "loader"
+import "lower"
+
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("lldump: cannot read /dev/stdin")
+        return
+    }
+    m, valid := loader.ManifestOf(src)
+    if !valid {
+        println("lldump: bad manifest")
+        return
+    }
+    p, lerr := loader.Load(m)
+    if lerr != nil {
+        println("lldump: load error")
+        return
+    }
+    out, berr := lower.Ll(p)
+    if berr != nil {
+        println("lldump: lower error")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", out)
+    if werr != nil {
+        println("lldump: cannot write /dev/stdout")
+    }
+}

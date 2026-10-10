@@ -1,0 +1,36 @@
+package main
+
+// std/rand（xoshiro128** — シード明示の決定的な擬似乱数）の検証例。Go の双子 scripts/oracles/rand_xoshiro.go（uint32 の wrap で書いた参照実装の写し）
+// が .out を作る — std/rand の 32 bit の算術（int の上で桁に割る）が uint32 と一致することを見る
+
+import "std/iter"
+import "std/rand"
+
+func main() {
+    seeds := []int{0, 1, 42, 0 - 1, 0 - 9223372036854775807 - 1, 9223372036854775807, 123456789}
+    for i <- iter.Range(0, len(seeds)) {
+        mut r := rand.New(seeds[i])
+        a := rand.Next(mut r)
+        b := rand.Next(mut r)
+        c := rand.Next(mut r)
+        d := rand.Int62(mut r)
+        e := rand.Intn(mut r, 10)
+        f := rand.Intn(mut r, 1000003)
+        g := rand.Bool(mut r)
+        println(seeds[i], a, b, c, d, e, f, g)
+    }
+    mut r := rand.New(7)
+    mut ch := rand.Split(mut r)
+    x := rand.Next(mut r)
+    y := rand.Next(mut ch)
+    z := rand.Intn(mut ch, 6)
+    println(x, y, z)
+    // 偏りの粗い見張り: 6 面のさいころ 60000 回の度数
+    mut dr := rand.New(2026)
+    mut cnt := mut []int{0, 0, 0, 0, 0, 0}
+    for k <- iter.Range(0, 60000) {
+        v := rand.Intn(mut dr, 6)
+        cnt[v] = cnt[v] + 1
+    }
+    println(cnt[0], cnt[1], cnt[2], cnt[3], cnt[4], cnt[5])
+}

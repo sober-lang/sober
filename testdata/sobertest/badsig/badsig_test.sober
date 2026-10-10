@@ -1,0 +1,5 @@
+package badsig
+
+func TestTwo(n int) {
+    println(Two() + n)
+}

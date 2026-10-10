@@ -1,0 +1,1092 @@
+package lower
+
+// 入口と関数の本体・文（src/lower.zig の program / funcBody / stmts / bind / assign / while / ret / defer の写し）。
+// 値 = (型, IR の値) の対（スカラーは値、アグリゲートはアドレス）。到達しないのは型 never。多値の結果の列 = [n, (型, 値)…]（never は -1）
+
+import "desugar"
+import "ast"
+import "lexer"
+import "loader"
+import "std/table"
+
+// FnInfo は下ろす関数 1 つ（st.infos の要素 — 添字で指す）
+type FnInfo struct {
+    fn int        // 関数表の添字（持ち上げたラムダ・インスタンスは -1）
+    pkg int
+    ir int        // IR の関数の記録
+    params int    // 型の列
+    results int
+    next int      // 作業列の鎖
+    decl int      // 関数宣言の節（持ち上げたラムダは合成の節）
+    env int       // 型環境（ジェネリックの単相コピー — 他は下ろし始めの型環境）
+    transp bool   // region 透過の実体関数（入口で region を開かない — language.md 26 節）
+}
+
+// infoAt は FnInfo fi の記録（非ジェネリックの包み — F-10）
+func infoAt(st mut St, fi int) FnInfo {
+    return table.Get(mut st.infos, fi)
+}
+
+// 名前の実体（スコープの鎖の項 [next, name, kind, 型, 値]）: 不変束縛は値、mut ローカルはスロット（値はそのアドレス）
+const LVal = 0
+const LCell = 1
+
+// Scope はスコープ 1 つ（st.scopes の要素 — 添字で指す。名前・defer の鎖の頭は積んだ後に書き替わる — setScope で丸ごと）
+type Scope struct {
+    prev int
+    names int     // 名前の項の鎖（[next, name, kind, 型, 値]、新しい順）
+    defers int    // defer の鎖（新しい順）
+    idx int       // スコープ番号（可視範囲の区間の判定に使う）
+}
+
+// Loop はループ 1 つ（st.loops の要素）
+type Loop struct {
+    prev int
+    head int      // continue の行き先
+    exit int      // break の行き先
+    ncont int     // continue の defer の床
+    nbrk int      // break の defer の床
+}
+
+// scopeAt / loopAt は記録（非ジェネリックの包み — F-10）
+func scopeAt(st mut St, s int) Scope {
+    return table.Get(mut st.scopes, s)
+}
+
+func loopAt(st mut St, lp int) Loop {
+    return table.Get(mut st.loops, lp)
+}
+
+func setScope(st mut St, s int, names int, defers int) {
+    x := scopeAt(mut st, s)
+    table.Set(mut st.scopes, s, Scope{prev: x.prev, names: names, defers: defers, idx: x.idx})
+}
+
+// Ir は Program p の IR テキスト（Zig 版 `sober build --emit=ir` と同じバイト列 — スロットの宣言と番号を除く）。拒否なら (空, 種類 k > 0, 位置 tok)
+// （診断の文言は持たない — 差分オラクルは拒否の有無だけを比べる）
+func Ir(p loader.Program) ([]int, int, int) {
+    return irText(p, false)
+}
+
+// IrPasses は設計整合パス（opt.sober）を掛けた IR テキスト（`sober build --passes`）
+func IrPasses(p loader.Program) ([]int, int, int) {
+    return irText(p, true)
+}
+
+func irText(p loader.Program, passes bool) ([]int, int, int) {
+    mut st := St{}
+    st.transparent = passes
+    k, tok := build(mut st, p)
+    if k != 0 {
+        return []int{}, k, tok
+    }
+    if passes {
+        optimize(mut st)
+    }
+    mut out := mut []int{}
+    printModule(mut st, mut out)
+    return freeze(out), 0, 0
+}
+
+// Ll は Program p の LLVM テキスト（Zig 版 `sober build --emit=ll` と同じバイト列 — rtlower → .ll の印字。IR パスは掛けない）
+func Ll(p loader.Program) ([]int, int, int) {
+    return llText(p, false)
+}
+
+// LlPasses は設計整合パスを掛けてから rtlower → .ll（`sober build --passes`）
+func LlPasses(p loader.Program) ([]int, int, int) {
+    return llText(p, true)
+}
+
+func llText(p loader.Program, passes bool) ([]int, int, int) {
+    mut st := St{}
+    st.transparent = passes
+    k, tok := build(mut st, p)
+    if k != 0 {
+        return []int{}, k, tok
+    }
+    if passes {
+        optimize(mut st)
+    }
+    rtlower(mut st)
+    llPrepare(mut st)
+    mut out := mut []int{}
+    llModule(mut st, mut out)
+    return freeze(out), 0, 0
+}
+
+// build は Program p を IR のモジュールへ下ろす（st はモジュールを持ったまま返る）。拒否なら (種類, 位置)
+func build(st mut St, p loader.Program) (int, int) {
+    desugar.Init(mut st.d, p)
+    initScalars(mut st)
+    st.nstr = 0
+    st.ninterp = 0
+    st.errs = -1
+    st.errstruct = -1
+    st.nlambda = 0
+    st.tenv = -1
+    st.insts = -1
+    st.inDict = 0
+    st.dlifts = -1
+    st.nscope = 0
+    st.nloop = 0
+    hv1 := rec4(mut st, TNone, 0, 0, 0)
+    st.tNone = hv1
+    hv2 := rec4(mut st, TInt, 0, 0, 0)
+    st.tInt = hv2
+    hv3 := rec4(mut st, TBool, 0, 0, 0)
+    st.tBool = hv3
+    hv4 := rec4(mut st, TNever, 0, 0, 0)
+    st.tNever = hv4
+    hv5 := rec4(mut st, TNil, 0, 0, 0)
+    st.tNil = hv5
+    fis := recN(mut st, nfn(mut st) + 1)
+    hset(mut st, fis, nfn(mut st))
+    st.fninfo = fis
+    installRt(mut st)
+    err := program(mut st)
+    if err != nil {
+        mut fk := KUnsupported
+        mut ft := 0
+        switch err {
+        case LowerFail{k, tok}:
+            fk = k
+            ft = tok
+        default:
+            fk = KUnsupported
+        }
+        return fk, ft
+    }
+    return 0, 0
+}
+
+func program(st mut St) error? {
+    registerTypes(mut st)
+    m := strLit(mut st, "main")
+    mi := findFnIn(mut st, st.d.mainPkg, m, 0, 4)
+    if mi < 0 {
+        return LowerFail{k: KMissing, tok: 0}
+    }
+    main_fn := funcByKey(mut st, mi)?
+    // `func main()` か `func main() int`（戻り値 = 終了コード — R31 の裁定）
+    rs := infoAt(mut st, main_fn).results
+    main_int := llen(mut st, rs) == 1 && isTag(mut st, lat(mut st, rs, 0), TInt)
+    if llen(mut st, infoAt(mut st, main_fn).params) != 0 || (llen(mut st, rs) != 0 && !main_int) {
+        return LowerFail{k: KUnsupported, tok: tokOf(mut st, fnNode(mut st, mi))}
+    }
+    buildEntry(mut st, infoAt(mut st, main_fn).ir, main_int)
+    while st.work >= 0 {
+        fi := st.work
+        st.work = infoAt(mut st, fi).next
+        funcBody(mut st, fi)?
+    }
+    return nil
+}
+
+// ── 関数表 ──
+
+// funcByKey は関数表の i 番の FnInfo（初出なら署名を作って本体を作業列に積む）。展開される関数・ジェネリック関数は呼び手が別経路へ回す
+func funcByKey(st mut St, i int) (int, error?) {
+    fis := st.fninfo
+    x := hget(mut st, fis + 1 + i)
+    if x >= 0 {
+        return x, nil
+    }
+    if fnBodiless(mut st, i) {
+        return 0, LowerFail{k: KUnsupported, tok: tokOf(mut st, fnNode(mut st, i))}
+    }
+    return newFunc(mut st, i)
+}
+
+// isMutParam は関数宣言の節 decl の j 番の仮引数が mut か（decl = -1 は関数値の呼び出し — mut 仮引数を持たない）
+func isMutParam(st mut St, decl int, j int) bool {
+    if decl < 0 {
+        return false
+    }
+    ps := hget(mut st, decl + NC)
+    return j < llen(mut st, ps) && hget(mut st, lat(mut st, ps, j) + NC) != 0
+}
+
+// sigOf は関数宣言 decl の署名を package pk の文脈で読む（(引数の型の列, 結果の型の列) — 関数型の引数は TFunc）
+func sigOf(st mut St, decl int, pk int) (int, int, error?) {
+    tok := tokOf(mut st, decl)
+    ps := hget(mut st, decl + NC)
+    np := llen(mut st, ps)
+    params := listN(mut st, np)
+    mut j := 0
+    while j < np {
+        t := resolveType(mut st, pk, hget(mut st, lat(mut st, ps, j) + NB), false)?
+        hset(mut st, params + 1 + j, t)
+        j += 1
+    }
+    rs := hget(mut st, decl + ND)
+    nr := llen(mut st, rs)
+    results := listN(mut st, nr)
+    j = 0
+    while j < nr {
+        t := resolveType(mut st, pk, lat(mut st, rs, j), false)?
+        if isTag(mut st, t, TFunc) {
+            return 0, 0, LowerFail{k: KUnsupported, tok: tok}
+        }
+        hset(mut st, results + 1 + j, t)
+        j += 1
+    }
+    return params, results, nil
+}
+
+func newFunc(st mut St, i int) (int, error?) {
+    pk := fnPkg(mut st, i)
+    decl := fnNode(mut st, i)
+    params, results := sigOf(mut st, decl, pk)?
+    fi := newFuncSig(mut st, strDot(mut st, pkgPath(mut st, pk), fnName(mut st, i)), decl, pk, params, results, i, st.tenv)
+    if fnTransparent(mut st, i) {
+        markTransp(mut st, fi)
+    }
+    hset(mut st, st.fninfo + 1 + i, fi)
+    return fi, nil
+}
+
+// newFuncSig は名前 name・宣言 decl・署名の関数を足し、本体を作業列に積む（fn = 関数表の添字か -1、env = 本体を下ろす型環境）
+func newFuncSig(st mut St, name int, decl int, pk int, params int, results int, fn int, env int) int {
+    np := llen(mut st, params)
+    nr := llen(mut st, results)
+    sret := sretOf(mut st, results)
+    // 引数は語に展開する（アグリゲートは語数ぶんの i64）。mut 仮引数は呼び手のセルのアドレス 1 語
+    mut total := if sret { 1 } else { 0 }
+    mut j := 0
+    while j < np {
+        total += if isMutParam(mut st, decl, j) { 1 } else { tWords(mut st, lat(mut st, params, j)) }
+        j += 1
+    }
+    ptys := listN(mut st, total)
+    mut k := 0
+    if sret {
+        hset(mut st, ptys + 1, TyPtr)
+        k = 1
+    }
+    j = 0
+    while j < np {
+        if isMutParam(mut st, decl, j) {
+            hset(mut st, ptys + 1 + k, TyPtr)
+            k += 1
+        } else {
+            mut w := 0
+            while w < tWords(mut st, lat(mut st, params, j)) {
+                hset(mut st, ptys + 1 + k, TyI64)
+                k += 1
+                w += 1
+            }
+        }
+        j += 1
+    }
+    irf := addFunc(mut st, name, ptys, if sret || nr == 0 { -1 } else { TyI64 })
+    fi := table.Len(mut st.infos)
+    table.Push(mut st.infos, FnInfo{fn: fn, pkg: pk, ir: irf, params: params, results: results, next: st.work, decl: decl, env: env, transp: false})
+    st.work = fi
+    return fi
+}
+
+// markTransp は FnInfo fi を region 透過の実体関数にする
+func markTransp(st mut St, fi int) {
+    x := infoAt(mut st, fi)
+    table.Set(mut st.infos, fi, FnInfo{fn: x.fn, pkg: x.pkg, ir: x.ir, params: x.params, results: x.results, next: x.next, decl: x.decl, env: x.env, transp: true})
+}
+
+func infoSret(st mut St) bool {
+    return sretOf(mut st, infoAt(mut st, st.info).results)
+}
+
+// ── 値の置き場 ──
+
+func newAgg(st mut St, t int) int {
+    w := tWords(mut st, t)
+    return newSlotAddr(mut st, if w > 1 { w } else { 1 })
+}
+
+// fieldPtr は p + off 語
+func fieldPtr(st mut St, p int, off int) int {
+    if off == 0 {
+        return p
+    }
+    return gepWord(mut st, p, iconst(mut st, off))
+}
+
+// loadVal は p + off 語にある型 t の値（アグリゲートはアドレスのまま — コピーしない）
+func loadVal(st mut St, p int, off int, t int) int {
+    if isScalar(mut st, t) {
+        return load(mut st, p, off)
+    }
+    return fieldPtr(mut st, p, off)
+}
+
+// storeVal は型 t の値 v を p + off 語へ書く（アグリゲートは語ごとにコピー）
+func storeVal(st mut St, p int, off int, t int, v int) {
+    if isScalar(mut st, t) {
+        store(mut st, p, off, v)
+        return
+    }
+    mut w := 0
+    while w < tWords(mut st, t) {
+        store(mut st, p, off + w, load(mut st, v, w))
+        w += 1
+    }
+}
+
+// copyVal はアグリゲートを新しいスロットへ写す（スカラーはそのまま）
+func copyVal(st mut St, t int, v int) int {
+    if !isAggregate(mut st, t) {
+        return v
+    }
+    p := newAgg(mut st, t)
+    storeVal(mut st, p, 0, t, v)
+    return p
+}
+
+// ── スコープ ──
+
+func pushScope(st mut St) {
+    n := st.nscope
+    s := table.Len(mut st.scopes)
+    table.Push(mut st.scopes, Scope{prev: st.scopeTop, names: -1, defers: -1, idx: n})
+    st.scopeTop = s
+    st.nscope = n + 1
+}
+
+func popScope(st mut St) {
+    st.scopeTop = scopeAt(mut st, st.scopeTop).prev
+    st.nscope = st.nscope - 1
+}
+
+func declare(st mut St, name int, kind int, t int, v int) {
+    if strIs(mut st, name, "_") {
+        return
+    }
+    s := st.scopeTop
+    sc := scopeAt(mut st, s)
+    en := recN(mut st, 5)
+    hset(mut st, en, sc.names)
+    hset(mut st, en + 1, name)
+    hset(mut st, en + 2, kind)
+    hset(mut st, en + 3, t)
+    hset(mut st, en + 4, v)
+    setScope(mut st, s, en, sc.defers)
+}
+
+// declareNew は利用者の書いた束縛: 見えている名前の再束縛は拒否
+func declareNew(st mut St, name int, kind int, t int, v int, tok int) error? {
+    if strIs(mut st, name, "_") {
+        return nil
+    }
+    if lookup(mut st, name) >= 0 {
+        return LowerFail{k: KUnsupported, tok: tok}
+    }
+    declare(mut st, name, kind, t, v)
+    return nil
+}
+
+// lookup は名前の項（無ければ -1）— 可視範囲の鎖を後ろから、各区間の中は内側のスコープから
+func lookup(st mut St, name int) int {
+    ch := st.chain
+    ns := st.nscope
+    mut v := hget(mut st, ch) / 2
+    while v > 0 {
+        v -= 1
+        lo := hget(mut st, ch + 1 + v * 2)
+        hi0 := hget(mut st, ch + 2 + v * 2)
+        hi := if hi0 < ns { hi0 } else { ns }
+        mut s := st.scopeTop
+        while s >= 0 {
+            sc := scopeAt(mut st, s)
+            if sc.idx >= lo && sc.idx < hi {
+                mut en := sc.names
+                while en >= 0 {
+                    if strEq(mut st, hget(mut st, en + 1), name) {
+                        return en
+                    }
+                    en = hget(mut st, en)
+                }
+            }
+            s = sc.prev
+        }
+    }
+    return -1
+}
+
+// bindName は束縛 1 つ: スカラーの不変束縛は値そのもの、それ以外はスロットを取って書く（アグリゲートは束縛でコピー）
+func bindName(st mut St, name int, t int, v int, mutable bool, tok int) error? {
+    if isTag(mut st, t, TNone) || isTag(mut st, t, TNever) || isTag(mut st, t, TNil) {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    if strIs(mut st, name, "_") {
+        return nil
+    }
+    if isAggregate(mut st, t) {
+        c := copyVal(mut st, t, v)
+        return declareNew(mut st, name, if mutable { LCell } else { LVal }, t, c, tok)
+    }
+    if !mutable {
+        return declareNew(mut st, name, LVal, t, v, tok)
+    }
+    p := newSlotAddr(mut st, 1)
+    store(mut st, p, 0, v)
+    return declareNew(mut st, name, LCell, t, p, tok)
+}
+
+// runDefers はスコープ番号 from 以上に積まれた defer を内側から逆順に展開する（各 defer は自分の新スコープで評価し、結果は捨てる）
+func runDefers(st mut St, from int) error? {
+    mut s := st.scopeTop
+    while s >= 0 && scopeAt(mut st, s).idx >= from {
+        mut d := scopeAt(mut st, s).defers
+        while d >= 0 {
+            pushScope(mut st)
+            evalMulti(mut st, hget(mut st, d + 1))?
+            popScope(mut st)
+            if cur(mut st) < 0 {
+                return nil
+            }
+            d = hget(mut st, d)
+        }
+        s = scopeAt(mut st, s).prev
+    }
+    return nil
+}
+
+// ── 本体 ──
+
+func funcBody(st mut St, fi int) error? {
+    st.info = fi
+    pk := infoAt(mut st, fi).pkg
+    st.curPkg = pk
+    st.scopeTop = -1
+    st.nscope = 0
+    st.loop = -1
+    st.nloop = 0
+    hv0 := list2(mut st, 0, VOPEN)
+    st.chain = hv0
+    st.rets = rec4(mut st, -1, -1, 0, 0)
+    st.floors = rec4(mut st, -1, 0, 0, 0)
+    st.inlining = list0(mut st)
+    decl := infoAt(mut st, fi).decl
+    st.tenv = infoAt(mut st, fi).env
+    irf := infoAt(mut st, fi).ir
+    begin(mut st, irf)
+    pushScope(mut st)
+    mut idx := 0
+    if infoSret(mut st) {
+        st.sret = 0
+        idx = 1
+    }
+    ps := hget(mut st, decl + NC)
+    params := infoAt(mut st, fi).params
+    mut j := 0
+    while j < llen(mut st, ps) {
+        prm := lat(mut st, ps, j)
+        t := lat(mut st, params, j)
+        if hget(mut st, prm + NC) != 0 {
+            // mut 仮引数は呼び手のセルそのもの（アドレス越しに読み書きする — R2）
+            declare(mut st, hget(mut st, prm + NA), LCell, t, idx)
+            idx += 1
+        } else {
+            if isScalar(mut st, t) {
+                declare(mut st, hget(mut st, prm + NA), LVal, t, idx)
+            } else {
+                // 語で受けた引数を自分のスロットへ写す
+                slot := newAgg(mut st, t)
+                mut w := 0
+                while w < tWords(mut st, t) {
+                    store(mut st, slot, w, idx + w)
+                    w += 1
+                }
+                declare(mut st, hget(mut st, prm + NA), LVal, t, slot)
+            }
+            idx += tWords(mut st, t)
+        }
+        j += 1
+    }
+    // 関数本体は自分の region を開く（入口の深度を退避し、出口が復元する）。region 透過の実体関数は開かない — 本体は呼び手の最内 region で走り、
+    // 出口の復元と戻り値の境界コピーの floor = 入口の深度が展開の呼び出し点の深度と同じ値になる（language.md 26 節・formal.md「region 透過の実体関数の段」）
+    hv1 := regionDepth(mut st)
+    st.entryDepth = hv1
+    if !infoAt(mut st, fi).transp {
+        regionEnter(mut st)
+    }
+    stmts(mut st, hget(mut st, hget(mut st, decl + NE) + NA))?
+    if cur(mut st) >= 0 {
+        if llen(mut st, infoAt(mut st, fi).results) != 0 {
+            return LowerFail{k: KMissing, tok: tokOf(mut st, decl)}
+        }
+        runDefers(mut st, 0)?
+        if cur(mut st) >= 0 {
+            regionSetDepth(mut st, st.entryDepth)
+            ret(mut st, -1)
+        }
+    }
+    popScope(mut st)
+    // 到達しない位置で作って前任を持たないまま残ったブロックを閉じる（到達したら panic — 中身は死んでいる）
+    mut b := hget(mut st, irf + F_BHEAD)
+    while b >= 0 {
+        if hget(mut st, b + B_TERM) == TmNone && hget(mut st, b + B_PREDS) == 0 {
+            hset(mut st, b + B_TERM, TmExit)
+            hset(mut st, b + B_X1, PANIC)
+        }
+        b = hget(mut st, b + B_NEXT)
+    }
+    return nil
+}
+
+// stmts は文の列。脱出の後の文は到達しないので下ろさない
+func stmts(st mut St, l int) error? {
+    mut i := 0
+    while i < llen(mut st, l) {
+        if cur(mut st) < 0 {
+            return nil
+        }
+        stmt(mut st, lat(mut st, l, i))?
+        i += 1
+    }
+    return nil
+}
+
+// stmt は文を 1 つ下ろし、出口でその文が取った一時スロットを返す（S-1 — スロットの使い回し）。
+// 文の中で取ったスロットのアドレスが文の外へ出る道は、この文が今のスコープに束縛した名前だけ（束縛はコピーで作る — bindName）。
+// 腕・ブロック・展開の結果は合流でアドレスのまま外へ流れるので、スコープの出口では返せない（入口の監査 — report-22）
+func stmt(st mut St, s int) error? {
+    m := st.slen
+    names0 := scopeAt(mut st, st.scopeTop).names
+    stmtBody(mut st, s)?
+    releaseSlots(mut st, m, names0)
+    return nil
+}
+
+// releaseSlots は積みの m より上（文の間に取った分）を空き鎖へ返す。今のスコープの names0 より後の名前の置き場は残す（外側の文の出口で返る）
+func releaseSlots(st mut St, m int, names0 int) {
+    top := st.slen
+    st.slen = m
+    mut i := m
+    while i < top {
+        r := table.Get(mut st.slive, i)
+        if slotBound(mut st, hget(mut st, r + 4), names0) {
+            liveAdd(mut st, r)
+        } else {
+            slotFree(mut st, r)
+        }
+        i += 1
+    }
+}
+
+// slotBound は値 v（スロットのアドレス）が今のスコープの names0 より後の名前の値か
+func slotBound(st mut St, v int, names0 int) bool {
+    mut en := scopeAt(mut st, st.scopeTop).names
+    while en >= 0 && en != names0 {
+        if hget(mut st, en + 4) == v {
+            return true
+        }
+        en = hget(mut st, en)
+    }
+    return false
+}
+
+func stmtBody(st mut St, s int) error? {
+    k := kindOf(mut st, s)
+    tok := tokOf(mut st, s)
+    if k == ast.SExpr {
+        // 文位置は結果の個数を問わない（多値の呼び出しは捨てる）。文形の for は生成元の呼び出しに書き換えて下ろす
+        e := hget(mut st, s + NA)
+        if isForStmt(mut st, e) {
+            return forStmt(mut st, e)
+        }
+        evalMulti(mut st, e)?
+        return nil
+    }
+    if k == ast.SRet {
+        return retStmt(mut st, s)
+    }
+    if k == ast.SBind {
+        return bindStmt(mut st, s)
+    }
+    if k == ast.SAssign {
+        return assignStmt(mut st, s)
+    }
+    if k == ast.SWhile {
+        return whileStmt(mut st, s)
+    }
+    if k == ast.SBreak || k == ast.SContinue {
+        if st.nloop <= hget(mut st, st.floors + 1) {
+            return LowerFail{k: KUnsupported, tok: tok}
+        }
+        lp := loopAt(mut st, st.loop)
+        runDefers(mut st, if k == ast.SBreak { lp.nbrk } else { lp.ncont })?
+        if cur(mut st) < 0 {
+            return nil
+        }
+        br(mut st, if k == ast.SBreak { lp.exit } else { lp.head }, -1)
+        return nil
+    }
+    if k == ast.SYield {
+        // yield 文は束縛 `yield`（for 式を書き換えたラムダの引数）の呼び出し
+        evalMulti(mut st, yieldCall(mut st, hget(mut st, s + NA), tok))?
+        return nil
+    }
+    if k == ast.SDefer {
+        sc := scopeAt(mut st, st.scopeTop)
+        d := rec4(mut st, sc.defers, hget(mut st, s + NA), 0, 0)
+        setScope(mut st, st.scopeTop, sc.names, d)
+        return nil
+    }
+    return LowerFail{k: KUnsupported, tok: tok}
+}
+
+// bindStmt は `a := e` / `a, b := e1, e2` / `q, r := f()`
+func bindStmt(st mut St, s int) error? {
+    names := hget(mut st, s + NA)
+    mutable := hget(mut st, s + NB) != 0
+    values := hget(mut st, s + NC)
+    tok := tokOf(mut st, s)
+    nn := llen(mut st, names)
+    nv := llen(mut st, values)
+    if nn != nv {
+        r := multiValue(mut st, values, nn, tok)?
+        if r < 0 {
+            return nil
+        }
+        mut i := 0
+        while i < nn {
+            bindName(mut st, lat(mut st, names, i), hget(mut st, r + 1 + i * 2), hget(mut st, r + 2 + i * 2), mutable, tok)?
+            i += 1
+        }
+        return nil
+    }
+    // 同数の式は右辺を全部評価してから束縛する（束縛がコピーするので右辺の一時は写さなくてよい）
+    vs := listN(mut st, nv * 2)
+    mut i := 0
+    while i < nv {
+        t, v0 := expr(mut st, lat(mut st, values, i))?
+        if isTag(mut st, t, TNever) {
+            return nil
+        }
+        v := if nv > 1 { copyVal(mut st, t, v0) } else { v0 }
+        hset(mut st, vs + 1 + i * 2, t)
+        hset(mut st, vs + 2 + i * 2, v)
+        i += 1
+    }
+    i = 0
+    while i < nn {
+        bindName(mut st, lat(mut st, names, i), hget(mut st, vs + 1 + i * 2), hget(mut st, vs + 2 + i * 2), mutable, tok)?
+        i += 1
+    }
+    return nil
+}
+
+// compoundOp は複合代入の演算子 → 二項演算子（無ければ -1）
+func compoundOp(op int) int {
+    if op == lexer.PlusEqual {
+        return lexer.Plus
+    }
+    if op == lexer.MinusEqual {
+        return lexer.Minus
+    }
+    if op == lexer.StarEqual {
+        return lexer.Star
+    }
+    if op == lexer.SlashEqual {
+        return lexer.Slash
+    }
+    if op == lexer.PercentEqual {
+        return lexer.Percent
+    }
+    if op == lexer.AmpersandEqual {
+        return lexer.Ampersand
+    }
+    if op == lexer.PipeEqual {
+        return lexer.Pipe
+    }
+    if op == lexer.CaretEqual {
+        return lexer.Caret
+    }
+    if op == lexer.ShlEqual {
+        return lexer.Shl
+    }
+    if op == lexer.ShrEqual {
+        return lexer.Shr
+    }
+    return -1
+}
+
+// assignStmt は `x = e` / `x, y = e1, e2`（並行）/ `a, b = f()` / `x op= e`。代入先は名前とフィールド
+func assignStmt(st mut St, s int) error? {
+    targets := hget(mut st, s + NA)
+    op := hget(mut st, s + NB)
+    values := hget(mut st, s + NC)
+    tok := tokOf(mut st, s)
+    nt := llen(mut st, targets)
+    nv := llen(mut st, values)
+    if nt == 1 && kindOf(mut st, lat(mut st, targets, 0)) == ast.EIndex {
+        if op != lexer.Equal || nv != 1 {
+            return LowerFail{k: KUnsupported, tok: tok}
+        }
+        return setIndex(mut st, lat(mut st, targets, 0), lat(mut st, values, 0))
+    }
+    if op != lexer.Equal {
+        if nt != 1 || nv != 1 {
+            return LowerFail{k: KUnsupported, tok: tok}
+        }
+        // 右辺 → 対象の現在値 → 演算 → 書き戻し
+        rt, rv := expr(mut st, lat(mut st, values, 0))?
+        if isTag(mut st, rt, TNever) {
+            return nil
+        }
+        want(mut st, rt, tInt(mut st), tok)?
+        pt, pp := target(mut st, lat(mut st, targets, 0), tok)?
+        if pt < 0 {
+            return LowerFail{k: KUnsupported, tok: tok}
+        }
+        if !isTag(mut st, pt, TInt) {
+            return LowerFail{k: KMismatch, tok: tok}
+        }
+        bop := compoundOp(op)
+        if bop < 0 {
+            return LowerFail{k: KUnsupported, tok: tok}
+        }
+        c := load(mut st, pp, 0)
+        v := arith(mut st, bop, c, rv, tok)?
+        store(mut st, pp, 0, v)
+        return nil
+    }
+    mut vs := 0
+    if nt != nv {
+        vs = multiValue(mut st, values, nt, tok)?
+        if vs < 0 {
+            return nil
+        }
+    } else {
+        // 右辺を全部評価してから左辺に書く（`x, y = y, x` の並行代入 — アグリゲートは一時へ写す）
+        vs = listN(mut st, nv * 2)
+        mut i := 0
+        while i < nv {
+            t, v0 := expr(mut st, lat(mut st, values, i))?
+            if isTag(mut st, t, TNever) {
+                return nil
+            }
+            v := if nv > 1 { copyVal(mut st, t, v0) } else { v0 }
+            hset(mut st, vs + 1 + i * 2, t)
+            hset(mut st, vs + 2 + i * 2, v)
+            i += 1
+        }
+    }
+    // 書く順は後ろから（同じ名前が 2 度出たら先頭が勝つ）
+    mut i := nt
+    while i > 0 {
+        i -= 1
+        pt, pp := target(mut st, lat(mut st, targets, i), tok)?
+        if pt >= 0 {
+            t, v := coerce(mut st, hget(mut st, vs + 1 + i * 2), hget(mut st, vs + 2 + i * 2), pt, tok)?
+            storeVal(mut st, pp, 0, t, v)
+        }
+    }
+    return nil
+}
+
+// target は代入先の場所 (型, アドレス)。`_` なら型 -1。フィールドは基底の場所から辿る（基底は mut ローカル）
+func target(st mut St, t int, tok int) (int, int, error?) {
+    k := kindOf(mut st, t)
+    if k == ast.EIdent {
+        name := hget(mut st, t + NA)
+        if strIs(mut st, name, "_") {
+            return -1, 0, nil
+        }
+        l := lookup(mut st, name)
+        if l < 0 {
+            return 0, 0, LowerFail{k: KUndefined, tok: tokOf(mut st, t)}
+        }
+        if hget(mut st, l + 2) != LCell {
+            return 0, 0, LowerFail{k: KMismatch, tok: tokOf(mut st, t)}
+        }
+        return hget(mut st, l + 3), hget(mut st, l + 4), nil
+    }
+    if k == ast.ESelector {
+        bt, bp := target(mut st, hget(mut st, t + NA), tok)?
+        if bt < 0 {
+            return 0, 0, LowerFail{k: KMismatch, tok: tokOf(mut st, t)}
+        }
+        f := fieldOf(mut st, bt, hget(mut st, t + NB), tokOf(mut st, t))?
+        return hget(mut st, f + 1), fieldPtr(mut st, bp, hget(mut st, f + 2)), nil
+    }
+    return 0, 0, LowerFail{k: KMismatch, tok: tok}
+}
+
+// fieldOf は struct 型 t のフィールド name の記録
+func fieldOf(st mut St, t int, name int, tok int) (int, error?) {
+    if !isTag(mut st, t, TStruct) {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    f := findField(mut st, hget(mut st, hget(mut st, t + 1) + SI_FIELDS), name)
+    if f < 0 {
+        return 0, LowerFail{k: KUndefined, tok: tok}
+    }
+    return f, nil
+}
+
+// whileStmt: 入口の深度を退避し、周回の頭と出口で復元する（break / continue が式ブロックの region を飛び越えるため）。本体は region を開かない
+func whileStmt(st mut St, s int) error? {
+    tok := tokOf(mut st, s)
+    saved := regionDepth(mut st)
+    head := newBlock(mut st)
+    body := newBlock(mut st)
+    ex := newBlock(mut st)
+    br(mut st, head, -1)
+    setCur(mut st, head)
+    regionSetDepth(mut st, saved)
+    ct, cv := expr(mut st, hget(mut st, s + NA))?
+    if isTag(mut st, ct, TNever) {
+        return nil
+    }
+    want(mut st, ct, tBool(mut st), tok)?
+    condbr(mut st, cv, body, -1, ex, -1)
+    setCur(mut st, body)
+    lp := loopRec(mut st, head, ex, st.nscope, st.nscope)
+    st.loop = lp
+    st.nloop = st.nloop + 1
+    armValue(mut st, hget(mut st, hget(mut st, s + NB) + NA))?
+    st.nloop = st.nloop - 1
+    st.loop = loopAt(mut st, lp).prev
+    if cur(mut st) >= 0 {
+        br(mut st, head, -1)
+    }
+    setCur(mut st, ex)
+    regionSetDepth(mut st, saved)
+    return nil
+}
+
+// loopRec はループを積む（while は両方の床が同じ。文形 for は break が生成元の展開ごと抜けるので床が浅い）
+func loopRec(st mut St, head int, ex int, ncont int, nbrk int) int {
+    lp := table.Len(mut st.loops)
+    table.Push(mut st.loops, Loop{prev: st.loop, head: head, exit: ex, ncont: ncont, nbrk: nbrk})
+    return lp
+}
+
+// forStmt は文形 for: 生成元の呼び出し `GEN(src, k)` を下ろし、その後ろに break の行き先を置く。k の節の c に
+// [break の行き先, 入口の region 深度, 入口のスコープ数] の記録 + 1 を書いておき、lambdaCall が本体の周りにループを開く
+func forStmt(st mut St, e int) error? {
+    gen := forGen(mut st, e)?
+    saved := regionDepth(mut st)
+    ex := newBlock(mut st)
+    ga := hget(mut st, gen + NB)
+    hset(mut st, lat(mut st, ga, llen(mut st, ga) - 1) + NC, rec4(mut st, ex, saved, st.nscope, 0) + 1)
+    evalMulti(mut st, gen)?
+    if cur(mut st) >= 0 {
+        br(mut st, ex, -1)
+    }
+    if hget(mut st, ex + B_PREDS) == 0 {
+        setCur(mut st, -1)
+        return nil
+    }
+    setCur(mut st, ex)
+    regionSetDepth(mut st, saved)
+    return nil
+}
+
+func retStmt(st mut St, s int) error? {
+    tok := tokOf(mut st, s)
+    values := hget(mut st, s + NA)
+    ctx := hget(mut st, st.rets + 1)
+    want_ts := if ctx >= 0 { hget(mut st, ctx + IC_RESULTS) } else { infoAt(mut st, st.info).results }
+    nw := llen(mut st, want_ts)
+    nv := llen(mut st, values)
+    mut vs := 0
+    if nw > 1 && nv == 1 {
+        // `return g()` の転送: g の結果をそのまま自分の結果へ
+        vs = multiValue(mut st, values, nw, tok)?
+    } else {
+        if nv != nw {
+            return LowerFail{k: KMismatch, tok: tok}
+        }
+        vs = listN(mut st, nv * 2)
+        hset(mut st, vs, nv)
+        mut i := 0
+        while i < nv {
+            t, v := exprExpecting(mut st, lat(mut st, values, i), lat(mut st, want_ts, i), tok)?
+            if isTag(mut st, t, TNever) {
+                return nil
+            }
+            hset(mut st, vs + 1 + i * 2, t)
+            hset(mut st, vs + 2 + i * 2, v)
+            i += 1
+        }
+    }
+    if vs < 0 {
+        return nil
+    }
+    mut i := 0
+    while i < nw {
+        if !tEql(mut st, hget(mut st, vs + 1 + i * 2), lat(mut st, want_ts, i)) {
+            return LowerFail{k: KMismatch, tok: tok}
+        }
+        i += 1
+    }
+    if ctx >= 0 {
+        mut ioff := 0
+        i = 0
+        while i < nw {
+            t := hget(mut st, vs + 1 + i * 2)
+            storeVal(mut st, hget(mut st, ctx + IC_SLOT), ioff, t, hget(mut st, vs + 2 + i * 2))
+            ioff += tWords(mut st, t)
+            i += 1
+        }
+        return inlineExit(mut st, ctx, tok)
+    }
+    // 結果スロットへ書いてから defer（値は defer より先に確定する）
+    if infoSret(mut st) {
+        mut off := 0
+        i = 0
+        while i < nw {
+            t := hget(mut st, vs + 1 + i * 2)
+            storeVal(mut st, st.sret, off, t, hget(mut st, vs + 2 + i * 2))
+            off += tWords(mut st, t)
+            i += 1
+        }
+    }
+    return funcExit(mut st, if !infoSret(mut st) && nw == 1 { hget(mut st, vs + 2) } else { -1 }, tok)
+}
+
+// funcExit は関数の出口の後半（結果は書き済み — sret でなければ v）: defer → 結果の relocate → 深度復元 → ret
+func funcExit(st mut St, v int, tok int) error? {
+    runDefers(mut st, 0)?
+    if cur(mut st) < 0 {
+        return nil
+    }
+    if infoSret(mut st) {
+        // 結果の slice / map を呼び手の region へ写す（defer の後・深度復元の前）
+        rs := infoAt(mut st, st.info).results
+        mut off := 0
+        mut i := 0
+        while i < llen(mut st, rs) {
+            t := lat(mut st, rs, i)
+            relocateTo(mut st, st.sret, off, t, st.entryDepth)
+            off += tWords(mut st, t)
+            i += 1
+        }
+    }
+    regionSetDepth(mut st, st.entryDepth)
+    ret(mut st, v)
+    return nil
+}
+
+// containsSlice は slice / map を（入れ子含め）どこかに含むか
+func containsSlice(st mut St, t int) bool {
+    k := hget(mut st, t)
+    if k == TSlice || k == TMap {
+        return true
+    }
+    if k == TOpt {
+        return containsSlice(mut st, hget(mut st, t + 1))
+    }
+    if k == TStruct {
+        fs := hget(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        mut i := 0
+        while i < llen(mut st, fs) {
+            if containsSlice(mut st, hget(mut st, lat(mut st, fs, i) + 1)) {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
+    if k == TUnion {
+        vs := hget(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        mut i := 0
+        while i < llen(mut st, vs) {
+            fs := hget(mut st, lat(mut st, vs, i) + 2)
+            mut j := 0
+            while j < llen(mut st, fs) {
+                if containsSlice(mut st, hget(mut st, lat(mut st, fs, j) + 1)) {
+                    return true
+                }
+                j += 1
+            }
+            i += 1
+        }
+    }
+    return false
+}
+
+// blockTail は文の並びの値（末尾の式文）。スコープは呼び手が切る
+func blockTail(st mut St, l int) (int, int, error?) {
+    n := llen(mut st, l)
+    mut tail := -1
+    if n > 0 && kindOf(mut st, lat(mut st, l, n - 1)) == ast.SExpr {
+        tail = hget(mut st, lat(mut st, l, n - 1) + NA)
+        if isForStmt(mut st, tail) {
+            tail = -1
+        }
+    }
+    m := if tail >= 0 { n - 1 } else { n }
+    mut i := 0
+    while i < m {
+        if cur(mut st) < 0 {
+            return tNever(mut st), 0, nil
+        }
+        stmt(mut st, lat(mut st, l, i))?
+        i += 1
+    }
+    if cur(mut st) < 0 {
+        return tNever(mut st), 0, nil
+    }
+    if tail >= 0 {
+        r := evalMulti(mut st, tail)?
+        if cur(mut st) < 0 || r < 0 {
+            return tNever(mut st), 0, nil
+        }
+        if hget(mut st, r) == 1 {
+            return hget(mut st, r + 1), hget(mut st, r + 2), nil
+        }
+    }
+    return tNone(mut st), 0, nil
+}
+
+// armValue は if / switch の腕・while 本体: 新スコープだけ開き、region は開かない。出口で defer を展開
+func armValue(st mut St, l int) (int, int, error?) {
+    pushScope(mut st)
+    t, v := armTail(mut st, l)?
+    popScope(mut st)
+    return t, v, nil
+}
+
+func armTail(st mut St, l int) (int, int, error?) {
+    t, v := blockTail(mut st, l)?
+    if isTag(mut st, t, TNever) {
+        return t, v, nil
+    }
+    runDefers(mut st, st.nscope - 1)?
+    if cur(mut st) < 0 {
+        return tNever(mut st), 0, nil
+    }
+    return t, v, nil
+}
+
+// blockValue は式位置の `{ }`: 新スコープ + 新 region。出口で defer を展開してから region を閉じる（入口の深度へ戻す）
+func blockValue(st mut St, l int, tok int) (int, int, error?) {
+    pushScope(mut st)
+    saved := regionDepth(mut st)
+    regionEnter(mut st)
+    t, v := blockTail(mut st, l)?
+    if isTag(mut st, t, TNever) {
+        popScope(mut st)
+        return t, v, nil
+    }
+    runDefers(mut st, st.nscope - 1)?
+    if cur(mut st) < 0 {
+        popScope(mut st)
+        return tNever(mut st), 0, nil
+    }
+    // 普通の出口の境界コピー（R5 — Lean の regionKR）: 末尾値がコンテナを含むなら、ブロックの region にあるヘッダを親の最内 region へ中身ごと写す
+    if containsSlice(mut st, t) {
+        c := copyVal(mut st, t, v)
+        relocateTo(mut st, c, 0, t, saved)
+        regionSetDepth(mut st, saved)
+        popScope(mut st)
+        return t, c, nil
+    }
+    regionSetDepth(mut st, saved)
+    popScope(mut st)
+    return t, v, nil
+}

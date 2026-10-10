@@ -1,0 +1,2 @@
+sober: load error at examples/localname_const.sober:8:5: a local binding cannot reuse a top-level name (const, func or type)
+exit=1

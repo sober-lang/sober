@@ -1,0 +1,29 @@
+package main
+
+// std/os.ModTime / Sleep（sober watch の mtime ポーリングの口）: 書いたファイルの更新時刻は 0 より大きく、眠ってから書き直すと進む。
+// 無いパスは io.NotFound。時刻の値そのものは印字しない（比べるだけ — 実行ごとに変わる）
+
+import "std/io"
+import "std/os"
+
+func main() int {
+    p := "out/os_modtime.txt"
+    if io.WriteFile(p, bytes("a")) != nil {
+        return 1
+    }
+    t0 := os.ModTime(p) catch return 2
+    println(t0 > 0)
+    os.Sleep(20)
+    if io.WriteFile(p, bytes("bb")) != nil {
+        return 3
+    }
+    t1 := os.ModTime(p) catch return 4
+    println(t1 > t0)
+    _, err := os.ModTime("out/no/such/file")
+    println(switch err {
+    case nil: "found"
+    case io.NotFound{}: "not found"
+    default: "other"
+    })
+    return 0
+}

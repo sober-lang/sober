@@ -1,0 +1,57 @@
+{
+  "package": "b",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/loader_neg/cycle/a",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "G",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "a",
+                    "tok": 13
+                  },
+                  "field": "F",
+                  "tok": 15
+                },
+                "args": [],
+                "tok": 16
+              }
+            ],
+            "tok": 12
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 21
+      },
+      "sig_end": 11
+    }
+  ],
+  "consts": []
+}

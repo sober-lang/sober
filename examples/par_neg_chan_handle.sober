@@ -1,0 +1,23 @@
+package main
+
+// 段 6 P5-2 入口: chan のペイロードに handle（kind 19） — check と build が同じ名指しで拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
+
+import "std/par"
+
+type W struct {
+    h par.Task[int]
+}
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        h0 := par.Spawn(s, () => 4)
+        ta, ra := par.NewChan[W](cap: 1)
+        par.Send(ta, W{h: h0})
+        h := par.Spawn(s, (q) => {
+            w := par.Recv(q)
+            if w != nil { par.Join(w.h) } else { 0 }
+        }, give: ra)
+        par.Join(h)
+    })
+    println(r)
+}

@@ -1,0 +1,13 @@
+package main
+
+// 内側の block の region で組んだ mut slice を外側の変数へ移す（旧 testdata/checkneg/region_assign）。
+// 宛先構築レーン M4 で受理: 後で外へ移す mut の局所は宣言の時点で行き先の region に作る（mksliceAt — build は元から受理）
+func main() {
+    mut ys := mut []int{}
+    {
+        mut zs := mut []int{}
+        zs = append(zs, 1)
+        ys = zs
+    }
+    println(len(ys))
+}

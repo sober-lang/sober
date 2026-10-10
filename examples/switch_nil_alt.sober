@@ -1,0 +1,13 @@
+package main
+
+// 負例: nil は他のパターンと `|` で並べられない（loader の拒否 — D1）
+func pick(k int) int? {
+    return if k > 0 { k } else { nil }
+}
+
+func main() {
+    println(switch pick(3) {
+    case nil | 3: 0
+    default: 1
+    })
+}

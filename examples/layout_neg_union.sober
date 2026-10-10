@@ -1,0 +1,12 @@
+package main
+
+// 負例: @layout は struct の型宣言にだけ付く（language.md 36 節 — loader の拒否 diag.Layout）
+
+@layout
+type U union {
+    A { x int }
+}
+
+func main() {
+    println(1)
+}

@@ -1,0 +1,11 @@
+package main
+
+// 負例（language.md 32 節）: named scalar の順序比較は無い（== / != だけ）
+
+type NodeRef int
+
+func main() {
+    a := NodeRef(1)
+    b := NodeRef(2)
+    println(a < b)
+}

@@ -1,0 +1,11 @@
+testdata/readdir: 6 entries
+  Z.src file
+  a.src file
+  ab.src file
+  b.txt file
+  link.src symlink
+  sub dir
+testdata/readdir/sub: 1 entries
+  x.src file
+testdata/readdir/missing: not found
+testdata/readdir/b.txt: not found

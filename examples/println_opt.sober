@@ -1,0 +1,9 @@
+package main
+
+// 負例（check が名指して拒否 — diag.PrintArg）: println は int・byte・bool・string を印字する。`T?`（map の読み・T? を返す呼び出し）は
+// 絞ってから渡す（`if v != nil { println(v) }`）。以前は check が実引数の型を見ず（F-j）、build だけが拒否していた
+
+func main() {
+    m := map[int]string{1: "a"}
+    println(m[1])
+}

@@ -1,0 +1,88 @@
+{
+  "package": "mid",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/cachekey/leaf",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "leaf",
+                    "tok": 15
+                  },
+                  "field": "Inc",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "leaf",
+                        "tok": 19
+                      },
+                      "field": "Inc",
+                      "tok": 21
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 23
+                      }
+                    ],
+                    "tok": 22
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 14
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 29
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

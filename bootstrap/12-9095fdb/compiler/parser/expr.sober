@@ -1,0 +1,890 @@
+package parser
+
+// 式（grammar.zig の 5.4 節と exprChain、cst_to_ast.zig の expr 以下）。
+// 二項階層は lv 0 = `||`、1 = `&&`、2 = 比較、3 = 加法（+ - | ^）、4 = 乗法（* / % << >> &）、5 = 単項
+
+import "std/builder"
+import "ast"
+import "lexer"
+import "std/iter"
+
+// isOp は階層 lv の演算子か
+func isOp(lv int, t int) bool {
+    return switch lv {
+    case 0: t == lexer.PipePipe
+    case 1: t == lexer.AmpersandAmpersand
+    case 2: t == lexer.EqualEqual || t == lexer.BangEqual || t == lexer.Less || t == lexer.LessEqual || t == lexer.Greater || t == lexer.GreaterEqual
+    case 3: t == lexer.Plus || t == lexer.Minus || t == lexer.Pipe || t == lexer.Caret
+    case _: t == lexer.Star || t == lexer.Slash || t == lexer.Percent || t == lexer.Shl || t == lexer.Shr || t == lexer.Ampersand
+    }
+}
+
+// matchParen は位置 p の '(' に対応する ')' の位置（無ければ -1）
+func matchParen(cx Cx, p0 int) int {
+    mut depth := 0
+    mut p := p0
+    while p < len(cx.ts) {
+        t := tg(cx, p)
+        if t == lexer.LParen {
+            depth += 1
+        } else if t == lexer.RParen {
+            depth -= 1
+            if depth == 0 {
+                return p
+            }
+        }
+        p += 1
+    }
+    return -1
+}
+
+// lambdaAhead は位置 p から lambda（lambda_params '=>'）が始まるか。結果は '=>' の位置（無ければ -1）
+func lambdaAhead(cx Cx, p int) int {
+    if tg(cx, p) == lexer.Identifier && tg(cx, p + 1) == lexer.FatArrow {
+        return p + 1
+    }
+    if tg(cx, p) == lexer.LParen {
+        m := matchParen(cx, p)
+        if m >= 0 && tg(cx, m + 1) == lexer.FatArrow {
+            return m + 1
+        }
+    }
+    return -1
+}
+
+// expression <- lambda / pipe_expr
+func parseExpr(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, c bool) (int, int) {
+    arrow := lambdaAhead(cx, p)
+    if arrow >= 0 {
+        return lambda(mut nb, mut db, cx, p, arrow)
+    }
+    l, q := parseBin(mut nb, mut db, cx, p, c, 0)
+    if l < 0 {
+        return -1, p
+    }
+    return pipeRest(mut nb, mut db, cx, l, q, c)
+}
+
+// lambda <- lambda_params '=>' (block / expression)。tok は '=>'
+func lambda(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, arrow int) (int, int) {
+    mut ps := -1
+    if tg(cx, p) == lexer.Identifier {
+        ps = ast.PutList(mut db, []int{node(mut nb, ast.KLParam, 0, name(mut db, cx, p), -1, 0, 0, 0, 0)})
+    } else {
+        l, q := parameters(mut nb, mut db, cx, p, 2)
+        if l < 0 || q != arrow {
+            return -1, p
+        }
+        ps = l
+    }
+    if tg(cx, arrow + 1) == lexer.LBrace {
+        b, r := block(mut nb, mut db, cx, arrow + 1)
+        if b >= 0 {
+            body := node(mut nb, ast.EBlock, 0, blockStmts(mut nb, b), 0, 0, 0, 0, 0)
+            return node(mut nb, ast.ELambda, tk(cx, arrow), ps, body, 0, 0, 0, 0), r
+        }
+    }
+    e, r := parseExpr(mut nb, mut db, cx, arrow + 1, false)
+    if e < 0 {
+        return -1, p
+    }
+    return node(mut nb, ast.ELambda, tk(cx, arrow), ps, e, 0, 0, 0, 0), r
+}
+
+// pipe_expr の残り: ('|>' pipe_stage)* を左結合で畳む。tok は '|>'
+func pipeRest(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, l0 int, p0 int, c bool) (int, int) {
+    mut l := l0
+    mut p := p0
+    while tg(cx, p) == lexer.PipeGreater {
+        s, q := pipeStage(mut nb, mut db, cx, l, p, c)
+        if s < 0 {
+            return l, p
+        }
+        l = s
+        p = q
+    }
+    return l, p
+}
+
+// pipe_stage: 裸の名前 `f`・修飾名 `pkg.F`・呼び出し `f(a, _, b)`（直下の引数の `_` が穴）。at は '|>' の位置
+func pipeStage(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, lhs int, at int, c bool) (int, int) {
+    callee0, q0 := primary(mut nb, mut db, cx, at + 1, c)
+    if callee0 < 0 {
+        return -1, at
+    }
+    mut callee := callee0
+    mut p := q0
+    while tg(cx, p) == lexer.Dot && tg(cx, p + 1) == lexer.Identifier {
+        callee = node(mut nb, ast.ESelector, tk(cx, p + 1), callee, name(mut db, cx, p + 1), 0, 0, 0, 0)
+        p += 2
+    }
+    mut args := ast.PutList(mut db, []int{})
+    if tg(cx, p) == lexer.LParen {
+        l, q := arguments(mut nb, mut db, cx, p, true)
+        if l < 0 {
+            return -1, at
+        }
+        args = l
+        p = q
+    }
+    t := tg(cx, p)
+    if t == lexer.LParen || t == lexer.LBracket || t == lexer.Question || t == lexer.Dot {
+        return -1, at
+    }
+    return node(mut nb, ast.EPipe, tk(cx, at), lhs, callee, args, 0, 0, 0), p
+}
+
+// parseBin は階層 lv の二項式（operand (op operand)* を左結合で畳む。tok は演算子）
+func parseBin(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, c bool, lv int) (int, int) {
+    if lv == 5 {
+        return unary(mut nb, mut db, cx, p, c)
+    }
+    l, q := parseBin(mut nb, mut db, cx, p, c, lv + 1)
+    if l < 0 {
+        return -1, p
+    }
+    return binRest(mut nb, mut db, cx, l, q, c, lv)
+}
+
+// binRest は lhs に続く階層 lv の (op operand)* を畳む（右項が読めなければ演算子の手前で止まる — PEG の * と同じ）
+func binRest(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, l0 int, p0 int, c bool, lv int) (int, int) {
+    mut l := l0
+    mut p := p0
+    mut going := true
+    while going && isOp(lv, tg(cx, p)) {
+        r, q := parseBin(mut nb, mut db, cx, p + 1, c, lv + 1)
+        if r < 0 {
+            going = false
+        } else {
+            l = node(mut nb, ast.EBinary, tk(cx, p), tg(cx, p), l, r, 0, 0, 0)
+            p = q
+        }
+    }
+    return l, p
+}
+
+// unary_expr <- unary_op unary_expr / postfix_expr。tok は演算子
+func unary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, c bool) (int, int) {
+    t := tg(cx, p)
+    if t == lexer.Minus || t == lexer.Bang || t == lexer.Caret {
+        e, q := unary(mut nb, mut db, cx, p + 1, c)
+        if e < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.EUnary, tk(cx, p), t, e, 0, 0, 0, 0), q
+    }
+    return postfix(mut nb, mut db, cx, p, c)
+}
+
+// arguments: '(' argument_list? ')'（argument <- (IDENT ':')? (mut_arg / expression) — 名前付き〔決定 7〕は位置の後にだけ・可変長は拒否）。
+// holes なら直下の `_` は穴（-1 — パイプ段。穴は位置引数としてだけ）。名前付きは KNamedArg（loader が位置へ写す）
+func arguments(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, holes bool) (int, int) {
+    mut out := mut []int{}
+    mut p := p0 + 1
+    mut going := tg(cx, p) != lexer.RParen
+    mut named := false
+    while going {
+        nm := if tg(cx, p) == lexer.Identifier && tg(cx, p + 1) == lexer.Colon { p } else { -1 }
+        if nm >= 0 {
+            named = true
+            p += 2
+        } else if named {
+            // 名前付きの後の位置引数
+            return -1, p
+        }
+        n0 := len(out)
+        // mut 実引数 `mut x` / `mut x.f.g`（欄の経路 — F-17 案 2α で解禁。字句は隙間なく続くこと。名前は経路の綴りそのまま）
+        mut mq := p + 2
+        if tg(cx, p) == lexer.KwMut && tg(cx, p + 1) == lexer.Identifier {
+            while tg(cx, mq) == lexer.Dot && tg(cx, mq + 1) == lexer.Identifier && cx.ts[mq - 1].end == cx.ts[mq].start && cx.ts[mq].end == cx.ts[mq + 1].start {
+                mq += 2
+            }
+        }
+        if tg(cx, p) == lexer.KwMut && tg(cx, p + 1) == lexer.Identifier && (tg(cx, mq) == lexer.Comma || tg(cx, mq) == lexer.RParen) {
+            out = append(out, node(mut nb, ast.EMutArg, tk(cx, p + 1), ast.PutBytes(mut db, cx.src, cx.ts[p + 1].start, cx.ts[mq - 1].end), 0, 0, 0, 0, 0))
+            p = mq
+        } else if holes && textIs(cx, p, "_") && (tg(cx, p + 1) == lexer.Comma || tg(cx, p + 1) == lexer.RParen) {
+            out = append(out, -1)
+            p += 1
+        } else {
+            e, q := parseExpr(mut nb, mut db, cx, p, false)
+            if e < 0 {
+                return -1, p
+            }
+            out = append(out, e)
+            p = q
+        }
+        if nm >= 0 {
+            // 穴 `_` は位置引数としてだけ（決定 7 — `f(sep: _)` は書けない）
+            if out[n0] < 0 {
+                return -1, p
+            }
+            out[n0] = node(mut nb, ast.KNamedArg, tk(cx, nm), name(mut db, cx, nm), out[n0], 0, 0, 0, 0)
+        }
+        if tg(cx, p) == lexer.Ellipsis {
+            return -1, p
+        }
+        if tg(cx, p) == lexer.Comma {
+            p += 1
+            going = tg(cx, p) != lexer.RParen
+        } else {
+            going = false
+        }
+    }
+    if tg(cx, p) != lexer.RParen {
+        return -1, p
+    }
+    return ast.PutList(mut db, freeze(out)), p + 1
+}
+
+// postfix_expr <- primary_expr postfix*（postfix <- call / selector / index / try）
+func postfix(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, c bool) (int, int) {
+    e0, q0 := primary(mut nb, mut db, cx, p0, c)
+    if e0 < 0 {
+        return -1, p0
+    }
+    mut e := e0
+    mut p := q0
+    // `string(b)` → `$utf8.Parse(b)`（cst_to_ast の固定テンプレート — 裁定 C1。凍結した Zig 版は旧名 FromBytes を合成する — 構文の照合は綴りを揃えて比べる）
+    mut bare_string := q0 == p0 + 1 && tg(cx, p0) == lexer.Identifier && textIs(cx, p0, "string")
+    mut going := true
+    while going {
+        t := tg(cx, p)
+        if t == lexer.LParen {
+            args, q := arguments(mut nb, mut db, cx, p, false)
+            if args < 0 {
+                return -1, p0
+            }
+            if bare_string {
+                base := node(mut nb, ast.EUtf8Ref, tk(cx, p0), 0, 0, 0, 0, 0, 0)
+                e = node(mut nb, ast.ESelector, tk(cx, p0), base, ast.PutLit(mut db, "Parse"), 0, 0, 0, 0)
+            }
+            e = node(mut nb, ast.ECall, tk(cx, p), e, args, 0, 0, 0, 0)
+            p = q
+        } else if t == lexer.Dot && tg(cx, p + 1) == lexer.Identifier {
+            e = node(mut nb, ast.ESelector, tk(cx, p + 1), e, name(mut db, cx, p + 1), 0, 0, 0, 0)
+            p += 2
+        } else if t == lexer.LBracket {
+            i, q := parseExpr(mut nb, mut db, cx, p + 1, false)
+            if i < 0 {
+                return -1, p0
+            }
+            if tg(cx, q) == lexer.Colon {
+                h, r := parseExpr(mut nb, mut db, cx, q + 1, false)
+                if h < 0 || tg(cx, r) != lexer.RBracket {
+                    return -1, p0
+                }
+                e = node(mut nb, ast.ESlice3, tk(cx, p), e, i, h, 0, 0, 0)
+                p = r + 1
+            } else {
+                if tg(cx, q) != lexer.RBracket {
+                    return -1, p0
+                }
+                e = node(mut nb, ast.EIndex, tk(cx, p), e, i, 0, 0, 0, 0)
+                p = q + 1
+            }
+        } else if t == lexer.Question {
+            // '?' composite_lit?（包み替え — 条件位置の c_try は読まない）
+            mut wrap := -1
+            mut q := p + 1
+            if !c && compositeAhead(mut nb, mut db, cx, q) {
+                w, r := composite(mut nb, mut db, cx, q)
+                if w < 0 {
+                    return -1, p0
+                }
+                wrap = w
+                q = r
+            }
+            e = node(mut nb, ast.ETry, tk(cx, p), e, wrap, 0, 0, 0, 0)
+            p = q
+        } else {
+            going = false
+        }
+        bare_string = false
+    }
+    return e, p
+}
+
+// compositeAhead は位置 p から composite_lit（'mut'? literal_type literal_value）が始まるか。
+// literal_type <- type_name type_args? / slice_type / map_type。type_args は型として試し読みする（R5-2 — 失敗した試しの節は
+// 根から辿れないので出力に出ない）
+func compositeAhead(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) bool {
+    mut p := p0
+    if tg(cx, p) == lexer.KwMut {
+        p += 1
+    }
+    t := tg(cx, p)
+    if t == lexer.Identifier || t == lexer.KwError {
+        mut q := p + 1
+        if t == lexer.Identifier && tg(cx, q) == lexer.Dot && tg(cx, q + 1) == lexer.Identifier {
+            q += 2
+        }
+        if tg(cx, q) == lexer.LBracket {
+            ta, r := typeArgs(mut nb, mut db, cx, q)
+            if ta < 0 {
+                return false
+            }
+            q = r
+        }
+        return tg(cx, q) == lexer.LBrace
+    }
+    if t == lexer.LBracket && tg(cx, p + 1) == lexer.RBracket {
+        return true
+    }
+    return t == lexer.KwMap
+}
+
+// Elem は literal の要素 1 つ（keyed_element）: キーの式（無しは -1）・キーの字句位置（キー無しは -1、キーが裸の識別子 1 字句でなければ -2）・値の式
+type Elem struct {
+    key int
+    ktok int
+    val int
+}
+
+// literalValue: '{' (element_list ','?)? '}'（keyed_element <- (key ':')? element）。結果は（要素の列, 次の位置）。
+// 失敗は次の位置 -1。入れ子の `{…}`（型なしの literal）は拒否
+func literalValue(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) ([]Elem, int) {
+    mut es := mut []Elem{}
+    if tg(cx, p0) != lexer.LBrace {
+        return freeze(es), -1
+    }
+    mut p := p0 + 1
+    mut going := tg(cx, p) != lexer.RBrace
+    while going {
+        if tg(cx, p) == lexer.LBrace {
+            return freeze(es), -1
+        }
+        e, q := parseExpr(mut nb, mut db, cx, p, false)
+        if e < 0 {
+            return freeze(es), -1
+        }
+        if tg(cx, q) == lexer.Colon {
+            if tg(cx, q + 1) == lexer.LBrace {
+                return freeze(es), -1
+            }
+            v, r := parseExpr(mut nb, mut db, cx, q + 1, false)
+            if v < 0 {
+                return freeze(es), -1
+            }
+            kt := if q == p + 1 && tg(cx, p) == lexer.Identifier && !textIs(cx, p, "nil") { p } else { -2 }
+            es = append(es, Elem{key: e, ktok: kt, val: v})
+            p = r
+        } else {
+            es = append(es, Elem{key: -1, ktok: -1, val: e})
+            p = q
+        }
+        if tg(cx, p) == lexer.Comma {
+            p += 1
+            going = tg(cx, p) != lexer.RBrace
+        } else {
+            going = false
+        }
+    }
+    if tg(cx, p) != lexer.RBrace {
+        return freeze(es), -1
+    }
+    return freeze(es), p + 1
+}
+
+// composite_lit <- 'mut'? literal_type literal_value（struct / slice / map のリテラル）
+func composite(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut p := p0
+    m := tg(cx, p) == lexer.KwMut
+    if m {
+        p += 1
+    }
+    mv := if m { 1 } else { 0 }
+    lt := p
+    t := tg(cx, p)
+    if t == lexer.LBracket {
+        // slice リテラル `[]T{e, ...}`（キーつき要素は拒否）
+        el, q := typeOf(mut nb, mut db, cx, p + 2, false)
+        if el < 0 {
+            return -1, p0
+        }
+        els, r := literalValue(mut nb, mut db, cx, q)
+        if r < 0 {
+            return -1, p0
+        }
+        mut vals := mut []int{}
+        for x <- els {
+            if x.key >= 0 {
+                return -1, p0
+            }
+            vals = append(vals, x.val)
+        }
+        return node(mut nb, ast.ESlicelit, tk(cx, lt), el, ast.PutList(mut db, freeze(vals)), mv, 0, 0, 0), r
+    }
+    if t == lexer.KwMap {
+        // map リテラル `map[K]V{k: v, ...}`（全要素にキーが要る）
+        if tg(cx, p + 1) != lexer.LBracket {
+            return -1, p0
+        }
+        k, q := typeOf(mut nb, mut db, cx, p + 2, false)
+        if k < 0 || tg(cx, q) != lexer.RBracket {
+            return -1, p0
+        }
+        v, q2 := typeOf(mut nb, mut db, cx, q + 1, false)
+        if v < 0 {
+            return -1, p0
+        }
+        els, r := literalValue(mut nb, mut db, cx, q2)
+        if r < 0 {
+            return -1, p0
+        }
+        mut es := mut []int{}
+        for x <- els {
+            if x.key < 0 {
+                return -1, p0
+            }
+            es = append(es, node(mut nb, ast.KEntry, 0, x.key, x.val, 0, 0, 0, 0))
+        }
+        return node(mut nb, ast.EMaplit, tk(cx, lt), k, v, ast.PutList(mut db, freeze(es)), mv, 0, 0), r
+    }
+    // struct リテラル `T{a, b}` / `T{x: a}` / `Ord[int]{…}`（キーは裸の識別子）
+    if m {
+        return -1, p0
+    }
+    tn, q := qualName(mut db, cx, p)
+    if tn < 0 {
+        return -1, p0
+    }
+    mut targs := ast.PutList(mut db, []int{})
+    mut q2 := q
+    if tg(cx, q) == lexer.LBracket {
+        l, r := typeArgs(mut nb, mut db, cx, q)
+        if l < 0 {
+            return -1, p0
+        }
+        targs = l
+        q2 = r
+    }
+    els, r := literalValue(mut nb, mut db, cx, q2)
+    if r < 0 {
+        return -1, p0
+    }
+    mut es := mut []int{}
+    for x <- els {
+        if x.ktok == -2 {
+            return -1, p0
+        }
+        kname := if x.ktok >= 0 { name(mut db, cx, x.ktok) } else { -1 }
+        es = append(es, node(mut nb, ast.KElem, 0, kname, x.val, 0, 0, 0, 0))
+    }
+    return node(mut nb, ast.EComposite, tk(cx, p0), tn, ast.PutList(mut db, freeze(es)), targs, 0, 0, 0), r
+}
+
+// primary_expr <- if / switch / for / scope / spawn / shield / block / composite_lit（条件位置以外）/ operand
+func primary(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, c bool) (int, int) {
+    t := tg(cx, p)
+    switch t {
+    case lexer.KwIf:
+        return ifExpr(mut nb, mut db, cx, p)
+    case lexer.KwSwitch:
+        return switchExpr(mut nb, mut db, cx, p)
+    case lexer.KwFor:
+        return forExpr(mut nb, mut db, cx, p)
+    case lexer.LBrace:
+        b, q := block(mut nb, mut db, cx, p)
+        if b < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.EBlock, 0, blockStmts(mut nb, b), 0, 0, 0, 0, 0), q
+    }
+    if !c && compositeAhead(mut nb, mut db, cx, p) {
+        return composite(mut nb, mut db, cx, p)
+    }
+    // operand <- INT / CHAR / STR / IDENT / '(' expression ')'（raw 文字列は拒否）
+    switch t {
+    case lexer.IntegerLiteral:
+        return intLit(mut nb, cx, p)
+    case lexer.CharLiteral:
+        // 文字リテラルは型なし整数定数（language.md 33 節）— EInt に綴りの印 b = 1（printer と AST JSON だけが見る）
+        x := cx.ts[p]
+        return node(mut nb, ast.EInt, tk(cx, p), lexer.CharValue(cx.src, x.start, x.end), 1, 0, 0, 0, 0), p + 1
+    case lexer.StringLiteral:
+        return stringLit(mut nb, mut db, cx, p)
+    case lexer.Identifier:
+        if textIs(cx, p, "nil") {
+            return node(mut nb, ast.ENil, tk(cx, p), 0, 0, 0, 0, 0, 0), p + 1
+        }
+        return node(mut nb, ast.EIdent, tk(cx, p), name(mut db, cx, p), 0, 0, 0, 0, 0), p + 1
+    case lexer.LParen:
+        e, q := parseExpr(mut nb, mut db, cx, p + 1, false)
+        if e < 0 || tg(cx, q) != lexer.RParen {
+            return -1, p
+        }
+        return node(mut nb, ast.EParen, 0, e, 0, 0, 0, 0, 0), q + 1
+    }
+    return -1, p
+}
+
+// intLit は整数リテラル（10 進・`0x` / `0o` / `0b` — i64 に収まらなければ拒否）。n 進の綴りは EInt の b に基数で印を付ける
+// （printer と AST JSON だけが見る — 文字リテラルの b = 1 と同じ扱い）
+func intLit(nb mut builder.Builder[ast.Node], cx Cx, p int) (int, int) {
+    t := cx.ts[p]
+    r := if t.end - t.start > 2 && cx.src[t.start] == '0' && !lexer.IsDecimalDigit(int(cx.src[t.start + 1])) { lexer.RadixOf(int(cx.src[t.start + 1])) } else { 10 }
+    mut v := 0
+    mut i := if r == 10 { t.start } else { t.start + 2 }
+    while i < t.end {
+        d := lexer.DigitVal(int(cx.src[i]), r)
+        if v > (9223372036854775807 - d) / r {
+            return -1, p
+        }
+        v = v * r + d
+        i += 1
+    }
+    return node(mut nb, ast.EInt, tk(cx, p), v, if r == 10 { 0 } else { r }, 0, 0, 0, 0), p + 1
+}
+
+// if_expr <- 'if' c_expression block ('else' (if_expr / block))?
+func ifExpr(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    cond, q := parseExpr(mut nb, mut db, cx, p + 1, true)
+    if cond < 0 {
+        return -1, p
+    }
+    then, r := block(mut nb, mut db, cx, q)
+    if then < 0 {
+        return -1, p
+    }
+    if tg(cx, r) != lexer.KwElse {
+        return node(mut nb, ast.EIf, tk(cx, p), cond, then, -1, 0, 0, 0), r
+    }
+    if tg(cx, r + 1) == lexer.KwIf {
+        alt, s := ifExpr(mut nb, mut db, cx, r + 1)
+        if alt < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.EIf, tk(cx, p), cond, then, alt, 0, 0, 0), s
+    }
+    b, s := block(mut nb, mut db, cx, r + 1)
+    if b < 0 {
+        return -1, p
+    }
+    alt := node(mut nb, ast.EBlock, 0, blockStmts(mut nb, b), 0, 0, 0, 0, 0)
+    return node(mut nb, ast.EIf, tk(cx, p), cond, then, alt, 0, 0, 0), s
+}
+
+// switch_expr <- 'switch' c_expression_list? '{' case_clause* '}'
+func switchExpr(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    mut q := p + 1
+    mut subjects := ast.PutList(mut db, []int{})
+    if tg(cx, q) != lexer.LBrace {
+        l, r := exprList(mut nb, mut db, cx, q, true)
+        if l < 0 {
+            return -1, p
+        }
+        subjects = l
+        q = r
+    }
+    if tg(cx, q) != lexer.LBrace {
+        return -1, p
+    }
+    q += 1
+    mut cases := mut []int{}
+    mut dflt := -1
+    mut going := true
+    while going {
+        t := tg(cx, q)
+        if t == lexer.KwCase {
+            at := q
+            mut pats := mut []int{}
+            mut more := true
+            q += 1
+            while more {
+                pt, r := pattern(mut nb, mut db, cx, q)
+                if pt < 0 {
+                    return -1, p
+                }
+                pats = append(pats, pt)
+                q = r
+                more = tg(cx, q) == lexer.Comma
+                if more {
+                    q += 1
+                }
+            }
+            if tg(cx, q) != lexer.Colon {
+                return -1, p
+            }
+            body, r := stmtList(mut nb, mut db, cx, q + 1)
+            cases = append(cases, node(mut nb, ast.KCase, tk(cx, at), ast.PutList(mut db, freeze(pats)), node(mut nb, ast.KBlock, 0, body, 0, 0, 0, 0, 0), 0, 0, 0, 0))
+            q = r
+        } else if t == lexer.KwDefault {
+            if dflt >= 0 || tg(cx, q + 1) != lexer.Colon {
+                return -1, p
+            }
+            body, r := stmtList(mut nb, mut db, cx, q + 2)
+            dflt = node(mut nb, ast.KBlock, 0, body, 0, 0, 0, 0, 0)
+            q = r
+        } else {
+            going = false
+        }
+    }
+    if tg(cx, q) != lexer.RBrace {
+        return -1, p
+    }
+    return node(mut nb, ast.ESwitch, tk(cx, p), subjects, ast.PutList(mut db, freeze(cases)), dflt, 0, 0, 0), q + 1
+}
+
+// typePatAhead は位置 p から type_pattern（type_name '{'）が始まるか
+func typePatAhead(cx Cx, p int) bool {
+    if tg(cx, p) == lexer.KwError {
+        return tg(cx, p + 1) == lexer.LBrace
+    }
+    if tg(cx, p) != lexer.Identifier {
+        return false
+    }
+    if tg(cx, p + 1) == lexer.Dot && tg(cx, p + 2) == lexer.Identifier {
+        return tg(cx, p + 3) == lexer.LBrace
+    }
+    return tg(cx, p + 1) == lexer.LBrace
+}
+
+// pattern <- IDENT type_pattern / type_pattern / const_pattern
+func pattern(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    if tg(cx, p) == lexer.Identifier && typePatAhead(cx, p + 1) {
+        return typePattern(mut nb, mut db, cx, p + 1, name(mut db, cx, p))
+    }
+    if typePatAhead(cx, p) {
+        return typePattern(mut nb, mut db, cx, p, -1)
+    }
+    return constPattern(mut nb, mut db, cx, p)
+}
+
+// type_pattern <- type_name '{' (field_pattern (',' field_pattern)* ','?)? '}'（field_pattern <- IDENT (':' pattern)?）
+func typePattern(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, bind int) (int, int) {
+    tn, q0 := qualName(mut db, cx, p)
+    mut q := q0 + 1
+    mut fs := mut []int{}
+    mut going := tg(cx, q) == lexer.Identifier
+    while going {
+        at := q
+        mut sub := -1
+        q += 1
+        if tg(cx, q) == lexer.Colon {
+            s, r := pattern(mut nb, mut db, cx, q + 1)
+            if s < 0 {
+                return -1, p
+            }
+            sub = s
+            q = r
+        }
+        fs = append(fs, node(mut nb, ast.KFieldPat, tk(cx, at), name(mut db, cx, at), sub, 0, 0, 0, 0))
+        if tg(cx, q) == lexer.Comma {
+            q += 1
+            going = tg(cx, q) == lexer.Identifier
+        } else {
+            going = false
+        }
+    }
+    if tg(cx, q) != lexer.RBrace {
+        return -1, p
+    }
+    return node(mut nb, ast.KPType, tk(cx, p), bind, tn, ast.PutList(mut db, freeze(fs)), 0, 0, 0), q + 1
+}
+
+// fold は operands を ops で左結合に畳む（ops[i] は operands[i] と operands[i+1] の間。opat は演算子の位置）
+func fold(nb mut builder.Builder[ast.Node], cx Cx, operands []int, ops []int, opat []int, n int) int {
+    mut l := operands[0]
+    for i <- iter.Range(1, n) {
+        l = node(mut nb, ast.EBinary, tk(cx, opat[i - 1]), ops[i - 1], l, operands[i], 0, 0, 0)
+    }
+    return l
+}
+
+// const_pattern <- c_expression。式が加法の階層で終わり、その最上位の末尾から続く '|' の並びがあれば選択に分ける
+// （`case 1 | 2:` — 二項の '|' と同じ木を AST 層で読み替える。括弧 `(A | B)` や比較の下の '|' は分けない）
+func constPattern(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    arrow := lambdaAhead(cx, p)
+    if arrow >= 0 {
+        l, q := lambda(mut nb, mut db, cx, p, arrow)
+        if l < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.KPConst, 0, ast.PutList(mut db, []int{l}), 0, 0, 0, 0, 0), q
+    }
+    first, q0 := parseBin(mut nb, mut db, cx, p, true, 4)
+    if first < 0 {
+        return -1, p
+    }
+    mut operands := mut []int{first}
+    mut ops := mut []int{}
+    mut opat := mut []int{}
+    mut q := q0
+    mut going := true
+    while going && isOp(3, tg(cx, q)) {
+        r, s := parseBin(mut nb, mut db, cx, q + 1, true, 4)
+        if r < 0 {
+            going = false
+        } else {
+            ops = append(ops, tg(cx, q))
+            opat = append(opat, q)
+            operands = append(operands, r)
+            q = s
+        }
+    }
+    n := len(operands)
+    mut trailing := 0
+    while trailing < len(ops) && ops[len(ops) - 1 - trailing] == lexer.Pipe {
+        trailing += 1
+    }
+    nx := tg(cx, q)
+    higher := isOp(2, nx) || isOp(1, nx) || isOp(0, nx) || nx == lexer.PipeGreater
+    if higher || trailing == 0 {
+        whole := fold(mut nb, cx, freeze(operands), freeze(ops), freeze(opat), n)
+        l2, q2 := binRest(mut nb, mut db, cx, whole, q, true, 2)
+        l1, q1 := binRest(mut nb, mut db, cx, l2, q2, true, 1)
+        l0, qa := binRest(mut nb, mut db, cx, l1, q1, true, 0)
+        e, qe := pipeRest(mut nb, mut db, cx, l0, qa, true)
+        return node(mut nb, ast.KPConst, 0, ast.PutList(mut db, []int{e}), 0, 0, 0, 0, 0), qe
+    }
+    head := n - trailing
+    mut alts := mut []int{fold(mut nb, cx, freeze(operands), freeze(ops), freeze(opat), head)}
+    for j <- iter.Range(head, n) {
+        alts = append(alts, operands[j])
+    }
+    return node(mut nb, ast.KPConst, 0, ast.PutList(mut db, freeze(alts)), 0, 0, 0, 0, 0), q
+}
+
+// genAhead は位置 p から generator（identifier_list '<-'）が始まるか
+func genAhead(cx Cx, p0 int) bool {
+    mut p := p0
+    if tg(cx, p) != lexer.Identifier {
+        return false
+    }
+    p += 1
+    while tg(cx, p) == lexer.Comma && tg(cx, p + 1) == lexer.Identifier {
+        p += 2
+    }
+    return tg(cx, p) == lexer.LeftArrow
+}
+
+// for_expr <- 'for' generators ('yield' or_expr / block)（generator <- identifier_list '<-' c_expression ('if' c_expression)*）
+func forExpr(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    mut gens := mut []int{}
+    mut q := p + 1
+    mut more := true
+    while more {
+        if !genAhead(cx, q) {
+            return -1, p
+        }
+        at := q
+        mut names := mut []int{}
+        while tg(cx, q) != lexer.LeftArrow {
+            if tg(cx, q) == lexer.Identifier {
+                names = append(names, name(mut db, cx, q))
+            }
+            q += 1
+        }
+        src, r := parseExpr(mut nb, mut db, cx, q + 1, true)
+        if src < 0 {
+            return -1, p
+        }
+        q = r
+        mut guards := mut []int{}
+        mut ok := true
+        while ok && tg(cx, q) == lexer.KwIf {
+            g, s := parseExpr(mut nb, mut db, cx, q + 1, true)
+            if g < 0 {
+                ok = false
+            } else {
+                guards = append(guards, g)
+                q = s
+            }
+        }
+        gens = append(gens, node(mut nb, ast.KGen, tk(cx, at), ast.PutList(mut db, freeze(names)), src, ast.PutList(mut db, freeze(guards)), 0, 0, 0))
+        more = tg(cx, q) == lexer.Semicolon && genAhead(cx, q + 1)
+        if more {
+            q += 1
+        }
+    }
+    gl := ast.PutList(mut db, freeze(gens))
+    if tg(cx, q) == lexer.KwYield {
+        e, r := parseBin(mut nb, mut db, cx, q + 1, false, 0)
+        if e < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.EFor, tk(cx, p), gl, 0, e, 0, 0, 0), r
+    }
+    b, r := block(mut nb, mut db, cx, q)
+    if b < 0 {
+        return -1, p
+    }
+    return node(mut nb, ast.EFor, tk(cx, p), gl, 1, blockStmts(mut nb, b), 0, 0, 0), r
+}
+
+// stringLit: `"..."`。エスケープを解決し、`${ 式 }` の式は先に字句に分けてある穴（Cx.holes）を 1 つの式として読む
+// （座標は文字列リテラルで代表）。穴が無ければ strlit、あれば補間（定数部 n+1 個 + 穴 n 個 — 穴の隣接や端でも空文字列を置く）
+func stringLit(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    t := cx.ts[p]
+    s := t.start
+    n := t.end - t.start
+    mut lits := mut []int{}
+    mut holes := mut []int{}
+    mut cur := mut []byte{}
+    mut hk := cx.first[p]
+    mut i := 1
+    while i + 1 < n {
+        c := cx.src[s + i]
+        if c == '\\' && i + 2 < n {
+            i += 1
+            e := cx.src[s + i]
+            esc := switch e {
+            case 'n': '\n'
+            case 't': '\t'
+            case 'r': '\r'
+            case '0': '\0'
+            case '\\': '\\'
+            case '"': '"'
+            case '$': '$'
+            case _: -1
+            }
+            if esc < 0 {
+                return -1, p
+            }
+            cur = append(cur, byte(esc))
+        } else if c == '$' && cx.src[s + i + 1] == '{' {
+            end := lexer.InterpEnd(cx.src, s + i + 1)
+            if end < 0 || hk < 0 {
+                return -1, p
+            }
+            fc := freeze(cur)
+            lits = append(lits, ast.PutBytes(mut db, fc, 0, len(fc)))
+            cur = mut []byte{}
+            h := interpHole(mut nb, mut db, cx, p, cx.holes[hk])
+            if h < 0 {
+                return -1, p
+            }
+            holes = append(holes, h)
+            hk += 1
+            i = end - s - 1
+        } else {
+            cur = append(cur, c)
+        }
+        i += 1
+    }
+    fc := freeze(cur)
+    lits = append(lits, ast.PutBytes(mut db, fc, 0, len(fc)))
+    if len(holes) == 0 {
+        return node(mut nb, ast.EStrlit, tk(cx, p), lits[0], 0, 0, 0, 0, 0), p + 1
+    }
+    return node(mut nb, ast.EInterp, tk(cx, p), ast.PutList(mut db, freeze(lits)), ast.PutList(mut db, freeze(holes)), 0, 0, 0, 0), p + 1
+}
+
+// interpHole は字句 h から始まる穴の字句列を 1 つの式として読む（全節の tok は文字列リテラル p の位置）
+func interpHole(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, h int) int {
+    hx := Cx{cx.src, cx.ts, cx.first, cx.holes, tk(cx, p)}
+    e, q := parseExpr(mut nb, mut db, hx, h, false)
+    if e < 0 {
+        return -1
+    }
+    // 末尾は自動挿入の ';' と eof だけ
+    mut k := q
+    while cx.ts[k].tag != lexer.Eof {
+        if cx.ts[k].tag != lexer.Semicolon {
+            return -1
+        }
+        k += 1
+    }
+    return e
+}

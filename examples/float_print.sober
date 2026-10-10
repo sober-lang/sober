@@ -1,0 +1,39 @@
+package main
+
+// float の印字と解析の口（language.md 37 節）: println と conv.FormatFloat は最短の往復表現（Go の fmt.Println / strconv.FormatFloat(f, 'g', -1, 64)
+// と同じ綴り — 期待値は Go の双子 scripts/oracles/float_print.go）・conv.ParseFloat の誤り（構文・溢れ）
+
+import "std/iter"
+import "std/conv"
+
+func show(s string) {
+    f, err := conv.ParseFloat(s)
+    if err != nil {
+        msg := switch err {
+        case conv.InvalidFloat{}: "invalid"
+        case conv.FloatOutOfRange{}: "range"
+        }
+        println(s, msg, f)
+    } else {
+        println(s, f)
+    }
+}
+
+func main() int {
+    println(0.0, -0.0, 1.0, 0.1, 0.1 + 0.2, 1.0 / 3.0, 100000.0, 1000000.0, 0.0001, 0.00001, 123456789.0, 1.0e21, 5.0e-324)
+    println(1.0 / 0.0, -1.0 / 0.0, 0.0 / 0.0 != 0.0, 1.7976931348623157e308, 2.5e-3, -12.75)
+    mut x := 1.0
+    for i <- iter.Range(0, 12) {
+        x = x * 7.0 / 3.0
+        println(i, x, conv.FormatFloat(x * x))
+    }
+    show("3.14159")
+    show("-1e-5")
+    show("1e400")
+    show("abc")
+    show("inf")
+    show("NaN")
+    show(".5")
+    show("1e")
+    return 0
+}

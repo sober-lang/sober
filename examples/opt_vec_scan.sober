@@ -1,0 +1,86 @@
+package main
+
+// ベクトル化（第三便のスパイク — vec.sober・x86.sober の xScanB）の回帰例: バイトの走査のループを、出口のバイトの位置（0〜40 — 16 レーンの
+// 境界の前後）・上限（slice の長さと別の n — 上限のすぐ外に出口のバイトを置く）・符号なしの述語（< 128 の区間に 128 以上を混ぜる）・2 つの述語で回す
+
+import "std/iter"
+
+// scanSemi は b[i] が ';' になるまで進む（上限 = 長さ — 必ず ';' がある入力だけ）
+func scanSemi(b []byte, i0 int) int {
+    mut i := i0
+    while b[i] != ';' {
+        i += 1
+    }
+    return i
+}
+
+// scanUntil は n の手前まで、';' でない間進む
+func scanUntil(b []byte, i0 int, n int) int {
+    mut i := i0
+    while i < n && b[i] != ';' {
+        i += 1
+    }
+    return i
+}
+
+// scanAscii は 128 未満の間進む
+func scanAscii(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] < 128 {
+        i += 1
+    }
+    return i
+}
+
+// scanTwo は ';' でも改行でもない間進む
+func scanTwo(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] != ';' && b[i] != '\n' {
+        i += 1
+    }
+    return i
+}
+
+// scanLower は 'a' 以上の間進む（出口 = x <u 'a' — 符号なしの比較の反転の側）と、'z' 以下の間（x <= K — 閾値 K + 1）
+func scanLower(b []byte, i0 int) int {
+    mut i := i0
+    while i < len(b) && b[i] >= 'a' && b[i] <= 'z' {
+        i += 1
+    }
+    return i
+}
+
+func buf(n int, at int, c byte) []byte {
+    mut b := mut []byte{}
+    for k <- iter.Range(0, n) {
+        b = append(b, if k == at { c } else { byte('a' + k % 26) })
+    }
+    return freeze(b)
+}
+
+func main() {
+    mut sum := 0
+    for at <- iter.Range(0, 41) {
+        b := buf(48, at, ';')
+        s := scanSemi(b, 0)
+        u := scanUntil(b, 0, if at > 2 { at - 1 } else { 0 })
+        t := scanTwo(b, 0)
+        sum = sum * 31 + s * 7 + u * 3 + t
+        println("${at}: ${s} ${u} ${t}")
+    }
+    for at <- iter.Range(0, 41) {
+        b := buf(40, at, byte(200))
+        println("ascii ${at}: ${scanAscii(b, 0)} ${scanAscii(b, 3)}")
+        d := buf(40, at, '0')
+        e := buf(40, at, '{')
+        println("lower ${at}: ${scanLower(d, 0)} ${scanLower(e, 0)} ${scanLower(b, 0)}")
+    }
+    // 上限 n のすぐ外（n .. n + 15）に出口のバイト: 結果は n
+    for n <- iter.Range(0, 34) {
+        b := buf(50, n + 1, ';')
+        println("limit ${n}: ${scanUntil(b, 0, n)}")
+    }
+    nl := buf(37, 33, '\n')
+    println("newline: ${scanTwo(nl, 0)} ${scanTwo(nl, 34)}")
+    println(sum)
+}

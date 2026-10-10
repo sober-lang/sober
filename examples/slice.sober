@@ -1,0 +1,26 @@
+package main
+
+func main() {
+    xs := []int{1, 2, 3}
+    println(len(xs), xs[0] + xs[1] * xs[2])
+    mut sum := 0
+    mut i := 0
+    while i < len(xs) {
+        sum += xs[i]
+        i += 1
+    }
+    println(sum)
+    ys := append(xs, 4)
+    zs := append(xs, 5)
+    println(ys[3], zs[3], len(xs))
+    ws := mut []int{7}
+    ws[0] = 8
+    println(ws[0])
+    fs := freeze(ws)
+    println(fs[0])
+    s := "hi!"
+    b := bytes(s)
+    println(len(b), b[0])
+    println(s)
+    println("hello, world")
+}

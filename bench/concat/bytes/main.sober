@@ -1,0 +1,35 @@
+package main
+
+import "std/iter"
+import "std/os"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+// 文字列を []byte の append で積む（息継ぎ ① の双子 (a) — 連結の O(n²) を避ける回避術の形）
+func main() int {
+    args := os.Args() catch return 2
+    n := atoi(args[1])
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, 'a')
+        out = append(out, 'b')
+        if i % 7 == 0 {
+            out = append(out, 'c')
+        }
+    }
+    b := freeze(out)
+    mut h := 0
+    for i <- iter.Range(0, len(b)) {
+        h = (h * 31 + int(b[i])) & 1048575
+    }
+    println(len(b))
+    println(h)
+    return 0
+}

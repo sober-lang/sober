@@ -1,0 +1,164 @@
+package parser
+
+// 文とブロック（grammar.zig の 5.3 節、cst_to_ast.zig の block / statement）
+
+import "std/builder"
+import "ast"
+import "lexer"
+
+// block <- '{' statement_list '}'。結果は（KBlock, 次の位置）— 文の列は KBlock の a（式位置の EBlock を組む呼び手は blockStmts で読む）
+func block(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    if tg(cx, p) != lexer.LBrace {
+        return -1, p
+    }
+    l, q := stmtList(mut nb, mut db, cx, p + 1)
+    if tg(cx, q) != lexer.RBrace {
+        return -1, q
+    }
+    return node(mut nb, ast.KBlock, 0, l, 0, 0, 0, 0, 0), q + 1
+}
+
+// blockStmts は KBlock b の文の列
+func blockStmts(nb mut builder.Builder[ast.Node], b int) int {
+    return nodeAt(mut nb, b).a
+}
+
+// statement_list <- (statement (';' / &'}'))*（文の列。止まった位置を返す — case の本体は次の case で止まる）
+func stmtList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
+    mut out := mut []int{}
+    mut p := p0
+    mut going := true
+    while going && tg(cx, p) != lexer.RBrace {
+        s, q := statement(mut nb, mut db, cx, p)
+        if s < 0 {
+            going = false
+        } else if tg(cx, q) == lexer.Semicolon {
+            out = append(out, s)
+            p = q + 1
+        } else if tg(cx, q) == lexer.RBrace {
+            out = append(out, s)
+            p = q
+        } else {
+            going = false
+        }
+    }
+    return ast.PutList(mut db, freeze(out)), p
+}
+
+func isAssignOp(t int) bool {
+    return t == lexer.Equal || t == lexer.PlusEqual || t == lexer.MinusEqual || t == lexer.StarEqual ||
+        t == lexer.SlashEqual || t == lexer.PercentEqual || t == lexer.AmpersandEqual || t == lexer.PipeEqual ||
+        t == lexer.CaretEqual || t == lexer.ShlEqual || t == lexer.ShrEqual
+}
+
+// bindAhead は位置 p から bind_decl（'mut'? identifier_list ':='）が始まるか。結果は ':=' の位置（無ければ -1）
+func bindAhead(cx Cx, p0 int) int {
+    mut p := p0
+    if tg(cx, p) == lexer.KwMut {
+        p += 1
+    }
+    if tg(cx, p) != lexer.Identifier {
+        return -1
+    }
+    p += 1
+    while tg(cx, p) == lexer.Comma && tg(cx, p + 1) == lexer.Identifier {
+        p += 2
+    }
+    return if tg(cx, p) == lexer.ColonEqual { p } else { -1 }
+}
+
+// exprList: expression (',' expression)*（列）。c は条件位置。結果は（列, 次の位置）
+func exprList(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, c bool) (int, int) {
+    mut out := mut []int{}
+    mut p := p0
+    mut more := true
+    while more {
+        e, q := parseExpr(mut nb, mut db, cx, p, c)
+        if e < 0 {
+            return -1, p
+        }
+        out = append(out, e)
+        p = q
+        more = tg(cx, p) == lexer.Comma
+        if more {
+            p += 1
+        }
+    }
+    return ast.PutList(mut db, freeze(out)), p
+}
+
+// statement: 束縛 / return / break / continue / while / yield / defer / 代入 / 式文（局所の const / type 宣言と注釈ブロックは拒否）
+func statement(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int) (int, int) {
+    t := tg(cx, p)
+    at := bindAhead(cx, p)
+    if at >= 0 {
+        mut names := mut []int{}
+        mut q := if t == lexer.KwMut { p + 1 } else { p }
+        while q < at {
+            if tg(cx, q) == lexer.Identifier {
+                names = append(names, name(mut db, cx, q))
+            }
+            q += 1
+        }
+        vs, r := exprList(mut nb, mut db, cx, at + 1, false)
+        if vs < 0 {
+            return -1, p
+        }
+        mv := if t == lexer.KwMut { 1 } else { 0 }
+        return node(mut nb, ast.SBind, tk(cx, p), ast.PutList(mut db, freeze(names)), mv, vs, 0, 0, 0), r
+    }
+    if t == lexer.KwReturn {
+        // expression_list?（続かなければ値なし）
+        vs, r := exprList(mut nb, mut db, cx, p + 1, false)
+        if vs < 0 {
+            return node(mut nb, ast.SRet, tk(cx, p), ast.PutList(mut db, []int{}), 0, 0, 0, 0, 0), p + 1
+        }
+        return node(mut nb, ast.SRet, tk(cx, p), vs, 0, 0, 0, 0, 0), r
+    }
+    if t == lexer.KwBreak {
+        return node(mut nb, ast.SBreak, tk(cx, p), 0, 0, 0, 0, 0, 0), p + 1
+    }
+    if t == lexer.KwContinue {
+        return node(mut nb, ast.SContinue, tk(cx, p), 0, 0, 0, 0, 0, 0), p + 1
+    }
+    if t == lexer.KwWhile {
+        cond, q := parseExpr(mut nb, mut db, cx, p + 1, true)
+        if cond < 0 {
+            return -1, p
+        }
+        body, r := block(mut nb, mut db, cx, q)
+        if body < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.SWhile, tk(cx, p), cond, body, 0, 0, 0, 0), r
+    }
+    if t == lexer.KwYield || t == lexer.KwDefer {
+        e, q := parseExpr(mut nb, mut db, cx, p + 1, false)
+        if e < 0 {
+            return -1, p
+        }
+        k := if t == lexer.KwYield { ast.SYield } else { ast.SDefer }
+        return node(mut nb, k, tk(cx, p), e, 0, 0, 0, 0, 0), q
+    }
+    if t == lexer.KwConst || t == lexer.KwType || t == lexer.At || t == lexer.KwCase || t == lexer.KwDefault {
+        return -1, p
+    }
+    // simple_stmt <- assignment / expression_stmt
+    lhs, q := exprList(mut nb, mut db, cx, p, false)
+    if lhs < 0 {
+        return -1, p
+    }
+    op := tg(cx, q)
+    if isAssignOp(op) {
+        rhs, r := exprList(mut nb, mut db, cx, q + 1, false)
+        if rhs < 0 {
+            return -1, p
+        }
+        return node(mut nb, ast.SAssign, tk(cx, p), lhs, op, rhs, 0, 0, 0), r
+    }
+    // 式文は 1 つの式（`a, b` だけの行は文にならない）
+    if listLen(mut db, lhs) != 1 {
+        return -1, p
+    }
+    return node(mut nb, ast.SExpr, 0, listAt(mut db, lhs, 0), 0, 0, 0, 0, 0), q
+}

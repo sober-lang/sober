@@ -1,0 +1,714 @@
+package checker
+
+import "std/table"
+
+// typecheck（Checker.lean）の写し。明示スタックの機械で回す（式の入れ子の深さで再帰の実効上限を踏まない — 仮決め R11-3）。
+//
+// 引数は Lean と同じ (Δ, f, b, d, Γ, Λ, e)。Ξ / Ψ はソース項の検査では常に [] なので持たない（chanV / loc は境界の語彙に無い）。
+// Lean の typecheck は、どの規則も「評価した部分項がすべて some」のときだけ some を返す（none を吸収する規則が無い）ので、
+// 部分項が 1 つでも none なら全体が none になる — 機械は最初の none で打ち切る（結果は Lean と同じ。評価しない部分項が出るだけ）。
+// 部分項を評価する順・文脈の組み方は各規則の match の順に揃える
+
+// 作業の枠: [式, 段, b, d, Γ, Λ, x1, x2]（段 = 評価し終えた部分項の数。x1 / x2 = 途中の型）
+const CF = 8
+
+// cons は Γ のセル [ty, next]
+func cons(st mut S, t int, g int) int {
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, t)
+    table.Push(mut st.h, g)
+    return at
+}
+
+// nth は Γ[i]?（無ければ -1）
+func nth(st mut S, g0 int, i0 int) int {
+    mut g := g0
+    mut i := i0
+    while g >= 0 && i > 0 {
+        g = table.Get(mut st.h, g + 1)
+        i -= 1
+    }
+    return if g < 0 { -1 } else { table.Get(mut st.h, g) }
+}
+
+// lnth は Λ[n]? のセル [ty, k, next]（無ければ -1）
+func lnth(st mut S, l0 int, i0 int) int {
+    mut l := l0
+    mut i := i0
+    while l >= 0 && i > 0 {
+        l = table.Get(mut st.h, l + 2)
+        i -= 1
+    }
+    return l
+}
+
+func allMutFree(st mut S, g0 int) bool {
+    mut g := g0
+    while g >= 0 {
+        if !mutFree(mut st, table.Get(mut st.h, g)) {
+            return false
+        }
+        g = table.Get(mut st.h, g + 1)
+    }
+    return true
+}
+
+// defAt は Δ[fn]? の記録 [param, ret, body, tparams, mask]（無ければ -1）
+func defAt(st mut S, fn int) int {
+    ds := st.defs
+    return if fn < table.Get(mut st.h, ds) { table.Get(mut st.h, ds + 1 + fn) } else { -1 }
+}
+
+// mapCell は map の型 t のセル型が prod k (opt v) か
+func mapCell(st mut S, t int) bool {
+    c := tC(mut st, t)
+    return tg(mut st, c) == TPr && tg(mut st, tB(mut st, c)) == TOpt
+}
+
+// tcRun は typecheck Δ [] [] f b0 d0 Γ0 Λ0 e0（f は st.f）。結果の型、none は -1
+func tcRun(st mut S, e0 int, b0 int, d0 int, g0 int, l0 int) int {
+    tInt := st.tInt
+    tBool := st.tBool
+    tUnit := st.tUnit
+    base := st.cstk
+    table.Set(mut st.h, base, e0)
+    table.Set(mut st.h, base + 1, 0)
+    table.Set(mut st.h, base + 2, b0)
+    table.Set(mut st.h, base + 3, d0)
+    table.Set(mut st.h, base + 4, g0)
+    table.Set(mut st.h, base + 5, l0)
+    mut sp := 1
+    mut res := -1
+    while true {
+        fr := base + (sp - 1) * CF
+        e := table.Get(mut st.h, fr)
+        ph := table.Get(mut st.h, fr + 1)
+        b := table.Get(mut st.h, fr + 2)
+        d := table.Get(mut st.h, fr + 3)
+        g := table.Get(mut st.h, fr + 4)
+        l := table.Get(mut st.h, fr + 5)
+        k := table.Get(mut st.h, e)
+        ea := table.Get(mut st.h, e + 2)
+        eb := table.Get(mut st.h, e + 3)
+        ec := table.Get(mut st.h, e + 4)
+        // d - 1（Nat の引き算 — 0 で止まる）
+        dm := if d > 0 { d - 1 } else { 0 }
+        // 部分項へ降りる（cn を文脈 cb / cd / cg / cl で）か、結果 r で上がる
+        // kind の分岐は else-if の鎖にせず平たい if を並べる（長い else-if の鎖は Sober 製 parsedump の AST の印字を native stack で落とす —
+        // selfhost-drafts F-22）
+        mut push := false
+        mut cn := 0
+        mut cb := b
+        mut cd := d
+        mut cg := g
+        mut cl := l
+        mut r := -1
+        if k == W_LIT {
+            r = tInt
+        }
+        if k == W_TRUE || k == W_FALSE {
+            r = tBool
+        }
+        if k == W_TRIV {
+            r = tUnit
+        }
+        if k == W_VAR {
+            r = nth(mut st, g, ea)
+        }
+        if k == W_LET {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                push = true
+                cn = eb
+                cg = cons(mut st, res, g)
+            } else {
+                r = res
+            }
+        }
+        if k == W_ADD || k == W_LT || (k >= W_SUB && k <= W_GE) {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TInt {
+                    push = true
+                    cn = eb
+                }
+            } else if tg(mut st, res) == TInt {
+                r = if k == W_ADD || (k >= W_SUB && k <= W_SHR) { tInt } else { tBool }
+            }
+        }
+        if k == W_IF {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TBool {
+                    push = true
+                    cn = eb
+                }
+            } else if ph == 2 {
+                table.Set(mut st.h, fr + 6, res)
+                push = true
+                cn = ec
+            } else if tyEq(mut st, table.Get(mut st.h, fr + 6), res) {
+                r = table.Get(mut st.h, fr + 6)
+            }
+        }
+        if k == W_NIL {
+            r = tOpt(mut st, ea)
+        }
+        if k == W_SOME {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else {
+                r = tOpt(mut st, res)
+            }
+        }
+        if k == W_IFNIL {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TOpt {
+                    table.Set(mut st.h, fr + 6, tA(mut st, res))
+                    push = true
+                    cn = eb
+                }
+            } else if ph == 2 {
+                table.Set(mut st.h, fr + 7, res)
+                push = true
+                cn = ec
+                cg = cons(mut st, table.Get(mut st.h, fr + 6), g)
+            } else if tyEq(mut st, table.Get(mut st.h, fr + 7), res) {
+                r = res
+            }
+        }
+        if k == W_INL || k == W_INR {
+            if ph == 0 {
+                push = true
+                cn = eb
+            } else if k == W_INL {
+                r = mk(mut st, TUn, res, ea, 0)
+            } else {
+                r = mk(mut st, TUn, ea, res, 0)
+            }
+        }
+        if k == W_CASE {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TUn {
+                    table.Set(mut st.h, fr + 7, tB(mut st, res))
+                    push = true
+                    cn = eb
+                    cg = cons(mut st, tA(mut st, res), g)
+                }
+            } else if ph == 2 {
+                table.Set(mut st.h, fr + 6, res)
+                push = true
+                cn = ec
+                cg = cons(mut st, table.Get(mut st.h, fr + 7), g)
+            } else if tyEq(mut st, table.Get(mut st.h, fr + 6), res) {
+                r = res
+            }
+        }
+        if k == W_PAIR {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                table.Set(mut st.h, fr + 6, res)
+                push = true
+                cn = eb
+            } else {
+                r = mk(mut st, TPr, table.Get(mut st.h, fr + 6), res, 0)
+            }
+        }
+        if k == W_FST || k == W_SND {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TPr {
+                r = if k == W_FST { tA(mut st, res) } else { tB(mut st, res) }
+            }
+        }
+        if k == W_CALL || k == W_CALLM {
+            // round4: 呼び手深さ d = d' + 1、ρ = d'（= dm）
+            df := defAt(mut st, ea)
+            if ph == 0 {
+                if d > 0 && df >= 0 {
+                    push = true
+                    cn = ec
+                }
+            } else {
+                pi := tsubst(mut st, eb, table.Get(mut st.h, df))
+                ok0 := tsLen(mut st, eb) == table.Get(mut st.h, df + 3) && tyArgsOk(mut st, eb)
+                if k == W_CALL {
+                    ps := shiftR(mut st, dm, pi)
+                    if ok0 && sub(mut st, res, ps) && b <= dm {
+                        ri := tsubst(mut st, eb, table.Get(mut st.h, df + 1))
+                        r = relocR(mut st, dm, ri)
+                    }
+                } else {
+                    // R2: anchor a は引数の型の mut 位置から読み、region 0 を a へ写す
+                    a := anchorOf(mut st, pi, res)
+                    if a >= 0 {
+                        ps := renR(mut st, a, dm, pi)
+                        if ok0 && sub(mut st, res, ps) && b <= a && a <= dm {
+                            ri := tsubst(mut st, eb, table.Get(mut st.h, df + 1))
+                            r = relocA(mut st, a, dm, ri)
+                        }
+                    }
+                }
+            }
+        }
+        if k == W_FNREF {
+            df := defAt(mut st, ea)
+            if df >= 0 && tsLen(mut st, eb) == table.Get(mut st.h, df + 3) && tyArgsOk(mut st, eb) {
+                pi := tsubst(mut st, eb, table.Get(mut st.h, df))
+                ri := tsubst(mut st, eb, table.Get(mut st.h, df + 1))
+                r = mk(mut st, TFn, pi, ri, 0)
+            }
+        }
+        if k == W_ANN {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if sub(mut st, res, eb) {
+                r = eb
+            }
+        }
+        if k == W_CALLV {
+            if ph == 0 {
+                if d > 0 {
+                    push = true
+                    cn = ea
+                }
+            } else if ph == 1 {
+                if tg(mut st, res) == TFn {
+                    table.Set(mut st.h, fr + 6, tA(mut st, res))
+                    table.Set(mut st.h, fr + 7, tB(mut st, res))
+                    push = true
+                    cn = eb
+                }
+            } else {
+                ps := shiftR(mut st, dm, table.Get(mut st.h, fr + 6))
+                if sub(mut st, res, ps) && b <= dm {
+                    r = relocR(mut st, dm, table.Get(mut st.h, fr + 7))
+                }
+            }
+        }
+        if k == W_LABEL {
+            if ph == 0 {
+                push = true
+                cn = eb
+                at := table.Len(mut st.h)
+                table.Push(mut st.h, ea)
+                table.Push(mut st.h, dm)
+                table.Push(mut st.h, l)
+                cl = at
+            } else if tyEq(mut st, res, ea) && regionsBelow(mut st, d, ea) {
+                r = ea
+            }
+        }
+        if k == W_JUMP {
+            if ph == 0 {
+                push = true
+                cn = ec
+            } else {
+                lc := lnth(mut st, l, ea)
+                if lc >= 0 && jumpRel(mut st, b, table.Get(mut st.h, lc + 1), res, table.Get(mut st.h, lc)) {
+                    r = eb
+                }
+            }
+        }
+        if k == W_BLOCK || k == K_BLOCKR {
+            if ph == 0 {
+                push = true
+                cn = ea
+                cd = d + 1
+            } else if k == W_BLOCK {
+                if regionsBelow(mut st, d, res) {
+                    r = res
+                }
+            } else if jumpRel(mut st, b, dm, res, eb) && regionsBelow(mut st, d, eb) {
+                r = eb
+            }
+        }
+        if k == W_ALLOC {
+            if ph == 0 {
+                if d > 0 {
+                    push = true
+                    cn = eb
+                }
+            } else if regionsBelow(mut st, d, res) && b <= dm && (ea != 0 || mutFree(mut st, res)) {
+                r = mk(mut st, TRef, ea, dm, res)
+            }
+        }
+        if k == W_DEREF {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TRef {
+                r = tC(mut st, res)
+            }
+        }
+        if k == W_ASSIGN {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TRef && tA(mut st, res) != 0 {
+                    table.Set(mut st.h, fr + 6, tC(mut st, res))
+                    push = true
+                    cn = eb
+                }
+            } else if tyEq(mut st, res, table.Get(mut st.h, fr + 6)) {
+                r = tUnit
+            }
+        }
+        if k == W_WHILE {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TBool {
+                    push = true
+                    cn = eb
+                }
+            } else {
+                r = tUnit
+            }
+        }
+        if k == W_FREEZE {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if isCont(tg(mut st, res)) && tA(mut st, res) != 0 && mutFree(mut st, tC(mut st, res)) {
+                r = mk(mut st, tg(mut st, res), 0, tB(mut st, res), tC(mut st, res))
+            }
+        }
+        if k == W_STRLIT {
+            if b <= ea && ea < d {
+                r = mk(mut st, TSl, 0, ea, st.tInt)
+            }
+        }
+        if k == W_MKSLICE {
+            if d > 0 && regionsBelow(mut st, d, eb) && b <= dm && (ea != 0 || mutFree(mut st, eb)) {
+                r = mk(mut st, TSl, ea, dm, eb)
+            }
+        }
+        if k == W_INDEX {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TSl {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else if tg(mut st, res) == TInt {
+                x := table.Get(mut st.h, fr + 6)
+                r = readAs(mut st, tA(mut st, x), ec, tC(mut st, x))
+            }
+        }
+        if k == W_LEN {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TSl {
+                r = tInt
+            }
+        }
+        if k == W_APPEND {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TSl {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else {
+                x := table.Get(mut st.h, fr + 6)
+                t := tC(mut st, x)
+                if tA(mut st, x) != 0 {
+                    if tyEq(mut st, res, t) && b <= tB(mut st, x) {
+                        r = x
+                    }
+                } else if d > 0 && tyEq(mut st, res, t) && b <= dm && regionsBelow(mut st, d, t) {
+                    // imm append は現在の最内 region へ書く（round4）
+                    r = mk(mut st, TSl, 0, dm, t)
+                }
+            }
+        }
+        if k == W_SETIDX {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TSl && tA(mut st, res) != 0 {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else if ph == 2 {
+                if tg(mut st, res) == TInt {
+                    push = true
+                    cn = ec
+                }
+            } else if tyEq(mut st, res, tC(mut st, table.Get(mut st.h, fr + 6))) {
+                r = tUnit
+            }
+        }
+        if k == W_SUBSLICE {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TSl && tA(mut st, res) == 0 {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else if ph == 2 {
+                if tg(mut st, res) == TInt {
+                    push = true
+                    cn = ec
+                }
+            } else if tg(mut st, res) == TInt {
+                r = table.Get(mut st.h, fr + 6)
+            }
+        }
+        if k == W_EQS {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if isImmStr(mut st, res) {
+                    push = true
+                    cn = eb
+                }
+            } else if isImmStr(mut st, res) {
+                r = tBool
+            }
+        }
+        if k == W_CONCAT {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TSl && tA(mut st, res) == 0 {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else if tg(mut st, res) == TSl && tA(mut st, res) == 0 {
+                // 最内 region へ書く（appendI と同じ床）
+                t1 := tC(mut st, table.Get(mut st.h, fr + 6))
+                if d > 0 && tyEq(mut st, tC(mut st, res), t1) && b <= dm {
+                    r = mk(mut st, TSl, 0, dm, t1)
+                }
+            }
+        }
+        if k == W_MKMAP {
+            c := eb
+            if d > 0 && tg(mut st, c) == TPr && tg(mut st, tB(mut st, c)) == TOpt {
+                if keyOk(mut st, tA(mut st, c)) && regionsBelow(mut st, d, c) && b <= dm && (ea != 0 || mutFree(mut st, c)) {
+                    r = mk(mut st, TMp, ea, dm, c)
+                }
+            }
+        }
+        if k == W_GETM || k == W_DELM {
+            if ph == 0 {
+                push = true
+                cn = eb
+            } else if ph == 1 {
+                if tg(mut st, res) == TMp && mapCell(mut st, res) && (k == W_GETM || tA(mut st, res) != 0) {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = ec
+                }
+            } else {
+                c := tC(mut st, table.Get(mut st.h, fr + 6))
+                kt := tA(mut st, c)
+                tv := tA(mut st, tB(mut st, c))
+                if k == W_GETM {
+                    if sub(mut st, tv, ea) && keyCompat(mut st, res, kt) {
+                        r = tOpt(mut st, ea)
+                    }
+                } else if tyEq(mut st, tv, ea) && keyCompat(mut st, res, kt) {
+                    r = tUnit
+                }
+            }
+        }
+        if k == W_SETM {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TMp && tA(mut st, res) != 0 && mapCell(mut st, res) {
+                    table.Set(mut st.h, fr + 6, res)
+                    push = true
+                    cn = eb
+                }
+            } else if ph == 2 {
+                table.Set(mut st.h, fr + 7, res)
+                push = true
+                cn = ec
+            } else {
+                x := table.Get(mut st.h, fr + 6)
+                c := tC(mut st, x)
+                if tyEq(mut st, table.Get(mut st.h, fr + 7), tA(mut st, c)) && tyEq(mut st, res, tA(mut st, tB(mut st, c))) {
+                    r = x
+                }
+            }
+        }
+        if k == W_LENM {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TMp {
+                r = tInt
+            }
+        }
+        if k == W_KEYSM {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TMp && mapCell(mut st, res) {
+                // 最内 region へ書く（concat と同じ床）。キー型は keyOk、新しいセルの床 regionsBelow d
+                kt := tA(mut st, tC(mut st, res))
+                if d > 0 && keyOk(mut st, kt) && regionsBelow(mut st, d, kt) && b <= dm {
+                    r = mk(mut st, TSl, 0, dm, kt)
+                }
+            }
+        }
+        if k == W_PAR || k == W_PARCH {
+            // 子の世界: b = d、Λ = []（parch は Γ にチャネル chan d t を足す）
+            if ph == 0 && k == W_PARCH {
+                table.Set(mut st.h, fr + 6, mk(mut st, TChan, d, ea, 0))
+            }
+            if ph < 2 {
+                push = true
+                cb = d
+                cl = -1
+                if k == W_PAR {
+                    cn = if ph == 0 { ea } else { eb }
+                } else {
+                    cn = if ph == 0 { eb } else { ec }
+                    cg = cons(mut st, table.Get(mut st.h, fr + 6), g)
+                }
+            } else if allMutFree(mut st, g) && (k == W_PAR || (regionsBelow(mut st, d, ea) && mutFree(mut st, ea))) {
+                r = tUnit
+            }
+        }
+        if k == W_NEWCHAN {
+            if ea <= st.f && regionsBelow(mut st, ea, eb) && mutFree(mut st, eb) {
+                r = mk(mut st, TChan, ea, eb, 0)
+            }
+        }
+        if k == W_SEND {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if ph == 1 {
+                if tg(mut st, res) == TChan {
+                    table.Set(mut st.h, fr + 6, tB(mut st, res))
+                    push = true
+                    cn = eb
+                }
+            } else if tyEq(mut st, res, table.Get(mut st.h, fr + 6)) {
+                r = tUnit
+            }
+        }
+        if k == W_RECV {
+            if ph == 0 {
+                push = true
+                cn = ea
+            } else if tg(mut st, res) == TChan {
+                r = tB(mut st, res)
+            }
+        }
+        if push {
+            table.Set(mut st.h, fr + 1, ph + 1)
+            nf := fr + CF
+            table.Set(mut st.h, nf, cn)
+            table.Set(mut st.h, nf + 1, 0)
+            table.Set(mut st.h, nf + 2, cb)
+            table.Set(mut st.h, nf + 3, cd)
+            table.Set(mut st.h, nf + 4, cg)
+            table.Set(mut st.h, nf + 5, cl)
+            sp += 1
+            continue
+        }
+        if r < 0 {
+            return -1
+        }
+        sp -= 1
+        if sp == 0 {
+            return r
+        }
+        res = r
+    }
+    return -1
+}
+
+// 判定（checkAll の結果）: 0 以上 = 根の式の型、R_TYPE = type error、R_DEF = def error、R_NOTY = 根の式の無い部分検査の受理
+const R_TYPE = -1
+const R_DEF = -2
+const R_NOTY = -3
+
+// checkAll は checkDefs（部分検査なら checkDefsAt — mask の立つ Def だけ）→ 根の式の typecheck（Json.lean の checkToJson /
+// checkPartsToJson）。root = -1 は根の式が無い（部分検査）
+func checkAll(st mut S, root int) int {
+    ds := st.defs
+    n := table.Get(mut st.h, ds)
+    mut j := 0
+    while j <= n {
+        mut e0 := root
+        mut d0 := 0
+        mut g0 := -1
+        mut df := -1
+        if j < n {
+            df = table.Get(mut st.h, ds + 1 + j)
+            if table.Get(mut st.h, df + 4) == 0 {
+                j += 1
+                continue
+            }
+            p := table.Get(mut st.h, df)
+            rt := table.Get(mut st.h, df + 1)
+            tp := table.Get(mut st.h, df + 3)
+            e0 = table.Get(mut st.h, df + 2)
+            if !(paramOk(mut st, p) && retOk(mut st, rt) && nc(mut st, e0) == 0 && tvarsBelow(mut st, tp, p) && tvarsBelow(mut st, tp, rt)) {
+                return R_DEF
+            }
+            // Def 本体の世界: f = 1、b = 0、d = 2、Γ = [param]
+            d0 = 2
+            g0 = cons(mut st, p, -1)
+            st.f = 1
+        } else {
+            if root < 0 {
+                return R_NOTY
+            }
+            st.f = 0
+        }
+        r := tcRun(mut st, e0, 0, d0, g0, -1)
+        if j < n {
+            if r < 0 || !tyEq(mut st, r, table.Get(mut st.h, df + 1)) {
+                return R_DEF
+            }
+        } else {
+            return if r < 0 { R_TYPE } else { r }
+        }
+        j += 1
+    }
+    return R_TYPE
+}

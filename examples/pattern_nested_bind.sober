@@ -1,0 +1,36 @@
+package main
+
+// 回帰例: 束縛つきの内側の型パターン（`case O1{x: e I1{v}, y}:` — e は欄 x の値）。check は断片外にしていた（build は受理）
+
+type I union {
+    I1{v int}
+    I2{w int}
+}
+
+type O union {
+    O1 {
+        x I
+        y int
+    }
+    O2{k int}
+}
+
+func weight(i I) int {
+    return switch i {
+    case I1{v}: v * 100
+    case I2{w}: w * 1000
+    }
+}
+
+func f(o O) int {
+    return switch o {
+    case O1{x: e I1{v}, y}: weight(e) + v + y
+    default: 0
+    }
+}
+
+func main() {
+    println(f(O1{x: I1{v: 3}, y: 2}))
+    println(f(O1{x: I2{w: 3}, y: 2}))
+    println(f(O2{k: 1}))
+}

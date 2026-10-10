@@ -1,0 +1,8 @@
+package main
+
+// 負例: catch の左辺は (T, error?) を返す呼び出し — 修飾名の呼び出し（std の package の func 宣言）も同じ拒否
+import "std/strings"
+
+func main() {
+    println(strings.Index("abc", "b") catch 0 - 1)
+}

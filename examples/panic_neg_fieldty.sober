@@ -1,0 +1,10 @@
+package main
+
+// 負例: 欄の型は int / byte / bool / string（language.md 27 節「panic ラベル」— loader の拒否）
+type L panic {
+    xs []int
+}
+
+func main() {
+    panic(L{xs: []int{}})
+}

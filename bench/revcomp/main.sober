@@ -1,0 +1,65 @@
+package main
+
+// reverse-complement（benchmarks game — docs/bench.md）: fasta の出力を読み、記録（'>' の見出し行 + 配列の行）ごとに見出しはそのまま・
+// 配列は改行を除いて逆順の相補にして 1 行 60 文字で書く。素直な形（Go の双子 bench/revcomp/go と同じアルゴリズム）。
+// 見出しの行末と次の見出しまでの走査は素直なバイトのループ（第三便のベクトル化の対象の形 — 配列の区間は長い）
+
+import "std/io"
+import "std/os"
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 2 {
+        return 2
+    }
+    b := io.ReadFile(args[1]) catch return 1
+    mut comp := mut []byte{}
+    mut c0 := 0
+    while c0 < 256 {
+        comp = append(comp, byte(c0))
+        c0 += 1
+    }
+    from := bytes("ACBDGHKMNSRUTWVYacbdghkmnsrutwvy")
+    to := bytes("TGVHCDMKNSYAAWBRTGVHCDMKNSYAAWBR")
+    mut j := 0
+    while j < len(from) {
+        comp[int(from[j])] = to[j]
+        j += 1
+    }
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(b) {
+        s := i
+        while b[i] != '\n' {
+            i += 1
+        }
+        i += 1
+        mut h := s
+        while h < i {
+            out = append(out, b[h])
+            h += 1
+        }
+        hs := i
+        while i < len(b) && b[i] != '>' {
+            i += 1
+        }
+        mut col := 0
+        mut k := i - 1
+        while k >= hs {
+            c := b[k]
+            if c != '\n' {
+                out = append(out, comp[int(c)])
+                col += 1
+                if col == 60 {
+                    out = append(out, '\n')
+                    col = 0
+                }
+            }
+            k -= 1
+        }
+        if col > 0 {
+            out = append(out, '\n')
+        }
+    }
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}

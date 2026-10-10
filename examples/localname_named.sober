@@ -1,0 +1,14 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 13）: ローカル束縛は型名（named scalar）と同名にできない
+
+type Id int
+
+func f() int {
+    return 3
+}
+
+func main() {
+    Id := f()
+    println(Id)
+}

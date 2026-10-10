@@ -1,0 +1,187 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "A",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "V",
+            "fields": [
+              {
+                "name": "a",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 9
+              }
+            ],
+            "tok": 7
+          },
+          {
+            "name": "W",
+            "fields": [],
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 19
+      }
+    },
+    {
+      "name": "B",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "V",
+            "fields": [
+              {
+                "name": "b",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 25
+              }
+            ],
+            "tok": 23
+          },
+          {
+            "name": "X",
+            "fields": [],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 20,
+      "span": {
+        "start": 19,
+        "end": 35
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "V",
+                "elems": [
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 46
+                    }
+                  }
+                ],
+                "tok": 42,
+                "type_args": []
+              }
+            ],
+            "tok": 40
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 49
+              },
+              "args": [
+                {
+                  "k": "switch",
+                  "subjects": [
+                    {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 52
+                    }
+                  ],
+                  "cases": [
+                    {
+                      "patterns": [
+                        {
+                          "k": "type",
+                          "bind": null,
+                          "variant": "V",
+                          "fields": [
+                            {
+                              "name": "a",
+                              "sub": null,
+                              "tok": 57
+                            }
+                          ],
+                          "tok": 55
+                        }
+                      ],
+                      "body": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "ident",
+                              "name": "a",
+                              "tok": 60
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 54
+                    }
+                  ],
+                  "default": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 64
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 51
+                }
+              ],
+              "tok": 50
+            }
+          }
+        ]
+      },
+      "tok": 36,
+      "bodiless": false,
+      "span": {
+        "start": 35,
+        "end": 71
+      },
+      "sig_end": 39
+    }
+  ],
+  "consts": []
+}

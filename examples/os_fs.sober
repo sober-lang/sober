@@ -1,0 +1,61 @@
+package main
+
+// std/os.Mkdir / Rename / Getenv（3'' 第 2 段 C0 — キャッシュの置き場の口）: ディレクトリを作り（2 度目は EEXIST = io.Other{errno: 17}）、
+// 一時ファイルに書いて Rename で公開し（既にある to は置き換わる）、読み戻す。Getenv は無い名前で nil・値に `=` を含む名前は最初の `=` の後ろ全部 —
+// 正の場合は自分を /usr/bin/env 経由で子として走らせて確かめる（子は環境変数を印字して終わる）
+
+import "std/io"
+import "std/os"
+
+func code(e error?) int {
+    return switch e {
+    case nil: 0
+    case io.Other{errno}: errno
+    case io.NotFound{}: -2
+    default: -1
+    }
+}
+
+func child() bool {
+    v := os.Getenv("SOBER_OS_FS_CHILD") catch return false
+    if v != nil {
+        println("child sees ${v}")
+        e := os.Getenv("SOBER_OS_FS_EMPTY") catch return true
+        if e != nil {
+            println("empty value is [${e}]")
+        }
+        return true
+    }
+    return false
+}
+
+func main() int {
+    if child() {
+        return 0
+    }
+    d := "out/os_fs.d"
+    // 前の実行の残りがあれば EEXIST — どちらでも続ける
+    e0 := code(os.Mkdir(d))
+    println(e0 == 0 || e0 == 17)
+    println(code(os.Mkdir(d)))
+    println(code(os.Mkdir("out/no/such/parent")))
+    t := d + "/v.tmp"
+    v := d + "/v"
+    if io.WriteFile(t, bytes("first")) != nil {
+        return 1
+    }
+    println(code(os.Rename(t, v)))
+    if io.WriteFile(t, bytes("second")) != nil {
+        return 1
+    }
+    println(code(os.Rename(t, v)))
+    b := io.ReadFile(v) catch return 1
+    println(string(b) catch "?")
+    println(code(os.Rename(t, v)))
+    n := os.Getenv("SOBER_OS_FS_NO_SUCH_VARIABLE") catch return 1
+    println(n == nil)
+    args := os.Args() catch return 1
+    c := os.Run("/usr/bin/env", []string{"SOBER_OS_FS_CHILD=a=b", "SOBER_OS_FS_EMPTY=", args[0]}) catch return 1
+    println(c)
+    return 0
+}

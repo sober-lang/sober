@@ -1,0 +1,51 @@
+package main
+
+// V4-4c の突き合わせの対（Lean 側: Examples.lean の v45）。try_wrap.sober から出力を抜いた形
+
+type BadDigit error {
+    at int
+}
+
+type BadLine error {
+    line int
+    col int
+}
+
+func digit(c int, at int) (int, error?) {
+    if c < 48 || c > 57 {
+        return 0, BadDigit{at: at}
+    }
+    return c - 48, nil
+}
+
+// 1 行ぶんの数を読む。桁の失敗は行・桁の位置に包み替える
+func number(line int, cs []int) (int, error?) {
+    mut v := 0
+    mut i := 0
+    while i < len(cs) {
+        d := digit(cs[i], i)? BadLine{line: line, col: i + 1}
+        v = v * 10 + d
+        i += 1
+    }
+    return v, nil
+}
+
+func code(e error?) int {
+    return if e != nil {
+        switch e {
+        case BadDigit{at}: 100 + at
+        case BadLine{line, col}: 1000 * line + col
+        }
+    } else {
+        0
+    }
+}
+
+func main() {
+    a, e1 := number(1, []int{52, 50})
+    b, e2 := number(7, []int{49, 120, 51})
+    c, e3 := digit(65, 9)
+    r := a + code(e1) * 100 + b * 1000 + code(e2) * 10000 + c + code(e3) * 100000000
+    println(r)
+    r
+}

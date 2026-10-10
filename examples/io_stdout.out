@@ -1,0 +1,4 @@
+line 1 (println)
+line 2 (WriteStdout)
+line 3 (println)
+line 4, no newline / line 4 continued

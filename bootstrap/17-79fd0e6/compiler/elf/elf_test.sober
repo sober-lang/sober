@@ -1,0 +1,44 @@
+package elf
+
+// ELF の書き出しの単体テスト（`cd compiler && ../bin/sober test elf`）。黄金は凍結した Zig 版（legacy/zig/format/elf.zig の writeExecutableRw）に
+// 同じ入力（code 5 バイト・rodata 16 バイト・.bss 24 バイト）を与えた出力 — 一度だけ取った（正規の照合は elfeq の ELF のバイト一致）
+
+import "std/iter"
+import "std/table"
+
+func digit(n int) byte {
+    return byte(if n < 10 { 48 + n } else { 87 + n })
+}
+
+func hex(b []byte) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, digit(int(b[i]) >> 4))
+        out = append(out, digit(int(b[i]) & 15))
+    }
+    s := string(freeze(out)) catch panic(Unreachable{})
+    return s
+}
+
+func TestExecutable() {
+    mut code := table.Table[byte]{}
+    table.Push(mut code, 195)
+    table.Push(mut code, 144)
+    table.Push(mut code, 15)
+    table.Push(mut code, 5)
+    table.Push(mut code, 204)
+    mut ro := mut []byte{}
+    for i <- iter.Range(1, 17) {
+        ro = append(ro, byte(i))
+    }
+    assert(hex(Executable(mut code, freeze(ro), 24)) == "7f454c4602010100000000000000000002003e0001000000b00040000000000040000000000000000000000000000000000000004000380002000000000000000100000005000000000000000000000000004000000000000000400000000000c800000000000000c80000000000000000100000000000000100000006000000000000000000000000104000000000000010400000000000000000000000000018000000000000000010000000000000c3900f05cc0000000102030405060708090a0b0c0d0e0f10")
+}
+
+func TestLayout() {
+    lay := LayoutOf(5, 16)
+    assert(CodeOffset == 176)
+    assert(lay.Code == 4194480)
+    assert(lay.Rodata == 4194488)
+    assert(lay.Bss == 4198400)
+    assert(lay.FileSize == 200)
+}

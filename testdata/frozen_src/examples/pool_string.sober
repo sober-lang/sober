@@ -1,0 +1,34 @@
+package main
+
+// R1（region 多相の裁定 ①s + S）の検証例: Pool[string]。
+// Pool の関数は mut 引数なので展開され、コアに届く型は具体型（string を型引数にできる）。
+// 深いブロックで作った string は strings.Keep で Arena（= Pool と同じ region）へ置き直してから入れる —
+// Keep を外すと check が escape で拒否する（コピーはソースに見える: 境界コピー = 明示イディオム）
+
+import "std/pool"
+import "std/strings"
+
+func main() {
+    mut p := pool.Pool[string]{}
+    mut a := strings.Arena{}
+    mut hs := mut []pool.Handle{}
+    mut i := 0
+    while i < 3 {
+        name := {
+            s := "user" + strings.Itoa(i * 10)
+            strings.Keep(mut a, s)
+        }
+        h := pool.Acquire(mut p, name)
+        defer pool.Release(mut p, h)
+        hs = append(hs, h)
+        v := pool.Get(mut p, h)
+        if v != nil {
+            println(v)
+        }
+        i += 1
+    }
+    // 返却済みの Handle は世代が合わず nil
+    old := pool.Get(mut p, hs[0])
+    println(if old == nil { "released" } else { "live" })
+    println("out ${pool.Outstanding(mut p)}")
+}

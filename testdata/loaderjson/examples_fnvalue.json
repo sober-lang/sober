@@ -1,0 +1,50 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "ascending",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "descending",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "min3",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "ord.less"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "down.less",
+            "f",
+            "g",
+            "min3",
+            "println"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

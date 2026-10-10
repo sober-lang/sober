@@ -1,0 +1,14 @@
+package main
+
+// 負例（language.md 24・32 節）: 補間の穴が型パラメータ型で、型引数が named scalar のインスタンスは型エラー（build・check とも拒否 —
+// check はインスタンスの表層型の型引数で穴の種類を決める。型引数を core の int で見ると named が消えて check だけ受理してしまう）
+
+type Meters int
+
+func show[T](x T) string {
+    return "v=${x}"
+}
+
+func main() {
+    println(show(Meters(3)))
+}

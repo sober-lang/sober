@@ -1,0 +1,39 @@
+package main
+
+// 仮引数の欄で初期化した mut 局所へ後から代入する（F-q — 2026-10-02 まで check が def error・build は受理）:
+// 脱糖器は名前の初期値（F-o の対の assign_param）と同じく、欄読みの初期値も束縛点の点座標へ ann で緩める
+
+type Inner struct {
+    tag string
+}
+
+type Item struct {
+    name string
+    inner Inner
+    n int
+}
+
+func rename(it Item, c bool) string {
+    mut name := it.name
+    if c {
+        name = "renamed"
+    }
+    return name
+}
+
+func retag(it Item) string {
+    mut in := it.inner
+    in = Inner{tag: in.tag + "+"}
+    return in.tag
+}
+
+func swap(a Item, b Item) string {
+    mut x := a.name
+    x = b.name
+    return x
+}
+
+func main() {
+    it := Item{name: "orig", inner: Inner{tag: "t"}, n: 1}
+    println(rename(it, true), rename(it, false), retag(it), swap(it, Item{name: "other", inner: Inner{tag: ""}, n: 2}))
+}

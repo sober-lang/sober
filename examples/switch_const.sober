@@ -1,0 +1,34 @@
+package main
+
+const Local = 1
+const Remote = 2
+
+// 裸の Local / Remote はトップレベル const との比較（束縛ではない）
+func kind(k int) int {
+    return switch k {
+    case Local:
+        10
+    case Remote:
+        20
+    default:
+        0
+    }
+}
+
+// const は比較、未知の名前 v は従来どおり束縛
+func pair(a, b int) int {
+    return switch a, b {
+    case Local, v:
+        100 + v
+    case Remote, Local:
+        21
+    case w, _:
+        w
+    default:
+        0
+    }
+}
+
+func main() {
+    println(kind(1), kind(2), kind(3), pair(1, 7), pair(2, 1), pair(5, 5))
+}

@@ -1,0 +1,9 @@
+# selfhost_cli の check の照合（stage2 check の exit code・判定 ≡ 凍結した Zig 版）から退役させた entry。build 側の照合は続ける。
+# 退役の理由（2026-10-01、error 網羅 analyzer E4-d (ii) — 決定・ナビ承認）: 主の sober の check は analyzer（compiler/analyzer）を通し、
+# error の switch の到達しない腕（subject の導出集合の外のラベルの腕）を拒否する。凍結した Zig 版は全ラベルの網羅を要求するので、
+# 全ラベルを覆う形の次の entry を Zig は受理し、主の sober は拒否する — 意図した意味論の差（language.md 13 節）。
+# entry の写しの由来は testdata/frozen_src/README.md
+testdata/frozen_src/examples/errparse.sober
+testdata/frozen_src/examples/errparse_file.sober
+testdata/frozen_src/examples/errparse_pure.sober
+testdata/frozen_src/examples/utf8_pure.sober

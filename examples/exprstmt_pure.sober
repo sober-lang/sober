@@ -1,0 +1,12 @@
+package main
+
+// 負例（load が拒否 — syntax.md ブロックの行・裁定 C）: 純粋な式の値を捨てる文
+
+func f(x int) int {
+    x + 1
+    return x
+}
+
+func main() {
+    println(f(3))
+}

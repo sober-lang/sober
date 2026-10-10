@@ -1,0 +1,31 @@
+package main
+
+// F-ab の修理（check ⊂ build — 2026-10-04 掃除枠 E）: 値の位置の if / switch の腕が `[]string` を持つ variant を作る。
+// 腕の合流（F-g / F-m）の upRegion が imm の slice の要素の region まで上げるようにした（imm の要素は上界へ読める — 31 節）
+
+type V union {
+    N {}
+    O { names []string }
+}
+
+func mk(k int) V {
+    return switch k {
+    case 0: N{}
+    default: O{names: []string{"a", "b"}}
+    }
+}
+
+func mk2(k int, extra string) V {
+    return if k == 0 { N{} } else { O{names: []string{extra, "z"}} }
+}
+
+func count(v V) int {
+    return switch v {
+    case O{names}: len(names)
+    case N{}: 0
+    }
+}
+
+func main() {
+    println(count(mk(0)), count(mk(1)), count(mk2(1, "q")), count(mk2(0, "q")))
+}

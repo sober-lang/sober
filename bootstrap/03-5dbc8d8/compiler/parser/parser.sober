@@ -1,0 +1,363 @@
+package parser
+
+// 再帰下降 parser（src/grammar.zig の PEG + src/cst_to_ast.zig の変換を 1 段で行う — CST は作らない）。
+// 出力は C4 の表層 AST（compiler/ast）。PEG の順序付き選択は、字句の先読みで選ぶ（lambda・束縛・composite・パターン）か、
+// 型だけの試し読み（失敗した試しの節は表に残るが、根から辿れないので出力に出ない）で写す。
+//
+// 各 parse 関数は (nb 節の表, db データプール, cx 文脈, p 字句の位置) を取り、(節の添字, 次の位置) を返す。失敗は節 -1。
+// c は条件位置（if / while / switch の subject・for の生成元とガード）: 裸の composite literal を読まない（決定 5）
+
+import "std/builder"
+import "ast"
+import "lexer"
+
+// Cx は読んでいる字句列。ts はファイルの字句の後ろに補間の穴の字句列（各 Eof 終わり、位置はソースの絶対オフセット）を
+// 続けたもの。first[i] は字句 i が穴を持つ文字列リテラルなら、その最初の穴の holes の添字（無ければ -1）、
+// holes[k] は k 番目の穴の字句列の先頭。fixed >= 0 なら全節の tok をその値にする（補間の穴 — 囲む文字列リテラルの位置で代表する）。
+// 穴の字句を parse の前に全部作るのは、再帰する mut 引数の関数（parser 全体が anchor つきで呼ばれる）に、深い frame で作った
+// slice を渡せないため（language.md 31 節の anchor 1 slot — selfhost-drafts の F-6）
+type Cx struct {
+    src []int
+    ts []lexer.Token
+    first []int
+    holes []int
+    fixed int
+}
+
+// tg は位置 p の字句の種類（末尾より先は Eof）
+func tg(cx Cx, p int) int {
+    return if p < len(cx.ts) { cx.ts[p].tag } else { lexer.Eof }
+}
+
+// tk は節の tok
+func tk(cx Cx, p int) int {
+    return if cx.fixed >= 0 { cx.fixed } else { p }
+}
+
+// name は位置 p の字句の綴りを文字列として積む
+func name(db mut builder.Builder[int], cx Cx, p int) int {
+    t := cx.ts[p]
+    return ast.PutBytes(mut db, cx.src, t.start, t.end)
+}
+
+// textIs は位置 p の字句の綴りが w か
+func textIs(cx Cx, p int, w string) bool {
+    if p >= len(cx.ts) {
+        return false
+    }
+    t := cx.ts[p]
+    wb := bytes(w)
+    if t.end - t.start != len(wb) {
+        return false
+    }
+    mut k := 0
+    while k < len(wb) {
+        if cx.src[t.start + k] != wb[k] {
+            return false
+        }
+        k += 1
+    }
+    return true
+}
+
+// nodeAt は積んだ節 i（型の付いた読み出し — builder.Get の結果の型を名前で受ける）
+func nodeAt(nb mut builder.Builder[ast.Node], i int) ast.Node {
+    return builder.Get(mut nb, i)
+}
+
+// listLen / listAt は組み立て中の列（ast.PutList の [n, 要素…]）の読み出し
+func listLen(db mut builder.Builder[int], l int) int {
+    return builder.Get(mut db, l)
+}
+
+func listAt(db mut builder.Builder[int], l int, i int) int {
+    return builder.Get(mut db, l + 1 + i)
+}
+
+func node(nb mut builder.Builder[ast.Node], kind int, tok int, a int, b int, c int, d int, e int, f int) int {
+    return ast.Add(mut nb, ast.Node{kind, tok, a, b, c, d, e, f})
+}
+
+// Parse は 1 ファイルの字句列を AST にする（失敗なら ok = false）
+func Parse(src []int, ts []lexer.Token) (ast.Tree, bool) {
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    cx := lexHoles(src, ts)
+    f := parseFile(mut nb, mut db, cx)
+    if f < 0 {
+        // 節を 1 つも作らずに失敗しうる（空のビルダーの Build は panic — F-12）
+        return ast.Tree{[]ast.Node{}, []int{}, -1}, false
+    }
+    return ast.Tree{builder.Build(mut nb), builder.Build(mut db), f}, true
+}
+
+// tokens は字句のビルダーの写し（非ジェネリックの包み — ジェネリックな Build の結果は要素型が脱糖器に見えない。F-10）
+func tokens(b mut builder.Builder[lexer.Token]) []lexer.Token {
+    return builder.Build(mut b)
+}
+
+// ints は int のビルダーの写し。一度も Push していないビルダーの Build は panic する（std/builder の cur のゼロ値が 0 で、
+// 無い chunk 0 を読む — selfhost-drafts の F-12）ので、空なら空の slice を返す
+func ints(b mut builder.Builder[int]) []int {
+    if builder.Len(mut b) == 0 {
+        return []int{}
+    }
+    return builder.Build(mut b)
+}
+
+// lexHoles は、字句列を先頭から（足した穴の字句も含めて）走査し、補間の穴を字句に分けて後ろへ足す（入れ子の穴も同じ走査で拾う）。
+// 穴の範囲の読み方は stringLit と同じ（エスケープを飛ばし、`${` から lexer.InterpEnd まで）。結果は parse の文脈（穴を足した字句列と穴の表）
+func lexHoles(src []int, ts []lexer.Token) Cx {
+    mut all := builder.Builder[lexer.Token]{}
+    mut first := builder.Builder[int]{}
+    mut holes := builder.Builder[int]{}
+    mut k := 0
+    while k < len(ts) {
+        builder.Push(mut all, ts[k])
+        k += 1
+    }
+    // 足した穴の字句も走査する: 1 巡ごとに今の列を写して読み、増えなくなったら終わる
+    mut i := 0
+    mut nh := 0
+    while i < builder.Len(mut all) {
+        snap := tokens(mut all)
+        while i < len(snap) {
+            t := snap[i]
+            mut fh := -1
+            if t.tag == lexer.StringLiteral {
+                s := t.start
+                n := t.end - t.start
+                mut j := 1
+                while j + 1 < n {
+                    c := src[s + j]
+                    if c == 92 && j + 2 < n {
+                        j += 1
+                    } else if c == 36 && src[s + j + 1] == 123 {
+                        end := lexer.InterpEnd(src, s + j + 1)
+                        if end < 0 {
+                            j = n
+                        } else {
+                            if fh < 0 {
+                                fh = nh
+                            }
+                            a := s + j + 2
+                            sub := lexer.Lex(src[a:end - 1])
+                            builder.Push(mut holes, builder.Len(mut all))
+                            nh += 1
+                            mut m := 0
+                            while m < len(sub) {
+                                u := sub[m]
+                                builder.Push(mut all, lexer.Token{u.tag, u.start + a, u.end + a})
+                                m += 1
+                            }
+                            j = end - s - 1
+                        }
+                    }
+                    j += 1
+                }
+            }
+            builder.Push(mut first, fh)
+            i += 1
+        }
+    }
+    return Cx{src, tokens(mut all), ints(mut first), ints(mut holes), -1}
+}
+
+// hasKind は表に kind の節があるか（暗黙 import の判定 — for / 補間 / string(b)。試し読みの残骸は型の節だけなので混ざらない）
+func hasKind(ns []ast.Node, kind int) bool {
+    mut i := 0
+    while i < len(ns) {
+        if ns[i].kind == kind {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// source_file <- package_clause ';' (import_decl ';')* top_level_decl* EOF
+func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx) int {
+    if tg(cx, 0) != lexer.KwPackage || tg(cx, 1) != lexer.Identifier || tg(cx, 2) != lexer.Semicolon {
+        return -1
+    }
+    pkg := name(mut db, cx, 1)
+    mut p := 3
+    mut imports := mut []int{}
+    while tg(cx, p) == lexer.KwImport {
+        p += 1
+        if tg(cx, p) == lexer.LParen {
+            p += 1
+            while tg(cx, p) != lexer.RParen {
+                im, q := importSpec(mut nb, mut db, cx, p)
+                if im < 0 {
+                    return -1
+                }
+                imports = append(imports, im)
+                p = q
+                if tg(cx, p) == lexer.Semicolon {
+                    p += 1
+                } else if tg(cx, p) != lexer.RParen {
+                    return -1
+                }
+            }
+            p += 1
+        } else {
+            im, q := importSpec(mut nb, mut db, cx, p)
+            if im < 0 {
+                return -1
+            }
+            imports = append(imports, im)
+            p = q
+        }
+        if tg(cx, p) != lexer.Semicolon {
+            return -1
+        }
+        p += 1
+    }
+    mut types := mut []int{}
+    mut funcs := mut []int{}
+    mut consts := mut []int{}
+    while tg(cx, p) != lexer.Eof {
+        start := p
+        // (annotation ';'?)* — `@errors(...)` は受理して読み捨てる（V4。強制は analyzer）。`@noinline`（引数なし）は続く関数宣言の印
+        mut noinl := 0
+        // `@embed("glob")` は続く const 宣言（名前 1 つ）の印 — KConst の e = パターン（文字列）、f = 1（ファイルの読み込みは loader）
+        mut emb := 0 - 1
+        while tg(cx, p) == lexer.At {
+            if textIs(cx, p + 1, "embed") && tg(cx, p + 2) == lexer.LParen {
+                v, r := parseExpr(mut nb, mut db, cx, p + 3, false)
+                if v < 0 || tg(cx, r) != lexer.RParen {
+                    return -1
+                }
+                vn := nodeAt(mut nb, v)
+                if vn.kind != ast.EStrlit {
+                    return -1
+                }
+                emb = vn.a
+                p = r + 1
+                if tg(cx, p) == lexer.Semicolon {
+                    p += 1
+                }
+                continue
+            }
+            if textIs(cx, p + 1, "noinline") && tg(cx, p + 2) != lexer.LParen {
+                noinl = 1
+                p += 2
+                if tg(cx, p) == lexer.Semicolon {
+                    p += 1
+                }
+                continue
+            }
+            if !textIs(cx, p + 1, "errors") {
+                return -1
+            }
+            p += 2
+            if tg(cx, p) == lexer.LParen {
+                mut depth := 0
+                mut going := true
+                while going {
+                    t := tg(cx, p)
+                    if t == lexer.Eof {
+                        return -1
+                    }
+                    if t == lexer.LParen {
+                        depth += 1
+                    } else if t == lexer.RParen {
+                        depth -= 1
+                    }
+                    p += 1
+                    going = depth > 0
+                }
+            }
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+        }
+        t := tg(cx, p)
+        if noinl != 0 && t != lexer.KwFunc {
+            return -1
+        }
+        if emb >= 0 && (t != lexer.KwConst || noinl != 0) {
+            return -1
+        }
+        if t == lexer.KwFunc {
+            fd, q := funcDecl(mut nb, mut db, cx, p, start, noinl)
+            if fd < 0 {
+                return -1
+            }
+            funcs = append(funcs, fd)
+            p = q
+        } else if t == lexer.KwType {
+            td, q := typeDecl(mut nb, mut db, cx, p, start)
+            if td < 0 {
+                return -1
+            }
+            types = append(types, td)
+            p = q
+        } else if t == lexer.KwConst {
+            // 'const' identifier_list '=' expression_list（値の畳み込みは loader の仕事）
+            mut names := mut []int{}
+            mut q := p + 1
+            mut more := true
+            while more {
+                if tg(cx, q) != lexer.Identifier {
+                    return -1
+                }
+                names = append(names, q)
+                q += 1
+                more = tg(cx, q) == lexer.Comma
+                if more {
+                    q += 1
+                }
+            }
+            if tg(cx, q) != lexer.Equal {
+                return -1
+            }
+            q += 1
+            mut values := mut []int{}
+            more = true
+            while more {
+                v, r := parseExpr(mut nb, mut db, cx, q, false)
+                if v < 0 {
+                    return -1
+                }
+                values = append(values, v)
+                q = r
+                more = tg(cx, q) == lexer.Comma
+                if more {
+                    q += 1
+                }
+            }
+            if len(names) != len(values) || tg(cx, q) != lexer.Semicolon {
+                return -1
+            }
+            if emb >= 0 && len(names) != 1 {
+                return -1
+            }
+            mut k := 0
+            while k < len(names) {
+                consts = append(consts, node(mut nb, ast.KConst, tk(cx, names[k]), name(mut db, cx, names[k]), values[k], start, q + 1, if emb >= 0 { emb } else { 0 }, if emb >= 0 { 1 } else { 0 }))
+                k += 1
+            }
+            p = q + 1
+        } else {
+            return -1
+        }
+    }
+    // 暗黙 import（cst_to_ast の書き換え — 裁定 C1）: for → std/iter、補間 → std/strings、string(b) → std/utf8
+    ns := builder.Build(mut nb)
+    if hasKind(ns, ast.EFor) {
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "iter#"), ast.PutLit(mut db, "std/iter"), 0, 0, 0, 0))
+    }
+    if hasKind(ns, ast.EInterp) {
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$strings"), ast.PutLit(mut db, "std/strings"), 0, 0, 0, 0))
+    }
+    if hasKind(ns, ast.EUtf8Ref) {
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$utf8"), ast.PutLit(mut db, "std/utf8"), 0, 0, 0, 0))
+    }
+    il := ast.PutList(mut db, freeze(imports))
+    tl := ast.PutList(mut db, freeze(types))
+    fl := ast.PutList(mut db, freeze(funcs))
+    cl := ast.PutList(mut db, freeze(consts))
+    return node(mut nb, ast.KFile, 0, pkg, il, tl, fl, cl, 0)
+}

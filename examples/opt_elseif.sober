@@ -1,0 +1,31 @@
+package main
+
+// else if での nil の絞り込み（language.md 330 行 — `x == nil` の else 側は x が値あり）。以前は check だけが受理し build は Mismatch だった
+
+func g(x int) bool {
+    return x > 2
+}
+
+func f(x int?) int {
+    return if x == nil { 0 } else if g(x) { x } else { 1 }
+}
+
+func h(x int?) int {
+    if x == nil {
+        println(0)
+    } else if x > 5 {
+        println(x * 2)
+    } else {
+        println(x)
+    }
+    return 0
+}
+
+func main() {
+    println(f(nil))
+    println(f(5))
+    println(f(1))
+    h(nil)
+    h(7)
+    h(3)
+}

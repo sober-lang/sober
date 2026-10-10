@@ -1,0 +1,2 @@
+sober: load error at examples/lit_leading_zero.sober:6:13: a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros
+exit=1

@@ -1,0 +1,9 @@
+package main
+
+// 負例: byte は条件に置けない（b != 0 と書く — language.md 33 節）
+func main() {
+    b := byte(1)
+    if b {
+        println(1)
+    }
+}

@@ -1,0 +1,32 @@
+package main
+
+// Tour 6: mut arguments and freeze (docs/guide/tour.md)
+
+// A function that rewrites the caller's mut local says mut on the parameter and at the call site
+func push3(xs mut []int, v int) {
+    xs = append(xs, v)
+    xs = append(xs, v)
+    xs = append(xs, v)
+}
+
+type Counter struct {
+    n int
+}
+
+func bump(c mut Counter) {
+    c.n += 1
+}
+
+func main() int {
+    mut xs := mut []int{}
+    push3(mut xs, 7)
+    println(len(xs))
+    mut c := Counter{n: 0}
+    bump(mut c)
+    bump(mut c)
+    println(c.n)
+    // freeze when done building — from then on it can be shared as immutable
+    ys := freeze(xs)
+    println(ys[0] + ys[1] + ys[2])
+    return 0
+}

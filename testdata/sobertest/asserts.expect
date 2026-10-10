@@ -1,0 +1,24 @@
+ok   testdata/sobertest/asserts.TestPass
+assert failed: Double(x) == x + 1
+  Double(x) = 6
+  x + 1 = 4
+  x = 3
+panic: testing.AssertFailed{} at std/testing/testing.sober:24:10
+FAIL testdata/sobertest/asserts.TestCompareFails (exit 101)
+assert failed: Name(2) == "one"
+  Name(2) = many
+panic: testing.AssertFailed{} at std/testing/testing.sober:24:10
+FAIL testdata/sobertest/asserts.TestStringFails (exit 101)
+assert failed: Even(Double(1) + 1)
+  Double(1) + 1 = 3
+panic: testing.AssertFailed{} at std/testing/testing.sober:24:10
+FAIL testdata/sobertest/asserts.TestCallFails (exit 101)
+assert failed: ok
+  ok = false
+panic: testing.AssertFailed{} at std/testing/testing.sober:24:10
+FAIL testdata/sobertest/asserts.TestBoolFails (exit 101)
+assert failed: c == 'B' && p.a + n == 6
+  n = 5
+panic: testing.AssertFailed{} at std/testing/testing.sober:24:10
+FAIL testdata/sobertest/asserts.TestUnprintableSkipped (exit 101)
+1 passed, 5 failed

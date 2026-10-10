@@ -1,0 +1,418 @@
+package desugar
+
+// 入口: Program → コア AST の JSON（legacy/zig/desugar.zig の desugar + toJson と同じバイト列 — `sober check --core-json` の出力）
+
+import "diag"
+import "ast"
+import "loader"
+import "std/iter"
+import "std/table"
+import "obuf"
+
+// defOf は展開されない関数 fi → コアの Def（[param, ret, body, tparams, next]）。ienv = インスタンスの型環境（型引数を代入したもの —
+// 型パラメータを持たない Def になる。call.sober の instDef）か -1（抽象の型変数）
+func defOf(st mut S, fi int, ienv int) (int, error?) {
+    saved_rd := st.rdepth
+    saved := fnCtx(mut st)
+    st.rdepth = 2
+    saved_tf := st.taskFloor
+    st.taskFloor = 0
+    saved_ps := st.parScope1
+    st.parScope1 = 0
+    defer {
+        st.taskFloor = saved_tf
+        st.parScope1 = saved_ps
+    }
+    pk := fnPkg(mut st, fi)
+    st.curPkg = pk
+    st.tenv = if ienv == -1 { tvarEnv(mut st, fnTParams(mut st, fi), 0) } else { ienv }
+    ntp := if ienv == -1 { lenL(mut st, fnTParams(mut st, fi)) } else { 0 }
+    st.curTparams = ntp
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    at := fnNode(mut st, fi)
+    ptys := ListRef(listN(mut st, np))
+    vtys := ListRef(listN(mut st, np))
+    for i <- iter.Range(0, np) {
+        prm := latN(mut st, ps, i)
+        if kindN(mut st, nB(nodeOf(mut st, prm))) == ast.TFunc {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        t := tyOf(mut st, pk, nB(nodeOf(mut st, prm)), at, TYFUEL)?
+        hsetTy(mut st, int(vtys) + 1 + i, t)
+        // mut 仮引数: struct は欄ごとのセルの木（F-17 案 2α）、他は ref
+        pty := if !ast.ParamIsMut(nodeOf(mut st, prm)) {
+            t
+        } else if teSplits(mut st, pk, st.tenv, nB(nodeOf(mut st, prm))) {
+            splitTy(mut st, declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm))), 0, false, at)?
+        } else {
+            tRefOf(mut st, 1, 0, t)
+        }
+        hsetTy(mut st, int(ptys) + 1 + i, pty)
+    }
+    param := tyChain(mut st, ptys)
+    rl0 := fnResults(mut st, fi)
+    nr := lenL(mut st, rl0)
+    rtys := ListRef(listN(mut st, nr))
+    for i <- iter.Range(0, nr) {
+        rt := tyOf(mut st, pk, latN(mut st, rl0, i), at, TYFUEL)?
+        hsetTy(mut st, int(rtys) + 1 + i, retTy(mut st, rt))
+    }
+    ret := tyChain(mut st, rtys)
+    if st.sigOnly {
+        // 部分検査の視点の外の Def は署名だけ（本体 -1 — 検査器は検査しない。stage1 の sig_only）
+        setFnCtx(mut st, saved)
+        st.rdepth = saved_rd
+        return rec5(mut st, int(param), int(ret), -1, ntp, -1), nil
+    }
+    mut eb := -1
+    mut d := 1
+    exs := ListRef(listN(mut st, if np >= 2 { np } else { 0 }))
+    if np == 1 {
+        prm := latN(mut st, ps, 0)
+        mutable := ast.ParamIsMut(nodeOf(mut st, prm))
+        dd := declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))
+        el := elemDeclOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))
+        eb = bind(mut st, eb, sA(nodeOf(mut st, prm)), 0, mutable, dd, latTy(mut st, vtys, 0), el, 0, if mutable { TyRef(-1) } else { latTy(mut st, vtys, 0) }, mutable && teSplits(mut st, pk, st.tenv, nB(nodeOf(mut st, prm))), SurfaceOf(mut st, pk, nB(nodeOf(mut st, prm))))
+    } else if np >= 2 {
+        for i <- iter.Range(0, np) {
+            prm := latN(mut st, ps, i)
+            hsetCore(mut st, int(exs) + 1 + i, projection(mut st, cVar(mut st, d - 1), i, np))
+            mutable := ast.ParamIsMut(nodeOf(mut st, prm))
+            dd := declOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))
+            el := elemDeclOfTypeExpr(mut st, pk, nB(nodeOf(mut st, prm)))
+            eb = bind(mut st, eb, sA(nodeOf(mut st, prm)), d, mutable, dd, latTy(mut st, vtys, i), el, 0, if mutable { TyRef(-1) } else { latTy(mut st, vtys, i) }, mutable && teSplits(mut st, pk, st.tenv, nB(nodeOf(mut st, prm))), SurfaceOf(mut st, pk, nB(nodeOf(mut st, prm))))
+            d += 1
+        }
+    }
+    st.curRtys = rtys
+    st.curRes = fnResults(mut st, fi)
+    st.curResPkg = pk
+    rl := newLabel(mut st, LRet, ret)
+    setLabelRtys(mut st, rl, rtys)
+    st.retTarget = pushLabel(mut st, rl)
+    st.loopFloor = st.nlab
+    // 戻り値の無い関数の本体は末尾の式文の値を捨てる（決定 9 — func 本体は文位置。F-e: 末尾の `f(k)` を本体の値にしていた）
+    inner := scoped(mut st, lA(nodeOf(mut st, fnBody(mut st, fi))), eb, -1, d, true, nr == 0, ret)?
+    st.nlab = st.nlab - 1
+    mut body := labelNode(mut st, rl, inner, WNone)
+    body = wrapLets(mut st, exs, body)
+    setFnCtx(mut st, saved)
+    st.rdepth = saved_rd
+    return rec5(mut st, int(param), int(ret), int(body), ntp, -1), nil
+}
+
+// outsideOnly は関数 i が部分検査の視点の外か（check --pkg — st.only の package 以外）
+func outsideOnly(st mut S, i int) bool {
+    return st.onlySet && fnPkg(mut st, i) != st.only
+}
+
+// renumberDefs は本体に型パラメータ型の補間の穴があるジェネリック Def（typer の YInstNeeded）を抽象の Def の列から外し
+// （Def の添字 = DINST — 呼び出しごとのインスタンスを call.sober の instDef が足す）、残りの Def の添字を宣言順に詰め直す。
+// 印の付いた関数が無ければ何もしない（添字は init の振り方のまま）
+func renumberDefs(st mut S) {
+    YPropagate(mut st)
+    mut any := false
+    for i <- iter.Range(0, st.nfn) {
+        if fnDef(mut st, i) >= 0 && lenL(mut st, fnTParams(mut st, i)) > 0 && YInstNeeded(mut st, i) {
+            any = true
+        }
+    }
+    if !any {
+        return
+    }
+    mut nd := 0
+    for i <- iter.Range(0, st.nfn) {
+        mut x := FnAt(mut st, i)
+        if x.def >= 0 {
+            if lenL(mut st, fnTParams(mut st, i)) > 0 && YInstNeeded(mut st, i) {
+                x.def = DINST
+            } else {
+                x.def = nd
+                nd += 1
+            }
+            table.Set(mut st.fns, i, x)
+        }
+    }
+    st.ndef = nd
+}
+
+// sigOnlyAt は関数 i の Def を署名だけにするか（部分検査の視点の外・L0 の std・区間〔関数表の添字〕の外 — 段 6 P6-3 の rangeSet）
+func sigOnlyAt(st mut S, i int, dx int) bool {
+    return outsideOnly(mut st, i) || (st.trustStd && IsStdPkg(mut st, fnPkg(mut st, i))) || (st.rangeSet && (i < st.rlo || i >= st.rhi))
+}
+
+// prefix は run の前段（Def の脱糖の手前まで — 本体なし宣言の検査・表層型検査器・E2-S の上げ・Def の添字の確定）。決定的（段 6 P6-3 の子は
+// 親と同じ前段を走らせ直す — 同じ結果）
+func prefix(st mut S) error? {
+    // 本体なし宣言（.sobi）は脱糖できない（部分検査の視点の外なら署名だけで足りる）
+    mut i := 0
+    while i < st.nfn {
+        if nodeOf(mut st, fnNode(mut st, i)).f >= 0 && latI(mut st, ListRef(nodeOf(mut st, fnNode(mut st, i)).f), 0) != 0 && !outsideOnly(mut st, i) {
+            return diag.CoreFragment{at: posOf(mut st, fnNode(mut st, i))}
+        }
+        i += 1
+    }
+    if st.stopAt == 6 {
+        return nil
+    }
+    if st.e2s {
+        e2sPrepare(mut st)
+    }
+    // 区間の計画（段 6 P6-3 — PlanDefs）は型付けしない: 区間は関数表の添字で切り、費用は E2-S の上げの後の展開の有無だけで決まる
+    // （上げの判定は型付けを読まない — e2sScanCalls と署名）。Def の添字の振り直し（印を読む）もしない
+    if st.planOnly {
+        if st.e2s {
+            e2sPromote(mut st)
+        }
+        return nil
+    }
+    // 表層型検査器（関数本体ごとに 1 回 — exprSty が表を読む）
+    TypeAll(mut st)
+    if st.stopAt == 7 {
+        return nil
+    }
+    if st.e2s {
+        e2sPromote(mut st)
+    }
+    renumberDefs(mut st)
+    return nil
+}
+
+// lazySigs は Def の区間の子（根を持たない — 段 6 P6-3）の後回しにした区間の外の Def の署名を作る: コア式が呼ぶ（call / fnref の関数の添字）
+// Def だけ本当の署名（defOf の署名だけの形）・他は使われないので unit → unit の詰め物（本体なし — 検査器は検査しない・呼ばれないので型も読まれない）。
+// 署名の拒否を見落とさないために、根の区間の子は全部の署名を作る（rangeRoot — 後回しにしない）。拒否があれば親は 1 本の経路で走らせ直す
+func lazySigs(st mut S, defs ListRef) error? {
+    mut used := mut []bool{}
+    for j <- iter.Range(0, st.ndef) {
+        used = append(used, false)
+    }
+    n := table.Len(mut st.cores)
+    for x <- iter.Range(0, n) {
+        e := coreAt(mut st, CoreRef(CBASE + x))
+        f := e.a
+        if (e.tag == CCall || e.tag == CFnref) && f >= 0 && f < st.ndef {
+            used[f] = true
+        }
+    }
+    for i <- iter.Range(0, st.nfn) {
+        dx := fnDef(mut st, i)
+        if dx >= 0 && latI(mut st, defs, dx) == -1 {
+            if used[dx] {
+                st.sigOnly = true
+                dv, err := defOf(mut st, i, -1)
+                st.sigOnly = false
+                if err != nil {
+                    return err
+                }
+                lput(mut st, defs, dx, dv)
+            } else {
+                lput(mut st, defs, dx, rec5(mut st, int(st.tUnit), int(st.tUnit), -1, 0, -1))
+            }
+        }
+    }
+    return nil
+}
+
+// run は関数表と main 本体を脱糖する（(Def の列の先頭の添字, main 本体)）
+func run(st mut S) (ListRef, CoreRef, error?) {
+    perr := prefix(mut st)
+    if perr != nil {
+        return 0, 0, perr
+    }
+    if st.stopAt == 4 || st.stopAt == 6 || st.stopAt == 7 {
+        return 0, CoreRef(-1), nil
+    }
+    defs := ListRef(listN(mut st, st.ndef))
+    mut i := 0
+    // 根を持たない Def の区間（段 6 P6-3）: 区間の外の Def の署名は後回し（区間の本体が呼ぶものだけ後で作る — lazySigs）
+    lazy := st.rangeSet && !st.rangeRoot
+    while i < st.nfn {
+        dx := fnDef(mut st, i)
+        if dx >= 0 && lazy && (i < st.rlo || i >= st.rhi) {
+            lput(mut st, defs, dx, -1)
+        } else if dx >= 0 {
+            expBegin(mut st)
+            defer {
+                expEnd(mut st, i, 1)
+            }
+            // trustStd（L0 — std の受理印が焼き込まれている一括の check）: std の Def は署名だけ（検査器は検査しない — std の package の視点で
+            // 検査済み。合成定理 defsOk_of_linked の hchk を焼き込みが運ぶ。3'' 第 1.5 段）
+            st.sigOnly = sigOnlyAt(mut st, i, dx)
+            dv := defOf(mut st, i, -1)?
+            st.sigOnly = false
+            lput(mut st, defs, dx, dv)
+        }
+        i += 1
+    }
+    if lazy {
+        lazySigs(mut st, defs)?
+    }
+    if (st.onlySet && st.only != st.mainPkg) || (st.rangeSet && !st.rangeRoot) {
+        // 部分検査（main 以外の package）・根を持たない Def の区間（段 6 P6-3）: 根の式なし
+        return defs, CoreRef(-1), nil
+    }
+    // main
+    mut mf := -1
+    i = 0
+    while i < st.nfn {
+        if fnPkg(mut st, i) == st.mainPkg && strIs(mut st, fnName(mut st, i), "main") {
+            mf = i
+        }
+        i += 1
+    }
+    if mf < 0 {
+        // main が無い: main package の最初のファイルの package 節を指す
+        return 0, 0, diag.Malformed{at: posOf(mut st, FileRoot(mut st, PkgFlo(mut st, st.mainPkg)))}
+    }
+    if lenL(mut st, fnParams(mut st, mf)) != 0 {
+        return 0, 0, diag.CoreFragment{at: posOf(mut st, fnNode(mut st, mf))}
+    }
+    // main 本体 = `block (label unit body)`（途中の return は jump。本体の値は捨てる）。
+    // `func main() int`（R31 — 戻り値 = 終了コード）は `block (label int body)`（Def の本体と同じ ann の形）
+    mrs := fnResults(mut st, mf)
+    main_int := if lenL(mut st, mrs) == 1 {
+        mt := tyOf(mut st, st.mainPkg, latN(mut st, mrs, 0), fnNode(mut st, mf), TYFUEL)?
+        tg(mut st, mt) == TInt
+    } else {
+        false
+    }
+    if lenL(mut st, mrs) != 0 && !main_int {
+        return 0, 0, diag.CoreFragment{at: posOf(mut st, fnNode(mut st, mf))}
+    }
+    st.curPkg = st.mainPkg
+    st.curRes = mrs
+    st.curResPkg = st.mainPkg
+    rl := newLabel(mut st, LRet, if main_int { st.tInt } else { st.tUnit })
+    st.curRes = -1
+    if main_int {
+        mrt := ListRef(listN(mut st, 1))
+        hsetTy(mut st, int(mrt) + 1, st.tInt)
+        setLabelRtys(mut st, rl, mrt)
+        setLabelAnn(mut st, rl, true)
+        st.curRtys = mrt
+    }
+    st.retTarget = pushLabel(mut st, rl)
+    st.loopFloor = st.nlab
+    body := scoped(mut st, lA(nodeOf(mut st, fnBody(mut st, mf))), -1, -1, 0, true, !main_int, if main_int { st.tInt } else { TyRef(-1) })?
+    st.nlab = st.nlab - 1
+    root := c1(mut st, CBlock, labelNode(mut st, rl, body, if main_int { WAnn } else { WDiscard }))
+    return defs, root, nil
+}
+
+// Json は Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = e2s
+    st.e2sExcl = excl
+    defs, root := run(mut st)?
+    // 印字の作業領域（出力 out より先にヒープへ取る — 以降ヒープは伸びない）。スタックは (op, arg) の対で 32,768 対 —
+    // 実測の最大は約 200 対（compiler/tools の大きいもの、2026-09-28）。旧 1,048,576 語（8MB）は同じ region に積む出力
+    // （1 バイト 1 語）の取り分を削っていた
+    st.jstk = listN(mut st, 65536)
+    st.jlab = listN(mut st, 4096)
+    mut out := mut []byte{}
+    if st.ndef + st.nlifted == 0 {
+        exprJson(mut st, mut out, root)
+    } else {
+        obuf.Lit(mut out, "{\"defs\":[")
+        mut i := 0
+        while i < st.ndef {
+            if i > 0 {
+                out = append(out, 44)
+            }
+            defJson(mut st, mut out, latI(mut st, defs, i))
+            i += 1
+        }
+        mut d := st.liftedHead
+        while d >= 0 {
+            if i > 0 {
+                out = append(out, 44)
+            }
+            defJson(mut st, mut out, d)
+            i += 1
+            d = hget(mut st, d + 4)
+        }
+        obuf.Lit(mut out, "],\"e\":")
+        exprJson(mut st, mut out, root)
+        out = append(out, 125)
+    }
+    out = append(out, 10)
+    return freeze(out), nil
+}
+
+// TyperDiff は check の経路の差分オラクル（`sober check --typer-diff`）: 表層型検査器を走らせてから脱糖し、exprSty との突き合わせの数を返す
+// [一致, 表だけ分かる, exprSty だけ分かる, 食い違い, 比べない, 型引数の一致, 型引数の食い違い, 記録の数 n,
+//  (ファイル, 字句, 種類 0 = exprSty だけ / 1 = 食い違い / 2 = 型引数, 表層型の種類（型引数なら inferTs が決まったか 1 / 0）) × n]
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+func TyperDiff(p loader.Program) ([]int, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.ydiff = 1
+    run(mut st)?
+    mut out := mut []int{}
+    out = append(out, st.ydsame)
+    out = append(out, st.ydgain)
+    out = append(out, st.ydloss)
+    out = append(out, st.ydmis)
+    out = append(out, st.ydskip)
+    out = append(out, st.ydtsame)
+    out = append(out, st.ydtdiff)
+    n := table.Len(mut st.ydlog) / 4
+    out = append(out, n)
+    for i <- iter.Range(0, n * 4) {
+        out = append(out, table.Get(mut st.ydlog, i))
+    }
+    return freeze(out), nil
+}
+
+// NominalAll は開発用（`sober check --nominal-all`）: 表層型の照合の拒否を止めずに全部集めて返す [ファイル, 字句の位置] × n
+// （他の拒否は diag のラベル）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+func NominalAll(p loader.Program) ([]int, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.nomAll = 1
+    run(mut st)?
+    mut out := mut []int{}
+    for i <- iter.Range(0, table.Len(mut st.nomLog)) {
+        out = append(out, table.Get(mut st.nomLog, i))
+    }
+    return freeze(out), nil
+}
+
+// DefAt は開発用（`sober check --def-index`）: 脱糖し直して、検査器の Def の列の j 番目（名前付き関数 → 持ち上げた Def の順 — defJson と同じ）
+// の出所の位置（名前付き関数・インスタンスは関数宣言、持ち上げたラムダはラムダの節）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = true
+    st.e2sExcl = excl
+    _, _, err := run(mut st)
+    if err != nil {
+        return diag.None(), err
+    }
+    if j < st.ndef {
+        for i <- iter.Range(0, st.nfn) {
+            if fnDef(mut st, i) == j {
+                return posOf(mut st, fnNode(mut st, i)), nil
+            }
+        }
+        return diag.None(), nil
+    }
+    k := j - st.ndef
+    if k < table.Len(mut st.liftAt) {
+        return posOf(mut st, NodeRef(table.Get(mut st.liftAt, k))), nil
+    }
+    return diag.None(), nil
+}
+
+// Init は Program p から表層 AST のヒープと表（package・関数・const・error）を組む（initState — 名前付き関数型の展開込み）。
+// Sober 版 lower（compiler/lower）が同じ層を読む — 「解決済み AST 層を desugar と共有する」（docs/ir.md 1 節）の最初の形。
+// 表現は state.sober の冒頭（表層 AST は loader の木を参照で指す・表と記録は S の欄とヒープの添字）
+func Init(st mut S, p loader.Program) {
+    initState(mut st, p)
+}

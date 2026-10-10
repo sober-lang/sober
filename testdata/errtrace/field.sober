@@ -1,0 +1,67 @@
+package main
+
+// error 網羅 analyzer の動的オラクル（scripts/errtrace.sh）のコーパス: struct の error? の欄を通る流れ
+// （名前つき・位置指定のリテラル・欄への代入 → 読んで戻す / switch する）
+
+type A error {
+    n int
+}
+
+type B error
+
+type C error
+
+type Hit struct {
+    k int
+    err error?
+}
+
+func keyed(n int) Hit {
+    if n < 0 {
+        return Hit{k: 1, err: A{n: n}}
+    }
+    return Hit{k: 0, err: nil}
+}
+
+func positional(n int) Hit {
+    return if n == 0 { Hit{2, B{}} } else { Hit{3, nil} }
+}
+
+func assigned(n int) Hit {
+    mut h := Hit{k: 4, err: nil}
+    if n > 5 {
+        h.err = C{}
+    }
+    return h
+}
+
+func lift(h Hit) (int, error?) {
+    if h.err != nil {
+        return 0, h.err
+    }
+    return h.k, nil
+}
+
+func name(e error) string {
+    return switch e {
+    case A{n}: "A${n}"
+    case B{}: "B"
+    case C{}: "C"
+    }
+}
+
+func show(h Hit) {
+    _, err := lift(h)
+    if err != nil {
+        println(name(err))
+    } else {
+        println("ok")
+    }
+}
+
+func main() {
+    show(keyed(-1))
+    show(keyed(1))
+    show(positional(0))
+    show(assigned(9))
+}

@@ -1,0 +1,10 @@
+package main
+
+// 負例: リテラルの型が panic ラベルでない（struct）（language.md 27 節「panic ラベル」— loader の拒否）
+type S struct {
+    a int
+}
+
+func main() {
+    panic(S{a: 1})
+}

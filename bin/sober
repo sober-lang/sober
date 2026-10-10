@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# 主の sober（主役交代 R38 / R39）: Sober で書いたコンパイラ（stage2 = compiler/app）のフロントエンド〜lower ＋ 凍結した Zig の正規バックエンド。
+# stage2 は compiler/ か std/ か stage1 が変わっていれば、呼ばれたときに scripts/stage2.sh が作り直す（約 40 秒・stderr に 1 行）。
+#
+#   sober build <entry> [-o <out>] [--no-opt]   stage2 の正規バックエンド（compiler/lower/x86.sober — B-4 で既定に）が ELF を書く（既定 a.out）。
+#                                              設計整合パス（stage2 の --passes — compiler/lower/opt.sober）と mem2reg（compiler/lower/m2r.sober）を掛ける。
+#                                              --no-opt は両方を外す（obs の ir-x86raw 列 = パスなしの経路）。実行の bit は stage2 が付ける（os.WriteMode）
+#   sober build <entry> --via=stage1 [-o <out>] [--no-opt]  逃げ道と照合の役: stage2 が IR テキスト（docs/ir.md — コンポーネント境界）を吐き、
+#                                              凍結した Zig の正規バックエンド（stage1 の `build x.ir`）が ELF にする（B-4 までの既定。照合 = scripts/elfeq.sh）
+#   sober build <entry> --via=sober             既定と同じ（B-1d〜B-3 の綴り — 残す）
+#   sober build <entry> --backend=copy [--no-opt]  写しのバックエンド（命令選択・配置が src/stage1 の写しのまま — stage1 との ELF のバイト一致の照合用。性能投資 M4）
+#   sober build <entry> --via=ll [-o <out>]     stage2 の .ll（--passes つき）を zig cc -O0 で ELF に（Zig の正規バックエンドが新しい IR op を拒否したときの逃げ道）。
+#                                              SOBER_O1=1 なら -O1（gates の -O1 列が道具をこれで建てる）
+#   sober build <entry> --emit=ll|ir [--passes] [-o <out>] stage2 の .ll / IR テキスト（既定 a.out — Zig 版と同じ。パスは --passes のときだけ）
+#   sober build <entry> --emit=syms [-o <out>]   既定の build（--emit=elf --passes）と同じ形の実行ファイルの関数の先頭番地の表（プロファイルの口 — scripts/prof.ts）
+#   sober run <entry> [--] [<args>…]          build して走らせる（子の終了コードを透過・実行ファイルは置き場に鍵で残り同じ鍵なら build を飛ばす）
+#   sober check <entry>                        stage2 の analyzer（compiler/analyzer — acquire / release）→ 検査器（Checker.lean の移植）の判定
+#   sober check <entry> --core-json            stage2 の脱糖したコア AST の JSON
+#   sober check <package> --test               テストのビルド（_test.sober と合成の main）を analyzer → 検査器で
+#   sober check <entry> --lean                 stage2 の脱糖 → Lean の sober-check（Lean が正の照合 — $SOBER_CHECK）
+#   sober check <entry> --def-index | --nominal-all | --typer-diff | --errors-dump | --expansion-report   開発用（stage2 のまま）: def error の Def の番号と出所の位置 /
+#                                              表層型の照合の拒否を全部 / 表層型検査器の突き合わせ
+#   sober lex | fmt <file>、parse --ast-json <file> | --loader-json <entry>   stage2
+#   sober test <package>… [-v]                 package の _test.sober の TestXxx() を 1 テスト 1 サブプロセスで（下の cmd_test）
+#   sober watch <entry>                        更新時刻のポーリング → 小分けの check（温）+ analyzer → 前回との差分の診断を標準エラーへ（cmd_watch —
+#                                              検査器は起動時の stage2 の写し。SOBER_WATCH_REF=<バイナリ> で固定参照・SOBER_WATCH_MS で間隔）
+# stage1（凍結した Zig 版 — 信頼の根・$STAGE1 で差し替え可）の役は照合だけ（3'' M5）: --via=stage1（逃げ道 + elfeq の照合）と、
+# 未移植の build --mem-trace（実需待ち）だけがここから stage1 に落ちる。.ir 入力・--pkg の比較用出力（--core-json-pkg・署名表）は照合のスクリプトが
+# stage1 を直に叩く（elfeq・passes・selfhost_lower・errtrace・stages・pkgcheck）。build --opt・parse の CST の s 式は捨てた（M5）
+set -uo pipefail
+ROOT=$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)
+STAGE1=${STAGE1:-$ROOT/src/stage1/zig-out/bin/sober}
+ZIG=${ZIG:-zig}
+[ -x "$STAGE1" ] || { echo "sober: $STAGE1 not found (zig build)" >&2; exit 1; }
+# watch の固定参照（SOBER_WATCH_REF = 検査器にするバイナリ）: stage2 を作り直さずにそのバイナリで見張る（compiler/ の編集中も検査器が動かない・
+# キャッシュの鍵〔/proc/self/exe〕も動かないので温のまま。正式の判定は gates）
+if [ "${1:-}" = watch ] && [ -n "${SOBER_WATCH_REF:-}" ]; then
+    shift
+    [ $# = 1 ] || { echo "sober: watch takes one entry" >&2; exit 1; }
+    exec "$SOBER_WATCH_REF" watch "$1"
+fi
+# stage2 の鮮度の確認（compiler/ + std/ + 鎖の内容ハッシュ — 1 回 約 0.35 s）。SOBER_STAGE2_CHECKED=1 は「呼び手が確認済みで、走っている間は木を変えない」の印
+# （gates.sh・regen.sh・optdiff.sh が最初に 1 回確かめて立てる — 1 回 11 ms の呼び出しに毎回 0.35 s を払わない。足回りの便）
+if [ -z "${SOBER_STAGE2_CHECKED:-}" ]; then
+    STAGE1=$STAGE1 "$ROOT/scripts/stage2.sh" --quiet || exit 1
+fi
+S2=$ROOT/out/stage2/sober2
+
+to_stage1() { # $1 = 何が未移植か、残り = stage1 の引数
+    echo "sober: $1: stage1 (not yet ported)" >&2
+    shift
+    exec "$STAGE1" "$@"
+}
+tmpdir() { T=$(mktemp -d); trap 'rm -rf "$T"' EXIT; }
+
+cmd_build() {
+    local entry="" out=a.out emit="" via="" noopt="" passes=--passes epasses="" backend="" a
+    local all=("$@")
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o) [ $# -ge 2 ] || { echo "sober: -o needs a path" >&2; exit 1; }; out=$2; shift ;;
+            --emit=ll|--emit=ir|--emit=syms) emit=${1#--emit=} ;;
+            --via=ll) via=ll ;;
+            --via=sober) via="" ;;
+            --via=stage1) via=stage1 ;;
+            --no-opt) noopt=--no-opt; passes="" ;;
+            --backend=copy) backend=--backend=copy ;;
+            --no-vec) backend="$backend --no-vec" ;;   # ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
+            --passes) epasses=--passes ;;
+            --mem-trace) to_stage1 "build --mem-trace" build "${all[@]}" ;;
+            -*) echo "sober: unknown flag '$1'" >&2; exit 1 ;;
+            *) [ -z "$entry" ] || { echo "sober: build takes one entry" >&2; exit 1; }; entry=$1 ;;
+        esac
+        shift
+    done
+    [ -n "$entry" ] || { echo "sober: 'build' requires a source file or a package directory" >&2; exit 1; }
+    case "$entry" in *.ir) echo "sober: building an .ir file is stage1's (the comparison scripts call $STAGE1 build x.ir directly)" >&2; exit 1 ;; esac
+    if [ -n "$emit" ]; then
+        exec "$S2" build "$entry" --emit="$emit" $epasses -o "$out"
+    fi
+    tmpdir
+    if [ "$via" = ll ]; then
+        "$S2" build "$entry" --emit=ll $passes -o "$T/a.ll" || exit 1
+        "$ZIG" cc -target x86_64-linux-none -nostdlib -static -Wno-override-module "$( [ -n "${SOBER_O1:-}" ] && echo -O1 || echo -O0 )" "$T/a.ll" -o "$out" || exit 1
+        exit 0
+    fi
+    if [ "$via" = stage1 ]; then
+        "$S2" build "$entry" --emit=ir $passes -o "$T/a.ir" || exit 1
+        "$STAGE1" build "$T/a.ir" $noopt -o "$out"
+        exit $?
+    fi
+    # 書き出しの先のディレクトリは作る（stage1 の build と同じ — io.WriteFile は作らない）
+    mkdir -p "$(dirname "$out")"
+    "$S2" build "$entry" --emit=elf $passes $noopt $backend -o "$out" || exit 1
+}
+
+cmd_check() {
+    local entry="" mode=check dev="" a trace=""
+    local all=("$@")
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --core-json) mode=core ;;
+            --lean) mode=lean ;;
+            --def-index|--nominal-all|--typer-diff|--errors-dump|--expansion-report|--sigs) mode=dev; dev=$1 ;;
+            --test) mode=test ;;
+            --split) mode=split ;;   # 小分けの check（3'' M3 — package ごとの region で依存の順に）
+            --cache-trace) trace=--cache-trace ;;   # 小分けの check のキャッシュの鍵と当否（3'' 第 2 段 C1 — --split と一緒に）
+            --pkg|--iface)
+                # `check <entry> --pkg P --iface D [--sigs]`（部分検査の判定 / 視点の署名表）は stage2（3'' M2）。stage1 の比較用出力（--core-json-pkg・
+                # コア型の署名表）は照合のスクリプト（pkgcheck）が stage1 を直に叩く（M5）
+                if { [ "${#all[@]}" = 5 ] || { [ "${#all[@]}" = 6 ] && [ "${all[5]}" = --sigs ]; }; } && [ "${all[1]}" = --pkg ] && [ "${all[3]}" = --iface ]; then exec "$S2" check "${all[@]}"; fi
+                echo "sober: check --pkg takes exactly: <entry> --pkg <path> --iface <dir> [--sigs]" >&2; exit 1 ;;
+            -*) echo "sober: unknown flag '$1'" >&2; exit 1 ;;
+            *) [ -z "$entry" ] || { echo "sober: check takes one entry" >&2; exit 1; }; entry=$1 ;;
+        esac
+        shift
+    done
+    [ -n "$entry" ] || { echo "sober: 'check' requires a source file or a package directory" >&2; exit 1; }
+    case "$mode" in
+        core) exec "$S2" check "$entry" --core-json ;;
+        dev) exec "$S2" check "$entry" "$dev" ;;   # 開発用（stage2 のまま — analyzer は通さない）
+        test) exec "$S2" check "$entry" --test ;;   # テストのビルドの検査（package の _test.sober と合成の main ごと — T12）
+        # コンパイラの鍵 = stage2 の .key（compiler/ + std/ + boot の内容ハッシュ — cache-draft 3.3）
+        split) SOBER_SELF_KEY=$(cat "$(dirname "$S2")/.key" 2>/dev/null) exec "$S2" check "$entry" --split $trace ;;
+        lean)
+            local chk=${SOBER_CHECK:-$ROOT/lean/.lake/build/bin/sober-check}
+            [ -x "$chk" ] || { echo "sober: $chk not found (cd lean && lake build)" >&2; exit 1; }
+            tmpdir
+            "$S2" check "$entry" --core-json > "$T/core.json" || exit 1
+            "$chk" < "$T/core.json"
+            exit $? ;;
+    esac
+    # analyzer（受理の定義に含む層 — docs/design-dev.md 層の線引き）は stage2 の check の中（compiler/analyzer — 指摘があれば判定を出さずに 1）
+    exec "$S2" check "$entry"
+}
+
+# sober test <package>… [-run <接頭辞>] [-v]: package の _test.sober の TestXxx() を 1 テスト 1 サブプロセスで（stage2 の `test` — Sober 製のランナー。
+# テストのビルドは Sober の正規バックエンド。作業場所をここが渡す）
+cmd_test() {
+    tmpdir
+    "$S2" test "$@" --work "$T"
+}
+
+[ $# -ge 1 ] || { "$S2"; exit 1; }
+# sober iface <entry> (-o <dir> [--no-expand] | --pkg <path>): package の interface（.sobi — compiler/iface）。-o は全 package を <dir>/<path>.sobi と
+# <dir>/link.txt に書く（stage2 は束を標準出力へ出す — std に mkdir の口が無いので書き分けとディレクトリ作りはここ）
+cmd_iface() {
+    local entry="" out="" pkg="" noexp=""
+    # --view <path> <dir>（G-a の不動点 — 束を標準出力へ）はそのまま stage2 へ
+    if [ "${2:-}" = --view ]; then exec "$S2" iface "$@"; fi
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o) out=$2; shift ;;
+            --pkg) pkg=$2; shift ;;
+            --no-expand) noexp=--no-expand ;;
+            -*) echo "sober: unknown flag '$1'" >&2; exit 1 ;;
+            *) entry=$1 ;;
+        esac
+        shift
+    done
+    [ -n "$entry" ] || { echo "sober: 'iface' requires an entry" >&2; exit 1; }
+    if [ -n "$pkg" ]; then
+        exec "$S2" iface "$entry" --pkg "$pkg"
+    fi
+    [ -n "$out" ] || { echo "sober: iface needs -o <dir> or --pkg <path>" >&2; exit 1; }
+    tmpdir
+    "$S2" iface "$entry" $noexp > "$T/bundle" || exit 1
+    awk -v d="$out" '/^== / { f = d "/" substr($0, 4); g = f; sub(/\/[^\/]*$/, "", g); system("mkdir -p \047" g "\047"); printf "" > f; next } { print > f }' "$T/bundle"
+}
+
+# cmd_watch: 今の stage2 の写し（out/watch/sober2-<鍵の要約> — stage2 の作り直しで上書きされない）を検査器にして見張る（下の compiler/app の cmdWatch）
+cmd_watch() {
+    [ $# = 1 ] || { echo "sober: watch takes one entry" >&2; exit 1; }
+    local key ref
+    key=$(cat "$(dirname "$S2")/.key" 2>/dev/null)
+    ref=$ROOT/out/watch/sober2-$(printf '%s' "$key" | sha256sum | cut -c1-16)
+    if [ ! -x "$ref" ]; then
+        mkdir -p "$ROOT/out/watch"
+        cp "$S2" "$ref.tmp.$$" && mv "$ref.tmp.$$" "$ref" || exit 1
+    fi
+    SOBER_SELF_KEY=$key exec "$ref" watch "$1"
+}
+
+sub=$1
+shift
+case "$sub" in
+    build) cmd_build "$@" ;;
+    check) cmd_check "$@" ;;
+    test) cmd_test "$@"; exit $? ;;
+    watch) cmd_watch "$@" ;;
+    # sober run <entry> [--] [<args>…]: build して走らせる（子の終了コードを透過。実行ファイルは置き場に鍵で残り、同じ鍵なら build を飛ばす —
+    # 鍵の材料のコンパイラの鍵 = stage2 の .key）
+    run)
+        [ $# -ge 1 ] || { echo "sober: 'run' requires an entry" >&2; exit 1; }
+        entry=$1; shift
+        [ "${1:-}" = -- ] && shift
+        exe=$(SOBER_SELF_KEY=$(cat "$(dirname "$S2")/.key" 2>/dev/null) "$S2" run --exe "$entry") || exit 1
+        exec "$exe" "$@" ;;
+    lex|fmt) exec "$S2" "$sub" "$@" ;;
+    parse)
+        case "${1:-}" in
+            --loader-json) exec "$S2" parse "$@" ;;
+            --ast-json) exec "$S2" parse "$@" ;;
+            *) echo "sober: parse takes --ast-json <file> or --loader-json <entry>" >&2; exit 1 ;;
+        esac ;;
+    iface) cmd_iface "$@" ;;
+    help|--help|-h) "$S2"; exit 0 ;;
+    *) echo "sober: unknown subcommand '$sub'" >&2; exit 1 ;;
+esac

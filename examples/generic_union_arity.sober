@@ -1,0 +1,16 @@
+package main
+
+// 負例（language.md 25 節）: ジェネリック union の variant の型引数の個数は宣言の型パラメータの数ちょうど
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+func main() {
+    x := Some[int, bool]{v: 3}
+    println(switch x {
+    case Some{v}: v
+    default: 0
+    })
+}

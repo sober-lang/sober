@@ -1,0 +1,9 @@
+package lib
+
+type pt struct {
+    x int
+}
+
+func X(p pt) int {
+    return p.x
+}

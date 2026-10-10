@@ -1,0 +1,2 @@
+sober: desugar error at examples/byte_arith.sober:6:15 (TypeMismatch)
+exit=1

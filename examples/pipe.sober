@@ -1,0 +1,21 @@
+package main
+
+type User struct {
+    id int
+    age int
+}
+
+func adults(users []User) []int {
+    return users |> filter(u => u.age >= 18) |> pluck(u => u.id) |> collect
+}
+
+func main() {
+    total := adults(load()) |> fold(0, (acc, id) => acc + id)
+    by := (a, b) => a < b
+    sorted := adults(load()) |> sortBy(by)
+    twice := x => {
+        y := x * 2
+        y
+    }
+    println(total, sorted, twice(3))
+}

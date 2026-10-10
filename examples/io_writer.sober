@@ -1,0 +1,22 @@
+package main
+
+import "std/io"
+
+// io の書きバッファ（息継ぎ ②）: ゼロ値は標準出力へ・64 KiB をまたいで書き出す・Flush で残りを出す・println と混ぜても出る順は呼んだ順
+func main() int {
+    mut w := io.Writer{}
+    io.WriteString(mut w, "head\n")
+    mut i := 0
+    while i < 70000 {
+        io.WriteByte(mut w, byte('a' + i % 26))
+        i += 1
+    }
+    io.WriteByte(mut w, '\n')
+    io.WriteBytes(mut w, bytes("tail\n"))
+    e := io.Flush(mut w)
+    println(e == nil)
+    io.WriteString(mut w, "again\n")
+    e2 := io.Flush(mut w)
+    println(e2 == nil)
+    return 0
+}

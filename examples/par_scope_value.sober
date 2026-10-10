@@ -1,0 +1,55 @@
+package main
+
+// 段 6 P3b 残穴レーン: scope の本体の値の境界コピー（region を持つ値 — 子の結果は scope の region へ写るので、その値を scope の値に
+// すると scope の region を指す）。出口で親の最内へ写さないと、同じ深度で開き直した region が上書きする（修理前は全部ゴミ）
+
+import "std/par"
+import "std/strings"
+
+func main() {
+    mut out := mut []string{}
+    mut i := 0
+    while i < 4 {
+        k := i
+        a, e1 := par.Scope((s) => {
+            h := par.Spawn(s, () => "v" + strings.FormatInt(k) + "-xxxxxxxx")
+            par.Join(h)
+        })
+        mut j := 0
+        n, e2 := par.Scope((s) => {
+            mut ys := mut []string{}
+            while j < 30 {
+                ys = append(ys, "Q" + strings.FormatInt(j))
+                j += 1
+            }
+            len(ys)
+        })
+        if e1 == nil && e2 == nil && n == 30 {
+            out = append(out, a)
+        }
+        i += 1
+    }
+    // slice の値（中身ごと写る）
+    c := i
+    xs, e3 := par.Scope((s) => {
+        h := par.Spawn(s, () => []string{"p", "q" + strings.FormatInt(c)})
+        par.Join(h)
+    })
+    _, e4 := par.Scope((s) => {
+        mut zs := mut []string{}
+        mut q := 0
+        while q < 20 {
+            zs = append(zs, "ZZZZZZZZZZ")
+            q += 1
+        }
+        len(zs)
+    })
+    mut q := 0
+    while q < len(out) {
+        println(out[q])
+        q += 1
+    }
+    if e3 == nil && e4 == nil {
+        println(xs[0] + xs[1])
+    }
+}

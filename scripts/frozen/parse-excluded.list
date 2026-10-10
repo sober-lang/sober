@@ -1,0 +1,8 @@
+# 凍結コーパス（主役交代 R39 — 2026-09-28 の時点）: selfhost_parse の拒否側（Zig の cst_to_ast が拒否するソース — 旧 testdata/astjson/EXCLUDED.txt の写し）。以後 regen しない
+examples/annot.sober	error: Unsupported at tok 24 (rule annotation): annotation
+examples/bind.sober	error: Unsupported at tok 3 (rule bind_decl): top-level declaration kind
+examples/scope.sober	error: Unsupported at tok 33 (rule scope_expr): primary expression kind
+examples/struct.sober	error: Unsupported at tok 44 (rule type): type other than struct, union, error, or a function type
+testdata/loader_neg/embed_func/app/main.sober	error: Unsupported at tok 3 (rule annotation): @embed on a declaration other than a const
+testdata/loader_neg/noinline_args/app/main.sober	error: Unsupported at tok 3 (rule annotation): annotation
+testdata/loader_neg/noinline_type/app/main.sober	error: Unsupported at tok 3 (rule annotation): @noinline on a declaration other than a function

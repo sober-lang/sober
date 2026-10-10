@@ -1,0 +1,10 @@
+package main
+
+// 負例（language.md 32 節）: named scalar の算術は無い — int(r) で下地へ戻して書く
+
+type NodeRef int
+
+func main() {
+    r := NodeRef(1)
+    println(int(r + 1))
+}

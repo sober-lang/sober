@@ -1,0 +1,8 @@
+package main
+
+// 負例（parse）: 関数型の仮引数は名前を全部付けるか全部付けないか（Go と同じ）
+type Fetch func(url int, int) int
+
+func main() {
+    println(1)
+}

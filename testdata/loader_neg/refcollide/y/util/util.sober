@@ -1,0 +1,5 @@
+package util
+
+func F() int {
+    return 2
+}

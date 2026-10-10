@@ -1,0 +1,11 @@
+testdata/io/hello.txt: 17 bytes, first line = hello, io
+testdata/io/missing.txt: not found
+testdata/io: errno 21
+out/io_basic.tmp: written
+read back 10000 bytes, sum 1094920
+out/io_basic_bad.tmp: written
+out/io_basic_bad.tmp: invalid utf-8 at 2
+out/io_basic_empty.tmp: written
+out/io_basic_empty.tmp: 0 bytes, first line = 
+/proc/version: denied
+out/no/such/dir.tmp: not found

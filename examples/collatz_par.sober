@@ -1,0 +1,42 @@
+package main
+
+import "std/iter"
+import "std/par"
+
+type TooLarge error {
+    n int
+}
+
+// Collatz steps (expression-oriented: if has a value)
+func steps(n int) (int, error?) {
+    if n > 1000000000 {
+        return 0, TooLarge{n: n}
+    }
+    mut x := n
+    mut k := 0
+    while x != 1 {
+        x = if x % 2 == 0 { x / 2 } else { 3 * x + 1 }
+        k += 1
+    }
+    return k, nil
+}
+
+func main() int {
+    mut ns := mut []int{}
+    for i <- iter.Range(1, 1000001) {
+        ns = append(ns, i)
+    }
+    // a parallel Map — the output is the same for any number of workers
+    ks, err := par.Map(freeze(ns), (n) => steps(n) catch -1)
+    if err != nil {
+        return 1
+    }
+    mut best := 0
+    for k <- ks {
+        if k > best {
+            best = k
+        }
+    }
+    println("longest: ${best}")
+    return 0
+}

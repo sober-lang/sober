@@ -1,0 +1,808 @@
+package lower
+
+// ループの中のメモリの積算のレジスタ昇格（nbody のレジスタ昇格便 — .pair/report-386 3 節・report-388）: B2（cfgCleanFunc の末尾）。ループ不変の
+// 語の番地 L（基底 B・添字の形 c·X + D）について、ループの中のメモリ操作が全部 L そのものか L と重ならない（添字の算術で言える）なら、
+// 1 語のスロットに付け替えて前置きで読み込み・正常の出口で書き戻し、その場で mem2reg が SSA にする。範囲外を読み書きしないよう前置き・出口は
+// 範囲の判定で守る。panic の出口では書き戻さない（死んだ task のメモリは誰も観測しない — mut は spawn に捕獲できない）。
+// 重ならない判定（v1 — ナビ裁定 2026-10-08）: ①同じ X・同じ c で D が違う ②X が昇格するループの頭の帰納変数（入り = Y + k〔k ≥ 1〕・
+// 後ろの辺 = X + 1・`lt X, U`〔U は定数〕の真の側）・Y は非負の定数から +1 で増える帰納変数 → c·(X − Y) + ΔD が 0 を跨がず巡回しない
+// 諦める形: 呼び出し・syscall・region の op・バイトの読み書き・基底の違う番地・番地の形が分からない読み書き
+
+import "std/iter"
+
+// promoteFunc は関数 f のループに昇格を掛ける（先に安い走査で対象を絞る — 支配木を組むのは利用者のループがあって同じ番地の load と store がある関数だけ）
+func promoteFunc(st mut St, f FnRef) {
+    if !prCheap(mut st, f) {
+        return
+    }
+    saved := st.fn
+    st.fn = f
+    mut round := 0
+    while round < 4 && prRound(mut st, f) {
+        round += 1
+    }
+    if round > 0 {
+        recountPreds(mut st, f)
+        // その場で SSA に（スロットの値の仮引数）+ 死んだ仮引数の除去（m2r は刈らない SSA — 外側のループの頭に運ぶだけの仮引数が残る）
+        m2rFunc(mut st, f)
+        prClean(mut st, f)
+    }
+    st.fn = saved
+}
+
+// prClean は死んだ仮引数を消して後始末する（cfgclean ① と同じ — 作業域は cfgCleanFunc と同じ形）
+func prClean(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        b = irBlkNext(mut st, b)
+    }
+    if ccDeadParams(mut st, f, nv, nb, mut blk) {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optBlocks(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// prCheap は利用者のループの頭があり、同じ番地の値を load と store の両方が使う関数か（作業域を作らない走査）
+func prCheap(st mut St, f FnRef) bool {
+    mut loop := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 && !loop {
+        if irBlkLoop(mut st, b) & 1 == 1 {
+            loop = true
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if !loop {
+        return false
+    }
+    // 呼び出し（落ちる rt.panic を除く）・syscall を含む関数は対象外（昇格はループの中に呼び出しの無い形だけ — 関数ごとの近似で先に弾く。
+    // 自己 build では前検査を通った関数の CFG の仕事が +0.29 G だった — report-388）
+    mut sa := mut []int{}
+    mut la := mut []int{}
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if (op == OpCall && irInsFn(mut st, i) != st.rtPanic && irInsFn(mut st, i) != st.rtPanicMem) || op == OpCallI || op == OpSyscall {
+                return false
+            }
+            if op == OpStore {
+                sa = append(sa, irInsA(mut st, i))
+            } else if op == OpLoad {
+                la = append(la, irInsA(mut st, i))
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if len(sa) > 256 {
+        return false
+    }
+    for k <- iter.Range(0, len(sa)) {
+        for q <- iter.Range(0, len(la)) {
+            if la[q] == sa[k] {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// PrW は 1 回の作業域: 値 → 定義の命令（-1 = 命令でない）・値 → 定義のブロック番号（関数の仮引数は入口 = 0）・ブロック → ループの印
+type PrW struct {
+    def mut []int
+    dblk mut []int
+    inl mut []int
+    mark int
+}
+
+// prRound はループを 1 つ昇格したら true（CFG が変わるので呼び手が組み直して次へ）
+func prRound(st mut St, f FnRef) bool {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut pw := PrW{def: mut []int{}, dblk: mut []int{}, inl: mut []int{}, mark: 0}
+    xFill(mut pw.def, nv, -1)
+    xFill(mut pw.dblk, nv, 0)
+    xFill(mut pw.inl, nb, 0)
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut p := irBlkPHead(mut st, b)
+            while p >= 0 {
+                pw.dblk[hget(mut st, p + 1)] = bi
+                p = hget(mut st, p)
+            }
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 {
+                    pw.def[r] = int(ins)
+                    pw.dblk[r] = bi
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    // 内側のループから（逆後順の後ろから — 内側の頭は外側の頭より後に来る）
+    mut k := w.nrpo
+    while k > 0 {
+        k -= 1
+        h := w.rpo[k]
+        pre := loopPre(mut st, mut w, h)
+        if pre >= 0 {
+            pw.mark += 1
+            loopMark(mut w, mut pw.inl, pw.mark, h)
+            if prLoop(mut st, f, mut w, mut pw, h, pre) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// prIn は値 v がループ（印 pw.mark）の中で定義されているか
+func prIn(pw mut PrW, v int) bool {
+    return pw.inl[pw.dblk[v]] == pw.mark
+}
+
+// prLoop は頭 h（前置きの番号 pre）のループを判定し、昇格できる番地があれば書き換えて true
+func prLoop(st mut St, f FnRef, w mut m2rW, pw mut PrW, h int, pre int) bool {
+    // ループの中のメモリ操作（基底 B の語の番地だけ — 命令・添字・欄・store か・ブロック）
+    mut mIns := mut []int{}
+    mut mIdx := mut []int{}
+    mut mK := mut []int{}
+    mut mSt := mut []int{}
+    mut mBlk := mut []int{}
+    mut base := -1
+    mut slotSt := mut []int{}
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad || op == OpStore {
+                p := irInsA(mut st, ins)
+                d := pw.def[p]
+                if d >= 0 && irInsOp(mut st, InsRef(d)) == OpSlotaddr {
+                    // スロット: 基底のメモリと重ならない（書いたスロットはヘッダの判定で見る）
+                    if op == OpStore {
+                        slotSt = append(slotSt, irInsA(mut st, InsRef(d)))
+                    }
+                } else {
+                    if d < 0 || irInsOp(mut st, InsRef(d)) != OpGepW || (op == OpLoad && irInsC(mut st, ins) != 0) {
+                        return false
+                    }
+                    b := irInsA(mut st, InsRef(d))
+                    if base == -1 {
+                        base = b
+                    } else if base != b {
+                        return false
+                    }
+                    mIns = append(mIns, int(ins))
+                    mIdx = append(mIdx, irInsB(mut st, InsRef(d)))
+                    mK = append(mK, irInsB(mut st, ins))
+                    mSt = append(mSt, if op == OpStore { 1 } else { 0 })
+                    mBlk = append(mBlk, bi)
+                }
+            } else if !prQuiet(op) {
+                return false
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    if base == -1 || prIn(mut pw, base) {
+        return false
+    }
+    // B = itop(load P[0])・LEN = load P[1]（ループの外で前置きを支配する点）
+    bd := pw.def[base]
+    if bd < 0 || irInsOp(mut st, InsRef(bd)) != OpItop {
+        return false
+    }
+    hd := pw.def[irInsA(mut st, InsRef(bd))]
+    if hd < 0 || irInsOp(mut st, InsRef(hd)) != OpLoad || irInsB(mut st, InsRef(hd)) != 0 {
+        return false
+    }
+    hp := irInsA(mut st, InsRef(hd))
+    // ヘッダがスロットで、ループの中でそのスロットへ書くなら諦める（B / LEN がループの中で変わりうる）
+    hpd := pw.def[hp]
+    if hpd >= 0 && irInsOp(mut st, InsRef(hpd)) == OpSlotaddr {
+        for q <- iter.Range(0, len(slotSt)) {
+            if slotSt[q] == irInsA(mut st, InsRef(hpd)) {
+                return false
+            }
+        }
+    }
+    ln := prLen(mut st, mut w, mut pw, hp, pre)
+    if ln < 0 {
+        return false
+    }
+    // 操作ごとの語の添字のアフィン形 (X, c, D)（D = d + 欄）。X がループの外（か定数）なら不変 — 添字の値そのものはループの中で
+    // 計算されていてよい（B1 の LICM が定数ごと出し切れない形 — 前置きで形から作り直す）
+    nm := len(mIns)
+    mut fX := mut []int{}
+    mut fC := mut []int{}
+    mut fD := mut []int{}
+    for a <- iter.Range(0, nm) {
+        x, c, d := prAff(mut st, mut pw, mIdx[a])
+        fX = append(fX, x)
+        fC = append(fC, c)
+        fD = append(fD, d + mK[a])
+    }
+    // 群（不変の形）を集め、形の違う全部の操作と重ならないか見る
+    mut gX := mut []int{}
+    mut gC := mut []int{}
+    mut gD := mut []int{}
+    mut gRw := mut []int{}
+    mut gOk := mut []int{}
+    for a <- iter.Range(0, nm) {
+        if fX[a] >= 0 && prIn(mut pw, fX[a]) {
+            continue
+        }
+        mut seen := -1
+        for g <- iter.Range(0, len(gX)) {
+            if gX[g] == fX[a] && gC[g] == fC[a] && gD[g] == fD[a] {
+                seen = g
+            }
+        }
+        if seen >= 0 {
+            if mSt[a] == 1 {
+                gRw[seen] = 1
+            }
+            continue
+        }
+        mut ok := true
+        for m <- iter.Range(0, nm) {
+            if ok && !(fX[m] == fX[a] && fC[m] == fC[a] && fD[m] == fD[a]) {
+                if !prDisjoint(mut st, mut w, mut pw, h, mBlk[m], fX[a], fC[a], fD[a], fX[m], fC[m], fD[m]) {
+                    ok = false
+                }
+            }
+        }
+        gX = append(gX, fX[a])
+        gC = append(gC, fC[a])
+        gD = append(gD, fD[a])
+        gRw = append(gRw, mSt[a])
+        gOk = append(gOk, if ok { 1 } else { 0 })
+    }
+    // 重なりうる群は落とす
+    mut hX := mut []int{}
+    mut hC := mut []int{}
+    mut hD := mut []int{}
+    mut hRw := mut []int{}
+    mut x0 := -2
+    mut c0 := 0
+    for g <- iter.Range(0, len(gX)) {
+        if gOk[g] == 1 && x0 == -2 {
+            x0 = gX[g]
+            c0 = gC[g]
+        }
+        // 前置きの速い道は 1 つの基準 c·X から欄のオフセットで読む — 同じ (X, c) の群だけ（D の幅は小さい — prAff の上限）
+        if gOk[g] == 1 && gX[g] == x0 && gC[g] == c0 {
+            hX = append(hX, gX[g])
+            hC = append(hC, gC[g])
+            hD = append(hD, gD[g])
+            hRw = append(hRw, gRw[g])
+        }
+    }
+    if len(hX) == 0 {
+        return false
+    }
+    prRewrite(mut st, f, mut w, mut pw, h, pre, base, ln, freeze(hX), freeze(hC), freeze(hD), freeze(hRw), freeze(mIns), freeze(fX), freeze(fC), freeze(fD))
+    return true
+}
+
+// prQuiet はメモリを書かず、ループの中にあっても昇格を妨げない命令か（load / store は呼び手が見る）
+func prQuiet(op int) bool {
+    return op == OpConst || op == OpBin || op == OpCmp || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr ||
+        op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth
+}
+
+// prLen は前置き pre を支配する `load hp[1]`（B と同じヘッダの長さ）の値（無ければ -1）
+func prLen(st mut St, w mut m2rW, pw mut PrW, hp int, pre int) int {
+    for bi <- iter.Range(0, w.nb) {
+        if w.blk[bi] < 0 || w.rpoIx[bi] < 0 || !licmDominates(mut w, bi, pre) {
+            continue
+        }
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpLoad && irInsA(mut st, ins) == hp && irInsB(mut st, ins) == 1 && irInsC(mut st, ins) == 0 {
+                return irInsRes(mut st, ins)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    return -1
+}
+
+const PR_C = 1048576          // 係数・倍率の上限（2^20）
+const PR_D = 1099511627776    // 定数の項の上限（2^40）
+
+// prConst は値 v が定数ならその値と true
+func prConst(st mut St, pw mut PrW, v int) (int, bool) {
+    d := pw.def[v]
+    if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
+        return irInsA(mut st, InsRef(d)), true
+    }
+    return 0, false
+}
+
+// prAff は添字 v のアフィン形 (X, c, d)（v = c·X + d。X = -1 は定数 d）— 畳めない値はそれ自身を X に (v, 1, 0)。
+// 再帰でなくループで剥く（v = mul · 残り + add の形を保つ — 再帰は mut 引数の関数の展開の閉包で検査に掛からない: report-388）
+func prAff(st mut St, pw mut PrW, v0 int) (int, int, int) {
+    mut v := v0
+    mut mul := 1
+    mut add := 0
+    mut steps := 0
+    while steps < 8 {
+        steps += 1
+        d := pw.def[v]
+        if d < 0 {
+            return v, mul, add
+        }
+        op := irInsOp(mut st, InsRef(d))
+        if op == OpConst {
+            n := irInsA(mut st, InsRef(d))
+            if n > PR_D || n < -PR_D || add + mul * n > PR_D || add + mul * n < -PR_D {
+                return v, mul, add
+            }
+            return -1, 0, add + mul * n
+        }
+        if op != OpBin {
+            return v, mul, add
+        }
+        k := irInsA(mut st, InsRef(d))
+        a := irInsB(mut st, InsRef(d))
+        b := irInsC(mut st, InsRef(d))
+        cb, okb := prConst(mut st, mut pw, b)
+        ca, oka := prConst(mut st, mut pw, a)
+        if (k == BAdd || k == BSub) && okb && cb <= PR_D && cb >= -PR_D {
+            n := add + mul * (if k == BAdd { cb } else { -cb })
+            if n > PR_D || n < -PR_D {
+                return v, mul, add
+            }
+            add = n
+            v = a
+        } else if k == BAdd && oka && ca <= PR_D && ca >= -PR_D {
+            n := add + mul * ca
+            if n > PR_D || n < -PR_D {
+                return v, mul, add
+            }
+            add = n
+            v = b
+        } else if (k == BMul && (okb || oka)) || (k == BShl && okb && cb >= 0 && cb <= 20) {
+            m := if k == BShl { 1 << cb } else if okb { cb } else { ca }
+            if m <= 0 || m > PR_C || mul > PR_C / m {
+                return v, mul, add
+            }
+            mul = mul * m
+            v = if k == BMul && !okb { b } else { a }
+        } else {
+            return v, mul, add
+        }
+    }
+    return v, mul, add
+}
+
+// prDisjoint は番地の語の添字 ca·xa + da（不変の L）と cm·xm + dm（ブロック mb の操作）が重ならないと言えるか
+func prDisjoint(st mut St, w mut m2rW, pw mut PrW, h int, mb int, xa int, ca int, da int, xm int, cm int, dm int) bool {
+    if xa == xm && ca == cm {
+        return da != dm
+    }
+    if ca != cm || ca <= 0 {
+        return false
+    }
+    // xm − xa ∈ [lo, hi]（xm が h の帰納変数で、入りが xa + k）
+    lo, hi, ok := prGap(mut st, mut w, mut pw, h, mb, xm, xa)
+    if !ok {
+        return false
+    }
+    dd := dm - da
+    // 差 = ca·(xm − xa) + dd: 区間 [ca·lo + dd, ca·hi + dd] が 0 を含まず、巡回しない大きさ（2^62 未満）
+    if hi > 1073741824 {
+        return false
+    }
+    mn := ca * lo + dd
+    mx := ca * hi + dd
+    return mn > 0 && mx < 4611686018427387904
+}
+
+// prGap は x − y の区間（x は頭 h の帰納変数〔入り = y + k・後ろの辺 = x + 1・`lt x, U` の真の側〕・y は非負の下限を持つ帰納変数）。
+// 操作のブロック mb が `lt x, U` の真の側に支配されていること（そこで x ≤ U − 1）
+func prGap(st mut St, w mut m2rW, pw mut PrW, h int, mb int, x int, y int) (int, int, bool) {
+    if pw.def[x] >= 0 || pw.dblk[x] != h || prIn(mut pw, y) {
+        return 0, 0, false
+    }
+    hb := BlkRef(w.blk[h])
+    if irBlkTerm(mut st, hb) != TmCondbr {
+        return 0, 0, false
+    }
+    cd := pw.def[irBlkX1(mut st, hb)]
+    if cd < 0 || irInsOp(mut st, InsRef(cd)) != OpCmp || irInsA(mut st, InsRef(cd)) != CLt || irInsB(mut st, InsRef(cd)) != x {
+        return 0, 0, false
+    }
+    u, oku := prConst(mut st, mut pw, irInsC(mut st, InsRef(cd)))
+    t := irBlkId(mut st, irCondThen(mut st, hb))
+    if !oku || irCondThen(mut st, hb) == irCondElse(mut st, hb) || w.pcnt[t + 1] - w.pcnt[t] != 1 || !licmDominates(mut w, t, mb) {
+        return 0, 0, false
+    }
+    // h の仮引数での x の位置
+    mut ix := 0
+    mut p := irBlkPHead(mut st, hb)
+    while p >= 0 && hget(mut st, p + 1) != x {
+        ix += 1
+        p = hget(mut st, p)
+    }
+    // 入る辺: 外からは y + k（k ≥ 1）・中からは x + 1（足し算は真の側の中 — x < U ≤ 最大値なので溢れない）
+    mut kmin := -1
+    for j <- iter.Range(w.pcnt[h], w.pcnt[h + 1]) {
+        pb := w.preds[j]
+        pr := BlkRef(w.blk[pb])
+        if irBlkTerm(mut st, pr) != TmBr {
+            return 0, 0, false
+        }
+        args := irBlkX2(mut st, pr)
+        if ix >= xLen(mut st, args) {
+            return 0, 0, false
+        }
+        a := xAt(mut st, args, ix)
+        ax, ac, ad := prAff(mut st, mut pw, a)
+        if pw.inl[pb] == pw.mark {
+            if ax != x || ac != 1 || ad != 1 || !licmDominates(mut w, t, pw.dblk[a]) {
+                return 0, 0, false
+            }
+        } else {
+            if ax != y || ac != 1 || ad < 1 {
+                return 0, 0, false
+            }
+            if kmin < 0 || ad < kmin {
+                kmin = ad
+            }
+        }
+    }
+    if kmin < 0 {
+        return 0, 0, false
+    }
+    ylo, oky := prLow(mut st, mut w, mut pw, y)
+    if !oky || u - 1 - ylo < kmin {
+        return 0, 0, false
+    }
+    return kmin, u - 1 - ylo, true
+}
+
+// prLow は帰納変数 y の下限（入りが全部「非負の定数」か「y + 1〔`lt y, _` の真の側の中〕」— 下限 = 定数の最小）
+func prLow(st mut St, w mut m2rW, pw mut PrW, y int) (int, bool) {
+    if pw.def[y] >= 0 {
+        return 0, false
+    }
+    hy := pw.dblk[y]
+    hb := BlkRef(w.blk[hy])
+    mut ix := 0
+    mut p := irBlkPHead(mut st, hb)
+    while p >= 0 && hget(mut st, p + 1) != y {
+        ix += 1
+        p = hget(mut st, p)
+    }
+    if p < 0 {
+        return 0, false
+    }
+    mut lo := -1
+    for j <- iter.Range(w.pcnt[hy], w.pcnt[hy + 1]) {
+        pr := BlkRef(w.blk[w.preds[j]])
+        if irBlkTerm(mut st, pr) != TmBr {
+            return 0, false
+        }
+        args := irBlkX2(mut st, pr)
+        if ix >= xLen(mut st, args) {
+            return 0, false
+        }
+        a := xAt(mut st, args, ix)
+        c, okc := prConst(mut st, mut pw, a)
+        if okc {
+            if c < 0 {
+                return 0, false
+            }
+            if lo < 0 || c < lo {
+                lo = c
+            }
+        } else {
+            ax, ac, ad := prAff(mut st, mut pw, a)
+            if ax != y || ac != 1 || ad != 1 || !bceGuarded(mut st, mut w, mut pw.def, pw.dblk[a], y) {
+                return 0, false
+            }
+        }
+    }
+    return lo, lo >= 0
+}
+
+// prRewrite は群（形 c·X + D — 全群で X と c は同じ）ごとにスロットを作り、前置きで読み込み・ループの中を付け替え・正常の出口で書き戻す。
+// 前置き・出口の費用を小さく保つ（nbody の j ループは平均 2 反復）: 基準 m = c·X から D の最小・最大の 2 本の判定で「全部範囲内」なら
+// 速い道（gep 1 本 + 欄のオフセットつきの load / store）・そうでなければ群ごとに守った遅い道。ループの中に残る群と同じ形の境界検査
+// （`uge 添字, LEN`）は前置きの旗 any で判定し、any が立つときだけ本物の検査をやり直す（不変の添字を 7 本ループの間生かさない）
+func prRewrite(st mut St, f FnRef, w mut m2rW, pw mut PrW, h int, pre int, base int, ln int, gX []int, gC []int, gD []int, gRw []int, mIns []int, fX []int, fC []int, fD []int) {
+    ng := len(gX)
+    nv0 := len(pw.def)
+    pb := BlkRef(w.blk[pre])
+    hb := BlkRef(w.blk[h])
+    pargs := irBlkX2(mut st, pb)
+    x := gX[0]
+    c := gC[0]
+    mut dmin := gD[0]
+    mut dmax := gD[0]
+    for g <- iter.Range(0, ng) {
+        if gD[g] < dmin {
+            dmin = gD[g]
+        }
+        if gD[g] > dmax {
+            dmax = gD[g]
+        }
+    }
+    mut sa := mut []int{}
+    for g <- iter.Range(0, ng) {
+        sroaNewSlot(mut st, f)
+        s := newValueIn(mut st, f)
+        linkInst(mut st, pb, mkInst(mut st, s, OpSlotaddr, irFnNSlot(mut st, f) - 1, 0, 0))
+        sa = append(sa, s)
+    }
+    z := newValueIn(mut st, f)
+    linkInst(mut st, pb, mkInst(mut st, z, OpConst, 0, 0, 0))
+    for g <- iter.Range(0, ng) {
+        linkInst(mut st, pb, mkInst(mut st, -1, OpStore, sa[g], 0, z))
+    }
+    m := prBase(mut st, f, pb, x, c)
+    any := prAny(mut st, f, pb, m, dmin, dmax, ln)
+    fast := newBlock(mut st)
+    slow := newBlock(mut st)
+    join := newBlock(mut st)
+    prCond(mut st, pb, any, slow, fast)
+    prFast(mut st, f, fast, base, m, gD, freeze(sa), true)
+    prBr(mut st, fast, join, -1)
+    prBr(mut st, prSlow(mut st, f, slow, base, ln, gX, gC, gD, freeze(sa), true), join, -1)
+    prBr(mut st, join, hb, pargs)
+    // ループの中: 群の読み書きをスロットへ・群と同じ形の境界検査を any の判定へ
+    for m2 <- iter.Range(0, len(mIns)) {
+        for g <- iter.Range(0, ng) {
+            if fX[m2] == gX[g] && fC[m2] == gC[g] && fD[m2] == gD[g] {
+                irSetInsA(mut st, InsRef(mIns[m2]), sa[g])
+                irSetInsB(mut st, InsRef(mIns[m2]), 0)
+            }
+        }
+    }
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        b := BlkRef(w.blk[bi])
+        if irBlkTerm(mut st, b) != TmCondbr || !emptyArgs(mut st, irBlkX3(mut st, b)) || !emptyArgs(mut st, irBlkX5(mut st, b)) {
+            continue
+        }
+        cv := irBlkX1(mut st, b)
+        if cv >= nv0 || pw.def[cv] < 0 {
+            continue
+        }
+        cd := InsRef(pw.def[cv])
+        if irInsOp(mut st, cd) != OpCmp || irInsA(mut st, cd) != CUge || irInsC(mut st, cd) != ln {
+            continue
+        }
+        vx, vc, vd := prAff(mut st, mut pw, irInsB(mut st, cd))
+        mut hit := -1
+        for g <- iter.Range(0, ng) {
+            if vx == gX[g] && vc == gC[g] && vd == gD[g] {
+                hit = g
+            }
+        }
+        if hit < 0 {
+            continue
+        }
+        bad := irCondThen(mut st, b)
+        good := irCondElse(mut st, b)
+        sc := newBlock(mut st)
+        prCond(mut st, b, any, sc, good)
+        one := prMatAll(mut st, f, sc, gX[hit:hit + 1], gC[hit:hit + 1], gD[hit:hit + 1])
+        c2 := newValueIn(mut st, f)
+        linkInst(mut st, sc, mkInst(mut st, c2, OpCmp, CUge, one[0], ln))
+        prCond(mut st, sc, c2, bad, good)
+    }
+    // 正常の出口の辺で書き戻す（書きのある群だけ・行き先が exit〔panic の点〕の辺は飛ばす）
+    mut wD := mut []int{}
+    mut wS := mut []int{}
+    mut wX := mut []int{}
+    mut wC := mut []int{}
+    for g <- iter.Range(0, ng) {
+        if gRw[g] == 1 {
+            wX = append(wX, gX[g])
+            wC = append(wC, gC[g])
+            wD = append(wD, gD[g])
+            wS = append(wS, sa[g])
+        }
+    }
+    if len(wD) == 0 {
+        return
+    }
+    for bi <- iter.Range(0, w.nb) {
+        if pw.inl[bi] != pw.mark || w.blk[bi] < 0 {
+            continue
+        }
+        b := BlkRef(w.blk[bi])
+        t := irBlkTerm(mut st, b)
+        for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+            to := if t == TmBr { irBrTo(mut st, b) } else if e == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+            if irBlkId(mut st, to) >= w.nb || pw.inl[irBlkId(mut st, to)] == pw.mark || irBlkTerm(mut st, to) == TmExit {
+                continue
+            }
+            args := if t == TmBr { irBlkX2(mut st, b) } else if e == 0 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+            first := newBlock(mut st)
+            wfast := newBlock(mut st)
+            wslow := newBlock(mut st)
+            wjoin := newBlock(mut st)
+            mw := prBase(mut st, f, first, x, c)
+            anyw := prAny(mut st, f, first, mw, dmin, dmax, ln)
+            prCond(mut st, first, anyw, wslow, wfast)
+            prFast(mut st, f, wfast, base, mw, freeze(wD), freeze(wS), false)
+            prBr(mut st, wfast, wjoin, -1)
+            prBr(mut st, prSlow(mut st, f, wslow, base, ln, freeze(wX), freeze(wC), freeze(wD), freeze(wS), false), wjoin, -1)
+            prBr(mut st, wjoin, to, args)
+            if t == TmBr {
+                irSetBlkX1(mut st, b, int(first))
+                irSetBlkX2(mut st, b, -1)
+            } else if e == 0 {
+                irSetCondThen(mut st, b, first)
+                irSetBlkX3(mut st, b, -1)
+            } else {
+                irSetCondElse(mut st, b, first)
+                irSetBlkX5(mut st, b, -1)
+            }
+        }
+    }
+}
+
+// prBase は b の末尾で基準 c·X の値を作る（X = -1 は 0）
+func prBase(st mut St, f FnRef, b BlkRef, x int, c int) int {
+    if x >= 0 && c == 1 {
+        return x
+    }
+    k := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, k, OpConst, if x < 0 { 0 } else { c }, 0, 0))
+    if x < 0 {
+        return k
+    }
+    m := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, m, OpBin, BMul, x, k))
+    return m
+}
+
+// prAny は b の末尾で「m + D のどれかが範囲外」の旗（m + dmin と m + dmax の 2 本の uge の or — 両端が [0, LEN) なら間も入る: 差は小さく巡回しない）
+func prAny(st mut St, f FnRef, b BlkRef, m int, dmin int, dmax int, ln int) int {
+    lo := prAdd(mut st, f, b, m, dmin)
+    c1 := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, c1, OpCmp, CUge, lo, ln))
+    if dmin == dmax {
+        return c1
+    }
+    hi := prAdd(mut st, f, b, m, dmax)
+    c2 := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, c2, OpCmp, CUge, hi, ln))
+    o := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, o, OpBin, BOr, c1, c2))
+    return o
+}
+
+// prAdd は b の末尾で m + d（d = 0 は m のまま）
+func prAdd(st mut St, f FnRef, b BlkRef, m int, d int) int {
+    if d == 0 {
+        return m
+    }
+    k := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, k, OpConst, d, 0, 0))
+    a := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, a, OpBin, BAdd, m, k))
+    return a
+}
+
+// prMatAll は b の末尾で群ごとの語の添字 c·X + D の値を作る（c·X は (X, c) ごとに 1 回）
+func prMatAll(st mut St, f FnRef, b BlkRef, gX []int, gC []int, gD []int) []int {
+    mut mX := mut []int{}
+    mut mC := mut []int{}
+    mut mV := mut []int{}
+    mut out := mut []int{}
+    for g <- iter.Range(0, len(gX)) {
+        x := gX[g]
+        mut m := -1
+        if x >= 0 {
+            for q <- iter.Range(0, len(mX)) {
+                if mX[q] == x && mC[q] == gC[g] {
+                    m = mV[q]
+                }
+            }
+            if m < 0 {
+                m = x
+                if gC[g] != 1 {
+                    k := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, k, OpConst, gC[g], 0, 0))
+                    m = newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, m, OpBin, BMul, x, k))
+                }
+                mX = append(mX, x)
+                mC = append(mC, gC[g])
+                mV = append(mV, m)
+            }
+        }
+        k := newValueIn(mut st, f)
+        linkInst(mut st, b, mkInst(mut st, k, OpConst, gD[g], 0, 0))
+        if x < 0 {
+            out = append(out, k)
+        } else if gD[g] == 0 {
+            out = append(out, m)
+        } else {
+            a := newValueIn(mut st, f)
+            linkInst(mut st, b, mkInst(mut st, a, OpBin, BAdd, m, k))
+            out = append(out, a)
+        }
+    }
+    return freeze(out)
+}
+
+// prCond はブロック b の終端を `condbr c, 真 → th, 偽 → el`（引数なし）に
+func prCond(st mut St, b BlkRef, c int, th BlkRef, el BlkRef) {
+    irSetBlkTerm(mut st, b, TmCondbr)
+    irSetBlkX1(mut st, b, c)
+    irSetBlkX2(mut st, b, int(th))
+    irSetBlkX3(mut st, b, -1)
+    irSetBlkX4(mut st, b, int(el))
+    irSetBlkX5(mut st, b, -1)
+}
+
+// prBr はブロック b の終端を `br to(args)` に
+func prBr(st mut St, b BlkRef, to BlkRef, args int) {
+    irSetBlkTerm(mut st, b, TmBr)
+    irSetBlkX1(mut st, b, int(to))
+    irSetBlkX2(mut st, b, args)
+    irSetBlkX3(mut st, b, -1)
+    irSetBlkX4(mut st, b, -1)
+    irSetBlkX5(mut st, b, -1)
+}
+
+// prFast は速い道の写し（gep B, m 1 本 + 欄のオフセット D ごとの load / store — toSlot は B → スロット）を b の末尾へ
+func prFast(st mut St, f FnRef, b BlkRef, base int, m int, gD []int, sl []int, toSlot bool) {
+    a := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, a, OpGepW, base, m, 0))
+    for g <- iter.Range(0, len(gD)) {
+        v := newValueIn(mut st, f)
+        linkInst(mut st, b, if toSlot { mkInst(mut st, v, OpLoad, a, gD[g], 0) } else { mkInst(mut st, v, OpLoad, sl[g], 0, 0) })
+        linkInst(mut st, b, if toSlot { mkInst(mut st, -1, OpStore, sl[g], 0, v) } else { mkInst(mut st, -1, OpStore, a, gD[g], v) })
+    }
+}
+
+// prSlow は遅い道の鎖（群ごとに [condbr (uge 添字, LEN), 次, 写す → 次]）を b から組み、最後のブロックを返す（toSlot = B → スロットの読み込み・
+// そうでなければスロット → B の書き戻し）
+func prSlow(st mut St, f FnRef, b BlkRef, base int, ln int, gX []int, gC []int, gD []int, sl []int, toSlot bool) BlkRef {
+    gI := prMatAll(mut st, f, b, gX, gC, gD)
+    mut at := b
+    for g <- iter.Range(0, len(gX)) {
+        cc := newValueIn(mut st, f)
+        linkInst(mut st, at, mkInst(mut st, cc, OpCmp, CUge, gI[g], ln))
+        cp := newBlock(mut st)
+        nx := newBlock(mut st)
+        prCond(mut st, at, cc, nx, cp)
+        a := newValueIn(mut st, f)
+        linkInst(mut st, cp, mkInst(mut st, a, OpGepW, base, gI[g], 0))
+        v := newValueIn(mut st, f)
+        linkInst(mut st, cp, mkInst(mut st, v, OpLoad, if toSlot { a } else { sl[g] }, 0, 0))
+        linkInst(mut st, cp, mkInst(mut st, -1, OpStore, if toSlot { sl[g] } else { a }, 0, v))
+        prBr(mut st, cp, nx, -1)
+        at = nx
+    }
+    return at
+}

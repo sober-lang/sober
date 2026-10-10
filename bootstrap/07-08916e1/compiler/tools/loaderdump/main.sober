@@ -1,0 +1,35 @@
+package main
+
+// loaderdump: 標準入力の Manifest から Program を load し、loader 黄金の JSON（Zig 版 `sober parse --loader-json` と同じバイト列）を
+// 標準出力に書く。selfhost の loader 差分オラクル（scripts/selfhost_load.sh）の Sober 側。
+// Manifest の形（argv と readdir が無いための代役 — 仮決め R8-2 / R8-3）: 1 行目 = entry、2 行目 = std の置き場（`std/…` を読む根）、
+// 3 行目以降 = ルート（cwd）相対のファイル一覧（ファイル名順。`std/…` は std の置き場の相対）
+
+import "std/io"
+import "loader"
+import "diag"
+
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("loaderdump: cannot read /dev/stdin")
+        return
+    }
+    m, valid := loader.ManifestOf(src)
+    if !valid {
+        println("loaderdump: bad manifest")
+        return
+    }
+    p, lerr := loader.Load(m)
+    if lerr != nil {
+        werr := io.WriteFile("/dev/stdout", bytes(diag.Format(lerr, "")))
+        println("")
+        println("loaderdump: load error")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", loader.Json(p))
+    if werr != nil {
+        println("loaderdump: cannot write /dev/stdout")
+    }
+}

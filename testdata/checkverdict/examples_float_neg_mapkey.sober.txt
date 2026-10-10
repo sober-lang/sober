@@ -1,0 +1,2 @@
+sober: desugar error at examples/float_neg_mapkey.sober:6:18 (TypeMismatch)
+exit=1

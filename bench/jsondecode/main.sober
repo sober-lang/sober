@@ -1,0 +1,65 @@
+package main
+
+// イディオム双子 jsondecode（scripts/idiomgap.sh — RVO の的の基準値）の (b) 素直な形: json.Decode[Rec] が作って返す（shape[T] の写しの関数 —
+// 戻りの struct と tags の slice は呼び手の region へ写る）。(a) = mutout/main.sober（呼び手が置き場を mut で渡す回避術の形）
+
+import "std/conv"
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/os"
+
+type Pos struct {
+    x int
+    y int
+}
+
+type Rec struct {
+    id int
+    name string
+    active bool
+    score float
+    pos Pos
+    tags []string
+    note string?
+}
+
+func main() {
+    args, aerr := os.Args()
+    if aerr != nil || len(args) < 2 {
+        return
+    }
+    b, rerr := io.ReadFile(args[1])
+    if rerr != nil {
+        return
+    }
+    d, err := json.Parse(b)
+    if err != nil {
+        println("parse error")
+        return
+    }
+    xs := switch json.At(d, json.Root(d)) {
+    case json.Arr{items}: items
+    default: []int{}
+    }
+    mut ids := 0
+    mut active := 0
+    mut score := 0.0
+    mut xy := 0
+    mut tags := 0
+    mut notes := 0
+    for i <- iter.Range(0, len(xs)) {
+        r, derr := json.Decode[Rec](d, xs[i])
+        if derr != nil {
+            println("decode error at", i)
+            return
+        }
+        ids += r.id
+        active += if r.active { 1 } else { 0 }
+        score = score + r.score
+        xy += r.pos.x + r.pos.y
+        tags += len(r.tags)
+        notes += if r.note != nil { 1 } else { 0 }
+    }
+    println(len(xs), ids, active, conv.FormatFixed(score, 2), xy, tags, notes)
+}

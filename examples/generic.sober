@@ -1,0 +1,27 @@
+package main
+
+// ジェネリクス（V3-3 の 3b）: 単一の定義を 2 つの型で呼ぶ。型引数は値引数から推論する
+type Pair[T] struct {
+    a, b T
+}
+
+func first[T](p Pair[T]) T {
+    return p.a
+}
+
+func pick[T](c bool, x T, y T) T {
+    return if c { x } else { y }
+}
+
+func swap[T](p Pair[T]) Pair[T] {
+    return Pair[T]{p.b, p.a}
+}
+
+func main() {
+    pi := Pair[int]{1, 2}
+    pb := Pair[bool]{true, false}
+    println(first(pi), first(pb))
+    println(pick(false, 10, 20), pick(true, true, false), pick[int](true, 3, 4))
+    q := swap(pi)
+    println(q.a, q.b, first(swap(pb)))
+}

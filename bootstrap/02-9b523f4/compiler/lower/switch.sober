@@ -1,0 +1,337 @@
+package lower
+
+// switch（src/lower_switch.zig の写し）: subject の評価、case の順次照合（定数・束縛・`_`・型パターン）、腕の合流
+
+import "desugar"
+import "ast"
+
+// hasTopName は package pk のトップレベル名（const・関数・型・union の variant）か
+func hasTopName(st mut St, pk int, name int) bool {
+    if findConIn(mut st, pk, name, 0, hget(mut st, name)) >= 0 || findFnIn(mut st, pk, name, 0, hget(mut st, name)) >= 0 {
+        return true
+    }
+    mut f := pkgFlo(mut st, pk)
+    while f < pkgFhi(mut st, pk) {
+        tys := hget(mut st, fileRoot(mut st, f) + NC)
+        mut i := 0
+        while i < llen(mut st, tys) {
+            td := lat(mut st, tys, i)
+            if strEq(mut st, hget(mut st, td + NA), name) {
+                return true
+            }
+            body := hget(mut st, td + NC)
+            if kindOf(mut st, body) == ast.BUnion {
+                vs := hget(mut st, body + NA)
+                mut j := 0
+                while j < llen(mut st, vs) {
+                    if strEq(mut st, hget(mut st, lat(mut st, vs, j) + NA), name) {
+                        return true
+                    }
+                    j += 1
+                }
+            }
+            i += 1
+        }
+        f += 1
+    }
+    return false
+}
+
+// isBindingPattern はパターン位置の裸の識別子が束縛か
+func isBindingPattern(st mut St, name int) bool {
+    return lookup(mut st, name) < 0 && !strIs(mut st, name, "true") && !strIs(mut st, name, "false") && !hasTopName(mut st, st.curPkg, name)
+}
+
+func hasWildcard(st mut St, alts int) bool {
+    mut i := 0
+    while i < llen(mut st, alts) {
+        a := lat(mut st, alts, i)
+        if kindOf(mut st, a) == ast.EIdent && strIs(mut st, hget(mut st, a + NA), "_") {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// isBindAlt はパターンの選択が裸の束縛 1 つか
+func isBindAlt(st mut St, alts int) bool {
+    if llen(mut st, alts) != 1 {
+        return false
+    }
+    a := lat(mut st, alts, 0)
+    return kindOf(mut st, a) == ast.EIdent && isBindingPattern(mut st, hget(mut st, a + NA))
+}
+
+// baseAt は名前（文字列）の最後の要素の先頭（"ref.N" の N — Zig の baseName は最初の '.' の後）
+func baseAt(st mut St, name int) int {
+    d := dotAt(mut st, name)
+    return if d >= 0 { d + 1 } else { 0 }
+}
+
+// 束縛の鎖 = [head, tail]、項 = [next, name, 型, 値]
+func bindAdd(st mut St, bs int, name int, t int, v int) {
+    en := rec4(mut st, -1, name, t, v)
+    if hget(mut st, bs + 1) < 0 {
+        hset(mut st, bs, en)
+    } else {
+        hset(mut st, hget(mut st, bs + 1), en)
+    }
+    hset(mut st, bs + 1, en)
+}
+
+// switchExpr は subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
+func switchExpr(st mut St, sw int) (int, int, error?) {
+    tok := tokOf(mut st, sw)
+    subjects := hget(mut st, sw + NA)
+    cases := hget(mut st, sw + NB)
+    dflt := hget(mut st, sw + NC)
+    ns := llen(mut st, subjects)
+    mut subj := 0
+    if ns == 1 {
+        subj = evalMulti(mut st, lat(mut st, subjects, 0))?
+    } else {
+        subj = listN(mut st, ns * 2)
+        hset(mut st, subj, ns)
+        mut i := 0
+        while i < ns {
+            t, v := expr(mut st, lat(mut st, subjects, i))?
+            if isTag(mut st, t, TNever) {
+                return t, 0, nil
+            }
+            hset(mut st, subj + 1 + i * 2, t)
+            hset(mut st, subj + 2 + i * 2, v)
+            i += 1
+        }
+    }
+    if subj < 0 {
+        return tNever(mut st), 0, nil
+    }
+    nsub := hget(mut st, subj)
+    if ns > 0 && nsub == 0 {
+        return 0, 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    nc := llen(mut st, cases)
+    ends := endsNew(mut st, nc + 1)
+    mut t := -1
+    mut ci := 0
+    while ci < nc {
+        c := lat(mut st, cases, ci)
+        pats := hget(mut st, c + NA)
+        np := llen(mut st, pats)
+        wantp := if nsub > 1 { nsub } else { 1 }
+        if np != wantp {
+            return 0, 0, LowerFail{k: KMismatch, tok: tokOf(mut st, c)}
+        }
+        bs := rec4(mut st, -1, -1, 0, 0)
+        nx := newBlock(mut st)
+        mut i := 0
+        while i < np && cur(mut st) >= 0 {
+            if nsub == 0 {
+                matchPattern(mut st, lat(mut st, pats, i), -1, 0, nx, bs)?
+            } else {
+                matchPattern(mut st, lat(mut st, pats, i), hget(mut st, subj + 1 + i * 2), hget(mut st, subj + 2 + i * 2), nx, bs)?
+            }
+            i += 1
+        }
+        pushScope(mut st)
+        mut b := hget(mut st, bs)
+        while b >= 0 {
+            declareNew(mut st, hget(mut st, b + 1), LVal, hget(mut st, b + 2), hget(mut st, b + 3), tokOf(mut st, c))?
+            b = hget(mut st, b)
+        }
+        vt, vv := armTail(mut st, hget(mut st, hget(mut st, c + NB) + NA))?
+        popScope(mut st)
+        t = joinType(mut st, t, if cur(mut st) < 0 { tNever(mut st) } else { vt }, tokOf(mut st, c))?
+        if cur(mut st) >= 0 {
+            endsAdd(mut st, ends, cur(mut st), vt, vv)
+        }
+        setCur(mut st, nx)
+        ci += 1
+    }
+    if ns <= 1 && dflt < 0 {
+        mut cty := tNone(mut st)
+        if nsub == 1 {
+            cty = if isErr(mut st, hget(mut st, subj + 1)) { hget(mut st, errsInfo(mut st) + SI_TY) } else { hget(mut st, subj + 1) }
+        }
+        checkCover(mut st, sw, cty, t)?
+    }
+    if dflt >= 0 {
+        vt, vv := armValue(mut st, hget(mut st, dflt + NA))?
+        t = joinType(mut st, t, if cur(mut st) < 0 { tNever(mut st) } else { vt }, tok)?
+        if cur(mut st) >= 0 {
+            endsAdd(mut st, ends, cur(mut st), vt, vv)
+        }
+    } else {
+        rt := if t < 0 { tNone(mut st) } else { t }
+        mut zv := 0
+        if isScalar(mut st, rt) {
+            zv = iconst(mut st, 0)
+        } else if isAggregate(mut st, rt) {
+            zv = newAgg(mut st, rt)
+        }
+        endsAdd(mut st, ends, cur(mut st), rt, zv)
+    }
+    jt, jv := joinArms(mut st, ends, if t < 0 { tNone(mut st) } else { t })
+    return jt, jv, nil
+}
+
+// checkCover は網羅の規則（check に揃える）: union の型パターンの switch は全 variant を覆うか `_` / default を持つ。
+// それ以外で default も全域の case（`_`・束縛）も無い switch は、値が unit でなければ拒否
+func checkCover(st mut St, sw int, sty int, t int) error? {
+    cases := hget(mut st, sw + NB)
+    mut ci := 0
+    while ci < llen(mut st, cases) {
+        pats := hget(mut st, lat(mut st, cases, ci) + NA)
+        mut i := 0
+        while i < llen(mut st, pats) {
+            p := lat(mut st, pats, i)
+            if kindOf(mut st, p) == ast.KPConst && (hasWildcard(mut st, hget(mut st, p + NA)) || isBindAlt(mut st, hget(mut st, p + NA))) {
+                return nil
+            }
+            i += 1
+        }
+        ci += 1
+    }
+    if isTag(mut st, sty, TUnion) {
+        vs := hget(mut st, hget(mut st, sty + 1) + SI_FIELDS)
+        mut typed := false
+        mut vi := 0
+        while vi < llen(mut st, vs) {
+            vn := hget(mut st, lat(mut st, vs, vi))
+            mut hit := false
+            ci = 0
+            while ci < llen(mut st, cases) {
+                pats := hget(mut st, lat(mut st, cases, ci) + NA)
+                if llen(mut st, pats) == 1 && kindOf(mut st, lat(mut st, pats, 0)) == ast.KPType {
+                    typed = true
+                    pn := hget(mut st, lat(mut st, pats, 0) + NB)
+                    if strEqPart(mut st, vn, pn, baseAt(mut st, pn), hget(mut st, pn)) {
+                        hit = true
+                    }
+                }
+                ci += 1
+            }
+            if typed && !hit {
+                return LowerFail{k: KMismatch, tok: tokOf(mut st, sw)}
+            }
+            vi += 1
+        }
+        if typed {
+            return nil
+        }
+    }
+    if t < 0 {
+        return nil
+    }
+    if !isTag(mut st, t, TNone) && !isTag(mut st, t, TNever) {
+        return LowerFail{k: KMismatch, tok: tokOf(mut st, sw)}
+    }
+    return nil
+}
+
+// matchPattern はパターン 1 つを値 (sty, sv) に照合する（sty = -1 は subject 無し switch の bool 条件）。
+// 不一致なら nx へ跳び、一致なら続きのブロックを cur にする
+func matchPattern(st mut St, p int, sty int, sv int, nx int, bs int) error? {
+    if kindOf(mut st, p) == ast.KPConst {
+        alts := hget(mut st, p + NA)
+        if hasWildcard(mut st, alts) {
+            return nil
+        }
+        // 裸の識別子でスコープに無い名前は値の束縛。既存の名前は比較
+        if isBindAlt(mut st, alts) {
+            if sty < 0 {
+                return LowerFail{k: KUndefined, tok: tokOf(mut st, lat(mut st, alts, 0))}
+            }
+            bindAdd(mut st, bs, hget(mut st, lat(mut st, alts, 0) + NA), sty, sv)
+            return nil
+        }
+        if sty >= 0 && !isScalar(mut st, sty) {
+            return LowerFail{k: KMismatch, tok: tokOf(mut st, lat(mut st, alts, 0))}
+        }
+        ok := newBlock(mut st)
+        n := llen(mut st, alts)
+        mut i := 0
+        while i < n {
+            alt := lat(mut st, alts, i)
+            at, av := expr(mut st, alt)?
+            if isTag(mut st, at, TNever) {
+                return nil
+            }
+            mut c := av
+            if sty >= 0 {
+                if !tEql(mut st, at, sty) {
+                    return LowerFail{k: KMismatch, tok: tokOf(mut st, alt)}
+                }
+                c = cmp(mut st, CEq, sv, av)
+            } else {
+                want(mut st, at, tBool(mut st), tokOf(mut st, alt))?
+            }
+            miss := if i + 1 < n { newBlock(mut st) } else { nx }
+            condbr(mut st, c, ok, -1, miss, -1)
+            setCur(mut st, miss)
+            i += 1
+        }
+        setCur(mut st, ok)
+        return nil
+    }
+    // 型パターン `[x] Variant{f, g: p}`: タグを比べ、フィールドを束縛か下位パターンで照合する
+    tok := tokOf(mut st, p)
+    if sty < 0 {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    // error: 先頭ラベル（語 0 から — 同じアドレス）で照合し、`cause` は鎖から作る 1 つ内側の error?
+    is_err := isErr(mut st, sty)
+    sty0 := sty
+    ut := if is_err { hget(mut st, errsInfo(mut st) + SI_TY) } else { sty0 }
+    if !isTag(mut st, ut, TUnion) {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    vn := hget(mut st, p + NB)
+    vs := hget(mut st, hget(mut st, ut + 1) + SI_FIELDS)
+    mut vr := -1
+    mut i := 0
+    while i < llen(mut st, vs) {
+        if strEqPart(mut st, hget(mut st, lat(mut st, vs, i)), vn, baseAt(mut st, vn), hget(mut st, vn)) {
+            vr = lat(mut st, vs, i)
+        }
+        i += 1
+    }
+    if vr < 0 {
+        return LowerFail{k: KMismatch, tok: tok}
+    }
+    ok := newBlock(mut st)
+    tagv := load(mut st, sv, 0)
+    condbr(mut st, cmp(mut st, CEq, tagv, iconst(mut st, hget(mut st, vr + 1))), ok, -1, nx, -1)
+    setCur(mut st, ok)
+    if hget(mut st, p + NA) >= 0 {
+        bindAdd(mut st, bs, hget(mut st, p + NA), sty0, sv)
+    }
+    fps := hget(mut st, p + NC)
+    i = 0
+    while i < llen(mut st, fps) {
+        fp := lat(mut st, fps, i)
+        f := findField(mut st, hget(mut st, vr + 2), hget(mut st, fp + NA))
+        mut ft := 0
+        mut fv := 0
+        if f >= 0 {
+            ft = hget(mut st, f + 1)
+            fv = loadVal(mut st, sv, 1 + hget(mut st, f + 2), ft)
+        } else if is_err && strIs(mut st, hget(mut st, fp + NA), "cause") {
+            ft = optOf(mut st, sty0)
+            fv = causeOf(mut st, sv, sty0, ut)
+        } else {
+            return LowerFail{k: KUndefined, tok: tokOf(mut st, fp)}
+        }
+        if hget(mut st, fp + NB) >= 0 {
+            matchPattern(mut st, hget(mut st, fp + NB), ft, fv, nx, bs)?
+            if cur(mut st) < 0 {
+                return nil
+            }
+        } else if !strIs(mut st, hget(mut st, fp + NA), "_") {
+            bindAdd(mut st, bs, hget(mut st, fp + NA), ft, fv)
+        }
+        i += 1
+    }
+    return nil
+}

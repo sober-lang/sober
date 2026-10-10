@@ -1,0 +1,364 @@
+package main
+
+// tyvecdump（Lean → Sober 抽出器 E1b — scripts/extract.sh が組み立てて走らせる）: 標準入力の tyvec（sober-gen --tyvec — 1 行
+// `<関数名> <引数…> = <Lean の結果>`）の各行を、型の関数（抽出物 ty_gen.sober か移行期の手書きの写し ty.sober）で計算し直して
+// `<関数名> <引数…> = <この実装の結果>` を標準出力へ書く。照合（Lean の結果とのバイト比較）は extract.sh の仕事。
+//
+// このファイルは単独では建たない: extract.sh が「この道具 + 型の表現（ty.sober の先頭 — 型の記録と tg / tA / mk）+ 型の関数
+// （生成物か手書き）+ 口の違いを吸う shim（readAsB）」を 1 つの package main に連結して建てる
+
+import "std/io"
+import "std/iter"
+import "std/table"
+
+// 型の表と List Ty の置き場（ty.sober の関数は st.types / st.h を読む — compiler/checker の S の部分集合）
+type S struct {
+    h table.Table[int]
+    types table.Table[Ty]
+}
+
+// 読み口（入力のバイト列と位置）
+type P struct {
+    b []byte
+    i int
+}
+
+func skipSp(p mut P) {
+    while p.i < len(p.b) && p.b[p.i] == ' ' {
+        p.i += 1
+    }
+}
+
+// tag は次の字句の 1 文字目（字句は空白区切り）
+func tag(p mut P) byte {
+    skipSp(mut p)
+    c := p.b[p.i]
+    while p.i < len(p.b) && p.b[p.i] != ' ' && p.b[p.i] != '\n' {
+        p.i += 1
+    }
+    return c
+}
+
+func num(p mut P) int {
+    skipSp(mut p)
+    mut neg := false
+    if p.b[p.i] == '-' {
+        neg = true
+        p.i += 1
+    }
+    mut n := 0
+    while p.i < len(p.b) && p.b[p.i] >= '0' && p.b[p.i] <= '9' {
+        n = n * 10 + (int(p.b[p.i]) - 48)
+        p.i += 1
+    }
+    return if neg { 0 - n } else { n }
+}
+
+// ty は型 1 つ（前順のトークン）を読んで記録を作る
+func ty(st mut S, p mut P) int {
+    c := tag(mut p)
+    switch c {
+    case 'i':
+        return mk(mut st, TInt, 0, 0, 0)
+    case 'v':
+        return mk(mut st, TVar, num(mut p), 0, 0)
+    case 'b':
+        return mk(mut st, TBool, 0, 0, 0)
+    case 'y':
+        return mk(mut st, TByte, 0, 0, 0)
+    case 'f':
+        return mk(mut st, TF64, 0, 0, 0)
+    case 'u':
+        return mk(mut st, TUnit, 0, 0, 0)
+    case 'o':
+        return mk(mut st, TOpt, ty(mut st, mut p), 0, 0)
+    case 'U':
+        l := ty(mut st, mut p)
+        return mk(mut st, TUn, l, ty(mut st, mut p), 0)
+    case 'P':
+        l := ty(mut st, mut p)
+        return mk(mut st, TPr, l, ty(mut st, mut p), 0)
+    case 'F':
+        l := ty(mut st, mut p)
+        return mk(mut st, TFn, l, ty(mut st, mut p), 0)
+    case 'C':
+        rc := num(mut p)
+        return mk(mut st, TChan, rc, ty(mut st, mut p), 0)
+    }
+    m := num(mut p)
+    r := num(mut p)
+    t := ty(mut st, mut p)
+    k := if c == 'R' { TRef } else if c == 'S' { TSl } else if c == 'W' { TOwn } else { TMp }
+    return mk(mut st, k, m, r, t)
+}
+
+// optTy は Option Ty（N / J T — 番地、-1 = none）
+func optTy(st mut S, p mut P) int {
+    c := tag(mut p)
+    return if c == 'N' { 0 - 1 } else { ty(mut st, mut p) }
+}
+
+// list は List Ty（L n T… → st.h の [n, t…]、空は -1）
+func list(st mut S, p mut P) int {
+    _ = tag(mut p)
+    n := num(mut p)
+    if n == 0 {
+        return 0 - 1
+    }
+    mut ts := mut []int{}
+    mut i := 0
+    while i < n {
+        ts = append(ts, ty(mut st, mut p))
+        i += 1
+    }
+    at := table.Len(mut st.h)
+    table.Push(mut st.h, n)
+    mut j := 0
+    while j < len(ts) {
+        table.Push(mut st.h, ts[j])
+        j += 1
+    }
+    return at
+}
+
+func put(out mut []byte, s string) {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+}
+
+func putNum(out mut []byte, n int) {
+    if n < 0 {
+        out = append(out, '-')
+        putNum(mut out, 0 - n)
+        return
+    }
+    if n >= 10 {
+        putNum(mut out, n / 10)
+    }
+    out = append(out, byte(48 + n % 10))
+}
+
+func putB(out mut []byte, b bool) {
+    out = append(out, if b { byte(49) } else { byte(48) })
+}
+
+// putTy は型を前順のトークンで印字する（Lean の tyTok と同じ形）
+func putTy(st mut S, out mut []byte, t int) {
+    k := tg(mut st, t)
+    switch k {
+    case TInt:
+        put(mut out, "i")
+        return
+    case TVar:
+        put(mut out, "v ")
+        putNum(mut out, tA(mut st, t))
+        return
+    case TBool:
+        put(mut out, "b")
+        return
+    case TByte:
+        put(mut out, "y")
+        return
+    case TF64:
+        put(mut out, "f")
+        return
+    case TUnit:
+        put(mut out, "u")
+        return
+    case TOpt:
+        put(mut out, "o ")
+        putTy(mut st, mut out, tA(mut st, t))
+        return
+    case TUn | TPr | TFn:
+        put(mut out, if k == TUn { "U " } else if k == TPr { "P " } else { "F " })
+        putTy(mut st, mut out, tA(mut st, t))
+        put(mut out, " ")
+        putTy(mut st, mut out, tB(mut st, t))
+        return
+    case TChan:
+        put(mut out, "C ")
+        putNum(mut out, tA(mut st, t))
+        put(mut out, " ")
+        putTy(mut st, mut out, tB(mut st, t))
+        return
+    }
+    put(mut out, if k == TRef { "R " } else if k == TSl { "S " } else if k == TOwn { "W " } else { "M " })
+    putNum(mut out, tA(mut st, t))
+    put(mut out, " ")
+    putNum(mut out, tB(mut st, t))
+    put(mut out, " ")
+    putTy(mut st, mut out, tC(mut st, t))
+}
+
+func putOptTy(st mut S, out mut []byte, t int) {
+    if t < 0 {
+        put(mut out, "N")
+        return
+    }
+    put(mut out, "J ")
+    putTy(mut st, mut out, t)
+}
+
+// name は関数名の字句（行頭から空白まで）
+func name(p mut P) string {
+    s := p.i
+    while p.i < len(p.b) && p.b[p.i] != ' ' {
+        p.i += 1
+    }
+    return string(p.b[s:p.i]) catch ""
+}
+
+// line は 1 行を計算し直して out へ（入力の「= 」の手前はそのまま写す）
+func line(st mut S, p mut P, out mut []byte) {
+    s := p.i
+    fname := name(mut p)
+    // 引数の読み・計算（結果を印字する前に「= 」の手前までを写す）
+    mut rb := false
+    mut rn := 0
+    mut kind := 0 // 0 = Bool・1 = Nat / Option Nat・2 = Ty・3 = Option Ty
+    if fname == "regionsBelow" {
+        d := num(mut p)
+        rb = regionsBelow(mut st, d, ty(mut st, mut p))
+    } else if fname == "mutFree" {
+        rb = mutFree(mut st, ty(mut st, mut p))
+    } else if fname == "keyOk" {
+        rb = keyOk(mut st, ty(mut st, mut p))
+    } else if fname == "keyCompat" {
+        a := ty(mut st, mut p)
+        rb = keyCompat(mut st, a, ty(mut st, mut p))
+    } else if fname == "shiftR" {
+        r := num(mut p)
+        rn = shiftR(mut st, r, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "relocR" {
+        r := num(mut p)
+        rn = relocR(mut st, r, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "rmap" {
+        a := num(mut p)
+        b := num(mut p)
+        rn = rmap(a, b, num(mut p))
+        kind = 1
+    } else if fname == "renR" {
+        a := num(mut p)
+        b := num(mut p)
+        rn = renR(mut st, a, b, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "relocA" {
+        a := num(mut p)
+        b := num(mut p)
+        rn = relocA(mut st, a, b, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "clampR" {
+        k := num(mut p)
+        rn = clampR(mut st, k, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "noClamp" {
+        k := num(mut p)
+        rb = noClamp(mut st, k, ty(mut st, mut p))
+    } else if fname == "annFree" {
+        rb = annFree(mut st, ty(mut st, mut p))
+    } else if fname == "isMut0" {
+        rb = isMut0(mut st, ty(mut st, mut p))
+    } else if fname == "mutTop" {
+        rn = mutTop(mut st, ty(mut st, mut p))
+        kind = 1
+    } else if fname == "anchorOf" {
+        a := ty(mut st, mut p)
+        rn = anchorOf(mut st, a, ty(mut st, mut p))
+        kind = 1
+    } else if fname == "sub" {
+        a := ty(mut st, mut p)
+        rb = sub(mut st, a, ty(mut st, mut p))
+    } else if fname == "chanFree" {
+        rb = chanFree(mut st, ty(mut st, mut p))
+    } else if fname == "jumpRel" {
+        b := num(mut p)
+        k := num(mut p)
+        a := ty(mut st, mut p)
+        rb = jumpRel(mut st, b, k, a, ty(mut st, mut p))
+    } else if fname == "readAs" {
+        m := num(mut p) != 0
+        ot := optTy(mut st, mut p)
+        rn = readAsB(mut st, m, ot, ty(mut st, mut p))
+        kind = 3
+    } else if fname == "tyArgOk" {
+        rb = tyArgOk(mut st, ty(mut st, mut p))
+    } else if fname == "tyArgsOk" {
+        rb = tyArgsOk(mut st, list(mut st, mut p))
+    } else if fname == "tsubst" {
+        ts := list(mut st, mut p)
+        rn = tsubst(mut st, ts, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "tvarsBelow" {
+        n := num(mut p)
+        rb = tvarsBelow(mut st, n, ty(mut st, mut p))
+    } else if fname == "paramOk" {
+        rb = paramOk(mut st, ty(mut st, mut p))
+    } else if fname == "retOk" {
+        rb = retOk(mut st, ty(mut st, mut p))
+    } else if fname == "givable" {
+        r := num(mut p)
+        rb = givable(mut st, r, ty(mut st, mut p))
+    } else if fname == "rehome" {
+        d := num(mut p)
+        rn = rehome(mut st, d, ty(mut st, mut p))
+        kind = 2
+    } else if fname == "tyEq" {
+        a := ty(mut st, mut p)
+        rb = tyEq(mut st, a, ty(mut st, mut p))
+    } else {
+        kind = 9
+    }
+    // 「 = 」の位置まで進めて、そこまでを写す
+    while p.i < len(p.b) && p.b[p.i] != '=' {
+        p.i += 1
+    }
+    mut j := s
+    while j < p.i {
+        out = append(out, p.b[j])
+        j += 1
+    }
+    put(mut out, "= ")
+    switch kind {
+    case 0:
+        putB(mut out, rb)
+    case 1:
+        putNum(mut out, rn)
+    case 2:
+        putTy(mut st, mut out, rn)
+    case 3:
+        putOptTy(mut st, mut out, rn)
+    default:
+        put(mut out, "?unknown")
+    }
+    out = append(out, '\n')
+    while p.i < len(p.b) && p.b[p.i] != '\n' {
+        p.i += 1
+    }
+    p.i += 1
+}
+
+func main() int {
+    src, err := io.ReadStdin()
+    if err != nil {
+        _ = io.WriteStderr(bytes("tyvecdump: cannot read stdin\n"))
+        return 1
+    }
+    mut st := S{h: table.Table[int]{}, types: table.Table[Ty]{}}
+    mut p := P{b: src, i: 0}
+    mut out := mut []byte{}
+    while p.i < len(p.b) {
+        line(mut st, mut p, mut out)
+    }
+    werr := io.WriteStdout(freeze(out))
+    if werr != nil {
+        _ = io.WriteStderr(bytes("tyvecdump: cannot write stdout\n"))
+        return 1
+    }
+    return 0
+}

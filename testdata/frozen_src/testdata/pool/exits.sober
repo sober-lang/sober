@@ -1,0 +1,61 @@
+package main
+
+import "std/pool"
+
+// acquire の後の全出口（早期 return・break・continue・? の伝播）で返却が走る — 終了時の未返却は 0
+type Buf struct {
+    n int
+}
+
+type Bad error { at int }
+
+func early(p mut pool.Pool[Buf], k int) int {
+    h := pool.Acquire(mut p, Buf{n: k})
+    defer pool.Release(mut p, h)
+    if k > 2 {
+        return k
+    }
+    return 0
+}
+
+func loop(p mut pool.Pool[Buf]) int {
+    mut i := 0
+    mut s := 0
+    while i < 10 {
+        h := pool.Acquire(mut p, Buf{n: i})
+        defer pool.Release(mut p, h)
+        i += 1
+        if i == 3 {
+            continue
+        }
+        if i == 7 {
+            break
+        }
+        s += i
+    }
+    return s
+}
+
+func check(k int) (int, error?) {
+    if k == 4 {
+        return 0, Bad{at: k}
+    }
+    return k, nil
+}
+
+func prop(p mut pool.Pool[Buf], k int) (int, error?) {
+    h := pool.Acquire(mut p, Buf{n: k})
+    defer pool.Release(mut p, h)
+    v := check(k)?
+    return v * 2, nil
+}
+
+func main() {
+    mut p := pool.Pool[Buf]{}
+    println(early(mut p, 1), early(mut p, 5))
+    println(loop(mut p))
+    a, e1 := prop(mut p, 3)
+    b, e2 := prop(mut p, 4)
+    println(a, e1 == nil, b, e2 == nil)
+    println("outstanding", pool.Outstanding(mut p))
+}

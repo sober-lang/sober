@@ -1,0 +1,19 @@
+package main
+
+// 回帰例（language.md 32 節）: package 修飾の型なしの const（`lib.Five`）は文脈の named に割り当てられる
+// （check は表層型検査器の表を読むようになって拒否しかけた・build は前から拒否していた — isUntypedConst が選択子を見ていなかった。C1 B3）
+
+import "testdata/constpkg/lib"
+
+type N int
+
+func main() {
+    mut n := N(1)
+    n = lib.Five
+    m := N(lib.Five)
+    if n == lib.Five && m == n {
+        println(int(n))
+    }
+    k := if n == m { lib.Five } else { n }
+    println(int(k))
+}

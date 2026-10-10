@@ -1,0 +1,11 @@
+package main
+
+// @embed は const 宣言にだけ付く
+@embed("testdata/embed/*.txt")
+func f() int {
+    return 1
+}
+
+func main() {
+    println(f())
+}

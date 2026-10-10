@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_field.sober:7:7: a @layout field has a width type (u8, i8, u16le, u32be, …) or a fixed-length array [N] of one (N ≥ 1)
+exit=1

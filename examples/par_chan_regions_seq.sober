@@ -1,0 +1,34 @@
+package main
+
+// par_chan_regions の逐次の双子（seq ≡ par — scripts/seqpar.sh）
+
+func build(n int) []int {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i * 7)
+        i += 1
+    }
+    return freeze(xs)
+}
+
+func total(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() {
+    mut acc := 0
+    mut got := 0
+    mut k := 0
+    while k < 6 {
+        ys := build(k + 3)
+        got += total(ys)
+        acc += total(build(k + 10)) - total(ys)
+        k += 1
+    }
+    println(got * 1000 + acc)
+}

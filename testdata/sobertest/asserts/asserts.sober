@@ -1,0 +1,14 @@
+package asserts
+
+// power assert の題材（testdata/sobertest — scripts/sobertest.sh。T5）
+func Double(n int) int {
+    return n * 2
+}
+
+func Name(n int) string {
+    return if n == 1 { "one" } else { "many" }
+}
+
+func Even(n int) bool {
+    return n % 2 == 0
+}

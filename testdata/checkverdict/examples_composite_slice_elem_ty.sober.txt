@@ -1,0 +1,2 @@
+sober: desugar error at examples/composite_slice_elem_ty.sober:10:15 (FieldType): the value does not have the field's declared type
+exit=1

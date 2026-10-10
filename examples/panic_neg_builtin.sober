@@ -1,0 +1,9 @@
+package main
+
+// 負例: 組み込みのラベルの名前は宣言できない（language.md 27 節「panic ラベル」— loader の拒否）
+type Unreachable struct {
+    a int
+}
+
+func main() {
+}

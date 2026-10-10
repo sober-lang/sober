@@ -1,0 +1,409 @@
+package analyzer
+
+// analyzer 層（受理の定義に含む — DESIGN.md 層の線引き。language.md 30 節）: `sober check` が desugar の前に走らせ、build は走らせない。
+// 入力はローダの後の表層 AST（脱糖後は defer が出口ごとに展開され関数名も消えるので、照合はここでしかできない）。
+// 読みは desugar の公開の口（Init が立てる表 — 名前解決・関数表・ラベル表）。出力は指摘の列（1 件で止めない — Zig 版 src/analyzer.zig と同じ）。
+// 規則: pool.sober（acquire / release の局所照合 R-a — Zig 版の移植）・annot.sober（`@errors` の項の解決）。導出: errors.sober（今は影）
+
+import "ast"
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// Finding は指摘 1 件: 位置 at と本文 what（fix が差し込む行の提示を含む）
+type Finding struct {
+    at diag.Pos
+    what string
+}
+
+// Az は走査の状態（Init 済みの脱糖器の表・今の package・指摘の記録 [種類, 位置の節, 付帯の節]…・規則どおりの位置にある呼び出しの節 — 表（std/table — 成長しても動かない）。数は Acquire / Release の数なので列で足りる）
+type Az struct {
+    d desugar.S
+    pk int
+    out table.Table[int]
+    ok table.Table[int]
+    // error のラベル集合の導出（errors.sober）
+    nfn int
+    nerr int
+    sets table.Table[int]    // スロットの集合
+    rhead table.Table[int]   // スロットの読み手の鎖の頭（-1 = 無し）
+    rnode table.Table[int]   // 読み手の鎖の項 [関数, 次]
+    pbase table.Table[int]   // 関数の仮引数のスロットの基底
+    errfn table.Table[int]   // 関数の結果に error があるか（0 / 1）
+    ffield table.Table[int]  // error 型の欄 [名前, スロット]…
+    work table.Table[int]    // 作業の列
+    inq table.Table[int]     // 関数が作業の列にいるか
+    env table.Table[int]     // 今の関数の局所 [名前, 集合]…（envN 個が有効）
+    envN int
+    envChanged bool
+    cur int                  // 今歩いている関数
+    rec bool                 // 最後の 1 周（switch を記録する）
+    sw table.Table[int]      // error の switch の記録 [節, S, 覆った, default]…
+    unknown int              // 関数値の呼び出し（TOP に倒した数 — 最後の 1 周も含む延べ）
+    walks int                // 不動点までに本体を歩いた回数
+    declared table.Table[int] // 関数の @errors の集合（無し -1）— package をまたぐ呼び出しは導出でなくこれを読む（裁定 E2）
+    swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
+    swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
+    lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
+}
+
+
+// Run は Program p の全 package の全関数本体と const の式を照合して指摘を返す（空なら受理）
+func Run(p loader.Program) []Finding {
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
+        rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
+    desugar.Init(mut az.d, p)
+    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
+        az.pk = desugar.FilePkg(mut az.d, f)
+        root := desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f))
+        fs := desugar.ListRef(root.d)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
+            fd := desugar.NodeOf(mut az.d, nat(mut az, fs, i))
+            if fd.e != -1 {
+                stmtList(mut az, desugar.ListRef(desugar.NodeOf(mut az.d, desugar.NodeRef(fd.e)).a))
+            }
+        }
+        cs := desugar.ListRef(root.e)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+            expr(mut az, desugar.NodeRef(desugar.NodeOf(mut az.d, nat(mut az, cs, i)).b))
+        }
+    }
+    checkAnnots(mut az)
+    errInit(mut az)
+    errSolve(mut az)
+    checkErrors(mut az)
+    checkSwitches(mut az)
+    // 綴りはここで組む（走査の mut の関数の中で作った文字列を az に積むと、region の座標が呼び手の外へ出る）
+    mut fs := mut []Finding{}
+    for i <- iter.Range(0, table.Len(mut az.out) / 3) {
+        k := table.Get(mut az.out, i * 3)
+        at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
+        x := desugar.NodeRef(table.Get(mut az.out, i * 3 + 2))
+        if k == MSwGap || k == MSwDeadDefault {
+            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
+        } else if k == MSwDeadArm || k == MSwDeadCase {
+            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: armMessage(mut az, k, int(x))})
+        } else if k >= MErrMissing {
+            fs = append(fs, Finding{at: errPos(mut az, int(x)), what: errMessage(mut az, k, int(x))})
+        } else if k >= MAnnUnknown {
+            // 注釈の指摘: 位置は関数宣言のファイルの `@` の字句
+            pos := desugar.PosOf(mut az.d, at)
+            fs = append(fs, Finding{at: diag.Pos{file: pos.file, tok: errsTok(mut az, node(mut az, at))}, what: annMessage(mut az, k, at, int(x))})
+        } else {
+            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: poolMessage(mut az, k, x)})
+        }
+    }
+    return freeze(fs)
+}
+
+// ── 小道具 ──
+
+func nat(az mut Az, l desugar.ListRef, i int) desugar.NodeRef {
+    return desugar.NodeRef(desugar.LatI(mut az.d, l, i))
+}
+
+func node(az mut Az, n desugar.NodeRef) ast.Node {
+    return desugar.NodeOf(mut az.d, n)
+}
+
+func kind(az mut Az, n desugar.NodeRef) int {
+    return desugar.KindN(mut az.d, n)
+}
+
+// report は指摘を記録する（種類 k・位置の節 at・付帯の節 x — 本文は Run が組む）
+func report(az mut Az, k int, at desugar.NodeRef, x desugar.NodeRef) {
+    table.Push(mut az.out, k)
+    table.Push(mut az.out, int(at))
+    table.Push(mut az.out, int(x))
+}
+
+func markOk(az mut Az, n desugar.NodeRef) {
+    table.Push(mut az.ok, int(n))
+}
+
+func isOk(az mut Az, n desugar.NodeRef) bool {
+    for i <- iter.Range(0, table.Len(mut az.ok)) {
+        if table.Get(mut az.ok, i) == int(n) {
+            return true
+        }
+    }
+    return false
+}
+
+// str は文字列の参照の綴り（名前は ASCII — 不正なら "?"）
+func str(az mut Az, s desugar.StrRef) string {
+    n := desugar.Dat(mut az.d, int(s))
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(desugar.Dat(mut az.d, int(s) + 1 + i)))
+    }
+    r, err := string(freeze(b))
+    if err != nil {
+        return "?"
+    }
+    return r
+}
+
+// ── 走査（Zig 版 Analyzer.stmtList / stmt / expr と同じ順）──
+
+// stmtList は文の列: 先に束縛の Acquire を直後の文と照合し（pool.sober）、それから各文を歩く
+func stmtList(az mut Az, l desugar.ListRef) {
+    n := desugar.LenL(mut az.d, l)
+    for i <- iter.Range(0, n) {
+        s := nat(mut az, l, i)
+        if kind(mut az, s) == ast.SBind {
+            next := if i + 1 < n { nat(mut az, l, i + 1) } else { desugar.NodeRef(-1) }
+            acquireBind(mut az, s, next)
+        }
+    }
+    for i <- iter.Range(0, n) {
+        stmt(mut az, nat(mut az, l, i))
+    }
+}
+
+func exprs(az mut Az, l desugar.ListRef) {
+    if l == -1 {
+        return
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        expr(mut az, nat(mut az, l, i))
+    }
+}
+
+// block はブロックの節（ast.KBlock / ast.EBlock）の文の列を歩く
+func block(az mut Az, b desugar.NodeRef) {
+    if b != -1 {
+        stmtList(mut az, desugar.ListRef(node(mut az, b).a))
+    }
+}
+
+func stmt(az mut Az, s desugar.NodeRef) {
+    x := node(mut az, s)
+    k := x.kind
+    if k == ast.SBind {
+        exprs(mut az, desugar.ListRef(x.c))
+    } else if k == ast.SAssign {
+        exprs(mut az, desugar.ListRef(x.a))
+        exprs(mut az, desugar.ListRef(x.c))
+    } else if k == ast.SRet {
+        exprs(mut az, desugar.ListRef(x.a))
+    } else if k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+        expr(mut az, desugar.NodeRef(x.a))
+    } else if k == ast.SWhile {
+        expr(mut az, desugar.NodeRef(x.a))
+        block(mut az, desugar.NodeRef(x.b))
+    }
+}
+
+func expr(az mut Az, e desugar.NodeRef) {
+    if e == -1 {
+        return
+    }
+    x := node(mut az, e)
+    k := x.kind
+    if k == ast.EBinary {
+        expr(mut az, desugar.NodeRef(x.b))
+        expr(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EUnary {
+        expr(mut az, desugar.NodeRef(x.b))
+    } else if k == ast.ECall {
+        callSite(mut az, e, desugar.NodeRef(x.a))
+        expr(mut az, desugar.NodeRef(x.a))
+        exprs(mut az, desugar.ListRef(x.b))
+    } else if k == ast.EPipe {
+        pipeSite(mut az, e, desugar.NodeRef(x.b))
+        expr(mut az, desugar.NodeRef(x.a))
+        expr(mut az, desugar.NodeRef(x.b))
+        exprs(mut az, desugar.ListRef(x.c))
+    } else if k == ast.EIndex || k == ast.EParen || k == ast.ESelector {
+        expr(mut az, desugar.NodeRef(x.a))
+        if k == ast.EIndex {
+            expr(mut az, desugar.NodeRef(x.b))
+        }
+    } else if k == ast.ESlice3 {
+        expr(mut az, desugar.NodeRef(x.a))
+        expr(mut az, desugar.NodeRef(x.b))
+        expr(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EInterp || k == ast.ESlicelit {
+        exprs(mut az, desugar.ListRef(x.b))
+    } else if k == ast.EMaplit {
+        entries(mut az, desugar.ListRef(x.c))
+    } else if k == ast.EComposite {
+        elems(mut az, desugar.ListRef(x.b))
+    } else if k == ast.ELambda {
+        body := desugar.NodeRef(x.b)
+        bk := kind(mut az, body)
+        if bk == ast.EBlock || bk == ast.KBlock {
+            block(mut az, body)
+        } else {
+            expr(mut az, body)
+        }
+    } else if k == ast.EIf {
+        expr(mut az, desugar.NodeRef(x.a))
+        block(mut az, desugar.NodeRef(x.b))
+        els := desugar.NodeRef(x.c)
+        if els != -1 {
+            ek := kind(mut az, els)
+            if ek == ast.EBlock || ek == ast.KBlock {
+                block(mut az, els)
+            } else {
+                expr(mut az, els)
+            }
+        }
+    } else if k == ast.ESwitch {
+        exprs(mut az, desugar.ListRef(x.a))
+        cs := desugar.ListRef(x.b)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+            c := node(mut az, nat(mut az, cs, i))
+            ps := desugar.ListRef(c.a)
+            for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+                p := nat(mut az, ps, j)
+                if kind(mut az, p) == ast.KPConst {
+                    exprs(mut az, desugar.ListRef(node(mut az, p).a))
+                }
+            }
+            block(mut az, desugar.NodeRef(c.b))
+        }
+        block(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EBlock {
+        block(mut az, e)
+    } else if k == ast.EFor {
+        gs := desugar.ListRef(x.a)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
+            g := node(mut az, nat(mut az, gs, i))
+            expr(mut az, desugar.NodeRef(g.b))
+            exprs(mut az, desugar.ListRef(g.c))
+        }
+        if x.b == 0 {
+            expr(mut az, desugar.NodeRef(x.c))
+        } else {
+            stmtList(mut az, desugar.ListRef(x.c))
+        }
+    } else if k == ast.ETry {
+        expr(mut az, desugar.NodeRef(x.a))
+        if x.b != -1 {
+            elems(mut az, desugar.ListRef(node(mut az, desugar.NodeRef(x.b)).b))
+        }
+    }
+}
+
+func elems(az mut Az, l desugar.ListRef) {
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        expr(mut az, desugar.NodeRef(node(mut az, nat(mut az, l, i)).b))
+    }
+}
+
+func entries(az mut Az, l desugar.ListRef) {
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        en := node(mut az, nat(mut az, l, i))
+        expr(mut az, desugar.NodeRef(en.a))
+        expr(mut az, desugar.NodeRef(en.b))
+    }
+}
+
+// ErrorsDump は error のラベル集合の導出の結果（開発用 `check --errors-dump` — A2 の影）: error を返す関数ごとの集合・
+// error の switch ごとの S / 覆ったラベル / default の有無、最後に要約（位置の無い 1 行）
+func ErrorsDump(p loader.Program) []Finding {
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
+        rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
+    desugar.Init(mut az.d, p)
+    errInit(mut az)
+    errSolve(mut az)
+    mut fs := mut []Finding{}
+    mut ntop := 0
+    mut nerrfn := 0
+    for fi <- iter.Range(0, az.nfn) {
+        if table.Get(mut az.errfn, fi) != 0 && desugar.NodeRef(fnDecl(mut az, fi).e) != -1 {
+            m := table.Get(mut az.sets, fi)
+            nerrfn += 1
+            if (m & TOP) != 0 {
+                ntop += 1
+            }
+            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node), what: "errors ${fnName(mut az, fi)} fi=${fi} tags=${tagList(mut az, m)} ${setStr(mut az, m)}"})
+        }
+    }
+    mut nsw := 0
+    mut nnot := 0
+    mut nunr := 0
+    mut ndead := 0
+    for i <- iter.Range(0, table.Len(mut az.sw) / 4) {
+        at := desugar.NodeRef(table.Get(mut az.sw, i * 4))
+        if seenBefore(mut az, i) {
+            continue
+        }
+        S := table.Get(mut az.sw, i * 4 + 1)
+        cov := table.Get(mut az.sw, i * 4 + 2)
+        def := table.Get(mut az.sw, i * 4 + 3) != 0
+        byS := (S & TOP) == 0 && (S & cov) == S
+        nsw += 1
+        if !byS {
+            nnot += 1
+        }
+        if byS && def {
+            nunr += 1
+        }
+        dead := cov & ^S
+        if (S & TOP) == 0 && dead != 0 {
+            ndead += 1
+        }
+        verdict := if byS { if def { "covered-by-S default-unreachable" } else { "covered-by-S" } } else { if def { "not-covered default-needed" } else { "not-covered" } }
+        pos := desugar.PosOf(mut az.d, at)
+        fs = append(fs, Finding{at: pos, what: "switch at=${pos.file}:${pos.tok} tags=${tagList(mut az, S)} S=${setStr(mut az, S)} covered=${setStr(mut az, cov)} default=${def} ${verdict}${if (S & TOP) == 0 && dead != 0 { " dead-arms=" + setStr(mut az, dead) } else { "" }}"})
+    }
+    fs = append(fs, Finding{at: diag.None(), what: "summary labels=${az.nerr} errfns=${nerrfn} top=${ntop} switches=${nsw} not-covered=${nnot} default-unreachable=${nunr} dead-arms=${ndead} unknown-calls=${az.unknown} walks=${az.walks}"})
+    return freeze(fs)
+}
+
+// seenBefore は switch の記録 i が前の記録と同じ節か（最後の 1 周でも局所の不動点のために本体を 2 度以上歩く）
+func seenBefore(az mut Az, i int) bool {
+    at := table.Get(mut az.sw, i * 4)
+    for j <- iter.Range(0, i) {
+        if table.Get(mut az.sw, j * 4) == at {
+            return true
+        }
+    }
+    return false
+}
+
+// fnName は関数 fi の `<package のパス>.<名前>`
+func fnName(az mut Az, fi int) string {
+    return "${str(mut az, desugar.PkgPath(mut az.d, desugar.FnAt(mut az.d, fi).pkg))}.${str(mut az, desugar.StrRef(fnDecl(mut az, fi).a))}"
+}
+
+// tagList は集合のタグの列 `0,3,…`（TOP は `T` — scripts/errtrace.sh が読む）
+func tagList(az mut Az, m int) string {
+    mut s := ""
+    for L <- iter.Range(0, az.nerr) {
+        if L < NBITS && (m & (1 << L)) != 0 {
+            s = if s == "" { "${L}" } else { s + ",${L}" }
+        }
+    }
+    if (m & TOP) != 0 {
+        s = if s == "" { "T" } else { s + ",T" }
+    }
+    return if s == "" { "-" } else { s }
+}
+
+// setStr は集合の綴り `{pkg.L, …}`（TOP を含めば `{…, TOP}`）
+func setStr(az mut Az, m int) string {
+    mut s := "{"
+    mut first := true
+    for L <- iter.Range(0, az.nerr) {
+        if L < NBITS && (m & (1 << L)) != 0 {
+            td := desugar.ErrNode(mut az.d, L)
+            nm := "${str(mut az, desugar.PkgPath(mut az.d, desugar.ErrPkg(mut az.d, L)))}.${str(mut az, desugar.StrRef(node(mut az, td).a))}"
+            s = if first { s + nm } else { s + ", " + nm }
+            first = false
+        }
+    }
+    if (m & TOP) != 0 {
+        s = if first { s + "TOP" } else { s + ", TOP" }
+    }
+    return s + "}"
+}

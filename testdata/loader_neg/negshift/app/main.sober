@@ -1,0 +1,8 @@
+package main
+
+// loader の負例: const 式の負のシフト量
+const X = 1 << -1
+
+func main() {
+    println(X)
+}

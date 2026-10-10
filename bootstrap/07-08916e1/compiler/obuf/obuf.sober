@@ -1,0 +1,60 @@
+package obuf
+
+// 出力の小道具（1 バイト 1 語の out に綴りを積む）。compiler/ の印字（ast・loader・desugar・checker・printer・lower）が共有する —
+// 以前は各 package に写しがあり、putInt の写しは負数（printer）・最小値（ast）の扱いが食い違っていた（reaudit 第 2 弾 C8）
+
+import "std/iter"
+
+// Lit は w のバイト列を out に積む
+func Lit(out mut []int, w string) {
+    b := bytes(w)
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+// Int は n の 10 進（負号つき）を out に積む。最小値でも符号を反転しない（剰余を負のまま使う）
+func Int(out mut []int, n int) {
+    if n < 0 {
+        out = append(out, 45)
+    }
+    q := n / 10
+    aq := if q < 0 { 0 - q } else { q }
+    mut p := 1
+    while p <= aq {
+        p = p * 10
+    }
+    while p > 0 {
+        d := n / p % 10
+        out = append(out, 48 + (if d < 0 { 0 - d } else { d }))
+        p = p / 10
+    }
+}
+
+// Bool は true / false を out に積む
+func Bool(out mut []int, b bool) {
+    if b {
+        Lit(mut out, "true")
+    } else {
+        Lit(mut out, "false")
+    }
+}
+
+// Nl は JSON 整形の改行 + d 段のインデント（1 段 2 桁 — ast / loader の黄金 JSON）
+func Nl(out mut []int, d int) {
+    out = append(out, 10)
+    for i <- iter.Range(0, d * 2) {
+        out = append(out, 32)
+    }
+}
+
+// Key は `,`（先頭以外）+ 改行 + インデント + `"name": `
+func Key(out mut []int, d int, first bool, name string) {
+    if !first {
+        out = append(out, 44)
+    }
+    Nl(mut out, d)
+    out = append(out, 34)
+    Lit(mut out, name)
+    Lit(mut out, "\": ")
+}

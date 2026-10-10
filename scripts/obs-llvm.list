@@ -1,0 +1,97 @@
+# IR 経路（obs.sh --backend llvm / llvm2）で到達済みの例。段が進むたびに backend レーンが足す。
+# 使い方: scripts/obs.sh --backend llvm $(grep -v '^#' scripts/obs-llvm.list)
+# B-1
+fib
+panic_depth
+# B-2
+while
+multi
+switch
+switch_const
+switch_multi
+pipe_multi
+defer
+bits
+bool
+shift
+panic_div
+# B-3
+point
+shape
+opt
+exit_arms
+errval
+# B-4
+arith_edge
+bytes_view
+interp
+lexer
+map
+map_str
+panic_index
+parser_x
+parser_y
+slice
+std_import
+strings_ops
+strings_std
+utf8_std
+zero
+# B-5（inline / 閉包 / mut 引数 / ジェネリクス / 関数値 / 辞書 const）
+constdict
+early_return
+early_return_pure
+fnvalue
+generic
+inline
+mutparam
+nested
+parser_b
+pool
+sort
+# B-5（? / error の伝播・io の sys*）
+errparse
+errparse_file
+errparse_pure
+io_basic
+try_prop
+try_prop_pure
+try_wrap
+try_wrap_pure
+utf8_pure
+# B-5（for 式の Iter — 型推論は試し生成 + Builder.rollback）
+lexer_iter
+# R0 還流（opt / union の中のコンテナの relocate — examples は main 側 6d5020e。worktree ではマージまで欠ける）
+errlabel
+errlabel_pure
+# R1 還流（展開されるジェネリック・ジェネリック struct の型引数に値の型 — tyArgValueOk）
+builder_string
+pool_string
+testdata/minic/app
+testdata/minic_rd/app
+deep_return
+block_escape
+errcause
+# io の器
+exit_code
+exit_range
+io_args
+io_readdir
+io_stdout
+# @embed
+embed_demo
+# F-34
+map_value_coords
+# keysm
+map_keys
+# 文形 for + 呼び出し形の生成元
+for_stmt
+# 文形 for の break / continue
+for_break
+# フィールドの mut 実引数（F-17 案 2α）
+field_mutarg
+# 部分フィールドの struct リテラル（省いた欄のゼロ値）
+partial_lit
+# std/table（固定長 chunk の Table — Get / Set O(1)）
+table_std
+table_get_oob

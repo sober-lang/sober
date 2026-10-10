@@ -1,0 +1,4 @@
+{
+  "file_types": { "Go": ["sober"] },
+  "languages": { "Go": { "language_servers": [] } }
+}

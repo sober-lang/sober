@@ -1,0 +1,10 @@
+package main
+
+limit := 10
+
+func main() {
+    x := fib(limit)
+    mut acc := x
+    a, b := split(acc)
+    println(a, b)
+}

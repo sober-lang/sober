@@ -1,0 +1,192 @@
+package utf8
+
+// UTF-8 の検査と bytes → string の戻し（language.md 27 節: 検査あり + (string, error?)）。
+// Go の unicode/utf8.Valid が仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` はこの Parse の呼び出しに
+// cst_to_ast が置き換える（予約参照名の暗黙 import — for の std/iter・補間の std/strings と同じ形）
+
+import "std/iter"
+import "std/par"
+
+// pos = 最初の不正なシーケンスの先頭バイトのオフセット（b 上）
+type InvalidUtf8 error {
+    pos int
+}
+
+// cont は b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
+func cont(b []byte, i int, lo int, hi int) bool {
+    return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
+}
+
+// seqLen は b[i] から始まる妥当なシーケンスの長さ、不正なら 0
+func seqLen(b []byte, i int) int {
+    c := int(b[i])
+    if c >= 0 && c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) && cont(b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+// IndexInvalid は最初の不正なシーケンスの位置、妥当なら -1
+func IndexInvalid(b []byte) int {
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        // 妥当な列の並びを速く読み進める（最適化のバックエンドでは SSE2 の検査器 — 非 ASCII の列もベクトルのまま。他の経路は i のまま）
+        i = validPrefix(b, i)
+        // ASCII の区間を先に読み飛ばす（素直な走査のループ — 第三便のベクトル化の対象の形。短い区間でも 1 バイトごとの seqLen の呼び出しが消える）
+        while i < len(b) && b[i] < 128 {
+            i += 1
+        }
+        if i >= len(b) {
+            break
+        }
+        // 2 バイト列（C2..DF + 継続）と 3 バイト列の普通の形（E1..EC / EE..EF + 継続 2 つ — 範囲が狭まる E0 / ED は seqLen）は
+        // seqLen を呼ばずに読む（第三便 M14 — 非 ASCII が多い入力で 1 文字ごとの呼び出しの固定費が検査の大半だった）
+        c := int(b[i])
+        if c >= 194 && c <= 223 && i + 1 < len(b) && int(b[i + 1]) & 192 == 128 {
+            i += 2
+            continue
+        }
+        if c >= 225 && c <= 239 && c != 237 && i + 2 < len(b) && int(b[i + 1]) & 192 == 128 && int(b[i + 2]) & 192 == 128 {
+            i += 3
+            continue
+        }
+        n := seqLen(b, i)
+        if n == 0 {
+            at = i
+        } else {
+            i += n
+        }
+    }
+    return at
+}
+
+// validPrefix は j ≥ i で「b[i:j] は妥当な UTF-8 の列の並び・j は列の頭（か末尾）」となる j を返す — i をそのまま返しても契約どおり
+// （UTF-8 の SIMD 速い道便 — report-395 / 396）。最適化のバックエンドはこの呼び出しを SSE2 の検査器に差し替える（compiler/lower/irinl.sober の
+// ilUtf8 — 機構の置き場はコンパイラとランタイムの中）。この本体は他の経路（写しのバックエンド・.ll・照合）の形で、意味は全経路で同じ
+// （IndexInvalid は j から今の走査を続けるので、見つける最初の不正の位置は変わらない）
+func validPrefix(b []byte, i int) int {
+    return i
+}
+
+func Valid(b []byte) bool {
+    return IndexInvalid(b) < 0
+}
+
+// Parse は妥当な UTF-8 だけを string にする（`string(b)` の裏方 — 利用者は `string(b)` を書く。名前は変換の族 Parse — std 命名規則・裁定 N1）。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
+@errors(InvalidUtf8)
+func Parse(b []byte) (string, error?) {
+    at := IndexInvalid(b)
+    if at >= 0 {
+        return "", InvalidUtf8{pos: at}
+    }
+    s := bytesToString(b)
+    return s, nil
+}
+
+// View は中身が有効な UTF-8 と検査済みのバイト列（型つき証人 — 第三便 M13）。作れるのは Check だけ: 非公開の型の封の欄 seal があるので外からは composite に
+// 書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開（引数の型に utf8.View と書ける — json.Doc と同じ形・2026-10-04 掃除枠 E）。
+// 全体を 1 回検査すれば、文字境界で切った部分列は全部有効（有効な列を境界で切ると両側とも有効）なので、Str は境界の 2 バイトを読むだけで string を返す
+// — 行ごとに検査し直さない。棄てた案: 非公開の型 view（構築は塞げるが型の名前が書けず、View を受け渡す関数が書けない — 欄の読みはどちらでも塞げない）。
+// 再訪条件: 可視性の細分（構築のみ私有）が入ったら封を外す
+type View struct {
+    b []byte
+    seal sealed
+}
+
+// sealed は View の封（非公開 — 外で値を書けない）
+type sealed struct {
+}
+
+// Check は b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — Parse と同じ）
+@errors(InvalidUtf8)
+func Check(b []byte) (View, error?) {
+    at := if len(b) < CHECK_PAR_MIN { IndexInvalid(b) } else { indexInvalidPar(b) }
+    if at >= 0 {
+        return View{}, InvalidUtf8{pos: at}
+    }
+    return View{b: b, seal: sealed{}}, nil
+}
+
+// Bytes は View のバイト列（読むだけ）
+func Bytes(v View) []byte {
+    return v.b
+}
+
+// boundary は p が v の文字境界か（端か、継続バイト 10xxxxxx でない）
+func boundary(v View, p int) bool {
+    return p == 0 || p == len(v.b) || (p > 0 && p < len(v.b) && int(v.b[p]) & 192 != 128)
+}
+
+// Str は v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
+@errors(InvalidUtf8)
+func Str(v View, s int, i int) (string, error?) {
+    sub := v.b[s:i]
+    if !boundary(v, s) {
+        return "", InvalidUtf8{pos: s}
+    }
+    if !boundary(v, i) {
+        return "", InvalidUtf8{pos: i}
+    }
+    return bytesToString(sub), nil
+}
+
+// 大きい入力の Check は区間に割って並列に検査する（並列 1.0× 段 2 — report-337。1BRC で読み込みの直後の全体の検査が Amdahl の直列の大半だった）。
+// 区間の大きさは入力の大きさだけで決まる（ワーカー数に依らない — 区間の数 = 長さ / CHECK_GRAIN）。CHECK_PAR_MIN 未満は逐次のまま
+// （区間 1 つの検査 ≈ 数百万命令に対し task の器は ≈ 1,000 命令 — 区間が 2 つ以上になる長さから割る）
+const CHECK_GRAIN = 1048576
+const CHECK_PAR_MIN = 2097152
+
+// indexInvalidPar は IndexInvalid(b) と同じ値を区間ごとの並列の検査で求める。区間の頭は名目の位置から継続バイト（10xxxxxx）を読み飛ばした
+// 最初の非継続バイト（か末尾）: 妥当な列の内側は継続バイトだけなので、手前の区間に不正が無ければ逐次の走査もちょうどそこを列の頭として通る。
+// 区間の末尾で途切れる列は、全体でも次のバイトが継続バイトでないので不正 — 区間ごとの判定は全体の判定と同じ。読み飛ばした継続バイトは
+// 手前の区間に入る（区間は隙間なく並ぶ）。答え = 区間の順で最初の不正（後ろの区間の不正は手前が全部妥当なときだけ採る — 逐次と同じ値）
+func indexInvalidPar(b []byte) int {
+    n := (len(b) + CHECK_GRAIN - 1) / CHECK_GRAIN
+    mut bounds := mut []int{0}
+    for k <- iter.Range(1, n) {
+        mut p := k * CHECK_GRAIN
+        if p < bounds[len(bounds) - 1] {
+            p = bounds[len(bounds) - 1]
+        }
+        while p < len(b) && int(b[p]) & 192 == 128 {
+            p += 1
+        }
+        bounds = append(bounds, p)
+    }
+    bounds = append(bounds, len(b))
+    bs := freeze(bounds)
+    mut ks := mut []int{}
+    for k <- iter.Range(0, n) {
+        ks = append(ks, k)
+    }
+    ats, e := par.Map(freeze(ks), (k) => chunkInvalid(b, bs[k], bs[k + 1]))
+    if e != nil {
+        return IndexInvalid(b)
+    }
+    for k <- iter.Range(0, n) {
+        if ats[k] >= 0 {
+            return ats[k]
+        }
+    }
+    return -1
+}
+
+// chunkInvalid は b[lo:hi] の最初の不正の位置（b 上）、妥当なら -1
+func chunkInvalid(b []byte, lo int, hi int) int {
+    at := IndexInvalid(b[lo:hi])
+    return if at >= 0 { lo + at } else { -1 }
+}

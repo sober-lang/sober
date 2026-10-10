@@ -1,0 +1,89 @@
+package main
+
+// map の約束の例（language.md 22 節 — 表現を変えても保つもの）: ①列挙は初回挿入の順・delete は墓石・
+// 同じ鍵の再挿入は元の位置に戻る ②墓石を持つ map を内側の scope から外へ写しても（鍵ごと再配置）再挿入が元の位置に戻る — 16 バイトを
+// 超える鍵は比較でバイトを読むので、墓石の鍵の写しが漏れると内側の region の跡を読む ③成長の後も旧ヘッダは旧テーブルを見る
+// ④freeze の後の keys・len は墓石を数えない
+
+import "std/iter"
+
+func show(tag string, m map[string]int) {
+    mut line := "${tag} ${len(m)}:"
+    for k <- keys(m) {
+        v := m[k]
+        line = line + " " + k + "=" + (if v != nil { "${v}" } else { "?" })
+    }
+    println(line)
+}
+
+func main() {
+    // ① 短い鍵と長い鍵・索引の道（8 以上）
+    mut a := mut map[string]int{}
+    for i <- iter.Range(0, 12) {
+        a["k${i}"] = i
+        a["long-key-for-the-prefix-test-${i}"] = 100 + i
+    }
+    for i <- iter.Range(0, 12) {
+        if i % 4 == 1 {
+            delete(a, "k${i}")
+            delete(a, "long-key-for-the-prefix-test-${i}")
+        }
+    }
+    show("del", freeze(a))
+    a["k5"] = 55
+    a["long-key-for-the-prefix-test-9"] = 99
+    a["fresh"] = 7
+    show("re", freeze(a))
+
+    // ② 墓石を持つ map を反復の region から外の map の値へ（値の格納点の写し — 墓石の鍵ごと再配置）
+    mut outer := mut map[string]map[string]int{}
+    for j <- iter.Range(0, 3) {
+        mut t := mut map[string]int{}
+        for i <- iter.Range(0, 10) {
+            t["inner-scope-key-number-${i}-${j}-xyz"] = i
+            t["s${i}"] = j
+        }
+        for i <- iter.Range(0, 10) {
+            if i % 3 == j {
+                delete(t, "inner-scope-key-number-${i}-${j}-xyz")
+                delete(t, "s${i}")
+            }
+        }
+        outer["m${j}"] = freeze(t)
+    }
+    // 反復の region の跡を別の確保で汚す
+    mut g := mut []string{}
+    for i <- iter.Range(0, 64) {
+        g = append(g, "garbage-garbage-garbage-garbage-${i}")
+    }
+    for j <- iter.Range(0, 3) {
+        v := outer["m${j}"]
+        if v != nil {
+            show("moved${j}", v)
+            d := v["inner-scope-key-number-${j}-${j}-xyz"]
+            e := v["inner-scope-key-number-${(j + 1) % 3}-${j}-xyz"]
+            println(d == nil, e != nil)
+        }
+    }
+    println(len(g))
+
+    // ③ 旧ヘッダ（成長の前のヘッダの値）は旧テーブルを見る
+    mut c := mut map[string]int{}
+    c["x"] = 1
+    c["y"] = 2
+    old := freeze(c)
+    for i <- iter.Range(0, 20) {
+        c["grow-${i}"] = i
+    }
+    c["x"] = 10
+    show("old", old)
+    println(len(freeze(c)))
+
+    // ④ 空の鍵の墓石と再挿入
+    mut d := mut map[string]int{}
+    d[""] = 1
+    d["a"] = 2
+    delete(d, "")
+    d[""] = 3
+    show("edge", freeze(d))
+}

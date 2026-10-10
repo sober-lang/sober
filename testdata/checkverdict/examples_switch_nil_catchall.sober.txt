@@ -1,0 +1,2 @@
+sober: load error at examples/switch_nil_catchall.sober:12:5: case nil must come before name patterns (_ or a binding also matches nil)
+exit=1

@@ -1,0 +1,39 @@
+package asserts
+
+func TestPass() {
+    assert(Double(2) == 4)
+    assert(Name(1) == "one")
+    assert(Even(4))
+    assert(!Even(3))
+}
+
+func TestCompareFails() {
+    x := 3
+    assert(Double(x) == x + 1)
+}
+
+func TestStringFails() {
+    assert(Name(2) == "one")
+}
+
+func TestCallFails() {
+    assert(Even(Double(1) + 1))
+}
+
+func TestBoolFails() {
+    ok := Double(1) > 5
+    assert(ok)
+}
+
+type Pair struct {
+    a int
+    b int
+}
+
+// 印字できない型（byte・struct）の値の行は出さない（補間の穴を諦める — 式と印字できる値だけ）
+func TestUnprintableSkipped() {
+    c := byte(65)
+    p := Pair{a: 1, b: 2}
+    n := 5
+    assert(c == 'B' && p.a + n == 6)
+}

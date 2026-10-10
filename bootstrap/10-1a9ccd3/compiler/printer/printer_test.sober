@@ -1,0 +1,33 @@
+package printer
+
+// printer の単体テスト: @layout の印と `[N]T` の印字（読み → 印字 → 同じ綴り — fmt の不動点）
+
+import "lexer"
+import "parser"
+import "std/iter"
+
+// roundTrip は src を読んで印字した綴りが src と同じか
+func roundTrip(src string) bool {
+    b := bytes(src)
+    t, ok := parser.Parse(b, lexer.Lex(b))
+    out := Print(t)
+    return ok && sameBytes(out, b)
+}
+
+func sameBytes(x []byte, y []byte) bool {
+    if len(x) != len(y) {
+        return false
+    }
+    for i <- iter.Range(0, len(x)) {
+        if x[i] != y[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func TestLayoutPrint() {
+    assert(roundTrip("package main\n\n@layout\ntype H struct {\n    ident [16]u8\n    kind u16le\n}\n"))
+    assert(roundTrip("package main\n\ntype H struct {\n    xs []int\n}\n"))
+    assert(!roundTrip("package main\n\ntype H struct {\n    xs  []int\n}\n"))
+}

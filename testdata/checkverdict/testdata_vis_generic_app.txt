@@ -1,0 +1,2 @@
+sober: desugar error at testdata/vis_generic/app/main.sober:7:10 (CoreFragment)
+exit=1

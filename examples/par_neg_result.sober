@@ -1,0 +1,22 @@
+package main
+
+// 段 6 P3a-1d / P3b-4: task の結果が写せない（関数値 — diag.Par kind 8 — check と build が同じ拒否。desugar/parcheck.sober）。
+// string・slice・map・error は P3b-4 から scope の region へ写せる（examples/par_result_string）
+
+import "std/par"
+
+func inc(x int) int {
+    return x + 1
+}
+
+func pick() func(int) int {
+    return inc
+}
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        h := par.Spawn(s, () => pick())
+        par.Join(h)(1)
+    })
+    println(r)
+}

@@ -1,0 +1,17 @@
+package main
+
+type Bad error
+
+func call(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{}
+    }
+    return n, nil
+}
+
+// 負例（nil でないエラーの行き先が無い — loader の拒否・D1 の 2 位置版）
+func main() {
+    println(switch call(1) {
+    case v, nil: v
+    })
+}

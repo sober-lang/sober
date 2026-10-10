@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_form.sober:13:21: layout.Decode / DecodeAt / Encode are called with a type argument (layout.Decode[T](…)); layout.Size[T] is a constant
+exit=1

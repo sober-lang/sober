@@ -1,0 +1,2 @@
+sober: desugar error at examples/unknown_field_type.sober:6:7 (UnknownName)
+exit=1

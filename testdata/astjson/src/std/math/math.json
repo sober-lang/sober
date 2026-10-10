@@ -1,0 +1,324 @@
+{
+  "package": "math",
+  "imports": [
+    {
+      "alias": "$float",
+      "path": "std/floatfmt",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Sqrt",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "sysFSqrt",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 56
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 53
+          }
+        ]
+      },
+      "tok": 46,
+      "bodiless": false,
+      "span": {
+        "start": 45,
+        "end": 61
+      },
+      "sig_end": 52
+    },
+    {
+      "name": "Abs",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "FromBits",
+                  "tok": 70
+                },
+                "args": [
+                  {
+                    "k": "binary",
+                    "op": "&",
+                    "lhs": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Bits",
+                        "tok": 72
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 74
+                        }
+                      ],
+                      "tok": 73
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 9223372036854775807,
+                      "tok": 77
+                    },
+                    "tok": 76
+                  }
+                ],
+                "tok": 71
+              }
+            ],
+            "tok": 69
+          }
+        ]
+      },
+      "tok": 62,
+      "bodiless": false,
+      "span": {
+        "start": 61,
+        "end": 82
+      },
+      "sig_end": 68
+    },
+    {
+      "name": "Bits",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "sysFBits",
+                  "tok": 91
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 93
+                  }
+                ],
+                "tok": 92
+              }
+            ],
+            "tok": 90
+          }
+        ]
+      },
+      "tok": 83,
+      "bodiless": false,
+      "span": {
+        "start": 82,
+        "end": 98
+      },
+      "sig_end": 89
+    },
+    {
+      "name": "FromBits",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "sysFFromBits",
+                  "tok": 107
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 109
+                  }
+                ],
+                "tok": 108
+              }
+            ],
+            "tok": 106
+          }
+        ]
+      },
+      "tok": 99,
+      "bodiless": false,
+      "span": {
+        "start": 98,
+        "end": 114
+      },
+      "sig_end": 105
+    }
+  ],
+  "consts": [],
+  "intrinsics": [
+    {
+      "name": "sysFSqrt",
+      "key": "fsqrt",
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "tok": 10,
+      "span": {
+        "start": 3,
+        "end": 17
+      }
+    },
+    {
+      "name": "sysFBits",
+      "key": "fbits",
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "float"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "tok": 24,
+      "span": {
+        "start": 17,
+        "end": 31
+      }
+    },
+    {
+      "name": "sysFFromBits",
+      "key": "ffrombits",
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "float"
+        }
+      ],
+      "tok": 38,
+      "span": {
+        "start": 31,
+        "end": 45
+      }
+    }
+  ]
+}

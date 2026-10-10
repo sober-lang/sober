@@ -1,0 +1,11 @@
+package main
+
+import "testdata/cachekey/leaf"
+import "testdata/cachekey/mid"
+import "testdata/cachekey/side"
+
+func main() {
+    println(mid.Twice(1))
+    println(leaf.Count())
+    println(side.Half(10))
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/byte_interp.sober:6:13 (CoreFragment)
+exit=1

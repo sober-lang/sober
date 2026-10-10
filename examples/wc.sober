@@ -1,0 +1,29 @@
+package main
+
+import "std/io"
+
+// wc: count lines, words and bytes of standard input (docs/guide/first-program.md)
+
+func isSpace(c byte) bool {
+    return c == ' ' || c == '\n' || c == '\t' || c == '\r'
+}
+
+func main() int {
+    b := io.ReadStdin() catch return 1
+    mut lines := 0
+    mut words := 0
+    mut inWord := false
+    for c <- b {
+        if c == '\n' {
+            lines += 1
+        }
+        if isSpace(c) {
+            inWord = false
+        } else if !inWord {
+            inWord = true
+            words += 1
+        }
+    }
+    println("${lines} ${words} ${len(b)}")
+    return 0
+}

@@ -1,0 +1,152 @@
+package io
+
+import "std/utf8"
+
+// ファイルの読み書き（同期 syscall の直呼び — Executor・block 効果は持ち込まない。Phase 5a で中身を差し替えても
+// API は同期形のまま）。バイト列は []int（24 節: バイトの型は当面 int、要素は 0〜255）。
+// text として読むなら `s := string(io.ReadFile(p)?)?`（std/utf8 の検査つき）
+
+// ENOENT / ENOTDIR
+type NotFound error
+
+// EACCES / EPERM / EROFS
+type Denied error
+
+// 開いたバケツ（13 節「正直な宣言」）: 上の 2 つ以外の errno。EISDIR・EINVAL（path に NUL）・ENAMETOOLONG など
+type Other error {
+    errno int
+}
+
+// errno → ラベル（Linux x86_64 の番号）
+func errOf(e int) error {
+    if e == 2 || e == 20 {
+        return NotFound{}
+    }
+    if e == 13 || e == 1 || e == 30 {
+        return Denied{}
+    }
+    return Other{errno: e}
+}
+
+// path のファイルを全部読む
+@errors(NotFound, Denied, Other)
+func ReadFile(path string) ([]int, error?) {
+    b := sysReadFile(path)
+    e := sysErrno()
+    if e != 0 {
+        return []int{}, errOf(e)
+    }
+    return b, nil
+}
+
+// path に b を書く（作成 / 切り詰め、0644）。/dev/stdout への追記には使わない（切り詰める）— WriteStdout を使う。b の要素が 0〜255 を外れたら panic（到達 = バグ類 — 27 節）
+@errors(NotFound, Denied, Other)
+func WriteFile(path string, b []int) error? {
+    e := sysWriteFile(path, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// WriteStdout は開いている標準出力（fd 1）へ b を書く（open しないので切り詰めない）。println の行バッファに残りがあれば先に出す
+// （出る順 = 呼んだ順）。b の要素が 0〜255 を外れたら panic
+@errors(NotFound, Denied, Other)
+func WriteStdout(b []int) error? {
+    e := sysWriteFd(1, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// WriteStderr は開いている標準エラー（fd 2）へ b を書く（WriteStdout と同じ規則）
+@errors(NotFound, Denied, Other)
+func WriteStderr(b []int) error? {
+    e := sysWriteFd(2, b)
+    if e != 0 {
+        return errOf(e)
+    }
+    return nil
+}
+
+// ディレクトリの項目の種類（getdents64 の d_type）。Irregular = 上の 3 つ以外（fifo・socket・デバイス・DT_UNKNOWN）
+type EntryKind union {
+    File {}
+    Dir {}
+    Symlink {}
+    Irregular {}
+}
+
+type DirEntry struct {
+    Name string
+    Kind EntryKind
+}
+
+func kindOf(t int) EntryKind {
+    if t == 8 {
+        return File{}
+    }
+    if t == 4 {
+        return Dir{}
+    }
+    if t == 10 {
+        return Symlink{}
+    }
+    return Irregular{}
+}
+
+// dot は名前が "." か ".." か
+func dot(nb []int) bool {
+    return (len(nb) == 1 && nb[0] == 46) || (len(nb) == 2 && nb[0] == 46 && nb[1] == 46)
+}
+
+// less は名前のバイト列の辞書順（LC_ALL=C sort と同じ）
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) && x[i] == y[i] {
+        i += 1
+    }
+    return if i < len(x) && i < len(y) { x[i] < y[i] } else { len(x) < len(y) }
+}
+
+// ReadDir は path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
+// 並びはファイルシステムの列挙順に依らない（loader の決定性 — 29 節）。名前が 1 つでも不正な UTF-8 なら全体が utf8.InvalidUtf8
+@errors(NotFound, Denied, Other, utf8.InvalidUtf8)
+func ReadDir(path string) ([]DirEntry, error?) {
+    // 「d_type + 名前のバイト + 0」の連結（getdents64 の順のまま）
+    b := sysReadDir(path)
+    e := sysErrno()
+    if e != 0 {
+        return []DirEntry{}, errOf(e)
+    }
+    mut es := mut []DirEntry{}
+    mut i := 0
+    while i < len(b) {
+        mut j := i + 1
+        while b[j] != 0 {
+            j += 1
+        }
+        nb := b[i + 1:j]
+        if !dot(nb) {
+            name := string(nb)?
+            es = append(es, DirEntry{Name: name, Kind: kindOf(b[i])})
+        }
+        i = j + 1
+    }
+    // 挿入ソート（1 ディレクトリの項目数なので素朴でよい — 並べ替えは es の中だけで、region を伸ばさない）
+    mut k := 1
+    while k < len(es) {
+        x := es[k]
+        mut m := k
+        while m > 0 && less(x.Name, es[m - 1].Name) {
+            es[m] = es[m - 1]
+            m -= 1
+        }
+        es[m] = x
+        k += 1
+    }
+    return freeze(es), nil
+}

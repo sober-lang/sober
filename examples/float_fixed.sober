@@ -1,0 +1,33 @@
+package main
+
+// 浮動小数の固定桁の印字の差分（scripts/oracles/float_fixed.go — 境界値と乱択のビット列 × 桁数 0〜20 を Go の strconv.FormatFloat(f, 'f', prec, 64) と照合）
+
+import "std/floatfmt"
+import "std/io"
+
+func num(b []byte, i0 int) (int, int) {
+    mut i := i0
+    mut neg := false
+    if b[i] == '-' {
+        neg = true
+        i += 1
+    }
+    mut v := 0
+    while b[i] != ' ' && b[i] != '\n' {
+        v = v * 10 + int(b[i]) - '0'
+        i += 1
+    }
+    return if neg { 0 - v } else { v }, i + 1
+}
+
+func main() int {
+    b := io.ReadStdin() catch return 1
+    mut i := 0
+    while i < len(b) {
+        bits, j := num(b, i)
+        p, k := num(b, j)
+        println(floatfmt.FormatFixed(bits, p))
+        i = k
+    }
+    return 0
+}

@@ -1,0 +1,12 @@
+package main
+
+// 負例（load が拒否 — syntax.md 決定 16）: 組み込みの名前に関数値を束縛できない（以前は check が関数値の呼び出し、build が builtin の len と読んで食い違った）
+
+func twice(x int) int {
+    return x * 2
+}
+
+func main() {
+    len := twice
+    println(len(3))
+}

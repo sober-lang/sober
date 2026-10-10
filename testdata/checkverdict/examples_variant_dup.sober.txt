@@ -1,0 +1,2 @@
+sober: load error at examples/variant_dup.sober:6:5: a variant name must be unique among the package's top-level names
+exit=1

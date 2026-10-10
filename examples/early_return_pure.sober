@@ -1,0 +1,81 @@
+package main
+
+// V4-3 の突き合わせの対（Lean 側: Examples.lean の v43）。early_return.sober から出力を抜いた形。
+// main の末尾の値 r を codegen は println で、Lean は脱糖したコアを機械で走らせて照合する
+
+func sign(x int) int {
+    if x < 0 {
+        return -1
+    }
+    if x == 0 {
+        return 0
+    } else {
+        return 1
+    }
+}
+
+func firstOver(limit int) int {
+    mut i := 0
+    while i < 10 {
+        defer append([]int{}, i)
+        i += 1
+        v := {
+            xs := append([]int{}, i * i)
+            xs[0]
+        }
+        if v > limit {
+            return i
+        }
+    }
+    return -1
+}
+
+func grid() int {
+    mut acc := 0
+    mut i := 0
+    while i < 3 {
+        i += 1
+        mut j := 0
+        while j < 5 {
+            j += 1
+            if j == 2 {
+                continue
+            }
+            if j == 4 {
+                break
+            }
+            acc += i * 10 + j
+        }
+    }
+    return acc
+}
+
+func each(n int, f func(int)) {
+    mut i := 0
+    while i < n {
+        f(i)
+        i += 1
+    }
+}
+
+func find(limit int) int {
+    each(10, i => {
+        if i * i > limit {
+            return i
+        }
+    })
+    return -1
+}
+
+func pick(c bool, a, b int) int {
+    if c {
+        return a
+    }
+    return b
+}
+
+func main() {
+    r := (sign(-5) + 2) * 100000 + firstOver(20) * 10000 + grid() * 10 + find(10) + pick(false, 4, 5) * 0
+    println(r)
+    r
+}

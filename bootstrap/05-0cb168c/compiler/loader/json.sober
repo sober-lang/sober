@@ -1,0 +1,285 @@
+package loader
+
+// loader 黄金（testdata/loaderjson/）の JSON（src/loader_json.zig と同じバイト列 — スキーマは .pair/selfhost-drafts.md）。
+// 形は固定の深さなので再帰しない。import 表は参照名のバイト順、callees は重複を除いたバイト順
+
+import "ast"
+import "std/iter"
+import "obuf"
+
+func nl(out mut []int, d int) {
+    out = append(out, 10)
+    mut i := 0
+    while i < d * 2 {
+        out = append(out, 32)
+        i += 1
+    }
+}
+
+func hex(n int) int {
+    return if n < 10 { n + 48 } else { n + 87 }
+}
+
+// str はバイト列を JSON 文字列として書く（C4 と同じ escape）
+func str(out mut []int, s []int) {
+    out = append(out, 34)
+    for i <- iter.Range(0, len(s)) {
+        c := s[i]
+        if c == 34 {
+            obuf.Lit(mut out, "\\\"")
+        } else if c == 92 {
+            obuf.Lit(mut out, "\\\\")
+        } else if c == 10 {
+            obuf.Lit(mut out, "\\n")
+        } else if c == 9 {
+            obuf.Lit(mut out, "\\t")
+        } else if c == 13 {
+            obuf.Lit(mut out, "\\r")
+        } else if c < 32 {
+            obuf.Lit(mut out, "\\u00")
+            out = append(out, hex(c / 16))
+            out = append(out, hex(c % 16))
+        } else {
+            out = append(out, c)
+        }
+    }
+    out = append(out, 34)
+}
+
+// key は `,`（先頭以外）+ 改行 + インデント + `"name": `
+func key(out mut []int, d int, first bool, name string) {
+    if !first {
+        out = append(out, 44)
+    }
+    nl(mut out, d)
+    out = append(out, 34)
+    obuf.Lit(mut out, name)
+    obuf.Lit(mut out, "\": ")
+}
+
+func boolv(out mut []int, v bool) {
+    obuf.Lit(mut out, if v { "true" } else { "false" })
+}
+
+// open / close は配列・オブジェクトの開き（要素の前の改行は呼び手の key / 要素側）
+func elem(out mut []int, d int, first bool) {
+    if !first {
+        out = append(out, 44)
+    }
+    nl(mut out, d)
+}
+
+// sortedIdx は xs[lo:hi] の添字をバイト順に並べ、重複（dedup = true のとき）を除いたもの
+func sortedIdx(xs [][]int, lo int, hi int, dedup bool) []int {
+    mut ix := mut []int{}
+    for i <- iter.Range(lo, hi) {
+        // 挿入ソート
+        ix = append(ix, i)
+        mut j := len(ix) - 1
+        while j > 0 && Less(xs[ix[j]], xs[ix[j - 1]]) {
+            tmp := ix[j]
+            ix[j] = ix[j - 1]
+            ix[j - 1] = tmp
+            j -= 1
+        }
+    }
+    if !dedup {
+        return freeze(ix)
+    }
+    mut out := mut []int{}
+    mut k := 0
+    while k < len(ix) {
+        if k == 0 || !Eq(xs[ix[k]], xs[ix[k - 1]]) {
+            out = append(out, ix[k])
+        }
+        k += 1
+    }
+    return freeze(out)
+}
+
+// Json は Program を loader 黄金の JSON にする
+func Json(p Program) []int {
+    mut out := mut []int{}
+    out = append(out, 123)
+    key(mut out, 1, true, "main")
+    obuf.Lit(mut out, "\"main\"")
+    key(mut out, 1, false, "pkgs")
+    out = append(out, 91)
+    mut pk := 0
+    while pk < len(p.pkg_path) {
+        elem(mut out, 2, pk == 0)
+        out = append(out, 123)
+        key(mut out, 3, true, "path")
+        str(mut out, p.pkg_path[pk])
+        key(mut out, 3, false, "name")
+        str(mut out, p.pkg_name[pk])
+        // import 表（この package の分を参照名のバイト順に）
+        mut refs := mut [][]int{}
+        mut rpath := mut [][]int{}
+        mut e := 0
+        while e < len(p.imp_pkg) {
+            if p.imp_pkg[e] == pk {
+                refs = append(refs, p.imp_ref[e])
+                rpath = append(rpath, p.imp_path[e])
+            }
+            e += 1
+        }
+        rs := freeze(refs)
+        rp := freeze(rpath)
+        key(mut out, 3, false, "imports")
+        if len(rs) == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            out = append(out, 91)
+            ord := sortedIdx(rs, 0, len(rs), false)
+            mut i := 0
+            while i < len(ord) {
+                elem(mut out, 4, i == 0)
+                out = append(out, 123)
+                key(mut out, 5, true, "ref")
+                str(mut out, rs[ord[i]])
+                key(mut out, 5, false, "path")
+                str(mut out, rp[ord[i]])
+                nl(mut out, 4)
+                out = append(out, 125)
+                i += 1
+            }
+            nl(mut out, 3)
+            out = append(out, 93)
+        }
+        // 関数
+        key(mut out, 3, false, "funcs")
+        mut nf := 0
+        mut i := 0
+        while i < len(p.fn_file) {
+            if p.file_pkg[p.fn_file[i]] == pk {
+                if nf == 0 {
+                    out = append(out, 91)
+                }
+                elem(mut out, 4, nf == 0)
+                out = append(out, 123)
+                t := p.trees[p.fn_file[i]]
+                key(mut out, 5, true, "name")
+                str(mut out, Str(t, t.nodes[p.fn_node[i]].a))
+                key(mut out, 5, false, "expands")
+                boolv(mut out, p.fn_expands[i])
+                key(mut out, 5, false, "mut_def")
+                boolv(mut out, p.fn_mut_def[i])
+                key(mut out, 5, false, "has_try")
+                boolv(mut out, p.fn_has_try[i])
+                key(mut out, 5, false, "callees")
+                ord := sortedIdx(p.callees, p.fn_clo[i], p.fn_chi[i], true)
+                if len(ord) == 0 {
+                    obuf.Lit(mut out, "[]")
+                } else {
+                    out = append(out, 91)
+                    mut c := 0
+                    while c < len(ord) {
+                        elem(mut out, 6, c == 0)
+                        str(mut out, p.callees[ord[c]])
+                        c += 1
+                    }
+                    nl(mut out, 5)
+                    out = append(out, 93)
+                }
+                nl(mut out, 4)
+                out = append(out, 125)
+                nf += 1
+            }
+            i += 1
+        }
+        if nf == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            nl(mut out, 3)
+            out = append(out, 93)
+        }
+        // const
+        key(mut out, 3, false, "consts")
+        mut nc := 0
+        i = 0
+        while i < len(p.c_file) {
+            if p.file_pkg[p.c_file[i]] == pk {
+                if nc == 0 {
+                    out = append(out, 91)
+                }
+                elem(mut out, 4, nc == 0)
+                out = append(out, 123)
+                t := p.trees[p.c_file[i]]
+                key(mut out, 5, true, "name")
+                str(mut out, Str(t, t.nodes[p.c_node[i]].a))
+                key(mut out, 5, false, "value")
+                if p.c_has[i] {
+                    obuf.Int(mut out, p.c_value[i])
+                } else {
+                    obuf.Lit(mut out, "null")
+                }
+                key(mut out, 5, false, "dict")
+                boolv(mut out, p.c_dict[i])
+                // `@embed` の const だけ: 埋めたファイルのパスの列（畳んだ map リテラルのキー = バイト辞書順）
+                cn := t.nodes[p.c_node[i]]
+                if cn.f == 1 {
+                    key(mut out, 5, false, "embed")
+                    es := t.nodes[cn.b].c
+                    out = append(out, 91)
+                    mut c := 0
+                    while c < ast.ListLen(t, es) {
+                        elem(mut out, 6, c == 0)
+                        str(mut out, Str(t, t.nodes[t.nodes[ast.ListAt(t, es, c)].a].a))
+                        c += 1
+                    }
+                    nl(mut out, 5)
+                    out = append(out, 93)
+                }
+                nl(mut out, 4)
+                out = append(out, 125)
+                nc += 1
+            }
+            i += 1
+        }
+        if nc == 0 {
+            obuf.Lit(mut out, "[]")
+        } else {
+            nl(mut out, 3)
+            out = append(out, 93)
+        }
+        nl(mut out, 2)
+        out = append(out, 125)
+        pk += 1
+    }
+    nl(mut out, 1)
+    out = append(out, 93)
+    key(mut out, 1, false, "errors")
+    if len(p.err_name) == 0 {
+        obuf.Lit(mut out, "[]")
+    } else {
+        out = append(out, 91)
+        mut i := 0
+        while i < len(p.err_name) {
+            elem(mut out, 2, i == 0)
+            out = append(out, 123)
+            key(mut out, 3, true, "name")
+            str(mut out, p.err_name[i])
+            key(mut out, 3, false, "pkg")
+            str(mut out, p.pkg_path[p.err_pkg[i]])
+            nl(mut out, 2)
+            out = append(out, 125)
+            i += 1
+        }
+        nl(mut out, 1)
+        out = append(out, 93)
+    }
+    nl(mut out, 0)
+    out = append(out, 125)
+    out = append(out, 10)
+    return freeze(out)
+}
+
+// Failed は load が失敗したか（理由は FailMsg）
+func Failed(p Program) bool {
+    return len(p.fail) > 0
+}
+
+func FailMsg(p Program) []int {
+    return p.fail
+}

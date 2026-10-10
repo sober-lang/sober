@@ -1,0 +1,267 @@
+{
+  "package": "layout",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "WidthOverflow",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "field",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 10
+          },
+          {
+            "name": "value",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          },
+          {
+            "name": "width",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 21
+      }
+    },
+    {
+      "name": "LengthMismatch",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "field",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 25
+          },
+          {
+            "name": "want",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 28
+          },
+          {
+            "name": "got",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 31
+          }
+        ]
+      },
+      "tok": 22,
+      "span": {
+        "start": 21,
+        "end": 36
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "FailWidth",
+      "type_params": [],
+      "params": [
+        {
+          "name": "field",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "width",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "v",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "panic",
+                "tok": 49
+              },
+              "args": [
+                {
+                  "k": "composite",
+                  "type_name": "WidthOverflow",
+                  "elems": [
+                    {
+                      "key": "field",
+                      "value": {
+                        "k": "ident",
+                        "name": "field",
+                        "tok": 55
+                      }
+                    },
+                    {
+                      "key": "value",
+                      "value": {
+                        "k": "ident",
+                        "name": "v",
+                        "tok": 59
+                      }
+                    },
+                    {
+                      "key": "width",
+                      "value": {
+                        "k": "ident",
+                        "name": "width",
+                        "tok": 63
+                      }
+                    }
+                  ],
+                  "tok": 51,
+                  "type_args": []
+                }
+              ],
+              "tok": 50
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 69
+      },
+      "sig_end": 48
+    },
+    {
+      "name": "FailLength",
+      "type_params": [],
+      "params": [
+        {
+          "name": "field",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        },
+        {
+          "name": "want",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "got",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "panic",
+                "tok": 82
+              },
+              "args": [
+                {
+                  "k": "composite",
+                  "type_name": "LengthMismatch",
+                  "elems": [
+                    {
+                      "key": "field",
+                      "value": {
+                        "k": "ident",
+                        "name": "field",
+                        "tok": 88
+                      }
+                    },
+                    {
+                      "key": "want",
+                      "value": {
+                        "k": "ident",
+                        "name": "want",
+                        "tok": 92
+                      }
+                    },
+                    {
+                      "key": "got",
+                      "value": {
+                        "k": "ident",
+                        "name": "got",
+                        "tok": 96
+                      }
+                    }
+                  ],
+                  "tok": 84,
+                  "type_args": []
+                }
+              ],
+              "tok": 83
+            }
+          }
+        ]
+      },
+      "tok": 70,
+      "bodiless": false,
+      "span": {
+        "start": 69,
+        "end": 102
+      },
+      "sig_end": 81
+    }
+  ],
+  "consts": []
+}

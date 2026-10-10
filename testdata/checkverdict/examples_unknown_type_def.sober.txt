@@ -1,0 +1,2 @@
+sober: desugar error at examples/unknown_type_def.sober:5:16 (UnknownName)
+exit=1

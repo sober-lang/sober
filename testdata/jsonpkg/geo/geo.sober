@@ -1,0 +1,6 @@
+package geo
+
+type Pt struct {
+    lat int
+    lon int
+}

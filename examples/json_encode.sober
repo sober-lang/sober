@@ -1,0 +1,42 @@
+package main
+
+// shape[T] の逆向き（language.md 16 節 2 — 第二便）: json.Encode[T](v) が struct を JSON に書く（空白なし・欄は宣言の順・U? の nil は null）。
+// EncodeWith / DecodeWith は欄名 → JSON のキーの対応の辞書つき（同じ辞書で両方向）。Encode → Parse → Decode の往復で元に戻る
+
+import "std/json"
+
+type Point struct {
+    x int
+    y int
+}
+
+type Shape struct {
+    name string
+    closed bool
+    scale float
+    points []Point
+    tags []string
+    note string?
+    origin Point?
+}
+
+func main() {
+    s := Shape{name: "tri \"A\"", closed: true, scale: 1.5, points: []Point{Point{x: 0, y: 0}, Point{x: 3, y: -4}}, tags: []string{"a", "b\nc"}, note: nil, origin: Point{x: 7, y: 9}}
+    j := json.Encode[Shape](s)
+    println(j)
+    r := map[string]string{"points": "pts", "x": "lon", "y": "lat"}
+    j2 := json.EncodeWith[Shape](s, r)
+    println(j2)
+    // 往復: 書いたものを読んで戻す（rename も同じ辞書で）
+    d, err := json.Parse(bytes(j2))
+    if err != nil {
+        println("parse error")
+        return
+    }
+    t, derr := json.DecodeWith[Shape](d, json.Root(d), r)
+    if derr != nil {
+        println("decode error")
+        return
+    }
+    println(json.Encode[Shape](t) == j)
+}

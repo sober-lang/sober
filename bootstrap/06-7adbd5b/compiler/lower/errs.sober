@@ -1,0 +1,289 @@
+package lower
+
+// 組み込み error（K1'' — src/lower_types.zig の errType / lower.zig の labelToErr / lower_inline.zig の tryResults / lower_cont.zig の chainPush・causeOf の写し）。
+// - ラベルの型 = 全 error ラベルの union（st.errs — variant の並びは desugar の errv = ロード順 × ファイル順 × 宣言順、タグ = 添字）
+// - error = (先頭ラベル, 鎖) の struct（st.errstruct — フィールド #top / #chain。鎖は内側の error を外側から積んだ imm の []ラベル）
+
+import "diag"
+import "desugar"
+import "ast"
+import "std/iter"
+
+// errsInfo はラベルの union の情報（初出で作る。SI_DECL = -1 が印）
+func errsInfo(st mut St) int {
+    x := st.errs
+    if x >= 0 {
+        return x
+    }
+    info := recN(mut st, SISZ)
+    hset(mut st, info, TUnion)
+    hset(mut st, info + SI_DECL, -1)
+    hset(mut st, info + SI_PKG, desugar.MainPkg(mut st.d))
+    hset(mut st, info + SI_WORDS, 0)
+    hset(mut st, info + SI_STATE, LPending)
+    hset(mut st, info + SI_TY, rec4(mut st, TUnion, info, 0, 0))
+    st.errs = info
+    return info
+}
+
+// layoutErrs はラベルの union のレイアウト（ラベルのフィールド型は宣言側 package で解決する）
+func layoutErrs(st mut St, info int) error? {
+    hset(mut st, info + SI_STATE, LLaying)
+    saved_env := st.tenv
+    st.tenv = -1
+    err := layoutErrsBody(mut st, info)
+    st.tenv = saved_env
+    return err
+}
+
+func layoutErrsBody(st mut St, info int) error? {
+    n := desugar.NErr(mut st.d)
+    vs := listN(mut st, n)
+    mut mx := 0
+    for i <- iter.Range(0, n) {
+        td := desugar.ErrNode(mut st.d, i)
+        pk := desugar.ErrPkg(mut st.d, i)
+        lay := layoutFields(mut st, pk, lA(nodeOf(mut st, nC(nodeOf(mut st, td)))))?
+        vr := rec4(mut st, nodeOf(mut st, td).a, i, lay.fields, 0)
+        hset(mut st, vs + 1 + i, vr)
+        if lay.words > mx {
+            mx = lay.words
+        }
+    }
+    hset(mut st, info + SI_FIELDS, vs)
+    hset(mut st, info + SI_WORDS, 1 + mx)
+    hset(mut st, info + SI_STATE, LDone)
+    return nil
+}
+
+// errLabelOf は型の名前（"N" か "ref.N"）の error ラベルの添字（無ければ -1）。pk は参照側の package（修飾参照は公開の検査つき — desugar.ResolveVariant）
+func errLabelOf(st mut St, pk int, name desugar.StrRef) int {
+    r := desugar.ResolveVariant(mut st.d, pk, name)
+    return if r.kind == desugar.TopVariant && r.idx == desugar.ERRS { r.sub } else { -1 }
+}
+
+// errType は組み込み error の型（初出で作る）
+func errType(st mut St) (int, error?) {
+    x := st.errstruct
+    if x >= 0 {
+        return hget(mut st, x + SI_TY), nil
+    }
+    u := errsInfo(mut st)
+    layoutInfo(mut st, u)?
+    lt := hget(mut st, u + SI_TY)
+    lw := tWords(mut st, lt)
+    fs := list2(mut st, rec4(mut st, int(strLit(mut st, "#top")), lt, 0, 0), rec4(mut st, int(strLit(mut st, "#chain")), mkSlice(mut st, lt, false), lw, 0))
+    info := recN(mut st, SISZ)
+    hset(mut st, info, TStruct)
+    hset(mut st, info + SI_DECL, -2)
+    hset(mut st, info + SI_PKG, desugar.MainPkg(mut st.d))
+    hset(mut st, info + SI_FIELDS, fs)
+    hset(mut st, info + SI_WORDS, lw + 3)
+    hset(mut st, info + SI_STATE, LDone)
+    hv1 := rec4(mut st, TStruct, info, 0, 0)
+    hset(mut st, info + SI_TY, hv1)
+    st.errstruct = info
+    return hv1, nil
+}
+
+// isErr は t が組み込み error か
+func isErr(st mut St, t int) bool {
+    x := st.errstruct
+    return x >= 0 && isTag(mut st, t, TStruct) && hget(mut st, t + 1) == x
+}
+
+func isErrOpt(st mut St, t int) bool {
+    return isTag(mut st, t, TOpt) && isErr(mut st, hget(mut st, t + 1))
+}
+
+// isLabel は error ラベルのリテラルの型（全ラベルの union）か
+func isLabel(st mut St, t int) bool {
+    x := st.errs
+    return x >= 0 && isTag(mut st, t, TUnion) && hget(mut st, t + 1) == x
+}
+
+// labelToErr はラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
+func labelToErr(st mut St, t int, v int) (Val, error?) {
+    et := errType(mut st)?
+    p := newAgg(mut st, et)
+    storeVal(mut st, p, 0, t, v)
+    zero := iconst(mut st, 0)
+    for w <- iter.Range(0, 3) {
+        store(mut st, p, tWords(mut st, t) + w, zero)
+    }
+    return Val{t: et, v: p}, nil
+}
+
+// chainPush は error の鎖に内側の error を積む（包み替え）: dst_chain ← append(内側の鎖, 内側の先頭)。
+// 内側の error は src + src_off 語（先頭ラベル lt、その後に鎖のヘッダ）。imm の append なので最内 region へ全コピー + 1 セル
+func chainPush(st mut St, dst_chain int, src int, src_off int, lt int) {
+    inner := fieldPtr(mut st, src, src_off)
+    lw := tWords(mut st, lt)
+    inner_chain := fieldPtr(mut st, inner, lw)
+    d := regionDepth(mut st)
+    gp, gd := grow(mut st, inner_chain, lw, d, false)
+    storeVal(mut st, gd, 0, lt, inner)
+    store(mut st, dst_chain, 0, ptoi(mut st, gp))
+    store(mut st, dst_chain, 1, bin(mut st, BAdd, load(mut st, inner_chain, 1), iconst(mut st, 1)))
+    store(mut st, dst_chain, 2, d)
+}
+
+// causeOf は error の cause: e（error の値のアドレス）の 1 つ内側の error?。鎖が空なら nil、
+// でなければ (鎖の末尾, 鎖の [0 : len-1])（部分列はビュー — 同じセル・同じ深度）
+func causeOf(st mut St, e int, et int, lt int) int {
+    ot := optOf(mut st, et)
+    out := newAgg(mut st, ot)
+    lw := tWords(mut st, lt)
+    chain := fieldPtr(mut st, e, lw)
+    ln := load(mut st, chain, 1)
+    some := newBlock(mut st)
+    none := newBlock(mut st)
+    join := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, ln, iconst(mut st, 0)), some, -1, none, -1)
+    setCur(mut st, none)
+    store(mut st, out, 0, iconst(mut st, 0))
+    br(mut st, join, -1)
+    setCur(mut st, some)
+    store(mut st, out, 0, iconst(mut st, 1))
+    n1 := bin(mut st, BSub, ln, iconst(mut st, 1))
+    last := cellAt(mut st, itop(mut st, load(mut st, chain, 0)), n1, lw)
+    storeVal(mut st, out, 1, lt, last)
+    oc := fieldPtr(mut st, out, 1 + lw)
+    store(mut st, oc, 0, load(mut st, chain, 0))
+    store(mut st, oc, 1, n1)
+    store(mut st, oc, 2, load(mut st, chain, 2))
+    br(mut st, join, -1)
+    setCur(mut st, join)
+    return out
+}
+
+// tryResults は後置 `?`: 呼び出しの最後の結果 error? のタグが非 0 なら、関数の結果へゼロ値 + err（`? L{…}` なら包み替え）を書いて
+// 出口の後半（defer → relocate → 深度復元 → ret）へ。一致側は残りの結果の列
+func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
+    at := e
+    call0 := nA(nodeOf(mut st, e))
+    if kindN(mut st, call0) != ast.ECall {
+        return 0, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    ctx := hget(mut st, st.rets + 1)
+    rts := if ctx >= 0 { hgetL(mut st, ctx + IC_RESULTS) } else { desugar.ListRef(infoAt(mut st, st.info).results) }
+    n := lenL(mut st, rts)
+    if n == 0 || !isErrOpt(mut st, latI(mut st, rts, n - 1)) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    mut i := 0
+    while i < n - 1 {
+        requireZero(mut st, latI(mut st, rts, i), at)?
+        i += 1
+    }
+    r := evalMulti(mut st, call0)?
+    if r < 0 {
+        return r, nil
+    }
+    k := hget(mut st, r)
+    if k == 0 || !isErrOpt(mut st, hget(mut st, r + 1 + (k - 1) * 2)) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    errt := hget(mut st, r + 1 + (k - 1) * 2)
+    errv := hget(mut st, r + 2 + (k - 1) * 2)
+    err_b := newBlock(mut st)
+    ok_b := newBlock(mut st)
+    tagv := load(mut st, errv, 0)
+    condbr(mut st, cmp(mut st, CNe, tagv, iconst(mut st, 0)), err_b, -1, ok_b, -1)
+    // エラー側: ゼロ値（語を 0 埋め → slice / map は空ヘッダ）+ err を結果の置き場へ（結果は error? を含むので常に sret）
+    setCur(mut st, err_b)
+    dst := if ctx >= 0 { hget(mut st, ctx + IC_SLOT) } else { st.sret }
+    mut off := 0
+    zero := iconst(mut st, 0)
+    i = 0
+    while i < n - 1 {
+        rt := latI(mut st, rts, i)
+        mut w := 0
+        while w < tWords(mut st, rt) {
+            store(mut st, dst, off + w, zero)
+            w += 1
+        }
+        zeroFill(mut st, dst, off, rt)
+        off += tWords(mut st, rt)
+        i += 1
+    }
+    wrap := nB(nodeOf(mut st, e))
+    if wrap != -1 {
+        // 包み替え: 内側の error (top, 鎖) から (W{…}, append(鎖, top)) を作る。フィールドはエラーの経路でだけ評価する
+        if errLabelOf(mut st, st.curPkg, sA(nodeOf(mut st, wrap))) < 0 {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        wrapped := composite(mut st, wrap)?
+        if isTag(mut st, wrapped.t, TNever) {
+            return -1, nil
+        }
+        ev := labelToErr(mut st, wrapped.t, wrapped.v)?
+        chainPush(mut st, fieldPtr(mut st, ev.v, tWords(mut st, wrapped.t)), errv, 1, wrapped.t)
+        c := coerce(mut st, ev.t, ev.v, latI(mut st, rts, n - 1), at)?
+        storeVal(mut st, dst, off, c.t, c.v)
+    } else {
+        storeVal(mut st, dst, off, errt, errv)
+    }
+    if ctx >= 0 {
+        inlineExit(mut st, ctx, at)?
+    } else {
+        funcExit(mut st, -1, at)?
+    }
+    setCur(mut st, ok_b)
+    out := listN(mut st, (k - 1) * 2)
+    hset(mut st, out, k - 1)
+    i = 0
+    while i < (k - 1) * 2 {
+        hset(mut st, out + 1 + i, hget(mut st, r + 1 + i))
+        i += 1
+    }
+    return out, nil
+}
+
+// traceErr は開発用の計装（st.traceErrs — 関数の出口の後半の入口）: 最後の結果が error? で非 nil（error なら常に）なら
+// `#errtrace <関数の表の添字> <ラベルのタグ>` を標準出力へ（println と同じ行バッファ）。持ち上げたラムダ・インスタンス（fn = -1）は出さない。
+// error? の値は [opt のタグ, error（先頭ラベルの union: タグ, …）, …] — 結果は error を含むので常に sret
+func traceErr(st mut St) {
+    fx := infoAt(mut st, st.info)
+    rs := fx.results
+    n := lenL(mut st, rs)
+    if fx.fn < 0 || n == 0 || !infoSret(mut st) {
+        return
+    }
+    mut off := 0
+    for i <- iter.Range(0, n - 1) {
+        off += tWords(mut st, latI(mut st, rs, i))
+    }
+    t := latI(mut st, rs, n - 1)
+    mut tagAt := off
+    if isErrOpt(mut st, t) {
+        tagAt = off + 1
+    } else if !isErr(mut st, t) {
+        return
+    }
+    yes := newBlock(mut st)
+    done := newBlock(mut st)
+    present := if isErrOpt(mut st, t) { cmp(mut st, CNe, load(mut st, st.sret, off), iconst(mut st, 0)) } else { iconst(mut st, 1) }
+    condbr(mut st, present, yes, -1, done, -1)
+    setCur(mut st, yes)
+    printChars(mut st, "#errtrace ")
+    call(mut st, st.rtPint, list1(mut st, iconst(mut st, fx.fn)))
+    printChars(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, st.sret, tagAt)))
+    printChars(mut st, "\n")
+    br(mut st, done, -1)
+    setCur(mut st, done)
+}
+
+// traceSwitch は開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルの union のタグが語 0）ごとに
+// `#errsw <ファイル> <字句> <ラベルのタグ>` を標準出力へ（仮引数・cause の集合の照合 — 戻りの計装では見えない）
+func traceSwitch(st mut St, sw desugar.NodeRef, v int) {
+    at := posOf(mut st, sw)
+    printChars(mut st, "#errsw ")
+    call(mut st, st.rtPint, list1(mut st, iconst(mut st, at.file)))
+    printChars(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, iconst(mut st, at.tok)))
+    printChars(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, v, 0)))
+    printChars(mut st, "\n")
+}

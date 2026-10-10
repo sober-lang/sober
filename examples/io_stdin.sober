@@ -1,0 +1,23 @@
+package main
+
+// std/io.ReadStdin（開発スクリプトの Sober 化の前提）: 標準入力を EOF まで読む Unix フィルタの最小形。
+// 行ごとに番号を付けて出し、最後に行数とバイト数（標準入力 = examples/io_stdin.in — obs / optdiff が流す）
+
+import "std/io"
+import "std/iter"
+
+func main() int {
+    b := io.ReadStdin() catch return 1
+    mut line := 1
+    mut start := 0
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == '\n' {
+            s := string(b[start:i]) catch return 2
+            println("${line}: ${s}")
+            line += 1
+            start = i + 1
+        }
+    }
+    println("lines=${line - 1} bytes=${len(b)}")
+    return 0
+}

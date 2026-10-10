@@ -1,0 +1,55 @@
+package main
+
+// mut 引数（V3-5）: 呼び手の mut ローカルへの参照。呼び出し点に `mut x` と印を付ける。
+// 実装は呼び出し点への展開（関数型引数と同じ生成方式。再帰は拒否）
+
+type Counter struct {
+    n, total int
+}
+
+func bump(c mut Counter, by int) {
+    c.n = c.n + 1
+    c.total = c.total + by
+}
+
+func push(xs mut []int, x int) {
+    xs = append(xs, x)
+}
+
+// ジェネリック + mut 引数。mut 引数を別の mut 引数へ転送する
+type Stack[T] struct {
+    items mut []T
+    size int
+}
+
+func Push[T](s mut Stack[T], x T) {
+    s.items = append(s.items, x)
+    s.size = s.size + 1
+}
+
+func PushTwice[T](s mut Stack[T], x T) {
+    Push(mut s, x)
+    Push(mut s, x)
+}
+
+func sum(n int) int {
+    mut c := Counter{0, 0}
+    mut i := 1
+    while i <= n {
+        bump(mut c, i)
+        i += 1
+    }
+    return c.n * 1000 + c.total
+}
+
+func main() {
+    println(sum(10))
+    mut xs := mut []int{}
+    push(mut xs, 3)
+    push(mut xs, 4)
+    println(len(xs), xs[0] + xs[1])
+    mut s := Stack[int]{mut []int{}, 0}
+    Push(mut s, 7)
+    PushTwice(mut s, 5)
+    println(s.size, s.items[0] + s.items[1] + s.items[2])
+}

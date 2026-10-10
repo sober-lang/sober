@@ -1,0 +1,9 @@
+examples/annot.sober	error: Unsupported at tok 24 (rule annotation): annotation
+examples/bind.sober	error: Unsupported at tok 3 (rule bind_decl): top-level declaration kind
+examples/char_lit_nonascii.sober	sober: parse error
+examples/named_fn_type_mixed.sober	sober: parse error
+examples/scope.sober	error: Unsupported at tok 33 (rule scope_expr): primary expression kind
+examples/struct.sober	error: Unsupported at tok 44 (rule type): type other than struct, union, error, or a function type
+testdata/loader_neg/embed_func/app/main.sober	error: Unsupported at tok 3 (rule annotation): @embed on a declaration other than a const
+testdata/loader_neg/noinline_args/app/main.sober	error: Unsupported at tok 3 (rule annotation): annotation
+testdata/loader_neg/noinline_type/app/main.sober	error: Unsupported at tok 3 (rule annotation): @noinline on a declaration other than a function

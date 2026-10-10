@@ -1,0 +1,2 @@
+sober: load error at examples/switch_nil_only.sober:10:5: a switch with case nil needs another case or a default
+exit=1

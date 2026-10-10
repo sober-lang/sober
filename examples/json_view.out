@@ -1,0 +1,17 @@
+$ = object of 6
+$.name = str "sober — "json"" (16 bytes)
+$.tags = array of 3
+$.tags[0] = str "a" (1 bytes)
+$.tags[1] = str "b	c" (3 bytes)
+$.tags[2] = array of 0
+$.n = array of 3
+$.n[0] = num 0
+$.n[1] = num -1.5e-3
+$.n[2] = num 12345678901234567890123
+$.ok = true
+$.nothing = null
+$.nested = object of 1
+$.nested.x = object of 1
+$.nested.x.y = object of 0
+{"name":"sober — \"json\"","tags":["a","b\tc",[]],"n":[0,-1.5e-3,12345678901234567890123],"ok":true,"nothing":null,"nested":{"x":{"y":{}}}}
+name at byte 12

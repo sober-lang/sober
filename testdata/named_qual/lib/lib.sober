@@ -1,0 +1,8 @@
+package lib
+
+// R は named scalar（language.md 32 節）
+type R int
+
+func Next(r R) int {
+    return int(r) + 1
+}

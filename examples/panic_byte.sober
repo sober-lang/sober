@@ -1,0 +1,13 @@
+package main
+
+// byte(n) の範囲外は panic（language.md 33 節・27 節の「到達 = バグ」）: exit 101（examples/panic_byte.exit）。
+// 定数の範囲外はコンパイルエラー（examples/byte_range.sober）— ここは実行時の値
+func toByte(n int) byte {
+    return byte(n)
+}
+
+func main() {
+    println("before", toByte(255), toByte(0))
+    println(toByte(256))
+    println("unreachable")
+}

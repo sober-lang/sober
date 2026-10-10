@@ -1,0 +1,107 @@
+package checker
+
+// 型検査器（lean/FeatherweightSober/Checker.lean の typecheck / checkDefs と Json.lean の境界の写し —
+// コア AST JSON → 判定 JSON。sober-check と同じバイト列を吐く）の状態と土台。
+//
+// 表現（仮決め R11-1 — selfhost-drafts）: 脱糖器と同じく状態は S 1 つ、可変のものは全部 1 本の int ヒープ st.h に積む。
+// 記録はヒープの添字で指し、無し（Lean の none）は -1。
+// - 型 = 4 語 [tag, a, b, c]（ty.sober）
+// - 式 = 5 語 [kind, nc, a, b, c]（kind = 語の番号 — json.sober、nc = newchan を含むか）
+// - 文脈 Γ = cons [ty, next]、ラベル文脈 Λ = cons [ty, k, next]（末尾 -1）
+// 再帰する関数は `st mut S` を持ち回る Def（R2 の callM）で、渡す imm の値は int だけ（selfhost-drafts F-6 — frame で作った slice を
+// 渡せないため。string リテラルは strlit の段で渡せる）
+
+type S struct {
+    h mut []int
+}
+
+// ヒープ先頭の固定番地（1〜）。スカラーを S のフィールドにしない理由は脱糖器と同じ（F-17）
+const GLOBALS = 32
+const G_T_INT = 1
+const G_T_BOOL = 2
+const G_T_UNIT = 3
+const G_WTAB = 4     // 語の表（ハッシュ → 語の番号）
+const G_PSTK = 5     // JSON の parse の作業領域（深さごとの枠）
+const G_STAMP = 6    // parse で開いた object の通し番号
+const G_CSTK = 7     // 型検査の作業スタック
+const G_NDEF = 8
+const G_DEFS = 9     // 関数表（列 [n, 記録…]、記録 = [param, ret, body, tparams, mask]）
+const G_F = 10       // 型検査の床 f（main 本体 = 0、Def 本体 = 1）
+const G_MAXDEPTH = 11
+
+func put(st mut S, x int) {
+    st.h = append(st.h, x)
+}
+
+func rec4(st mut S, a int, b int, c int, d int) int {
+    at := len(st.h)
+    st.h = append(st.h, a)
+    st.h = append(st.h, b)
+    st.h = append(st.h, c)
+    st.h = append(st.h, d)
+    return at
+}
+
+func rec5(st mut S, a int, b int, c int, d int, e int) int {
+    at := len(st.h)
+    st.h = append(st.h, a)
+    st.h = append(st.h, b)
+    st.h = append(st.h, c)
+    st.h = append(st.h, d)
+    st.h = append(st.h, e)
+    return at
+}
+
+// block は n 語の 0 埋めの領域を取る
+func block(st mut S, n int) int {
+    at := len(st.h)
+    mut i := 0
+    while i < n {
+        st.h = append(st.h, 0)
+        i += 1
+    }
+    return at
+}
+
+func b2i(b bool) int {
+    return if b { 1 } else { 0 }
+}
+
+// ── 出力（1 バイト 1 語）──
+
+func lit(out mut []int, w string) {
+    b := bytes(w)
+    mut i := 0
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+}
+
+func putInt(out mut []int, n0 int) {
+    mut n := n0
+    if n < 0 {
+        out = append(out, 45)
+        if n == -9223372036854775807 - 1 {
+            lit(mut out, "9223372036854775808")
+            return
+        }
+        n = 0 - n
+    }
+    mut p := 1
+    while p <= n / 10 {
+        p = p * 10
+    }
+    while p > 0 {
+        out = append(out, 48 + n / p % 10)
+        p = p / 10
+    }
+}
+
+func putBool(out mut []int, b bool) {
+    if b {
+        lit(mut out, "true")
+    } else {
+        lit(mut out, "false")
+    }
+}

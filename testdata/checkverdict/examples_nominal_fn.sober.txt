@@ -1,0 +1,2 @@
+sober: desugar error at examples/nominal_fn.sober:13:15 (TypeMismatch)
+exit=1

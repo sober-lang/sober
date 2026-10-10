@@ -1,0 +1,984 @@
+package desugar
+
+// 呼び出し（src/desugar.zig の call / inlineCall / lambdaCall / liftLambda / tryExpr 一族の写し）
+
+import "ast"
+
+// 閉包（8 語）: [lambda, env.b, env.f, pkg, tenv, ft, ret_target, 定義時の inlrec]
+func closure(st mut S, lam int, eb int, ef int, ft int) int {
+    at := top(mut st)
+    put(mut st, lam)
+    put(mut st, eb)
+    put(mut st, ef)
+    put(mut st, st.curPkg)
+    put(mut st, st.tenv)
+    put(mut st, ft)
+    put(mut st, st.retTarget)
+    put(mut st, st.inlrec)
+    return at
+}
+
+// fnRef は名前付き関数 → fnref（展開される関数・mut 引数の関数・ジェネリックは値にならない）
+func fnRef(st mut S, fi int, tok int) (int, error?) {
+    if fnExpands(mut st, fi) || fnMutDef(mut st, fi) || llen(mut st, fnTParams(mut st, fi)) > 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    d := fnDef(mut st, fi)
+    if d < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    return ce(mut st, CFnref, d, -1, 0, 0), nil
+}
+
+// callValue は関数値の呼び出し（関数値を先に評価し、引数は pair 鎖）
+func callValue(st mut S, callee int, ft int, args int, tok int, eb int, ef int, depth int) (int, error?) {
+    f := expr(mut st, callee, eb, ef, depth)?
+    n := llen(mut st, args)
+    vs := listN(mut st, n)
+    mut p := tA(mut st, ft)
+    mut i := 0
+    while i < n {
+        mut want := p
+        if i + 1 != n {
+            if st.h[p] != TPr {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            want = tA(mut st, p)
+            p = tB(mut st, p)
+        }
+        hv49 := coerceExpr(mut st, lat(mut st, args, i), want, eb, ef, depth, tok)?
+        st.h[vs + 1 + i] = hv49
+        i += 1
+    }
+    if n == 0 && st.h[p] != TUnit {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    return c2(mut st, CCallv, f, pairChain(mut st, vs)), nil
+}
+
+// letArgs は引数を左から右へ let で評価して捨て、body を返す形（println / io の代役）
+func call(st mut S, callee0 int, args int, tok int, eb int, ef int, depth int) (int, error?) {
+    mut callee := callee0
+    mut explicit := -1
+    na := llen(mut st, args)
+    // 明示の型引数 `f[T](...)`
+    if kindOf(mut st, callee0) == ast.EIndex && kindOf(mut st, st.h[callee0 + NB]) == ast.EIdent {
+        if findFn(mut st, st.h[callee0 + NA], eb) >= 0 {
+            explicit = st.h[callee0 + NB]
+            callee = st.h[callee0 + NA]
+        }
+    }
+    ft := fnValueTy(mut st, callee, eb, ef)
+    if ft >= 0 {
+        return callValue(mut st, callee, ft, args, tok, eb, ef, depth)
+    }
+    if kindOf(mut st, callee) == ast.EIdent {
+        name := st.h[callee + NA]
+        if strIs(mut st, name, "println") {
+            mut body := cTriv(mut st)
+            mut i := na - 1
+            while i >= 0 {
+                v := expr(mut st, lat(mut st, args, i), eb, ef, depth + i)?
+                body = cLet(mut st, v, body)
+                i -= 1
+            }
+            return body, nil
+        }
+        if strIs(mut st, name, "len") {
+            if na != 1 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            a0 := lat(mut st, args, 0)
+            if isStringTy(mut st, computeTy(mut st, a0, eb, ef)) {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            if isTag(mut st, computeTy(mut st, a0, eb, ef), TMp) {
+                v := expr(mut st, a0, eb, ef, depth)?
+                return c1(mut st, CLenm, v), nil
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CLen, v), nil
+        }
+        // keys(m)（keysm の段）: map のキー列のスナップショット（最内 region の imm slice）
+        if strIs(mut st, name, "keys") {
+            if na != 1 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            a0 := lat(mut st, args, 0)
+            mt := computeTy(mut st, a0, eb, ef)
+            if mt < 0 {
+                return 0, Fail{k: KFrag, tok: tok}
+            }
+            if !isTag(mut st, mt, TMp) {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CKeysm, v), nil
+        }
+        if isStdPkg(mut st, st.curPkg) {
+            if strIs(mut st, name, "sysErrno") {
+                if na != 0 {
+                    return 0, Fail{k: KMalformed, tok: tok}
+                }
+                return cLit(mut st, 0), nil
+            }
+            if strIs(mut st, name, "sysArgs") {
+                if na != 0 {
+                    return 0, Fail{k: KMalformed, tok: tok}
+                }
+                return c1(mut st, CFreeze, c2(mut st, CMkslice, 1, st.tInt)), nil
+            }
+            rd := strIs(mut st, name, "sysReadFile") || strIs(mut st, name, "sysReadDir")
+            if rd || strIs(mut st, name, "sysWriteFile") || strIs(mut st, name, "sysWriteFd") {
+                n := if rd { 1 } else { 2 }
+                if na != n {
+                    return 0, Fail{k: KMalformed, tok: tok}
+                }
+                mut body := if n == 1 { c1(mut st, CFreeze, c2(mut st, CMkslice, 1, st.tInt)) } else { cLit(mut st, 0) }
+                mut i := n - 1
+                while i >= 0 {
+                    v := expr(mut st, lat(mut st, args, i), eb, ef, depth + i)?
+                    body = cLet(mut st, v, body)
+                    i -= 1
+                }
+                return body, nil
+            }
+        }
+        if strIs(mut st, name, "bytesToString") && isStdPkg(mut st, st.curPkg) {
+            if na != 1 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            bt := computeTy(mut st, lat(mut st, args, 0), eb, ef)
+            if bt < 0 {
+                return 0, Fail{k: KFrag, tok: tok}
+            }
+            if st.h[bt] != TSl || tD(mut st, bt) != 0 || tA(mut st, bt) != 0 || st.h[tC(mut st, bt)] != TInt {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            return expr(mut st, lat(mut st, args, 0), eb, ef, depth)
+        }
+        if strIs(mut st, name, "bytes") {
+            if na != 1 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            if !isStringTy(mut st, computeTy(mut st, lat(mut st, args, 0), eb, ef)) {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            return expr(mut st, lat(mut st, args, 0), eb, ef, depth)
+        }
+        if strIs(mut st, name, "freeze") {
+            if na != 1 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            v := expr(mut st, lat(mut st, args, 0), eb, ef, depth)?
+            return c1(mut st, CFreeze, v), nil
+        }
+        if strIs(mut st, name, "delete") {
+            if na != 2 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            bt := computeTy(mut st, lat(mut st, args, 0), eb, ef)
+            if bt < 0 {
+                return 0, Fail{k: KFrag, tok: tok}
+            }
+            if st.h[bt] != TMp {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            m := expr(mut st, lat(mut st, args, 0), eb, ef, depth)?
+            key := expr(mut st, lat(mut st, args, 1), eb, ef, depth)?
+            return c3(mut st, CDelm, tD(mut st, bt), m, key), nil
+        }
+        if strIs(mut st, name, "append") {
+            if na != 2 {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            a0 := lat(mut st, args, 0)
+            if isStringTy(mut st, computeTy(mut st, a0, eb, ef)) {
+                return 0, Fail{k: KMalformed, tok: tok}
+            }
+            subject := expr(mut st, a0, eb, ef, depth)?
+            v0 := expr(mut st, lat(mut st, args, 1), eb, ef, depth)?
+            v := appendValueAnn(mut st, a0, lat(mut st, args, 1), v0, eb, ef)
+            return c2(mut st, CAppend, subject, v), nil
+        }
+        cl := lookupF(mut st, ef, name)
+        if cl >= 0 {
+            return lambdaCall(mut st, cl, args, tok, eb, ef, depth)
+        }
+    }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    if fnExpands(mut st, fi) {
+        return inlineCall(mut st, fi, explicit, args, tok, eb, ef, depth)
+    }
+    d := fnDef(mut st, fi)
+    if d < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    ps := fnParams(mut st, fi)
+    if na != llen(mut st, ps) {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    tps := fnTParams(mut st, fi)
+    nt := llen(mut st, tps)
+    mut ts := -1
+    if nt > 0 {
+        ts = inferTs(mut st, fi, explicit, args, eb, ef, tok, false)?
+    } else if explicit >= 0 {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    penv := listN(mut st, nt * 3)
+    st.h[penv] = nt
+    mut i := 0
+    while i < nt {
+        hv213 := lat(mut st, tps, i)
+        st.h[penv + 1 + i * 3] = hv213
+        hv214 := lat(mut st, ts, i)
+        st.h[penv + 2 + i * 3] = hv214
+        st.h[penv + 3 + i * 3] = -1
+        i += 1
+    }
+    vs := listN(mut st, na)
+    i = 0
+    while i < na {
+        prm := lat(mut st, ps, i)
+        arg := lat(mut st, args, i)
+        if st.h[prm + NC] != 0 {
+            hv224 := mutRefArg(mut st, arg, eb, depth)?
+            st.h[vs + 1 + i] = hv224
+        } else {
+            w, err := tyIn(mut st, fnPkg(mut st, fi), penv, st.h[prm + NB], tok)
+            if err == nil && kindOf(mut st, arg) == ast.EStrlit && isStringTy(mut st, w) {
+                // string リテラルの実引数は region 0（呼び手空間の上界 — 再帰する mut Def の imm 引数の条件に掛けない。F-6）
+                st.h[vs + 1 + i] = c2(mut st, CStrlit, st.h[arg + NA], 0)
+            } else if err == nil {
+                hv228 := coerceExpr(mut st, arg, w, eb, ef, depth, tok)?
+                st.h[vs + 1 + i] = hv228
+            } else {
+                hv230 := expr(mut st, arg, eb, ef, depth)?
+                st.h[vs + 1 + i] = hv230
+            }
+        }
+        i += 1
+    }
+    return ce(mut st, CCall, d, pairChain(mut st, vs), ts, b2i(fnMutDef(mut st, fi))), nil
+}
+
+// mutRefArg は mut 引数の実引数 `mut x`（R2）: 呼び手の mut ローカルの ref
+func mutRefArg(st mut S, arg int, eb int, depth int) (int, error?) {
+    if kindOf(mut st, arg) != ast.EMutArg {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    // 割った束縛の中の場所（`mut x` / `mut x.f`）: ref（の木）をそのまま渡す
+    pl := placeOfMutArg(mut st, arg, eb, depth)
+    if pl.ok {
+        return pl.refs, nil
+    }
+    if isDotted(mut st, arg) {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    b := lookup(mut st, eb, st.h[arg + NA])
+    if b < 0 {
+        return 0, Fail{k: KUnknown, tok: tokOf(mut st, arg)}
+    }
+    if st.h[b + BMut] == 0 {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    return cVar(mut st, depth - 1 - st.h[b + BLevel]), nil
+}
+
+// inlining の列（[fn, next]）に fi があるか
+func inInlining(st mut S, fi int) bool {
+    mut x := st.inlrec
+    while x >= 0 {
+        if st.h[x] == fi {
+            return true
+        }
+        x = st.h[x + 1]
+    }
+    return false
+}
+
+// inlineCall は展開される関数の呼び出し点展開。値引数は letE、関数型引数はラムダを fenv に積む
+func inlineCall(st mut S, fi int, explicit int, args int, tok int, eb int, ef int, depth int) (int, error?) {
+    if inInlining(mut st, fi) {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    ps := fnParams(mut st, fi)
+    np := llen(mut st, ps)
+    if llen(mut st, args) != np {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    pk := fnPkg(mut st, fi)
+    mut body_tenv := st.tenv
+    if llen(mut st, fnTParams(mut st, fi)) > 0 {
+        body_tenv = callEnv(mut st, fi, explicit, args, eb, ef, tok)?
+    } else if explicit >= 0 {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    mut fenv := -1
+    mut benv := -1
+    vals := listN(mut st, np)
+    mut nv := 0
+    mut level := depth
+    mut i := 0
+    while i < np {
+        p := lat(mut st, ps, i)
+        arg := lat(mut st, args, i)
+        pt := st.h[p + NB]
+        if st.h[p + NC] != 0 {
+            v := mutParamArg(mut st, fi, p, arg, body_tenv, eb, level, tok)?
+            st.h[vals + 1 + nv] = v
+            nv += 1
+            pb := lookup(mut st, eb, lat(mut st, DotParts(mut st, st.h[arg + NA]), 0))
+            saved := st.tenv
+            st.tenv = body_tenv
+            w, err := tyOf(mut st, pk, pt, tok, 32)
+            pd := declOfTypeExpr(mut st, pk, pt)
+            pe := elemDeclOfTypeExpr(mut st, pk, pt)
+            psplit := teSplits(mut st, pk, body_tenv, pt)
+            st.tenv = saved
+            benv = bind(mut st, benv, st.h[p + NA], level, true, pd, if err == nil { w } else { -1 }, pe, st.h[pb + BRegion], -1)
+            if psplit {
+                markSplit(mut st, benv)
+            }
+            level += 1
+        } else {
+            if kindOf(mut st, arg) == ast.EMutArg {
+                return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+            }
+            if kindOf(mut st, pt) == ast.TFunc {
+                saved := st.tenv
+                st.tenv = body_tenv
+                w, err := tyOf(mut st, pk, pt, tok, 32)
+                st.tenv = saved
+                c := closureArg(mut st, arg, if err == nil { w } else { -1 }, eb, ef, tok)?
+                fenv = bindF(mut st, fenv, st.h[p + NA], c)
+            } else {
+                saved := st.tenv
+                st.tenv = body_tenv
+                w, err := tyOf(mut st, pk, pt, tok, 32)
+                pd := declOfTypeExpr(mut st, pk, pt)
+                pe := elemDeclOfTypeExpr(mut st, pk, pt)
+                st.tenv = saved
+                want := if err == nil { w } else { -1 }
+                at := if want >= 0 { inlineArgTy(mut st, arg, want, eb) } else { -1 }
+                mut v := -1
+                if at >= 0 {
+                    cv := coerceExpr(mut st, arg, want, eb, ef, level, tok)?
+                    v = cAnn(mut st, cv, at)
+                } else {
+                    v = expr(mut st, arg, eb, ef, level)?
+                }
+                st.h[vals + 1 + nv] = v
+                nv += 1
+                benv = bind(mut st, benv, st.h[p + NA], level, false, pd, want, pe, 0, at)
+                level += 1
+            }
+        }
+        i += 1
+    }
+    hv340 := rec5(mut st, fi, st.inlining, 0, 0, 0)
+    st.inlining = hv340
+    saved_inl := st.h[st.inlining + 1]
+    saved_rec := st.inlrec
+    hv341 := rec5(mut st, fi, saved_rec, 0, 0, 0)
+    st.inlrec = hv341
+    saved_pkg := st.curPkg
+    st.curPkg = pk
+    saved_tenv := st.tenv
+    st.tenv = body_tenv
+    // 本体 = `label t body`（t は結果型の展開点の座標）
+    rs := fnResults(mut st, fi)
+    nr := llen(mut st, rs)
+    mut rtys := listN(mut st, nr)
+    mut j := 0
+    while j < nr && rtys >= 0 {
+        t, err := tyOf(mut st, pk, lat(mut st, rs, j), tok, 32)
+        if err != nil {
+            rtys = -1
+        } else {
+            hv356 := pointTy(mut st, t)
+            st.h[rtys + 1 + j] = hv356
+        }
+        j += 1
+    }
+    saved_rt := st.retTarget
+    saved_lf := st.loopFloor
+    rl := newLabel(mut st, LRet, if rtys >= 0 { tyChain(mut st, rtys) } else { -1 })
+    if rtys >= 0 {
+        st.h[rl + LBRtys] = rtys
+    }
+    st.h[rl + LBAnn] = b2i(nr > 0)
+    hv370 := pushLabel(mut st, rl)
+    st.retTarget = hv370
+    st.loopFloor = st.nlab
+    saved_rtys := st.curRtys
+    st.curRtys = rtys
+    inner := scoped(mut st, st.h[fnBody(mut st, fi) + NA], benv, fenv, level, true, false, st.h[rl + LBT])?
+    st.nlab = st.nlab - 1
+    mut body := labelNode(mut st, rl, inner, if nr > 0 { WAnn } else { WDiscard })
+    st.curRtys = saved_rtys
+    st.retTarget = saved_rt
+    st.loopFloor = saved_lf
+    st.tenv = saved_tenv
+    st.curPkg = saved_pkg
+    st.inlining = saved_inl
+    st.inlrec = saved_rec
+    mut k := nv - 1
+    while k >= 0 {
+        body = cLet(mut st, lat(mut st, vals, k), body)
+        k -= 1
+    }
+    return body, nil
+}
+
+// mutParamArg は mut 引数の実引数（V3-5）: ref そのものを渡し、仮引数の型を ref の型（region は束縛の alloc 点）で ann する
+func mutParamArg(st mut S, fi int, p int, arg int, body_tenv int, eb int, level int, tok int) (int, error?) {
+    if kindOf(mut st, arg) != ast.EMutArg {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    saved := st.tenv
+    st.tenv = body_tenv
+    w, err := tyOf(mut st, fnPkg(mut st, fi), st.h[p + NB], tok, 32)
+    psplit := teSplits(mut st, fnPkg(mut st, fi), body_tenv, st.h[p + NB])
+    st.tenv = saved
+    // 割った束縛の中の場所（`mut x` / `mut x.f`）: ref（の木）を渡す（葉は場所の型で ann する）。割り方は仮引数の型と揃うこと
+    pl := placeOfMutArg(mut st, arg, eb, level)
+    if pl.ok {
+        if (pl.dr >= 0) != psplit || err != nil {
+            return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+        }
+        // struct の場所は実引数と仮引数の宣言が同じ型宣言であること（形が同じ別の struct を渡すのは型エラー — ann を付けないので
+        // ここが唯一の照合。インスタンスの型引数の違いは葉の型として本体の検査に残る）
+        if pl.dr >= 0 {
+            pd := teDecl(mut st, fnPkg(mut st, fi), body_tenv, st.h[p + NB])
+            if pd < 0 || st.h[pd] != st.h[pl.dr] {
+                return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+            }
+        }
+        pt := placeTy(mut st, pl, w, tok)?
+        // struct の場所（ref の木）は ann しない: 木の型は実引数の宣言 pl.dr から組む（仮引数の型との照合ではない）うえ、ref true を葉とする
+        // 木の sub は等値だけ（緩めない）なので、ann は冗長な自己整合の表明 — 欄の数 × 展開点の数でコアを膨らませる（report-8）。
+        // placeTy は拒否（欄の型が引けない）を保つために呼ぶ
+        if pl.dr >= 0 {
+            return pl.refs, nil
+        }
+        return cAnn(mut st, pl.refs, pt), nil
+    }
+    if isDotted(mut st, arg) || psplit {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    b := lookup(mut st, eb, st.h[arg + NA])
+    if b < 0 {
+        return 0, Fail{k: KUnknown, tok: tokOf(mut st, arg)}
+    }
+    if st.h[b + BMut] == 0 {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+    }
+    ref := cVar(mut st, level - 1 - st.h[b + BLevel])
+    if err != nil {
+        return ref, nil
+    }
+    saved_rd := st.rdepth
+    st.rdepth = st.h[b + BRegion] + 1
+    inner := pointTy(mut st, w)
+    st.rdepth = saved_rd
+    return cAnn(mut st, ref, rec5(mut st, TRef, 1, st.h[b + BRegion], inner, 0)), nil
+}
+
+// closureArg は関数型の引数位置に書ける形（ラムダ・閉包の名前・for 式）
+func closureArg(st mut S, arg int, want int, eb int, ef int, tok int) (int, error?) {
+    k := kindOf(mut st, arg)
+    if k == ast.EFor {
+        if forOut(mut st, arg) {
+            return 0, Fail{k: KFrag, tok: tokOf(mut st, arg)}
+        }
+        g := lat(mut st, st.h[arg + NA], 0)
+        lowered := forLower(mut st, arg, forSrcKind(mut st, st.h[g + NB], eb, ef))
+        return closure(mut st, lowered, eb, ef, want), nil
+    }
+    if k == ast.ELambda {
+        return closure(mut st, arg, eb, ef, want), nil
+    }
+    if k == ast.EIdent {
+        if lookup(mut st, eb, st.h[arg + NA]) < 0 {
+            c := lookupF(mut st, ef, st.h[arg + NA])
+            if c >= 0 {
+                return c, nil
+            }
+        }
+    }
+    return 0, Fail{k: KFrag, tok: tok}
+}
+
+// for の生成元の種類（forexpand.zig の SrcKind）
+const FSlice = 0
+const FMap = 1
+const FClosure = 2
+const FCall = 3
+
+// forSrcKind は for の生成元の種類（forLower が書き換えを選ぶ）
+func forSrcKind(st mut S, src int, eb int, ef int) int {
+    if isClosureName(mut st, src, eb, ef) {
+        return FClosure
+    }
+    if isCallGen(mut st, src, eb) {
+        return FCall
+    }
+    return if isTag(mut st, computeTy(mut st, src, eb, ef), TMp) { FMap } else { FSlice }
+}
+
+// isCallGen は生成元が呼び出し形か（`x <- iter.Range(0, n)` — 名前の付いた関数の呼び出しで、仮引数が実引数より 1 つ多く、
+// 最後の仮引数が関数型。継続 k を末尾の実引数に足して呼ぶ — Go の range-over-func の鏡）。slice を返す呼び出し（`keys(m)`）は数が合うので当たらない
+func isCallGen(st mut S, src int, eb int) bool {
+    if kindOf(mut st, src) != ast.ECall {
+        return false
+    }
+    fi := findFn(mut st, st.h[src + NA], eb)
+    if fi < 0 {
+        return false
+    }
+    ps := fnParams(mut st, fi)
+    np := llen(mut st, ps)
+    return np == llen(mut st, st.h[src + NB]) + 1 && kindOf(mut st, st.h[lat(mut st, ps, np - 1) + NB]) == ast.TFunc
+}
+
+// forLower は for 式 → Iter[T] 型のラムダ（forexpand.zig の lower — 表層 AST の節をヒープに足す）:
+// `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`。map の生成元は `iter#.Slice(keys(src), k)`（keysm の段）
+func forLower(st mut S, fe int, kind int) int {
+    return lambda1(mut st, strLit(mut st, "yield"), forGen(mut st, fe, kind), tokOf(mut st, fe))
+}
+
+// isForStmt は文形の for か（文の位置に置いたブロック形 — language.md 7 節）。本体は消費のコールバックで、yield は字句的に囲む生成器のもの
+func isForStmt(st mut S, e int) bool {
+    return kindOf(mut st, e) == ast.EFor && st.h[e + NB] == 1
+}
+
+// forStmt は文形の for → `GEN(src, (x) => { if g { body } })`（forLower の内側そのもの — 外側の `(yield) =>` で包まない）
+func forStmt(st mut S, fe int, eb int, ef int) (int, error?) {
+    if forOut(mut st, fe) {
+        return 0, Fail{k: KFrag, tok: tokOf(mut st, fe)}
+    }
+    g := lat(mut st, st.h[fe + NA], 0)
+    return forGen(mut st, fe, forSrcKind(mut st, st.h[g + NB], eb, ef)), nil
+}
+
+// forGen は for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（本体 = yield 形なら `yield(e)`、ブロック形なら文の列）
+func forGen(st mut S, fe int, kind int) int {
+    g := lat(mut st, st.h[fe + NA], 0)
+    ftok := tokOf(mut st, fe)
+    gtok := tokOf(mut st, g)
+    mut inner := if st.h[fe + NB] == 0 { yieldCall(mut st, st.h[fe + NC], ftok) } else { rec8(mut st, ast.EBlock, ftok, st.h[fe + NC], 0, 0, 0, 0, 0) }
+    guards := st.h[g + NC]
+    mut i := llen(mut st, guards) - 1
+    while i >= 0 {
+        inner = rec8(mut st, ast.EIf, gtok, lat(mut st, guards, i), blockOf(mut st, inner), -1, 0, 0, 0)
+        i -= 1
+    }
+    kf := lambda1(mut st, lat(mut st, st.h[g + NA], 0), inner, gtok)
+    mut gen := -1
+    if kind == FClosure {
+        gen = rec8(mut st, ast.ECall, gtok, st.h[g + NB], list1(mut st, kf), 0, 0, 0, 0)
+    } else if kind == FCall {
+        src := st.h[g + NB]
+        sargs := st.h[src + NB]
+        na := llen(mut st, sargs)
+        args := listN(mut st, na + 1)
+        mut j := 0
+        while j < na {
+            st.h[args + 1 + j] = lat(mut st, sargs, j)
+            j += 1
+        }
+        st.h[args + 1 + na] = kf
+        gen = rec8(mut st, ast.ECall, gtok, st.h[src + NA], args, 0, 0, 0, 0)
+    } else {
+        base := rec8(mut st, ast.EIdent, gtok, strLit(mut st, "iter#"), 0, 0, 0, 0, 0)
+        callee := rec8(mut st, ast.ESelector, gtok, base, strLit(mut st, "Slice"), 0, 0, 0, 0)
+        mut src := st.h[g + NB]
+        if kind == FMap {
+            kc := rec8(mut st, ast.EIdent, gtok, strLit(mut st, "keys"), 0, 0, 0, 0, 0)
+            src = rec8(mut st, ast.ECall, gtok, kc, list1(mut st, src), 0, 0, 0, 0)
+        }
+        gen = rec8(mut st, ast.ECall, gtok, callee, list2(mut st, src, kf), 0, 0, 0, 0)
+    }
+    return gen
+}
+
+// lambda1 は 1 引数・型注釈なし・本体ブロックのラムダ（本体が既にブロックならそのまま）
+func lambda1(st mut S, param int, body int, tok int) int {
+    lp := rec8(mut st, ast.KLParam, tok, param, -1, 0, 0, 0, 0)
+    blk := if kindOf(mut st, body) == ast.EBlock { body } else { rec8(mut st, ast.EBlock, tok, st.h[blockOf(mut st, body) + NA], 0, 0, 0, 0, 0) }
+    return rec8(mut st, ast.ELambda, tok, list1(mut st, lp), blk, 0, 0, 0, 0)
+}
+
+// blockOf は式 1 つを文位置に置いたブロック（KBlock）
+func blockOf(st mut S, e int) int {
+    s := rec8(mut st, ast.SExpr, tokOf(mut st, e), e, 0, 0, 0, 0, 0)
+    return rec8(mut st, ast.KBlock, 0, list1(mut st, s), 0, 0, 0, 0, 0)
+}
+
+// isClosureArg は引数が閉包として束縛される形か（ラムダ・for 式・閉包の名前）
+func isClosureArg(st mut S, arg int, eb int, ef int) bool {
+    k := kindOf(mut st, arg)
+    if k == ast.ELambda || k == ast.EFor {
+        return true
+    }
+    return isClosureName(mut st, arg, eb, ef)
+}
+
+// lambdaCall はラムダの呼び出し点展開。本体から見えるのは定義時の env + 引数
+func lambdaCall(st mut S, cl int, args int, tok int, eb int, ef int, depth int) (int, error?) {
+    lam := st.h[cl]
+    lps := st.h[lam + NA]
+    n := llen(mut st, lps)
+    if llen(mut st, args) != n {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    ft := st.h[cl + 5]
+    cpk := st.h[cl + 3]
+    wants := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        st.h[wants + 1 + i] = -1
+        i += 1
+    }
+    if isTag(mut st, ft, TFn) {
+        mut pt := tA(mut st, ft)
+        i = 0
+        while i < n {
+            if i + 1 == n {
+                st.h[wants + 1 + i] = pt
+            } else if st.h[pt] == TPr {
+                hv514 := tA(mut st, pt)
+                st.h[wants + 1 + i] = hv514
+                pt = tB(mut st, pt)
+            } else {
+                i = n
+            }
+            i += 1
+        }
+    }
+    vals := listN(mut st, n)
+    mut nv := 0
+    mut benv := st.h[cl + 1]
+    mut fenv := st.h[cl + 2]
+    mut level := depth
+    i = 0
+    while i < n {
+        lp := lat(mut st, lps, i)
+        arg := lat(mut st, args, i)
+        want := lat(mut st, wants, i)
+        if isClosureArg(mut st, arg, eb, ef) {
+            c := closureArg(mut st, arg, want, eb, ef, tok)?
+            fenv = bindF(mut st, fenv, st.h[lp + NA], c)
+        } else {
+            at := computeTy(mut st, arg, eb, ef)
+            ann_t := if want >= 0 { inlineArgTy(mut st, arg, want, eb) } else { -1 }
+            mut v := -1
+            if ann_t >= 0 {
+                cv := coerceExpr(mut st, arg, want, eb, ef, level, tok)?
+                v = cAnn(mut st, cv, ann_t)
+            } else {
+                v = expr(mut st, arg, eb, ef, level)?
+            }
+            st.h[vals + 1 + nv] = v
+            nv += 1
+            pt := st.h[lp + NB]
+            d := if pt >= 0 { declOfTypeExpr(mut st, cpk, pt) } else { declOfExpr(mut st, arg, eb, ef) }
+            el := if pt >= 0 { elemDeclOfTypeExpr(mut st, cpk, pt) } else { elemDeclOfExpr(mut st, arg, eb, ef) }
+            benv = bind(mut st, benv, st.h[lp + NA], level, false, d, if want >= 0 { want } else { at }, el, 0, ann_t)
+            level += 1
+        }
+        i += 1
+    }
+    saved_tenv := st.tenv
+    st.tenv = st.h[cl + 4]
+    saved_pkg := st.curPkg
+    st.curPkg = cpk
+    saved_rt := st.retTarget
+    saved_lf := st.loopFloor
+    st.retTarget = st.h[cl + 6]
+    st.loopFloor = st.nlab
+    saved_rec := st.inlrec
+    st.inlrec = st.h[cl + 7]
+    // 文形 for の本体（節の c = 文形 for の brk のラベルスタックの位置 + 1）: 床の上に brk を積み直し、展開ごとに cont を新設して本体を包む
+    // （break → for 全体の外、continue → 本体の末尾。本体の値は捨てる）
+    loop := st.h[lam + NC]
+    mut cont := -1
+    if loop > 0 {
+        pushLabel(mut st, labelAt(mut st, loop - 1))
+        cont = newLabel(mut st, LCont, st.tUnit)
+        pushLabel(mut st, cont)
+    }
+    lbody := st.h[lam + NB]
+    mut body := -1
+    if kindOf(mut st, lbody) == ast.EBlock {
+        body = scoped(mut st, st.h[lbody + NA], benv, fenv, level, false, loop > 0, -1)?
+    } else {
+        body = expr(mut st, lbody, benv, fenv, level)?
+    }
+    if loop > 0 {
+        body = labelNode(mut st, cont, body, WNone)
+        st.nlab = st.nlab - 2
+    }
+    if isTag(mut st, ft, TFn) {
+        body = cAnn(mut st, body, pointTy(mut st, tB(mut st, ft)))
+    }
+    st.retTarget = saved_rt
+    st.loopFloor = saved_lf
+    st.inlrec = saved_rec
+    st.curPkg = saved_pkg
+    st.tenv = saved_tenv
+    mut k := nv - 1
+    while k >= 0 {
+        body = cLet(mut st, lat(mut st, vals, k), body)
+        k -= 1
+    }
+    return body, nil
+}
+
+// dictLiftOf は辞書 const のラムダ lam を持ち上げた Def の添字（まだなら -1）。記録は [lam, idx, next]
+func dictLiftOf(st mut S, lam int) int {
+    mut x := st.dictLifts
+    while x >= 0 {
+        if st.h[x] == lam {
+            return st.h[x + 1]
+        }
+        x = st.h[x + 2]
+    }
+    return -1
+}
+
+// liftLambda は閉じたラムダ → 匿名 Def（関数表の末尾）+ fnref
+func liftLambda(st mut S, lam int, ft int, outer_b int, outer_f int, tok int) (int, error?) {
+    saved_rd := st.rdepth
+    st.rdepth = 2
+    if (st.inDict != 0) {
+        idx := dictLiftOf(mut st, lam)
+        if idx >= 0 {
+            st.rdepth = saved_rd
+            return ce(mut st, CFnref, idx, -1, 0, 0), nil
+        }
+    }
+    lps := st.h[lam + NA]
+    n := llen(mut st, lps)
+    ptys := listN(mut st, n)
+    mut p := tA(mut st, ft)
+    mut i := 0
+    while i < n {
+        if i + 1 == n {
+            st.h[ptys + 1 + i] = p
+        } else if st.h[p] == TPr {
+            hv617 := tA(mut st, p)
+            st.h[ptys + 1 + i] = hv617
+            p = tB(mut st, p)
+        } else {
+            return 0, Fail{k: KMalformed, tok: tok}
+        }
+        i += 1
+    }
+    if n == 0 && st.h[tA(mut st, ft)] != TUnit {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    pdecls := listN(mut st, n)
+    pelems := listN(mut st, n)
+    i = 0
+    while i < n {
+        st.h[pdecls + 1 + i] = -1
+        st.h[pelems + 1 + i] = -1
+        i += 1
+    }
+    if st.liftHint >= 0 {
+        h := st.liftHint
+        st.liftHint = -1
+        hps := st.h[st.h[h + 2] + NA]
+        if llen(mut st, hps) == n {
+            saved := st.tenv
+            st.tenv = st.h[h + 1]
+            i = 0
+            while i < n {
+                te := lat(mut st, hps, i)
+                hv645 := declOfTypeExpr(mut st, st.h[h], te)
+                st.h[pdecls + 1 + i] = hv645
+                hv646 := elemDeclOfTypeExpr(mut st, st.h[h], te)
+                st.h[pelems + 1 + i] = hv646
+                i += 1
+            }
+            st.tenv = saved
+        }
+    }
+    mut benv := -1
+    mut d := 1
+    mut exs := listN(mut st, 0)
+    if n == 1 {
+        benv = bind(mut st, benv, st.h[lat(mut st, lps, 0) + NA], 0, false, lat(mut st, pdecls, 0), lat(mut st, ptys, 0), lat(mut st, pelems, 0), 0, -1)
+    } else if n >= 2 {
+        exs = listN(mut st, n)
+        i = 0
+        while i < n {
+            hv661 := projection(mut st, cVar(mut st, d - 1), i, n)
+            st.h[exs + 1 + i] = hv661
+            benv = bind(mut st, benv, st.h[lat(mut st, lps, i) + NA], d, false, lat(mut st, pdecls, i), lat(mut st, ptys, i), lat(mut st, pelems, i), 0, -1)
+            d += 1
+            i += 1
+        }
+    }
+    saved_has := (st.hasOuter != 0)
+    saved_ob := st.outerB
+    saved_of := st.outerF
+    st.hasOuter = b2i(true)
+    st.outerB = outer_b
+    st.outerF = outer_f
+    saved_rt := st.retTarget
+    saved_lf := st.loopFloor
+    st.retTarget = -1
+    st.loopFloor = st.nlab
+    lbody := st.h[lam + NB]
+    mut body := -1
+    if kindOf(mut st, lbody) == ast.EBlock {
+        body = scoped(mut st, st.h[lbody + NA], benv, -1, d, false, false, -1)?
+    } else {
+        body = coerceExpr(mut st, lbody, tB(mut st, ft), benv, -1, d, tok)?
+    }
+    st.retTarget = saved_rt
+    st.loopFloor = saved_lf
+    st.hasOuter = b2i(saved_has)
+    st.outerB = saved_ob
+    st.outerF = saved_of
+    body = wrapLets(mut st, exs, body)
+    idx := st.ndef + st.nlifted
+    def := rec5(mut st, tA(mut st, ft), tB(mut st, ft), body, st.curTparams, -1)
+    if st.liftedTail >= 0 {
+        st.h[st.liftedTail + 4] = def
+    } else {
+        st.liftedHead = def
+    }
+    st.liftedTail = def
+    st.nlifted = st.nlifted + 1
+    if (st.inDict != 0) {
+        hv700 := rec5(mut st, lam, idx, st.dictLifts, 0, 0)
+        st.dictLifts = hv700
+    }
+    mut ts := -1
+    if st.curTparams > 0 {
+        ts = listN(mut st, st.curTparams)
+        i = 0
+        while i < st.curTparams {
+            hv707 := tVar(mut st, i)
+            st.h[ts + 1 + i] = hv707
+            i += 1
+        }
+    }
+    st.rdepth = saved_rd
+    return ce(mut st, CFnref, idx, ts, 0, 0), nil
+}
+
+// ── 後置 `?`（V4-4b、S1。Z1 = 入口のゼロ値束縛は撤去 — R4b の clampR が吸収、selfhost-drafts「Z1 の撤去」）──
+
+// isErrOptTE は型式が `error?` か
+func isErrOptTE(st mut S, te int) bool {
+    if kindOf(mut st, te) != ast.TOpt {
+        return false
+    }
+    x := st.h[te + NA]
+    return kindOf(mut st, x) == ast.TName && strIs(mut st, st.h[x + NA], "error")
+}
+
+// tryExpr は後置 `?`: `let p = f() in (ifnil (last p) triv (jump k unit (zeros…, some err)); init p)`
+func tryExpr(st mut S, e int, eb int, ef int, depth int) (int, error?) {
+    tok := tokOf(mut st, e)
+    tc0 := st.h[e + NA]
+    if kindOf(mut st, tc0) != ast.ECall {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    c0 := st.h[tc0 + NA]
+    callee := if kindOf(mut st, c0) == ast.EIndex { st.h[c0 + NA] } else { c0 }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    res := fnResults(mut st, fi)
+    kr := llen(mut st, res)
+    if kr == 0 || !isErrOptTE(mut st, lat(mut st, res, kr - 1)) {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    if st.retTarget < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    lb := labelAt(mut st, st.retTarget)
+    if st.h[lb + LBT] < 0 {
+        return 0, Fail{k: KFrag, tok: tok}
+    }
+    rtys := st.h[lb + LBRtys]
+    n := if rtys < 0 { 0 } else { llen(mut st, rtys) }
+    if n == 0 {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    eo := isErrOpt(mut st, lat(mut st, rtys, n - 1))?
+    if !eo {
+        return 0, Fail{k: KMalformed, tok: tok}
+    }
+    mut i := 0
+    while i < n - 1 {
+        if !hasZero(mut st, lat(mut st, rtys, i)) {
+            return 0, Fail{k: KFrag, tok: tok}
+        }
+        i += 1
+    }
+    p := expr(mut st, tc0, eb, ef, depth)?
+    // some 腕（深さ depth + 2: var 0 = err、var 1 = p）
+    sd := depth + 2
+    vs := listN(mut st, n)
+    // ゼロ値はその場で組む（深い位置の imm コンテナは jump の clampR — R4b — がラベルの region へ締める）
+    i = 0
+    while i < n - 1 {
+        hv806 := zeroOf(mut st, lat(mut st, rtys, i), tok)?
+        st.h[vs + 1 + i] = hv806
+        i += 1
+    }
+    wrap := st.h[e + NB]
+    mut err_v := -1
+    if wrap >= 0 {
+        wname := st.h[wrap + NA]
+        decl, wpk, widx := findVariant(mut st, st.curPkg, wname)
+        if decl != ERRS {
+            return 0, Fail{k: KMalformed, tok: tokOf(mut st, wrap)}
+        }
+        topv := labelL(mut st, wrap, decl, wpk, widx, eb, ef, sd)?
+        inner := cVar(mut st, 0)
+        chain := c2(mut st, CAppend, c1(mut st, CSnd, inner), c1(mut st, CFst, inner))
+        err_v = c2(mut st, CPair, topv, chain)
+    } else {
+        err_v = cVar(mut st, 0)
+    }
+    hv825 := c1(mut st, CSome, err_v)
+    st.h[vs + n] = hv825
+    payload0 := pairChain(mut st, vs)
+    payload := if st.h[lb + LBAnn] != 0 { cAnn(mut st, payload0, st.h[lb + LBT]) } else { payload0 }
+    st.h[lb + LBUsed] = 1
+    dv := withDefers(mut st, payload, st.h[lb + LBScope], sd)?
+    jump := ce(mut st, CJump, st.h[lb], st.tUnit, dv, 0)
+    // 判定（深さ depth + 1: var 0 = p）
+    err_opt := projection(mut st, cVar(mut st, 0), kr - 1, kr)
+    check := c3(mut st, CIfnil, err_opt, cTriv(mut st), jump)
+    // 成功値（深さ depth + 2: 判定の匿名束縛の下で var 1 = p）
+    mut succ := -1
+    if kr == 1 {
+        succ = cTriv(mut st)
+    } else if kr == 2 {
+        succ = projection(mut st, cVar(mut st, 1), 0, 2)
+    } else {
+        comps := listN(mut st, kr - 1)
+        i = 0
+        while i < kr - 1 {
+            hv844 := projection(mut st, cVar(mut st, 1), i, kr)
+            st.h[comps + 1 + i] = hv844
+            i += 1
+        }
+        succ = pairChain(mut st, comps)
+    }
+    return cLet(mut st, p, cLet(mut st, check, succ)), nil
+}

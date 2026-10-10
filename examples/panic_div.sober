@@ -1,0 +1,13 @@
+package main
+
+// 到達 = バグの panic（language.md 27 節）: ゼロ除算は exit 101（examples/panic_div.exit）。
+// panic の前に出した行は失われない（println は行ごとに書く）
+func div(a int, b int) int {
+    return a / b
+}
+
+func main() {
+    println("before", div(7, 2))
+    println(div(1, 0))
+    println("unreachable")
+}

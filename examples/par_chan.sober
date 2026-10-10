@@ -1,0 +1,32 @@
+package main
+
+// 段 6 P3b（language.md 11 節「チャネル」）: 端点 2 型・SPSC・有界。送り端は give: でちょうど 1 つの子へ移る（名前付きの実引数は末尾・仮引数は親の名前と別の名前 — `par.Spawn(s, (out) => …, give: tx)`）。受け手は送られる数を
+// 知っている形で書く（Close は P3b-2c の Lean 便まで無い — Recv は T? だが今は nil にならない）
+
+import "std/par"
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[int](cap: 2)
+        n := 5
+        h := par.Spawn(s, (out) => {
+            mut i := 0
+            while i < n {
+                par.Send(out, i * i)
+                i += 1
+            }
+            n
+        }, give: tx)
+        mut sum := 0
+        mut k := 0
+        while k < n {
+            v := par.Recv(rx)
+            if v != nil {
+                sum += v
+            }
+            k += 1
+        }
+        sum + par.Join(h)
+    })
+    println(r)
+}

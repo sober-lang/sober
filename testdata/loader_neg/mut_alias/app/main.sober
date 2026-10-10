@@ -1,0 +1,13 @@
+package main
+
+// mut 実引数の排他（language.md 26 節 — diag.MutAlias）: 同じ呼び出しで同じ mut の場所を 2 本渡す形は拒否
+func two(a mut int, b mut int) {
+    a += 1
+    b += 2
+}
+
+func main() {
+    mut a := 0
+    two(mut a, mut a)
+    println(a)
+}

@@ -1,0 +1,38 @@
+package main
+
+// 文字列補間 `${}`（随時回収 R7）: int / string / bool だけを受け、連結の連鎖に脱糖する。
+// int は std/strings.FormatInt（Sober で書いた std — 暗黙に import される）
+
+type Point struct {
+    x int
+    y int
+}
+
+func label(k string, v int) string {
+    return "${k}=${v}"
+}
+
+func trace(n int) int {
+    println("eval ${n}")
+    return n
+}
+
+func main() {
+    n := 42
+    name := "sober"
+    p := Point{x: 3, y: -4}
+    println("hello, ${name}!")
+    println("n=${n} n+1=${n + 1} neg=${-n} zero=${0}")
+    println("ok=${n > 40} ng=${n < 0}")
+    println("p=(${p.x}, ${p.y})")
+    println("${label("a", 1)} ${label("b", -20)}")
+    println("nested: ${"in${n}side"}")
+    println("escaped: \${n} and a lone $ sign")
+    println("${-9223372036854775807 - 1} ${9223372036854775807}")
+    println("${n}")
+    println("${name}")
+    println("")
+    // 断片は左から 1 回ずつ評価
+    s := "${trace(1)}-${trace(2)}"
+    println(s)
+}

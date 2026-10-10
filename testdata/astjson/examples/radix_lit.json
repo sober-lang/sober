@@ -1,0 +1,248 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 18
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 16,
+                  "radix": 16,
+                  "tok": 20
+                }
+              ],
+              "tok": 19
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 15,
+                  "radix": 8,
+                  "tok": 25
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 11,
+                  "radix": 2,
+                  "tok": 30
+                }
+              ],
+              "tok": 29
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 33
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "&",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "Mask",
+                    "tok": 35
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 60,
+                    "radix": 16,
+                    "tok": 37
+                  },
+                  "tok": 36
+                }
+              ],
+              "tok": 34
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 40
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Perm",
+                  "tok": 42
+                }
+              ],
+              "tok": 41
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 45
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 9223372036854775807,
+                  "radix": 16,
+                  "tok": 47
+                }
+              ],
+              "tok": 46
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 50
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 0,
+                  "radix": 2,
+                  "tok": 52
+                }
+              ],
+              "tok": 51
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 57
+              }
+            ],
+            "tok": 55
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 59
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 61
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 10,
+                    "radix": 16,
+                    "tok": 63
+                  },
+                  "tok": 62
+                }
+              ],
+              "tok": 60
+            }
+          }
+        ]
+      },
+      "tok": 14,
+      "bodiless": false,
+      "span": {
+        "start": 13,
+        "end": 68
+      },
+      "sig_end": 17
+    }
+  ],
+  "consts": [
+    {
+      "name": "Mask",
+      "expr": {
+        "k": "int",
+        "value": 255,
+        "radix": 16,
+        "tok": 6
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 8
+      }
+    },
+    {
+      "name": "Perm",
+      "expr": {
+        "k": "int",
+        "value": 493,
+        "radix": 8,
+        "tok": 11
+      },
+      "tok": 9,
+      "span": {
+        "start": 8,
+        "end": 13
+      }
+    }
+  ]
+}

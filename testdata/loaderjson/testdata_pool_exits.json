@@ -1,0 +1,138 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "pool",
+          "path": "std/pool"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "early",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "pool.Acquire",
+            "pool.Release"
+          ]
+        },
+        {
+          "name": "loop",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "pool.Acquire",
+            "pool.Release"
+          ]
+        },
+        {
+          "name": "check",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "prop",
+          "expands": true,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "check",
+            "pool.Acquire",
+            "pool.Release"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "early",
+            "loop",
+            "pool.Len",
+            "println",
+            "prop"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/pool",
+      "name": "pool",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Acquire",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "Release",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len",
+            "live"
+          ]
+        },
+        {
+          "name": "Get",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Set",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Len",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "live",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": [
+    {
+      "name": "Bad",
+      "pkg": "main"
+    }
+  ]
+}

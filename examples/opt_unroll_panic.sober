@@ -1,0 +1,21 @@
+package main
+
+// 定数上限のループの全展開（unroll.sober）の網: 展開したループの途中（k = 4）で添字が範囲外 — 元と同じ点・同じ順で panic する
+// （その前の反復の書き込みと出力は見える）
+
+import "std/iter"
+
+func run(a mut []int) {
+    for k <- iter.Range(0, 6) {
+        a[k] = a[k] * 2 + k
+    }
+}
+
+func main() {
+    mut a := mut []int{1, 2, 3, 4}
+    for k <- iter.Range(0, 3) {
+        println(a[k])
+    }
+    run(mut a)
+    println(a[0])
+}

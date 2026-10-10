@@ -1,0 +1,2 @@
+sober: desugar error at examples/union.sober:24:12 (CoreFragment)
+exit=1

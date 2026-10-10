@@ -1,0 +1,2 @@
+sober: load error at examples/par_neg_budget.sober:12:79: budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only
+exit=1

@@ -1,0 +1,2 @@
+sober: desugar error at examples/named_scalar_order.sober:10:13 (TypeMismatch)
+exit=1

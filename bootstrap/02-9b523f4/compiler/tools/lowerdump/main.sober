@@ -1,0 +1,53 @@
+package main
+
+// lowerdump: 標準入力の Manifest から Program を load し、Sober 版 lower（compiler/lower）で下ろした IR テキスト（Zig 版
+// `sober build --emit=ir` と同じバイト列）を標準出力に書く。selfhost の lower の差分オラクル（scripts/selfhost_lower.sh）の Sober 側。
+// Manifest の形は loaderdump と同じ
+
+import "std/io"
+import "loader"
+import "lower"
+
+// lines は b を改行で割った行の列（空行は捨てる）
+func lines(b []int) [][]int {
+    mut out := mut [][]int{}
+    mut s := 0
+    mut i := 0
+    while i <= len(b) {
+        if i == len(b) || b[i] == 10 {
+            if i > s {
+                out = append(out, b[s:i])
+            }
+            s = i + 1
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("lowerdump: cannot read /dev/stdin")
+        return
+    }
+    ls := lines(src)
+    if len(ls) < 2 {
+        println("lowerdump: bad manifest")
+        return
+    }
+    p := loader.Load(loader.Manifest{ls[0], ls[1], ls[2:len(ls)]})
+    if loader.Failed(p) {
+        println("lowerdump: load error")
+        return
+    }
+    out, k, tok := lower.Ir(p)
+    if k != 0 {
+        println("lowerdump: lower error", k, tok)
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", out)
+    if werr != nil {
+        println("lowerdump: cannot write /dev/stdout")
+    }
+}

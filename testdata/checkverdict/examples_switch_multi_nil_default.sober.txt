@@ -1,0 +1,2 @@
+sober: load error at examples/switch_multi_nil_default.sober:14:13: a default here would be needed for both a nil and a non-nil error: cover every value in the nil cases (case v, nil:)
+exit=1

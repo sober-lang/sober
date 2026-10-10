@@ -1,0 +1,38 @@
+package main
+
+// utf8 の型つき証人（第三便 M13）: 全体を 1 回 Check し、文字境界で切った部分列は Str が検査し直さずに string にする。
+// 境界でない位置で切ると InvalidUtf8（継続バイトの位置）・不正な列は Check が拒否・証人を経ない string() は今までどおり検査
+
+import "std/utf8"
+
+func main() int {
+    b := bytes("añb;日本;x")
+    v := utf8.Check(b) catch return 1
+    cuts := []int{0, 4, 5, 11, 12, 13, 0, 2, 6, 11, 0, 0, 13, 13}
+    mut k := 0
+    while k < len(cuts) {
+        t, err := utf8.Str(v, cuts[k], cuts[k + 1])
+        if err != nil {
+            switch err {
+            case utf8.InvalidUtf8{pos}: println("not a boundary at ${pos}")
+            }
+        } else {
+            println("[${t}] ${len(bytes(t))}")
+        }
+        k += 2
+    }
+    println(len(utf8.Bytes(v)))
+    bad := []byte{97, 255, 98}
+    w, err := utf8.Check(bad)
+    if err != nil {
+        switch err {
+        case utf8.InvalidUtf8{pos}: println("invalid at ${pos}")
+        }
+    }
+    println(len(utf8.Bytes(w)))
+    s2, e2 := string(bad)
+    if e2 != nil {
+        println("string() still checks: ${len(bytes(s2))}")
+    }
+    return 0
+}

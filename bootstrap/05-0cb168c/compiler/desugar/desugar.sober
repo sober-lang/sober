@@ -1,0 +1,223 @@
+package desugar
+
+// 入口: Program → コア AST の JSON（src/desugar.zig の desugar + toJson と同じバイト列 — `sober check --core-json` の出力）
+
+import "ast"
+import "loader"
+import "std/iter"
+import "obuf"
+
+// defOf は展開されない関数 fi → コアの Def（[param, ret, body, tparams, next]）
+func defOf(st mut S, fi int) (int, error?) {
+    saved_rd := st.rdepth
+    st.rdepth = 2
+    saved_pkg := st.curPkg
+    pk := fnPkg(mut st, fi)
+    st.curPkg = pk
+    saved_tenv := st.tenv
+    hv16 := tvarEnv(mut st, fnTParams(mut st, fi), 0)
+    st.tenv = hv16
+    saved_tp := st.curTparams
+    ntp := llen(mut st, fnTParams(mut st, fi))
+    st.curTparams = ntp
+    ps := fnParams(mut st, fi)
+    np := llen(mut st, ps)
+    tok := tokOf(mut st, fnNode(mut st, fi))
+    ptys := listN(mut st, np)
+    vtys := listN(mut st, np)
+    for i <- iter.Range(0, np) {
+        prm := lat(mut st, ps, i)
+        if kindOf(mut st, nodeAt(mut st, prm).b) == ast.TFunc {
+            return 0, Fail{k: KFrag, tok: tok}
+        }
+        t := tyOf(mut st, pk, nodeAt(mut st, prm).b, tok, 32)?
+        hsetTy(mut st, vtys + 1 + i, t)
+        mut pty := t
+        if ast.ParamIsMut(nodeAt(mut st, prm)) {
+            // mut 仮引数: struct は欄ごとのセルの木（F-17 案 2α）、他は ref
+            if teSplits(mut st, pk, st.tenv, nodeAt(mut st, prm).b) {
+                pty = splitTy(mut st, declOfTypeExpr(mut st, pk, nodeAt(mut st, prm).b), 0, false, tok)?
+            } else {
+                pty = tRefOf(mut st, 1, 0, t)
+            }
+        }
+        hsetTy(mut st, ptys + 1 + i, pty)
+    }
+    param := tyChain(mut st, ptys)
+    rl0 := fnResults(mut st, fi)
+    nr := llen(mut st, rl0)
+    rtys := listN(mut st, nr)
+    for i <- iter.Range(0, nr) {
+        rt := tyOf(mut st, pk, lat(mut st, rl0, i), tok, 32)?
+        hv43 := retTy(mut st, rt)
+        hsetTy(mut st, rtys + 1 + i, hv43)
+    }
+    ret := tyChain(mut st, rtys)
+    mut eb := -1
+    mut d := 1
+    exs := listN(mut st, if np >= 2 { np } else { 0 })
+    if np == 1 {
+        prm := lat(mut st, ps, 0)
+        mutable := ast.ParamIsMut(nodeAt(mut st, prm))
+        dd := declOfTypeExpr(mut st, pk, nodeAt(mut st, prm).b)
+        el := elemDeclOfTypeExpr(mut st, pk, nodeAt(mut st, prm).b)
+        eb = bind(mut st, eb, nodeAt(mut st, prm).a, 0, mutable, dd, latTy(mut st, vtys, 0), el, 0, if mutable { TyRef(-1) } else { latTy(mut st, vtys, 0) }, mutable && teSplits(mut st, pk, st.tenv, nodeAt(mut st, prm).b), SurfaceOf(mut st, pk, nodeAt(mut st, prm).b))
+    } else if np >= 2 {
+        for i <- iter.Range(0, np) {
+            prm := lat(mut st, ps, i)
+            hv60 := projection(mut st, cVar(mut st, d - 1), i, np)
+            hset(mut st, exs + 1 + i, hv60)
+            mutable := ast.ParamIsMut(nodeAt(mut st, prm))
+            dd := declOfTypeExpr(mut st, pk, nodeAt(mut st, prm).b)
+            el := elemDeclOfTypeExpr(mut st, pk, nodeAt(mut st, prm).b)
+            eb = bind(mut st, eb, nodeAt(mut st, prm).a, d, mutable, dd, latTy(mut st, vtys, i), el, 0, if mutable { TyRef(-1) } else { latTy(mut st, vtys, i) }, mutable && teSplits(mut st, pk, st.tenv, nodeAt(mut st, prm).b), SurfaceOf(mut st, pk, nodeAt(mut st, prm).b))
+            d += 1
+        }
+    }
+    saved_rtys := st.curRtys
+    st.curRtys = rtys
+    saved_res := st.curRes
+    saved_respk := st.curResPkg
+    st.curRes = fnResults(mut st, fi)
+    st.curResPkg = pk
+    saved_rt := st.retTarget
+    saved_lf := st.loopFloor
+    rl := newLabel(mut st, LRet, ret)
+    setLabelRtys(mut st, rl, rtys)
+    hv78 := pushLabel(mut st, rl)
+    st.retTarget = hv78
+    st.loopFloor = st.nlab
+    inner := scoped(mut st, nodeAt(mut st, fnBody(mut st, fi)).a, eb, -1, d, true, false, ret)?
+    st.nlab = st.nlab - 1
+    mut body := labelNode(mut st, rl, inner, WNone)
+    body = wrapLets(mut st, exs, body)
+    st.retTarget = saved_rt
+    st.loopFloor = saved_lf
+    st.curRtys = saved_rtys
+    st.curRes = saved_res
+    st.curResPkg = saved_respk
+    st.curTparams = saved_tp
+    st.tenv = saved_tenv
+    st.curPkg = saved_pkg
+    st.rdepth = saved_rd
+    return rec5(mut st, int(param), int(ret), body, ntp, -1), nil
+}
+
+// run は関数表と main 本体を脱糖する（(Def の列の先頭の添字, main 本体)）
+func run(st mut S) (int, int, error?) {
+    // 本体なし宣言（.sobi）は脱糖できない
+    mut i := 0
+    while i < st.nfn {
+        if nodeAt(mut st, fnNode(mut st, i)).f >= 0 && lat(mut st, nodeAt(mut st, fnNode(mut st, i)).f, 0) != 0 {
+            return 0, 0, Fail{k: KFrag, tok: tokOf(mut st, fnNode(mut st, i))}
+        }
+        i += 1
+    }
+    defs := listN(mut st, st.ndef)
+    i = 0
+    while i < st.nfn {
+        dx := fnDef(mut st, i)
+        if dx >= 0 {
+            hv110 := defOf(mut st, i)?
+            hset(mut st, defs + 1 + dx, hv110)
+        }
+        i += 1
+    }
+    // main
+    mut mf := -1
+    i = 0
+    while i < st.nfn {
+        if fnPkg(mut st, i) == st.mainPkg && strIs(mut st, fnName(mut st, i), "main") {
+            mf = i
+        }
+        i += 1
+    }
+    if mf < 0 {
+        return 0, 0, Fail{k: KMalformed, tok: 0}
+    }
+    if llen(mut st, fnParams(mut st, mf)) != 0 {
+        return 0, 0, Fail{k: KFrag, tok: tokOf(mut st, fnNode(mut st, mf))}
+    }
+    // main 本体 = `block (label unit body)`（途中の return は jump。本体の値は捨てる）。
+    // `func main() int`（R31 — 戻り値 = 終了コード）は `block (label int body)`（Def の本体と同じ ann の形）
+    mrs := fnResults(mut st, mf)
+    mut main_int := false
+    if llen(mut st, mrs) == 1 {
+        mt, merr := tyOf(mut st, st.mainPkg, lat(mut st, mrs, 0), tokOf(mut st, fnNode(mut st, mf)), 32)
+        main_int = merr == nil && tg(mut st, mt) == TInt
+    }
+    if llen(mut st, mrs) != 0 && !main_int {
+        return 0, 0, Fail{k: KFrag, tok: tokOf(mut st, fnNode(mut st, mf))}
+    }
+    st.curPkg = st.mainPkg
+    st.curRes = mrs
+    st.curResPkg = st.mainPkg
+    rl := newLabel(mut st, LRet, if main_int { st.tInt } else { st.tUnit })
+    st.curRes = -1
+    if main_int {
+        mrt := listN(mut st, 1)
+        hsetTy(mut st, mrt + 1, st.tInt)
+        setLabelRtys(mut st, rl, mrt)
+        setLabelAnn(mut st, rl, true)
+        st.curRtys = mrt
+    }
+    hv132 := pushLabel(mut st, rl)
+    st.retTarget = hv132
+    st.loopFloor = st.nlab
+    body := scoped(mut st, nodeAt(mut st, fnBody(mut st, mf)).a, -1, -1, 0, true, false, if main_int { st.tInt } else { TyRef(-1) })?
+    st.nlab = st.nlab - 1
+    root := c1(mut st, CBlock, labelNode(mut st, rl, body, if main_int { WAnn } else { WDiscard }))
+    return defs, root, nil
+}
+
+// Json は Program p のコア AST の JSON（失敗なら ok = false — out は [種類, ファイル, 字句の位置]（failInfo））
+func Json(p loader.Program) ([]int, bool) {
+    mut st := S{}
+    initState(mut st, p)
+    defs, root, err := run(mut st)
+    if err != nil {
+        return failInfo(mut st, err), false
+    }
+    // 印字の作業領域（出力 out より先にヒープへ取る — 以降ヒープは伸びない）。スタックは (op, arg) の対で 32,768 対 —
+    // 実測の最大は約 200 対（compiler/tools の大きいもの、2026-09-28）。旧 1,048,576 語（8MB）は同じ region に積む出力
+    // （1 バイト 1 語）の取り分を削っていた
+    hv149 := listN(mut st, 65536)
+    st.jstk = hv149
+    hv150 := listN(mut st, 4096)
+    st.jlab = hv150
+    mut out := mut []int{}
+    if st.ndef + st.nlifted == 0 {
+        exprJson(mut st, mut out, root)
+    } else {
+        obuf.Lit(mut out, "{\"defs\":[")
+        mut i := 0
+        while i < st.ndef {
+            if i > 0 {
+                out = append(out, 44)
+            }
+            defJson(mut st, mut out, lat(mut st, defs, i))
+            i += 1
+        }
+        mut d := st.liftedHead
+        while d >= 0 {
+            if i > 0 {
+                out = append(out, 44)
+            }
+            defJson(mut st, mut out, d)
+            i += 1
+            d = hget(mut st, d + 4)
+        }
+        obuf.Lit(mut out, "],\"e\":")
+        exprJson(mut st, mut out, root)
+        out = append(out, 125)
+    }
+    out = append(out, 10)
+    return freeze(out), true
+}
+
+// Init は Program p から表層 AST のヒープと表（package・関数・const・error）を組む（initState — 名前付き関数型の展開込み）。
+// Sober 版 lower（compiler/lower）が同じ層を読む — 「解決済み AST 層を desugar と共有する」（docs/ir.md 1 節）の最初の形。
+// ヒープの形は state.sober の冒頭（節 = 8 語、表は G_* の番地）。0 番地は使わない（lower が自分の状態の番地を置く）
+func Init(st mut S, p loader.Program) {
+    initState(mut st, p)
+}

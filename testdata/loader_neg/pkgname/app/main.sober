@@ -1,0 +1,8 @@
+package main
+
+// loader の負例: package 名がディレクトリ名と違う
+import "testdata/loader_neg/pkgname/lib"
+
+func main() {
+    println(lib.F())
+}

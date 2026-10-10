@@ -1,0 +1,2 @@
+sober: desugar error at examples/inline_unknown_result.sober:6:27 (UnknownName)
+exit=1

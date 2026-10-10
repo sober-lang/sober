@@ -1,0 +1,14 @@
+hello, sober!
+n=42 n+1=43 neg=-42 zero=0
+ok=true ng=false
+p=(3, -4)
+a=1 b=-20
+nested: in42side
+escaped: ${n} and a lone $ sign
+-9223372036854775808 9223372036854775807
+42
+sober
+
+eval 1
+eval 2
+1-2

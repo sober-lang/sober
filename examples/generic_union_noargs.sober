@@ -1,0 +1,19 @@
+package main
+
+// 負例（language.md 25 節）: ジェネリック union の variant のリテラルは型引数が要る（期待型からの推論は後の段 — 今は build・check とも拒否）
+
+type Opt[T] union {
+    Some { v T }
+    None {}
+}
+
+func get(o Opt[int]) int {
+    return switch o {
+    case Some{v}: v
+    default: 0
+    }
+}
+
+func main() {
+    println(get(Some{v: 3}))
+}

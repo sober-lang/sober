@@ -1,0 +1,7 @@
+package main
+
+// 負例: byte の算術は無い — int(b) + 1 と書く（language.md 33 節）
+func main() {
+    b := byte(65)
+    println(b + 1)
+}

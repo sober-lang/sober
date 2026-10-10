@@ -1,0 +1,53 @@
+package main
+
+// named scalar type（language.md 32 節）: 下地 int / bool の nominal な区別。演算は == / != だけ、リテラルは文脈の named に割り当てられ、
+// 算術は int(x) で下地へ戻して書く。脱糖で下地に消える（コアの型は int / bool）
+
+import "std/table"
+
+type NodeRef int
+type Flag bool
+
+type Node struct {
+    ref NodeRef
+    on Flag
+}
+
+const NONE = -1
+
+func next(r NodeRef) NodeRef {
+    return NodeRef(int(r) + 1)
+}
+
+func isNone(r NodeRef) bool {
+    return r == NONE
+}
+
+func pick(f Flag, a NodeRef, b NodeRef) NodeRef {
+    return if bool(f) { a } else { b }
+}
+
+func main() {
+    mut r := NodeRef(41)
+    r = next(r)
+    println(int(r))
+    println(isNone(r), isNone(-1), r != 0)
+    n := Node{ref: r, on: true}
+    println(n.ref == 42, bool(n.on))
+    println(int(pick(n.on, 7, n.ref)), int(pick(false, 7, n.ref)))
+    xs := []NodeRef{1, 2, 3}
+    println(int(xs[1]))
+    mut t := table.Table[NodeRef]{}
+    table.Push(mut t, r)
+    table.Push(mut t, NONE)
+    println(int(table.Get(mut t, 0)), isNone(table.Get(mut t, 1)))
+    mut m := mut map[NodeRef]int{}
+    m[r] = 7
+    m[1] = 8
+    v := m[r]
+    println(len(m), if v != nil { v } else { 0 })
+    switch r {
+    case 42: println("forty-two")
+    default: println("other")
+    }
+}

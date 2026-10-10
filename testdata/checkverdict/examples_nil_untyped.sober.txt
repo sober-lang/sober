@@ -1,0 +1,2 @@
+sober: desugar error at examples/nil_untyped.sober:7:31 (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)
+exit=1

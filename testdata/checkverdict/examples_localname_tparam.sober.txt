@@ -1,0 +1,2 @@
+sober: load error at examples/localname_tparam.sober:9:6: a type parameter cannot reuse a top-level type name
+exit=1

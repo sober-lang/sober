@@ -1,0 +1,118 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "pool",
+          "path": "std/pool"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "with",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "f",
+            "pool.Acquire",
+            "pool.Release"
+          ]
+        },
+        {
+          "name": "arms",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "pool.Acquire",
+            "pool.Len",
+            "pool.Release"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "arms",
+            "pool.Acquire",
+            "pool.Len",
+            "pool.Release",
+            "println",
+            "with"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/pool",
+      "name": "pool",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Acquire",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "Release",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len",
+            "live"
+          ]
+        },
+        {
+          "name": "Get",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Set",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "live"
+          ]
+        },
+        {
+          "name": "Len",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "live",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

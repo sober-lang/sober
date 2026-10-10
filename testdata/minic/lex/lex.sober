@@ -1,0 +1,93 @@
+package lex
+
+// minic の字句: 数・+ - * / ( ) と空白。位置はファイル先頭からのバイトオフセット
+
+import "std/builder"
+import "testdata/minic/diag"
+
+// 字句の種類
+const Num = 0
+const Plus = 1
+const Minus = 2
+const Star = 3
+const Slash = 4
+const LParen = 5
+const RParen = 6
+const End = 7
+
+type Token struct {
+    kind, pos, val int
+}
+
+func isDigit(c int) bool {
+    return c >= 48 && c <= 57
+}
+
+func punct(c int) int {
+    return switch c {
+    case 43: Plus
+    case 45: Minus
+    case 42: Star
+    case 47: Slash
+    case 40: LParen
+    case 41: RParen
+    case _: 0 - 1
+    }
+}
+
+// Lex は b[start:end]（1 行）を字句に分ける。末尾に End を置く
+@errors(diag.UnexpectedChar)
+func Lex(b []byte, start int, end int) ([]Token, error?) {
+    mut tb := builder.Builder[Token]{}
+    mut i := start
+    while i < end {
+        c := int(b[i])
+        if c == 32 {
+            i += 1
+        } else if isDigit(c) {
+            mut j := i
+            mut v := 0
+            while j < end && isDigit(int(b[j])) {
+                v = v * 10 + int(b[j]) - 48
+                j += 1
+            }
+            builder.Push(mut tb, Token{Num, i, v})
+            i = j
+        } else {
+            k := punct(c)
+            if k < 0 {
+                return []Token{}, diag.UnexpectedChar{pos: i}
+            }
+            builder.Push(mut tb, Token{k, i, 0})
+            i += 1
+        }
+    }
+    builder.Push(mut tb, Token{End, end, 0})
+    return builder.Build(mut tb), nil
+}
+
+// Cursor は字句列の読み位置。Next は mut 引数なので呼び出し点（parse）に展開される —
+// その本体が参照する非公開の clamp / step は .sobi にリンク可視で載る（language.md 29 節の実地の例）
+type Cursor struct {
+    ts []Token
+    i int
+}
+
+func Start(ts []Token) Cursor {
+    return Cursor{ts: ts, i: 0}
+}
+
+// Next は今の字句を返して 1 つ進める。End に着いたらそこで止まる
+func Next(c mut Cursor) Token {
+    t := c.ts[clamp(c.i, len(c.ts))]
+    if t.kind != End {
+        c.i = c.i + step
+    }
+    return t
+}
+
+const step = 1
+
+func clamp(i int, n int) int {
+    return if i < n { i } else { n - 1 }
+}

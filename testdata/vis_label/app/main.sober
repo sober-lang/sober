@@ -1,0 +1,14 @@
+package main
+
+// 負例（build・check とも拒否 — language.md 20 節「可視性は package 境界の参照時」）: 非公開の error ラベルのリテラルを他 package から作る。
+// 以前は lower だけが受理していた（report-55 v2c）
+import "testdata/vis_label/lib"
+
+func f() (int, error?) {
+    return 0, lib.bad{n: 1}
+}
+
+func main() {
+    _, e := f()
+    println(if e == nil { 0 } else { 1 })
+}

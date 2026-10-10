@@ -1,0 +1,217 @@
+package main
+
+// 1BRC の並列版（段 6 P4-6 — 逐次の bench/1brc と同じ集計・同じ出力）: 全体を読んで UTF-8 を 1 回だけ検査し、行の切れ目で NCHUNK 個の区間に
+// 分けて区間ごとに par.Map で集計（子ごとに自分の map と列）、親が生んだ順に合わせる。素直縛り — ワーカーの数は書かない（区間の数は固定・
+// 余った区間は pull で均される）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/par"
+import "std/utf8"
+
+const NCHUNK = 64
+
+// Part は 1 区間の集計（観測所の名前の列と、観測所ごとの [min, max, sum, count]）
+type Part struct {
+    names []string
+    st []int
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 2 {
+        return 2
+    }
+    b := io.ReadFile(args[1]) catch return 1
+    v := utf8.Check(b) catch return 1
+    // 区間の境目: k × len / NCHUNK から次の行の頭へ
+    mut bounds := mut []int{0}
+    for k <- iter.Range(1, NCHUNK) {
+        mut p := k * len(b) / NCHUNK
+        if p < bounds[len(bounds) - 1] {
+            p = bounds[len(bounds) - 1]
+        }
+        while p < len(b) && b[p - 1] != '\n' {
+            p += 1
+        }
+        bounds = append(bounds, p)
+    }
+    bounds = append(bounds, len(b))
+    bs := freeze(bounds)
+    mut ks := mut []int{}
+    for k <- iter.Range(0, NCHUNK) {
+        ks = append(ks, k)
+    }
+    parts, e := par.Map(freeze(ks), (k) => part(b, v, bs[k], bs[k + 1]))
+    if e != nil {
+        return 1
+    }
+    // 合わせる（区間の順）
+    mut ix := mut map[string]int{}
+    mut names := mut []string{}
+    mut st := mut []int{}
+    for p <- iter.Range(0, len(parts)) {
+        pt := parts[p]
+        for j <- iter.Range(0, len(pt.names)) {
+            name := pt.names[j]
+            q := j * 4
+            k := ix[name]
+            if k != nil {
+                o := k * 4
+                if pt.st[q] < st[o] {
+                    st[o] = pt.st[q]
+                }
+                if pt.st[q + 1] > st[o + 1] {
+                    st[o + 1] = pt.st[q + 1]
+                }
+                st[o + 2] = st[o + 2] + pt.st[q + 2]
+                st[o + 3] = st[o + 3] + pt.st[q + 3]
+            } else {
+                ix[name] = len(names)
+                names = append(names, name)
+                st = append(st, pt.st[q])
+                st = append(st, pt.st[q + 1])
+                st = append(st, pt.st[q + 2])
+                st = append(st, pt.st[q + 3])
+            }
+        }
+    }
+    order := sorted(freeze(names))
+    stats := freeze(st)
+    ix2 := freeze(ix)
+    mut out := mut []byte{'{'}
+    for j <- iter.Range(0, len(order)) {
+        if j > 0 {
+            out = append(out, ',')
+            out = append(out, ' ')
+        }
+        nb := bytes(order[j])
+        for c <- iter.Range(0, len(nb)) {
+            out = append(out, nb[c])
+        }
+        out = append(out, '=')
+        k := indexOf(ix2, order[j])
+        o := k * 4
+        put10(mut out, stats[o])
+        out = append(out, '/')
+        put10(mut out, floorDiv(2 * stats[o + 2] + stats[o + 3], 2 * stats[o + 3]))
+        out = append(out, '/')
+        put10(mut out, stats[o + 1])
+    }
+    out = append(out, '}')
+    out = append(out, '\n')
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}
+
+// part は b[lo:hi]（行の頭から行の頭まで）の集計（逐次の bench/1brc の本体と同じ）
+func part(b []byte, v utf8.View, lo int, hi int) Part {
+    mut ix := mut map[string]int{}
+    mut names := mut []string{}
+    mut st := mut []int{}
+    mut i := lo
+    while i < hi {
+        s := i
+        while b[i] != ';' {
+            i += 1
+        }
+        name := utf8.Str(v, s, i) catch ""
+        i += 1
+        neg := b[i] == '-'
+        if neg {
+            i += 1
+        }
+        mut t := 0
+        while b[i] != '\n' {
+            if b[i] != '.' {
+                t = t * 10 + int(b[i]) - '0'
+            }
+            i += 1
+        }
+        i += 1
+        if neg {
+            t = 0 - t
+        }
+        k := ix[name]
+        if k != nil {
+            o := k * 4
+            if t < st[o] {
+                st[o] = t
+            }
+            if t > st[o + 1] {
+                st[o + 1] = t
+            }
+            st[o + 2] = st[o + 2] + t
+            st[o + 3] = st[o + 3] + 1
+        } else {
+            ix[name] = len(names)
+            names = append(names, name)
+            st = append(st, t)
+            st = append(st, t)
+            st = append(st, t)
+            st = append(st, 1)
+        }
+    }
+    return Part{names: freeze(names), st: freeze(st)}
+}
+
+func indexOf(ix map[string]int, name string) int {
+    k := ix[name]
+    if k != nil {
+        return k
+    }
+    return 0
+}
+
+func floorDiv(a int, b int) int {
+    q := a / b
+    return if a % b != 0 && (a < 0) != (b < 0) { q - 1 } else { q }
+}
+
+// put10 は ×10 の整数 v を小数 1 桁で書く
+func put10(out mut []byte, v0 int) {
+    mut v := v0
+    if v < 0 {
+        out = append(out, '-')
+        v = 0 - v
+    }
+    putInt(mut out, v / 10)
+    out = append(out, '.')
+    out = append(out, byte('0' + v % 10))
+}
+
+func putInt(out mut []byte, v int) {
+    if v >= 10 {
+        putInt(mut out, v / 10)
+    }
+    out = append(out, byte('0' + v % 10))
+}
+
+// sorted は names を名前のバイト順に並べた写し（挿入ソート — 観測所は数百）
+func sorted(names []string) []string {
+    mut xs := mut []string{}
+    for i <- iter.Range(0, len(names)) {
+        xs = append(xs, names[i])
+        mut j := len(xs) - 1
+        while j > 0 && less(xs[j], xs[j - 1]) {
+            tmp := xs[j]
+            xs[j] = xs[j - 1]
+            xs[j - 1] = tmp
+            j -= 1
+        }
+    }
+    return freeze(xs)
+}
+
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+        i += 1
+    }
+    return len(x) < len(y)
+}

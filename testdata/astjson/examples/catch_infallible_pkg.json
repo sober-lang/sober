@@ -1,0 +1,90 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "-",
+                  "lhs": {
+                    "k": "catch",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "strings",
+                          "tok": 13
+                        },
+                        "field": "Index",
+                        "tok": 15
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "abc",
+                          "tok": 17
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "b",
+                          "tok": 19
+                        }
+                      ],
+                      "tok": 16
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 22
+                    },
+                    "tok": 21
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 24
+                  },
+                  "tok": 23
+                }
+              ],
+              "tok": 12
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 29
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,30 @@
+package main
+
+// 関数値（V3-3 の 3a）: 関数型フィールドを持つ struct = 辞書。名前付き関数を値として詰め、
+// フィールド経由で呼ぶ（間接呼び出し）。ジェネリクス無しの単相版
+type IntOrd struct {
+    less func(int, int) bool
+}
+
+func ascending(a int, b int) bool {
+    return a < b
+}
+
+func descending(a int, b int) bool {
+    return a > b
+}
+
+// ord.less で 3 値の最小（ord の順序で）を選ぶ
+func min3(a int, b int, c int, ord IntOrd) int {
+    ab := if ord.less(a, b) { a } else { b }
+    return if ord.less(ab, c) { ab } else { c }
+}
+
+func main() {
+    up := IntOrd{less: ascending}
+    down := IntOrd{less: descending}
+    println(min3(5, 2, 8, up), min3(5, 2, 8, down))
+    f := up.less
+    g := descending
+    println(f(1, 2), down.less(1, 2), g(3, 1))
+}

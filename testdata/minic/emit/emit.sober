@@ -1,0 +1,66 @@
+package emit
+
+// minic のバックエンド: 木（後置順）→ スタック VM のバイトコード → 実行。
+// 命令は 2 語（op, arg）。Push の arg は即値、Div の arg はゼロ除算を報告する位置、他は 0
+
+import "std/builder"
+import "testdata/minic/parse"
+import "testdata/minic/diag"
+
+const OpPush = 0
+const OpNeg = 1
+const OpAdd = 2
+const OpSub = 3
+const OpMul = 4
+const OpDiv = 5
+
+// 節の種類と命令は同じ番号（parse.Lit = OpPush …）— 節を後置順に並べ直すだけでコードになる
+func Compile(nodes []parse.Node) []int {
+    mut cb := builder.Builder[int]{}
+    mut i := 0
+    while i < len(nodes) {
+        n := nodes[i]
+        arg := if n.kind == parse.Lit { n.val } else if n.kind == parse.Div { n.pos } else { 0 }
+        builder.Push(mut cb, n.kind)
+        builder.Push(mut cb, arg)
+        i += 1
+    }
+    return builder.Build(mut cb)
+}
+
+// Run はコードを実行して最後にスタックに残った値を返す
+@errors(diag.DivByZero)
+func Run(code []int) (int, error?) {
+    mut st := mut []int{}
+    mut sp := 0
+    mut pc := 0
+    while pc < len(code) {
+        op := code[pc]
+        arg := code[pc + 1]
+        if op == OpPush {
+            if sp == len(st) {
+                st = append(st, arg)
+            } else {
+                st[sp] = arg
+            }
+            sp += 1
+        } else if op == OpNeg {
+            st[sp - 1] = 0 - st[sp - 1]
+        } else {
+            a := st[sp - 2]
+            b := st[sp - 1]
+            if op == OpDiv && b == 0 {
+                return 0, diag.DivByZero{pos: arg}
+            }
+            st[sp - 2] = switch op {
+            case 2: a + b
+            case 3: a - b
+            case 4: a * b
+            case _: a / b
+            }
+            sp -= 1
+        }
+        pc += 2
+    }
+    return st[sp - 1], nil
+}

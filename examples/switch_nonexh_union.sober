@@ -1,0 +1,16 @@
+package main
+
+// 負例（check / build とも名指しで拒否 — diag.NonExhaustive）: union の文の switch が variant を落とす（default も `_` も無い）。
+// 文面は落ちている最初の variant を添える（missing: A）。以前は check = Malformed・build = Mismatch
+
+type V union {
+    A {}
+    B { n int }
+}
+
+func main() {
+    v := B{n: 1}
+    switch v {
+    case B{n}: println(n)
+    }
+}

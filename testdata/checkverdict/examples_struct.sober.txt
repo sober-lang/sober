@@ -1,0 +1,2 @@
+sober: load error at examples/struct.sober:31:96: source does not match the grammar
+exit=1

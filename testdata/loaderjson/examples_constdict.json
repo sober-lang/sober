@@ -1,0 +1,82 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "byStart",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "sort",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze",
+            "len",
+            "ord.less"
+          ]
+        },
+        {
+          "name": "smaller",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IntOrd.less"
+          ]
+        },
+        {
+          "name": "inRange",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "inRange",
+            "println",
+            "smaller",
+            "sort"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "Base",
+          "value": 10,
+          "dict": false
+        },
+        {
+          "name": "IntOrd",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "TokOrd",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "Digits",
+          "value": null,
+          "dict": true
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

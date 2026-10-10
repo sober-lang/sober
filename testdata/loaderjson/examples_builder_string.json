@@ -1,0 +1,270 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "$strings",
+          "path": "std/strings"
+        },
+        {
+          "ref": "builder",
+          "path": "std/builder"
+        },
+        {
+          "ref": "strings",
+          "path": "std/strings"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "builder.Build",
+            "builder.Push",
+            "bytes",
+            "len",
+            "println",
+            "strings.Clone",
+            "strings.FormatInt"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/builder",
+      "name": "builder",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Push",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "PushAll",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Push",
+            "len"
+          ]
+        },
+        {
+          "name": "PushStr",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "PushAll",
+            "bytes"
+          ]
+        },
+        {
+          "name": "Len",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Get",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "Build",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "seeds",
+          "value": 24,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/strings",
+      "name": "strings",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "hasPrefixAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "indexAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "runeCount",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "HasPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "HasSuffix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "Index",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "indexAt"
+          ]
+        },
+        {
+          "name": "Contains",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Index"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "countFrom",
+            "len",
+            "runeCount"
+          ]
+        },
+        {
+          "name": "countFrom",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "IndexByte",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "len"
+          ]
+        },
+        {
+          "name": "utoa",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "FormatInt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "utoa"
+          ]
+        },
+        {
+          "name": "Clone",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "Join",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

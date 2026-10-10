@@ -1,0 +1,1951 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 13
+                    },
+                    "field": "HasPrefix",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello world",
+                      "tok": 17
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "hello",
+                      "tok": 19
+                    }
+                  ],
+                  "tok": 16
+                }
+              ],
+              "tok": 12
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 25
+                    },
+                    "field": "HasPrefix",
+                    "tok": 27
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello world",
+                      "tok": 29
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "world",
+                      "tok": 31
+                    }
+                  ],
+                  "tok": 28
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 35
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 37
+                    },
+                    "field": "HasPrefix",
+                    "tok": 39
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hi",
+                      "tok": 41
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "hello",
+                      "tok": 43
+                    }
+                  ],
+                  "tok": 40
+                }
+              ],
+              "tok": 36
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 47
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 49
+                    },
+                    "field": "HasPrefix",
+                    "tok": 51
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello",
+                      "tok": 53
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 55
+                    }
+                  ],
+                  "tok": 52
+                }
+              ],
+              "tok": 48
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 59
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 61
+                    },
+                    "field": "HasPrefix",
+                    "tok": 63
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 65
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 67
+                    }
+                  ],
+                  "tok": 64
+                }
+              ],
+              "tok": 60
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 71
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 73
+                    },
+                    "field": "HasPrefix",
+                    "tok": 75
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 77
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "a",
+                      "tok": 79
+                    }
+                  ],
+                  "tok": 76
+                }
+              ],
+              "tok": 72
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 83
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 85
+                    },
+                    "field": "HasPrefix",
+                    "tok": 87
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 89
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 91
+                    }
+                  ],
+                  "tok": 88
+                }
+              ],
+              "tok": 84
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 95
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 97
+                    },
+                    "field": "HasPrefix",
+                    "tok": 99
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 101
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abcd",
+                      "tok": 103
+                    }
+                  ],
+                  "tok": 100
+                }
+              ],
+              "tok": 96
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 107
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 109
+                    },
+                    "field": "HasSuffix",
+                    "tok": 111
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello world",
+                      "tok": 113
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "world",
+                      "tok": 115
+                    }
+                  ],
+                  "tok": 112
+                }
+              ],
+              "tok": 108
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 119
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 121
+                    },
+                    "field": "HasSuffix",
+                    "tok": 123
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello world",
+                      "tok": 125
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "hello",
+                      "tok": 127
+                    }
+                  ],
+                  "tok": 124
+                }
+              ],
+              "tok": 120
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 131
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 133
+                    },
+                    "field": "HasSuffix",
+                    "tok": 135
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "lo",
+                      "tok": 137
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "hello",
+                      "tok": 139
+                    }
+                  ],
+                  "tok": 136
+                }
+              ],
+              "tok": 132
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 143
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 145
+                    },
+                    "field": "HasSuffix",
+                    "tok": 147
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 149
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 151
+                    }
+                  ],
+                  "tok": 148
+                }
+              ],
+              "tok": 144
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 155
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 157
+                    },
+                    "field": "HasSuffix",
+                    "tok": 159
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 161
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 163
+                    }
+                  ],
+                  "tok": 160
+                }
+              ],
+              "tok": 156
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 167
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 169
+                    },
+                    "field": "HasSuffix",
+                    "tok": 171
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 173
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 175
+                    }
+                  ],
+                  "tok": 172
+                }
+              ],
+              "tok": 168
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 179
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 181
+                    },
+                    "field": "HasSuffix",
+                    "tok": 183
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abcabc",
+                      "tok": 185
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "cabc",
+                      "tok": 187
+                    }
+                  ],
+                  "tok": 184
+                }
+              ],
+              "tok": 180
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 191
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 193
+                    },
+                    "field": "Index",
+                    "tok": 195
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "chicken",
+                      "tok": 197
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "ken",
+                      "tok": 199
+                    }
+                  ],
+                  "tok": 196
+                }
+              ],
+              "tok": 192
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 203
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 205
+                    },
+                    "field": "Index",
+                    "tok": 207
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "chicken",
+                      "tok": 209
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "dmr",
+                      "tok": 211
+                    }
+                  ],
+                  "tok": 208
+                }
+              ],
+              "tok": 204
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 215
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 217
+                    },
+                    "field": "Index",
+                    "tok": 219
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 221
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 223
+                    }
+                  ],
+                  "tok": 220
+                }
+              ],
+              "tok": 216
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 227
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 229
+                    },
+                    "field": "Index",
+                    "tok": 231
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 233
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 235
+                    }
+                  ],
+                  "tok": 232
+                }
+              ],
+              "tok": 228
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 239
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 241
+                    },
+                    "field": "Index",
+                    "tok": 243
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 245
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "a",
+                      "tok": 247
+                    }
+                  ],
+                  "tok": 244
+                }
+              ],
+              "tok": 240
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 251
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 253
+                    },
+                    "field": "Index",
+                    "tok": 255
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 257
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 259
+                    }
+                  ],
+                  "tok": 256
+                }
+              ],
+              "tok": 252
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 263
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 265
+                    },
+                    "field": "Index",
+                    "tok": 267
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "ab",
+                      "tok": 269
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 271
+                    }
+                  ],
+                  "tok": 268
+                }
+              ],
+              "tok": 264
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 275
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 277
+                    },
+                    "field": "Index",
+                    "tok": 279
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "aaab",
+                      "tok": 281
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "aab",
+                      "tok": 283
+                    }
+                  ],
+                  "tok": 280
+                }
+              ],
+              "tok": 276
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 287
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 289
+                    },
+                    "field": "Index",
+                    "tok": 291
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abcabc",
+                      "tok": 293
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "cab",
+                      "tok": 295
+                    }
+                  ],
+                  "tok": 292
+                }
+              ],
+              "tok": 288
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 299
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 301
+                    },
+                    "field": "Index",
+                    "tok": 303
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "xxxxx",
+                      "tok": 305
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 307
+                    }
+                  ],
+                  "tok": 304
+                }
+              ],
+              "tok": 300
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 311
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 313
+                    },
+                    "field": "Index",
+                    "tok": 315
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "あいう",
+                      "tok": 317
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "い",
+                      "tok": 319
+                    }
+                  ],
+                  "tok": 316
+                }
+              ],
+              "tok": 312
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 323
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 325
+                    },
+                    "field": "Index",
+                    "tok": 327
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "あいう",
+                      "tok": 329
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "え",
+                      "tok": 331
+                    }
+                  ],
+                  "tok": 328
+                }
+              ],
+              "tok": 324
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 335
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 337
+                    },
+                    "field": "Contains",
+                    "tok": 339
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "seafood",
+                      "tok": 341
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "foo",
+                      "tok": 343
+                    }
+                  ],
+                  "tok": 340
+                }
+              ],
+              "tok": 336
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 347
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 349
+                    },
+                    "field": "Contains",
+                    "tok": 351
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "seafood",
+                      "tok": 353
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "bar",
+                      "tok": 355
+                    }
+                  ],
+                  "tok": 352
+                }
+              ],
+              "tok": 348
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 359
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 361
+                    },
+                    "field": "Contains",
+                    "tok": 363
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "seafood",
+                      "tok": 365
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 367
+                    }
+                  ],
+                  "tok": 364
+                }
+              ],
+              "tok": 360
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 371
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 373
+                    },
+                    "field": "Contains",
+                    "tok": 375
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 377
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 379
+                    }
+                  ],
+                  "tok": 376
+                }
+              ],
+              "tok": 372
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 383
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 385
+                    },
+                    "field": "Contains",
+                    "tok": 387
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 389
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "a",
+                      "tok": 391
+                    }
+                  ],
+                  "tok": 388
+                }
+              ],
+              "tok": 384
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 395
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 397
+                    },
+                    "field": "Contains",
+                    "tok": 399
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "ab",
+                      "tok": 401
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "ba",
+                      "tok": 403
+                    }
+                  ],
+                  "tok": 400
+                }
+              ],
+              "tok": 396
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 407
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 409
+                    },
+                    "field": "Count",
+                    "tok": 411
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "cheese",
+                      "tok": 413
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "e",
+                      "tok": 415
+                    }
+                  ],
+                  "tok": 412
+                }
+              ],
+              "tok": 408
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 419
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 421
+                    },
+                    "field": "Count",
+                    "tok": 423
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "five",
+                      "tok": 425
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 427
+                    }
+                  ],
+                  "tok": 424
+                }
+              ],
+              "tok": 420
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 431
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 433
+                    },
+                    "field": "Count",
+                    "tok": 435
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 437
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 439
+                    }
+                  ],
+                  "tok": 436
+                }
+              ],
+              "tok": 432
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 443
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 445
+                    },
+                    "field": "Count",
+                    "tok": 447
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "aaaa",
+                      "tok": 449
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "aa",
+                      "tok": 451
+                    }
+                  ],
+                  "tok": 448
+                }
+              ],
+              "tok": 444
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 455
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 457
+                    },
+                    "field": "Count",
+                    "tok": 459
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "aaaaa",
+                      "tok": 461
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "aa",
+                      "tok": 463
+                    }
+                  ],
+                  "tok": 460
+                }
+              ],
+              "tok": 456
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 467
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 469
+                    },
+                    "field": "Count",
+                    "tok": 471
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 473
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abcd",
+                      "tok": 475
+                    }
+                  ],
+                  "tok": 472
+                }
+              ],
+              "tok": 468
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 479
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 481
+                    },
+                    "field": "Count",
+                    "tok": 483
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abcabcab",
+                      "tok": 485
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 487
+                    }
+                  ],
+                  "tok": 484
+                }
+              ],
+              "tok": 480
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 491
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 493
+                    },
+                    "field": "Count",
+                    "tok": 495
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "あいう",
+                      "tok": 497
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 499
+                    }
+                  ],
+                  "tok": 496
+                }
+              ],
+              "tok": 492
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 503
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 505
+                    },
+                    "field": "Count",
+                    "tok": 507
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "ababab",
+                      "tok": 509
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "bab",
+                      "tok": 511
+                    }
+                  ],
+                  "tok": 508
+                }
+              ],
+              "tok": 504
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 515
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 517
+                    },
+                    "field": "IndexByte",
+                    "tok": 519
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "golang",
+                      "tok": 521
+                    },
+                    {
+                      "k": "int",
+                      "value": 108,
+                      "tok": 523
+                    }
+                  ],
+                  "tok": 520
+                }
+              ],
+              "tok": 516
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 527
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 529
+                    },
+                    "field": "IndexByte",
+                    "tok": 531
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "gophers",
+                      "tok": 533
+                    },
+                    {
+                      "k": "int",
+                      "value": 104,
+                      "tok": 535
+                    }
+                  ],
+                  "tok": 532
+                }
+              ],
+              "tok": 528
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 539
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 541
+                    },
+                    "field": "IndexByte",
+                    "tok": 543
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "golang",
+                      "tok": 545
+                    },
+                    {
+                      "k": "int",
+                      "value": 120,
+                      "tok": 547
+                    }
+                  ],
+                  "tok": 544
+                }
+              ],
+              "tok": 540
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 551
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 553
+                    },
+                    "field": "IndexByte",
+                    "tok": 555
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 557
+                    },
+                    {
+                      "k": "int",
+                      "value": 97,
+                      "tok": 559
+                    }
+                  ],
+                  "tok": 556
+                }
+              ],
+              "tok": 552
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 563
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 565
+                    },
+                    "field": "IndexByte",
+                    "tok": 567
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "aaa",
+                      "tok": 569
+                    },
+                    {
+                      "k": "int",
+                      "value": 97,
+                      "tok": 571
+                    }
+                  ],
+                  "tok": 568
+                }
+              ],
+              "tok": 564
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 575
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "strings",
+                      "tok": 577
+                    },
+                    "field": "IndexByte",
+                    "tok": 579
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "abc",
+                      "tok": 581
+                    },
+                    {
+                      "k": "int",
+                      "value": 99,
+                      "tok": 583
+                    }
+                  ],
+                  "tok": 580
+                }
+              ],
+              "tok": 576
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 589
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

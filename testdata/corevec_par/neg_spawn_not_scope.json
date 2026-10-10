@@ -1,0 +1,1 @@
+{"defs":[],"e":{"k":"block","e":{"k":"scope","t":{"k":"int"},"e":{"k":"let","e":{"k":"spawn","s":{"k":"lit","n":0},"a":{"k":"lit","n":1},"e":{"k":"var","i":0}},"body":{"k":"join","h":{"k":"var","i":0}}}}}}

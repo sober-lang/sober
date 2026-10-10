@@ -1,0 +1,15 @@
+package main
+
+// std/table の Get / Set の範囲外: chunk の中身は確保時の写しで埋まっていて Len 以降も読めてしまうので、
+// Len 以上の添字は境界検査の panic（exit 101）に落とす
+
+import "std/table"
+
+func main() {
+    mut t := table.Table[int]{}
+    table.Push(mut t, 1)
+    table.Push(mut t, 2)
+    table.Set(mut t, 1, 5)
+    println("${table.Get(mut t, 1)}")
+    println("${table.Get(mut t, 2)}")
+}

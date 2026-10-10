@@ -1,0 +1,2 @@
+sober: load error at examples/named_fn_args_dup.sober:7:31: named arguments must follow the order of the parameters
+exit=1

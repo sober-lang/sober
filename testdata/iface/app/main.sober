@@ -1,0 +1,30 @@
+package main
+
+// V5-5 の一致検証の難所を意図的に踏む例（scripts/iface.sh）:
+// - main の非展開関数の本体で持ち上げるラムダ（lib より前の package — 生の index なら lib の持ち上げ番号がずれる）
+// - lib は 2 ファイル（ファイル名順 = 宣言順）
+// - lib.Decode の本体だけが std/utf8 を暗黙に引く（`.sobi` では本体が落ちる — ロード順はリンク表から）
+// - lib.Twice（展開される公開関数）が非公開の helper / 非公開 const を参照する（リンク可視）
+// - 辞書 const lib.ByMod のラムダが非公開関数を参照する
+import "testdata/iface/lib"
+
+type Pick struct {
+    f func(int) int
+}
+
+func choose(n int) int {
+    p := Pick{f: (x) => x * 10}
+    return p.f(n)
+}
+
+func main() {
+    mut v := 3
+    lib.Bump(mut v)
+    println(v)
+    println(lib.Twice((x) => x + 1, 5))
+    println(choose(4))
+    println(lib.Decode([]int{104, 105}))
+    println(lib.Decode([]int{255}))
+    println(lib.ByMod.less(7, 12))
+    println(lib.Tag(lib.Mark{n: 2}))
+}

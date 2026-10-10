@@ -1,0 +1,10 @@
+package main
+
+import "std/strings"
+
+func main() {
+    println(strings.HasPrefix("hello world", "hello"))
+    println(strings.HasPrefix("hello world", "world"))
+    println(strings.HasPrefix("hi", "hello"))
+    println(strings.HasPrefix("hello", ""))
+}

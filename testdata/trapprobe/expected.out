@@ -1,0 +1,26 @@
+kid ok 0
+ok died=0
+  code=0
+  top=0
+kid idx 1
+idx died=1
+  code=101
+  top=0
+kid mem 2
+mem died=1
+  code=102
+  top=0
+div died=1
+  code=101
+  top=0
+kid idx 4
+nest inner died=1
+nest died=1
+  code=101
+  top=0
+deep bottom 0
+deep died=1
+  code=101
+  top=0
+live 9753
+kid idx 99

@@ -1,0 +1,16 @@
+package main
+
+// @noinline は関数型引数を持つ関数には付けられない（関数型引数の展開は生成方式の本体 — language.md 8 節）
+@noinline
+func each(xs mut []int, f func(int)) {
+    mut i := 0
+    while i < len(xs) {
+        f(xs[i])
+        i += 1
+    }
+}
+
+func main() {
+    mut xs := mut []int{1, 2}
+    each(mut xs, x => println(x))
+}

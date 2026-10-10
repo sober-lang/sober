@@ -1,0 +1,8 @@
+package main
+
+// loader の負例: import の循環（a → b → a）
+import "testdata/loader_neg/cycle/a"
+
+func main() {
+    println(a.F())
+}

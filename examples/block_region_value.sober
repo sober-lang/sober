@@ -1,0 +1,46 @@
+package main
+
+// region を持つ値（string・string の欄を持つ struct）のブロック式（F-f — 2026-10-02 まで check が拒否・build は受理）:
+// 脱糖器の型の読み（computeTy）が、リテラル・struct リテラル・欄読み・if / switch の合流を「値が実際に置かれた座標」で読むので、
+// ブロックの出口の付け替え（R5）が正しく発火する
+
+type S struct {
+    a int
+    s string
+}
+
+// 素の形（main の中 — 旧: type error）と演算子の右
+func plain() string {
+    x := { "abc" }
+    return x + { "d" }
+}
+
+// Def の中の return（旧: def error）
+func ret() string {
+    return { "ret" }
+}
+
+// struct 版（旧: type error）と、struct リテラルの欄読み版
+func structs() int {
+    x := { S{a: 3, s: "z"} }
+    y := { S{a: 7, s: "yy"}.s }
+    return x.a + len(bytes(x.s)) + len(bytes(y))
+}
+
+// ブロック × 仮引数の region の合流（if の腕の中のブロック・ブロックの中の if / switch）
+func join(v string, k int) string {
+    a := if k == 0 { v } else { { "z" } }
+    b := { if k == 1 { v } else { v } }
+    c := { switch k { case 0: v; default: "w" } }
+    return a + b + c
+}
+
+func joinS(v S, c bool) S {
+    return { if c { v } else { S{a: 9, s: "n"} } }
+}
+
+func main() {
+    println(plain(), ret(), structs())
+    println(join("p", 0), join("q", 1), join("r", 2))
+    println(joinS(S{a: 1, s: "v"}, true).s, joinS(S{a: 1, s: "v"}, false).a)
+}

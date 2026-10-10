@@ -1,0 +1,76 @@
+package stdtable
+
+// std/table の black-box テスト（scripts/unittest.sh — cwd = ルート）: PushAll は Push を要素ごとに呼ぶのと同じ表を作る（chunk の境目を跨ぐ・
+// 途中の chunk から始める・空の列）
+
+import "std/iter"
+import "std/table"
+
+// same は前置き pre 個を Push で積んだ後に n 個の列を PushAll で積んだ表と、全部を Push で積んだ表が同じか
+func same(pre int, n int) bool {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, n) {
+        xs = append(xs, i * 7 + 3)
+    }
+    ys := freeze(xs)
+    mut a := table.Table[int]{}
+    mut b := table.Table[int]{}
+    for i <- iter.Range(0, pre) {
+        table.Push(mut a, -i)
+        table.Push(mut b, -i)
+    }
+    table.PushAll(mut a, ys)
+    for i <- iter.Range(0, n) {
+        table.Push(mut b, ys[i])
+    }
+    if table.Len(mut a) != table.Len(mut b) {
+        return false
+    }
+    for i <- iter.Range(0, table.Len(mut a)) {
+        if table.Get(mut a, i) != table.Get(mut b, i) {
+            return false
+        }
+    }
+    // 後から Push / Set しても同じ（埋めた chunk の残りを上書きする）
+    table.Push(mut a, 99)
+    table.Push(mut b, 99)
+    return table.Get(mut a, table.Len(mut a) - 1) == 99 && table.Len(mut a) == table.Len(mut b)
+}
+
+func TestPushAll() {
+    sizes := []int{0, 1, 5, 8191, 8192, 8193, 20000}
+    pres := []int{0, 1, 8191, 8192, 9000}
+    for i <- iter.Range(0, len(sizes)) {
+        for j <- iter.Range(0, len(pres)) {
+            ok := same(pres[j], sizes[i])
+            assert(ok)
+        }
+    }
+}
+
+// Freeze は中身を写さずに凍らせ、元の表を空に戻す: At ≡ 凍らせる前の Get・凍らせた後の Push は凍った表に届かない
+func TestFreeze() {
+    sizes := []int{0, 1, 8191, 8192, 8193, 20000}
+    for s <- iter.Range(0, len(sizes)) {
+        n := sizes[s]
+        mut t := table.Table[int]{}
+        for i <- iter.Range(0, n) {
+            table.Push(mut t, i * 3 + 1)
+        }
+        f := table.Freeze(mut t)
+        assert(table.FrozenLen(f) == n)
+        assert(table.Len(mut t) == 0)
+        for i <- iter.Range(0, n) {
+            assert(table.At(f, i) == i * 3 + 1)
+        }
+        for i <- iter.Range(0, 10) {
+            table.Push(mut t, -1)
+        }
+        assert(table.Len(mut t) == 10)
+        assert(table.Get(mut t, 9) == -1)
+        if n > 0 {
+            assert(table.At(f, 0) == 1)
+            assert(table.At(f, n - 1) == (n - 1) * 3 + 1)
+        }
+    }
+}

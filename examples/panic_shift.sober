@@ -1,0 +1,12 @@
+package main
+
+// シフトの量が負で panic（exit 101 — Go と同じ）。stderr に点の位置（scripts/panicmsg.sh）
+
+func sh(x int, n int) int {
+    return x << n
+}
+
+func main() {
+    println(sh(1, 3))
+    println(sh(1, 0 - 1))
+}

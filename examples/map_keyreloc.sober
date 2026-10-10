@@ -1,0 +1,36 @@
+package main
+
+// map の鍵の格納点の写し（宛先構築レーン M5 — 挿入のときだけ鍵を map のヘッダの深度へ再配置）の網: ループの反復で作った鍵
+// （反復の region に確保 — 連結）を外側の map に入れ、反復の region が捨てられた後に鍵を読む。写しが無ければ鍵が宙に浮く
+// （scripts/optdiff.sh の代表 — 最適化なしの経路とも突き合わせる）
+
+import "std/iter"
+
+func build(n int) map[string]int {
+    mut m := mut map[string]int{}
+    for i <- iter.Range(0, n) {
+        k := "key-${i % 7}-${i}"
+        filler := "xxxxxxxxxxxxxxxx${i * 31}"
+        c := m[k]
+        m[k] = if c != nil { c + len(bytes(filler)) } else { i }
+    }
+    return freeze(m)
+}
+
+func main() {
+    m := build(40)
+    mut total := 0
+    for k <- keys(m) {
+        total += len(bytes(k))
+        v := m[k]
+        if v != nil {
+            total += v
+        }
+    }
+    println(len(m), total)
+    for k <- keys(m) {
+        if len(bytes(k)) == 8 {
+            println(k)
+        }
+    }
+}

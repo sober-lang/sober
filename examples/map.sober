@@ -1,0 +1,28 @@
+package main
+
+func main() {
+    mut m := mut map[int]int{1: 10, 2: 20}
+    m[1] = 99
+    m[3] = 30
+    v := m[1]
+    if v != nil {
+        println(v)
+    }
+    println(len(m))
+    delete(m, 2)
+    println(len(m))
+    w := m[2]
+    if w == nil {
+        println(0 - 1)
+    }
+    f := freeze(m)
+    x := f[3]
+    if x != nil {
+        println(x)
+    }
+    lookup := map[int]int{7: 700}
+    y := lookup[7]
+    if y != nil {
+        println(y)
+    }
+}

@@ -1,0 +1,35 @@
+package main
+
+// 組み込みの `panic(L{…})`（language.md 12 節の語彙 — 2026-10-02 実装・2026-10-03 に理由のラベルが必須に〔27 節「panic ラベル」〕）:
+// 評価に来たら exit 101（範囲外・ゼロ除算と同じ終端 — 27 節）。値は Never — 腕の位置では兄弟の腕の型に合う（コアの unreach）。文の位置でも書ける
+
+func must(ok bool) {
+    if !ok {
+        panic(InvariantBroken{})
+    }
+}
+
+func digit(i int) string {
+    return switch i { case 0: "zero"; case 1: "one"; default: panic(Unreachable{}) }
+}
+
+func half(n int) int {
+    x := if n % 2 == 0 { n / 2 } else { panic(InvariantBroken{}) }
+    return x
+}
+
+// 値を返す位置（return の値 — 戻り値の型の unreach）
+func pick(i int) string {
+    if i == 0 {
+        return "first"
+    }
+    return panic(Unreachable{})
+}
+
+func main() {
+    must(true)
+    println(digit(1), half(8), pick(0))
+    println(digit(0))
+    must(false)
+    println("unreachable")
+}

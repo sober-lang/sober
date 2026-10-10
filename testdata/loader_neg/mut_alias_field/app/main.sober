@@ -1,0 +1,23 @@
+package main
+
+// mut 実引数の排他（diag.MutAlias）: 束縛とその欄（一方が他方の接頭）は重なる — 名前付き実引数でも同じ（位置へ写した後に見る）
+type P struct {
+    x int
+    y int
+}
+
+type T struct {
+    p P
+    n int
+}
+
+func whole(t mut T, x mut int) {
+    t.n += x
+    x += 1
+}
+
+func main() {
+    mut t := T{p: P{x: 0, y: 0}, n: 0}
+    whole(t: mut t, x: mut t.p.x)
+    println(t.n)
+}

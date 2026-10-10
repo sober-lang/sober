@@ -1,0 +1,16 @@
+package main
+
+// 負例（load が拒否 — diag.JsonShape 1）: json.Decode の型引数は struct（ここは int）
+
+import "std/json"
+
+func main() {
+    d, err := json.Parse(bytes("1"))
+    if err != nil {
+        return
+    }
+    n, derr := json.Decode[int](d, json.Root(d))
+    if derr == nil {
+        println(n)
+    }
+}

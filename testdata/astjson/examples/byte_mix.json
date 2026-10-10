@@ -1,0 +1,95 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "byte",
+                  "tok": 10
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 65,
+                    "tok": 12
+                  }
+                ],
+                "tok": 11
+              }
+            ],
+            "tok": 8
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 65,
+                "tok": 17
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 19
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 21
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 23
+                  },
+                  "tok": 22
+                }
+              ],
+              "tok": 20
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 28
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

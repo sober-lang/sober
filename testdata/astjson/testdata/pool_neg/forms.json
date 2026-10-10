@@ -1,0 +1,768 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Buf",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "a",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "generic",
+            "name": "pool.Pool",
+            "args": [
+              {
+                "k": "name",
+                "name": "Buf"
+              }
+            ]
+          },
+          "mutable": true
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 31
+                  },
+                  "field": "Acquire",
+                  "tok": 33
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 36
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 42
+                        }
+                      }
+                    ],
+                    "tok": 38,
+                    "type_args": []
+                  }
+                ],
+                "tok": 34
+              }
+            ],
+            "tok": 29
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 47
+                },
+                "field": "Release",
+                "tok": 49
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 52
+                },
+                {
+                  "k": "ident",
+                  "name": "h",
+                  "tok": 54
+                }
+              ],
+              "tok": 50
+            },
+            "tok": 46
+          },
+          {
+            "k": "bind",
+            "names": [
+              "g"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 59
+                  },
+                  "field": "Acquire",
+                  "tok": 61
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 64
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 70
+                        }
+                      }
+                    ],
+                    "tok": 66,
+                    "type_args": []
+                  }
+                ],
+                "tok": 62
+              }
+            ],
+            "tok": 57
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 75
+                },
+                "field": "Release",
+                "tok": 77
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 80
+                },
+                {
+                  "k": "ident",
+                  "name": "h",
+                  "tok": 82
+                }
+              ],
+              "tok": 78
+            },
+            "tok": 74
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 87
+                  },
+                  "field": "Acquire",
+                  "tok": 89
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 92
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 98
+                        }
+                      }
+                    ],
+                    "tok": 94,
+                    "type_args": []
+                  }
+                ],
+                "tok": 90
+              }
+            ],
+            "tok": 85
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 102
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 104
+                }
+              ],
+              "tok": 103
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 110
+                  },
+                  "field": "Acquire",
+                  "tok": 112
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 115
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 4,
+                          "tok": 121
+                        }
+                      }
+                    ],
+                    "tok": 117,
+                    "type_args": []
+                  }
+                ],
+                "tok": 113
+              }
+            ],
+            "tok": 107
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 125
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 127
+                      },
+                      "field": "Acquire",
+                      "tok": 129
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "p",
+                        "tok": 132
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "Buf",
+                        "elems": [
+                          {
+                            "key": "n",
+                            "value": {
+                              "k": "int",
+                              "value": 5,
+                              "tok": 138
+                            }
+                          }
+                        ],
+                        "tok": 134,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 130
+                  },
+                  "field": "idx",
+                  "tok": 142
+                }
+              ],
+              "tok": 126
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 145
+                },
+                "field": "Release",
+                "tok": 147
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 150
+                },
+                {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 152
+                }
+              ],
+              "tok": 148
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "q"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "index",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "pool",
+                      "tok": 157
+                    },
+                    "field": "Acquire",
+                    "tok": 159
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "Buf",
+                    "tok": 161
+                  },
+                  "tok": 160
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 165
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 6,
+                          "tok": 171
+                        }
+                      }
+                    ],
+                    "tok": 167,
+                    "type_args": []
+                  }
+                ],
+                "tok": 163
+              }
+            ],
+            "tok": 155
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "index",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 176
+                  },
+                  "field": "Release",
+                  "tok": 178
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "Buf",
+                  "tok": 180
+                },
+                "tok": 179
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 184
+                },
+                {
+                  "k": "ident",
+                  "name": "q",
+                  "tok": 186
+                }
+              ],
+              "tok": 182
+            },
+            "tok": 175
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 191
+                  },
+                  "field": "Acquire",
+                  "tok": 193
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 196
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Buf",
+                    "elems": [
+                      {
+                        "key": "n",
+                        "value": {
+                          "k": "int",
+                          "value": 7,
+                          "tok": 202
+                        }
+                      }
+                    ],
+                    "tok": 198,
+                    "type_args": []
+                  }
+                ],
+                "tok": 194
+              }
+            ],
+            "tok": 189
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 207
+                },
+                "field": "Release",
+                "tok": 209
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "p",
+                  "tok": 211
+                },
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 213
+                }
+              ],
+              "tok": 210
+            },
+            "tok": 206
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k2"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "pipe",
+                "lhs": {
+                  "k": "composite",
+                  "type_name": "Buf",
+                  "elems": [
+                    {
+                      "key": "n",
+                      "value": {
+                        "k": "int",
+                        "value": 8,
+                        "tok": 222
+                      }
+                    }
+                  ],
+                  "tok": 218,
+                  "type_args": []
+                },
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 225
+                  },
+                  "field": "Acquire",
+                  "tok": 227
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 230
+                  },
+                  null
+                ],
+                "tok": 224
+              }
+            ],
+            "tok": 216
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 236
+                },
+                "field": "Release",
+                "tok": 238
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 241
+                },
+                {
+                  "k": "ident",
+                  "name": "k2",
+                  "tok": 243
+                }
+              ],
+              "tok": 239
+            },
+            "tok": 235
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 247
+              }
+            ],
+            "tok": 246
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 251
+      },
+      "sig_end": 28
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "index",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "pool",
+                      "tok": 259
+                    },
+                    "field": "New",
+                    "tok": 261
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "Buf",
+                    "tok": 263
+                  },
+                  "tok": 262
+                },
+                "args": [],
+                "tok": 265
+              }
+            ],
+            "tok": 256
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 268
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "a",
+                    "tok": 270
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "p",
+                      "tok": 273
+                    }
+                  ],
+                  "tok": 271
+                }
+              ],
+              "tok": 269
+            }
+          }
+        ]
+      },
+      "tok": 252,
+      "bodiless": false,
+      "span": {
+        "start": 251,
+        "end": 279
+      },
+      "sig_end": 255
+    }
+  ],
+  "consts": []
+}

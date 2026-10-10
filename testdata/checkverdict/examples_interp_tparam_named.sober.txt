@@ -1,0 +1,2 @@
+sober: desugar error at examples/interp_tparam_named.sober:9:12 (CoreFragment)
+exit=1

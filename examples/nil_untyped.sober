@@ -1,0 +1,11 @@
+package main
+
+// 負例（check が名指して拒否 — diag.UntypedNil）: 期待型の無い位置の nil は型が決まらない（`x := if c { 3 } else { nil }`）。
+// T? が要る位置（型のある仮引数・欄・結果）で使う
+
+func main() {
+    x := if true { 3 } else { nil }
+    if x != nil {
+        println(x)
+    }
+}

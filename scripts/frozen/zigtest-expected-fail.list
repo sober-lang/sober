@@ -1,0 +1,16 @@
+# zigtest（`zig build test` — 凍結した Zig 版の単体テスト。タグ zig）の赤のうち、凍結後に動いた入力を読むために赤いもの（G1 — 掃除枠 B 2026-10-02）。
+# gates の zigtest は赤のテスト名の集合がこの宣言と一致すれば緑（新しい赤・ここにあるのに緑のテストはどちらも赤）。src/ は凍結なのでテスト側は直さない。
+# 行 = zig の test 名（ログの `error: '<名前>' failed` の <名前>）。理由ごとに束ねる。
+#
+# 理由 1: 今の std/ の集合を読む（std に layout・os が増えて 10 本 — build.zig の焼き込みは src/stage1/std_frozen の 8 本）
+embed.test.test.embed: std/**/*.sober の展開が build.zig の std 焼き込みと同じ列（同じ集合・同じ順）
+# 理由 2: 今の examples/ を読む（凍結後の言語で書かれた例 — fixpoint は examples/layout_elf.sober で落ちる）
+cst.test.test.fixpoint: samples under examples/
+# 理由 3: 今の Lean の sober-check（lean/.lake/build/bin/sober-check）を呼ぶ — 凍結後に動いた Lean の規則と凍結した脱糖器のコアが合わない（個々の原因は追っていない）
+desugar.test.test.R1 (region polymorphism ruling, ①s): region-bearing type arguments for generic structs and inline-expanded generics; Keep
+desugar.test.test.R2 (region polymorphism ruling, K-a): recursive mut-parameter functions are Defs called with an anchor (callm)
+desugar.test.test.R4a (region polymorphism ruling, deep relocate): a callee may return nested containers built in its frame
+desugar.test.test.R4b-cov (imm cells are deeply covariant): nested imm containers from a parameter forward to another call
+desugar.test.test.R5 (block exit is symmetric with jump): a value built in an expression block leaves by a boundary copy
+desugar.test.test.error label fields may hold string / slice / map (R0: L1 lifted) — load, build and check
+desugar.test.test.sober-check: a key built in an inner scope cannot be stored in an outer map, but can be looked up

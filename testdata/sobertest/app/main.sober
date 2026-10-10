@@ -1,0 +1,8 @@
+package main
+
+// 通常のビルドは `_test.sober` を読まない（scripts/sobertest.sh — loader の読み込むファイルの一覧に calc_test.sober が無いこと）
+import "testdata/sobertest/calc"
+
+func main() {
+    println(calc.Add(20, 22))
+}

@@ -1,0 +1,16 @@
+package main
+
+// 名前付き実引数の拒否（syntax.md 決定 7 の kind 1 — 名前付き関数型を持たない値は desugar/namedval.sober が拒否）: 関数値・組み込みへの名前付き
+
+func label(name string, prefix string?, suffix string?) string {
+    return name
+}
+
+func area(w int, h int) int {
+    return w * h
+}
+
+func main() {
+    f := (x int) => x
+    println(f(x: 1))
+}

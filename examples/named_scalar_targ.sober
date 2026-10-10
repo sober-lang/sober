@@ -1,0 +1,17 @@
+package main
+
+// 負例（language.md 32 節）: ジェネリック struct の型引数の named の区別（B[Meters] と B[int] は別の型。旧 check は型引数を捨てて受理 — build は拒否していた）
+
+type Meters int
+
+type B[T] struct {
+    v T
+}
+
+func get(b B[int]) int {
+    return b.v
+}
+
+func main() {
+    println(get(B[Meters]{v: Meters(3)}))
+}

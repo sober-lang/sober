@@ -1,0 +1,24 @@
+package main
+
+// 負例（check が拒否する）: 形が同じ別の struct を mut 実引数で渡すのは型エラー。展開される関数の mut 仮引数は
+// 割った struct の場所（ref の木）を ann なしで受けるので、脱糖器が実引数と仮引数の型宣言の一致を照合する
+
+type A struct {
+    x int
+    y int
+}
+
+type B struct {
+    x int
+    y int
+}
+
+func bumpB(b mut B) {
+    b.x += 1
+}
+
+func main() {
+    mut a := A{x: 1, y: 2}
+    bumpB(mut a)
+    println(a.x)
+}

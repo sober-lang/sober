@@ -1,0 +1,10 @@
+package main
+
+import "std/builder"
+import lay "std/layout"
+import w "testdata/layout/wire"
+
+// writeData は kind 2 の Frame（長さ n）を書く
+func writeData(out mut builder.Builder[byte], n int) {
+    lay.Encode[w.Frame](mut out, w.Frame{kind: 2, len: n, seq: 8})
+}

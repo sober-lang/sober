@@ -1,0 +1,17 @@
+package main
+
+// R31: `func main() int` — 戻り値が終了コード（0〜255、外は panic 101 — exit_range）。
+// defer は main の出口でも普通に評価される（os.Exit を入れなかった理由 — 決定 17）
+
+func code(n int) int {
+    return n * 7
+}
+
+func main() int {
+    defer println("deferred")
+    println("before")
+    if code(6) == 42 {
+        return 42
+    }
+    return 1
+}

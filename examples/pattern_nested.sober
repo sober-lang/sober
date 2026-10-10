@@ -1,0 +1,72 @@
+package main
+
+// 入れ子の型パターン（syntax.md の FieldPattern = identifier [":" Pattern]）: 内側が外れたら default の腕へ
+
+type I union {
+    I1{v int}
+    I2 {
+        w int
+        z bool
+    }
+    I3{}
+}
+
+type O union {
+    O1 {
+        x I
+        y int
+    }
+    O2{k int}
+}
+
+type W union {
+    W1{o O}
+    W2{}
+}
+
+func f(o O) int {
+    return switch o {
+    case O1{x: I1{v}, y}: v + y
+    case O2{k}: k
+    default: 100
+    }
+}
+
+func g(o O) int {
+    return switch o {
+    case O1{y, x: I2{z, w}}: if z { w * 10 + y } else { y }
+    case O2{k}: k
+    case _: -1
+    }
+}
+
+func h(o O) int {
+    return switch o {
+    case O1{x: I3{}, y: _}: 7
+    default: 8
+    }
+}
+
+func deep(q W) int {
+    return switch q {
+    case W1{o: O1{x: I2{w, z: _}, y}}: w + y
+    case W2{}: 1
+    default: 2
+    }
+}
+
+func main() {
+    println(f(O1{x: I1{v: 4}, y: 1}))
+    println(f(O1{x: I2{w: 4, z: true}, y: 1}))
+    println(f(O2{k: 9}))
+    println(g(O1{x: I2{w: 4, z: true}, y: 1}))
+    println(g(O1{x: I2{w: 4, z: false}, y: 3}))
+    println(g(O1{x: I1{v: 4}, y: 1}))
+    println(h(O1{x: I3{}, y: 1}))
+    println(h(O1{x: I1{v: 2}, y: 1}))
+    println(h(O2{k: 1}))
+    println(deep(W1{o: O1{x: I2{w: 5, z: true}, y: 6}}))
+    println(deep(W1{o: O1{x: I3{}, y: 6}}))
+    println(deep(W1{o: O2{k: 3}}))
+    println(deep(W2{}))
+}

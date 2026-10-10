@@ -1,0 +1,104 @@
+package main
+
+// V5-7: 検証例 minic — 複数 package に割ったミニコンパイラ（report-59 の 2 節）。
+// ファイル（std/io）→ UTF-8 検査（std/utf8）→ 行ごとに 字句（lex）→ 木（parse）→ バイトコード（emit）→ VM 実行 →
+// 結果か path:line:col の診断（diag）。行ごとの作業記録は Pool から借り、直後の defer で返す（analyzer の実顧客）
+
+import "std/io"
+import "std/pool"
+import "std/strings"
+import "testdata/minic/lex"
+import "testdata/minic/parse"
+import "testdata/minic/emit"
+import "testdata/minic/diag"
+
+// 行ごとの作業記録（Pool のスロット — T は loc-free）
+type Job struct {
+    line, toks, nodes, words int
+}
+
+// 行の区切り: 各行の [開始, 終わり) を 2 語ずつ並べる（改行は含めない）
+func lines(b []byte) []int {
+    mut out := mut []int{}
+    mut start := 0
+    mut i := 0
+    while i < len(b) {
+        if b[i] == 10 {
+            out = append(out, start)
+            out = append(out, i)
+            start = i + 1
+        }
+        i += 1
+    }
+    if start < len(b) {
+        out = append(out, start)
+        out = append(out, len(b))
+    }
+    return freeze(out)
+}
+
+// 1 行を通す。結果は（値, 作業記録, err）
+func compile(b []byte, n int, start int, end int) (int, Job, error?) {
+    ts := lex.Lex(b, start, end)?
+    nodes := parse.Parse(ts)?
+    code := emit.Compile(nodes)
+    v := emit.Run(code)?
+    return v, Job{line: n, toks: len(ts), nodes: len(nodes), words: len(code)}, nil
+}
+
+func ioWhy(e error) string {
+    return switch e {
+    case io.NotFound{}: "not found"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    default: "invalid utf-8"
+    }
+}
+
+func show(path string, j Job?, v int) {
+    if j != nil {
+        println("${path}:${j.line}: = ${v} (tokens ${j.toks}, nodes ${j.nodes}, code ${j.words})")
+    }
+}
+
+func run(p mut pool.Pool[Job], path string) {
+    if !strings.HasSuffix(path, ".mc") {
+        println("${path}: not a .mc file")
+        return
+    }
+    b, err := io.ReadFile(path)
+    if err != nil {
+        println("${path}: ${ioWhy(err)}")
+        return
+    }
+    s, uerr := string(b)
+    if uerr != nil {
+        println("${path}: ${ioWhy(uerr)}")
+        return
+    }
+    println("${path}: ${strings.Count(s, "\n")} lines")
+    ls := lines(b)
+    mut k := 0
+    while k < len(ls) {
+        n := k / 2 + 1
+        h := pool.Acquire(mut p, Job{line: n, toks: 0, nodes: 0, words: 0})
+        defer pool.Release(mut p, h)
+        v, j, e := compile(b, n, ls[k], ls[k + 1])
+        if e != nil {
+            println(diag.Render(path, b, e))
+        } else {
+            pool.Set(mut p, h, j)
+            show(path, pool.Get(mut p, h), v)
+        }
+        k += 2
+    }
+}
+
+func main() {
+    mut p := pool.Pool[Job]{}
+    run(mut p, "testdata/minic/prog.mc")
+    run(mut p, "testdata/minic/bad.mc")
+    run(mut p, "testdata/minic/nope.mc")
+    run(mut p, "testdata/minic/prog.txt")
+    println("outstanding", pool.Len(mut p))
+}

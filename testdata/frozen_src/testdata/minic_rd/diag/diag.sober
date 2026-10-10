@@ -1,0 +1,80 @@
+package diag
+
+// minic の診断: 失敗のラベル（位置はファイル先頭からのバイトオフセット 1 語 — V4 の errparse と同じ）と、
+// 位置 → line:col の変換。ラベルのフィールドは loc-free 限定（language.md 13 節 io-1）なので、位置だけを持つ
+
+type UnexpectedChar error {
+    pos int
+}
+
+type UnexpectedEnd error {
+    pos int
+}
+
+// want: 0 = 項、1 = 演算子、5 = ')'
+type Expected error {
+    pos int
+    want int
+}
+
+// 対応する '(' の無い ')'
+type Unbalanced error {
+    pos int
+}
+
+// VM の実行時エラー（位置は '/' の字句）
+type DivByZero error {
+    pos int
+}
+
+// Pos は e の位置。minic 以外のラベル（io / utf8 等）は -1
+func Pos(e error) int {
+    return switch e {
+    case UnexpectedChar{pos}: pos
+    case UnexpectedEnd{pos}: pos
+    case Expected{pos, want}: pos
+    case Unbalanced{pos}: pos
+    case DivByZero{pos}: pos
+    default: 0 - 1
+    }
+}
+
+func Why(e error) string {
+    return switch e {
+    case UnexpectedChar{pos}: "unexpected char"
+    case UnexpectedEnd{pos}: "unexpected end"
+    case Expected{pos, want}: "expected ${wantName(want)}"
+    case Unbalanced{pos}: "unbalanced ')'"
+    case DivByZero{pos}: "division by zero"
+    default: "error"
+    }
+}
+
+func wantName(w int) string {
+    return switch w {
+    case 0: "operand"
+    case 1: "operator"
+    case _: "')'"
+    }
+}
+
+// LineCol は b の中の位置 pos の行と桁（どちらも 1 始まり）
+func LineCol(b []int, pos int) (int, int) {
+    mut line := 1
+    mut start := 0
+    mut i := 0
+    while i < pos && i < len(b) {
+        if b[i] == 10 {
+            line += 1
+            start = i + 1
+        }
+        i += 1
+    }
+    return line, pos - start + 1
+}
+
+// Render は path:line:col: why の 1 行
+func Render(path string, b []int, e error) string {
+    l, c := LineCol(b, Pos(e))
+    return "${path}:${l}:${c}: ${Why(e)}"
+}

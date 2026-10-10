@@ -1,0 +1,33 @@
+package main
+
+// Tour 1: values, bindings, expressions (docs/guide/tour.md)
+
+func sign(n int) string {
+    // if is an expression — it returns a value
+    return if n < 0 { "negative" } else if n == 0 { "zero" } else { "positive" }
+}
+
+func size(n int) string {
+    // so is switch
+    return switch {
+    case n < 10: "small"
+    case n < 1000: "medium"
+    default: "large"
+    }
+}
+
+func main() int {
+    x := 40                // bindings are immutable by default
+    mut total := 0         // mut for a binding that changes
+    total += x
+    total += 2
+    // a block has a value too (its last expression)
+    y := {
+        t := total * 2
+        t + 1
+    }
+    println("total = ${total}, y = ${y}")
+    println(sign(0 - 3), sign(0), sign(7))
+    println(size(5), size(500), size(50000))
+    return 0
+}

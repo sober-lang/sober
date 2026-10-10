@@ -1,0 +1,10 @@
+package main
+
+// []byte の添字の範囲外も panic（exit 101 — 詰めたセルでも境界検査は要素数で）
+func main() {
+    b := []byte{1, 2, 3}
+    println("before", b[2])
+    i := len(b)
+    println(b[i])
+    println("unreachable")
+}

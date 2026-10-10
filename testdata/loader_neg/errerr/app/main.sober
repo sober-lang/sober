@@ -1,0 +1,10 @@
+package main
+
+// loader の負例: error ラベルが error を持つ（再帰型）
+type Wrap error {
+    inner error?
+}
+
+func main() {
+    println(1)
+}

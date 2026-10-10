@@ -1,0 +1,10 @@
+package mid
+
+import "testdata/named_qual/lib"
+
+// F は別 package の named scalar への変換 `lib.R(x)`（修飾つき）を使う。
+// 呼び手（app）は lib を import しない — lower は変換の行き先を mid の import 表で引く（以前は脱糖器の文脈の package で引いて Undefined）
+func F(x int) int {
+    r := lib.R(x)
+    return lib.Next(r) + lib.Next(lib.R(x + 1))
+}

@@ -1,0 +1,9 @@
+package main
+
+// 合うファイルが無いパターンは拒否（書き間違いを黙って空にしない）
+@embed("testdata/embed/*.nothing")
+const X = map[string]string{}
+
+func main() {
+    println(len(X))
+}

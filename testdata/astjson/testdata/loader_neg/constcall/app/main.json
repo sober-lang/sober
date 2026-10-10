@@ -1,0 +1,135 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "D",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "f",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 19
+              }
+            ],
+            "tok": 18
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 23
+      },
+      "sig_end": 17
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 40
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "T",
+                    "tok": 42
+                  },
+                  "field": "n",
+                  "tok": 44
+                }
+              ],
+              "tok": 41
+            }
+          }
+        ]
+      },
+      "tok": 36,
+      "bodiless": false,
+      "span": {
+        "start": 35,
+        "end": 49
+      },
+      "sig_end": 39
+    }
+  ],
+  "consts": [
+    {
+      "name": "T",
+      "expr": {
+        "k": "composite",
+        "type_name": "D",
+        "elems": [
+          {
+            "key": "n",
+            "value": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "f",
+                "tok": 30
+              },
+              "args": [],
+              "tok": 31
+            }
+          }
+        ],
+        "tok": 26,
+        "type_args": []
+      },
+      "tok": 24,
+      "span": {
+        "start": 23,
+        "end": 35
+      }
+    }
+  ]
+}

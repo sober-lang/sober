@@ -1,0 +1,15 @@
+package lib
+
+type Pt struct {
+    x int
+    y int
+}
+
+type Bad error {
+    at Pt
+}
+
+@errors(Bad)
+func Check(k int) (int, error?) {
+    return if k > 0 { k } else { 0 }, if k > 0 { nil } else { Bad{at: Pt{k, 2 * k}} }
+}

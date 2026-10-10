@@ -1,0 +1,25 @@
+package main
+
+// @layout の符号つきの幅の範囲（i8 は -128〜127）を外れた書き込みは panic（language.md 36 節 Y5・Y7 — exit 101）
+
+import "std/builder"
+import "std/layout"
+
+@layout
+type H struct {
+    k u16le
+    s i8
+    a [2]u8
+}
+
+func small() int {
+    return -129
+}
+
+func main() {
+    mut out := builder.Builder[byte]{}
+    layout.Encode[H](mut out, H{k: 1, s: -128, a: bytes("ok")})
+    println(builder.Len(mut out))
+    layout.Encode[H](mut out, H{k: 1, s: small(), a: bytes("ok")})
+    println("unreachable")
+}

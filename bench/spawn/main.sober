@@ -1,0 +1,68 @@
+package main
+
+// spawn の固定費のマイクロベンチ（「task 生成 ≈ region push ≈ ゼロ」の成立の見張り。scripts/spawnbench.sh）:
+//   loop  = Scope + Spawn + Join の往復を n 回（子は 1 つずつ — 塊の取得と返却・切替 2 回）
+//   wide  = 1 scope に n 個の spawn（handle の slice に積んで Gather — 枠と塊が scope の終わりまで生きる）
+// 実引数 = モード（loop / wide）と n
+
+import "std/iter"
+import "std/os"
+import "std/par"
+
+func loop(n int) int {
+    mut acc := 0
+    mut i := 0
+    while i < n {
+        k := i
+        r, e := par.Scope((s par.S) => {
+            par.Join(par.Spawn(s, () => k + 1))
+        })
+        acc += r
+        i += 1
+    }
+    return acc
+}
+
+func wide(n int) int {
+    r, e := par.Scope((s par.S) => {
+        mut hs := mut []par.Task[int]{}
+        mut i := 0
+        while i < n {
+            k := i
+            hs = append(hs, par.Spawn(s, () => k + 1))
+            i += 1
+        }
+        vs := par.Gather(hs)
+        mut acc := 0
+        mut j := 0
+        while j < len(vs) {
+            acc += vs[j]
+            j += 1
+        }
+        acc
+    })
+    return r
+}
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) < 3 {
+        return 2
+    }
+    n := atoi(args[2])
+    if args[1] == "loop" {
+        println(loop(n))
+    } else {
+        println(wide(n))
+    }
+    return 0
+}

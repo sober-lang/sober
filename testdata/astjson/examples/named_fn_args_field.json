@@ -1,0 +1,167 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Fetch",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          },
+          {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "int"
+            }
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "url",
+          "retries"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 16
+      }
+    },
+    {
+      "name": "Client",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "get",
+            "type": {
+              "k": "name",
+              "name": "Fetch"
+            },
+            "tok": 20
+          }
+        ]
+      },
+      "tok": 17,
+      "span": {
+        "start": 16,
+        "end": 25
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 46
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "C",
+                      "tok": 48
+                    },
+                    "field": "get",
+                    "tok": 50
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 52
+                    },
+                    {
+                      "k": "named_arg",
+                      "name": "retries",
+                      "value": {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 56
+                      },
+                      "tok": 54
+                    }
+                  ],
+                  "tok": 51
+                }
+              ],
+              "tok": 47
+            }
+          }
+        ]
+      },
+      "tok": 42,
+      "bodiless": false,
+      "span": {
+        "start": 41,
+        "end": 62
+      },
+      "sig_end": 45
+    }
+  ],
+  "consts": [
+    {
+      "name": "C",
+      "expr": {
+        "k": "composite",
+        "type_name": "Client",
+        "elems": [
+          {
+            "key": "get",
+            "value": {
+              "k": "lambda",
+              "params": [
+                {
+                  "name": "u",
+                  "type": null
+                },
+                {
+                  "name": "r",
+                  "type": null
+                }
+              ],
+              "body": {
+                "k": "ident",
+                "name": "u",
+                "tok": 38
+              },
+              "tok": 37
+            }
+          }
+        ],
+        "tok": 28,
+        "type_args": []
+      },
+      "tok": 26,
+      "span": {
+        "start": 25,
+        "end": 41
+      }
+    }
+  ]
+}

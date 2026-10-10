@@ -1,0 +1,41 @@
+package main
+
+// R5（region 多相の裁定 — 普通の出口の対称化）の検証例: 式ブロックの中で作った string / slice を末尾値で外へ返す。
+// ブロックの出口は暗黙のラベルへの脱出で、jump と同じ境界コピー（ブロックの region の中身を親の最内 region へ写してから pop）。
+// 写しが消えるのは再標的の最適化（最初から親の region に作る）の仕事で、意味論は常に写す
+
+import "std/strings"
+
+func noise() int {
+    t := "zzzzzzzzzzzzzzzz" + "yyyyyyyyyyyyyyyy"
+    return len(bytes(t))
+}
+
+func label(n int) string {
+    s := {
+        t := "n=" + strings.FormatInt(n)
+        t + "!"
+    }
+    k := noise()
+    return s
+}
+
+func squares(n int) []int {
+    xs := {
+        mut out := mut []int{}
+        mut i := 0
+        while i < n {
+            out = append(out, i * i)
+            i += 1
+        }
+        freeze(out)
+    }
+    k := noise()
+    return xs
+}
+
+func main() {
+    println(label(42))
+    ys := squares(4)
+    println("${len(ys)} ${ys[3]}")
+}

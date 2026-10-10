@@ -1,0 +1,553 @@
+package desugar
+
+// 初期化: loader の Program の木を参照で持ち（写さない — astref.sober）、package・関数・const・error の表を積む。
+// 名前付き関数型の展開（Zig の loader.expandFuncTypes — 関数の引数・結果と型宣言のフィールドの型を関数型に置き換える）もここで行う
+
+import "ast"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// desc は節の種類 k の 6 欄の付け替え（d6 の符号）
+func desc(k int) int {
+    if k == ast.EIdent || k == ast.EStrlit || k == ast.EMutArg || k == ast.TName {
+        return d6(2, 0, 0, 0, 0, 0)
+    }
+    if k == ast.EBinary {
+        return d6(0, 1, 1, 0, 0, 0)
+    }
+    if k == ast.EUnary {
+        return d6(0, 1, 0, 0, 0, 0)
+    }
+    if k == ast.ECall {
+        return d6(1, 3, 0, 0, 0, 0)
+    }
+    if k == ast.EPipe {
+        return d6(1, 1, 3, 0, 0, 0)
+    }
+    if k == ast.EIndex || k == ast.ETry || k == ast.SWhile || k == ast.KEntry || k == ast.TMap {
+        return d6(1, 1, 0, 0, 0, 0)
+    }
+    if k == ast.ESlice3 || k == ast.EIf {
+        return d6(1, 1, 1, 0, 0, 0)
+    }
+    if k == ast.EInterp {
+        return d6(4, 3, 0, 0, 0, 0)
+    }
+    if k == ast.ESlicelit {
+        return d6(1, 3, 0, 0, 0, 0)
+    }
+    if k == ast.EMaplit {
+        return d6(1, 1, 3, 0, 0, 0)
+    }
+    if k == ast.EComposite {
+        return d6(2, 3, 3, 0, 0, 0)
+    }
+    if k == ast.ESelector {
+        return d6(1, 2, 0, 0, 0, 0)
+    }
+    if k == ast.ELambda || k == ast.KCase {
+        return d6(3, 1, 0, 0, 0, 0)
+    }
+    if k == ast.ESwitch {
+        return d6(3, 3, 1, 0, 0, 0)
+    }
+    if k == ast.EBlock || k == ast.SRet || k == ast.KBlock || k == ast.BStruct || k == ast.BUnion || k == ast.BError || k == ast.KPConst {
+        return d6(3, 0, 0, 0, 0, 0)
+    }
+    if k == ast.EFor {
+        return d6(3, 0, 0, 0, 0, 0)
+    }
+    if k == ast.SBind {
+        return d6(4, 0, 3, 0, 0, 0)
+    }
+    if k == ast.SAssign {
+        return d6(3, 0, 3, 0, 0, 0)
+    }
+    if k == ast.SExpr || k == ast.SDefer || k == ast.SYield || k == ast.TOpt || k == ast.EParen || k == ast.TSlice || k == ast.BDefined {
+        return d6(1, 0, 0, 0, 0, 0)
+    }
+    if k == ast.TFunc || k == ast.BFunc {
+        return d6(3, 3, 0, 0, 0, 0)
+    }
+    if k == ast.TGeneric || k == ast.KVariant {
+        return d6(2, 3, 0, 0, 0, 0)
+    }
+    if k == ast.KFile {
+        return d6(2, 3, 3, 3, 3, 0)
+    }
+    if k == ast.KImport || k == ast.KPType {
+        return if k == ast.KImport { d6(2, 2, 0, 0, 0, 0) } else { d6(2, 2, 3, 0, 0, 0) }
+    }
+    if k == ast.KTypeDecl {
+        return d6(2, 4, 1, 0, 0, 0)
+    }
+    if k == ast.KField || k == ast.KParam || k == ast.KConst || k == ast.KElem || k == ast.KLParam || k == ast.KFieldPat {
+        return d6(2, 1, 0, 0, 0, 0)
+    }
+    if k == ast.KFuncDecl {
+        return d6(2, 4, 3, 3, 1, 5)
+    }
+    if k == ast.KGen {
+        return d6(4, 1, 3, 0, 0, 0)
+    }
+    return 0
+}
+
+// initState は Program p からヒープと表を組む
+func initState(st mut S, p loader.Program) {
+    // 0 番地は使わない（無し = -1 と取り違えないための詰め物）
+    put(mut st, 0)
+    // 表層 AST（astref.sober）: loader の木を imm のまま持ち、写さない（節 = ABASE + ファイル × FW + 添字）
+    checkTrees(p.trees)
+    st.trees = p.trees
+    st.descs = descTable()
+    hv_utf8 := strLit(mut st, "$utf8")
+    st.utf8 = hv_utf8
+    hv185 := mkTy(mut st, TInt, 0, 0, 0, 0)
+    st.tInt = hv185
+    hv186 := mkTy(mut st, TBool, 0, 0, 0, 0)
+    st.tBool = hv186
+    hv187 := mkTy(mut st, TUnit, 0, 0, 0, 0)
+    st.tUnit = hv187
+    // ファイル: [根, package]
+    st.nfile = len(p.trees)
+    hv196 := top(mut st)
+    st.files = hv196
+    mut f := 0
+    while f < st.nfile {
+        put(mut st, ABASE + f * FW + p.trees[f].file)
+        put(mut st, p.file_pkg[f])
+        f += 1
+    }
+    // named scalar の型宣言の有無（無ければ named の照合を飛ばす — surface.sober）
+    for g <- iter.Range(0, st.nfile) {
+        tys := nodeAt(mut st, FileRoot(mut st, g)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            if kindOf(mut st, nodeAt(mut st, lat(mut st, tys, i)).c) == ast.BDefined {
+                st.hasNamed = true
+            }
+        }
+    }
+    // package
+    st.npkg = len(p.pkg_path)
+    names := listN(mut st, st.npkg * 2)
+    mut k := 0
+    while k < st.npkg {
+        hv208 := strOf(mut st, p.pkg_path[k])
+        hset(mut st, names + 1 + k * 2, hv208)
+        hv209 := strOf(mut st, p.pkg_name[k])
+        hset(mut st, names + 2 + k * 2, hv209)
+        k += 1
+    }
+    imps := listN(mut st, st.npkg)
+    k = 0
+    while k < st.npkg {
+        mut n := 0
+        mut e := 0
+        while e < len(p.imp_pkg) {
+            if p.imp_pkg[e] == k {
+                n += 1
+            }
+            e += 1
+        }
+        l := listN(mut st, n * 2)
+        mut j := 0
+        e = 0
+        while e < len(p.imp_pkg) {
+            if p.imp_pkg[e] == k {
+                hv228 := strOf(mut st, p.imp_ref[e])
+                hset(mut st, l + 1 + j * 2, hv228)
+                hset(mut st, l + 2 + j * 2, pathPkg(p, p.imp_path[e]))
+                j += 1
+            }
+            e += 1
+        }
+        hset(mut st, imps + 1 + k, l)
+        k += 1
+    }
+    hv237 := top(mut st)
+    st.pkgs = hv237
+    k = 0
+    while k < st.npkg {
+        put(mut st, hget(mut st, names + 1 + k * 2))
+        put(mut st, hget(mut st, names + 2 + k * 2))
+        put(mut st, p.pkg_lo[k])
+        put(mut st, p.pkg_hi[k])
+        put(mut st, hget(mut st, imps + 1 + k))
+        put(mut st, 0)
+        k += 1
+    }
+    st.mainPkg = pathPkg(p, bytes("main"))
+    // 関数（ファイル順 × 宣言順）。Def の添字は展開されない・main.main 以外に宣言順で振る
+    st.nfn = len(p.fn_node)
+    mut ndef := 0
+    k = 0
+    while k < st.nfn {
+        fl := p.fn_file[k]
+        node := ABASE + fl * FW + p.fn_node[k]
+        pk := p.file_pkg[fl]
+        mut def := -1
+        if !(p.fn_expands[k] || (pk == st.mainPkg && strIs(mut st, nodeAt(mut st, node).a, "main"))) {
+            def = ndef
+            ndef += 1
+        }
+        table.Push(mut st.fns, FnInfo{node: node, pkg: pk, expands: p.fn_expands[k], mutDef: p.fn_mut_def[k], closed: p.fn_closed[k], hasTry: p.fn_has_try[k], def: def})
+        k += 1
+    }
+    st.ndef = ndef
+    // const
+    st.ncon = len(p.c_node)
+    hv274 := top(mut st)
+    st.cons = hv274
+    k = 0
+    while k < st.ncon {
+        fl := p.c_file[k]
+        put(mut st, ABASE + fl * FW + p.c_node[k])
+        put(mut st, p.file_pkg[fl])
+        put(mut st, p.c_value[k])
+        put(mut st, if p.c_has[k] { 1 } else { 0 })
+        put(mut st, if p.c_dict[k] { 1 } else { 0 })
+        k += 1
+    }
+    // 名前付き関数型の展開（関数の引数・結果、型宣言のフィールド）。木は imm なので、変わった節だけ合成の表に作り直す（案 B —
+    // 関数は KParam・KFuncDecl を作り直して関数表の節を差し替え、型宣言は KField から KFile までを作り直してファイルの根を差し替える）
+    k = 0
+    while k < st.nfn {
+        expandFunc(mut st, k)
+        k += 1
+    }
+    f = 0
+    while f < st.nfile {
+        expandFileTypes(mut st, f)
+        f += 1
+    }
+    // 組み込み error の variant: [n, (型宣言, package)…]（ロード順 × ファイル順 × 宣言順 — 型宣言は展開後の節）
+    mut ne := 0
+    f = 0
+    while f < st.nfile {
+        tys := nodeAt(mut st, FileRoot(mut st, f)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            if kindOf(mut st, nodeAt(mut st, lat(mut st, tys, i)).c) == ast.BError {
+                ne += 1
+            }
+        }
+        f += 1
+    }
+    hv299 := listN(mut st, ne * 2)
+    st.errv = hv299
+    mut j := 0
+    f = 0
+    while f < st.nfile {
+        tys := nodeAt(mut st, FileRoot(mut st, f)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            td := lat(mut st, tys, i)
+            if kindOf(mut st, nodeAt(mut st, td).c) == ast.BError {
+                hset(mut st, st.errv + 1 + j * 2, td)
+                hset(mut st, st.errv + 2 + j * 2, FilePkg(mut st, f))
+                j += 1
+            }
+        }
+        f += 1
+    }
+    // 脱出・defer のスタック（固定の置き場）
+    hv358 := listN(mut st, 4096)
+    st.lstk = hv358
+    hv359 := listN(mut st, 4096)
+    st.sstk = hv359
+    st.curRtys = -1
+    st.curRes = -1
+    st.tenv = -1
+    st.liftedHead = -1
+    st.liftedTail = -1
+    st.inlining = -1
+    st.inlrec = -1
+    st.dictLifts = -1
+    st.liftHint = -1
+    st.rdepth = 1
+    st.retTarget = -1
+    st.tailWant = -1
+    st.swWant = -1
+    st.errTy = -1
+}
+
+// pathPkg は path の package の番号（無ければ -1）
+func pathPkg(p loader.Program, path []int) int {
+    mut i := 0
+    while i < len(p.pkg_path) {
+        if loader.Eq(p.pkg_path[i], path) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// expandFunc は関数 k の仮引数・結果の型式を展開する（変わったときだけ KParam と KFuncDecl を作り直し、関数表の節を差し替える）
+func expandFunc(st mut S, k int) {
+    pk := fnPkg(mut st, k)
+    decl := fnNode(mut st, k)
+    ps := fnParams(mut st, k)
+    np := llen(mut st, ps)
+    nps := listN(mut st, np)
+    mut changed := false
+    for i <- iter.Range(0, np) {
+        prm := lat(mut st, ps, i)
+        t := expandTE(mut st, pk, nodeAt(mut st, prm).b, 16)
+        mut q := prm
+        if t != nodeAt(mut st, prm).b {
+            mut x := nodeAt(mut st, prm)
+            x.b = t
+            q = synNode(mut st, x)
+            changed = true
+        }
+        hset(mut st, nps + 1 + i, q)
+    }
+    rs := fnResults(mut st, k)
+    nrs := expandList(mut st, pk, rs, 16)
+    if !changed && nrs == rs {
+        return
+    }
+    mut d := nodeAt(mut st, decl)
+    if changed {
+        d.c = nps
+    }
+    d.d = nrs
+    mut fi := FnAt(mut st, k)
+    fi.node = synNode(mut st, d)
+    table.Set(mut st.fns, k, fi)
+}
+
+// expandFieldList は欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）
+func expandFieldList(st mut S, pk int, fs int) int {
+    n := llen(mut st, fs)
+    out := listN(mut st, n)
+    mut changed := false
+    for i <- iter.Range(0, n) {
+        fd := lat(mut st, fs, i)
+        t := expandTE(mut st, pk, nodeAt(mut st, fd).b, 16)
+        mut q := fd
+        if t != nodeAt(mut st, fd).b {
+            mut x := nodeAt(mut st, fd)
+            x.b = t
+            q = synNode(mut st, x)
+            changed = true
+        }
+        hset(mut st, out + 1 + i, q)
+    }
+    return if changed { out } else { fs }
+}
+
+// expandBody は型宣言の本体 body の欄を展開する（変わらなければ body、変われば作り直した本体）
+func expandBody(st mut S, pk int, body int) int {
+    bk := kindOf(mut st, body)
+    if bk == ast.BStruct || bk == ast.BError {
+        fs := nodeAt(mut st, body).a
+        nfs := expandFieldList(mut st, pk, fs)
+        if nfs == fs {
+            return body
+        }
+        mut x := nodeAt(mut st, body)
+        x.a = nfs
+        return synNode(mut st, x)
+    }
+    if bk == ast.BUnion {
+        vs := nodeAt(mut st, body).a
+        n := llen(mut st, vs)
+        nvs := listN(mut st, n)
+        mut changed := false
+        for v <- iter.Range(0, n) {
+            vr := lat(mut st, vs, v)
+            fs := nodeAt(mut st, vr).b
+            nfs := expandFieldList(mut st, pk, fs)
+            mut q := vr
+            if nfs != fs {
+                mut x := nodeAt(mut st, vr)
+                x.b = nfs
+                q = synNode(mut st, x)
+                changed = true
+            }
+            hset(mut st, nvs + 1 + v, q)
+        }
+        if !changed {
+            return body
+        }
+        mut y := nodeAt(mut st, body)
+        y.a = nvs
+        return synNode(mut st, y)
+    }
+    return body
+}
+
+// expandFileTypes はファイル f の型宣言の欄を展開する（変わった型宣言があれば types の列と KFile を作り直し、ファイルの根を差し替える）
+func expandFileTypes(st mut S, f int) {
+    pk := FilePkg(mut st, f)
+    root := FileRoot(mut st, f)
+    tys := nodeAt(mut st, root).c
+    n := llen(mut st, tys)
+    ntys := listN(mut st, n)
+    mut changed := false
+    for i <- iter.Range(0, n) {
+        td := lat(mut st, tys, i)
+        body := nodeAt(mut st, td).c
+        nb := expandBody(mut st, pk, body)
+        mut q := td
+        if nb != body {
+            mut x := nodeAt(mut st, td)
+            x.c = nb
+            q = synNode(mut st, x)
+            changed = true
+        }
+        hset(mut st, ntys + 1 + i, q)
+    }
+    if !changed {
+        return
+    }
+    mut r := nodeAt(mut st, root)
+    r.c = ntys
+    hv_root := synNode(mut st, r)
+    hset(mut st, st.files + f * 2, hv_root)
+}
+
+// LookupTypeDecl は型式の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1）
+func LookupTypeDecl(st mut S, pk int, name int) int {
+    mut from := pk
+    mut lo := 0
+    dot := dotAt(mut st, name)
+    if dot >= 0 {
+        from = ImportOf(mut st, pk, name, 0, dot)
+        if from < 0 {
+            return -1
+        }
+        lo = dot + 1
+    }
+    mut f := PkgFlo(mut st, from)
+    while f < PkgFhi(mut st, from) {
+        tys := nodeAt(mut st, FileRoot(mut st, f)).c
+        for i <- iter.Range(0, llen(mut st, tys)) {
+            td := lat(mut st, tys, i)
+            if strEqPart(mut st, nodeAt(mut st, td).a, name, lo, dat(mut st, name)) {
+                return td
+            }
+        }
+        f += 1
+    }
+    return -1
+}
+
+// newList はヒープの列 l と同じ長さの列を作り、要素を f で写す — 写しの本体は呼び手（expandTE / substTE）が埋める
+// expandTE は Zig の loader.expandTE（名前付き関数型を関数型に置き換える。変わらない型はそのまま返す）
+func expandTE(st mut S, pk int, te int, fuel int) int {
+    if fuel == 0 || te < 0 {
+        return te
+    }
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        td := LookupTypeDecl(mut st, pk, nodeAt(mut st, te).a)
+        if td < 0 || kindOf(mut st, nodeAt(mut st, td).c) != ast.BFunc {
+            return te
+        }
+        r := expandTE(mut st, pk, substFunc(mut st, td, -1, tokOf(mut st, te)), fuel - 1)
+        noteNamedFn(mut st, r, td)
+        return r
+    }
+    if k == ast.TGeneric {
+        args0 := nodeAt(mut st, te).b
+        n := llen(mut st, args0)
+        args := listN(mut st, n)
+        mut changed := false
+        for i <- iter.Range(0, n) {
+            a := expandTE(mut st, pk, lat(mut st, args0, i), fuel - 1)
+            hset(mut st, args + 1 + i, a)
+            if a != lat(mut st, args0, i) {
+                changed = true
+            }
+        }
+        td := LookupTypeDecl(mut st, pk, nodeAt(mut st, te).a)
+        if td < 0 || kindOf(mut st, nodeAt(mut st, td).c) != ast.BFunc {
+            return if changed { rec8(mut st, ast.TGeneric, tokOf(mut st, te), nodeAt(mut st, te).a, args, 0, 0, 0, 0) } else { te }
+        }
+        r := expandTE(mut st, pk, substFunc(mut st, td, args, tokOf(mut st, te)), fuel - 1)
+        noteNamedFn(mut st, r, td)
+        return r
+    }
+    if k == ast.TFunc {
+        ps := expandList(mut st, pk, nodeAt(mut st, te).a, fuel - 1)
+        rs := expandList(mut st, pk, nodeAt(mut st, te).b, fuel - 1)
+        if ps == nodeAt(mut st, te).a && rs == nodeAt(mut st, te).b {
+            return te
+        }
+        return rec8(mut st, ast.TFunc, tokOf(mut st, te), ps, rs, 0, 0, 0, 0)
+    }
+    if k == ast.TOpt || k == ast.TSlice {
+        x := expandTE(mut st, pk, nodeAt(mut st, te).a, fuel - 1)
+        if x == nodeAt(mut st, te).a {
+            return te
+        }
+        return rec8(mut st, k, tokOf(mut st, te), x, nodeAt(mut st, te).b, 0, 0, 0, 0)
+    }
+    if k == ast.TMap {
+        x := expandTE(mut st, pk, nodeAt(mut st, te).a, fuel - 1)
+        y := expandTE(mut st, pk, nodeAt(mut st, te).b, fuel - 1)
+        if x == nodeAt(mut st, te).a && y == nodeAt(mut st, te).b {
+            return te
+        }
+        return rec8(mut st, k, tokOf(mut st, te), x, y, nodeAt(mut st, te).c, 0, 0, 0)
+    }
+    return te
+}
+
+// expandList は型の列の各要素を展開する（変わらなければ元の列を返す）
+func expandList(st mut S, pk int, l int, fuel int) int {
+    n := llen(mut st, l)
+    out := listN(mut st, n)
+    mut changed := false
+    for i <- iter.Range(0, n) {
+        x := expandTE(mut st, pk, lat(mut st, l, i), fuel)
+        hset(mut st, out + 1 + i, x)
+        if x != lat(mut st, l, i) {
+            changed = true
+        }
+    }
+    return if changed { out } else { l }
+}
+
+// substFunc は名前付き関数型 td の本体に型引数 args（型の列、無ければ -1）を代入した関数型
+func substFunc(st mut S, td int, args int, tok int) int {
+    ft := nodeAt(mut st, td).c
+    ps := substList(mut st, td, nodeAt(mut st, ft).a, args)
+    rs := substList(mut st, td, nodeAt(mut st, ft).b, args)
+    return rec8(mut st, ast.TFunc, tok, ps, rs, 0, 0, 0, 0)
+}
+
+func substList(st mut S, td int, l int, args int) int {
+    n := llen(mut st, l)
+    out := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        hv513 := substTE(mut st, td, lat(mut st, l, i), args)
+        hset(mut st, out + 1 + i, hv513)
+    }
+    return out
+}
+
+func substTE(st mut S, td int, te int, args int) int {
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        tps := nodeAt(mut st, td).b
+        for i <- iter.Range(0, llen(mut st, tps)) {
+            if strEq(mut st, lat(mut st, tps, i), nodeAt(mut st, te).a) {
+                return lat(mut st, args, i)
+            }
+        }
+        return te
+    }
+    if k == ast.TFunc {
+        ps := substList(mut st, td, nodeAt(mut st, te).a, args)
+        rs := substList(mut st, td, nodeAt(mut st, te).b, args)
+        return rec8(mut st, ast.TFunc, tokOf(mut st, te), ps, rs, 0, 0, 0, 0)
+    }
+    if k == ast.TOpt || k == ast.TSlice {
+        return rec8(mut st, k, tokOf(mut st, te), substTE(mut st, td, nodeAt(mut st, te).a, args), nodeAt(mut st, te).b, 0, 0, 0, 0)
+    }
+    return te
+}

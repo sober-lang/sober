@@ -1,0 +1,1262 @@
+package lower
+
+// 式（src/lower.zig の expr / call / if / 演算子の写し）
+
+import "diag"
+import "desugar"
+import "ast"
+import "lexer"
+import "std/iter"
+
+// ── 多値 ──
+
+// evalMulti は多値を許す評価。呼び出しは結果の並び、他の式は 1 値（値なしは空）。到達しないなら -1
+func evalMulti(st mut St, e desugar.NodeRef) (int, error?) {
+    k := kindN(mut st, e)
+    if k == ast.ECall {
+        cv := convOf(mut st, e)
+        if cv != desugar.CONV_NONE {
+            x := convExpr(mut st, e, cv)?
+            r := list2(mut st, x.t, x.v)
+            hset(mut st, r, 1)
+            return r, nil
+        }
+        return callArgs(mut st, nA(nodeOf(mut st, e)), lB(nodeOf(mut st, e)), e)
+    }
+    if k == ast.EPipe {
+        return pipe(mut st, e)
+    }
+    if k == ast.ETry {
+        return tryResults(mut st, e)
+    }
+    x := expr(mut st, e)?
+    if isTag(mut st, x.t, TNever) {
+        return -1, nil
+    }
+    if isTag(mut st, x.t, TNone) {
+        return list0(mut st), nil
+    }
+    r := list2(mut st, x.t, x.v)
+    hset(mut st, r, 1)
+    return r, nil
+}
+
+// multiValue は `a, b := e` の右辺: 1 つの多値の式で、結果の個数が want_n
+func multiValue(st mut St, values desugar.ListRef, want_n int, at desugar.NodeRef) (int, error?) {
+    if lenL(mut st, values) != 1 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    r := evalMulti(mut st, latN(mut st, values, 0))?
+    if r < 0 {
+        return r, nil
+    }
+    if hget(mut st, r) != want_n {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return r, nil
+}
+
+// pipe は `lhs |> f(args)`: 左辺（多値可）を 1 回評価し、穴 `_` へ順に、穴が無ければ第 1 引数へ渡す
+func pipe(st mut St, e desugar.NodeRef) (int, error?) {
+    at := e
+    lhs := nA(nodeOf(mut st, e))
+    args := lC(nodeOf(mut st, e))
+    na0 := lenL(mut st, args)
+    if kindN(mut st, lhs) == ast.EFor {
+        // for 式（Iter[T]）は値にならない: 穴（無ければ第 1 引数）へ式のまま渡し、消費点で展開する
+        mut fh := 0
+        for j <- iter.Range(0, na0) {
+            if latI(mut st, args, j) < 0 {
+                fh += 1
+            }
+        }
+        if fh > 1 {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        fs := desugar.ListRef(listN(mut st, if fh == 0 { na0 + 1 } else { na0 }))
+        mut q := 0
+        if fh == 0 {
+            hset(mut st, int(fs) + 1, int(lhs))
+            q = 1
+        }
+        for j <- iter.Range(0, na0) {
+            x := latI(mut st, args, j)
+            lput(mut st, fs, q, if x < 0 { int(lhs) } else { x })
+            q += 1
+        }
+        return callArgs(mut st, nB(nodeOf(mut st, e)), fs, at)
+    }
+    r := evalMulti(mut st, lhs)?
+    if r < 0 {
+        return r, nil
+    }
+    if hget(mut st, r) == 0 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    na := lenL(mut st, args)
+    mut holes := 0
+    for i <- iter.Range(0, na) {
+        if latI(mut st, args, i) < 0 {
+            holes += 1
+        }
+    }
+    mut srcs := desugar.ListRef(0)
+    mut k := 0
+    if holes == 0 {
+        if hget(mut st, r) != 1 {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        srcs = desugar.ListRef(listN(mut st, na + 1))
+        hset(mut st, int(srcs) + 1, node(mut st, EVal, at, hget(mut st, r + 1), hget(mut st, r + 2), 0, 0))
+        k = 1
+    } else if holes != hget(mut st, r) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    } else {
+        srcs = desugar.ListRef(listN(mut st, na))
+    }
+    mut next := 0
+    for i <- iter.Range(0, na) {
+        x := latI(mut st, args, i)
+        if x >= 0 {
+            lput(mut st, srcs, k, x)
+        } else {
+            lput(mut st, srcs, k, node(mut st, EVal, at, hget(mut st, r + 1 + next * 2), hget(mut st, r + 2 + next * 2), 0, 0))
+            next += 1
+        }
+        k += 1
+    }
+    return callArgs(mut st, nB(nodeOf(mut st, e)), srcs, at)
+}
+
+// interpExpr は補間（src/interp.zig の固定テンプレート）: 穴を左から順に合成名へ束縛して型を得てから、その名前を参照する
+// 連結の連鎖を組んで下ろす（int は std/strings.Itoa（予約参照名 $strings）、bool は if）
+func interpExpr(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    lits := lA(nodeOf(mut st, e))
+    holes := lB(nodeOf(mut st, e))
+    pushScope(mut st)
+    nh := lenL(mut st, holes)
+    ids := desugar.ListRef(listN(mut st, nh))
+    for i <- iter.Range(0, nh) {
+        h := latN(mut st, holes, i)
+        x := expr(mut st, h)?
+        if isTag(mut st, x.t, TNever) {
+            popScope(mut st)
+            return x, nil
+        }
+        name := strCat(mut st, strLit(mut st, "$interp"), decimal(mut st, st.ninterp))
+        st.ninterp = st.ninterp + 1
+        bindName(mut st, name, x.t, x.v, false, at)?
+        lput(mut st, ids, i, node(mut st, ast.EIdent, h, int(name), 0, 0, 0))
+    }
+    mut acc := desugar.NodeRef(-1)
+    mut k := 0
+    while k < lenL(mut st, lits) {
+        text := latI(mut st, lits, k)
+        if dat(mut st, text) > 0 {
+            acc = interpAppend(mut st, int(acc), desugar.NodeRef(node(mut st, ast.EStrlit, at, text, 0, 0, 0)), at)
+        }
+        if k == nh {
+            k = lenL(mut st, lits)
+        } else {
+            id := latN(mut st, ids, k)
+            l := lookup(mut st, sA(nodeOf(mut st, id)))
+            t := hget(mut st, l + 3)
+            mut piece := id
+            if isTag(mut st, t, TInt) {
+                base := node(mut st, ast.EIdent, at, int(strLit(mut st, "$strings")), 0, 0, 0)
+                callee := node(mut st, ast.ESelector, at, base, int(strLit(mut st, "Itoa")), 0, 0)
+                piece = desugar.NodeRef(node(mut st, ast.ECall, at, callee, list1(mut st, int(id)), 0, 0))
+            } else if isTag(mut st, t, TBool) {
+                tb := node(mut st, ast.KBlock, at, list1(mut st, node(mut st, ast.SExpr, at, node(mut st, ast.EStrlit, at, int(strLit(mut st, "true")), 0, 0, 0), 0, 0, 0)), 0, 0, 0)
+                fb := node(mut st, ast.EBlock, at, list1(mut st, node(mut st, ast.SExpr, at, node(mut st, ast.EStrlit, at, int(strLit(mut st, "false")), 0, 0, 0), 0, 0, 0)), 0, 0, 0)
+                piece = desugar.NodeRef(node(mut st, ast.EIf, at, int(id), tb, fb, 0))
+            } else if !isString(mut st, t) {
+                popScope(mut st)
+                return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            acc = interpAppend(mut st, int(acc), piece, at)
+            k += 1
+        }
+    }
+    if acc == -1 {
+        acc = desugar.NodeRef(node(mut st, ast.EStrlit, at, int(strLit(mut st, "")), 0, 0, 0))
+    }
+    r := expr(mut st, acc)?
+    popScope(mut st)
+    return r, nil
+}
+
+// interpAppend は連鎖の末尾に 1 片足す
+func interpAppend(st mut St, acc int, piece desugar.NodeRef, at desugar.NodeRef) desugar.NodeRef {
+    if acc < 0 {
+        return piece
+    }
+    return desugar.NodeRef(node(mut st, ast.EBinary, at, lexer.Plus, acc, int(piece), 0))
+}
+
+// ── 呼び出し ──
+
+func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    // 明示の型引数 `f[T](...)`（index + call と同形。型名の index をここで型適用として読む）
+    mut explicit := -1
+    mut callee := callee0
+    if kindN(mut st, callee0) == ast.EIndex {
+        ix := nB(nodeOf(mut st, callee0))
+        if kindN(mut st, ix) == ast.EIdent {
+            explicit = node(mut st, ast.TName, ix, nodeOf(mut st, ix).a, 0, 0, 0)
+            callee = nA(nodeOf(mut st, callee0))
+        } else if kindN(mut st, ix) == ast.ESelector && kindN(mut st, nA(nodeOf(mut st, ix))) == ast.EIdent {
+            bn := strCat(mut st, strCat(mut st, sA(nodeOf(mut st, nA(nodeOf(mut st, ix)))), strLit(mut st, ".")), sB(nodeOf(mut st, ix)))
+            explicit = node(mut st, ast.TName, ix, int(bn), 0, 0, 0)
+            callee = nA(nodeOf(mut st, callee0))
+        }
+    }
+    ck := kindN(mut st, callee)
+    mut pk := st.curPkg
+    mut fi := -1
+    if ck == ast.EIdent {
+        name := sA(nodeOf(mut st, callee))
+        if strIs(mut st, name, "println") {
+            return printlnCall(mut st, args, at)
+        }
+        br0 := builtin(mut st, name, args, at)?
+        if br0 != -2 {
+            return br0, nil
+        }
+        l := lookup(mut st, name)
+        if l >= 0 {
+            if hget(mut st, l + 2) == LClosure {
+                return lambdaCall(mut st, hget(mut st, l + 4), args, at)
+            }
+            if isTag(mut st, hget(mut st, l + 3), TFnv) {
+                return callIndirect0(mut st, callee, args, at)
+            }
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        fi = desugar.ResolveFn(mut st.d, pk, name)
+    } else if ck == ast.ESelector {
+        base := nA(nodeOf(mut st, callee))
+        field := sB(nodeOf(mut st, callee))
+        // pkg.F（import の参照名）。base が import の参照名でなければ値（関数型フィールド）の呼び出し
+        if kindN(mut st, base) != ast.EIdent || lookup(mut st, sA(nodeOf(mut st, base))) >= 0 {
+            return callIndirect0(mut st, callee, args, at)
+        }
+        bn := sA(nodeOf(mut st, base))
+        ip := importOf(mut st, pk, bn, 0, slen(mut st, bn))
+        if ip < 0 {
+            return callIndirect0(mut st, callee, args, at)
+        }
+        fi = desugar.ResolveSelFn(mut st.d, pk, bn, field)
+        pk = ip
+    } else {
+        return 0, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    if fi < 0 {
+        return 0, diag.UndefinedFunction{at: posOf(mut st, at)}
+    }
+    if lenL(mut st, fnTParams(mut st, fi)) > 0 {
+        return genericCall(mut st, fi, args, at, callee0)
+    }
+    if explicit >= 0 {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if fnExpands(mut st, fi) && !fnTransparent(mut st, fi) {
+        sig := sigIn(mut st, fnNode(mut st, fi), pk, -1)?
+        return inlineCall(mut st, fnNode(mut st, fi), pk, desugar.ListRef(sig.ps), desugar.ListRef(sig.rs), args, at, -1)
+    }
+    info := funcByKey(mut st, fi)?
+    if lenL(mut st, args) != lenL(mut st, desugar.ListRef(infoAt(mut st, info).params)) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return emitCall(mut st, infoAt(mut st, info).ir, -1, desugar.ListRef(infoAt(mut st, info).params), desugar.ListRef(infoAt(mut st, info).results), args, at, fnNode(mut st, fi))
+}
+
+// callIndirect0 は関数値（callee の値）の間接呼び出し。呼び出し規約は直接呼び出しと同じ。関数値を先に評価する
+func callIndirect0(st mut St, callee desugar.NodeRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    cv := expr(mut st, callee)?
+    if isTag(mut st, cv.t, TNever) {
+        return -1, nil
+    }
+    if !isTag(mut st, cv.t, TFnv) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    ft := hget(mut st, cv.t + 1)
+    if lenL(mut st, hgetL(mut st, ft)) != lenL(mut st, args) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return emitCall(mut st, -1, cv.v, hgetL(mut st, ft), hgetL(mut st, ft + 1), args, at, -1)
+}
+
+// emitCall は呼び出し（irf >= 0 は直接、でなければ関数値 fv の間接）。decl: 直接呼び出しの宣言の節（mut 仮引数の位置 — 関数値は -1）
+func emitCall(st mut St, irf int, fv int, params desugar.ListRef, results desugar.ListRef, args desugar.ListRef, at desugar.NodeRef, fi desugar.NodeRef) (int, error?) {
+    sret := sretOf(mut st, int(results))
+    np := lenL(mut st, params)
+    mut total := if sret { 1 } else { 0 }
+    mut i := 0
+    while i < np {
+        total += if isMutParam(mut st, fi, i) { 1 } else { tWords(mut st, latI(mut st, params, i)) }
+        i += 1
+    }
+    argl := listN(mut st, total)
+    mut k := 0
+    mut sp := -1
+    if sret {
+        mut rw := 0
+        i = 0
+        while i < lenL(mut st, results) {
+            rw += tWords(mut st, latI(mut st, results, i))
+            i += 1
+        }
+        // 結果スロットのアドレスは第 0 引数（スロットは入口で取るので先に作ってよい）
+        sp = newSlotAddr(mut st, if rw > 1 { rw } else { 1 })
+        hset(mut st, argl + 1, sp)
+        k = 1
+    }
+    i = 0
+    while i < np {
+        pt := latI(mut st, params, i)
+        if isMutParam(mut st, fi, i) {
+            // 呼び手のセルのアドレス（mut 仮引数を転送するときは受け取ったアドレスそのもの — 同じセル）
+            l := mutArgCell(mut st, latN(mut st, args, i), at)?
+            if !tEql(mut st, hget(mut st, l + 3), pt) {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            hset(mut st, argl + 1 + k, hget(mut st, l + 4))
+            k += 1
+            i += 1
+            continue
+        }
+        x := exprExpecting(mut st, latN(mut st, args, i), pt, at)?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        // アグリゲートは評価した直後に語へ展開する
+        if isScalar(mut st, x.t) {
+            hset(mut st, argl + 1 + k, x.v)
+            k += 1
+        } else {
+            mut w := 0
+            while w < tWords(mut st, x.t) {
+                hset(mut st, argl + 1 + k, load(mut st, x.v, w))
+                k += 1
+                w += 1
+            }
+        }
+        i += 1
+    }
+    nr := lenL(mut st, results)
+    r := if irf >= 0 { call(mut st, irf, argl) } else { callIndirect(mut st, fv, argl, if sret || nr == 0 { -1 } else { TyI64 }) }
+    out := listN(mut st, nr * 2)
+    hset(mut st, out, nr)
+    if sret {
+        mut off := 0
+        i = 0
+        while i < nr {
+            t := latI(mut st, results, i)
+            hset(mut st, out + 1 + i * 2, t)
+            hset(mut st, out + 2 + i * 2, loadVal(mut st, sp, off, t))
+            off += tWords(mut st, t)
+            i += 1
+        }
+    } else if nr == 1 {
+        hset(mut st, out + 1, latI(mut st, results, 0))
+        hset(mut st, out + 2, r)
+    }
+    return out, nil
+}
+
+// printlnCall は全引数を先に評価してから書く（Go の順）。空白区切り + 改行
+func printlnCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    n := lenL(mut st, args)
+    vs := listN(mut st, n * 2)
+    for i <- iter.Range(0, n) {
+        x := expr(mut st, latN(mut st, args, i))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        xt := baseTy(mut st, x.t)
+        if !isTag(mut st, xt, TInt) && !isTag(mut st, xt, TBool) && !isString(mut st, xt) {
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        hset(mut st, vs + 1 + i * 2, xt)
+        hset(mut st, vs + 2 + i * 2, x.v)
+    }
+    for i <- iter.Range(0, n) {
+        t := hget(mut st, vs + 1 + i * 2)
+        v := hget(mut st, vs + 2 + i * 2)
+        if isString(mut st, t) {
+            call(mut st, st.rtPstr, list1(mut st, v))
+        } else if isTag(mut st, t, TInt) {
+            call(mut st, st.rtPint, list1(mut st, v))
+        } else {
+            t_b := newBlock(mut st)
+            f_b := newBlock(mut st)
+            done := newBlock(mut st)
+            condbr(mut st, v, t_b, -1, f_b, -1)
+            setCur(mut st, t_b)
+            printChars(mut st, "true")
+            br(mut st, done, -1)
+            setCur(mut st, f_b)
+            printChars(mut st, "false")
+            br(mut st, done, -1)
+            setCur(mut st, done)
+        }
+        if i + 1 < n {
+            printChars(mut st, " ")
+        }
+    }
+    printChars(mut st, "\n")
+    return list0(mut st), nil
+}
+
+func printChars(st mut St, w string) {
+    b := bytes(w)
+    for i <- iter.Range(0, len(b)) {
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, b[i])))
+    }
+}
+
+// ── 型の突き合わせ ──
+
+func want(st mut St, t int, w int, at desugar.NodeRef) error? {
+    if !tEql(mut st, t, w) {
+        return diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return nil
+}
+
+// coerce は値を期待型 w に合わせる: T? の期待に対して nil はタグ 0 の実体化、ペイロード型の値はタグ 1 で包む（暗黙 some）。他は型一致
+func coerce(st mut St, t int, v int, w int, at desugar.NodeRef) (Val, error?) {
+    if tEql(mut st, t, w) || isTag(mut st, t, TNever) {
+        return Val{t: t, v: v}, nil
+    }
+    if isTag(mut st, w, TOpt) {
+        if isTag(mut st, t, TNil) {
+            p := newAgg(mut st, w)
+            store(mut st, p, 0, iconst(mut st, 0))
+            return Val{t: w, v: p}, nil
+        }
+        mut it := t
+        mut iv := v
+        if isErr(mut st, hget(mut st, w + 1)) && isLabel(mut st, t) {
+            x1 := labelToErr(mut st, t, v)?
+            it = x1.t
+            iv = x1.v
+        }
+        if tEql(mut st, it, hget(mut st, w + 1)) {
+            p := newAgg(mut st, w)
+            store(mut st, p, 0, iconst(mut st, 1))
+            storeVal(mut st, p, 1, it, iv)
+            return Val{t: w, v: p}, nil
+        }
+    }
+    if isErr(mut st, w) && isLabel(mut st, t) {
+        return labelToErr(mut st, t, v)
+    }
+    return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+}
+
+// exprExpecting は期待型つきの式評価（sink: return・引数・フィールド・代入）。T? を期待する if 式は腕ごとに合わせる
+func exprExpecting(st mut St, e desugar.NodeRef, w int, at desugar.NodeRef) (Val, error?) {
+    k := kindN(mut st, e)
+    if k == ast.ELambda {
+        if isTag(mut st, w, TFnv) {
+            return liftLambda(mut st, e, hget(mut st, w + 1), at)
+        }
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    if k == ast.EIf && isTag(mut st, w, TOpt) && nodeOf(mut st, e).c >= 0 {
+        x := ifExpr(mut st, e, w)?
+        return coerce(mut st, x.t, x.v, w, at)
+    }
+    r := expr(mut st, e)?
+    // 型なしの定数は期待型の named scalar（か T? の中身の named）に割り当てる（language.md 32 節）
+    nt := if isTag(mut st, w, TNamed) { w } else if isTag(mut st, w, TOpt) && isTag(mut st, hget(mut st, w + 1), TNamed) { hget(mut st, w + 1) } else { -1 }
+    if nt >= 0 && tEql(mut st, baseTy(mut st, nt), r.t) && untypedConst(mut st, e) {
+        return coerce(mut st, nt, r.v, w, at)
+    }
+    return coerce(mut st, r.t, r.v, w, at)
+}
+
+// untypedConst は式 e が型なしの定数か（束縛された名前は違う — 判定の本体は desugar.IsUntypedConst）
+func untypedConst(st mut St, e desugar.NodeRef) bool {
+    if kindN(mut st, e) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, e))) >= 0 {
+        return false
+    }
+    return desugar.IsUntypedConst(mut st.d, e, st.curPkg)
+}
+
+// convOf は呼び出し e が変換（`X(e)` / `int(x)` / `bool(x)`）なら行き先（desugar.ConvTarget — でなければ CONV_NONE）
+func convOf(st mut St, e desugar.NodeRef) int {
+    callee := nA(nodeOf(mut st, e))
+    if kindN(mut st, callee) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, callee))) >= 0 {
+        return desugar.CONV_NONE
+    }
+    return desugar.ConvTarget(mut st.d, callee, st.curPkg)
+}
+
+// convExpr は変換（値は変えない — 型だけ付け替える。下地が同じでなければ拒否）
+func convExpr(st mut St, e desugar.NodeRef, cv int) (Val, error?) {
+    at := e
+    args := lB(nodeOf(mut st, e))
+    if lenL(mut st, args) != 1 {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    x := expr(mut st, latN(mut st, args, 0))?
+    mut to := -1
+    if cv >= 0 {
+        to = namedTy(mut st, desugar.NodeRef(cv))
+    } else if cv == desugar.CONV_INT {
+        to = tInt(mut st)
+    } else {
+        to = tBool(mut st)
+    }
+    if to < 0 || !tEql(mut st, baseTy(mut st, x.t), baseTy(mut st, to)) {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return Val{t: to, v: x.v}, nil
+}
+
+// ── 式 ──
+
+func expr(st mut St, e desugar.NodeRef) (Val, error?) {
+    v := expr0(mut st, e)?
+    if st.ymode == 2 {
+        yCompare(mut st, e, v.t)
+    }
+    return v, nil
+}
+
+func expr0(st mut St, e desugar.NodeRef) (Val, error?) {
+    k := kindN(mut st, e)
+    at := e
+    if k == ast.EInt {
+        return Val{t: tInt(mut st), v: iconst(mut st, nodeOf(mut st, e).a)}, nil
+    }
+    if k == ast.ENil {
+        return Val{t: tNil(mut st), v: 0}, nil
+    }
+    if k == ast.EIdent {
+        return ident(mut st, e)
+    }
+    if k == ast.EBinary {
+        return binary(mut st, e)
+    }
+    if k == ast.EUnary {
+        return unary(mut st, e)
+    }
+    if k == EVal {
+        return Val{t: nodeOf(mut st, e).a, v: nodeOf(mut st, e).b}, nil
+    }
+    if k == ast.EInterp {
+        return interpExpr(mut st, e)
+    }
+    if k == ast.ETry {
+        r := tryResults(mut st, e)?
+        if r < 0 {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        if hget(mut st, r) == 0 {
+            return Val{t: tNone(mut st), v: 0}, nil
+        }
+        if hget(mut st, r) > 1 {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return Val{t: hget(mut st, r + 1), v: hget(mut st, r + 2)}, nil
+    }
+    if k == ast.ECall || k == ast.EPipe {
+        r := evalMulti(mut st, e)?
+        if r < 0 {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        if hget(mut st, r) == 0 {
+            return Val{t: tNone(mut st), v: 0}, nil
+        }
+        if hget(mut st, r) > 1 {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return Val{t: hget(mut st, r + 1), v: hget(mut st, r + 2)}, nil
+    }
+    if k == ast.EComposite {
+        return composite(mut st, e)
+    }
+    if k == ast.ESelector {
+        return selector(mut st, e)
+    }
+    if k == ast.EIf {
+        return ifExpr(mut st, e, -1)
+    }
+    if k == ast.ESwitch {
+        return switchExpr(mut st, e)
+    }
+    if k == ast.EBlock {
+        return blockValue(mut st, lA(nodeOf(mut st, e)), at)
+    }
+    if k == ast.EStrlit {
+        return Val{t: mkString(mut st), v: strlit(mut st, sA(nodeOf(mut st, e)))}, nil
+    }
+    if k == ast.ESlicelit {
+        return slicelit(mut st, e)
+    }
+    if k == ast.EMaplit {
+        return maplit(mut st, e)
+    }
+    if k == ast.EIndex {
+        return index(mut st, e)
+    }
+    if k == ast.ESlice3 {
+        return slice3(mut st, e)
+    }
+    return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+}
+
+func ident(st mut St, e desugar.NodeRef) (Val, error?) {
+    name := sA(nodeOf(mut st, e))
+    at := e
+    if strIs(mut st, name, "_") {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    l := lookup(mut st, name)
+    if l >= 0 {
+        t := hget(mut st, l + 3)
+        if hget(mut st, l + 2) == LClosure {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        if hget(mut st, l + 2) == LCell && isScalar(mut st, t) {
+            return Val{t: t, v: load(mut st, hget(mut st, l + 4), 0)}, nil
+        }
+        return Val{t: t, v: hget(mut st, l + 4)}, nil
+    }
+    if strIs(mut st, name, "true") {
+        return Val{t: tBool(mut st), v: iconst(mut st, 1)}, nil
+    }
+    if strIs(mut st, name, "false") {
+        return Val{t: tBool(mut st), v: iconst(mut st, 0)}, nil
+    }
+    return constOrFn(mut st, desugar.ResolveTop(mut st.d, st.curPkg, name, false, desugar.TopConst | desugar.TopFn), at)
+}
+
+// constOrFn はトップレベル const（int はロード時に畳み込み済み）か名前付き関数の参照（関数値）— r は名前の解決（const か関数に絞ったもの）
+func constOrFn(st mut St, r desugar.TopRef, at desugar.NodeRef) (Val, error?) {
+    if r.kind == desugar.TopConst {
+        c := r.idx
+        pk := r.pkg
+        if conDict(mut st, c) {
+            return dictConst(mut st, c, pk)
+        }
+        if !conHas(mut st, c) {
+            return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        return Val{t: tInt(mut st), v: iconst(mut st, conValue(mut st, c))}, nil
+    }
+    fi := fnOf(r)
+    if fi >= 0 {
+        // 名前付き関数の参照 = 関数値（展開される関数・ジェネリック関数は値にならない）
+        if fnExpands(mut st, fi) || lenL(mut st, fnTParams(mut st, fi)) > 0 {
+            return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        info := funcByKey(mut st, fi)?
+        t, v := fnValue(mut st, info)
+        return Val{t: t, v: v}, nil
+    }
+    return Val{}, diag.UndefinedName{at: posOf(mut st, at)}
+}
+
+// selector は `x.f`（struct のフィールド）/ `pkg.N`（修飾 const）
+func selector(st mut St, e desugar.NodeRef) (Val, error?) {
+    base := nA(nodeOf(mut st, e))
+    field := sB(nodeOf(mut st, e))
+    at := e
+    if kindN(mut st, base) == ast.EIdent && lookup(mut st, sA(nodeOf(mut st, base))) < 0 {
+        bn := sA(nodeOf(mut st, base))
+        ip := importOf(mut st, st.curPkg, bn, 0, slen(mut st, bn))
+        if ip >= 0 {
+            return constOrFn(mut st, desugar.ResolveSel(mut st.d, st.curPkg, bn, field, desugar.TopConst | desugar.TopFn), at)
+        }
+    }
+    bx := expr(mut st, base)?
+    if isTag(mut st, bx.t, TNever) {
+        return bx, nil
+    }
+    f := fieldOf(mut st, bx.t, field, at)?
+    t := hget(mut st, f + 1)
+    return Val{t: t, v: loadVal(mut st, bx.v, hget(mut st, f + 2), t)}, nil
+}
+
+// variantOf は型の名前（"N" か "ref.N"）の union の variant (UnionInfo, 添字)。無ければ (-1, 0)。修飾参照は公開の検査つき（desugar.ResolveVariant）
+func variantOf(st mut St, pk int, name desugar.StrRef) (int, int) {
+    r := desugar.ResolveVariant(mut st.d, pk, name)
+    if r.kind != desugar.TopVariant {
+        return -1, 0
+    }
+    if r.idx == desugar.ERRS {
+        return errsInfo(mut st), r.sub
+    }
+    if lenL(mut st, lB(nodeOf(mut st, desugar.NodeRef(r.idx)))) > 0 {
+        // ジェネリック union の variant は型引数が要る（variantInst — 型引数の推論は後の段）
+        return -1, 0
+    }
+    u := infoOf(mut st, r.idx)
+    if u < 0 || hget(mut st, u) != TUnion {
+        return -1, 0
+    }
+    return u, r.sub
+}
+
+// variantInst はジェネリック union の variant の名前 name と明示の型引数（型式の列 args — 呼び手の文脈で読む）のインスタンス (UnionInfo, 添字)
+func variantInst(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, at desugar.NodeRef) (int, int, error?) {
+    r := desugar.ResolveVariant(mut st.d, pk, name)
+    if r.kind != desugar.TopVariant || r.idx == desugar.ERRS {
+        return -1, 0, diag.UndefinedType{at: posOf(mut st, at)}
+    }
+    n := lenL(mut st, args)
+    if n == 0 || n != lenL(mut st, lB(nodeOf(mut st, desugar.NodeRef(r.idx)))) {
+        return -1, 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    targs := desugar.ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        t := resolveType(mut st, pk, latN(mut st, args, i), false)?
+        lput(mut st, targs, i, t)
+    }
+    u := instStructTys(mut st, desugar.NodeRef(r.idx), r.pkg, targs, at)?
+    return u, r.sub, nil
+}
+
+// composite はリテラル: 新しいスロットに位置か名前でフィールドを埋める（全部の欄 — 名前指定で省く部分リテラルは拒否）。
+// 型名が variant なら union 値（語 0 にタグ、ペイロードは語 1 から）。`T{}` はゼロ値
+func composite(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    pk := st.curPkg
+    tn := sA(nodeOf(mut st, e))
+    mut t := -1
+    mut fields := desugar.ListRef(-1)
+    mut bs := 0
+    mut tag := -1
+    td := lookupTypeDecl(mut st, pk, tn)
+    mut info := if td != -1 { infoOf(mut st, int(td)) } else { -1 }
+    mut vinst := -1
+    mut vidx := 0
+    if lenL(mut st, lC(nodeOf(mut st, e))) > 0 && td == -1 {
+        // ジェネリック union の variant `V[T]{…}`
+        u, vi := variantInst(mut st, pk, tn, lC(nodeOf(mut st, e)), at)?
+        vinst = u
+        vidx = vi
+    } else if lenL(mut st, lC(nodeOf(mut st, e))) > 0 {
+        a1 := instStruct(mut st, pk, tn, lC(nodeOf(mut st, e)), at)?
+        info = a1
+    }
+    if info >= 0 && hget(mut st, info) == TStruct {
+        layoutInfo(mut st, info)?
+        t = hget(mut st, info + SI_TY)
+        fields = hgetL(mut st, info + SI_FIELDS)
+    } else {
+        mut u, vi := variantOf(mut st, pk, tn)
+        if vinst >= 0 {
+            u = vinst
+            vi = vidx
+        }
+        if u < 0 {
+            return Val{}, diag.UndefinedType{at: posOf(mut st, at)}
+        }
+        layoutInfo(mut st, u)?
+        t = hget(mut st, u + SI_TY)
+        vr := latI(mut st, hgetL(mut st, u + SI_FIELDS), vi)
+        fields = hgetL(mut st, vr + 2)
+        bs = 1
+        tag = hget(mut st, vr + 1)
+    }
+    els := lB(nodeOf(mut st, e))
+    n := lenL(mut st, els)
+    keyed := n > 0 && nodeOf(mut st, latN(mut st, els, 0)).a >= 0
+    // 欄の照合は check と共有（desugar.CompositeFields — 混在・重複・未知・個数。部分リテラルは拒否 = X4）
+    nf := lenL(mut st, fields)
+    names := desugar.ListRef(listN(mut st, nf))
+    for k <- iter.Range(0, nf) {
+        lput(mut st, names, k, hget(mut st, latI(mut st, fields, k)))
+    }
+    fof, cm := desugar.CompositeFields(mut st.d, names, els)
+    if cm == desugar.CMMixed {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    if cm == desugar.CMUnknown {
+        return Val{}, diag.UndefinedField{at: posOf(mut st, at)}
+    }
+    if cm != desugar.CMOk {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    mut i := 0
+    // 値を全部評価してから書く（評価中の式が同じ型のリテラルを作ってもよい）
+    vs := listN(mut st, n * 3)
+    if keyed {
+        i = 0
+        while i < n {
+            el := latN(mut st, els, i)
+            f := latI(mut st, fields, latI(mut st, fof, i))
+            fv := exprExpecting(mut st, nB(nodeOf(mut st, el)), hget(mut st, f + 1), nB(nodeOf(mut st, el)))?
+            if isTag(mut st, fv.t, TNever) {
+                return fv, nil
+            }
+            v := copyVal(mut st, fv.t, fv.v)
+            hset(mut st, vs + 1 + i * 3, fv.t)
+            hset(mut st, vs + 2 + i * 3, v)
+            hset(mut st, vs + 3 + i * 3, bs + hget(mut st, f + 2))
+            i += 1
+        }
+    } else if n > 0 || lenL(mut st, fields) == 0 {
+        i = 0
+        while i < n {
+            el := latN(mut st, els, i)
+            f := latI(mut st, fields, i)
+            fv2 := exprExpecting(mut st, nB(nodeOf(mut st, el)), hget(mut st, f + 1), nB(nodeOf(mut st, el)))?
+            if isTag(mut st, fv2.t, TNever) {
+                return fv2, nil
+            }
+            v := copyVal(mut st, fv2.t, fv2.v)
+            hset(mut st, vs + 1 + i * 3, fv2.t)
+            hset(mut st, vs + 2 + i * 3, v)
+            hset(mut st, vs + 3 + i * 3, bs + hget(mut st, f + 2))
+            i += 1
+        }
+    } else {
+        // ゼロ値リテラル `T{}`: int 0・bool false・T? は nil（タグ 0）・struct はフィールドごと
+        i = 0
+        while i < lenL(mut st, fields) {
+            requireZero(mut st, hget(mut st, latI(mut st, fields, i) + 1), at)?
+            i += 1
+        }
+    }
+    p := newAgg(mut st, t)
+    zero := iconst(mut st, 0)
+    mut w := 0
+    while w < tWords(mut st, t) {
+        store(mut st, p, w, zero)
+        w += 1
+    }
+    if tag >= 0 {
+        store(mut st, p, 0, iconst(mut st, tag))
+    }
+    // `T{}` の slice / map フィールドは現在の region の先端を指す空ヘッダ
+    if n == 0 {
+        i = 0
+        while i < lenL(mut st, fields) {
+            f := latI(mut st, fields, i)
+            zeroFill(mut st, p, bs + hget(mut st, f + 2), hget(mut st, f + 1))
+            i += 1
+        }
+    }
+    i = 0
+    while i < n {
+        storeVal(mut st, p, hget(mut st, vs + 3 + i * 3), hget(mut st, vs + 1 + i * 3), hget(mut st, vs + 2 + i * 3))
+        i += 1
+    }
+    return Val{t: t, v: p}, nil
+}
+
+// requireZero はゼロ値を持つ型か
+func requireZero(st mut St, t int, at desugar.NodeRef) error? {
+    k := hget(mut st, t)
+    if k == TInt || k == TBool || k == TOpt || k == TSlice || k == TMap || k == TNamed {
+        return nil
+    }
+    if k == TStruct {
+        fs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            requireZero(mut st, hget(mut st, latI(mut st, fs, i) + 1), at)?
+        }
+        return nil
+    }
+    return diag.Mismatch{at: posOf(mut st, at)}
+}
+
+// ── 演算子 ──
+
+func cmpOf(op int) int {
+    if op == lexer.EqualEqual {
+        return CEq
+    }
+    if op == lexer.BangEqual {
+        return CNe
+    }
+    if op == lexer.Less {
+        return CLt
+    }
+    if op == lexer.LessEqual {
+        return CLe
+    }
+    if op == lexer.Greater {
+        return CGt
+    }
+    if op == lexer.GreaterEqual {
+        return CGe
+    }
+    return -1
+}
+
+func binary(st mut St, e desugar.NodeRef) (Val, error?) {
+    op := nodeOf(mut st, e).a
+    lhs := nB(nodeOf(mut st, e))
+    rhs := nC(nodeOf(mut st, e))
+    at := e
+    if op == lexer.AmpersandAmpersand || op == lexer.PipePipe {
+        return shortCircuit(mut st, e)
+    }
+    // `x == nil` / `x != nil`: T? のタグ検査（語 0 が 0 なら nil）
+    if (op == lexer.EqualEqual || op == lexer.BangEqual) && (kindN(mut st, lhs) == ast.ENil || kindN(mut st, rhs) == ast.ENil) {
+        if kindN(mut st, lhs) == ast.ENil && kindN(mut st, rhs) == ast.ENil {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        sub := expr(mut st, if kindN(mut st, lhs) == ast.ENil { rhs } else { lhs })?
+        if isTag(mut st, sub.t, TNever) {
+            return sub, nil
+        }
+        if !isTag(mut st, sub.t, TOpt) {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        tagv := load(mut st, sub.v, 0)
+        return Val{t: tBool(mut st), v: cmp(mut st, if op == lexer.EqualEqual { CEq } else { CNe }, tagv, iconst(mut st, 0))}, nil
+    }
+    l := expr(mut st, lhs)?
+    if isTag(mut st, l.t, TNever) {
+        return l, nil
+    }
+    // string の == / != / + はセル列の演算（language.md 21 節）
+    if isString(mut st, l.t) && (op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Plus) {
+        return stringBinary(mut st, e, l.t, l.v)
+    }
+    r := expr(mut st, rhs)?
+    if isTag(mut st, r.t, TNever) {
+        return r, nil
+    }
+    c := cmpOf(op)
+    if c >= 0 {
+        // 型なしの定数は相手の named scalar に合わせる（language.md 32 節）
+        mut lt := l.t
+        mut rt := r.t
+        if isTag(mut st, lt, TNamed) && tEql(mut st, baseTy(mut st, lt), rt) && untypedConst(mut st, rhs) {
+            rt = lt
+        } else if isTag(mut st, rt, TNamed) && tEql(mut st, baseTy(mut st, rt), lt) && untypedConst(mut st, lhs) {
+            lt = rt
+        }
+        // == / != は int と bool と named scalar、順序比較は int のみ
+        if !tEql(mut st, lt, rt) || (!isTag(mut st, lt, TInt) && !((isTag(mut st, lt, TBool) || isTag(mut st, lt, TNamed)) && (c == CEq || c == CNe))) {
+            return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return Val{t: tBool(mut st), v: cmp(mut st, c, l.v, r.v)}, nil
+    }
+    want(mut st, l.t, tInt(mut st), at)?
+    want(mut st, r.t, tInt(mut st), at)?
+    v := arith(mut st, op, l.v, r.v, at)?
+    return Val{t: tInt(mut st), v: v}, nil
+}
+
+// arith は int の二項演算（二項式と複合代入の共通部）
+func arith(st mut St, op int, x int, y int, at desugar.NodeRef) (int, error?) {
+    mut b := -1
+    if op == lexer.Plus {
+        b = BAdd
+    } else if op == lexer.Minus {
+        b = BSub
+    } else if op == lexer.Star {
+        b = BMul
+    } else if op == lexer.Slash {
+        b = BDiv
+    } else if op == lexer.Percent {
+        b = BRem
+    } else if op == lexer.Ampersand {
+        b = BAnd
+    } else if op == lexer.Pipe {
+        b = BOr
+    } else if op == lexer.Caret {
+        b = BXor
+    } else if op == lexer.Shl || op == lexer.Shr {
+        return shift(mut st, op == lexer.Shl, x, y), nil
+    } else {
+        return 0, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    return bin(mut st, b, x, y), nil
+}
+
+// shift（Go 準拠）: 負の量は panic（exit 101）、量 ≥ 64 は << = 0・>> = 63 bit に畳む
+func shift(st mut St, left bool, x int, n int) int {
+    neg_b := newBlock(mut st)
+    ok_b := newBlock(mut st)
+    join := newBlock(mut st)
+    res := param(mut st, join, TyI64)
+    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, 0)), neg_b, -1, ok_b, -1)
+    setCur(mut st, neg_b)
+    exit(mut st, PANIC)
+    setCur(mut st, ok_b)
+    over_b := newBlock(mut st)
+    in_b := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, n, iconst(mut st, 63)), over_b, -1, in_b, -1)
+    setCur(mut st, over_b)
+    over_v := if left { iconst(mut st, 0) } else { bin(mut st, BSar, x, iconst(mut st, 63)) }
+    br(mut st, join, list1(mut st, over_v))
+    setCur(mut st, in_b)
+    br(mut st, join, list1(mut st, bin(mut st, if left { BShl } else { BSar }, x, n)))
+    setCur(mut st, join)
+    return res
+}
+
+// shortCircuit は a && b / a || b: 右辺は左辺で決まらないときだけ評価する
+func shortCircuit(st mut St, e desugar.NodeRef) (Val, error?) {
+    op := nodeOf(mut st, e).a
+    at := e
+    l := expr(mut st, nB(nodeOf(mut st, e)))?
+    if isTag(mut st, l.t, TNever) {
+        return l, nil
+    }
+    want(mut st, l.t, tBool(mut st), at)?
+    rhs := newBlock(mut st)
+    join := newBlock(mut st)
+    res := param(mut st, join, TyI64)
+    if op == lexer.AmpersandAmpersand {
+        condbr(mut st, l.v, rhs, -1, join, list1(mut st, l.v))
+    } else {
+        condbr(mut st, l.v, join, list1(mut st, l.v), rhs, -1)
+    }
+    setCur(mut st, rhs)
+    r := expr(mut st, nC(nodeOf(mut st, e)))?
+    if !isTag(mut st, r.t, TNever) {
+        want(mut st, r.t, tBool(mut st), at)?
+        br(mut st, join, list1(mut st, r.v))
+    }
+    setCur(mut st, join)
+    return Val{t: tBool(mut st), v: res}, nil
+}
+
+func unary(st mut St, e desugar.NodeRef) (Val, error?) {
+    op := nodeOf(mut st, e).a
+    at := e
+    x := expr(mut st, nB(nodeOf(mut st, e)))?
+    if isTag(mut st, x.t, TNever) {
+        return x, nil
+    }
+    if op == lexer.Minus {
+        want(mut st, x.t, tInt(mut st), at)?
+        return Val{t: tInt(mut st), v: bin(mut st, BSub, iconst(mut st, 0), x.v)}, nil
+    }
+    if op == lexer.Caret {
+        want(mut st, x.t, tInt(mut st), at)?
+        return Val{t: tInt(mut st), v: bin(mut st, BXor, x.v, iconst(mut st, -1))}, nil
+    }
+    if op == lexer.Bang {
+        want(mut st, x.t, tBool(mut st), at)?
+        return Val{t: tBool(mut st), v: bin(mut st, BXor, x.v, iconst(mut st, 1))}, nil
+    }
+    return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+}
+
+// ── 腕の合流 ──
+
+// joinType は腕の型を合わせる（acc = -1 は未定）: 一致か片方 never、片方が値なしなら値なし
+// armUntyped は if 式の腕 a（then の KBlock・else の EBlock か式）がちょうど型なしの定数 1 つか
+func armUntyped(st mut St, a desugar.NodeRef) bool {
+    if a == -1 {
+        return false
+    }
+    k := kindN(mut st, a)
+    if k != ast.EBlock && k != ast.KBlock {
+        return untypedConst(mut st, a)
+    }
+    l := lA(nodeOf(mut st, a))
+    if lenL(mut st, l) != 1 || kindN(mut st, latN(mut st, l, 0)) != ast.SExpr {
+        return false
+    }
+    return untypedConst(mut st, nA(nodeOf(mut st, latN(mut st, l, 0))))
+}
+
+func joinType(st mut St, acc int, t int, at desugar.NodeRef) (int, error?) {
+    if acc < 0 || tEql(mut st, acc, t) {
+        return if acc < 0 { t } else { acc }, nil
+    }
+    if isTag(mut st, acc, TNever) {
+        return t, nil
+    }
+    if isTag(mut st, t, TNever) {
+        return acc, nil
+    }
+    if isTag(mut st, acc, TNone) || isTag(mut st, t, TNone) {
+        return tNone(mut st), nil
+    }
+    return 0, diag.Mismatch{at: posOf(mut st, at)}
+}
+
+// 腕の末尾の列 = [n, (ブロック, 型, 値)…]（容量は呼び手が決める）
+func endsNew(st mut St, cap int) int {
+    l := listN(mut st, cap * 3)
+    hset(mut st, l, 0)
+    return l
+}
+
+func endsAdd(st mut St, l int, blk int, t int, v int) {
+    n := hget(mut st, l)
+    hset(mut st, l + 1 + n * 3, blk)
+    hset(mut st, l + 2 + n * 3, t)
+    hset(mut st, l + 3 + n * 3, v)
+    hset(mut st, l, n + 1)
+}
+
+// joinArms は腕の末尾を合流させる。値のある型ならブロック引数で受ける（アグリゲートはアドレス）
+func joinArms(st mut St, ends int, t int) (int, int) {
+    n := hget(mut st, ends)
+    if isTag(mut st, t, TNever) || n == 0 {
+        setCur(mut st, -1)
+        return tNever(mut st), 0
+    }
+    join := newBlock(mut st)
+    ty := irTy(mut st, t)
+    res := if ty >= 0 { param(mut st, join, ty) } else { 0 }
+    for i <- iter.Range(0, n) {
+        setCur(mut st, hget(mut st, ends + 1 + i * 3))
+        if ty >= 0 {
+            br(mut st, join, list1(mut st, hget(mut st, ends + 3 + i * 3)))
+        } else {
+            br(mut st, join, -1)
+        }
+    }
+    setCur(mut st, join)
+    if ty >= 0 {
+        return t, res
+    }
+    return tNone(mut st), 0
+}
+
+// nilTest は条件が `x != nil` / `x == nil`（x は T? の名前）なら (名前, then 側が値ありか)。でなければ (-1, false)
+func nilTest(st mut St, c desugar.NodeRef) (desugar.StrRef, bool) {
+    if kindN(mut st, c) != ast.EBinary {
+        return -1, false
+    }
+    op := nodeOf(mut st, c).a
+    if op != lexer.EqualEqual && op != lexer.BangEqual {
+        return -1, false
+    }
+    lhs := nB(nodeOf(mut st, c))
+    rhs := nC(nodeOf(mut st, c))
+    mut side := desugar.NodeRef(-1)
+    if kindN(mut st, lhs) == ast.ENil {
+        side = rhs
+    } else if kindN(mut st, rhs) == ast.ENil {
+        side = lhs
+    }
+    if side == -1 || kindN(mut st, side) != ast.EIdent {
+        return -1, false
+    }
+    l := lookup(mut st, sA(nodeOf(mut st, side)))
+    if l < 0 || !isTag(mut st, hget(mut st, l + 3), TOpt) {
+        return -1, false
+    }
+    return sA(nodeOf(mut st, side)), op == lexer.BangEqual
+}
+
+// narrowedArm は絞り込みつきの腕: name（T?）のペイロードのコピーを同名で再束縛して本体を実行する
+func narrowedArm(st mut St, name desugar.StrRef, l desugar.ListRef) (Val, error?) {
+    en := lookup(mut st, name)
+    o := hget(mut st, en + 3)
+    pt := hget(mut st, o + 1)
+    payload := copyVal(mut st, pt, loadVal(mut st, hget(mut st, en + 4), 1, pt))
+    pushScope(mut st)
+    declare(mut st, name, LVal, pt, payload)
+    x := armTail(mut st, l)?
+    popScope(mut st)
+    return x, nil
+}
+
+// narrowedElse は絞り込みつきの else if（`if x == nil { … } else if … { x }` — else 側は x が値あり。desugar の ifnil と同じ）:
+// name（T?）のペイロードのコピーを同名で再束縛して式 el（else if の if 式）を評価する
+func narrowedElse(st mut St, name desugar.StrRef, el desugar.NodeRef, w int, at desugar.NodeRef) (Val, error?) {
+    en := lookup(mut st, name)
+    o := hget(mut st, en + 3)
+    pt := hget(mut st, o + 1)
+    payload := copyVal(mut st, pt, loadVal(mut st, hget(mut st, en + 4), 1, pt))
+    pushScope(mut st)
+    declare(mut st, name, LVal, pt, payload)
+    x := if w >= 0 { exprExpecting(mut st, el, w, at)? } else { expr(mut st, el)? }
+    popScope(mut st)
+    return x, nil
+}
+
+// ifExpr は if 式 / 文。then は腕（region 透過）、else はブロックなら腕・else if なら式。else 無しは none。
+// w（T? の期待、無ければ -1）があれば腕ごとに合わせてから合流する
+func ifExpr(st mut St, e desugar.NodeRef, w int) (Val, error?) {
+    at := e
+    nname, some_then := nilTest(mut st, nA(nodeOf(mut st, e)))
+    cx := expr(mut st, nA(nodeOf(mut st, e)))?
+    if isTag(mut st, cx.t, TNever) {
+        return cx, nil
+    }
+    want(mut st, cx.t, tBool(mut st), at)?
+    then_b := newBlock(mut st)
+    else_b := newBlock(mut st)
+    condbr(mut st, cx.v, then_b, -1, else_b, -1)
+    ends := endsNew(mut st, 2)
+    mut t := -1
+    el := nC(nodeOf(mut st, e))
+    for arm <- iter.Range(0, 2) {
+        setCur(mut st, if arm == 0 { then_b } else { else_b })
+        narrow := nname != -1 && some_then == (arm == 0)
+        mut vt := -1
+        mut vv := 0
+        if arm == 0 {
+            ss := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+            if narrow {
+                x1 := narrowedArm(mut st, nname, ss)?
+                vt = x1.t
+                vv = x1.v
+            } else {
+                av := armValue(mut st, ss)?
+                vt = av.t
+                vv = av.v
+            }
+        } else if el != -1 {
+            if kindN(mut st, el) != ast.EBlock && narrow {
+                x2 := narrowedElse(mut st, nname, el, w, at)?
+                vt = x2.t
+                vv = x2.v
+            } else if kindN(mut st, el) != ast.EBlock {
+                if w >= 0 {
+                    x3 := exprExpecting(mut st, el, w, at)?
+                    vt = x3.t
+                    vv = x3.v
+                } else {
+                    x4 := expr(mut st, el)?
+                    vt = x4.t
+                    vv = x4.v
+                }
+            } else if narrow {
+                x5 := narrowedArm(mut st, nname, lA(nodeOf(mut st, el)))?
+                vt = x5.t
+                vv = x5.v
+            } else {
+                x6 := armValue(mut st, lA(nodeOf(mut st, el)))?
+                vt = x6.t
+                vv = x6.v
+            }
+        } else {
+            vt = tNone(mut st)
+        }
+        if w >= 0 && cur(mut st) >= 0 && !isTag(mut st, vt, TNone) {
+            x7 := coerce(mut st, vt, vv, w, at)?
+            vt = x7.t
+            vv = x7.v
+        }
+        // 期待型の無い if 式: 型なしの定数の腕は兄弟の腕の named scalar に割り当てる（language.md 32 節 — 値は下地のまま、型だけ付け替える）
+        if w < 0 && arm == 1 && t >= 0 && cur(mut st) >= 0 {
+            if isTag(mut st, t, TNamed) && tEql(mut st, baseTy(mut st, t), vt) && armUntyped(mut st, el) {
+                vt = t
+            } else if isTag(mut st, vt, TNamed) && tEql(mut st, baseTy(mut st, vt), t) && armUntyped(mut st, nB(nodeOf(mut st, e))) {
+                t = vt
+            }
+        }
+        t = joinType(mut st, t, if cur(mut st) < 0 { tNever(mut st) } else { vt }, at)?
+        if cur(mut st) >= 0 {
+            endsAdd(mut st, ends, cur(mut st), vt, vv)
+        }
+    }
+    if el == -1 {
+        t = if isTag(mut st, t, TNever) { t } else { tNone(mut st) }
+    }
+    rt, rv := joinArms(mut st, ends, t)
+    return Val{t: rt, v: rv}, nil
+}

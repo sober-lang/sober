@@ -1,0 +1,442 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "P",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "y",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "Q",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "p",
+            "type": {
+              "k": "name",
+              "name": "P"
+            },
+            "tok": 19
+          },
+          {
+            "name": "ok",
+            "type": {
+              "k": "name",
+              "name": "bool"
+            },
+            "tok": 22
+          },
+          {
+            "name": "tag",
+            "type": {
+              "k": "name",
+              "name": "byte"
+            },
+            "tok": 25
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 28
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 33
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "q"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Q",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 7,
+                      "tok": 44
+                    }
+                  },
+                  {
+                    "key": "tag",
+                    "value": {
+                      "k": "int",
+                      "value": 65,
+                      "tok": 48
+                    }
+                  },
+                  {
+                    "key": "ok",
+                    "value": {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 52
+                    }
+                  },
+                  {
+                    "key": "p",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "P",
+                      "elems": [
+                        {
+                          "key": "y",
+                          "value": {
+                            "k": "int",
+                            "value": 2,
+                            "tok": 60
+                          }
+                        },
+                        {
+                          "key": "x",
+                          "value": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 64
+                          }
+                        }
+                      ],
+                      "tok": 56,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "tok": 40,
+                "type_args": []
+              }
+            ],
+            "tok": 38
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Q",
+                "elems": [
+                  {
+                    "key": "p",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "P",
+                      "elems": [
+                        {
+                          "key": "x",
+                          "value": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "q",
+                              "tok": 78
+                            },
+                            "field": "n",
+                            "tok": 80
+                          }
+                        },
+                        {
+                          "key": "y",
+                          "value": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "q",
+                                  "tok": 84
+                                },
+                                "field": "p",
+                                "tok": 86
+                              },
+                              "field": "x",
+                              "tok": 88
+                            },
+                            "rhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "q",
+                                  "tok": 90
+                                },
+                                "field": "p",
+                                "tok": 92
+                              },
+                              "field": "y",
+                              "tok": 94
+                            },
+                            "tok": 89
+                          }
+                        }
+                      ],
+                      "tok": 74,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "ok",
+                    "value": {
+                      "k": "unary",
+                      "op": "!",
+                      "operand": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "q",
+                          "tok": 100
+                        },
+                        "field": "ok",
+                        "tok": 102
+                      },
+                      "tok": 99
+                    }
+                  },
+                  {
+                    "key": "tag",
+                    "value": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "q",
+                        "tok": 106
+                      },
+                      "field": "tag",
+                      "tok": 108
+                    }
+                  },
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 112
+                    }
+                  }
+                ],
+                "tok": 70,
+                "type_args": []
+              }
+            ],
+            "tok": 68
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 115
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "q",
+                          "tok": 117
+                        },
+                        "field": "p",
+                        "tok": 119
+                      },
+                      "field": "x",
+                      "tok": 121
+                    },
+                    "rhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "q",
+                          "tok": 123
+                        },
+                        "field": "p",
+                        "tok": 125
+                      },
+                      "field": "y",
+                      "tok": 127
+                    },
+                    "tok": 122
+                  },
+                  "rhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "q",
+                      "tok": 129
+                    },
+                    "field": "n",
+                    "tok": 131
+                  },
+                  "tok": 128
+                }
+              ],
+              "tok": 116
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 134
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 136
+                    },
+                    "field": "p",
+                    "tok": 138
+                  },
+                  "field": "y",
+                  "tok": 140
+                }
+              ],
+              "tok": 135
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 143
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 145
+                  },
+                  "field": "ok",
+                  "tok": 147
+                }
+              ],
+              "tok": 144
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 150
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "int",
+                    "tok": 152
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 154
+                      },
+                      "field": "tag",
+                      "tok": 156
+                    }
+                  ],
+                  "tok": 153
+                }
+              ],
+              "tok": 151
+            }
+          }
+        ]
+      },
+      "tok": 34,
+      "bodiless": false,
+      "span": {
+        "start": 33,
+        "end": 162
+      },
+      "sig_end": 37
+    }
+  ],
+  "consts": []
+}

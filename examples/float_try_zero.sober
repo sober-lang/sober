@@ -1,0 +1,29 @@
+package main
+
+// 回帰（float の段 — JSON 第一便で発見）: `?` の脱出と `T{}` が float の欄のゼロ値（0.0）を埋める（以前は lower の requireZero が float を知らず Mismatch）
+
+type M struct {
+    name string
+    v float
+}
+
+type Bad error {}
+
+func get(ok bool) (float, error?) {
+    if !ok {
+        return 0.0, Bad{}
+    }
+    return 2.5, nil
+}
+
+func load(ok bool) (M, error?) {
+    v := get(ok)?
+    return M{name: "m", v: v}, nil
+}
+
+func main() {
+    a, ea := load(true)
+    b, eb := load(false)
+    z := M{}
+    println(a.v, ea == nil, b.v, eb == nil, z.v)
+}

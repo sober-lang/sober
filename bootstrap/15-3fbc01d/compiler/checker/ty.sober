@@ -1,0 +1,521 @@
+package checker
+
+import "std/iter"
+import "std/table"
+import "obuf"
+
+// コアの型（Lean の Ty — Syntax.lean）と型の関数の写し。型 = 記録 {tag, a, b, c}（st.types — reaudit 第 2 弾 C7。以前はヒープ st.h の 4 語）。
+// 各関数は Syntax.lean / Typing.lean の同名の定義と 1:1（名前も揃える）。型は浅いので再帰で書く
+
+const TInt = 1
+const TVar = 2   // a = 添字
+const TBool = 3
+const TUnit = 4
+const TOpt = 5   // a = 中身
+const TUn = 6    // a = l, b = r
+const TPr = 7    // a = l, b = r
+const TRef = 8   // a = m（0 / 1）, b = r, c = 中身
+const TSl = 9    // a = m, b = r, c = 要素
+const TMp = 10   // a = m, b = r, c = セル型
+const TChan = 11 // a = rc, b = 中身
+const TFn = 12   // a = p, b = r
+// byte の段で足した種類（Lean の Ty.byte — 区域系の述語は int と同じ扱い）
+const TByte = 13
+
+// Ty は型 1 つ（st.types の要素 — 作ったら変えない）。参照 = TYBASE + 添字（ヒープ st.h の番地と取り違えて読むと範囲外で panic する — 音を立てる）
+type Ty struct {
+    tag int
+    a int
+    b int
+    c int
+}
+
+const TYBASE = 35184372088832
+
+// tyAt は型 t の記録（非ジェネリックの包み — F-10）
+func tyAt(st mut S, t int) Ty {
+    return table.Get(mut st.types, t - TYBASE)
+}
+
+func tg(st mut S, t int) int {
+    return tyAt(mut st, t).tag
+}
+
+func tA(st mut S, t int) int {
+    return tyAt(mut st, t).a
+}
+
+func tB(st mut S, t int) int {
+    return tyAt(mut st, t).b
+}
+
+func tC(st mut S, t int) int {
+    return tyAt(mut st, t).c
+}
+
+func mk(st mut S, k int, a int, b int, c int) int {
+    table.Push(mut st.types, Ty{tag: k, a: a, b: b, c: c})
+    return TYBASE + table.Len(mut st.types) - 1
+}
+
+func tOpt(st mut S, t int) int {
+    return mk(mut st, TOpt, t, 0, 0)
+}
+
+// isCont は ref / slice / map（m・r・中身の 3 欄を持つ型）
+func isCont(k int) bool {
+    return k == TRef || k == TSl || k == TMp
+}
+
+// tyEq は構造の等しさ（Lean の DecidableEq）
+func tyEq(st mut S, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    k := tg(mut st, a)
+    if k != tg(mut st, b) {
+        return false
+    }
+    switch k {
+    case TInt | TBool | TUnit | TByte:
+        return true
+    case TVar:
+        return tA(mut st, a) == tA(mut st, b)
+    case TOpt:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b))
+    case TUn | TPr | TFn:
+        return tyEq(mut st, tA(mut st, a), tA(mut st, b)) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    }
+    if isCont(k) {
+        return tA(mut st, a) == tA(mut st, b) && tB(mut st, a) == tB(mut st, b) && tyEq(mut st, tC(mut st, a), tC(mut st, b))
+    }
+    if k == TChan {
+        return tA(mut st, a) == tA(mut st, b) && tyEq(mut st, tB(mut st, a), tB(mut st, b))
+    }
+    return false
+}
+
+// regionsBelow: 型が言及する region がすべてレベル d 未満
+func regionsBelow(st mut S, d int, t int) bool {
+    k := tg(mut st, t)
+    if k == TOpt {
+        return regionsBelow(mut st, d, tA(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return regionsBelow(mut st, d, tA(mut st, t)) && regionsBelow(mut st, d, tB(mut st, t))
+    }
+    if isCont(k) {
+        return tB(mut st, t) < d && regionsBelow(mut st, d, tC(mut st, t))
+    }
+    if k == TChan {
+        return tA(mut st, t) <= d && regionsBelow(mut st, tA(mut st, t), tB(mut st, t))
+    }
+    return true
+}
+
+func mutFree(st mut S, t int) bool {
+    k := tg(mut st, t)
+    if k == TOpt {
+        return mutFree(mut st, tA(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return mutFree(mut st, tA(mut st, t)) && mutFree(mut st, tB(mut st, t))
+    }
+    if isCont(k) {
+        return tA(mut st, t) == 0 && mutFree(mut st, tC(mut st, t))
+    }
+    return true
+}
+
+func chanFree(st mut S, t int) bool {
+    k := tg(mut st, t)
+    if k == TOpt {
+        return chanFree(mut st, tA(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return chanFree(mut st, tA(mut st, t)) && chanFree(mut st, tB(mut st, t))
+    }
+    if isCont(k) {
+        return chanFree(mut st, tC(mut st, t))
+    }
+    return k != TChan
+}
+
+// isImmStr は slice false _ byte（imm string — byte の段 C）
+func isImmStr(st mut S, t int) bool {
+    return tg(mut st, t) == TSl && tA(mut st, t) == 0 && tg(mut st, tC(mut st, t)) == TByte
+}
+
+func keyOk(st mut S, t int) bool {
+    return tg(mut st, t) == TInt || isImmStr(mut st, t)
+}
+
+func keyCompat(st mut S, a int, b int) bool {
+    if tg(mut st, a) == TInt && tg(mut st, b) == TInt {
+        return true
+    }
+    return isImmStr(mut st, a) && isImmStr(mut st, b)
+}
+
+func shiftR(st mut S, rho int, t int) int {
+    k := tg(mut st, t)
+    if k == TOpt {
+        x := shiftR(mut st, rho, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := shiftR(mut st, rho, tA(mut st, t))
+        r := shiftR(mut st, rho, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := shiftR(mut st, rho, tC(mut st, t))
+        return mk(mut st, k, tA(mut st, t), tB(mut st, t) + rho, x)
+    }
+    if k == TChan {
+        x := shiftR(mut st, rho, tB(mut st, t))
+        return mk(mut st, TChan, tA(mut st, t) + rho, x, 0)
+    }
+    return t
+}
+
+// relocR: imm の最上段の region を ρ へ（中身も relocR）、mut / chan は一様シフト
+func relocR(st mut S, rho int, t int) int {
+    k := tg(mut st, t)
+    if k == TOpt {
+        x := relocR(mut st, rho, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := relocR(mut st, rho, tA(mut st, t))
+        r := relocR(mut st, rho, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        if tA(mut st, t) == 0 {
+            x := relocR(mut st, rho, tC(mut st, t))
+            return mk(mut st, k, 0, rho, x)
+        }
+        x := shiftR(mut st, rho, tC(mut st, t))
+        return mk(mut st, k, 1, tB(mut st, t) + rho, x)
+    }
+    if k == TChan {
+        x := shiftR(mut st, rho, tB(mut st, t))
+        return mk(mut st, TChan, tA(mut st, t) + rho, x, 0)
+    }
+    return t
+}
+
+func rmap(rho0 int, delta int, r int) int {
+    return if r == 0 { rho0 } else { r + delta }
+}
+
+func renR(st mut S, rho0 int, delta int, t int) int {
+    k := tg(mut st, t)
+    if k == TOpt {
+        x := renR(mut st, rho0, delta, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := renR(mut st, rho0, delta, tA(mut st, t))
+        r := renR(mut st, rho0, delta, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := renR(mut st, rho0, delta, tC(mut st, t))
+        return mk(mut st, k, tA(mut st, t), rmap(rho0, delta, tB(mut st, t)), x)
+    }
+    if k == TChan {
+        x := renR(mut st, rho0, delta, tB(mut st, t))
+        return mk(mut st, TChan, rmap(rho0, delta, tA(mut st, t)), x, 0)
+    }
+    return t
+}
+
+func relocA(st mut S, rho0 int, d int, t int) int {
+    k := tg(mut st, t)
+    if k == TOpt {
+        x := relocA(mut st, rho0, d, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := relocA(mut st, rho0, d, tA(mut st, t))
+        r := relocA(mut st, rho0, d, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        if tA(mut st, t) == 0 {
+            x := relocA(mut st, rho0, d, tC(mut st, t))
+            return mk(mut st, k, 0, if tB(mut st, t) == 0 { rho0 } else { d }, x)
+        }
+        x := renR(mut st, rho0, d, tC(mut st, t))
+        return mk(mut st, k, 1, rmap(rho0, d, tB(mut st, t)), x)
+    }
+    if k == TChan {
+        x := renR(mut st, rho0, d, tB(mut st, t))
+        return mk(mut st, TChan, rmap(rho0, d, tA(mut st, t)), x, 0)
+    }
+    return t
+}
+
+func clampR(st mut S, kk int, t int) int {
+    k := tg(mut st, t)
+    if k == TOpt {
+        x := clampR(mut st, kk, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    }
+    if k == TUn || k == TPr {
+        l := clampR(mut st, kk, tA(mut st, t))
+        r := clampR(mut st, kk, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) && tA(mut st, t) == 0 {
+        x := clampR(mut st, kk, tC(mut st, t))
+        r := tB(mut st, t)
+        return mk(mut st, k, 0, if r < kk { r } else { kk }, x)
+    }
+    return t
+}
+
+func noClamp(st mut S, kk int, t int) bool {
+    k := tg(mut st, t)
+    if k == TOpt {
+        return noClamp(mut st, kk, tA(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return noClamp(mut st, kk, tA(mut st, t)) && noClamp(mut st, kk, tB(mut st, t))
+    }
+    if isCont(k) && tA(mut st, t) == 0 {
+        return tB(mut st, t) <= kk && noClamp(mut st, kk, tC(mut st, t))
+    }
+    return true
+}
+
+func annFree(st mut S, t int) bool {
+    k := tg(mut st, t)
+    return switch k {
+    case TVar | TOpt | TUn: false
+    case TPr: annFree(mut st, tA(mut st, t)) && annFree(mut st, tB(mut st, t))
+    case TSl | TMp: tA(mut st, t) != 0 || annFree(mut st, tC(mut st, t))
+    default: true
+    }
+}
+
+func isMut0(st mut S, t int) bool {
+    return isCont(tg(mut st, t)) && tA(mut st, t) != 0 && tB(mut st, t) == 0
+}
+
+// mutTop: mut コンテナ / 参照の最上段の region（無ければ -1）
+func mutTop(st mut S, t int) int {
+    if isCont(tg(mut st, t)) && tA(mut st, t) != 0 {
+        return tB(mut st, t)
+    }
+    return -1
+}
+
+// anchorOf: 仮引数型 p の mut 位置に対応する実引数 ta の region（無ければ -1）
+func anchorOf(st mut S, p int, ta int) int {
+    if tg(mut st, p) == TPr {
+        if tg(mut st, ta) != TPr {
+            return -1
+        }
+        a := anchorOf(mut st, tA(mut st, p), tA(mut st, ta))
+        if a >= 0 {
+            return a
+        }
+        return anchorOf(mut st, tB(mut st, p), tB(mut st, ta))
+    }
+    if isMut0(mut st, p) {
+        return mutTop(mut st, ta)
+    }
+    return -1
+}
+
+// sub: 浅い imm 共変（Ty.sub）
+func sub(st mut S, a int, b int) bool {
+    k := tg(mut st, a)
+    if k == tg(mut st, b) {
+        if k == TOpt {
+            return sub(mut st, tA(mut st, a), tA(mut st, b))
+        }
+        if k == TUn || k == TPr {
+            return sub(mut st, tA(mut st, a), tA(mut st, b)) && sub(mut st, tB(mut st, a), tB(mut st, b))
+        }
+        if isCont(k) && tA(mut st, a) == 0 && tA(mut st, b) == 0 {
+            if tB(mut st, a) > tB(mut st, b) {
+                return false
+            }
+            if k == TRef {
+                return tyEq(mut st, tC(mut st, a), tC(mut st, b))
+            }
+            return sub(mut st, tC(mut st, a), tC(mut st, b))
+        }
+    }
+    return tyEq(mut st, a, b)
+}
+
+func jumpRel(st mut S, b int, kk int, tj int, tl int) bool {
+    c := clampR(mut st, kk, tj)
+    return sub(mut st, c, tl) && (noClamp(mut st, kk, tj) || (b <= kk && chanFree(mut st, tj)))
+}
+
+// readAs: ot = -1 は注釈なし。結果 -1 = none
+func readAs(st mut S, m int, ot int, t int) int {
+    if ot < 0 {
+        return if m != 0 || annFree(mut st, t) { t } else { -1 }
+    }
+    return if sub(mut st, t, ot) { ot } else { -1 }
+}
+
+func tyArgOk(st mut S, t int) bool {
+    return regionsBelow(mut st, 0, t) && chanFree(mut st, t)
+}
+
+// tyArgsOk: ts は型の列 [n, t…]（-1 = 空）
+func tyArgsOk(st mut S, ts int) bool {
+    if ts < 0 {
+        return true
+    }
+    for i <- iter.Range(0, table.Get(mut st.h, ts)) {
+        if !tyArgOk(mut st, table.Get(mut st.h, ts + 1 + i)) {
+            return false
+        }
+    }
+    return true
+}
+
+func tsLen(st mut S, ts int) int {
+    return if ts < 0 { 0 } else { table.Get(mut st.h, ts) }
+}
+
+// tsubst: tvar i を ts[i] へ（範囲外は tvar のまま）。fn のシグネチャの中へも入る
+func tsubst(st mut S, ts int, t int) int {
+    if ts < 0 {
+        return t
+    }
+    k := tg(mut st, t)
+    switch k {
+    case TVar:
+        i := tA(mut st, t)
+        return if i < table.Get(mut st.h, ts) { table.Get(mut st.h, ts + 1 + i) } else { t }
+    case TOpt:
+        x := tsubst(mut st, ts, tA(mut st, t))
+        return mk(mut st, TOpt, x, 0, 0)
+    case TUn | TPr | TFn:
+        l := tsubst(mut st, ts, tA(mut st, t))
+        r := tsubst(mut st, ts, tB(mut st, t))
+        return mk(mut st, k, l, r, 0)
+    }
+    if isCont(k) {
+        x := tsubst(mut st, ts, tC(mut st, t))
+        return mk(mut st, k, tA(mut st, t), tB(mut st, t), x)
+    }
+    if k == TChan {
+        x := tsubst(mut st, ts, tB(mut st, t))
+        return mk(mut st, TChan, tA(mut st, t), x, 0)
+    }
+    return t
+}
+
+func tvarsBelow(st mut S, n int, t int) bool {
+    k := tg(mut st, t)
+    switch k {
+    case TVar:
+        return tA(mut st, t) < n
+    case TOpt:
+        return tvarsBelow(mut st, n, tA(mut st, t))
+    case TUn | TPr | TFn:
+        return tvarsBelow(mut st, n, tA(mut st, t)) && tvarsBelow(mut st, n, tB(mut st, t))
+    }
+    if isCont(k) {
+        return tvarsBelow(mut st, n, tC(mut st, t))
+    }
+    if k == TChan {
+        return tvarsBelow(mut st, n, tB(mut st, t))
+    }
+    return true
+}
+
+// paramOk / retOk: Typing.lean の Def の境界の条件
+func paramOk(st mut S, t int) bool {
+    return regionsBelow(mut st, 1, t) && chanFree(mut st, t)
+}
+
+func retOk(st mut S, t int) bool {
+    k := tg(mut st, t)
+    if k == TOpt {
+        return retOk(mut st, tA(mut st, t))
+    }
+    if k == TUn || k == TPr {
+        return retOk(mut st, tA(mut st, t)) && retOk(mut st, tB(mut st, t))
+    }
+    if isCont(k) {
+        return tA(mut st, t) == 0 && tB(mut st, t) < 2 && retOk(mut st, tC(mut st, t))
+    }
+    return k != TChan
+}
+
+// ── 型の印字（Json.lean の tyToJson + Lean の Json.compress — object のキーは辞書順）──
+
+func tyJson(st mut S, out mut []byte, t int) {
+    k := tg(mut st, t)
+    if k == TInt {
+        obuf.Lit(mut out, "{\"k\":\"int\"}")
+    } else if k == TVar {
+        obuf.Lit(mut out, "{\"i\":")
+        obuf.Int(mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"k\":\"tvar\"}")
+    } else if k == TBool {
+        obuf.Lit(mut out, "{\"k\":\"bool\"}")
+    } else if k == TByte {
+        obuf.Lit(mut out, "{\"k\":\"byte\"}")
+    } else if k == TUnit {
+        obuf.Lit(mut out, "{\"k\":\"unit\"}")
+    } else if k == TOpt {
+        obuf.Lit(mut out, "{\"k\":\"opt\",\"t\":")
+        tyJson(mut st, mut out, tA(mut st, t))
+        out = append(out, '}')
+    } else if k == TUn || k == TPr || k == TFn {
+        obuf.Lit(mut out, if k == TUn { "{\"k\":\"union\",\"l\":" } else if k == TPr { "{\"k\":\"prod\",\"l\":" } else { "{\"k\":\"fn\",\"p\":" })
+        tyJson(mut st, mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, '}')
+    } else if k == TRef || k == TSl {
+        obuf.Lit(mut out, if k == TRef { "{\"k\":\"ref\",\"m\":" } else { "{\"k\":\"slice\",\"m\":" })
+        obuf.Bool(mut out, tA(mut st, t) != 0)
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, tB(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tC(mut st, t))
+        out = append(out, '}')
+    } else if k == TMp {
+        c := tC(mut st, t)
+        if tg(mut st, c) == TPr && tg(mut st, tB(mut st, c)) == TOpt {
+            // セル型 prod k (opt v) は key / t に分けて出す
+            obuf.Lit(mut out, "{\"k\":\"map\",\"key\":")
+            tyJson(mut st, mut out, tA(mut st, c))
+            obuf.Lit(mut out, ",\"m\":")
+            obuf.Bool(mut out, tA(mut st, t) != 0)
+            obuf.Lit(mut out, ",\"r\":")
+            obuf.Int(mut out, tB(mut st, t))
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, tA(mut st, tB(mut st, c)))
+            out = append(out, '}')
+        } else {
+            obuf.Lit(mut out, "{\"cell\":")
+            tyJson(mut st, mut out, c)
+            obuf.Lit(mut out, ",\"k\":\"map\",\"m\":")
+            obuf.Bool(mut out, tA(mut st, t) != 0)
+            obuf.Lit(mut out, ",\"r\":")
+            obuf.Int(mut out, tB(mut st, t))
+            out = append(out, '}')
+        }
+    } else if k == TChan {
+        obuf.Lit(mut out, "{\"k\":\"chan\",\"rc\":")
+        obuf.Int(mut out, tA(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tB(mut st, t))
+        out = append(out, '}')
+    }
+}

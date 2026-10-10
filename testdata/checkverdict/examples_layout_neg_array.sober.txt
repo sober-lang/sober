@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_array.sober:6:11: a fixed-length array field ([N]T) is only allowed in a @layout struct
+exit=1

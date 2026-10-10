@@ -1,0 +1,9 @@
+package main
+
+// 負例（build・check とも拒否 — language.md 20 節）: 非公開の struct のリテラルを他 package から作る。以前は lower だけが受理していた（report-55 v3a）
+import "testdata/vis_struct/lib"
+
+func main() {
+    p := lib.pt{x: 4}
+    println(p.x)
+}

@@ -1,0 +1,34 @@
+package main
+
+// map の索引の速い道（第三便 M13 — 索引済みの数 == 長さのときだけ索引をそのまま引く）の回帰例: 挿入の間に他の確保が無いので
+// セル列は region の先端でその場に伸び、持ち主（セル列の番地）は変わらない。数の確認が無いと、索引が新しいキーを含まないまま引いて
+// 既にあるキーを見失う（挿入し直して数え違える）
+
+import "std/iter"
+
+func main() {
+    mut m := mut map[int]int{}
+    mut misses := 0
+    for i <- iter.Range(0, 200) {
+        m[i * 7] = i
+        // 直前に足したキーと、少し前のキーを引く
+        a := m[i * 7]
+        if a == nil {
+            misses += 1
+        }
+        b := m[(i / 2) * 7]
+        if b == nil {
+            misses += 1
+        }
+    }
+    mut sum := 0
+    for i <- iter.Range(0, 200) {
+        v := m[i * 7]
+        if v != nil {
+            sum += v
+        }
+    }
+    println(len(m))
+    println(misses)
+    println(sum)
+}

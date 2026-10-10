@@ -1,0 +1,24 @@
+package main
+
+// R31: os.Args — 0 番 = プログラム名（置き場で変わるので印字しない）。引数ありの照合は scripts/io_args.sh
+// （実行ハーネスは引数を渡さないので、ここでの .out は引数なしの形）。不正な UTF-8 の引数があれば全体が utf8.InvalidUtf8、終了コード 2
+
+import "std/os"
+import "std/utf8"
+
+func main() int {
+    args, err := os.Args()
+    if err != nil {
+        switch err {
+        case utf8.InvalidUtf8{pos}: println("invalid utf-8 at ${pos}")
+        }
+        return 2
+    }
+    println("${len(args) - 1} args")
+    mut i := 1
+    while i < len(args) {
+        println("[${i}] ${args[i]} (${len(bytes(args[i]))} bytes)")
+        i += 1
+    }
+    return 0
+}

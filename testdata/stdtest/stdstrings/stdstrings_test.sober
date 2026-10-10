@@ -1,0 +1,66 @@
+package stdstrings
+
+// std/strings の black-box の表駆動テスト（Go のオラクル scripts/strings_oracle.ts と併存。`bin/sober test testdata/stdtest/stdstrings`）。
+// std/strings の中に置けないのは、assert の値の印字（補間）が std/strings を暗黙に import するため（自分自身への import の循環）
+
+import "std/iter"
+import "std/strings"
+
+type IndexCase struct {
+    s string
+    sub string
+    want int
+}
+
+func TestIndex() {
+    cases := []IndexCase{
+        IndexCase{s: "chicken", sub: "ken", want: 4},
+        IndexCase{s: "chicken", sub: "dmr", want: 0 - 1},
+        IndexCase{s: "abc", sub: "", want: 0},
+        IndexCase{s: "", sub: "a", want: 0 - 1},
+        IndexCase{s: "aaab", sub: "aab", want: 1},
+        IndexCase{s: "あいう", sub: "い", want: 3},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        assert(strings.Index(c.s, c.sub) == c.want)
+    }
+}
+
+func TestPrefixSuffix() {
+    assert(strings.HasPrefix("hello world", "hello"))
+    assert(!strings.HasPrefix("hi", "hello"))
+    assert(strings.HasPrefix("", ""))
+    assert(strings.HasSuffix("hello world", "world"))
+    assert(!strings.HasSuffix("lo", "hello"))
+    assert(strings.Contains("seafood", "foo"))
+    assert(!strings.Contains("seafood", "bar"))
+}
+
+func TestCount() {
+    assert(strings.Count("cheese", "e") == 3)
+    assert(strings.Count("five", "") == 5)
+    assert(strings.Count("aaaa", "aa") == 2)
+}
+
+func TestIndexByte() {
+    assert(strings.IndexByte("golang", 'l') == 2)
+    assert(strings.IndexByte("golang", 'x') == 0 - 1)
+    assert(strings.IndexByte("", 'a') == 0 - 1)
+}
+
+func TestFormatInt() {
+    assert(strings.FormatInt(0) == "0")
+    assert(strings.FormatInt(42) == "42")
+    assert(strings.FormatInt(0 - 7) == "-7")
+    assert(strings.FormatInt(9223372036854775807) == "9223372036854775807")
+    assert(strings.FormatInt(0 - 9223372036854775807 - 1) == "-9223372036854775808")
+}
+
+func TestJoin() {
+    assert(strings.Join([]string{"a", "b", "c"}, ", ") == "a, b, c")
+    assert(strings.Join([]string{"x"}, "-") == "x")
+    assert(strings.Join([]string{}, "-") == "")
+    assert(strings.Join([]string{"", ""}, "") == "")
+    assert(strings.Join([]string{"あ", "い"}, "・") == "あ・い")
+}

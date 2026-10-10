@@ -1,0 +1,29 @@
+# loader 黄金（testdata/loaderjson/）の対象 entry（1 行 1 つ、リポジトリルート相対・cwd = ルートで load する）。
+# 仮決め R8-1: マルチ package の testdata は全部、単一ファイルの examples は loader の段を踏む代表だけ
+#   （全 examples は std の同じ package を何度も写すだけで情報が薄い）。
+# マルチ package
+testdata/pkgdemo/app
+testdata/errpkg/app
+testdata/iface/app
+testdata/minic/app
+testdata/minic_rd/app
+testdata/pool/exits.sober
+testdata/pool/nested.sober
+# examples の代表（踏む段）
+examples/fib.sober
+examples/constdict.sober
+examples/interp_holes.sober
+examples/mutparam.sober
+examples/errval.sober
+examples/errcause.sober
+examples/errparse_file.sober
+examples/lexer_iter.sober
+examples/generic.sober
+examples/map_str.sober
+examples/utf8_pure.sober
+examples/builder_string.sober
+examples/inline_anchor.sober
+examples/bits.sober
+examples/fnvalue.sober
+examples/noinline.sober
+examples/embed_demo.sober

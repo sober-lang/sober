@@ -1,0 +1,153 @@
+package main
+
+// 1BRC（看板 — docs/bench.md）: `<名前>;<気温>` の行（気温は小数 1 桁）を観測所ごとに min / mean / max で集計して名前のバイト順に印字する。
+// 素直な形（Go の双子 bench/1brc/go と同じアルゴリズム）: 全体を読み、行ごとに分割・map[string] で観測所の番号を引き・気温は ×10 の整数。
+// 平均は floor((2 × 和 + 件数) / (2 × 件数)) — 0.5 は正の方向へ丸める。
+// UTF-8 の検査は全体に 1 回（utf8.Check — 型つき証人）・名前は `;` の手前で切るので Str が検査し直さない（第三便 M13）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/utf8"
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 2 {
+        return 2
+    }
+    b := io.ReadFile(args[1]) catch return 1
+    v := utf8.Check(b) catch return 1
+    mut ix := mut map[string]int{}
+    mut names := mut []string{}
+    // 観測所ごとに [min, max, sum, count]
+    mut st := mut []int{}
+    mut i := 0
+    while i < len(b) {
+        s := i
+        while b[i] != ';' {
+            i += 1
+        }
+        name := utf8.Str(v, s, i) catch return 1
+        i += 1
+        neg := b[i] == '-'
+        if neg {
+            i += 1
+        }
+        mut t := 0
+        while b[i] != '\n' {
+            if b[i] != '.' {
+                t = t * 10 + int(b[i]) - '0'
+            }
+            i += 1
+        }
+        i += 1
+        if neg {
+            t = 0 - t
+        }
+        k := ix[name]
+        if k != nil {
+            o := k * 4
+            if t < st[o] {
+                st[o] = t
+            }
+            if t > st[o + 1] {
+                st[o + 1] = t
+            }
+            st[o + 2] = st[o + 2] + t
+            st[o + 3] = st[o + 3] + 1
+        } else {
+            ix[name] = len(names)
+            names = append(names, name)
+            st = append(st, t)
+            st = append(st, t)
+            st = append(st, t)
+            st = append(st, 1)
+        }
+    }
+    order := sorted(freeze(names))
+    stats := freeze(st)
+    ix2 := freeze(ix)
+    mut out := mut []byte{'{'}
+    for j <- iter.Range(0, len(order)) {
+        if j > 0 {
+            out = append(out, ',')
+            out = append(out, ' ')
+        }
+        nb := bytes(order[j])
+        for c <- iter.Range(0, len(nb)) {
+            out = append(out, nb[c])
+        }
+        out = append(out, '=')
+        k := indexOf(ix2, order[j])
+        o := k * 4
+        put10(mut out, stats[o])
+        out = append(out, '/')
+        put10(mut out, floorDiv(2 * stats[o + 2] + stats[o + 3], 2 * stats[o + 3]))
+        out = append(out, '/')
+        put10(mut out, stats[o + 1])
+    }
+    out = append(out, '}')
+    out = append(out, '\n')
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}
+
+func indexOf(ix map[string]int, name string) int {
+    k := ix[name]
+    if k != nil {
+        return k
+    }
+    return 0
+}
+
+func floorDiv(a int, b int) int {
+    q := a / b
+    return if a % b != 0 && (a < 0) != (b < 0) { q - 1 } else { q }
+}
+
+// put10 は ×10 の整数 v を小数 1 桁で書く
+func put10(out mut []byte, v0 int) {
+    mut v := v0
+    if v < 0 {
+        out = append(out, '-')
+        v = 0 - v
+    }
+    putInt(mut out, v / 10)
+    out = append(out, '.')
+    out = append(out, byte('0' + v % 10))
+}
+
+func putInt(out mut []byte, v int) {
+    if v >= 10 {
+        putInt(mut out, v / 10)
+    }
+    out = append(out, byte('0' + v % 10))
+}
+
+// sorted は names を名前のバイト順に並べた写し（挿入ソート — 観測所は数百）
+func sorted(names []string) []string {
+    mut xs := mut []string{}
+    for i <- iter.Range(0, len(names)) {
+        xs = append(xs, names[i])
+        mut j := len(xs) - 1
+        while j > 0 && less(xs[j], xs[j - 1]) {
+            tmp := xs[j]
+            xs[j] = xs[j - 1]
+            xs[j - 1] = tmp
+            j -= 1
+        }
+    }
+    return freeze(xs)
+}
+
+func less(a string, b string) bool {
+    x := bytes(a)
+    y := bytes(b)
+    mut i := 0
+    while i < len(x) && i < len(y) {
+        if x[i] != y[i] {
+            return x[i] < y[i]
+        }
+        i += 1
+    }
+    return len(x) < len(y)
+}

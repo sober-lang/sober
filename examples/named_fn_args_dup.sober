@@ -1,0 +1,12 @@
+package main
+
+// 負例（syntax.md 決定 7 の kind 3）: 名前付き関数型を通した呼び出しで同じ仮引数を名前で 2 回
+type Fetch func(url int, timeout int?, retries int?) int
+
+func run(get Fetch) int {
+    return get(1, retries: 3, retries: 4)
+}
+
+func main() {
+    println(run((u, t, r) => u))
+}

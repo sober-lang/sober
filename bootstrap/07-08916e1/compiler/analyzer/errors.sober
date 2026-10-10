@@ -1,0 +1,756 @@
+package analyzer
+
+// error のラベル集合の導出（error 網羅 analyzer A2 — language.md 13 節。今は影: 消費者は開発用の `check --errors-dump` だけ）。
+// 抽象値 = ラベル集合（1 語のビット集合 — 添字 = リンク時のタグ = loader のラベル表の順。TOP = 不明）。値は「その式の error の成分」だけを見る:
+// error の成分を持たない式の集合は、error の位置（戻りの error の成分・error の仮引数・error の欄）へ流れないので、過大（TOP）でも結果を汚さない —
+// 分からない名前・添字の読み・関数値の呼び出しは TOP に倒す（健全の側）。
+// 集合の置き場（スロット — az.sets）: 関数 fi の戻り R[fi] = スロット fi・ラベル L の cause C[L] = nfn + L（wrap の地点の内側の合併 — 裁定 C-b）・
+// 関数の仮引数 P[fi][j]（呼び手の実引数の合併 — 裁定 P-b。公開関数の error の仮引数は TOP）・error 型の struct の欄（欄の名前ごとの合併 — 閉世界）。
+// package をまたぐ呼び出しは呼び先の `@errors` の宣言を読む（裁定 E2 — 無ければ導出。公開関数に宣言が無いことは declare.sober が拒否する）。
+// 解き方: スロットを読んだ関数を読み手として登録し、スロットが広がったら読み手を作業の列へ（不動点 — 格子の高さはラベル数）。
+// 関数の中は流れに鈍感（局所の名前ごとの合併 — シャドーイング禁止なので名前で引ける）で、局所が広がらなくなるまで本体を歩き直す
+
+import "ast"
+import "desugar"
+import "std/iter"
+import "std/table"
+
+const TOP = 4611686018427387904  // 1 << 62
+const NBITS = 62                   // これ以上のタグのラベルは TOP に倒す（1 語の集合）
+
+// bit はラベル L の集合
+func bit(L int) int {
+    return if L >= 0 && L < NBITS { 1 << L } else { TOP }
+}
+
+// ── スロット ──
+
+func newSlot(az mut Az, v int) int {
+    table.Push(mut az.sets, v)
+    table.Push(mut az.rhead, -1)
+    return table.Len(mut az.sets) - 1
+}
+
+// readSlot はスロット s の集合（今歩いている関数を読み手に登録する）
+func readSlot(az mut Az, s int) int {
+    mut r := table.Get(mut az.rhead, s)
+    mut seen := false
+    while r != -1 && !seen {
+        if table.Get(mut az.rnode, r) == az.cur {
+            seen = true
+        }
+        r = table.Get(mut az.rnode, r + 1)
+    }
+    if !seen {
+        table.Push(mut az.rnode, az.cur)
+        table.Push(mut az.rnode, table.Get(mut az.rhead, s))
+        table.Set(mut az.rhead, s, table.Len(mut az.rnode) - 2)
+    }
+    return table.Get(mut az.sets, s)
+}
+
+// addSlot はスロット s に集合 m を合併する（広がったら読み手を作業の列へ）
+func addSlot(az mut Az, s int, m int) {
+    if s == -1 || m == 0 {
+        return
+    }
+    o := table.Get(mut az.sets, s)
+    if (o | m) == o {
+        return
+    }
+    table.Set(mut az.sets, s, o | m)
+    mut r := table.Get(mut az.rhead, s)
+    while r != -1 {
+        enqueue(mut az, table.Get(mut az.rnode, r))
+        r = table.Get(mut az.rnode, r + 1)
+    }
+}
+
+func enqueue(az mut Az, f int) {
+    if table.Get(mut az.inq, f) == 0 {
+        table.Set(mut az.inq, f, 1)
+        table.Push(mut az.work, f)
+    }
+}
+
+// ── 型式・名前の小道具 ──
+
+// isErrTy は型式 te が error か error?
+func isErrTy(az mut Az, te desugar.NodeRef) bool {
+    mut t := te
+    if t != -1 && kind(mut az, t) == ast.TOpt {
+        t = desugar.NodeRef(node(mut az, t).a)
+    }
+    return t != -1 && kind(mut az, t) == ast.TName && desugar.StrIs(mut az.d, desugar.StrRef(node(mut az, t).a), "error")
+}
+
+// isPublic は名前が大文字で始まるか
+func isPublic(az mut Az, s desugar.StrRef) bool {
+    c := desugar.Dat(mut az.d, int(s) + 1)
+    return desugar.Dat(mut az.d, int(s)) > 0 && c >= 65 && c <= 90
+}
+
+func fnDecl(az mut Az, fi int) ast.Node {
+    return node(mut az, desugar.FnAt(mut az.d, fi).node)
+}
+
+// labelOf は型パターン / リテラルの名前（"N" か "ref.N"）の error ラベルのタグ（無ければ -1）
+func labelOf(az mut Az, name desugar.StrRef) int {
+    r := desugar.ResolveVariant(mut az.d, az.pk, name)
+    return if r.kind == desugar.TopVariant && r.idx == desugar.ERRS { r.sub } else { -1 }
+}
+
+// fieldSlot は error 型の欄の名前 name のスロット（無ければ -1）
+func fieldSlot(az mut Az, name desugar.StrRef) int {
+    for i <- iter.Range(0, table.Len(mut az.ffield) / 2) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.ffield, i * 2)), name) {
+            return table.Get(mut az.ffield, i * 2 + 1)
+        }
+    }
+    return -1
+}
+
+// paramIdx は今の関数の仮引数 name の添字（無ければ -1）
+func paramIdx(az mut Az, name desugar.StrRef) int {
+    ps := desugar.ListRef(fnDecl(mut az, az.cur).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a), name) {
+            return j
+        }
+    }
+    return -1
+}
+
+// ── 局所（名前 → 集合 — az.envN 個が有効）──
+
+func envFind(az mut Az, name desugar.StrRef) int {
+    for i <- iter.Range(0, az.envN) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.env, i * 2)), name) {
+            return i
+        }
+    }
+    return -1
+}
+
+func envAdd(az mut Az, name desugar.StrRef, m int) {
+    if name == -1 {
+        return
+    }
+    i := envFind(mut az, name)
+    if i == -1 {
+        if az.envN * 2 < table.Len(mut az.env) {
+            table.Set(mut az.env, az.envN * 2, int(name))
+            table.Set(mut az.env, az.envN * 2 + 1, m)
+        } else {
+            table.Push(mut az.env, int(name))
+            table.Push(mut az.env, m)
+        }
+        az.envN += 1
+        if m != 0 {
+            az.envChanged = true
+        }
+        return
+    }
+    o := table.Get(mut az.env, i * 2 + 1)
+    if (o | m) != o {
+        table.Set(mut az.env, i * 2 + 1, o | m)
+        az.envChanged = true
+    }
+}
+
+// ident は名前の集合: 局所 → 仮引数（error 型なら P のスロット）→ トップレベル（関数・const — error の値でない）
+func ident(az mut Az, name desugar.StrRef) int {
+    i := envFind(mut az, name)
+    if i != -1 {
+        return table.Get(mut az.env, i * 2 + 1)
+    }
+    j := paramIdx(mut az, name)
+    if j != -1 {
+        p := nat(mut az, desugar.ListRef(fnDecl(mut az, az.cur).c), j)
+        return if isErrTy(mut az, desugar.NodeRef(node(mut az, p).b)) { readSlot(mut az, table.Get(mut az.pbase, az.cur) + j) } else { 0 }
+    }
+    return 0
+}
+
+// isLocal は名前が局所か仮引数か（関数値の呼び出しの判定）
+func isLocal(az mut Az, name desugar.StrRef) bool {
+    return envFind(mut az, name) != -1 || paramIdx(mut az, name) != -1
+}
+
+// ── 準備と不動点 ──
+
+// errInit は表を立てる（スロット R・C・P と error 型の欄の名前）
+func errInit(az mut Az) {
+    az.nfn = desugar.Nfn(mut az.d)
+    az.nerr = desugar.NErr(mut az.d)
+    for fi <- iter.Range(0, az.nfn) {
+        newSlot(mut az, 0)
+        table.Push(mut az.inq, 0)
+        fd := fnDecl(mut az, fi)
+        rs := desugar.ListRef(fd.d)
+        mut ef := 0
+        for i <- iter.Range(0, desugar.LenL(mut az.d, rs)) {
+            if isErrTy(mut az, nat(mut az, rs, i)) {
+                ef = 1
+            }
+        }
+        table.Push(mut az.errfn, ef)
+    }
+    for L <- iter.Range(0, az.nerr) {
+        newSlot(mut az, 0)
+        table.Push(mut az.lit, 0)
+    }
+    for fi <- iter.Range(0, az.nfn) {
+        table.Push(mut az.declared, declaredSet(mut az, fi))
+    }
+    for fi <- iter.Range(0, az.nfn) {
+        fd := fnDecl(mut az, fi)
+        table.Push(mut az.pbase, table.Len(mut az.sets))
+        pub := isPublic(mut az, desugar.StrRef(fd.a))
+        ps := desugar.ListRef(fd.c)
+        for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+            e := isErrTy(mut az, desugar.NodeRef(node(mut az, nat(mut az, ps, j)).b))
+            newSlot(mut az, if e && pub { TOP } else { 0 })
+        }
+    }
+    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
+        ts := desugar.ListRef(desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f)).c)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, ts)) {
+            body := desugar.NodeRef(node(mut az, nat(mut az, ts, i)).c)
+            if body != -1 && kind(mut az, body) == ast.BStruct {
+                fs := desugar.ListRef(node(mut az, body).a)
+                for k <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
+                    fl := node(mut az, nat(mut az, fs, k))
+                    if isErrTy(mut az, desugar.NodeRef(fl.b)) && fieldSlot(mut az, desugar.StrRef(fl.a)) == -1 {
+                        table.Push(mut az.ffield, fl.a)
+                        table.Push(mut az.ffield, newSlot(mut az, 0))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// errSolve は全関数を作業の列に積み、スロットが広がらなくなるまで歩く。最後に 1 周、switch を記録しながら歩く
+func errSolve(az mut Az) {
+    for fi <- iter.Range(0, az.nfn) {
+        enqueue(mut az, fi)
+    }
+    mut h := 0
+    while h < table.Len(mut az.work) {
+        fi := table.Get(mut az.work, h)
+        h += 1
+        table.Set(mut az.inq, fi, 0)
+        walkFn(mut az, fi)
+        az.walks += 1
+    }
+    az.rec = true
+    for fi <- iter.Range(0, az.nfn) {
+        walkFn(mut az, fi)
+    }
+    az.rec = false
+}
+
+// walkFn は関数 fi の本体を、局所が広がらなくなるまで歩く
+func walkFn(az mut Az, fi int) {
+    body := desugar.NodeRef(fnDecl(mut az, fi).e)
+    if body == -1 {
+        return
+    }
+    az.cur = fi
+    az.pk = desugar.FnAt(mut az.d, fi).pkg
+    az.envN = 0
+    mut again := true
+    mut n := 0
+    while again && n < 16 {
+        az.envChanged = false
+        blockVal(mut az, body)
+        again = az.envChanged
+        n += 1
+    }
+}
+
+// ── 式と文（集合 = その式の error の成分）──
+
+// blockVal はブロックの節（KBlock / EBlock）の文を歩き、値（末尾の式文）の集合を返す
+func blockVal(az mut Az, b desugar.NodeRef) int {
+    if b == -1 {
+        return 0
+    }
+    l := desugar.ListRef(node(mut az, b).a)
+    n := desugar.LenL(mut az.d, l)
+    mut v := 0
+    for i <- iter.Range(0, n) {
+        s := nat(mut az, l, i)
+        if i + 1 == n && kind(mut az, s) == ast.SExpr {
+            v = ev(mut az, desugar.NodeRef(node(mut az, s).a))
+        } else {
+            est(mut az, s)
+        }
+    }
+    return v
+}
+
+// elseVal は if の else（ブロックか else-if）の集合
+func elseVal(az mut Az, e desugar.NodeRef) int {
+    if e == -1 {
+        return 0
+    }
+    k := kind(mut az, e)
+    return if k == ast.EBlock || k == ast.KBlock { blockVal(mut az, e) } else { ev(mut az, e) }
+}
+
+func evList(az mut Az, l desugar.ListRef) int {
+    mut v := 0
+    if l == -1 {
+        return 0
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        v = v | ev(mut az, nat(mut az, l, i))
+    }
+    return v
+}
+
+// est は文 1 つ
+func est(az mut Az, s desugar.NodeRef) {
+    x := node(mut az, s)
+    k := x.kind
+    if k == ast.SBind {
+        names := desugar.ListRef(x.a)
+        vals := desugar.ListRef(x.c)
+        nn := desugar.LenL(mut az.d, names)
+        nv := desugar.LenL(mut az.d, vals)
+        if nn == nv {
+            for i <- iter.Range(0, nn) {
+                envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, names, i)), ev(mut az, nat(mut az, vals, i)))
+            }
+        } else {
+            // 多値の分解（`x, err := f()`）: 集合は error の成分だけなので、全部の名前に同じ集合（error でない名前には流れても害が無い）
+            m := evList(mut az, vals)
+            for i <- iter.Range(0, nn) {
+                envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, names, i)), m)
+            }
+        }
+    } else if k == ast.SAssign {
+        ts := desugar.ListRef(x.a)
+        vals := desugar.ListRef(x.c)
+        nt := desugar.LenL(mut az.d, ts)
+        nv := desugar.LenL(mut az.d, vals)
+        mut all := 0
+        if nt != nv {
+            all = evList(mut az, vals)
+        }
+        for i <- iter.Range(0, nt) {
+            m := if nt == nv { ev(mut az, nat(mut az, vals, i)) } else { all }
+            assignTo(mut az, nat(mut az, ts, i), m)
+        }
+    } else if k == ast.SRet {
+        retVals(mut az, desugar.ListRef(x.a))
+    } else if k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+        ev(mut az, desugar.NodeRef(x.a))
+    } else if k == ast.SWhile {
+        ev(mut az, desugar.NodeRef(x.a))
+        blockVal(mut az, desugar.NodeRef(x.b))
+    }
+    // 末尾の return: 本体の末尾の if 文の腕が値を返す呼び出しで終わると、check がその if を本体の値として型付けして def error になる（摩擦 — report-76）
+    return
+}
+
+// assignTo は代入の行き先 t へ集合 m（名前 → 局所・欄 → error 型の欄のスロット・添字 → 歩くだけ）
+func assignTo(az mut Az, t desugar.NodeRef, m int) {
+    x := node(mut az, t)
+    if x.kind == ast.EIdent {
+        envAdd(mut az, desugar.StrRef(x.a), m)
+    } else if x.kind == ast.ESelector {
+        ev(mut az, desugar.NodeRef(x.a))
+        addSlot(mut az, fieldSlot(mut az, desugar.StrRef(x.b)), m)
+    } else {
+        ev(mut az, t)
+    }
+    // 末尾の return: est と同じ
+    return
+}
+
+// retVals は return の値: 今の関数の結果の error の位置の集合を R へ（ラムダの本体の return も囲みの関数から — 10 節）
+func retVals(az mut Az, vals desugar.ListRef) {
+    rs := desugar.ListRef(fnDecl(mut az, az.cur).d)
+    nw := desugar.LenL(mut az.d, rs)
+    nv := desugar.LenL(mut az.d, vals)
+    if nv == nw {
+        for i <- iter.Range(0, nv) {
+            m := ev(mut az, nat(mut az, vals, i))
+            if isErrTy(mut az, nat(mut az, rs, i)) {
+                addSlot(mut az, az.cur, m)
+            }
+        }
+        return
+    }
+    // `return g()` の転送（g の error の成分がそのまま）
+    m := evList(mut az, vals)
+    if table.Get(mut az.errfn, az.cur) != 0 {
+        addSlot(mut az, az.cur, m)
+    }
+}
+
+// ev は式を歩いて error の成分の集合を返す
+func ev(az mut Az, e desugar.NodeRef) int {
+    if e == -1 {
+        return 0
+    }
+    x := node(mut az, e)
+    k := x.kind
+    if k == ast.EIdent {
+        return ident(mut az, desugar.StrRef(x.a))
+    }
+    if k == ast.ECall {
+        return callVal(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1), 0)
+    }
+    if k == ast.EPipe {
+        lm := ev(mut az, desugar.NodeRef(x.a))
+        return callVal(mut az, desugar.NodeRef(x.b), desugar.ListRef(x.c), desugar.NodeRef(x.a), lm)
+    }
+    if k == ast.ETry {
+        m := ev(mut az, desugar.NodeRef(x.a))
+        w := desugar.NodeRef(x.b)
+        if w == -1 {
+            addSlot(mut az, az.cur, m)
+        } else {
+            wx := node(mut az, w)
+            evElems(mut az, desugar.ListRef(wx.b))
+            L := labelOf(mut az, desugar.StrRef(wx.a))
+            addSlot(mut az, az.cur, bit(L))
+            if L != -1 {
+                addSlot(mut az, az.nfn + L, m)
+            }
+        }
+        return 0
+    }
+    if k == ast.EComposite {
+        return composite(mut az, x)
+    }
+    if k == ast.ESelector {
+        ev(mut az, desugar.NodeRef(x.a))
+        s := fieldSlot(mut az, desugar.StrRef(x.b))
+        return if s == -1 { 0 } else { readSlot(mut az, s) }
+    }
+    if k == ast.EIf {
+        ev(mut az, desugar.NodeRef(x.a))
+        return blockVal(mut az, desugar.NodeRef(x.b)) | elseVal(mut az, desugar.NodeRef(x.c))
+    }
+    if k == ast.ESwitch {
+        return switchVal(mut az, e, x)
+    }
+    if k == ast.EBlock {
+        return blockVal(mut az, e)
+    }
+    if k == ast.ELambda {
+        ps := desugar.ListRef(x.a)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+            envAdd(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, i)).a), TOP)
+        }
+        body := desugar.NodeRef(x.b)
+        bk := kind(mut az, body)
+        if bk == ast.EBlock || bk == ast.KBlock {
+            blockVal(mut az, body)
+        } else {
+            ev(mut az, body)
+        }
+        return 0
+    }
+    if k == ast.EFor {
+        gs := desugar.ListRef(x.a)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
+            g := node(mut az, nat(mut az, gs, i))
+            ev(mut az, desugar.NodeRef(g.b))
+            ns := desugar.ListRef(g.a)
+            for j <- iter.Range(0, desugar.LenL(mut az.d, ns)) {
+                envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, ns, j)), TOP)
+            }
+            evList(mut az, desugar.ListRef(g.c))
+        }
+        if x.b == 0 {
+            ev(mut az, desugar.NodeRef(x.c))
+        } else {
+            stmts := desugar.ListRef(x.c)
+            for i <- iter.Range(0, desugar.LenL(mut az.d, stmts)) {
+                est(mut az, nat(mut az, stmts, i))
+            }
+        }
+        return 0
+    }
+    if k == ast.EIndex {
+        ev(mut az, desugar.NodeRef(x.a))
+        ev(mut az, desugar.NodeRef(x.b))
+        return TOP
+    }
+    if k == ast.EBinary {
+        ev(mut az, desugar.NodeRef(x.b))
+        ev(mut az, desugar.NodeRef(x.c))
+        return 0
+    }
+    if k == ast.EUnary {
+        ev(mut az, desugar.NodeRef(x.b))
+        return 0
+    }
+    if k == ast.ESlice3 {
+        ev(mut az, desugar.NodeRef(x.a))
+        ev(mut az, desugar.NodeRef(x.b))
+        ev(mut az, desugar.NodeRef(x.c))
+        return 0
+    }
+    if k == ast.EInterp || k == ast.ESlicelit {
+        evList(mut az, desugar.ListRef(x.b))
+        return 0
+    }
+    if k == ast.EMaplit {
+        es := desugar.ListRef(x.c)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
+            en := node(mut az, nat(mut az, es, i))
+            ev(mut az, desugar.NodeRef(en.a))
+            ev(mut az, desugar.NodeRef(en.b))
+        }
+        return 0
+    }
+    return 0
+}
+
+func evElems(az mut Az, l desugar.ListRef) {
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        ev(mut az, desugar.NodeRef(node(mut az, nat(mut az, l, i)).b))
+    }
+}
+
+// composite はリテラル: error ラベルなら {L}。struct なら error 型の欄へ値の集合を流す（位置指定の欄は宣言の順で名前を引く）
+func composite(az mut Az, x ast.Node) int {
+    name := desugar.StrRef(x.a)
+    els := desugar.ListRef(x.b)
+    L := labelOf(mut az, name)
+    if L != -1 {
+        // ラベルのリテラルは cause を書けない = cause が nil の値
+        if L < table.Len(mut az.lit) {
+            table.Set(mut az.lit, L, 1)
+        }
+        evElems(mut az, els)
+        return bit(L)
+    }
+    r := desugar.ResolveType(mut az.d, az.pk, name)
+    mut fs := desugar.ListRef(-1)
+    if r.kind == desugar.TopType {
+        body := desugar.NodeRef(node(mut az, desugar.NodeRef(r.idx)).c)
+        if body != -1 && kind(mut az, body) == ast.BStruct {
+            fs = desugar.ListRef(node(mut az, body).a)
+        }
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, els)) {
+        el := node(mut az, nat(mut az, els, i))
+        m := ev(mut az, desugar.NodeRef(el.b))
+        mut fname := desugar.StrRef(el.a)
+        if fname == -1 && fs != -1 && i < desugar.LenL(mut az.d, fs) {
+            fname = desugar.StrRef(node(mut az, nat(mut az, fs, i)).a)
+        }
+        if fname != -1 {
+            addSlot(mut az, fieldSlot(mut az, fname), m)
+        }
+    }
+    return 0
+}
+
+// calleeFn は呼び出しの callee の関数の表の添字（-1 = 関数でない — 組み込み・変換・型の構築。-2 = 関数値 — 中が見えない）
+func calleeFn(az mut Az, callee desugar.NodeRef) int {
+    mut c := callee
+    if kind(mut az, c) == ast.EIndex {
+        c = desugar.NodeRef(node(mut az, c).a)
+    }
+    x := node(mut az, c)
+    if x.kind == ast.EIdent {
+        name := desugar.StrRef(x.a)
+        if isLocal(mut az, name) {
+            return -2
+        }
+        return desugar.ResolveFn(mut az.d, az.pk, name)
+    }
+    if x.kind == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        ref := desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a)
+        if isLocal(mut az, ref) {
+            return -2
+        }
+        fi := desugar.ResolveSelFn(mut az.d, az.pk, ref, desugar.StrRef(x.b))
+        return if fi == -1 { -1 } else { fi }
+    }
+    return -2
+}
+
+// callVal は呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
+func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm int) int {
+    fi := calleeFn(mut az, callee)
+    if fi == -2 {
+        ev(mut az, callee)
+    }
+    n := desugar.LenL(mut az.d, args)
+    mut j := 0
+    mut hole := false
+    for i <- iter.Range(0, n) {
+        a := nat(mut az, args, i)
+        if a == -1 {
+            hole = true
+        }
+    }
+    if lhs != -1 && !hole {
+        argTo(mut az, fi, 0, lm)
+        j = 1
+    }
+    for i <- iter.Range(0, n) {
+        a := nat(mut az, args, i)
+        m := if a == -1 { lm } else { ev(mut az, a) }
+        argTo(mut az, fi, j, m)
+        j += 1
+    }
+    if fi == -2 {
+        az.unknown += 1
+        return TOP
+    }
+    if fi == -1 || table.Get(mut az.errfn, fi) == 0 {
+        return 0
+    }
+    d := table.Get(mut az.declared, fi)
+    if d != -1 && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
+        // package をまたぐ呼び出しは宣言を読む（裁定 E2 — 依存 package の中を解析しない 29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側の package で拒否する）
+        return d
+    }
+    return readSlot(mut az, fi)
+}
+
+// argTo は関数 fi の j 番目の仮引数が error 型なら、実引数の集合 m を P へ
+func argTo(az mut Az, fi int, j int, m int) {
+    if fi < 0 || m == 0 {
+        return
+    }
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    if j < desugar.LenL(mut az.d, ps) && isErrTy(mut az, desugar.NodeRef(node(mut az, nat(mut az, ps, j)).b)) {
+        addSlot(mut az, table.Get(mut az.pbase, fi) + j, m)
+    }
+}
+
+// switchVal は switch: subject の集合 S、腕の束縛（ラベルの型パターンは {L}・その cause は C[L]・他の束縛は TOP）、腕の値の合併。
+// error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無 — A5 の裁定材料）
+func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
+    subs := desugar.ListRef(x.a)
+    S := evList(mut az, subs)
+    single := desugar.LenL(mut az.d, subs) == 1
+    cs := desugar.ListRef(x.b)
+    mut covered := 0
+    mut isErr := false
+    mut v := 0
+    for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+        c := node(mut az, nat(mut az, cs, i))
+        ps := desugar.ListRef(c.a)
+        for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+            p := nat(mut az, ps, j)
+            px := node(mut az, p)
+            if px.kind == ast.KPType {
+                L := labelOf(mut az, desugar.StrRef(px.b))
+                if L != -1 {
+                    // 多値の subject（`case _, L{…}:` — check の断片外）は列ごとの集合を分けない: 記録は単一の subject だけ
+                    isErr = single
+                    covered = covered | bit(L)
+                    envAdd(mut az, desugar.StrRef(px.a), bit(L))
+                    labelFields(mut az, L, desugar.ListRef(px.c))
+                } else {
+                    bindTop(mut az, p)
+                }
+            } else if px.kind == ast.KPConst {
+                alts := desugar.ListRef(px.a)
+                for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
+                    a := nat(mut az, alts, q)
+                    if kind(mut az, a) == ast.EIdent {
+                        // 裸の識別子は未知なら束縛（syntax.md 9 節）— 束縛なら subject の集合
+                        envAdd(mut az, desugar.StrRef(node(mut az, a).a), S)
+                    } else {
+                        ev(mut az, a)
+                    }
+                }
+            }
+        }
+        v = v | blockVal(mut az, desugar.NodeRef(c.b))
+    }
+    hasDef := x.c != -1
+    v = v | blockVal(mut az, desugar.NodeRef(x.c))
+    if az.rec && isErr {
+        // 腕ごとの記録 [switch の記録の添字, 腕のパターンの節, タグ]（到達しない腕の拒否 — 裁定 E4-d (ii)）。腕の中の switch が先に記録されるので、
+        // 添字はここ（自分の記録を積む直前）で決める
+        swi := table.Len(mut az.sw) / 4
+        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+            ps := desugar.ListRef(node(mut az, nat(mut az, cs, i)).a)
+            for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+                p := nat(mut az, ps, j)
+                if kind(mut az, p) == ast.KPType {
+                    L := labelOf(mut az, desugar.StrRef(node(mut az, p).b))
+                    if L != -1 {
+                        table.Push(mut az.swarms, swi)
+                        table.Push(mut az.swarms, int(p))
+                        table.Push(mut az.swarms, L)
+                    }
+                }
+            }
+        }
+        table.Push(mut az.sw, int(e))
+        table.Push(mut az.sw, S)
+        table.Push(mut az.sw, covered)
+        table.Push(mut az.sw, if hasDef { 1 } else { 0 })
+        table.Push(mut az.swpk, az.pk)
+    }
+    return v
+}
+
+// labelFields はラベル L の型パターンの欄: `cause` は C[L]、cause の入れ子のラベルの型パターン（`cause: e A{…}`）は e が {A} でその欄を同じく、
+// 他の欄（ラベルは error を持てない）と入れ子の束縛は TOP
+func labelFields(az mut Az, L int, fps desugar.ListRef) {
+    if fps == -1 {
+        return
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, fps)) {
+        fp := node(mut az, nat(mut az, fps, i))
+        sub := desugar.NodeRef(fp.b)
+        isCause := desugar.StrIs(mut az.d, desugar.StrRef(fp.a), "cause")
+        A := if isCause && sub != -1 && kind(mut az, sub) == ast.KPType { labelOf(mut az, desugar.StrRef(node(mut az, sub).b)) } else { -1 }
+        if sub == -1 {
+            m := if isCause { readSlot(mut az, az.nfn + L) } else { 0 }
+            envAdd(mut az, desugar.StrRef(fp.a), m)
+        } else if A != -1 {
+            envAdd(mut az, desugar.StrRef(node(mut az, sub).a), bit(A))
+            labelFields(mut az, A, desugar.ListRef(node(mut az, sub).c))
+        } else {
+            bindTop(mut az, sub)
+        }
+    }
+}
+
+// bindTop はパターン p の中の束縛の名前を全部 TOP に（ラベルでない型パターン・入れ子）
+func bindTop(az mut Az, p desugar.NodeRef) {
+    if p == -1 {
+        return
+    }
+    x := node(mut az, p)
+    if x.kind == ast.KPType {
+        envAdd(mut az, desugar.StrRef(x.a), TOP)
+        fps := desugar.ListRef(x.c)
+        if fps != -1 {
+            for i <- iter.Range(0, desugar.LenL(mut az.d, fps)) {
+                fp := node(mut az, nat(mut az, fps, i))
+                if fp.b == -1 {
+                    envAdd(mut az, desugar.StrRef(fp.a), TOP)
+                } else {
+                    bindTop(mut az, desugar.NodeRef(fp.b))
+                }
+            }
+        }
+    } else if x.kind == ast.KPConst {
+        alts := desugar.ListRef(x.a)
+        for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
+            a := nat(mut az, alts, q)
+            if kind(mut az, a) == ast.EIdent {
+                envAdd(mut az, desugar.StrRef(node(mut az, a).a), TOP)
+            }
+        }
+    }
+}

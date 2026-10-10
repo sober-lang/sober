@@ -1,0 +1,8 @@
+package main
+
+// 負例: []byte の要素への代入も byte の文脈 — 定数の範囲外はコンパイルエラー（language.md 33 節）
+func main() {
+    mut a := mut []byte{1}
+    a[0] = 300
+    println(a[0])
+}

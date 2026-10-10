@@ -1,0 +1,13 @@
+package main
+
+// 段 6 P3a: 関数型の仮引数（展開される閉包）を子が捕獲する（diag.Par kind 11 — check と build が同じ拒否。desugar/parcheck.sober）
+
+import "std/par"
+
+func run(g func(int) int, x int) int {
+    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, () => g(x))))
+    return r
+}
+func main() {
+    println(run((v) => v * 3, 5))
+}

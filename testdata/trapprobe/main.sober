@@ -1,0 +1,6 @@
+package main
+
+// 罠の単体の例の器（scripts/trapprobe.sh — `sober build --trap-probe` は入口が main の代わりに trap.probe を呼ぶ）
+
+func main() {
+}

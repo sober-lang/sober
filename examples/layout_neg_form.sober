@@ -1,0 +1,15 @@
+package main
+
+// 負例: layout.Decode / DecodeAt / Encode は型引数をつけて呼ぶ（Size[T] は呼ばない定数）（language.md 36 節 — loader の拒否 diag.Layout）
+
+import "std/layout"
+
+@layout
+type H struct {
+    k u16le
+}
+
+func main() {
+    n := layout.Size[H]()
+    println(n)
+}

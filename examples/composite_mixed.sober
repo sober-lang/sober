@@ -1,0 +1,13 @@
+package main
+
+// 負例（composite の欄の照合 — build・check 共有の desugar.CompositeFields）: 位置と名前の混在は拒否
+
+type P struct {
+    x int
+    y int
+}
+
+func main() {
+    p := P{1, y: 2}
+    println(p.x)
+}

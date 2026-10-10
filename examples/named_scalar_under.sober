@@ -1,0 +1,10 @@
+package main
+
+// 負例（language.md 32 節）: named scalar の下地は int / bool に限る
+
+type Name string
+
+func main() {
+    n := Name("a")
+    println(1)
+}

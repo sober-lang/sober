@@ -1,0 +1,11 @@
+package main
+
+// 負例: catch の左辺は (T, error?) を返す呼び出し（language.md 13 節 — loader の拒否。写した後の多値の束縛の数の照合より先に名指す）
+func one(n int) int {
+    return n + 1
+}
+
+func main() {
+    x := one(1) catch 0
+    println(x)
+}

@@ -1,0 +1,63 @@
+package main
+
+// mandelbrot（benchmarks game — docs/bench.md）: n × n の点を 50 回まで反復し、|z|² ≤ 4 を 1 ビットで詰めた PBM（P4）を標準出力へ。
+// 素直な形・逐次（Go の双子 bench/mandelbrot/go と同じアルゴリズム・同じ演算の順）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/strings"
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) > 1 { atoi(args[1]) } else { 200 }
+    mut out := mut []byte{}
+    head := bytes("P4\n" + strings.FormatInt(n) + " " + strings.FormatInt(n) + "\n")
+    for k <- iter.Range(0, len(head)) {
+        out = append(out, head[k])
+    }
+    fn := float(n)
+    for y <- iter.Range(0, n) {
+        ci := 2.0 * float(y) / fn - 1.0
+        mut bits := 0
+        mut bitnum := 0
+        for x <- iter.Range(0, n) {
+            cr := 2.0 * float(x) / fn - 1.5
+            mut zr := 0.0
+            mut zi := 0.0
+            mut tr := 0.0
+            mut ti := 0.0
+            mut i := 0
+            while i < 50 && tr + ti <= 4.0 {
+                zi = 2.0 * zr * zi + ci
+                zr = tr - ti + cr
+                tr = zr * zr
+                ti = zi * zi
+                i += 1
+            }
+            bits = bits << 1
+            if tr + ti <= 4.0 {
+                bits = bits | 1
+            }
+            bitnum += 1
+            if bitnum == 8 {
+                out = append(out, byte(bits))
+                bits = 0
+                bitnum = 0
+            }
+        }
+        if bitnum > 0 {
+            out = append(out, byte(bits << (8 - bitnum)))
+        }
+    }
+    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+}

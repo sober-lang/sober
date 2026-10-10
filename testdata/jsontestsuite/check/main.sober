@@ -1,0 +1,30 @@
+package main
+
+// JSONTestSuite の判定（scripts/jsonsuite.sh）: 標準入力の文書を json.Parse で読み、受理なら「ok」+ 印字の不動点（Parse → Format → Parse → Format が同じ）、
+// 拒否なら「reject <位置> <種類>」を 1 行
+
+import "std/io"
+import "std/json"
+
+func main() {
+    b, rerr := io.ReadStdin()
+    if rerr != nil {
+        println("read-error")
+        return
+    }
+    d, err := json.Parse(b)
+    switch err {
+    case json.InvalidJson{pos, kind}: println("reject", pos, kind)
+    case nil: {
+        s := json.Format(d, json.Root(d))
+        d2, err2 := json.Parse(bytes(s))
+        if err2 != nil {
+            println("roundtrip-reject")
+        } else if json.Format(d2, json.Root(d2)) != s {
+            println("roundtrip-differs")
+        } else {
+            println("ok")
+        }
+    }
+    }
+}

@@ -1,0 +1,2 @@
+sober: load error at examples/par_neg_wrap_handle.sober:19:42: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
+exit=1

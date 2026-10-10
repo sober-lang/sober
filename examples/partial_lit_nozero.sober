@@ -1,0 +1,18 @@
+package main
+
+// 名前つきの部分フィールドの struct リテラルで、ゼロ値を持たない欄（union）を省くのは拒否（lower — reaudit round 6。testdata/irtext/EXCLUDED.txt に記録される）
+
+type U union {
+    A{}
+    B{n int}
+}
+
+type St struct {
+    n int
+    u U
+}
+
+func main() {
+    s := St{n: 1}
+    println(s.n)
+}

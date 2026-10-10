@@ -1,0 +1,2 @@
+sober: load error at examples/named_fn_args_nonames.sober:7:17: named arguments can only be passed to a func declaration or a value of a named function type with parameter names
+exit=1

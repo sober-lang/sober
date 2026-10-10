@@ -1,0 +1,26 @@
+package main
+
+func find(k int) int? {
+    return if k == 7 { 42 } else { nil }
+}
+
+func orZero(v int?) int {
+    return if v != nil { v } else { 0 }
+}
+
+func main() {
+    a := find(7)
+    b := find(1)
+    println(orZero(a), orZero(b))
+    if a != nil {
+        println(a + 1)
+    }
+    if b == nil {
+        println(-1)
+    } else {
+        println(b)
+    }
+    mut c := find(7)
+    c = nil
+    println(orZero(c), if c == nil { 1 } else { 0 })
+}

@@ -1,0 +1,19 @@
+package main
+
+import "testdata/inlrec/lib"
+
+type U struct {
+    s lib.S
+    k int
+}
+
+func llen(u mut U, l int) int {
+    return lib.Llen(mut u.s, l)
+}
+
+func main() {
+    ts := []lib.T{lib.T{xs: []int{7, 8}}}
+    mut u := U{s: lib.Mk(ts), k: 0}
+    println(llen(mut u, 101))
+    println(llen(mut u, 1))
+}

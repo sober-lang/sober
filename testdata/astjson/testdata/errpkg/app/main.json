@@ -1,0 +1,407 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/errpkg/lib",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Mine",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "code",
+      "type_params": [],
+      "params": [
+        {
+          "name": "e",
+          "type": {
+            "k": "name",
+            "name": "error"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 25
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "lib.Bad",
+                        "fields": [
+                          {
+                            "name": "at",
+                            "sub": null,
+                            "tok": 32
+                          }
+                        ],
+                        "tok": 28
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "at",
+                                "tok": 35
+                              },
+                              "field": "x",
+                              "tok": 37
+                            },
+                            "rhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "at",
+                                "tok": 39
+                              },
+                              "field": "y",
+                              "tok": 41
+                            },
+                            "tok": 38
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 27
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Mine",
+                        "fields": [
+                          {
+                            "name": "n",
+                            "sub": null,
+                            "tok": 46
+                          }
+                        ],
+                        "tok": 44
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "int",
+                              "value": 100,
+                              "tok": 49
+                            },
+                            "rhs": {
+                              "k": "ident",
+                              "name": "n",
+                              "tok": 51
+                            },
+                            "tok": 50
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 43
+                  }
+                ],
+                "default": null,
+                "tok": 24
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 57
+      },
+      "sig_end": 22
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 66
+                  },
+                  "field": "Check",
+                  "tok": 68
+                },
+                "args": [
+                  {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 71
+                    },
+                    "tok": 70
+                  }
+                ],
+                "tok": 69
+              }
+            ],
+            "tok": 62
+          },
+          {
+            "k": "bind",
+            "names": [
+              "w",
+              "e2"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 78
+                  },
+                  "field": "Check",
+                  "tok": 80
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 4,
+                    "tok": 82
+                  }
+                ],
+                "tok": 81
+              }
+            ],
+            "tok": 74
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 85
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "v",
+                  "tok": 87
+                },
+                {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 89
+                },
+                {
+                  "k": "if",
+                  "cond": {
+                    "k": "binary",
+                    "op": "!=",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "e",
+                      "tok": 92
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 94
+                    },
+                    "tok": 93
+                  },
+                  "then": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "code",
+                            "tok": 96
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "e",
+                              "tok": 98
+                            }
+                          ],
+                          "tok": 97
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 103
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 91
+                },
+                {
+                  "k": "if",
+                  "cond": {
+                    "k": "binary",
+                    "op": "==",
+                    "lhs": {
+                      "k": "ident",
+                      "name": "e2",
+                      "tok": 107
+                    },
+                    "rhs": {
+                      "k": "nil",
+                      "tok": 109
+                    },
+                    "tok": 108
+                  },
+                  "then": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "code",
+                            "tok": 111
+                          },
+                          "args": [
+                            {
+                              "k": "composite",
+                              "type_name": "Mine",
+                              "elems": [
+                                {
+                                  "key": "n",
+                                  "value": {
+                                    "k": "int",
+                                    "value": 5,
+                                    "tok": 117
+                                  }
+                                }
+                              ],
+                              "tok": 113,
+                              "type_args": []
+                            }
+                          ],
+                          "tok": 112
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "k": "block",
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 123
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 106
+                }
+              ],
+              "tok": 86
+            }
+          }
+        ]
+      },
+      "tok": 58,
+      "bodiless": false,
+      "span": {
+        "start": 57,
+        "end": 129
+      },
+      "sig_end": 61
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,28 @@
+package main
+
+// F-ac の修理（check ⊂ build — 2026-10-04 掃除枠 E）: struct の欄から束縛した `U?`（U は struct）を絞って欄を読む
+// （declOfExpr の欄読みが `U?` の欄の中身の宣言を返す — 仮引数の `U?` の束縛と同じ）
+
+type P struct {
+    x int
+}
+
+type S struct {
+    o P?
+    n int?
+}
+
+func main() {
+    s := S{o: P{x: 3}, n: nil}
+    o := s.o
+    if o != nil {
+        println(o.x)
+    }
+    t := S{o: nil, n: 4}
+    u := t.o
+    if u != nil {
+        println(u.x)
+    } else {
+        println("none")
+    }
+}

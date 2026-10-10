@@ -1,0 +1,48 @@
+package main
+
+import "std/iter"
+
+func main() {
+    mut m := mut map[int]int{3: 30, 1: 10, 2: 20}
+    // 挿入順
+    ks := keys(m)
+    println(len(ks))
+    println(ks[0], ks[1], ks[2])
+    // 削除したキーは列に現れない
+    delete(m, 1)
+    k2 := keys(m)
+    println(len(k2))
+    println(k2[0], k2[1])
+    // 削除 → 再挿入: 元の位置に戻る（墓石のセルを生き返らせる）
+    m[1] = 11
+    m[4] = 40
+    k3 := keys(m)
+    println(k3[0], k3[1], k3[2], k3[3])
+    // スナップショット: 取った後の変更は列に影響しない
+    delete(m, 3)
+    println(len(k3), k3[0])
+    // for k <- m: キーを挿入順に回す（keys(m) の添字ループ）
+    iter.Each(for k <- m yield k, (k) => {
+        println(k)
+    })
+    println(iter.Sum(for k <- m if k > 1 yield k * 100))
+    // 反復中の変更: 列はスナップショットなので回る回数は変わらず、消えたキーは m[k] が nil
+    mut seen := 0
+    iter.Each(for k <- m yield k, (k) => {
+        delete(m, 4)
+        v := m[k]
+        if v != nil {
+            seen += v
+        } else {
+            println(0 - k)
+        }
+    })
+    println(seen)
+    // string キー
+    s := map[string]int{"b": 2, "a": 1}
+    iter.Each(for k <- s yield k, (k) => {
+        println(k)
+    })
+    e := map[int]int{}
+    println(len(keys(e)))
+}

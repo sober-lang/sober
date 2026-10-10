@@ -1,0 +1,447 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$strings",
+      "path": "std/strings",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "fs",
+          "type": {
+            "k": "map_of",
+            "key": {
+              "k": "name",
+              "name": "string"
+            },
+            "value": {
+              "k": "name",
+              "name": "string"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 36
+                },
+                "idx": {
+                  "k": "ident",
+                  "name": "p",
+                  "tok": 38
+                },
+                "tok": 37
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "v",
+                  "tok": 42
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 44
+                },
+                "tok": 43
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 46
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "",
+                              ": ",
+                              " bytes: ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "ident",
+                                "name": "p",
+                                "tok": 48
+                              },
+                              {
+                                "k": "call",
+                                "callee": {
+                                  "k": "ident",
+                                  "name": "len",
+                                  "tok": 48
+                                },
+                                "args": [
+                                  {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "ident",
+                                      "name": "bytes",
+                                      "tok": 48
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "ident",
+                                        "name": "v",
+                                        "tok": 48
+                                      }
+                                    ],
+                                    "tok": 48
+                                  }
+                                ],
+                                "tok": 48
+                              },
+                              {
+                                "k": "ident",
+                                "name": "v",
+                                "tok": 48
+                              }
+                            ]
+                          },
+                          "tok": 48
+                        }
+                      ],
+                      "tok": 47
+                    }
+                  }
+                ]
+              },
+              "else": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 54
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "",
+                              ": (not embedded)"
+                            ],
+                            "holes": [
+                              {
+                                "k": "ident",
+                                "name": "p",
+                                "tok": 56
+                              }
+                            ]
+                          },
+                          "tok": 56
+                        }
+                      ],
+                      "tok": 55
+                    }
+                  }
+                ]
+              },
+              "tok": 41
+            }
+          }
+        ]
+      },
+      "tok": 21,
+      "bodiless": false,
+      "span": {
+        "start": 20,
+        "end": 63
+      },
+      "sig_end": 33
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "fs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "ident",
+                "name": "Files",
+                "tok": 70
+              }
+            ],
+            "tok": 68
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 72
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " files"
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 74
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "fs",
+                            "tok": 74
+                          }
+                        ],
+                        "tok": 74
+                      }
+                    ]
+                  },
+                  "tok": 74
+                }
+              ],
+              "tok": 73
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 77
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 79
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/B.txt",
+                  "tok": 81
+                }
+              ],
+              "tok": 78
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 84
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 86
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/a.txt",
+                  "tok": 88
+                }
+              ],
+              "tok": 85
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 91
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 93
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/deeper/x/c.txt",
+                  "tok": 95
+                }
+              ],
+              "tok": 92
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 98
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 100
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/sub/b.txt",
+                  "tok": 102
+                }
+              ],
+              "tok": 99
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 105
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 107
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/link.txt",
+                  "tok": 109
+                }
+              ],
+              "tok": 106
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 112
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "fs",
+                  "tok": 114
+                },
+                {
+                  "k": "strlit",
+                  "value": "testdata/embed/readme.md",
+                  "tok": 116
+                }
+              ],
+              "tok": 113
+            }
+          }
+        ]
+      },
+      "tok": 64,
+      "bodiless": false,
+      "span": {
+        "start": 63,
+        "end": 121
+      },
+      "sig_end": 67
+    }
+  ],
+  "consts": [
+    {
+      "name": "Files",
+      "expr": {
+        "k": "maplit",
+        "key": {
+          "k": "name",
+          "name": "string"
+        },
+        "value": {
+          "k": "name",
+          "name": "string"
+        },
+        "entries": [],
+        "mut": false,
+        "tok": 12
+      },
+      "tok": 10,
+      "span": {
+        "start": 3,
+        "end": 20
+      }
+    }
+  ]
+}

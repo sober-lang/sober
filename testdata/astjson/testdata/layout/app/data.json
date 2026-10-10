@@ -1,0 +1,134 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    },
+    {
+      "alias": "lay",
+      "path": "std/layout",
+      "tok": 8
+    },
+    {
+      "alias": "w",
+      "path": "testdata/layout/wire",
+      "tok": 12
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "writeData",
+      "type_params": [],
+      "params": [
+        {
+          "name": "out",
+          "type": {
+            "k": "generic",
+            "name": "builder.Builder",
+            "args": [
+              {
+                "k": "name",
+                "name": "byte"
+              }
+            ]
+          },
+          "mutable": true
+        },
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "index",
+                "base": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lay",
+                    "tok": 30
+                  },
+                  "field": "Encode",
+                  "tok": 32
+                },
+                "idx": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 34
+                  },
+                  "field": "Frame",
+                  "tok": 36
+                },
+                "tok": 33
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "out",
+                  "tok": 40
+                },
+                {
+                  "k": "composite",
+                  "type_name": "w.Frame",
+                  "elems": [
+                    {
+                      "key": "kind",
+                      "value": {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 48
+                      }
+                    },
+                    {
+                      "key": "len",
+                      "value": {
+                        "k": "ident",
+                        "name": "n",
+                        "tok": 52
+                      }
+                    },
+                    {
+                      "key": "seq",
+                      "value": {
+                        "k": "int",
+                        "value": 8,
+                        "tok": 56
+                      }
+                    }
+                  ],
+                  "tok": 42,
+                  "type_args": []
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 15,
+      "bodiless": false,
+      "span": {
+        "start": 14,
+        "end": 62
+      },
+      "sig_end": 29
+    }
+  ],
+  "consts": []
+}

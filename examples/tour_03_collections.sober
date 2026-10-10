@@ -1,0 +1,29 @@
+package main
+
+import "std/iter"
+
+// Tour 3: slices, maps, for (docs/guide/tour.md)
+
+func main() int {
+    // Build a slice with mut, then freeze it to pass it around immutably
+    mut xs := mut []int{}
+    for i <- iter.Range(1, 6) {
+        xs = append(xs, i * i)
+    }
+    squares := freeze(xs)
+    println(len(squares), squares[0], squares[4])
+
+    // for ... yield is a lazy producer (Iter) — consume it through a pipe, not a variable
+    println(for v <- squares if v % 2 == 0 yield v |> iter.Sum)
+
+    // map: a lookup is T? (nil when absent)
+    mut ages := mut map[string]int{}
+    ages["ada"] = 36
+    ages["alan"] = 41
+    a := ages["ada"]
+    if a != nil {
+        println("ada is ${a}")
+    }
+    println(ages["grace"] == nil)
+    return 0
+}

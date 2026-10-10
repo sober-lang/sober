@@ -1,0 +1,25 @@
+package testing
+
+// テストの語彙の裏方（.pair/test-design-draft.md T5 / T6）: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が
+// 「部分式を束縛 → 偽なら Fail」に写す。利用者は assert を書く（ここの関数を直接呼ばない）。
+// 値の印字（T6）は総称関数 Show[T] でなくテンプレートが組む補間 `"<式> = ${値}"`（int / bool / string — 補間の型の分岐をそのまま使う）。
+// 総称関数で書けないのは、T = string の Def が region を持つ型引数（積み R3）で拒否されるため — R3 が入ったら Show[T] へ移す
+
+import "std/io"
+import "std/iter"
+
+// AssertFailed は assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Fail が前置で印字する。language.md 27 節）
+type AssertFailed panic
+
+// Fail は assert の失敗: `assert failed: <式>` と部分式の値を 1 行ずつ標準エラーへ書いて panic(AssertFailed{}) する（exit 101 — 27 節の panic の契約。裁定 A3 / A4）
+func Fail(expr string, values []string) {
+    if io.WriteStderr(bytes("assert failed: ${expr}\n")) == nil {
+        for i <- iter.Range(0, len(values)) {
+            // 空の行は印字できない型の値（補間の穴を諦めた行 — loader/assert.sober）
+            if values[i] != "" && io.WriteStderr(bytes("  ${values[i]}\n")) != nil {
+                break
+            }
+        }
+    }
+    panic(AssertFailed{})
+}

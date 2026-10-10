@@ -1,0 +1,232 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "Pt",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "y",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "at",
+            "type": {
+              "k": "name",
+              "name": "Pt"
+            },
+            "tok": 19
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 24
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Check",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 45
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 47
+                  },
+                  "tok": 46
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "k",
+                        "tok": 49
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 53
+                      }
+                    }
+                  ]
+                },
+                "tok": 44
+              },
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 57
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 59
+                  },
+                  "tok": 58
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "nil",
+                        "tok": 61
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "composite",
+                        "type_name": "Bad",
+                        "elems": [
+                          {
+                            "key": "at",
+                            "value": {
+                              "k": "composite",
+                              "type_name": "Pt",
+                              "elems": [
+                                {
+                                  "key": null,
+                                  "value": {
+                                    "k": "ident",
+                                    "name": "k",
+                                    "tok": 71
+                                  }
+                                },
+                                {
+                                  "key": null,
+                                  "value": {
+                                    "k": "binary",
+                                    "op": "*",
+                                    "lhs": {
+                                      "k": "int",
+                                      "value": 2,
+                                      "tok": 73
+                                    },
+                                    "rhs": {
+                                      "k": "ident",
+                                      "name": "k",
+                                      "tok": 75
+                                    },
+                                    "tok": 74
+                                  }
+                                }
+                              ],
+                              "tok": 69,
+                              "type_args": []
+                            }
+                          }
+                        ],
+                        "tok": 65,
+                        "type_args": []
+                      }
+                    }
+                  ]
+                },
+                "tok": 56
+              }
+            ],
+            "tok": 43
+          }
+        ]
+      },
+      "tok": 31,
+      "bodiless": false,
+      "span": {
+        "start": 24,
+        "end": 82
+      },
+      "sig_end": 42
+    }
+  ],
+  "consts": []
+}

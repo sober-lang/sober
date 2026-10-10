@@ -1,0 +1,670 @@
+package lower
+
+// 呼び出しの生成方式（src/lower_inline.zig の写し）: inline 展開（関数型か mut の仮引数を持つ関数 — 呼び出し点に本体を展開する。region は開かない）・
+// 閉包（ラムダ — 定義時の可視範囲と return の行き先を閉じ込める）・関数値（funcaddr / call.indirect・持ち上げたラムダ）。
+// 名前の可視範囲は鎖 st.chain（スコープ番号の区間の列）。inline 展開は空の鎖 + 自分の区間で開き、ラムダは定義時の鎖（凍結）+ 自分の区間で開く。
+// return の行き先は st.rets の先頭（-1 = 実体の関数、他は InlineCtx）
+
+import "desugar"
+import "ast"
+import "std/table"
+
+// InlineCtx（展開中の inline 関数）
+const IC_RESULTS = 0  // 結果の型の列
+const IC_SLOT = 1     // 全結果の語を並べたスロット（呼び手はここから読む）
+const IC_BASE = 2     // 展開範囲の最外スコープの番号（return はここから内側の defer を展開する）
+const IC_DEPTH = 3    // 展開入口の深度（return が戻す）
+const IC_END = 4      // 末尾のブロック
+const ICSZ = 5
+
+// Closure はラムダ引数（st.closures の要素 — 添字で指す）
+type Closure struct {
+    lambda int
+    ft int        // FnType [params, results]
+    pkg int
+    chain int     // 定義時の可視範囲（凍結 — 開いた上限を定義時のスコープ数で閉じる）
+    ret int       // 定義時の return の行き先
+    inl int       // 定義時に展開中だった inline 関数の名前の列
+    env int       // 定義時の型環境
+    probe int     // 型だけを取る試し生成の番兵（forIterType）: yield の値の型を記録する 1 語の置き場（-1 = 番兵でない）
+}
+
+// cloAt は閉包 c の記録（非ジェネリックの包み — F-10）
+func cloAt(st mut St, c int) Closure {
+    return table.Get(mut st.closures, c)
+}
+
+const LClosure = 2
+
+// freezeChain は今の鎖を、開いた上限を現在のスコープ数で閉じて複製する
+func freezeChain(st mut St) int {
+    ch := st.chain
+    ns := st.nscope
+    n := hget(mut st, ch)
+    out := listN(mut st, n)
+    mut i := 0
+    while i < n / 2 {
+        hset(mut st, out + 1 + i * 2, hget(mut st, ch + 1 + i * 2))
+        hi := hget(mut st, ch + 2 + i * 2)
+        hset(mut st, out + 2 + i * 2, if hi < ns { hi } else { ns })
+        i += 1
+    }
+    return out
+}
+
+// enter は展開の文脈（鎖 = views + 自分の区間・package・return の行き先・ループの床・inline 列（-1 は据え置き））に差し替え、戻し先を返す
+func enter(st mut St, views int, pk int, env int, ctx int, inl int) int {
+    saved := rec4(mut st, st.chain, st.curPkg, st.inlining, st.tenv)
+    st.tenv = env
+    n := hget(mut st, views)
+    ch := listN(mut st, n + 2)
+    mut i := 0
+    while i < n {
+        hset(mut st, ch + 1 + i, hget(mut st, views + 1 + i))
+        i += 1
+    }
+    hset(mut st, ch + 1 + n, st.nscope)
+    hset(mut st, ch + 2 + n, VOPEN)
+    st.chain = ch
+    st.curPkg = pk
+    hv1 := rec4(mut st, st.rets, ctx, 0, 0)
+    st.rets = hv1
+    hv2 := rec4(mut st, st.floors, st.nloop, 0, 0)
+    st.floors = hv2
+    if inl >= 0 {
+        st.inlining = inl
+    }
+    return saved
+}
+
+func leave(st mut St, saved int) {
+    st.chain = hget(mut st, saved)
+    st.curPkg = hget(mut st, saved + 1)
+    st.inlining = hget(mut st, saved + 2)
+    st.tenv = hget(mut st, saved + 3)
+    st.rets = hget(mut st, st.rets)
+    st.floors = hget(mut st, st.floors)
+}
+
+// declListHas / declListAdd は展開中の関数の宣言の節の列（[n, 節…]）。名前でなく宣言で引く — 別の package の同名の関数を入れ子に
+// 展開するのは再帰でない（lower.llen → desugar.Llen → desugar.llen を名前で引くと再帰と取り違えて拒否していた — S-4 M1）
+func declListHas(st mut St, l int, decl int) bool {
+    mut i := 0
+    while i < hget(mut st, l) {
+        if hget(mut st, l + 1 + i) == decl {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+func declListAdd(st mut St, l int, decl int) int {
+    n := hget(mut st, l)
+    out := listN(mut st, n + 1)
+    mut i := 0
+    while i < n {
+        hset(mut st, out + 1 + i, hget(mut st, l + 1 + i))
+        i += 1
+    }
+    hset(mut st, out + 1 + n, decl)
+    return out
+}
+
+// mutArgCell は mut 引数の実引数: 呼び手の mut ローカル `mut x` のスロットそのもの（名前の項）。欄の経路 `mut x.f.g`（F-17 案 2α で解禁）は
+// 欄のアドレスを持つ合成の項 [0, 0, LCell, 欄の型, 欄のアドレス]（代入の行き先と同じ target で取る）
+func mutArgCell(st mut St, a int, tok int) (int, error?) {
+    if kindOf(mut st, a) != ast.EMutArg {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    parts := desugar.DotParts(mut st.d, nodeAt(mut st, a).a)
+    if llen(mut st, parts) > 1 {
+        at := tokOf(mut st, a)
+        mut e := node(mut st, ast.EIdent, at, lat(mut st, parts, 0), 0, 0, 0)
+        mut i := 1
+        while i < llen(mut st, parts) {
+            e = node(mut st, ast.ESelector, at, e, lat(mut st, parts, i), 0, 0)
+            i += 1
+        }
+        x := target(mut st, e, at)?
+        if x.t < 0 {
+            return 0, LowerFail{k: KMismatch, tok: at}
+        }
+        c := recN(mut st, 5)
+        hset(mut st, c + 2, LCell)
+        hset(mut st, c + 3, x.t)
+        hset(mut st, c + 4, x.v)
+        return c, nil
+    }
+    l := lookup(mut st, nodeAt(mut st, a).a)
+    if l < 0 {
+        return 0, LowerFail{k: KUndefined, tok: tokOf(mut st, a)}
+    }
+    if hget(mut st, l + 2) != LCell {
+        return 0, LowerFail{k: KMismatch, tok: tokOf(mut st, a)}
+    }
+    return l, nil
+}
+
+// closureArg は関数型の引数位置に書ける形: ラムダ（閉包にする）・閉包に束縛された名前（転送。型は一致が要る）。for 式は未対応
+func closureArg(st mut St, a int, ft int, tok int) (int, error?) {
+    k := kindOf(mut st, a)
+    if k == ast.ELambda {
+        return makeClosure(mut st, a, ft)
+    }
+    if k == ast.EFor {
+        lowered := lowerFor(mut st, a)?
+        return makeClosure(mut st, lowered, ft)
+    }
+    if k == ast.EIdent {
+        l := lookup(mut st, nodeAt(mut st, a).a)
+        if l >= 0 && hget(mut st, l + 2) == LClosure {
+            if !fnTypeEql(mut st, cloAt(mut st, hget(mut st, l + 4)).ft, ft) {
+                return 0, LowerFail{k: KMismatch, tok: tok}
+            }
+            return hget(mut st, l + 4), nil
+        }
+    }
+    return 0, LowerFail{k: KMismatch, tok: tok}
+}
+
+func makeClosure(st mut St, lam int, ft int) (int, error?) {
+    tok := tokOf(mut st, lam)
+    ps := nodeAt(mut st, lam).a
+    fps := hget(mut st, ft)
+    if llen(mut st, ps) != llen(mut st, fps) {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    mut i := 0
+    while i < llen(mut st, ps) {
+        te := nodeAt(mut st, lat(mut st, ps, i)).b
+        if te >= 0 {
+            t := resolveType(mut st, st.curPkg, te, false)?
+            if !tEql(mut st, t, lat(mut st, fps, i)) {
+                return 0, LowerFail{k: KMismatch, tok: tok}
+            }
+        }
+        i += 1
+    }
+    ch := freezeChain(mut st)
+    c := table.Len(mut st.closures)
+    table.Push(mut st.closures, Closure{lambda: lam, ft: ft, pkg: st.curPkg, chain: ch, ret: hget(mut st, st.rets + 1), inl: st.inlining, env: st.tenv, probe: -1})
+    return c, nil
+}
+
+// bindArg は展開の引数 1 つを束縛の Arg（種類, 型, 値）にする（mut は呼び手のセルの別名、関数型は閉包、他は評価してコピー）。到達しなければ種類 -1
+func bindArg(st mut St, a int, pw int, mutable bool, tok int) (Arg, error?) {
+    if mutable {
+        l := mutArgCell(mut st, a, tok)?
+        if !tEql(mut st, hget(mut st, l + 3), pw) {
+            return Arg{}, LowerFail{k: KMismatch, tok: tok}
+        }
+        return Arg{k: LCell, t: hget(mut st, l + 3), v: hget(mut st, l + 4)}, nil
+    }
+    if isTag(mut st, pw, TFunc) {
+        c := closureArg(mut st, a, hget(mut st, pw + 1), tok)?
+        return Arg{k: LClosure, t: pw, v: c}, nil
+    }
+    x := exprExpecting(mut st, a, pw, tok)?
+    if isTag(mut st, x.t, TNever) {
+        return Arg{k: -1, t: 0, v: 0}, nil
+    }
+    return Arg{k: LVal, t: x.t, v: copyVal(mut st, x.t, x.v)}, nil
+}
+
+// inlineCall は関数型か mut の仮引数を持つ関数（宣言 decl・package pk・署名）の呼び出し: 引数を呼び手の文脈で束縛し、callee の本体を新しい可視範囲で展開する
+// body_env: ジェネリック inline の型環境（-2 なら呼び手の型環境のまま）
+func inlineCall(st mut St, decl int, pk int, params int, results int, args int, tok int, body_env int) (int, error?) {
+    if declListHas(mut st, st.inlining, decl) {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    np := llen(mut st, params)
+    if llen(mut st, args) != np {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    ps := nodeAt(mut st, decl).c
+    bs := listN(mut st, np * 3)
+    mut i := 0
+    while i < np {
+        ba := bindArg(mut st, lat(mut st, args, i), lat(mut st, params, i), nodeAt(mut st, lat(mut st, ps, i)).c != 0, tok)?
+        if ba.k < 0 {
+            return -1, nil
+        }
+        hset(mut st, bs + 1 + i * 3, ba.k)
+        hset(mut st, bs + 2 + i * 3, ba.t)
+        hset(mut st, bs + 3 + i * 3, ba.v)
+        i += 1
+    }
+    mut total := 0
+    i = 0
+    while i < llen(mut st, results) {
+        total += tWords(mut st, lat(mut st, results, i))
+        i += 1
+    }
+    ctx := recN(mut st, ICSZ)
+    hset(mut st, ctx + IC_RESULTS, results)
+    hv1 := newSlotAddr(mut st, if total > 1 { total } else { 1 })
+    hset(mut st, ctx + IC_SLOT, hv1)
+    hset(mut st, ctx + IC_BASE, st.nscope)
+    hv2 := regionDepth(mut st)
+    hset(mut st, ctx + IC_DEPTH, hv2)
+    hv3 := newBlock(mut st)
+    hset(mut st, ctx + IC_END, hv3)
+    saved := enter(mut st, list0(mut st), pk, if body_env == -2 { st.tenv } else { body_env }, ctx, -1)
+    hv4 := declListAdd(mut st, st.inlining, decl)
+    st.inlining = hv4
+    pushScope(mut st)
+    i = 0
+    while i < np {
+        declareNew(mut st, nodeAt(mut st, lat(mut st, ps, i)).a, hget(mut st, bs + 1 + i * 3), hget(mut st, bs + 2 + i * 3), hget(mut st, bs + 3 + i * 3), tok)?
+        i += 1
+    }
+    stmts(mut st, nodeAt(mut st, nodeAt(mut st, decl).e).a)?
+    if cur(mut st) >= 0 {
+        if llen(mut st, results) != 0 {
+            return 0, LowerFail{k: KMissing, tok: tokOf(mut st, decl)}
+        }
+        runDefers(mut st, hget(mut st, ctx + IC_BASE))?
+        if cur(mut st) >= 0 {
+            br(mut st, hget(mut st, ctx + IC_END), -1)
+        }
+    }
+    popScope(mut st)
+    leave(mut st, saved)
+    end := hget(mut st, ctx + IC_END)
+    if hget(mut st, end + B_PREDS) == 0 {
+        setCur(mut st, -1)
+        return -1, nil
+    }
+    setCur(mut st, end)
+    nr := llen(mut st, results)
+    out := listN(mut st, nr * 2)
+    hset(mut st, out, nr)
+    mut off := 0
+    i = 0
+    while i < nr {
+        t := lat(mut st, results, i)
+        hset(mut st, out + 1 + i * 2, t)
+        hv5 := loadVal(mut st, hget(mut st, ctx + IC_SLOT), off, t)
+        hset(mut st, out + 2 + i * 2, hv5)
+        off += tWords(mut st, t)
+        i += 1
+    }
+    return out, nil
+}
+
+// inlineExit は inline 展開中の return / `?` のエラー側の後半: 展開範囲の defer → 結果の境界コピー（呼び出し点の深度へ）→ 展開入口の深度 → 末尾へ（値は書き済み）
+func inlineExit(st mut St, ctx int, tok int) error? {
+    runDefers(mut st, hget(mut st, ctx + IC_BASE))?
+    if cur(mut st) < 0 {
+        return nil
+    }
+    rs := hget(mut st, ctx + IC_RESULTS)
+    mut off := 0
+    mut i := 0
+    while i < llen(mut st, rs) {
+        t := lat(mut st, rs, i)
+        relocateTo(mut st, hget(mut st, ctx + IC_SLOT), off, t, hget(mut st, ctx + IC_DEPTH))
+        off += tWords(mut st, t)
+        i += 1
+    }
+    regionSetDepth(mut st, hget(mut st, ctx + IC_DEPTH))
+    br(mut st, hget(mut st, ctx + IC_END), -1)
+    return nil
+}
+
+// lambdaCall はラムダの呼び出し: 引数を評価して束縛し、定義時の可視範囲 + 引数スコープで本体を展開する
+func lambdaCall(st mut St, c int, args int, tok int) (int, error?) {
+    cr := cloAt(mut st, c)
+    seen := cr.probe
+    if seen >= 0 {
+        if llen(mut st, args) != 1 {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        y := expr(mut st, lat(mut st, args, 0))?
+        if isTag(mut st, y.t, TNever) {
+            return -1, nil
+        }
+        if hget(mut st, seen) >= 0 {
+            if !tEql(mut st, hget(mut st, seen), y.t) {
+                return 0, LowerFail{k: KMismatch, tok: tok}
+            }
+        } else {
+            hset(mut st, seen, y.t)
+        }
+        return list0(mut st), nil
+    }
+    ft := cr.ft
+    fps := hget(mut st, ft)
+    frs := hget(mut st, ft + 1)
+    np := llen(mut st, fps)
+    if llen(mut st, args) != np {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    if llen(mut st, frs) >= 2 {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    bs := listN(mut st, np * 3)
+    mut i := 0
+    while i < np {
+        ba := bindArg(mut st, lat(mut st, args, i), lat(mut st, fps, i), false, tok)?
+        if ba.k < 0 {
+            return -1, nil
+        }
+        hset(mut st, bs + 1 + i * 3, ba.k)
+        hset(mut st, bs + 2 + i * 3, ba.t)
+        hset(mut st, bs + 3 + i * 3, ba.v)
+        i += 1
+    }
+    lam := cr.lambda
+    saved := enter(mut st, cr.chain, cr.pkg, cr.env, cr.ret, cr.inl)
+    pushScope(mut st)
+    lps := nodeAt(mut st, lam).a
+    i = 0
+    while i < np {
+        declareNew(mut st, nodeAt(mut st, lat(mut st, lps, i)).a, hget(mut st, bs + 1 + i * 3), hget(mut st, bs + 2 + i * 3), hget(mut st, bs + 3 + i * 3), tok)?
+        i += 1
+    }
+    body := nodeAt(mut st, lam).b
+    bk := kindOf(mut st, body)
+    mut vt := -1
+    mut vv := 0
+    // 文形 for の本体（節の c = forStmt の記録 + 1）: 床の上にループを開く。continue → 本体の末尾（cb）、break → for の後ろ
+    loop := nodeAt(mut st, lam).c
+    mut cb := -1
+    mut cdepth := 0
+    if loop > 0 {
+        lr := loop - 1
+        cb = newBlock(mut st)
+        cdepth = regionDepth(mut st)
+        hv0 := loopRec(mut st, cb, hget(mut st, lr), st.nscope, hget(mut st, lr + 2))
+        st.loop = hv0
+        st.nloop = st.nloop + 1
+    }
+    // 本体が呼び出し / パイプなら値なしも許す
+    if bk == ast.ECall || bk == ast.EPipe {
+        r := evalMulti(mut st, body)?
+        if r < 0 {
+            vt = tNever(mut st)
+        } else if hget(mut st, r) > 1 {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        } else if hget(mut st, r) == 0 {
+            vt = tNone(mut st)
+        } else {
+            vt = hget(mut st, r + 1)
+            vv = hget(mut st, r + 2)
+        }
+    } else if bk == ast.EBlock {
+        // 本体の `{ }` は scope だけ（region は開かない — 脱糖器の lambdaCall の scoped と同じ。式位置の `{ }` の blockValue ではない）
+        x1 := armValue(mut st, nodeAt(mut st, body).a)?
+        vt = x1.t
+        vv = x1.v
+    } else {
+        x1 := expr(mut st, body)?
+        vt = x1.t
+        vv = x1.v
+    }
+    if loop > 0 {
+        st.nloop = st.nloop - 1
+        st.loop = loopAt(mut st, st.loop).prev
+        if cur(mut st) >= 0 {
+            br(mut st, cb, -1)
+        }
+        if hget(mut st, cb + B_PREDS) == 0 {
+            setCur(mut st, -1)
+            vt = tNever(mut st)
+        } else {
+            setCur(mut st, cb)
+            regionSetDepth(mut st, cdepth)
+            vt = tNone(mut st)
+        }
+    }
+    if !isTag(mut st, vt, TNever) {
+        runDefers(mut st, st.nscope - 1)?
+        if cur(mut st) < 0 {
+            vt = tNever(mut st)
+        }
+    }
+    popScope(mut st)
+    leave(mut st, saved)
+    if isTag(mut st, vt, TNever) {
+        return -1, nil
+    }
+    if llen(mut st, frs) == 0 {
+        return list0(mut st), nil
+    }
+    if !tEql(mut st, vt, lat(mut st, frs, 0)) {
+        return 0, LowerFail{k: KMismatch, tok: tokOf(mut st, lam)}
+    }
+    r := list2(mut st, vt, vv)
+    hset(mut st, r, 1)
+    return r, nil
+}
+
+// ── 関数値 ──
+
+// fnValue は名前付き関数の参照 = 関数値（コードアドレス 1 語）
+func fnValue(st mut St, fi int) (int, int) {
+    ft := rec4(mut st, infoAt(mut st, fi).params, infoAt(mut st, fi).results, 0, 0)
+    t := rec4(mut st, TFnv, ft, 0, 0)
+    return t, funcaddr(mut st, infoAt(mut st, fi).ir)
+}
+
+// liftLambda は関数値が期待される位置（struct の関数型フィールド）のラムダ → 匿名関数 lambda#N（作業列で下ろす）のコードアドレス。
+// 本体の値は合成した return。外側のローカルは見えない（別の関数として下ろす）
+func liftLambda(st mut St, lam int, ft int, tok int) (Val, error?) {
+    ps := nodeAt(mut st, lam).a
+    fps := hget(mut st, ft)
+    np := llen(mut st, ps)
+    if np != llen(mut st, fps) {
+        return Val{}, LowerFail{k: KMismatch, tok: tok}
+    }
+    mut i := 0
+    while i < np {
+        te := nodeAt(mut st, lat(mut st, ps, i)).b
+        if te >= 0 {
+            t := resolveType(mut st, st.curPkg, te, false)?
+            if !tEql(mut st, t, lat(mut st, fps, i)) {
+                return Val{}, LowerFail{k: KMismatch, tok: tok}
+            }
+        }
+        i += 1
+    }
+    // 辞書 const のラムダは単相・文脈固定なので、参照点が何箇所でも匿名関数は 1 本
+    if st.inDict != 0 {
+        mut x := st.dlifts
+        while x >= 0 {
+            if hget(mut st, x + 1) == lam {
+                return Val{t: rec4(mut st, TFnv, ft, 0, 0), v: funcaddr(mut st, hget(mut st, x + 2))}, nil
+            }
+            x = hget(mut st, x)
+        }
+    }
+    // 合成の宣言: 仮引数 KParam [name, 型（使わない）, mutable = 0]、本体 = 値の文 1 つ（結果があれば return）
+    params := listN(mut st, np)
+    i = 0
+    while i < np {
+        hv1 := node(mut st, ast.KParam, tok, nodeAt(mut st, lat(mut st, ps, i)).a, -1, 0, 0)
+        hset(mut st, params + 1 + i, hv1)
+        i += 1
+    }
+    body := nodeAt(mut st, lam).b
+    s := if llen(mut st, hget(mut st, ft + 1)) == 0 { node(mut st, ast.SExpr, tok, body, 0, 0, 0) } else { node(mut st, ast.SRet, tok, list1(mut st, body), 0, 0, 0) }
+    blk := node(mut st, ast.KBlock, tok, list1(mut st, s), 0, 0, 0)
+    dname := strLit(mut st, "lambda")
+    dtps := list0(mut st)
+    dres := list0(mut st)
+    decl := desugar.SynNode(mut st.d, ast.Node{kind: ast.KFuncDecl, tok: tok, a: dname, b: dtps, c: params, d: dres, e: blk, f: -1})
+    n := st.nlambda
+    st.nlambda = n + 1
+    key := strCat(mut st, strLit(mut st, "lambda#"), decimal(mut st, n))
+    fi := newFuncSig(mut st, key, decl, st.curPkg, hget(mut st, ft), hget(mut st, ft + 1), -1, st.tenv)
+    if st.inDict != 0 {
+        hv9 := rec4(mut st, st.dlifts, lam, infoAt(mut st, fi).ir, 0)
+        st.dlifts = hv9
+    }
+    return Val{t: rec4(mut st, TFnv, ft, 0, 0), v: funcaddr(mut st, infoAt(mut st, fi).ir)}, nil
+}
+
+// ── for 式（src/forexpand.zig の F1 脱糖 — 消費点での融合展開）──
+
+// lowerFor は for 式 → Iter[T] 型のラムダ `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`。
+// GEN は生成元が slice なら std/iter.Slice（予約参照名 iter#）、Iter の閉包（関数型の引数に束縛された名前）なら src 自身の呼び出し
+func lowerFor(st mut St, fe int) (int, error?) {
+    gen := forGen(mut st, fe)?
+    return forLambda(mut st, strLit(mut st, "yield"), gen, tokOf(mut st, fe)), nil
+}
+
+// isForStmt は文形の for か（文の位置に置いたブロック形 — language.md 7 節。desugar.isForStmt と同じ判定）
+func isForStmt(st mut St, e int) bool {
+    return kindOf(mut st, e) == ast.EFor && nodeAt(mut st, e).b == 1
+}
+
+// callGenFn は呼び出し形の生成元（`x <- iter.Range(0, n)`）の関数表の添字: 名前の付いた関数の呼び出しで、仮引数が実引数より
+// 1 つ多く、最後の仮引数が関数型（desugar.isCallGen と同じ判定）。当たらなければ -1
+func callGenFn(st mut St, src int) int {
+    if kindOf(mut st, src) != ast.ECall {
+        return -1
+    }
+    callee := nodeAt(mut st, src).a
+    ck := kindOf(mut st, callee)
+    mut fi := -1
+    if ck == ast.EIdent {
+        name := nodeAt(mut st, callee).a
+        if lookup(mut st, name) >= 0 {
+            return -1
+        }
+        fi = findFnIn(mut st, st.curPkg, name, 0, dat(mut st, name))
+    } else if ck == ast.ESelector {
+        base := nodeAt(mut st, callee).a
+        if kindOf(mut st, base) != ast.EIdent || lookup(mut st, nodeAt(mut st, base).a) >= 0 {
+            return -1
+        }
+        bn := nodeAt(mut st, base).a
+        ip := importOf(mut st, st.curPkg, bn, 0, dat(mut st, bn))
+        if ip < 0 {
+            return -1
+        }
+        field := nodeAt(mut st, callee).b
+        fi = findFnIn(mut st, ip, field, 0, dat(mut st, field))
+    }
+    if fi < 0 {
+        return -1
+    }
+    ps := fnParams(mut st, fi)
+    np := llen(mut st, ps)
+    if np != llen(mut st, nodeAt(mut st, src).b) + 1 || kindOf(mut st, nodeAt(mut st, lat(mut st, ps, np - 1)).b) != ast.TFunc {
+        return -1
+    }
+    return fi
+}
+
+// forGen は for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（文形 for はこれを文として下ろす）
+func forGen(st mut St, fe int) (int, error?) {
+    tok := tokOf(mut st, fe)
+    gens := nodeAt(mut st, fe).a
+    if llen(mut st, gens) != 1 {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    g := lat(mut st, gens, 0)
+    if llen(mut st, nodeAt(mut st, g).a) != 1 {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    src := nodeAt(mut st, g).b
+    mut is_closure := false
+    if kindOf(mut st, src) == ast.EIdent {
+        l := lookup(mut st, nodeAt(mut st, src).a)
+        is_closure = l >= 0 && hget(mut st, l + 2) == LClosure
+    }
+    gtok := tokOf(mut st, g)
+    // k の本体: ガードを外側から if で包む
+    mut inner := 0
+    if nodeAt(mut st, fe).b == 0 {
+        inner = yieldCall(mut st, nodeAt(mut st, fe).c, tok)
+    } else {
+        inner = node(mut st, ast.EBlock, tok, nodeAt(mut st, fe).c, 0, 0, 0)
+    }
+    guards := nodeAt(mut st, g).c
+    mut i := llen(mut st, guards)
+    while i > 0 {
+        i -= 1
+        th := node(mut st, ast.KBlock, gtok, list1(mut st, node(mut st, ast.SExpr, gtok, inner, 0, 0, 0)), 0, 0, 0)
+        inner = node(mut st, ast.EIf, gtok, lat(mut st, guards, i), th, -1, 0)
+    }
+    k := forLambda(mut st, lat(mut st, nodeAt(mut st, g).a, 0), inner, gtok)
+    mut gen := 0
+    if is_closure {
+        gen = node(mut st, ast.ECall, gtok, src, list1(mut st, k), 0, 0)
+    } else if callGenFn(mut st, src) >= 0 {
+        sargs := nodeAt(mut st, src).b
+        na := llen(mut st, sargs)
+        args := listN(mut st, na + 1)
+        mut j := 0
+        while j < na {
+            hset(mut st, args + 1 + j, lat(mut st, sargs, j))
+            j += 1
+        }
+        hset(mut st, args + 1 + na, k)
+        gen = node(mut st, ast.ECall, gtok, nodeAt(mut st, src).a, args, 0, 0)
+    } else {
+        bs := node(mut st, ast.EIdent, gtok, strLit(mut st, "iter#"), 0, 0, 0)
+        callee := node(mut st, ast.ESelector, gtok, bs, strLit(mut st, "Slice"), 0, 0)
+        // map の生成元はキーを回す（keysm の段 — `iter#.Slice(keys(src), k)`）。型は試し生成で取り、IR は巻き戻す（forIterType と同じ方式）
+        mk := mark(mut st)
+        p := expr(mut st, src)?
+        rollback(mut st, mk)
+        mut gsrc := src
+        if isTag(mut st, p.t, TMap) {
+            kc := node(mut st, ast.EIdent, gtok, strLit(mut st, "keys"), 0, 0, 0)
+            gsrc = node(mut st, ast.ECall, gtok, kc, list1(mut st, src), 0, 0)
+        }
+        gen = node(mut st, ast.ECall, gtok, callee, list2(mut st, gsrc, k), 0, 0)
+    }
+    return gen, nil
+}
+
+// yieldCall は `yield(v)` の呼び出し式
+func yieldCall(st mut St, v int, tok int) int {
+    callee := node(mut st, ast.EIdent, tok, strLit(mut st, "yield"), 0, 0, 0)
+    return node(mut st, ast.ECall, tok, callee, list1(mut st, v), 0, 0)
+}
+
+// forLambda は 1 引数・型注釈なし・本体ブロックのラムダ（本体が既にブロックならそのまま）
+func forLambda(st mut St, pname int, body int, tok int) int {
+    ps := list1(mut st, node(mut st, ast.KLParam, tok, pname, -1, 0, 0))
+    blk := if kindOf(mut st, body) == ast.EBlock { body } else { node(mut st, ast.EBlock, tok, list1(mut st, node(mut st, ast.SExpr, tok, body, 0, 0, 0)), 0, 0, 0) }
+    return node(mut st, ast.ELambda, tok, ps, blk, 0, 0)
+}
+
+// forIterType は for 式の型 = Iter[T]（func(func(T))）。T は yield の値の型で、書き換えたラムダの本体を試し生成して取る
+// （`yield` を番兵の閉包に束縛し、生成した IR は rollback で巻き戻す）。生成元が閉包なら -1
+func forIterType(st mut St, fe int) (int, error?) {
+    g := lat(mut st, nodeAt(mut st, fe).a, 0)
+    src := nodeAt(mut st, g).b
+    if kindOf(mut st, src) == ast.EIdent {
+        l := lookup(mut st, nodeAt(mut st, src).a)
+        if l >= 0 && hget(mut st, l + 2) == LClosure {
+            return -1, nil
+        }
+    }
+    lowered := lowerFor(mut st, fe)?
+    seen := rec4(mut st, -1, 0, 0, 0)
+    dummy := rec4(mut st, list0(mut st), list0(mut st), 0, 0)
+    ch := list0(mut st)
+    inl := list0(mut st)
+    probe := table.Len(mut st.closures)
+    table.Push(mut st.closures, Closure{lambda: lowered, ft: dummy, pkg: st.curPkg, chain: ch, ret: hget(mut st, st.rets + 1), inl: inl, env: st.tenv, probe: seen})
+    mk := mark(mut st)
+    pushScope(mut st)
+    declare(mut st, strLit(mut st, "yield"), LClosure, rec4(mut st, TFunc, dummy, 0, 0), probe)
+    expr(mut st, nodeAt(mut st, lowered).b)?
+    popScope(mut st)
+    rollback(mut st, mk)
+    y := hget(mut st, seen)
+    if y < 0 {
+        return -1, nil
+    }
+    k := rec4(mut st, list1(mut st, y), list0(mut st), 0, 0)
+    it := rec4(mut st, list1(mut st, rec4(mut st, TFunc, k, 0, 0)), list0(mut st), 0, 0)
+    return rec4(mut st, TFunc, it, 0, 0), nil
+}

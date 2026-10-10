@@ -1,0 +1,25 @@
+package main
+
+func work() int {
+    defer println(1)
+    {
+        defer println(2)
+        println(3)
+    }
+    mut i := 0
+    while i < 2 {
+        defer println(10 + i)
+        i += 1
+        if i == 1 {
+            continue
+        }
+    }
+    return {
+        defer println(4)
+        5
+    }
+}
+
+func main() {
+    println(work())
+}

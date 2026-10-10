@@ -1,0 +1,902 @@
+package lower
+
+// 設計整合パス（S-3.5 — `sober build --passes`）: 自然な書き方の展開結果から明らかな無駄だけを消す IR → IR のパス。意味は変えない。
+// 掛ける位置 = lower の組み立ての後、印字 / rtlower の前（S-1 のスロットの使い回しと同じ境界の手前）。既定の `--emit=ir|ll` には掛けない
+// （黄金と Zig ≡ Sober の照合は掛けない出力で見る）。まずモジュール全体に:
+//   P0 region を使わない関数の出入りの除去: 確保（region.alloc / bump / relocate）をせず、深度の値を深度の復元にしか使わず、間接呼び出しをせず、
+//      呼ぶ関数がすべて同じ条件を満たす関数は、region.enter と region.setdepth を消す（深度の値は P3 が消す）。region を開いても何も積まないので
+//      観測できない。判定は悲観的な不動点（再帰の輪は満たさない — 再帰は呼び出しごとに深度を 1 段使い、上限 1023 段の exit 102 の契約を保つ。27 節）
+//      — 読み口の小さな純粋関数（区間の判定・添字の取り出し）の呼び出しごとの region の出入りが S-4 で 1,000 万回単位になった（report-35）
+//   P0' 小さな関数の展開: P0 を満たし、ブロックが 1 つ（分岐なし）・呼び出しなし・スロットなし・syscall なしの関数の呼び出しを、本体の命令の写しに
+//      置き換える（「小さい」は構造だけで決める — 命令数の閾値は置かない。ブロックの分割が要らないので変換は命令の差し込みだけ）。呼び出しの結果の値は
+//      戻り値を作る命令の結果にする（戻り値が引数そのものなら `add x, 0` を置き P2 が付け替える）。展開した関数の本体は残す
+// 次に関数ごとに次の順:
+//   P1 深度の冗長な復元: `region.setdepth %v` を、今の深度が %v と等しいと分かるとき消す（inline 展開の出口の復元の大半）
+//   P2 定数畳み込み: 定数どうしの add / sub / mul / and / or / xor / 比較 → const、恒等（x * 1・x + 0・x - 0・x | 0・x ^ 0）→ x へ付け替え
+//   P3 死んだ純粋命令の除去（使われない const・算術・比較・load・gep・ptoi / itop・slotaddr・globaladdr・funcaddr・region.depth）
+//   P4 空ブロックの短絡: 引数も命令も無く `br bY`（引数なし）だけのブロックを飛ばし、到達しないブロックを消す（出口で前任数を数え直す）
+//   最後に値とブロックの番号を密に振り直す（テキスト形式の要求 — ir_parse）
+// UB を持ち込まない線: div / rem は畳まない・消さない（ゼロ除算の panic）。store・call・syscall・region の op（setdepth は P1 の条件のときだけ）・終端は触らない。
+// P1 の根拠: 深度を変える op は region.enter と region.setdepth だけで、呼ばれた関数は入口の深度に戻して帰る（funcExit）。
+// 深度の「版」: 値 %d = region.depth は定義点の深度の版を持つ。enter と合流（前任の版が揃わない・後ろから入る辺がある）は新しい版。
+// setdepth %v の後の版は %v の版（知らない値なら新しい版）。setdepth %v は「今の版 = %v の版」のとき冗長
+
+import "std/iter"
+import "std/table"
+
+// 値ごとの作業域（st.optw — 1 値 OW 語）
+const OW = 5
+const OW_K = 0   // 定数か（0 / 1）
+const OW_C = 1   // 定数の値
+const OW_AL = 2  // 付け替え先（-1 = なし）
+const OW_USE = 3 // 使われる数
+const OW_VER = 4 // 深度の版（-1 = 深度の値でない）/ 振り直し後の番号（最後の段で使い回す）
+
+// ブロックごとの作業域（st.optb — 1 ブロック OB 語、B_ID で引く）
+const OB = 5
+const OB_IN = 0   // 入口の版の候補（-1 = まだ、-2 = 揃わない）
+const OB_LATE = 1 // 後ろの辺（逆後順で自分以前のブロックから入る辺 = ループの戻り）があるか
+const OB_FWD = 2  // P4 の飛び先（-1 = 飛ばさない）
+const OB_RPO = 3  // 逆後順の位置（-1 = 入口から届かない）
+const OB_VIS = 4  // 深さ優先の訪問の印
+
+const OpDead = 0
+
+// optimize はモジュールの全関数に設計整合パスを掛ける
+func optimize(st mut St) {
+    optRegionFree(mut st)
+    optInline(mut st)
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            // 関数ごとの作業域を捨てる（mut 引数の関数は region 透過 — 26 節。包まないと全関数の分がこのループに積もる。仕上げ便）
+            _ = {
+                optFunc(mut st, f)
+                0
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func owGet(st mut St, v int, k int) int {
+    return table.Get(mut st.optw, v * OW + k)
+}
+
+func owSet(st mut St, v int, k int, x int) {
+    table.Set(mut st.optw, v * OW + k, x)
+}
+
+func obGet(st mut St, b BlkRef, k int) int {
+    return table.Get(mut st.optb, irBlkId(mut st, b) * OB + k)
+}
+
+func obSet(st mut St, b BlkRef, k int, x int) {
+    table.Set(mut st.optb, irBlkId(mut st, b) * OB + k, x)
+}
+
+// optReset は作業域を n 値・nb ブロック分だけ初期化する（足りなければ伸ばす）
+func optReset(st mut St, n int, nb int) {
+    while table.Len(mut st.optw) < n * OW {
+        table.Push(mut st.optw, 0)
+    }
+    for v <- iter.Range(0, n) {
+        owSet(mut st, v, OW_K, 0)
+        owSet(mut st, v, OW_C, 0)
+        owSet(mut st, v, OW_AL, -1)
+        owSet(mut st, v, OW_USE, 0)
+        owSet(mut st, v, OW_VER, -1)
+    }
+    while table.Len(mut st.optb) < nb * OB {
+        table.Push(mut st.optb, 0)
+    }
+    for i <- iter.Range(0, nb) {
+        table.Set(mut st.optb, i * OB + OB_IN, -1)
+        table.Set(mut st.optb, i * OB + OB_LATE, 0)
+        table.Set(mut st.optb, i * OB + OB_FWD, -1)
+        table.Set(mut st.optb, i * OB + OB_RPO, -1)
+        table.Set(mut st.optb, i * OB + OB_VIS, 0)
+    }
+}
+
+// resolve は付け替えの鎖の終点
+func resolve(st mut St, v int) int {
+    mut x := v
+    while owGet(mut st, x, OW_AL) >= 0 {
+        x = owGet(mut st, x, OW_AL)
+    }
+    return x
+}
+
+func optFunc(st mut St, f FnRef) {
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optDepth(mut st, f)
+    optFold(mut st, f)
+    optDce(mut st, f)
+    optBlocks(mut st, f)
+    optRenumber(mut st, f)
+}
+
+// ── P0 ──
+
+// optRegionFree は region を使わない関数を悲観的な不動点で求め、その region.enter / region.setdepth を消す
+func optRegionFree(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            rfLocal(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        f = st.fhead
+        while f != -1 {
+            r := irFnRFree(mut st, f)
+            if r >= 0 && hget(mut st, r) == 0 && rfCallees(mut st, hget(mut st, r + 1)) {
+                hset(mut st, r, 1)
+                changed = true
+            }
+            f = irFnNext(mut st, f)
+        }
+    }
+    f = st.fhead
+    while f != -1 {
+        r := irFnRFree(mut st, f)
+        if r >= 0 && hget(mut st, r) == 1 {
+            mut b := irFnBHead(mut st, f)
+            while b != -1 {
+                mut ins := irBlkIHead(mut st, b)
+                while ins != -1 {
+                    op := irInsOp(mut st, ins)
+                    if op == OpREnter || op == OpRSetDepth {
+                        irSetInsOp(mut st, ins, OpDead)
+                    }
+                    ins = irInsNext(mut st, ins)
+                }
+                b = irBlkNext(mut st, b)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// rfCallees は呼ぶ関数の列 l がすべて region を使わないと分かっているか
+func rfCallees(st mut St, l int) bool {
+    mut i := 0
+    while i < hget(mut st, l) {
+        r := irFnRFree(mut st, FnRef(hget(mut st, l + 1 + i)))
+        if r < 0 || hget(mut st, r) == 0 {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// rfLocal は関数 f の中だけで判定できる条件を見て、満たせば F_RFREE に [0, 呼ぶ関数の列] を置く
+func rfLocal(st mut St, f FnRef) {
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    mut ncall := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpRAlloc || op == OpRBump || op == OpRReloc || op == OpCallI {
+                return
+            }
+            if op == OpCall {
+                ncall += 1
+            }
+            if op == OpRDepth {
+                owSet(mut st, irInsRes(mut st, ins), OW_K, 1)
+            }
+            // 深度の復元以外の使用を数える（深度の値がそこに現れたら満たさない）
+            if op != OpRSetDepth && op != OpDead {
+                insOperands(mut st, ins, 0)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        termOperands(mut st, b, 0)
+        b = irBlkNext(mut st, b)
+    }
+    mut v := 0
+    while v < irFnNVal(mut st, f) {
+        if owGet(mut st, v, OW_K) == 1 && owGet(mut st, v, OW_USE) > 0 {
+            return
+        }
+        v += 1
+    }
+    calls := listN(mut st, ncall)
+    mut k := 0
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpCall {
+                hset(mut st, calls + 1 + k, irInsA(mut st, ins))
+                k += 1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    irSetFnRFree(mut st, f, rec4(mut st, 0, calls, -1, 0))
+}
+
+// ── P0' ──
+
+// inlineOk は関数 f が P0' の対象か（F_RFREE の記録の 3 語目に覚える: -1 = 未判定、0 / 1）
+func inlineOk(st mut St, f FnRef) bool {
+    r := irFnRFree(mut st, f)
+    if r < 0 || hget(mut st, r) != 1 {
+        return false
+    }
+    if hget(mut st, r + 2) < 0 {
+        hset(mut st, r + 2, if inlineShape(mut st, f) { 1 } else { 0 })
+    }
+    return hget(mut st, r + 2) == 1
+}
+
+// inlineShape はブロック 1 つ・引数のないブロック・スロットなし・終端が ret・命令が写せるものだけか
+func inlineShape(st mut St, f FnRef) bool {
+    b := irFnBHead(mut st, f)
+    if b == -1 || irBlkNext(mut st, b) != -1 || irBlkPHead(mut st, b) >= 0 || irFnSHead(mut st, f) >= 0 || irBlkTerm(mut st, b) != TmRet {
+        return false
+    }
+    mut ins := irBlkIHead(mut st, b)
+    while ins != -1 {
+        op := irInsOp(mut st, ins)
+        if !(op == OpDead || op == OpRDepth || op == OpConst || op == OpBin || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpStore ||
+            op == OpStore8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpGlobal || op == OpFuncaddr) {
+            return false
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    return true
+}
+
+// optInline はモジュールの全関数で、P0' の対象の関数の呼び出しを展開する
+func optInline(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        mut b := irFnBHead(mut st, f)
+        while b != -1 {
+            if blockHasInline(mut st, b) {
+                inlineBlock(mut st, f, b)
+            }
+            b = irBlkNext(mut st, b)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func blockHasInline(st mut St, b BlkRef) bool {
+    mut ins := irBlkIHead(mut st, b)
+    while ins != -1 {
+        if irInsOp(mut st, ins) == OpCall && inlineOk(mut st, irInsFn(mut st, ins)) {
+            return true
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    return false
+}
+
+// inlineBlock はブロック b（関数 f）の命令の鎖を組み直し、対象の呼び出しを本体の写しに置き換える
+func inlineBlock(st mut St, f FnRef, b BlkRef) {
+    mut ins := irBlkIHead(mut st, b)
+    irSetBlkIHead(mut st, b, -1)
+    irSetBlkITail(mut st, b, -1)
+    while ins != -1 {
+        nx := irInsNext(mut st, ins)
+        if irInsOp(mut st, ins) == OpCall && inlineOk(mut st, irInsFn(mut st, ins)) {
+            inlineCallAt(mut st, f, b, ins)
+        } else {
+            linkInst(mut st, b, ins)
+        }
+        ins = nx
+    }
+}
+
+// inlineCallAt は呼び出し ins（`%r = call @g(args)`）を g の本体の写しにしてブロック b の末尾へつなぐ
+func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
+    g := irInsFn(mut st, ins)
+    args := irInsB(mut st, ins)
+    res := irInsRes(mut st, ins)
+    np := lenL(mut st, hgetL(mut st, int(g) + F_PTYS))
+    gb := irFnBHead(mut st, g)
+    rv := irBlkX1(mut st, gb)
+    vmap := listN(mut st, irFnNVal(mut st, g))
+    for i <- iter.Range(0, np) {
+        hset(mut st, vmap + 1 + i, hget(mut st, args + 1 + i))
+    }
+    mut x := irBlkIHead(mut st, gb)
+    while x != -1 {
+        op := irInsOp(mut st, x)
+        if op != OpDead && op != OpRDepth {
+            r0 := irInsRes(mut st, x)
+            mut r := -1
+            if r0 >= 0 {
+                if r0 == rv && res >= 0 {
+                    r = res
+                } else {
+                    r = irFnNVal(mut st, f)
+                    irSetFnNVal(mut st, f, r + 1)
+                }
+                hset(mut st, vmap + 1 + r0, r)
+            }
+            mut a := irInsA(mut st, x)
+            mut bb := irInsB(mut st, x)
+            mut c := irInsC(mut st, x)
+            if op == OpBin || op == OpCmp {
+                bb = hget(mut st, vmap + 1 + bb)
+                c = hget(mut st, vmap + 1 + c)
+            } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop {
+                a = hget(mut st, vmap + 1 + a)
+            } else if op == OpStore || op == OpStore8 {
+                a = hget(mut st, vmap + 1 + a)
+                c = hget(mut st, vmap + 1 + c)
+            } else if op == OpGepW || op == OpGepB {
+                a = hget(mut st, vmap + 1 + a)
+                bb = hget(mut st, vmap + 1 + bb)
+            }
+            linkInst(mut st, b, mkInst(mut st, r, op, a, bb, c))
+        }
+        x = irInsNext(mut st, x)
+    }
+    // 戻り値が引数（本体の命令が作らない値）なら `%res = add 引数, 0`（P2 が付け替える）
+    if res >= 0 && rv >= 0 && rv < np {
+        z := irFnNVal(mut st, f)
+        irSetFnNVal(mut st, f, z + 1)
+        linkInst(mut st, b, mkInst(mut st, z, OpConst, 0, -1, -1))
+        linkInst(mut st, b, mkInst(mut st, res, OpBin, BAdd, hget(mut st, vmap + 1 + rv), z))
+    }
+}
+
+// ── P1 ──
+
+// succN は b の後続の数、succAt は k 番目
+func succN(st mut St, b BlkRef) int {
+    t := irBlkTerm(mut st, b)
+    return if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }
+}
+
+func succAt(st mut St, b BlkRef, k int) BlkRef {
+    if irBlkTerm(mut st, b) == TmBr {
+        return irBrTo(mut st, b)
+    }
+    return if k == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+}
+
+// rpo は入口からの逆後順の列（[n, ブロック…]）を作り、各ブロックに位置を記す（反復の深さ優先 — 積み = st.optw の後ろを使わず列で持つ）
+func rpo(st mut St, f FnRef) int {
+    nb := irFnNBlk(mut st, f)
+    post := listN(mut st, nb)
+    mut np := 0
+    // 積み: [ブロック, 次に見る後続の番号] の対
+    stack := listN(mut st, nb * 2)
+    mut sp := 0
+    entry := irFnBHead(mut st, f)
+    obSet(mut st, entry, OB_VIS, 1)
+    hset(mut st, stack + 1, int(entry))
+    hset(mut st, stack + 2, 0)
+    sp = 1
+    while sp > 0 {
+        b := BlkRef(hget(mut st, stack + 1 + (sp - 1) * 2))
+        k := hget(mut st, stack + 2 + (sp - 1) * 2)
+        if k < succN(mut st, b) {
+            hset(mut st, stack + 2 + (sp - 1) * 2, k + 1)
+            s := succAt(mut st, b, k)
+            if obGet(mut st, s, OB_VIS) == 0 {
+                obSet(mut st, s, OB_VIS, 1)
+                hset(mut st, stack + 1 + sp * 2, int(s))
+                hset(mut st, stack + 2 + sp * 2, 0)
+                sp += 1
+            }
+        } else {
+            hset(mut st, post + 1 + np, int(b))
+            np += 1
+            sp -= 1
+        }
+    }
+    order := listN(mut st, np)
+    mut i := 0
+    while i < np {
+        b := BlkRef(hget(mut st, post + np - i))
+        hset(mut st, order + 1 + i, int(b))
+        obSet(mut st, b, OB_RPO, i)
+        i += 1
+    }
+    return order
+}
+
+// edgeIn は b → to の前向きの辺を入口の版に合流させる（後ろの辺は OB_LATE — 先に数えてある）
+func edgeIn(st mut St, b BlkRef, to BlkRef, ver int) {
+    if obGet(mut st, to, OB_RPO) <= obGet(mut st, b, OB_RPO) {
+        return
+    }
+    x := obGet(mut st, to, OB_IN)
+    if x == -1 {
+        obSet(mut st, to, OB_IN, ver)
+    } else if x != ver {
+        obSet(mut st, to, OB_IN, -2)
+    }
+}
+
+func optDepth(st mut St, f FnRef) {
+    order := rpo(mut st, f)
+    n := hget(mut st, order)
+    // 後ろの辺（ループの戻り）を先に数える: 入る先の入口の版は引き継がない
+    for i <- iter.Range(0, n) {
+        b := BlkRef(hget(mut st, order + 1 + i))
+        mut k := 0
+        while k < succN(mut st, b) {
+            to := succAt(mut st, b, k)
+            if obGet(mut st, to, OB_RPO) <= i {
+                obSet(mut st, to, OB_LATE, 1)
+            }
+            k += 1
+        }
+    }
+    mut fresh := 0
+    for i <- iter.Range(0, n) {
+        b := BlkRef(hget(mut st, order + 1 + i))
+        mut ver := obGet(mut st, b, OB_IN)
+        if ver < 0 || obGet(mut st, b, OB_LATE) != 0 {
+            fresh += 1
+            ver = fresh
+        }
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpRDepth {
+                owSet(mut st, irInsRes(mut st, ins), OW_VER, ver)
+            } else if op == OpREnter {
+                fresh += 1
+                ver = fresh
+            } else if op == OpRSetDepth {
+                vv := owGet(mut st, irInsA(mut st, ins), OW_VER)
+                if vv >= 0 && vv == ver {
+                    irSetInsOp(mut st, ins, OpDead)
+                } else if vv >= 0 {
+                    ver = vv
+                } else {
+                    fresh += 1
+                    ver = fresh
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        mut k := 0
+        while k < succN(mut st, b) {
+            edgeIn(mut st, b, succAt(mut st, b, k), ver)
+            k += 1
+        }
+    }
+}
+
+// ── P2 ──
+
+func isConst(st mut St, v int) bool {
+    return owGet(mut st, v, OW_K) != 0
+}
+
+func constOf(st mut St, v int) int {
+    return owGet(mut st, v, OW_C)
+}
+
+func setConst(st mut St, ins InsRef, r int, c int) {
+    irSetInsOp(mut st, ins, OpConst)
+    irSetInsA(mut st, ins, c)
+    irSetInsB(mut st, ins, 0)
+    irSetInsC(mut st, ins, 0)
+    owSet(mut st, r, OW_K, 1)
+    owSet(mut st, r, OW_C, c)
+}
+
+// alias は結果 r を x に付け替えて命令を消す
+func aliasTo(st mut St, ins InsRef, r int, x int) {
+    owSet(mut st, r, OW_AL, x)
+    irSetInsOp(mut st, ins, OpDead)
+}
+
+func binConst(op int, x int, y int) int {
+    return switch op {
+    case BAdd: x + y
+    case BSub: x - y
+    case BMul: x * y
+    case BAnd: x & y
+    case BOr: x | y
+    default: x ^ y
+    }
+}
+
+func cmpConst(op int, x int, y int) int {
+    // 符号なしの比較（CUlt / CUge）: 符号ビットを反転してから符号つきで比べる
+    r := switch op {
+    case CEq: x == y
+    case CNe: x != y
+    case CLt: x < y
+    case CLe: x <= y
+    case CGt: x > y
+    case CGe: x >= y
+    case CUlt: (x ^ (1 << 63)) < (y ^ (1 << 63))
+    default: (x ^ (1 << 63)) >= (y ^ (1 << 63))
+    }
+    return if r { 1 } else { 0 }
+}
+
+func optFold(st mut St, f FnRef) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            r := irInsRes(mut st, ins)
+            if op == OpConst {
+                owSet(mut st, r, OW_K, 1)
+                owSet(mut st, r, OW_C, irInsA(mut st, ins))
+            } else if op == OpBin || op == OpCmp {
+                k := irInsA(mut st, ins)
+                x := resolve(mut st, irInsB(mut st, ins))
+                y := resolve(mut st, irInsC(mut st, ins))
+                irSetInsB(mut st, ins, x)
+                irSetInsC(mut st, ins, y)
+                cx := isConst(mut st, x)
+                cy := isConst(mut st, y)
+                if op == OpCmp {
+                    if cx && cy && k < CFEq {
+                        setConst(mut st, ins, r, cmpConst(k, constOf(mut st, x), constOf(mut st, y)))
+                    }
+                } else if k == BAdd || k == BSub || k == BMul || k == BAnd || k == BOr || k == BXor {
+                    if cx && cy {
+                        setConst(mut st, ins, r, binConst(k, constOf(mut st, x), constOf(mut st, y)))
+                    } else if cy && constOf(mut st, y) == 0 && (k == BAdd || k == BSub || k == BOr || k == BXor) {
+                        aliasTo(mut st, ins, r, x)
+                    } else if cx && constOf(mut st, x) == 0 && (k == BAdd || k == BOr || k == BXor) {
+                        aliasTo(mut st, ins, r, y)
+                    } else if k == BMul && cy && constOf(mut st, y) == 1 {
+                        aliasTo(mut st, ins, r, x)
+                    } else if k == BMul && cx && constOf(mut st, x) == 1 {
+                        aliasTo(mut st, ins, r, y)
+                    }
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// ── 被演算子の走査（mode: 0 = 使用を数える、1 = 使用を減らす、2 = 振り直した番号へ書き換える）──
+
+func opnd(st mut St, v int, mode int) int {
+    x := resolve(mut st, v)
+    if mode == 0 {
+        owSet(mut st, x, OW_USE, owGet(mut st, x, OW_USE) + 1)
+        return v
+    }
+    if mode == 1 {
+        owSet(mut st, x, OW_USE, owGet(mut st, x, OW_USE) - 1)
+        return v
+    }
+    return owGet(mut st, x, OW_VER)
+}
+
+// opField は記録 r の欄 k の値を走査する
+func opField(st mut St, r int, k int, mode int) {
+    hset(mut st, r + k, opnd(mut st, hget(mut st, r + k), mode))
+}
+
+// vlist は値の列 l を走査する。書き換え（mode 2）は同じ列を 2 度書かないよう長さを負にして印を付ける（listUnmark が戻す）
+func vlist(st mut St, l int, mode int) {
+    if l < 0 {
+        return
+    }
+    n := hget(mut st, l)
+    if n <= 0 {
+        return
+    }
+    for i <- iter.Range(0, n) {
+        opField(mut st, l, 1 + i, mode)
+    }
+    if mode == 2 {
+        hset(mut st, l, -n)
+    }
+}
+
+func listUnmark(st mut St, l int) {
+    if l >= 0 && hget(mut st, l) < 0 {
+        hset(mut st, l, -hget(mut st, l))
+    }
+}
+
+func insOperands(st mut St, ins InsRef, mode int) {
+    op := irInsOp(mut st, ins)
+    if op == OpBin || op == OpCmp {
+        opField(mut st, int(ins), I_B, mode)
+        opField(mut st, int(ins), I_C, mode)
+    } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop || op == OpRSetDepth || op == OpRBump {
+        opField(mut st, int(ins), I_A, mode)
+    } else if op == OpStore || op == OpStore8 || op == OpRReloc {
+        opField(mut st, int(ins), I_A, mode)
+        opField(mut st, int(ins), I_C, mode)
+    } else if op == OpGepW || op == OpGepB || op == OpRAlloc {
+        opField(mut st, int(ins), I_A, mode)
+        opField(mut st, int(ins), I_B, mode)
+    } else if op == OpCall {
+        vlist(mut st, irInsB(mut st, ins), mode)
+    } else if op == OpCallI {
+        opField(mut st, int(ins), I_A, mode)
+        vlist(mut st, irInsB(mut st, ins), mode)
+    } else if op == OpSyscall {
+        vlist(mut st, irInsA(mut st, ins), mode)
+    }
+}
+
+func termOperands(st mut St, b BlkRef, mode int) {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        vlist(mut st, irBlkX2(mut st, b), mode)
+    } else if t == TmCondbr {
+        opField(mut st, int(b), B_X1, mode)
+        vlist(mut st, irBlkX3(mut st, b), mode)
+        vlist(mut st, irBlkX5(mut st, b), mode)
+    } else if t == TmRet {
+        if irBlkX1(mut st, b) >= 0 {
+            opField(mut st, int(b), B_X1, mode)
+        }
+    }
+}
+
+// ── P3 ──
+
+func isPure(op int) bool {
+    return op == OpConst || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop ||
+        op == OpSlotaddr || op == OpGlobal || op == OpFuncaddr || op == OpRDepth
+}
+
+func pureIns(st mut St, ins InsRef) bool {
+    op := irInsOp(mut st, ins)
+    if op == OpBin {
+        k := irInsA(mut st, ins)
+        return k != BDiv && k != BRem
+    }
+    return isPure(op)
+}
+
+func optDce(st mut St, f FnRef) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) != OpDead {
+                insOperands(mut st, ins, 0)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        termOperands(mut st, b, 0)
+        b = irBlkNext(mut st, b)
+    }
+    mut changed := true
+    while changed {
+        changed = false
+        b = irFnBHead(mut st, f)
+        while b != -1 {
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if irInsOp(mut st, ins) != OpDead && r >= 0 && owGet(mut st, r, OW_USE) == 0 && pureIns(mut st, ins) {
+                    insOperands(mut st, ins, 1)
+                    irSetInsOp(mut st, ins, OpDead)
+                    changed = true
+                }
+                ins = irInsNext(mut st, ins)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    // 消した命令を鎖から外す
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        irSetBlkIHead(mut st, b, -1)
+        irSetBlkITail(mut st, b, -1)
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) != OpDead {
+                linkInst(mut st, b, ins)
+            }
+            ins = nx
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// ── P4 ──
+
+func fwdEnd(st mut St, b BlkRef) BlkRef {
+    mut x := b
+    mut n := 0
+    while obGet(mut st, x, OB_FWD) >= 0 && n < 64 {
+        x = BlkRef(obGet(mut st, x, OB_FWD))
+        n += 1
+    }
+    return x
+}
+
+func emptyArgs(st mut St, l int) bool {
+    return l < 0 || hget(mut st, l) == 0
+}
+
+func optBlocks(st mut St, f FnRef) {
+    entry := irFnBHead(mut st, f)
+    mut b := irBlkNext(mut st, entry)
+    while b != -1 {
+        if irBlkPHead(mut st, b) < 0 && irBlkIHead(mut st, b) == -1 && irBlkTerm(mut st, b) == TmBr && emptyArgs(mut st, irBlkX2(mut st, b)) {
+            obSet(mut st, b, OB_FWD, int(irBrTo(mut st, b)))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = entry
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        if t == TmBr {
+            irSetBrTo(mut st, b, fwdEnd(mut st, irBrTo(mut st, b)))
+        } else if t == TmCondbr {
+            irSetCondThen(mut st, b, fwdEnd(mut st, irCondThen(mut st, b)))
+            irSetCondElse(mut st, b, fwdEnd(mut st, irCondElse(mut st, b)))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 到達するブロック（入口から — 印は OB_IN を使い回す: 1 = 到達）
+    b = entry
+    while b != -1 {
+        obSet(mut st, b, OB_IN, 0)
+        b = irBlkNext(mut st, b)
+    }
+    obSet(mut st, entry, OB_IN, 1)
+    mut changed := true
+    while changed {
+        changed = false
+        b = entry
+        while b != -1 {
+            if obGet(mut st, b, OB_IN) == 1 {
+                t := irBlkTerm(mut st, b)
+                if t == TmBr {
+                    changed = reach(mut st, irBrTo(mut st, b)) || changed
+                } else if t == TmCondbr {
+                    changed = reach(mut st, irCondThen(mut st, b)) || changed
+                    changed = reach(mut st, irCondElse(mut st, b)) || changed
+                }
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    // 到達しないブロックを鎖から外し、番号を振り直す
+    mut prev := entry
+    mut id := 1
+    b = irBlkNext(mut st, entry)
+    while b != -1 {
+        nx := irBlkNext(mut st, b)
+        if obGet(mut st, b, OB_IN) == 1 {
+            irSetBlkNext(mut st, prev, b)
+            irSetBlkId(mut st, b, id)
+            id += 1
+            prev = b
+        }
+        // 消したブロックの値は到達するブロックから使われない（SSA — 定義が使用を支配する）ので番号を振らなくてよい
+        b = nx
+    }
+    irSetBlkNext(mut st, prev, -1)
+    irSetFnBTail(mut st, f, prev)
+    irSetFnNBlk(mut st, f, id)
+    recountPreds(mut st, f)
+}
+
+// recountPreds は関数 f の全ブロックの前任数（B_PREDS）を辺から数え直す。P4 は辺を付け替えてブロックを消すので、出口で数え直して
+// 「各段の後の IR は正しい」を保つ（付け替えごとの増減で保つ形は誤りやすく、読む者もいないので採らない — report-126 ③）
+func recountPreds(st mut St, f FnRef) {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        irSetBlkPreds(mut st, b, 0)
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        if t == TmBr {
+            to := irBrTo(mut st, b)
+            irSetBlkPreds(mut st, to, irBlkPreds(mut st, to) + 1)
+        } else if t == TmCondbr {
+            tt := irCondThen(mut st, b)
+            irSetBlkPreds(mut st, tt, irBlkPreds(mut st, tt) + 1)
+            te := irCondElse(mut st, b)
+            irSetBlkPreds(mut st, te, irBlkPreds(mut st, te) + 1)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+func reach(st mut St, b BlkRef) bool {
+    if obGet(mut st, b, OB_IN) == 1 {
+        return false
+    }
+    obSet(mut st, b, OB_IN, 1)
+    return true
+}
+
+// ── 振り直し ──
+
+func optRenumber(st mut St, f FnRef) {
+    np := hget(mut st, irFnPtys(mut st, f))
+    mut v := 0
+    while v < irFnNVal(mut st, f) {
+        owSet(mut st, v, OW_VER, if v < np { v } else { -1 })
+        v += 1
+    }
+    mut n := np
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut p := irBlkPHead(mut st, b)
+        while p >= 0 {
+            owSet(mut st, hget(mut st, p + 1), OW_VER, n)
+            hset(mut st, p + 1, n)
+            n += 1
+            p = hget(mut st, p)
+        }
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            r := irInsRes(mut st, ins)
+            if r >= 0 {
+                owSet(mut st, r, OW_VER, n)
+                n += 1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 被演算子を書き換えてから結果を書き換える（被演算子の引きは古い番号で行う）
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            insOperands(mut st, ins, 2)
+            ins = irInsNext(mut st, ins)
+        }
+        termOperands(mut st, b, 2)
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            r := irInsRes(mut st, ins)
+            if r >= 0 {
+                irSetInsRes(mut st, ins, owGet(mut st, r, OW_VER))
+            }
+            unmarkIns(mut st, ins)
+            ins = irInsNext(mut st, ins)
+        }
+        t := irBlkTerm(mut st, b)
+        if t == TmBr {
+            listUnmark(mut st, irBlkX2(mut st, b))
+        } else if t == TmCondbr {
+            listUnmark(mut st, irBlkX3(mut st, b))
+            listUnmark(mut st, irBlkX5(mut st, b))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    irSetFnNVal(mut st, f, n)
+}
+
+func unmarkIns(st mut St, ins InsRef) {
+    op := irInsOp(mut st, ins)
+    if op == OpCall || op == OpCallI {
+        listUnmark(mut st, irInsB(mut st, ins))
+    } else if op == OpSyscall {
+        listUnmark(mut st, irInsA(mut st, ins))
+    }
+}

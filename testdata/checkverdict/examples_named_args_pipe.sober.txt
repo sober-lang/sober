@@ -1,0 +1,2 @@
+sober: load error at examples/named_args_pipe.sober:14:26: a pipe stage with named arguments marks the piped value with _
+exit=1

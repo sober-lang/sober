@@ -1,0 +1,3 @@
+testdata/analyzer_neg/errors_cause.sober:51:16: error: switch does not cover every W{cause: …} (the cause may carry: A, B — not all matched): add cases or a default (Analyzer)
+testdata/analyzer_neg/errors_cause.sober:65:14: error: case W is unreachable: the cases before it, with the causes the subject may carry, leave nothing for it — remove the case (Analyzer)
+testdata/analyzer_neg/errors_cause.sober:75:16: error: switch does not cover every V{cause: …} (the cause may carry: A, B, or none — not all matched): add cases or a default (Analyzer)

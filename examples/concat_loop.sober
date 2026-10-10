@@ -1,0 +1,25 @@
+package main
+
+import "std/iter"
+
+// 先端一致の concat（息継ぎ ①）: ループの `s = s + x` は外の束縛の先端でその場に伸びる（償却 O(n)）。途中で別の連結を挟んでも値は独立
+func main() int {
+    mut s := ""
+    mut keep := ""
+    for i <- iter.Range(0, 2000) {
+        s = s + "x"
+        if i == 999 {
+            keep = s + "!"
+        }
+        if i % 500 == 0 {
+            s = s + "${i}"
+        }
+    }
+    b := bytes(s)
+    println(len(b))
+    println(len(bytes(keep)))
+    println(int(b[0]))
+    println(int(b[len(b) - 1]))
+    println(keep == s)
+    return 0
+}

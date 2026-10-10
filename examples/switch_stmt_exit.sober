@@ -1,0 +1,28 @@
+package main
+
+// 文位置の switch の腕の脱出（return / continue）— 文位置の if と同じく腕の値を捨てて合流する（2026-10-02 まで check が CoreFragment で拒否・build は受理）
+import "std/iter"
+
+func classify(x int) int {
+    switch x {
+    case 0: return 100
+    case 1:
+        println("one")
+        return 101
+    default: println("other")
+    }
+    return x
+}
+
+func main() {
+    println(classify(0), classify(1), classify(5))
+    mut s := 0
+    for i <- iter.Range(0, 10) {
+        switch i % 3 {
+        case 0: continue
+        case 2: s += 100
+        }
+        s += i
+    }
+    println(s)
+}

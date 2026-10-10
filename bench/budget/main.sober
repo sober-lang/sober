@@ -1,0 +1,51 @@
+package main
+
+// メモリの天井（budget:）の実働のデモ（README の 3 枚目のグラフ — bench/budget/run.sh が RSS の時系列を取る）。
+// 96 個の task がそれぞれ 32 MB の作業域を作って畳む。Scope の budget: 128 MB が天井（入れない子はその場で逐次に縮退 — 値は不変）・
+// Map の budget: 40 MB は子 1 つの上界の宣言。`nobudget` を渡すと宣言なしの同じ計算（対比の線）。どちらも出力は同じ値
+
+import "std/iter"
+import "std/os"
+import "std/par"
+
+// 1 つの task = 32 MB の作業域（int 400 万個）を作って畳む
+func work(k int) int {
+    n := 4194304
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, (i * 31 + k) % 1000)
+    }
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        s += b[i]
+    }
+    return s
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    mut ks := mut []int{}
+    for k <- iter.Range(0, 96) {
+        ks = append(ks, k)
+    }
+    xs := freeze(ks)
+    if len(args) > 1 && args[1] == "nobudget" {
+        ys, me := par.Map(xs, (x) => work(x))
+        mut t := 0
+        for y <- ys {
+            t += y
+        }
+        println(t)
+        return 0
+    }
+    r, e := par.Scope((s par.S) => {
+        ys, me := par.Map(xs, (x) => work(x), budget: 40 * par.MB)
+        mut t := 0
+        for y <- ys {
+            t += y
+        }
+        t
+    }, budget: 128 * par.MB)
+    println(r)
+    return 0
+}

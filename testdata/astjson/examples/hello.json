@@ -1,0 +1,60 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 9
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "Hello, Sober!",
+                  "tok": 11
+                }
+              ],
+              "tok": 10
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 15
+              }
+            ],
+            "tok": 14
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 19
+      },
+      "sig_end": 8
+    }
+  ],
+  "consts": []
+}

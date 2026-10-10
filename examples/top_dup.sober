@@ -1,0 +1,16 @@
+package main
+
+// 負例（load が拒否 — language.md 13 節「トップレベル名は package の中で一意」）: 同名の func を 2 つ宣言する
+// （それまでは宣言の重複検査が無く、型の合う呼び出しは黙って片方を選んでいた）
+
+func f(x int) int {
+    return x
+}
+
+func f(x string) int {
+    return 1
+}
+
+func main() {
+    println(f(3))
+}

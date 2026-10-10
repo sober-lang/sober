@@ -1,0 +1,20 @@
+package main
+
+// 負例（load が拒否 — language.md 13 節「variant 名は一意」）: union の variant と error ラベルが同名
+
+type A union {
+    E{a int}
+    W{}
+}
+
+type E error {
+    n int
+}
+
+func main() {
+    x := E{a: 1}
+    println(switch x {
+    case E{a}: a
+    default: 0
+    })
+}

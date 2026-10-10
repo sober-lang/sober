@@ -1,0 +1,6 @@
+ok   testdata/sobertest/calc.TestAdd
+ok   testdata/sobertest/calc.TestHalf
+about to fail
+panic: index out of range at testdata/sobertest/calc/calc_test.sober:8:21
+FAIL testdata/sobertest/calc.TestBroken (exit 101)
+2 passed, 1 failed

@@ -1,0 +1,16 @@
+package main
+
+// 負例（check が拒否 — 網羅）: json.At のビューを switch で開くとき、variant を落とすと通らない（16 節「雑に読む手段が構成的に無い」— 1 段のビューでも同じ）
+
+import "std/json"
+
+func main() {
+    d, err := json.Parse(bytes("[1]"))
+    if err != nil {
+        return
+    }
+    switch json.At(d, json.Root(d)) {
+    case json.Arr{items}: println(len(items))
+    case json.Num{lit}: println(lit)
+    }
+}

@@ -1,0 +1,43 @@
+package main
+
+// panic ラベル（language.md 27 節「panic ラベル」— 2026-10-03）: 理由を `type L panic{…}` で宣言して `panic(L{…})`。
+// 欄の値は書いた順に評価してから死ぬ（trace の印字が先に出る）。死亡時の標準エラーの 1 行は欄を宣言順に・string は引用 + エスケープ
+
+type BadNode panic {
+    node int
+    kind string
+    leaf bool
+    tag byte
+}
+
+type Done panic
+
+type Missing error
+
+func trace(n int) int {
+    println("trace", n)
+    return n
+}
+
+func digit(i int) string {
+    return switch i { case 0: "zero"; case 1: "one"; default: panic(Unreachable{}) }
+}
+
+func finish(more bool) {
+    if !more {
+        panic(Done{})
+    }
+}
+
+func find(ok bool) (int, error?) {
+    if ok {
+        return 7, nil
+    }
+    return 0, Missing{}
+}
+
+func main() {
+    finish(true)
+    println(digit(1), find(true) catch panic(InvariantBroken{}))
+    panic(BadNode{tag: 7, node: trace(42), kind: "a\"b\\c\nd", leaf: true})
+}

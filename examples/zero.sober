@@ -1,0 +1,35 @@
+package main
+
+// ゼロ値リテラル `T{}`（syntax.md「ゼロ値だけの宣言は持てる型に限り `mut x := T{}`」— V3-5）:
+// int 0・bool false・T? は nil・slice / map / string は空・struct はフィールドごと
+
+type Inner struct {
+    k int
+    tags []int
+}
+
+type Acc struct {
+    n int
+    ok bool
+    last int?
+    xs mut []int
+    name string
+    m mut map[int]int
+    in Inner
+}
+
+func fill(k int) int {
+    mut a := Acc{}
+    a.xs = append(a.xs, k)
+    a.xs = append(a.xs, k + 1)
+    a.n = len(a.xs)
+    return a.n * 100 + a.xs[1]
+}
+
+func main() {
+    mut a := Acc{}
+    println(a.n, len(a.xs), len(bytes(a.name)), len(a.in.tags), a.in.k, len(a.m))
+    println(if a.ok { 1 } else { 0 }, if a.last == nil { 1 } else { 0 })
+    a.xs = append(a.xs, 7)
+    println(len(a.xs), a.xs[0], fill(4))
+}

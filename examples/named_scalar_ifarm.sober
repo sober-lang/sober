@@ -1,0 +1,28 @@
+package main
+
+// 回帰例（language.md 32 節 — 型なしのリテラルは if 式の兄弟の腕の named に割り当てられる）: 期待型の無い if 式
+// （`:=` の束縛・名前付きでない位置）で片方の腕が型なしの定数、もう片方が named scalar。lower（build）が腕の型の不一致で拒否していた（check は受理）
+
+type Ref int
+
+type Flag bool
+
+const NONE = -1
+
+func pick(c bool, r Ref) int {
+    x := if c { r } else { -1 }
+    y := if c { NONE } else { r }
+    return if x == y { 1 } else { 0 }
+}
+
+func main() {
+    r := Ref(5)
+    a := if true { r } else { -1 }
+    b := if false { r } else { -1 }
+    println(int(a))
+    println(b == NONE)
+    f := if a == 5 { Flag(true) } else { false }
+    println(bool(f))
+    println(pick(true, r))
+    println(pick(false, r))
+}

@@ -1,0 +1,334 @@
+package lower
+
+// 移し器（段 4 後半 ラウンド 9 — report-341 3-3 (i)・report-343）: 関数 1 つの本体の IR を番地 0 起点の詰めた []int へ移し（mvPack）、
+// 詰めた形を今のヒープの末尾へ積んで関数の記録の頭を付け替える（mvUnpack）。束（B1 = optimizeSsa・B2 = 展開の後の cfgClean〜cmpDup）を
+// 群の子へ配る前提の形 — 子は詰めた形を自前のヒープに積んで束を回し、同じ形で詰め直して返す。
+// - 動かすもの = 関数の本体: スロット [next, 語数, 番号, 空きの鎖, 値]・ブロック [B_*]・ブロックの引数 [next, 値, 型, 0]・命令 [I_*]・値の列 [n, …]
+// - 動かさないもの = 関数の記録そのもの（他の関数の呼び出し〔K_FN〕・関数の鎖が番地で指す — 頭の本体の欄だけ書き換える）と外の参照
+//   （K_FN・K_GLOB・F_NAME・F_PTYS — 不透明にそのまま運ぶ）
+// - 付け替える欄 = 記録の鎖（スロットの next・ブロックの B_NEXT / B_PHEAD / B_PTAIL / B_IHEAD / B_ITAIL・引数の next・命令の I_NEXT）と、
+//   欄の種別の表（ir.sober の opRow / termRow）が K_BLK / K_VLIST / K_OLIST とする欄。値の番号（K_VAL）は関数ごとの通しなので付け替えない
+// - 値の列は命令・終端の間で共有されうる（opt の vlist が同じ列を 2 度書かない印を付けるのはそのため）— 1 つの列は 1 回だけ移す
+// 詰めた形: [頭 MV_HDR 語][スロット MV_SLOT 語…][ブロック BSZ 語…][引数 MV_PAR 語…][命令 ISZ 語…][値の列…]（各々鎖の順）
+
+import "std/iter"
+
+const MV_SLOT = 5
+const MV_PAR = 4
+// 頭: [スロット数, ブロック数, 引数数, 命令数, F_NVAL, F_BHEAD, F_BTAIL, F_NBLK, F_SHEAD, F_STAIL, F_NSLOT]
+const MV_NS = 0
+const MV_NB = 1
+const MV_NP = 2
+const MV_NI = 3
+const MV_FN = 4  // 関数の記録の本体の欄の写し（F_NVAL〜F_NSLOT の 7 語 — MV_FN + k = 下の mvFnField(k)）
+const MV_HDR = 11
+
+// mvFnField は頭に写す関数の記録の欄（k = 0〜6）
+func mvFnField(k int) int {
+    return switch k {
+    case 0: F_NVAL
+    case 1: F_BHEAD
+    case 2: F_BTAIL
+    case 3: F_NBLK
+    case 4: F_SHEAD
+    case 5: F_STAIL
+    default: F_NSLOT
+    }
+}
+
+// mvFnRef は頭の関数の欄 k が記録を指すか（鎖の頭・尾 — 付け替える）
+func mvFnRef(k int) bool { return k == 1 || k == 2 || k == 4 || k == 5 }
+
+// mvTr は旧い番地 x の詰めた番地（rel — -1 = 無しはそのまま）
+func mvTr(rel mut map[int]int, x int) int {
+    if x < 0 {
+        return x
+    }
+    v := rel[x]
+    if v != nil {
+        return v
+    }
+    panic(Unreachable{}) // 関数の本体の外を指す鎖・列（詰めの抜け — roundtrip の網が落とす形）
+}
+
+// mvList は列 l を（初出なら）移す列に足して次の空きの番地を返す
+func mvList(st mut St, rel mut map[int]int, lists mut []int, l int, at int) int {
+    if l < 0 || rel[l] != nil {
+        return at
+    }
+    rel[l] = at
+    lists = append(lists, l)
+    return at + 1 + hget(mut st, l)
+}
+
+// mvPack は関数 f の本体を詰めた形にする（ヒープは書かない）
+func mvPack(st mut St, f FnRef) []int {
+    mut rel := mut map[int]int{}
+    mut lists := mut []int{}
+    mut at := MV_HDR
+    mut ss := mut []int{}
+    mut bs := mut []int{}
+    mut ps := mut []int{}
+    mut is := mut []int{}
+    // 番地の割り当て（スロット → ブロック → 引数 → 命令 → 列）
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        ss = append(ss, s)
+        rel[s] = at
+        at += MV_SLOT
+        s = hget(mut st, s)
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        bs = append(bs, int(b))
+        rel[int(b)] = at
+        at += BSZ
+        b = irBlkNext(mut st, b)
+    }
+    for k <- iter.Range(0, len(bs)) {
+        mut p := irBlkPHead(mut st, BlkRef(bs[k]))
+        while p >= 0 {
+            ps = append(ps, p)
+            rel[p] = at
+            at += MV_PAR
+            p = hget(mut st, p)
+        }
+    }
+    for k <- iter.Range(0, len(bs)) {
+        mut i := irBlkIHead(mut st, BlkRef(bs[k]))
+        while i != -1 {
+            is = append(is, int(i))
+            rel[int(i)] = at
+            at += ISZ
+            i = irInsNext(mut st, i)
+        }
+    }
+    for k <- iter.Range(0, len(is)) {
+        mut r := st.opk[hget(mut st, is[k] + I_OP)]
+        mut fa := is[k] + I_A
+        while r != 0 {
+            kind := r & 15
+            if kind == K_VLIST || kind == K_OLIST {
+                at = mvList(mut st, mut rel, mut lists, hget(mut st, fa), at)
+            }
+            r = r >> 4
+            fa += 1
+        }
+    }
+    for k <- iter.Range(0, len(bs)) {
+        mut r := st.tmk[irBlkTerm(mut st, BlkRef(bs[k]))]
+        mut fa := bs[k] + B_X1
+        while r != 0 {
+            if r & 15 == K_VLIST {
+                at = mvList(mut st, mut rel, mut lists, hget(mut st, fa), at)
+            }
+            r = r >> 4
+            fa += 1
+        }
+    }
+    // 書き出し
+    mut out := mut []int{}
+    out = append(out, len(ss))
+    out = append(out, len(bs))
+    out = append(out, len(ps))
+    out = append(out, len(is))
+    for k <- iter.Range(0, 7) {
+        v := hget(mut st, int(f) + mvFnField(k))
+        out = append(out, if mvFnRef(k) { mvTr(mut rel, v) } else { v })
+    }
+    for k <- iter.Range(0, len(ss)) {
+        x := ss[k]
+        out = append(out, mvTr(mut rel, hget(mut st, x)))
+        out = append(out, hget(mut st, x + 1))
+        out = append(out, hget(mut st, x + 2))
+        // 空きの鎖（lower の間だけ使う — begin が関数ごとに空にする）は同じ関数のスロットなら付け替え・外なら無し
+        fr := hget(mut st, x + 3)
+        out = append(out, if fr >= 0 && rel[fr] != nil { mvTr(mut rel, fr) } else { -1 })
+        out = append(out, hget(mut st, x + 4))
+    }
+    for k <- iter.Range(0, len(bs)) {
+        x := bs[k]
+        r := st.tmk[hget(mut st, x + B_TERM)]
+        for j <- iter.Range(0, BSZ) {
+            v := hget(mut st, x + j)
+            kind := if j >= B_X1 && j <= B_X5 { r >> ((j - B_X1) * 4) & 15 } else { K_NONE }
+            ref := j == B_NEXT || j == B_PHEAD || j == B_PTAIL || j == B_IHEAD || j == B_ITAIL || kind == K_BLK || kind == K_VLIST
+            out = append(out, if ref { mvTr(mut rel, v) } else { v })
+        }
+    }
+    for k <- iter.Range(0, len(ps)) {
+        x := ps[k]
+        out = append(out, mvTr(mut rel, hget(mut st, x)))
+        out = append(out, hget(mut st, x + 1))
+        out = append(out, hget(mut st, x + 2))
+        out = append(out, hget(mut st, x + 3))
+    }
+    for k <- iter.Range(0, len(is)) {
+        x := is[k]
+        r := st.opk[hget(mut st, x + I_OP)]
+        out = append(out, mvTr(mut rel, hget(mut st, x + I_NEXT)))
+        out = append(out, hget(mut st, x + I_RES))
+        out = append(out, hget(mut st, x + I_OP))
+        for j <- iter.Range(0, 3) {
+            v := hget(mut st, x + I_A + j)
+            kind := r >> (j * 4) & 15
+            out = append(out, if kind == K_VLIST || kind == K_OLIST { mvTr(mut rel, v) } else { v })
+        }
+    }
+    for k <- iter.Range(0, len(lists)) {
+        l := lists[k]
+        n := hget(mut st, l)
+        for j <- iter.Range(0, 1 + n) {
+            out = append(out, hget(mut st, l + j))
+        }
+    }
+    return freeze(out)
+}
+
+// mvUnpack は詰めた形 p を今のヒープの末尾へ積み、内側の参照を + 基底で付け替えて関数 f の記録の本体の欄を書き換える
+// （旧い本体の記録はヒープにゴミとして残る）
+func mvUnpack(st mut St, f FnRef, p []int) {
+    base := hlen(mut st)
+    for k <- iter.Range(0, len(p)) {
+        hpush(mut st, p[k])
+    }
+    ns := p[MV_NS]
+    nb := p[MV_NB]
+    np := p[MV_NP]
+    ni := p[MV_NI]
+    mut at := base + MV_HDR
+    for k <- iter.Range(0, ns) {
+        mvRel(mut st, at, base)
+        mvRel(mut st, at + 3, base)
+        at += MV_SLOT
+    }
+    for k <- iter.Range(0, nb) {
+        r := st.tmk[hget(mut st, at + B_TERM)]
+        mvRel(mut st, at + B_NEXT, base)
+        mvRel(mut st, at + B_PHEAD, base)
+        mvRel(mut st, at + B_PTAIL, base)
+        mvRel(mut st, at + B_IHEAD, base)
+        mvRel(mut st, at + B_ITAIL, base)
+        mut rr := r
+        mut x := at + B_X1
+        while rr != 0 {
+            kind := rr & 15
+            if kind == K_BLK || kind == K_VLIST {
+                mvRel(mut st, x, base)
+            }
+            rr = rr >> 4
+            x += 1
+        }
+        at += BSZ
+    }
+    for k <- iter.Range(0, np) {
+        mvRel(mut st, at, base)
+        at += MV_PAR
+    }
+    for k <- iter.Range(0, ni) {
+        mvRel(mut st, at + I_NEXT, base)
+        mut r := st.opk[hget(mut st, at + I_OP)]
+        mut x := at + I_A
+        while r != 0 {
+            kind := r & 15
+            if kind == K_VLIST || kind == K_OLIST {
+                mvRel(mut st, x, base)
+            }
+            r = r >> 4
+            x += 1
+        }
+        at += ISZ
+    }
+    for k <- iter.Range(0, 7) {
+        v := p[MV_FN + k]
+        hset(mut st, int(f) + mvFnField(k), if mvFnRef(k) && v >= 0 { v + base } else { v })
+    }
+}
+
+// mvRel はヒープの語 at が詰めた番地なら + base（-1 = 無しはそのまま）
+func mvRel(st mut St, at int, base int) {
+    v := hget(mut st, at)
+    if v >= 0 {
+        hset(mut st, at, v + base)
+    }
+}
+
+// MV_POISON は roundtrip が旧い本体の記録に書く毒（ヒープの外の番地 — 付け替え忘れの参照を読めば添字の範囲外で落ちる・値として使えば ELF が変わる）
+const MV_POISON = 1125899906842624
+
+// mvPoison は関数 f の本体の記録（スロット・ブロック・引数・命令・値の列）を毒で潰す（roundtrip だけ — 詰めた後・積む前）
+func mvPoison(st mut St, f FnRef) {
+    mut lists := mut []int{}
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        nx := hget(mut st, s)
+        mvFill(mut st, s, MV_SLOT)
+        s = nx
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut p := irBlkPHead(mut st, b)
+        while p >= 0 {
+            nx := hget(mut st, p)
+            mvFill(mut st, p, MV_PAR)
+            p = nx
+        }
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            nx := irInsNext(mut st, i)
+            mut r := st.opk[irInsOp(mut st, i)]
+            mut fa := int(i) + I_A
+            while r != 0 {
+                if r & 15 == K_VLIST || r & 15 == K_OLIST {
+                    lists = append(lists, hget(mut st, fa))
+                }
+                r = r >> 4
+                fa += 1
+            }
+            mvFill(mut st, int(i), ISZ)
+            i = nx
+        }
+        mut r := st.tmk[irBlkTerm(mut st, b)]
+        mut fa := int(b) + B_X1
+        while r != 0 {
+            if r & 15 == K_VLIST {
+                lists = append(lists, hget(mut st, fa))
+            }
+            r = r >> 4
+            fa += 1
+        }
+        nx := irBlkNext(mut st, b)
+        mvFill(mut st, int(b), BSZ)
+        b = nx
+    }
+    // 列は共有されうるので全部の長さを先に読んでから潰す（潰した列の長さを読まない）
+    mut lens := mut []int{}
+    for k <- iter.Range(0, len(lists)) {
+        lens = append(lens, if lists[k] >= 0 && hget(mut st, lists[k]) != MV_POISON { hget(mut st, lists[k]) } else { -1 })
+    }
+    for k <- iter.Range(0, len(lists)) {
+        if lens[k] >= 0 {
+            mvFill(mut st, lists[k], 1 + lens[k])
+        }
+    }
+}
+
+func mvFill(st mut St, at int, n int) {
+    for k <- iter.Range(0, n) {
+        hset(mut st, at + k, MV_POISON)
+    }
+}
+
+// mvRoundtripModule は全関数の本体を詰め、旧い本体を毒で潰して積み直す（束を回さない — 移し器の網: SOBER_BUILD_PAR=roundtrip で、
+// ELF ≡ 移さない経路。毒は付け替え忘れの欄・本体の外から本体の記録を番地で持ち越す表を落とす）
+func mvRoundtripModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            p := mvPack(mut st, f)
+            mvPoison(mut st, f)
+            mvUnpack(mut st, f, p)
+        }
+        f = irFnNext(mut st, f)
+    }
+}

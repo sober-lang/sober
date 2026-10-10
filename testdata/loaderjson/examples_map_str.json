@@ -1,0 +1,34 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "count",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "count",
+            "delete",
+            "freeze",
+            "len",
+            "println"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

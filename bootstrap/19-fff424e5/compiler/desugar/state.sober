@@ -1,0 +1,865 @@
+package desugar
+
+// 脱糖器（legacy/zig/desugar.zig の写し — AST → コア AST（Lean の Json.lean スキーマ）→ JSON）の状態と土台。
+//
+// 表現（仮決め R10-1 — selfhost-drafts）: 状態は S 1 つ。スカラーは S の欄、記録は全部 1 本の int ヒープ st.h（std/table の Table — 添字で読み書きし、成長でコピーしない）に積む
+// （Zig 版のポインタの木・ArrayList・HashMap の代わり）。記録は「ヒープの添字」で指し、無しは -1。
+// - 表層 AST: loader の木を写さずに参照で指す（astref.sober — 木の節・合成の節・木の列 / 文字列の基底つき参照）。読みは nodeOf(mut st, n).a 等で、
+//   欄は参照に付け替わって返る（括弧 EParen は透過 — Zig の AST は括弧を持たない。`$utf8` の書き換え先 EUtf8Ref は名前 `$utf8` の EIdent に見える）。
+//   補間・for 式の書き換え（Zig の interp.zig / forexpand.zig）などが作る節は合成の表 st.syn に足す
+// - 列 = [n, 要素…]、文字列 = [n, バイト…]
+// - コア式は st.cores（CoreExpr の表 — 参照 = CBASE + 添字 — core.sober）。型は st.types（Ty の表 — intern、参照 = TBASE + 添字 — ty.sober）
+// 再帰する関数は `st mut S` を持ち回る（Def として呼ぶ mut 引数の関数 — R2）。その関数に渡す imm の値は int だけにする
+// （frame の中で作った slice を渡すと検査が拒否する — language.md 31 節の anchor 1 slot、selfhost-drafts F-6。string リテラルは
+// strlit の段で渡せる）
+
+import "ast"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// 拒否は diag のラベル（CoreFragment / UnknownName / Malformed / TypeMismatch — Zig 版の error 名）。位置は節で運び、raise の時点で posOf で Pos に落とす
+
+// 状態のスカラーは legacy/zig/desugar.zig の Desugarer の欄と同じ名前・意味（bool は 0 / 1）。表（pkgs / files / fns / cons / errv）と
+// 作業スタック（lstk / sstk / jstk）はヒープの添字
+type S struct {
+    h table.Table[int]
+    e2s bool         // E2-S: callM へ上げる（check の経路だけ — e2s.sober）
+    e2sExcl []int    // 上げない関数（逃げ — 検査器の判定で Def として落ちたもの）
+    // package 単位の検査（check --pkg — 3'' M2）: only >= 0 ならこの package の Def だけ本体つき・他の Def は署名だけ（本体 -1 — 部分検査の封筒）。
+    // 根の式（main の本体）は only が main package のときだけ。onlySet = only を使う（ゼロ値の 0 と区別）
+    only int
+    onlySet bool
+    sigOnly bool
+    e2sBad ListRef   // 上げない印（条件 5）
+    // 区間（段 6 P6-3 — 脱糖 + 検査を区間ごとに子 task で: core_out.sober の DefRng）: rangeSet なら関数表の添字 [rlo, rhi) の Def だけ本体つき・
+    // 他の Def は署名だけ（部分検査の視点の外と同じ形）。根の式は rangeRoot のときだけ
+    rangeSet bool
+    rlo int
+    rhi int
+    rangeRoot bool
+    planOnly bool    // 区間の計画だけ（PlanDefs — 前段の型付けを飛ばす）
+    refs RefGraph    // 区間の子: 親の計画が作った参照の辺（rangeReach）
+    planBad []int    // 区間の子: 親の計画が決めた E2-S の上げない印（e2sScanCalls の結果 — 子は走査しない。空 = 自分で走査）
+    stopAt int       // 計測の口（段 6 P6-3 — core_out.sober の WithCoreOpt の stopAt）
+    trustStd bool    // std の Def を署名だけにする（L0 の受理印 — core_out.sober の WithCoreOpt の trust）
+    hbuckets int     // 型の intern・表層型の表のハッシュの頭の数（init.sober の bucketsFor — 0 = 既定の TBUCKETS）
+    trees []ast.Tree            // loader の木（imm のまま — 参照は astref.sober）
+    syn table.Table[ast.Node]   // 合成の節（参照 = SBASE + 添字）
+    synFile table.Table[int]    // その節のファイル（元の節・位置の出所と同じ — 拒否の位置 posOf。無ければ -1）
+    utf8 int                    // 名前 `$utf8` の文字列（EUtf8Ref の見せ方 — treeNode）
+    descs []int                 // 節の種類 → 欄の付け替えの種類（desc の表 — treeNode が引く）
+    binds table.Table[Binding]
+    labels table.Table[Label]
+    closures table.Table[Closure]
+    types table.Table[Ty]
+    cores table.Table[CoreExpr]
+    tyNext table.Table[int]
+    tyBucket table.Table[int]
+    tyMemo table.Table[TyMemo]   // 名前付き型の解決の memo（resolve.sober の tyOf — 型環境なしの参照だけ）
+    tyMemoBucket table.Table[int]
+    npkg int
+    pkgs int
+    nfile int
+    files int
+    nfn int
+    fns table.Table[FnInfo]
+    ndef int
+    ncon int
+    cons int
+    errv int
+    mainPkg int
+    tInt TyRef
+    tBool TyRef
+    tUnit TyRef
+    curPkg int
+    curRtys ListRef
+    tenv int
+    curTparams int
+    liftedHead int
+    liftedTail int
+    nlifted int
+    pcMemo table.Table[int]   // ParCheck の pcHasPar のメモ（段 6 P6-1 — parcheck.sober の pcMemoGet / pcMemoPut。空 = 使わない）
+    liftAt table.Table[int]   // 持ち上げた Def（インスタンス・ラムダ）の出所の節（開発用 check --def-index — DefAt）
+    hasOuter int
+    outerB int
+    outerF int
+    inlining int
+    inDict int
+    dictConst int
+    dictLifts int
+    liftHint int
+    rdepth int
+    // task の床（段 6 P3a — par.Spawn の子の本体の中では子自前の region の番号・外では 0）: 呼び手空間の上界に置く値（Def 呼び出しの実引数の string リテラル）を
+    // 子の世界で書ける最も外の region へ（子は共有の接頭〔親の region〕に確保できない — コアの spawn の本体は b = 子の region で型付く）
+    taskFloor int
+    // 囲む par.Scope の region + 1（0 = 無し — 段 6 P3b-5）: 型式 `par.Task[T]`（handle の slice の要素）をその region の own task へ写す
+    parScope1 int
+    // 外の mut 場所へ格納する値の行き先の region + 1（0 = 無し — 宛先構築レーン M4）。値の式の最上段の mut のリテラルだけが消費する
+    // （mksliceAt / mkmapAt で行き先に作る — mut は copyTo で写せない）。expr の入口で必ず落とす（部分式へ漏らさない）
+    mutDest int
+    // mut を含む値を外の region から普通の関数へ渡す呼び出しを展開している関数の積み（再帰の守り — M4 mutValInline）
+    mvInl table.Table[int]
+    mvInlN int
+    lstk int
+    nlab int
+    sstk int
+    nscope int
+    nextLabel int
+    retTarget int
+    trySkip int
+    stmtIf int
+    loopFloor int
+    tailWant TyRef
+    swWant TyRef
+    swStmt int         // 今の switch が文位置か（腕の値を捨てる — switchExpr。0 / 1）
+    swHint TyRef       // 呼び手が知っている switch の結果型（return の値 — coerceExpr が積み、switchExpr が 1 度だけ読む）
+    swUnreach TyRef    // 今の switch の到達しない腕の型（swHint → swWant → unit — caseArm）
+    hasErrSw int
+    errLevel int
+    errTy TyRef
+    // 型パターンの束縛（`case e V{…}:`）の行き先: let で束縛した subject のレベル・型宣言・核の型・表層型
+    swSubj int
+    swSubjDecl int
+    swSubjTy TyRef
+    swSubjSty int
+    psteps table.Table[PatStep]  // 入れ子の型パターンを前順に平たくした手（switch.sober の nestedArm）
+    pslots table.Table[int]      // 手の値の枠 → レベル（生成中に決まる）
+    // 表層型検査器（typer.sober — C1 B1）: 型の表・局所の束縛・節 → 型の表（鎖つきハッシュ）と、検査中の関数の文脈
+    ytys table.Table[YT]
+    ybinds table.Table[YBind]
+    yents table.Table[YEnt]
+    ybucket table.Table[int]
+    yfnres table.Table[int]   // 関数ごとの呼び出しの結果の型（-2 = まだ）
+    yfnsig table.Table[int]   // 関数ごとの関数値の型（-2 = まだ）
+    yconty table.Table[int]   // 辞書 const ごとの型（-2 = まだ）
+    yyield int                // 検査中の for の yield の型（-3 = まだ yield が無い・-1 = 揃わない）
+    ydtsame int               // 型引数の突き合わせ（inferTs × YTArgsOf）: 一致・食い違い
+    ydtdiff int
+    ydiff int                 // 差分オラクル（check --typer-diff）: exprSty を表層型検査器の表と突き合わせる（0 / 1）
+    ydsame int                // 突き合わせの数: 一致・表だけ分かる・exprSty だけ分かる・食い違い・比べない（型なしの定数・合成の節）
+    ydgain int
+    ydloss int
+    ydmis int
+    ydskip int
+    nomAll int                // 開発用（check --nominal-all）: 表層型の照合の拒否（TypeMismatch）を止めずに記録して続ける（0 / 1）
+    nomLog table.Table[int]   // その記録（ファイル・字句の位置）
+    ydlog table.Table[int]    // 食い違いと exprSty だけ分かるものの記録（位置・exprSty の値・表の表層型の種類）
+    expRep int                // 開発用（check --expansion-report — expansion.sober）: 展開の寄与を数える（0 / 1）
+    expStk table.Table[int]   // 計測の区間の積み（[入口のコア式の数, 外側の区間の子の和] の対）と深さ
+    expSp int
+    expChild int              // 今の区間の中で閉じた子の区間の寄与（含む）の和
+    expCnt table.Table[int]   // 関数 × {展開, Def の本体} ごとの回数・寄与（含む）・寄与（自分だけ）
+    expIncl table.Table[int]
+    expExcl table.Table[int]
+    yenv int
+    ypk int
+    ytps ListRef
+    // 型パラメータ型の補間の穴（report-63 §3-3 — ユーザー裁定 2026-09-30: インスタンスごとに種類を決める）: 検査中の関数・印の列
+    // （関数ごと 0 / 1 — 本体に型パラメータ型の穴がある）・インスタンスの型環境 → 表層型の型引数の対応（鎖 [tenv, 型引数の列, next]）・
+    // ジェネリック Def のインスタンスの表（鎖 [関数, 型引数の列, Def の添字, next]）
+    yfi int
+    ymark int
+    instEnvs int
+    insts int
+    yedges int   // 型パラメータを型引数に渡す呼び出しの辺（鎖 [呼び手の関数, 呼ばれる関数, next] — 印の伝播）
+    jstk int
+    jlab int
+    // 再帰展開の検査に使う展開中の関数の鎖（inlining と同じ形）。ラムダの本体を展開する間は、閉包が定義時に持った鎖へ差し替える
+    // （本体は字句的に callee の外 — `iter.Slice` の中のラムダが `iter.Slice` を呼ぶのは再帰でない。lower の CL_INL と同じ方式）
+    inlrec int
+    stys table.Table[STy]        // 表層型の表（surface.sober — STBASE + 添字）
+    smemo table.Table[SMemo]     // 表層型のメモ（surface.sober — 型名の解決と intern）
+    smemoBucket table.Table[int]
+    fnBucket table.Table[int]    // 関数の索引（resolve.sober の findFn — (package, 名前) のハッシュ → 関数の添字の鎖。最初の findFn で組む）
+    fnNext table.Table[int]
+    conBucket table.Table[int]   // const の索引（resolve.sober の lookupConst — 形は fnBucket と同じ）
+    conNext table.Table[int]
+    tyBucketI table.Table[int]   // 型宣言の索引（resolve.sober の typeIn）: 宣言の節・package・鎖
+    tyIdxNode table.Table[int]
+    tyIdxPkg table.Table[int]
+    tyIdxNext table.Table[int]
+    fnNamed table.Table[int]     // 名前付き関数型の展開の結果 → 型宣言（対 [te, td]…— surface.sober の noteNamedFn）
+    curRes ListRef                   // 今の関数の結果の型式の列（表層型の照合用 — -1 = 無し）
+    curResPkg int
+}
+
+// ── ヒープの読み書き（st.h = std/table の Table）──
+// 包みは展開される（呼び出し点ごとの一時領域は lower の文の出口で返して使い回す — S-1。以前は @noinline で暫定回避していた: 展開すると
+// LLVM 経路（-O0）で呼び出し点ごとに一時領域が積もり、再帰する関数のフレームが 3〜4 倍に膨らんで 8MB のスタックを溢れた — reaudit ① report-15）
+
+func hget(st mut S, i int) int {
+    return table.Get(mut st.h, i)
+}
+
+func hset(st mut S, i int, v int) {
+    table.Set(mut st.h, i, v)
+}
+
+func hpush(st mut S, v int) {
+    table.Push(mut st.h, v)
+}
+
+func hlen(st mut S) int {
+    return table.Len(mut st.h)
+}
+
+// dat は生の 1 語（文字列のバイト・値の列の要素・列の個数）— 木の列・文字列（LBASE）なら木の data、他はヒープ
+func dat(st mut S, x int) int {
+    if x >= LBASE {
+        if x >= LBASE + LK {
+            return badRef()
+        }
+        return st.trees[refFile(x)].data[refIdx(x)]
+    }
+    return hget(mut st, x)
+}
+
+// ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
+
+func put(st mut S, x int) {
+    hpush(mut st, x)
+}
+
+func top(st mut S) int {
+    return hlen(mut st)
+}
+
+func rec5(st mut S, tag int, a int, b int, c int, d int) int {
+    at := hlen(mut st)
+    hpush(mut st, tag)
+    hpush(mut st, a)
+    hpush(mut st, b)
+    hpush(mut st, c)
+    hpush(mut st, d)
+    return at
+}
+
+// rec8 は表層 AST の節を合成する（合成の表 st.syn — 参照 = SBASE + 添字。補間・for 式・yield・名前付き関数型の展開などの書き換えが作る）
+// （位置 = 節 at — 字句とファイルを継ぐ）
+func rec8(st mut S, k int, at NodeRef, a int, b int, c int, d int, e int, f int) int {
+    return synNode(mut st, ast.Node{kind: k, tok: TokAt(mut st, int(at)), a: a, b: b, c: c, d: d, e: e, f: f}, at)
+}
+
+// strLit は綴り w をヒープの文字列にする
+func strLit(st mut S, w string) StrRef {
+    b := bytes(w)
+    at := StrRef(hlen(mut st))
+    hpush(mut st, len(b))
+    for i <- iter.Range(0, len(b)) {
+        hpush(mut st, int(b[i]))
+    }
+    return at
+}
+
+// strOf はバイト列 b をヒープの文字列にする
+func strOf(st mut S, b []byte) StrRef {
+    at := StrRef(hlen(mut st))
+    hpush(mut st, len(b))
+    for i <- iter.Range(0, len(b)) {
+        hpush(mut st, int(b[i]))
+    }
+    return at
+}
+
+// strPart は文字列 s のバイト [a, b) を新しい文字列にする
+func strPart(st mut S, s StrRef, a int, b int) StrRef {
+    at := StrRef(hlen(mut st))
+    hpush(mut st, b - a)
+    for i <- iter.Range(a, b) {
+        hpush(mut st, sat(mut st, s, i))
+    }
+    return at
+}
+
+// list0 / list1 / list2 は要素 0〜2 個の列
+func list0(st mut S) int {
+    at := hlen(mut st)
+    hpush(mut st, 0)
+    return at
+}
+
+func list1(st mut S, x int) int {
+    at := hlen(mut st)
+    hpush(mut st, 1)
+    hpush(mut st, x)
+    return at
+}
+
+func list2(st mut S, x int, y int) int {
+    at := hlen(mut st)
+    hpush(mut st, 2)
+    hpush(mut st, x)
+    hpush(mut st, y)
+    return at
+}
+
+// listN は長さ n の列を確保する（中身は 0 — 呼び手が埋める）
+func listN(st mut S, n int) int {
+    at := hlen(mut st)
+    hpush(mut st, n)
+    for i <- iter.Range(0, n) {
+        hpush(mut st, 0)
+    }
+    return at
+}
+
+// lset は listN で取った固定長の列 l（作業域 — jstk / jlab / lstk / sstk）の i 番に v を書く。範囲外は panic 101（badRef —
+// ヒープは 1 本の表なので、検査しないと溢れた書き込みが隣の列を黙って上書きする）
+func lset(st mut S, l int, i int, v int) {
+    if i < 0 || i >= hget(mut st, l) {
+        badRef()
+    }
+    hset(mut st, l + 1 + i, v)
+}
+
+// ── 文字列の比較 ──
+
+func strEq(st mut S, a StrRef, b StrRef) bool {
+    n := slen(mut st, a)
+    if slen(mut st, b) != n {
+        return false
+    }
+    return strSpanEq(mut st, a, 0, b, 0, n)
+}
+
+func strIs(st mut S, a StrRef, w string) bool {
+    b := bytes(w)
+    if slen(mut st, a) != len(b) {
+        return false
+    }
+    if int(a) >= LBASE {
+        return dataIs(st.trees[refFile(int(a))].data, refIdx(int(a)) + 1, b)
+    }
+    for i <- iter.Range(0, len(b)) {
+        if hget(mut st, int(a) + 1 + i) != int(b[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// strEqPart は文字列 a と、文字列 s のバイト [lo, hi) の一致
+func strEqPart(st mut S, a StrRef, s StrRef, lo int, hi int) bool {
+    if slen(mut st, a) != hi - lo {
+        return false
+    }
+    return strSpanEq(mut st, a, 0, s, lo, hi - lo)
+}
+
+// strSpanEq は文字列 a のバイト [alo, alo + n) と文字列 s のバイト [slo, slo + n) の一致（両方が木の文字列なら data を直に比べる）
+func strSpanEq(st mut S, a StrRef, alo int, s StrRef, slo int, n int) bool {
+    if int(a) >= LBASE && int(s) >= LBASE {
+        return dataEq(st.trees[refFile(int(a))].data, refIdx(int(a)) + 1 + alo, st.trees[refFile(int(s))].data, refIdx(int(s)) + 1 + slo, n)
+    }
+    for i <- iter.Range(0, n) {
+        if sat(mut st, a, alo + i) != sat(mut st, s, slo + i) {
+            return false
+        }
+    }
+    return true
+}
+
+// StrEq / StrIs / StrEqPart は lower が使う（同じ速い道を共有する）
+func StrEq(st mut S, a StrRef, b StrRef) bool {
+    return strEq(mut st, a, b)
+}
+
+func StrIs(st mut S, a StrRef, w string) bool {
+    return strIs(mut st, a, w)
+}
+
+func StrEqPart(st mut S, a StrRef, s StrRef, lo int, hi int) bool {
+    return strEqPart(mut st, a, s, lo, hi)
+}
+
+// dotAt は文字列 s の最初の '.' の位置（無ければ -1）
+func dotAt(st mut S, s StrRef) int {
+    mut i := 0
+    while i < slen(mut st, s) {
+        if sat(mut st, s, i) == '.' {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// ── 表層 AST の読み出し（節 = ast.Node — 木か合成の表。参照は astref.sober）──
+
+// synAt は合成の表の i 番目（非ジェネリックの包み — F-10）
+func synAt(st mut S, i int) ast.Node {
+    return table.Get(mut st.syn, i)
+}
+
+// synNode は合成の節を足して参照を返す（ファイルは from — 元の節・位置の出所 — と同じ）
+func synNode(st mut S, x ast.Node, from NodeRef) int {
+    table.Push(mut st.syn, x)
+    table.Push(mut st.synFile, fileOf(mut st, from))
+    return SBASE + table.Len(mut st.syn) - 1
+}
+
+// synSet は合成の節 n を x に差し替える（文形 for のラムダに break の行き先を後から書く — stmts.sober の 1 か所だけ）
+func synSet(st mut S, n int, x ast.Node) {
+    table.Set(mut st.syn, n - SBASE, x)
+}
+
+// SynSet は synSet（lower の文形 for — 同じ形の書き込み）
+func SynSet(st mut S, n int, x ast.Node) {
+    synSet(mut st, n, x)
+}
+
+// SynNode は synNode（lower が合成する）
+func SynNode(st mut S, x ast.Node, from NodeRef) int {
+    return synNode(mut st, x, from)
+}
+
+// KindAt / TokAt は節の種類・字句の位置（lower が読む）
+func KindAt(st mut S, n int) int {
+    return kindN(mut st, NodeRef(n))
+}
+
+
+func TokAt(st mut S, n int) int {
+    if n < 0 {
+        return 0
+    }
+    if isTreeNode(n) {
+        return st.trees[refFile(n)].nodes[refIdx(n)].tok
+    }
+    return synAt(mut st, n - SBASE).tok
+}
+
+// fileOf は節 n のファイル（木の節は参照の基底・合成の節は synFile — 無ければ -1）
+func fileOf(st mut S, n NodeRef) int {
+    if n == -1 {
+        return -1
+    }
+    if isTreeNode(int(n)) {
+        return refFile(int(n))
+    }
+    return table.Get(mut st.synFile, int(n) - SBASE)
+}
+
+// FileOf は fileOf（lower の表層型の突き合わせの報告）
+func FileOf(st mut S, n NodeRef) int {
+    return fileOf(mut st, n)
+}
+
+// posOf は節 n の位置（拒否の位置 — 無ければ diag.None()）
+func posOf(st mut S, n NodeRef) diag.Pos {
+    return diag.Pos{file: fileOf(mut st, n), tok: TokAt(mut st, int(n))}
+}
+
+// PosOf は posOf（lower の拒否の位置）
+func PosOf(st mut S, n NodeRef) diag.Pos {
+    return posOf(mut st, n)
+}
+
+// nomFail は表層型の照合の拒否（TypeMismatch — 節 at）。check --nominal-all では記録して続ける（名前はコアで消えるので続けても脱糖は壊れない）
+func nomFail(st mut S, at NodeRef) error? {
+    if st.nomAll == 0 {
+        return diag.TypeMismatch{at: posOf(mut st, at)}
+    }
+    table.Push(mut st.nomLog, fileOf(mut st, at))
+    table.Push(mut st.nomLog, TokAt(mut st, int(at)))
+    return nil
+}
+
+// ── 読み口（節 = NodeRef・列 = ListRef — language.md 32 節の named scalar。旧い int の読み口 nodeAt / kindOf / tokOf / llen / lat は
+// 2026-09-30 に全部移して消した。木の列なら要素を参照へ付け替える）──
+
+func nodeOf(st mut S, n NodeRef) ast.Node {
+    if isTreeNode(int(n)) {
+        return treeNode(refFile(int(n)), st.trees[refFile(int(n))].nodes, refIdx(int(n)), st.descs, st.utf8)
+    }
+    return synAt(mut st, int(n) - SBASE)
+}
+
+func kindN(st mut S, n NodeRef) int {
+    if isTreeNode(int(n)) {
+        return treeKind(st.trees[refFile(int(n))], refIdx(int(n)))
+    }
+    return synAt(mut st, int(n) - SBASE).kind
+}
+
+// tokN は節の字句の位置
+func tokN(st mut S, n NodeRef) int {
+    return TokAt(mut st, int(n))
+}
+
+// lenL / latN / latI / latL は列の個数・i 番目（節 / int — 文字列・ヒープの値 / 列）
+func lenL(st mut S, l ListRef) int {
+    if int(l) >= LBASE {
+        return st.trees[refFile(int(l))].data[refIdx(int(l))]
+    }
+    return hget(mut st, int(l))
+}
+
+func latN(st mut S, l ListRef, i int) NodeRef {
+    return NodeRef(latI(mut st, l, i))
+}
+
+func latI(st mut S, l ListRef, i int) int {
+    if int(l) >= LBASE {
+        return treeLat(refFile(int(l)), st.trees[refFile(int(l))].nodes, st.trees[refFile(int(l))].data, refKind(int(l)), refIdx(int(l)), i)
+    }
+    return hget(mut st, int(l) + 1 + i)
+}
+
+func latL(st mut S, l ListRef, i int) ListRef {
+    return ListRef(latI(mut st, l, i))
+}
+
+// lput は列 l（ヒープの列 — listN で取ったもの）の i 番に v を書く（検査なし — 作った直後に埋める形。作業域は lset）
+func lput(st mut S, l ListRef, i int, v int) {
+    hset(mut st, int(l) + 1 + i, v)
+}
+
+// slen / sat は文字列 s の長さ・i 番目のバイト（dat の型付きの読み口）
+func slen(st mut S, s StrRef) int {
+    return dat(mut st, int(s))
+}
+
+func sat(st mut S, s StrRef, i int) int {
+    return dat(mut st, int(s) + 1 + i)
+}
+
+// sput は listN で取った文字列 s の i 番目のバイトを書く（作った直後に埋める形 — lput と同じ）
+func sput(st mut S, s StrRef, i int, v int) {
+    hset(mut st, int(s) + 1 + i, v)
+}
+
+// latS は列 l の i 番目を文字列として読む（文字列の列 — desc の桁 4）
+func latS(st mut S, l ListRef, i int) StrRef {
+    return StrRef(latI(mut st, l, i))
+}
+
+func hgetS(st mut S, i int) StrRef {
+    return StrRef(hget(mut st, i))
+}
+
+// sA〜sE は節の欄を文字列として読む（desc の桁 2）
+func sA(x ast.Node) StrRef {
+    return StrRef(x.a)
+}
+
+func sB(x ast.Node) StrRef {
+    return StrRef(x.b)
+}
+
+func sC(x ast.Node) StrRef {
+    return StrRef(x.c)
+}
+
+func sD(x ast.Node) StrRef {
+    return StrRef(x.d)
+}
+
+func sE(x ast.Node) StrRef {
+    return StrRef(x.e)
+}
+
+// hgetN / hgetL はヒープの記録の 1 語を節・列として読む（記録の欄の意味は記録ごと — hgetTy と同じ形）
+func hgetN(st mut S, i int) NodeRef {
+    return NodeRef(hget(mut st, i))
+}
+
+func hgetL(st mut S, i int) ListRef {
+    return ListRef(hget(mut st, i))
+}
+
+// nA〜nE / lA〜lE は節の欄を子の節・列として読む（欄の意味は種類ごと — desc の表）
+func nA(x ast.Node) NodeRef {
+    return NodeRef(x.a)
+}
+
+func nB(x ast.Node) NodeRef {
+    return NodeRef(x.b)
+}
+
+func nC(x ast.Node) NodeRef {
+    return NodeRef(x.c)
+}
+
+func nD(x ast.Node) NodeRef {
+    return NodeRef(x.d)
+}
+
+func nE(x ast.Node) NodeRef {
+    return NodeRef(x.e)
+}
+
+func lA(x ast.Node) ListRef {
+    return ListRef(x.a)
+}
+
+func lB(x ast.Node) ListRef {
+    return ListRef(x.b)
+}
+
+func lC(x ast.Node) ListRef {
+    return ListRef(x.c)
+}
+
+func lD(x ast.Node) ListRef {
+    return ListRef(x.d)
+}
+
+func lE(x ast.Node) ListRef {
+    return ListRef(x.e)
+}
+
+// NodeOf / KindN / LenL / LatI は nodeOf / kindN / lenL / latI（lower が読む公開の口）
+func NodeOf(st mut S, n NodeRef) ast.Node {
+    return nodeOf(mut st, n)
+}
+
+
+func KindN(st mut S, n NodeRef) int {
+    return kindN(mut st, n)
+}
+
+
+func LenL(st mut S, l ListRef) int {
+    return lenL(mut st, l)
+}
+
+
+func LatI(st mut S, l ListRef, i int) int {
+    return latI(mut st, l, i)
+}
+
+
+// Dat は dat（lower が読む公開の口）
+func Dat(st mut S, x int) int {
+    return dat(mut st, x)
+}
+
+
+// ── 表: package（6 語 [path, name, flo, fhi, imports（列 [n, (ref, pkg)…]）, 0]）──
+
+const PKSZ = 6
+
+func pkgRec(st mut S, pk int) int {
+    return st.pkgs + pk * PKSZ
+}
+
+func PkgPath(st mut S, pk int) StrRef {
+    return hgetS(mut st, st.pkgs + pk * PKSZ)
+}
+
+func PkgFlo(st mut S, pk int) int {
+    return hget(mut st, st.pkgs + pk * PKSZ + 2)
+}
+
+func PkgFhi(st mut S, pk int) int {
+    return hget(mut st, st.pkgs + pk * PKSZ + 3)
+}
+
+// FileRoot はファイル f の KFile 節
+func FileRoot(st mut S, f int) NodeRef {
+    return hgetN(mut st, st.files + f * 2)
+}
+
+// FilePkg はファイル f の package
+func FilePkg(st mut S, f int) int {
+    return hget(mut st, st.files + f * 2 + 1)
+}
+
+// ImportOf は package pk の import の参照名（文字列 s のバイト [lo, hi)）の行き先 package（無ければ -1）。
+// import はファイルごと（language.md 20 節 — Go と同じ）: s が木の文字列（ソースに書いた名前）なら、その名前を書いたファイルが
+// 自分で import した参照名だけが引ける（同じ package の別ファイルの import は見えない）。合成の名前（ヒープの文字列 — 暗黙の import 等）は package の表
+func ImportOf(st mut S, pk int, s StrRef, lo int, hi int) int {
+    if int(s) >= LBASE && FilePkg(mut st, refFile(int(s))) == pk && !fileImports(mut st, refFile(int(s)), s, lo, hi) {
+        return -1
+    }
+    im := hget(mut st, st.pkgs + pk * PKSZ + 4)
+    mut i := 0
+    while i < hget(mut st, im) {
+        if strEqPart(mut st, hgetS(mut st, im + 1 + i * 2), s, lo, hi) {
+            return hget(mut st, im + 2 + i * 2)
+        }
+        i += 1
+    }
+    return -1
+}
+
+// fileImports はファイル f の import 宣言に参照名 s[lo:hi) があるか（参照名 = 別名、無ければ path の最後の段）
+func fileImports(st mut S, f int, s StrRef, lo int, hi int) bool {
+    imps := lB(nodeOf(mut st, FileRoot(mut st, f)))
+    for i <- iter.Range(0, lenL(mut st, imps)) {
+        im := nodeOf(mut st, latN(mut st, imps, i))
+        r := if im.a >= 0 { sA(im) } else { sB(im) }
+        n := slen(mut st, r)
+        mut b := 0
+        if im.a < 0 {
+            for j <- iter.Range(0, n) {
+                if dat(mut st, int(r) + 1 + j) == '/' {
+                    b = j + 1
+                }
+            }
+        }
+        if n - b == hi - lo {
+            mut same := true
+            for j <- iter.Range(0, hi - lo) {
+                if dat(mut st, int(r) + 1 + b + j) != dat(mut st, int(s) + 1 + lo + j) {
+                    same = false
+                }
+            }
+            if same {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// IsStdPkg は std/ 配下の package か
+func IsStdPkg(st mut S, pk int) bool {
+    p := PkgPath(mut st, pk)
+    return hget(mut st, int(p)) >= 4 && hget(mut st, int(p) + 1) == 's' && hget(mut st, int(p) + 2) == 't' && hget(mut st, int(p) + 3) == 'd' && hget(mut st, int(p) + 4) == '/'
+}
+
+// FuncErrors は関数宣言 fd の `@errors` のラベル名の列（文字列の列 — 無ければ -1）と `@` の字句（付加の列の 6・7 番目 — parser.funcDecl。
+// 付加の列は木の生の値の列なので、ラベル名の列を同じファイルの文字列の列の参照へ付け替える。合成の関数宣言（付加 -1）は -1）
+func FuncErrors(st mut S, fd ast.Node) (ListRef, int) {
+    ext := fd.f
+    if ext < LBASE || lenL(mut st, ListRef(ext)) < 7 {
+        return -1, 0
+    }
+    raw := latI(mut st, ListRef(ext), 5)
+    tok := latI(mut st, ListRef(ext), 6)
+    if raw < 0 {
+        return -1, tok
+    }
+    return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
+}
+
+// ── 表: 関数（st.fns の要素 — 関数表の添字で指す）──
+
+// FnInfo は関数表の 1 行（ファイル順 × 宣言順）
+type FnInfo struct {
+    node NodeRef      // 関数宣言の節
+    pkg int
+    expands bool  // 呼び出し点に展開される（関数型引数を持つ）
+    mutDef bool   // mut 引数を持つ Def（R2 の callm）
+    closed bool   // 関数型の引数を持たない展開関数（lower の --passes で region 透過の実体関数 — check は展開のまま）
+    hasTry bool
+    def int       // Def の添字（展開される・main は -1）
+}
+
+// FnAt は関数表の i 行目（lower も読む — 非ジェネリックの包み）
+func FnAt(st mut S, i int) FnInfo {
+    return table.Get(mut st.fns, i)
+}
+
+func fnNode(st mut S, i int) NodeRef {
+    return FnAt(mut st, i).node
+}
+
+func fnPkg(st mut S, i int) int {
+    return FnAt(mut st, i).pkg
+}
+
+func fnExpands(st mut S, i int) bool {
+    return FnAt(mut st, i).expands
+}
+
+func fnMutDef(st mut S, i int) bool {
+    return FnAt(mut st, i).mutDef
+}
+
+func fnHasTry(st mut S, i int) bool {
+    return FnAt(mut st, i).hasTry
+}
+
+func fnDef(st mut S, i int) int {
+    return FnAt(mut st, i).def
+}
+
+// 関数宣言の欄（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body）
+func fnName(st mut S, i int) StrRef {
+    return sA(nodeOf(mut st, fnNode(mut st, i)))
+}
+
+func fnTParams(st mut S, i int) ListRef {
+    return lB(nodeOf(mut st, fnNode(mut st, i)))
+}
+
+func fnParams(st mut S, i int) ListRef {
+    return lC(nodeOf(mut st, fnNode(mut st, i)))
+}
+
+func fnResults(st mut S, i int) ListRef {
+    return lD(nodeOf(mut st, fnNode(mut st, i)))
+}
+
+func fnBody(st mut S, i int) NodeRef {
+    return nE(nodeOf(mut st, fnNode(mut st, i)))
+}
+
+// ── 表: const（5 語 [node, pkg, value, has, dict]）──
+
+const CNSZ = 5
+
+func ConNode(st mut S, i int) NodeRef {
+    return hgetN(mut st, st.cons + i * CNSZ)
+}
+
+func ConValue(st mut S, i int) int {
+    return hget(mut st, st.cons + i * CNSZ + 2)
+}
+
+func ConDict(st mut S, i int) bool {
+    return hget(mut st, st.cons + i * CNSZ + 4) != 0
+}
+
+func ConPkg(st mut S, i int) int {
+    return hget(mut st, st.cons + i * CNSZ + 1)
+}
+
+func ConHas(st mut S, i int) bool {
+    return hget(mut st, st.cons + i * CNSZ + 3) != 0
+}
+
+// ── 表の大きさと、表に載らない大域（lower も読む — 表の記録のオフセットは desugar の外に出さない。reaudit 第 2 弾 C2）──
+
+func Nfn(st mut S) int {
+    return st.nfn
+}
+
+func Ncon(st mut S) int {
+    return st.ncon
+}
+
+func Nfile(st mut S) int {
+    return st.nfile
+}
+
+func MainPkg(st mut S) int {
+    return st.mainPkg
+}
+
+// error ラベル（st.errv = 列 [(型宣言, package)…] — リンク時に閉じる union の variant の並び）
+
+func NErr(st mut S) int {
+    return lenL(mut st, ListRef(st.errv)) / 2
+}
+
+func ErrNode(st mut S, i int) NodeRef {
+    return hgetN(mut st, st.errv + 1 + i * 2)
+}
+
+func ErrPkg(st mut S, i int) int {
+    return hget(mut st, st.errv + 2 + i * 2)
+}
+
+// ── 初期化: loader の Program をヒープへ ──
+
+// d6 は 6 欄の付け替えの種類（8 進 1 桁ずつ）: 0 = 値、1 = 節、2 = 文字列、3 = 節の列、4 = 文字列の列、5 = 値の列
+func d6(a int, b int, c int, d int, e int, f int) int {
+    return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
+}
+

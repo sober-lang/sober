@@ -1,0 +1,17 @@
+package main
+
+// 段 6 P4-2 (O1): par.Map の子の印字 — 要素の順（= 生んだ順）に子の流れが並ぶ
+
+import "std/par"
+
+func show(v int) int {
+    println("elem ${v}")
+    println("elem ${v} again")
+    return v * v
+}
+
+func main() {
+    println("before")
+    ys, e := par.Map([]int{3, 1, 2}, (v) => show(v))
+    println("${ys[0]} ${ys[1]} ${ys[2]}")
+}

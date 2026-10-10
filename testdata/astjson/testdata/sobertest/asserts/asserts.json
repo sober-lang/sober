@@ -1,0 +1,203 @@
+{
+  "package": "asserts",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Double",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 12
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 14
+                },
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 18
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "Name",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 28
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 30
+                  },
+                  "tok": 29
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "one",
+                        "tok": 32
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "many",
+                        "tok": 36
+                      }
+                    }
+                  ]
+                },
+                "tok": 27
+              }
+            ],
+            "tok": 26
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 41
+      },
+      "sig_end": 25
+    },
+    {
+      "name": "Even",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "binary",
+                  "op": "%",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 50
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 52
+                  },
+                  "tok": 51
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 54
+                },
+                "tok": 53
+              }
+            ],
+            "tok": 49
+          }
+        ]
+      },
+      "tok": 42,
+      "bodiless": false,
+      "span": {
+        "start": 41,
+        "end": 58
+      },
+      "sig_end": 48
+    }
+  ],
+  "consts": []
+}

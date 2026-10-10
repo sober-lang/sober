@@ -1,0 +1,58 @@
+package main
+
+// slice literal / map literal の要素に外側の region の値（仮引数・外の局所）を入れる（F-u の修理 — 要素を点座標へ緩める ann。
+// append の appendValueAnn と同じ規律）。対照: 局所で作った値・region を持たない値・struct literal・map のキーは前から通る
+
+type S struct {
+    s string
+}
+
+func one(e string) []string {
+    return []string{e}
+}
+
+func count(e string) int {
+    s := []string{e, "x"}
+    return len(s)
+}
+
+func nested(e []int) [][]int {
+    return [][]int{e, []int{9}}
+}
+
+func byKey(e string) map[int]string {
+    return map[int]string{1: e, 2: "y"}
+}
+
+// 対照（前から通る形）
+func local(e string) []string {
+    return []string{e + ""}
+}
+
+func ints(e int) []int {
+    return []int{e}
+}
+
+func wrap(e string) S {
+    return S{s: e}
+}
+
+func keyed(e string) map[string]int {
+    return map[string]int{e: 1}
+}
+
+func main() {
+    println(one("a")[0])
+    println(count("b"))
+    println(len(nested([]int{1, 2})[0]))
+    println(len(byKey("c")))
+    e := "d"
+    s := { []string{e} }
+    println(s[0])
+    m := { map[int]string{3: e} }
+    println(len(m))
+    println(local("f")[0])
+    println(ints(7)[0])
+    println(wrap("g").s)
+    println(len(keyed("h")))
+}

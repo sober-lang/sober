@@ -1,0 +1,73 @@
+package main
+
+// 入れ子の型パターンの逐次照合（パターン行列 — language.md 22 節）: 同じ外側の variant の腕を並べ、内側が外れたら次の腕へ
+// （上から順に最初に一致した腕 — build の逐次照合と check の脱糖が同じ意味）。新しい形（f）と、前から受理していた 2 段の switch（g）の
+// 出力が全入力で一致することの回帰例
+
+type Leaf union {
+    L1{a int}
+    L2{b int}
+}
+
+type Mid union {
+    M1{l Leaf}
+    M2{c int}
+}
+
+type Top union {
+    T1 {
+        m Mid
+        k int
+    }
+    T2{n int}
+}
+
+func f(t Top) int {
+    return switch t {
+    case T1{m: M1{l: L1{a}}, k}: a * 100 + k
+    case T1{m: M1{l: _}, k}: 0 - k
+    case T1{m: M2{c}, k}: c + k * 10
+    case T2{n}: n
+    }
+}
+
+func g(t Top) int {
+    return switch t {
+    case T1{m, k}: mid(m, k)
+    case T2{n}: n
+    }
+}
+
+func mid(m Mid, k int) int {
+    return switch m {
+    case M1{l}: leaf(l, k)
+    case M2{c}: c + k * 10
+    }
+}
+
+func leaf(l Leaf, k int) int {
+    return switch l {
+    case L1{a}: a * 100 + k
+    case L2{b}: 0 - k
+    }
+}
+
+// 文の switch・最後の腕が全域（`_`）: 外れた値は `_` へ
+func h(t Top) {
+    switch t {
+    case T1{m: M1{l: L2{b}}, k}:
+        println("L2 ${b} ${k}")
+    case T1{m: M2{c}}:
+        println("M2 ${c}")
+    case _:
+        println("other")
+    }
+}
+
+func main() {
+    ts := []Top{T1{m: M1{l: L1{a: 3}}, k: 2}, T1{m: M1{l: L2{b: 4}}, k: 5}, T1{m: M2{c: 6}, k: 7}, T2{n: 8}}
+    for t <- ts {
+        println("${f(t)} ${g(t)}")
+        h(t)
+    }
+}

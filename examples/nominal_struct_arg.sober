@@ -1,0 +1,15 @@
+package main
+
+// 負例（language.md 32 節）: 同形の別 struct は渡せない（X1 — 型宣言は nominal）
+
+type A struct { x int }
+type B struct { x int }
+
+func f(b B) int {
+    return b.x
+}
+
+func main() {
+    a := A{x: 1}
+    println(f(a))
+}

@@ -1,0 +1,42 @@
+package main
+
+// 名前付き実引数と `T?` 仮引数の省略（syntax.md 決定 7）: 位置が先・名前が後・名前付きは宣言の順。省略できるのは `T?` の仮引数だけで、
+// 省略は nil。loader が位置引数へ写す（以降の層は位置引数の木を読む）
+
+import "std/strings"
+
+func label(name string, prefix string?, suffix string?) string {
+    mut s := name
+    if prefix != nil {
+        s = prefix + s
+    }
+    if suffix != nil {
+        s = s + suffix
+    }
+    return s
+}
+
+func area(w int, h int) int {
+    return w * h
+}
+
+func scaled(x int, by int?) int {
+    if by != nil {
+        return x * by
+    }
+    return x
+}
+
+func main() {
+    println(label("a"))
+    println(label("a", prefix: "<"))
+    println(label("a", suffix: ">"))
+    println(label("a", prefix: "<", suffix: ">"))
+    println(label("a", "[", suffix: "]"))
+    println(area(3, h: 4))
+    println(area(w: 2, h: 5))
+    println(scaled(7))
+    println(scaled(7, by: 3))
+    println("b" |> label(_, suffix: "!"))
+    println(strings.HasPrefix("sober", prefix: "so"))
+}

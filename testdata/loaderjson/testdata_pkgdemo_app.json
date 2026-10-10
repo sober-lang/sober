@@ -1,0 +1,91 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "geo",
+          "path": "testdata/pkgdemo/geo"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "geo.Area",
+            "geo.Double",
+            "geo.Sum",
+            "println"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "Local",
+          "value": 4,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "testdata/pkgdemo/geo",
+      "name": "geo",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Area",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Sum",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "hidden",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Double",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hidden"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "Scale",
+          "value": 3,
+          "dict": false
+        },
+        {
+          "name": "AreaMetric",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "ByWeight",
+          "value": null,
+          "dict": true
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

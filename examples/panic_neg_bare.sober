@@ -1,0 +1,6 @@
+package main
+
+// 負例: 裸の `panic()` は廃止 — 理由のラベルが要る（language.md 27 節「panic ラベル」— loader の拒否）
+func main() {
+    panic()
+}

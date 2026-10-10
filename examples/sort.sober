@@ -1,0 +1,51 @@
+package main
+
+// V3-3 の検証例: sort[T] + Ord[T] 辞書。辞書のフィールドは閉じたラムダ（匿名関数に持ち上げる）か
+// 名前付き関数。型引数は値引数から推論する（解決ゼロ段は辞書にだけ掛かる — 辞書は常に明示）
+type Ord[T] struct {
+    less func(T, T) bool
+}
+
+// 挿入ソート: 新しい slice を返す（早期 return が断片外なので while で書く）
+func sort[T](xs []T, ord Ord[T]) []T {
+    mut ys := mut []T{}
+    mut i := 0
+    while i < len(xs) {
+        ys = append(ys, xs[i])
+        mut j := len(ys) - 1
+        while j > 0 && ord.less(ys[j], ys[j - 1]) {
+            t := ys[j]
+            ys[j] = ys[j - 1]
+            ys[j - 1] = t
+            j -= 1
+        }
+        i += 1
+    }
+    return freeze(ys)
+}
+
+type Tok struct {
+    kind, start int
+}
+
+func byStart(a Tok, b Tok) bool {
+    return a.start < b.start
+}
+
+// ジェネリック本体の中の閉じたラムダ（持ち上げた匿名関数が型パラメータを引き継ぐ）
+func never[T](x T) Ord[T] {
+    return Ord[T]{less: (a, b) => false}
+}
+
+func main() {
+    xs := []int{5, 2, 8, 1, 9}
+    up := sort(xs, Ord[int]{less: (a, b) => a < b})
+    down := sort(xs, Ord[int]{less: (a, b) => a > b})
+    println(up[0], up[1], up[2], up[3], up[4])
+    println(down[0], down[1], down[2], down[3], down[4])
+    ts := []Tok{Tok{0, 7}, Tok{1, 3}, Tok{2, 5}}
+    st := sort(ts, Ord[Tok]{less: byStart})
+    println(st[0].kind, st[1].kind, st[2].kind)
+    nv := sort(xs, never(0))
+    println(nv[0], nv[4])
+}

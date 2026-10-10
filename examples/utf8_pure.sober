@@ -1,0 +1,52 @@
+package main
+
+// io-2 の突き合わせの対（Lean 側: Examples.lean の v47）。`string(b)`（std/utf8.Parse への置き換え）の
+// UTF-8 検査・検査後の恒等の戻し・`string(b)?` の伝播と包み替えを、結果を 1 語に畳み込んで照合する
+
+import "std/utf8"
+
+type Line error {
+    n int
+}
+
+func code(b []byte) int {
+    s, err := string(b)
+    return if err != nil {
+        switch err {
+        case utf8.InvalidUtf8{pos}: 1000 + pos
+        }
+    } else {
+        len(bytes(s))
+    }
+}
+
+// string(b)? の伝播と、行番号への包み替え
+func text(k int, b []byte) (string, error?) {
+    s := string(b)? Line{n: k}
+    return s + "!", nil
+}
+
+func codeText(k int, b []byte) int {
+    s, err := text(k, b)
+    return if err != nil {
+        switch err {
+        case Line{n}: 2000 + n
+        }
+    } else {
+        len(bytes(s))
+    }
+}
+
+func main() {
+    mut r := 0
+    r = r * 31 + code([]byte{104, 105})
+    r = r * 31 + code([]byte{227, 129, 130, 104})
+    r = r * 31 + code([]byte{104, 237, 160, 128})
+    r = r * 31 + code([]byte{240, 159, 152})
+    r = r * 31 + code([]byte{97, 98, 128})
+    r = r * 31 + code([]byte{})
+    r = r * 31 + codeText(3, []byte{111, 107})
+    r = r * 31 + codeText(7, []byte{111, 192, 128})
+    println(r)
+    r
+}

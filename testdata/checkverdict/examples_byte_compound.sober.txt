@@ -1,0 +1,2 @@
+sober: desugar error at examples/byte_compound.sober:6:5 (TypeMismatch)
+exit=1

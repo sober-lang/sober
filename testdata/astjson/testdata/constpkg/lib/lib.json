@@ -1,0 +1,21 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [],
+  "funcs": [],
+  "consts": [
+    {
+      "name": "Five",
+      "expr": {
+        "k": "int",
+        "value": 5,
+        "tok": 6
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 8
+      }
+    }
+  ]
+}

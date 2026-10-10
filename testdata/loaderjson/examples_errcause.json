@@ -1,0 +1,253 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "$strings",
+          "path": "std/strings"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "open",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "load",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "open"
+          ]
+        },
+        {
+          "name": "outer",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "load"
+          ]
+        },
+        {
+          "name": "plain",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "passThrough",
+          "expands": false,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "plain"
+          ]
+        },
+        {
+          "name": "show",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "println",
+            "show"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "outer",
+            "passThrough",
+            "println",
+            "show"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/strings",
+      "name": "strings",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "hasPrefixAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "indexAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "runeCount",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "HasPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "HasSuffix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "Index",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "indexAt"
+          ]
+        },
+        {
+          "name": "Contains",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Index"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "countFrom",
+            "len",
+            "runeCount"
+          ]
+        },
+        {
+          "name": "countFrom",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "IndexByte",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "len"
+          ]
+        },
+        {
+          "name": "utoa",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "FormatInt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "utoa"
+          ]
+        },
+        {
+          "name": "Clone",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "Join",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": [
+    {
+      "name": "NotFound",
+      "pkg": "main"
+    },
+    {
+      "name": "Wrapped",
+      "pkg": "main"
+    },
+    {
+      "name": "Bad",
+      "pkg": "main"
+    }
+  ]
+}

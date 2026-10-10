@@ -1,0 +1,155 @@
+{
+  "package": "mid",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/named_qual/lib",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "F",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 16
+                  },
+                  "field": "R",
+                  "tok": 18
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 20
+                  }
+                ],
+                "tok": 19
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "lib",
+                      "tok": 24
+                    },
+                    "field": "Next",
+                    "tok": 26
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 28
+                    }
+                  ],
+                  "tok": 27
+                },
+                "rhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "lib",
+                      "tok": 31
+                    },
+                    "field": "Next",
+                    "tok": 33
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "lib",
+                          "tok": 35
+                        },
+                        "field": "R",
+                        "tok": 37
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "x",
+                            "tok": 39
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 41
+                          },
+                          "tok": 40
+                        }
+                      ],
+                      "tok": 38
+                    }
+                  ],
+                  "tok": 34
+                },
+                "tok": 30
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 47
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

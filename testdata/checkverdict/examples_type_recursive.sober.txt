@@ -1,0 +1,2 @@
+sober: load error at examples/type_recursive.sober:5:6: recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)
+exit=1

@@ -1,0 +1,21 @@
+package main
+
+// 負例（load が拒否 — language.md 13 節「variant 名は一意」）: 同じ package の 2 つの union に同名の variant
+
+type A union {
+    V{a int}
+    W{}
+}
+
+type B union {
+    V{b int}
+    X{}
+}
+
+func main() {
+    x := V{a: 1}
+    println(switch x {
+    case V{a}: a
+    default: 0
+    })
+}

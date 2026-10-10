@@ -1,0 +1,7 @@
+package main
+
+// 負例: byte に単項の - は無い（language.md 33 節）
+func main() {
+    b := byte(1)
+    println(-b)
+}

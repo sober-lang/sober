@@ -1,0 +1,12 @@
+package main
+
+// 負例: @layout の欄の型は幅の語（u8・u16le …）か幅の語の固定長配列（language.md 36 節 — loader の拒否 diag.Layout）
+
+@layout
+type H struct {
+    n int
+}
+
+func main() {
+    println(1)
+}

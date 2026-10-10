@@ -1,0 +1,35 @@
+package main
+
+// ブロック式の中の多値の束縛の値を末尾に置く（F-r — 2026-10-02 まで check が拒否・build は受理）:
+// 脱糖器の型の読みが多値の束縛の成分の型も呼び手の座標で読むので、ブロックの出口の付け替えが発火する（式の位置の catch の写しの形）
+
+type Bad error {
+    code int
+}
+
+func name(n int) (string, error?) {
+    if n < 0 {
+        return "", Bad{code: n}
+    }
+    return "ok", nil
+}
+
+func plain(n int) string {
+    s := {
+        v, e := name(n)
+        v
+    }
+    return s
+}
+
+// 式の中（catch の写し — `len(bytes(name(n) catch "none"))`）
+func width(n int) int {
+    return len(bytes({
+        v, e := name(n)
+        if e != nil { "none" } else { v }
+    }))
+}
+
+func main() {
+    println(plain(1), width(1), width(0 - 1))
+}

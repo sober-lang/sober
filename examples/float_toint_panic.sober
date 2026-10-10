@@ -1,0 +1,14 @@
+package main
+
+// float → int の変換（language.md 37 節）: 0 方向の切り捨て。NaN・±Inf・int の範囲外は panic（exit 101 — 結果を黙って番兵にしない）。
+// ちょうど -2^63 は int の範囲内（cvttsd2si の番兵と同じビットだが入力を見て区別する）
+
+func conv(x float) int {
+    return int(x)
+}
+
+func main() {
+    println(conv(-9223372036854775808.0), conv(9.2233720368547748e18))
+    println(conv(1.0e19))
+    println("unreachable")
+}

@@ -1,0 +1,13 @@
+testdata/minic/prog.mc: 8 lines
+testdata/minic/prog.mc:1: = 7 (tokens 6, nodes 5, code 10)
+testdata/minic/prog.mc:2: = -18 (tokens 9, nodes 6, code 12)
+testdata/minic/prog.mc:3:9: unexpected end
+testdata/minic/prog.mc:4:3: unexpected char
+testdata/minic/prog.mc:5:5: division by zero
+testdata/minic/prog.mc:6:6: unbalanced ')'
+testdata/minic/prog.mc:7: = 1 (tokens 14, nodes 9, code 18)
+testdata/minic/prog.mc:8:4: expected operator
+testdata/minic/bad.mc: invalid utf-8
+testdata/minic/nope.mc: not found
+testdata/minic/prog.txt: not a .mc file
+outstanding 0

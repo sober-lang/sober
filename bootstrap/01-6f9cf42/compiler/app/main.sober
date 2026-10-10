@@ -1,0 +1,247 @@
+package main
+
+// stage2 の CLI（selfhost の R35 / 主役交代 R39）: Sober で書いたコンパイラの単体の入口。Zig 版 `sober`（src/main.zig）の綴りに合わせて
+//   sober build <entry> [--emit=ll|ir] [-o <out>]   .ll（既定）/ IR テキストを書く（-o が無ければ標準出力）。ELF は吐かない —
+//                                                   bin/sober が IR テキストを凍結した Zig の正規バックエンドへ渡す（既定）か、
+//                                                   .ll を `zig cc -target x86_64-linux-none -nostdlib -static` で下ろす
+//   sober check <entry> [--core-json]               脱糖 → 型検査（Checker.lean の移植 — compiler/checker）の判定 JSON を標準出力へ
+//                                                   （--core-json は脱糖したコア AST の JSON — Lean の sober-check に渡す形 — を出して終わる）
+//   sober lex <file>                                字句の列（1 行 1 字句: 種類 開始 終わり 綴り）
+//   sober parse --ast-json <file>                   1 ファイルの表層 AST の JSON（C4 黄金の形）
+//   sober parse --loader-json <entry>               load した Program の、loader が決める情報の JSON（第 2 黄金の形）
+//   sober fmt <file>                                AST から整形したソース（compiler/printer — Zig 版の CST printer とは綴りが違う）
+// を持つ。entry は .sober ファイルか main package のディレクトリ（cwd 相対 — import もルート = cwd 相対）。
+// 終了コードは Zig 版と同じ: 成功 0・失敗（使い方・load / parse / 脱糖 / lower の拒否・型エラー・読み書きの失敗）1。診断は 1 行（`sober: load error` 等 — 質は別レーン）。
+// std はコンパイラの一部（language.md 20 節 R8-2）: `@embed` で自分に焼き込み、`std/…` の import はここから読む
+
+import "std/io"
+import "std/os"
+import "lexer"
+import "parser"
+import "ast"
+import "printer"
+import "loader"
+import "lower"
+import "desugar"
+import "checker"
+
+@embed("std/**/*.sober")
+const Std = map[string]string{}
+
+func fail(msg string) int {
+    werr := io.WriteStderr(bytes("sober: ${msg}\n"))
+    if werr != nil {
+        return 1
+    }
+    return 1
+}
+
+func usage() int {
+    return fail("usage: sober build <entry> [--emit=ll|ir] [-o <out>] | sober check <entry> [--core-json] | sober lex <file> | sober parse (--ast-json <file> | --loader-json <entry>) | sober fmt <file>")
+}
+
+func writeStdout(out []int) int {
+    werr := io.WriteStdout(out)
+    return if werr != nil { fail("cannot write the standard output") } else { 0 }
+}
+
+func writeFile(path string, out []int) int {
+    werr := io.WriteFile(path, out)
+    return if werr != nil { fail("cannot write ${path}") } else { 0 }
+}
+
+// check は p を脱糖して検査する（判定 JSON。脱糖の拒否なら ok = false）。関数に割るのは脱糖器のヒープの region を分けるため（sobercheck と同じ）
+func check(p loader.Program) ([]int, bool) {
+    out, ok := desugar.WithCore(p, c => checker.CheckCore(c))
+    return out, ok
+}
+
+// coreJson は p を脱糖したコア AST の JSON（脱糖の拒否なら ok = false）。region を分けるため関数に割る（check と同じ）
+func coreJson(p loader.Program) ([]int, bool) {
+    out, ok := desugar.Json(p)
+    return out, ok
+}
+
+// verdictOk は判定 JSON が受理（`{"ok":true` で始まる）か
+func verdictOk(out []int) bool {
+    w := bytes("{\"ok\":true")
+    if len(out) < len(w) {
+        return false
+    }
+    mut i := 0
+    while i < len(w) {
+        if out[i] != w[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// emit は lower の結果を args[oi]（oi < 0 なら標準出力）へ
+func emit(args []string, oi int, out []int, k int, tok int) int {
+    if k != 0 {
+        return fail("lower error ${k} at token ${tok}")
+    }
+    if oi < 0 {
+        return writeStdout(out)
+    }
+    return writeFile(args[oi], out)
+}
+
+// cmdBuild の引数は添字で持つ（`mut entry := ""` に仮引数の string を代入する形は check が拒否する — F-36。値は最後に 1 度だけ引く）
+func cmdBuild(args []string) int {
+    mut ei := 0 - 1
+    mut oi := 0 - 1
+    mut ir := false
+    mut i := 2
+    while i < len(args) {
+        a := args[i]
+        if a == "-o" {
+            if i + 1 >= len(args) {
+                return usage()
+            }
+            oi = i + 1
+            i += 2
+        } else if a == "--emit=ll" {
+            ir = false
+            i += 1
+        } else if a == "--emit=ir" {
+            ir = true
+            i += 1
+        } else if ei < 0 {
+            ei = i
+            i += 1
+        } else {
+            return usage()
+        }
+    }
+    if ei < 0 {
+        return usage()
+    }
+    // 焼き込んだ表は参照点で展開される辞書 const なので、一度束縛して渡す（参照ごとに組み直さない）
+    std := Std
+    p := loader.LoadFs(bytes(args[ei]), std)
+    if loader.Failed(p) {
+        why, werr := string(p.fail)
+        return fail(if werr != nil { "load error" } else { "load error: ${why}" })
+    }
+    if ir {
+        out, k, tok := lower.Ir(p)
+        return emit(args, oi, out, k, tok)
+    }
+    out, k, tok := lower.Ll(p)
+    return emit(args, oi, out, k, tok)
+}
+
+func cmdCheck(args []string) int {
+    core := len(args) == 4 && args[3] == "--core-json"
+    if len(args) != 3 && !core {
+        return usage()
+    }
+    std := Std
+    p := loader.LoadFs(bytes(args[2]), std)
+    if loader.Failed(p) {
+        return fail("load error")
+    }
+    if core {
+        cj, cok := coreJson(p)
+        if !cok {
+            return fail("desugar error")
+        }
+        return writeStdout(cj)
+    }
+    out, ok := check(p)
+    if !ok {
+        return fail("desugar error")
+    }
+    if writeStdout(out) != 0 {
+        return 1
+    }
+    return if verdictOk(out) { 0 } else { 1 }
+}
+
+// readSrc は args[i] のファイルの中身（読めなければ ok = false）
+func readSrc(args []string, i int) ([]int, bool) {
+    src, err := io.ReadFile(args[i])
+    if err != nil {
+        return []int{}, false
+    }
+    return src, true
+}
+
+func cmdLex(args []string) int {
+    if len(args) != 3 {
+        return usage()
+    }
+    src, ok := readSrc(args, 2)
+    if !ok {
+        return fail("cannot read ${args[2]}")
+    }
+    return writeStdout(lexer.Dump(src))
+}
+
+// cmdTree は args[i] を parse して、AST から整形したソース（pr）か AST JSON（!pr）を書く
+func cmdTree(args []string, i int, pr bool) int {
+    src, ok := readSrc(args, i)
+    if !ok {
+        return fail("cannot read ${args[i]}")
+    }
+    t, pok := parser.Parse(src, lexer.Lex(src))
+    if !pok {
+        return fail("parse error")
+    }
+    if pr {
+        return writeStdout(printer.Print(t))
+    }
+    return writeStdout(ast.Json(t))
+}
+
+func cmdLoaderJson(args []string) int {
+    std := Std
+    p := loader.LoadFs(bytes(args[3]), std)
+    if loader.Failed(p) {
+        why, werr := string(p.fail)
+        return fail(if werr != nil { "load error" } else { "load error: ${why}" })
+    }
+    return writeStdout(loader.Json(p))
+}
+
+func cmdParse(args []string) int {
+    if len(args) != 4 {
+        return usage()
+    }
+    if args[2] == "--ast-json" {
+        return cmdTree(args, 3, false)
+    }
+    if args[2] == "--loader-json" {
+        return cmdLoaderJson(args)
+    }
+    return usage()
+}
+
+func main() int {
+    args, err := os.Args()
+    if err != nil || len(args) < 2 {
+        return usage()
+    }
+    if args[1] == "build" {
+        return cmdBuild(args)
+    }
+    if args[1] == "check" {
+        return cmdCheck(args)
+    }
+    if args[1] == "lex" {
+        return cmdLex(args)
+    }
+    if args[1] == "parse" {
+        return cmdParse(args)
+    }
+    if args[1] == "fmt" {
+        if len(args) != 3 {
+            return usage()
+        }
+        return cmdTree(args, 2, true)
+    }
+    return usage()
+}

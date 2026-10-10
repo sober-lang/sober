@@ -1,0 +1,161 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Dir",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 7
+          },
+          {
+            "name": "files",
+            "type": {
+              "k": "map_of",
+              "key": {
+                "k": "name",
+                "name": "string"
+              },
+              "value": {
+                "k": "name",
+                "name": "File"
+              },
+              "mut": false
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 19
+      }
+    },
+    {
+      "name": "File",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 23
+          },
+          {
+            "name": "parent",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Dir"
+              }
+            },
+            "tok": 26
+          }
+        ]
+      },
+      "tok": 20,
+      "span": {
+        "start": 19,
+        "end": 32
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 37
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 39
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 41
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "composite",
+                            "type_name": "File",
+                            "elems": [
+                              {
+                                "key": "name",
+                                "value": {
+                                  "k": "strlit",
+                                  "value": "a",
+                                  "tok": 47
+                                }
+                              },
+                              {
+                                "key": "parent",
+                                "value": {
+                                  "k": "nil",
+                                  "tok": 51
+                                }
+                              }
+                            ],
+                            "tok": 43,
+                            "type_args": []
+                          },
+                          "field": "name",
+                          "tok": 54
+                        }
+                      ],
+                      "tok": 42
+                    }
+                  ],
+                  "tok": 40
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 33,
+      "bodiless": false,
+      "span": {
+        "start": 32,
+        "end": 61
+      },
+      "sig_end": 36
+    }
+  ],
+  "consts": []
+}

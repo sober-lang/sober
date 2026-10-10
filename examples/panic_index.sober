@@ -1,0 +1,12 @@
+package main
+
+// 範囲外の添字は exit 101（language.md 21 / 27 節）
+func at(xs []int, i int) int {
+    return xs[i]
+}
+
+func main() {
+    xs := []int{1, 2, 3}
+    println(at(xs, 2))
+    println(at(xs, 3))
+}

@@ -1,0 +1,117 @@
+{
+  "package": "wire",
+  "imports": [],
+  "types": [
+    {
+      "name": "Frame",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "type": {
+              "k": "name",
+              "name": "u8"
+            },
+            "tok": 10
+          },
+          {
+            "name": "len",
+            "type": {
+              "k": "name",
+              "name": "u16be"
+            },
+            "tok": 13
+          },
+          {
+            "name": "seq",
+            "type": {
+              "k": "name",
+              "name": "u32le"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "layout": true,
+      "tok": 7,
+      "span": {
+        "start": 3,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Ping",
+      "type_params": [],
+      "params": [
+        {
+          "name": "seq",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Frame"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Frame",
+                "elems": [
+                  {
+                    "key": "kind",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 34
+                    }
+                  },
+                  {
+                    "key": "len",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 38
+                    }
+                  },
+                  {
+                    "key": "seq",
+                    "value": {
+                      "k": "ident",
+                      "name": "seq",
+                      "tok": 42
+                    }
+                  }
+                ],
+                "tok": 30,
+                "type_args": []
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 47
+      },
+      "sig_end": 28
+    }
+  ],
+  "consts": []
+}

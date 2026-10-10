@@ -1,0 +1,47 @@
+package main
+
+// R4a（region 多相の裁定 — 深い relocate）の検証例: callee のフレームで作った入れ子のコンテナ
+// （中身もフレームで作ったもの）を返す。戻りの境界コピーが中身ごと呼び手の region へ写す。
+// 実行の照合は IR 経路（深い relocate の lower）が入ってから — 期待値は deep_return.out.expected
+
+import "std/strings"
+
+// words は "w0" .. "w{n-1}" を callee のフレームで作って返す（[]string — 中身の string もフレーム）
+func words(n int) []string {
+    mut out := mut []string{}
+    mut i := 0
+    while i < n {
+        out = append(out, "w" + strings.FormatInt(i))
+        i += 1
+    }
+    return freeze(out)
+}
+
+// grid は n × n の九九の表を返す（[][]int）
+func grid(n int) [][]int {
+    mut rows := mut [][]int{}
+    mut i := 1
+    while i <= n {
+        mut row := mut []int{}
+        mut j := 1
+        while j <= n {
+            row = append(row, i * j)
+            j += 1
+        }
+        rows = append(rows, freeze(row))
+        i += 1
+    }
+    return freeze(rows)
+}
+
+// 2 段の呼び出し越しに転送する（call 結果の再転送 — 深く締めた型が一致する）
+func twice(n int) [][]int {
+    return grid(n)
+}
+
+func main() {
+    ws := words(3)
+    println("${len(ws)} ${ws[0]} ${ws[2]}")
+    g := twice(4)
+    println("${len(g)} ${g[1][2]} ${g[3][3]}")
+}

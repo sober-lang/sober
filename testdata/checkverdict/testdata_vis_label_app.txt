@@ -1,0 +1,2 @@
+sober: desugar error at testdata/vis_label/app/main.sober:8:15 (CoreFragment)
+exit=1

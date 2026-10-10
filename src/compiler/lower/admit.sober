@@ -1,0 +1,447 @@
+package lower
+
+// 入場と縮退（段 6 P5-2 — language.md 11 節「予算と admission」）
+// - 入場（rt.task_new の頭 — admitIn）: 台帳の 1 語（rt.mn の MN_LED — バイトの欄〔ビット 0〜39〕と task の数の欄〔41〜61〕・それぞれの
+//   上にあふれビット〔40・62〕。欄の初期値 = 欄の最大 − 天井）へ見積もり（バイト + 1 << LED_TSHIFT）を鍵なしの xadd で足し、どちらのあふれビットも
+//   立たなければ入場（SWAR — 欄が天井を超えると桁上がりがその欄のあふれビットを立て、上の欄へは及ばない）。立ったら足した分を戻して縮退
+//   （rt.task_inline）。give: の子は縮退しない — 常に入場して超過を記帳。task の終わり（admitEnd）で足した分を引く。spawn の点は塊が 0 なら縮退の分岐だけ（spawn の点の値を増やすと
+//   呼び手の関数のレジスタ割り当てが崩れて命令が増える — spawnbench で実測）
+// - 見積もり = spawn の点ごとの観測した使用量の最大（rt.pest — task の終わりに自前のスロットの使った量の和・台帳に引く形で持つ）。まだ観測が無ければ EST_INIT。
+//   観測に EST_FLOOR を足す（終わりの時点の bump は機械スタック）。
+//   宣言（budget: — P5-3）> 見積もりの順（宣言の口は P5-3）
+// - 縮退（rt.task_inline）: 入場できない子をその場で今の task の上で呼ぶ（P3a の即時形 — 罠を張って呼び、枠に状態・死因を書く）。
+//   子の間は今の塊の欄（枠・子の関数・預かりの欄・番号・開いている scope）を子のものに付け替え、終わったら戻す（kid_keep・死の drainScopes・
+//   検査点が「今の task」の欄を読むため）。縮退した子は切らない（TC_CUTOK = 0 — 切ってよいのは死だけ・切るのは任意）。塊・スロット・VA を新しく取らない。
+//   出力は今の区間へそのまま（子を先にの順 = 先行順の位置 — O1）。値・死因・stdout は子を先にの 1 つのスケジュールと同じ（Kahn）
+
+import "desugar"
+import "std/iter"
+
+const LED_TSHIFT = 41                 // task の数の欄の位置
+const LED_OVF = 4611687117939015680   // あふれビット（1 << 40 | 1 << 62）
+const LED_BMAX = 1099511627775        // バイトの欄の最大（2^40 - 1 = 1 TiB）
+const LED_TMAX = 2097151              // task の数の欄の最大（2^21 - 1）
+const LED_ONE = 2199023255552         // task 1 つ（1 << LED_TSHIFT）
+const EST_INIT = 1048576              // 観測の無い spawn の点の見積もり（1 MiB — W_MADV の既定と揃える）
+const EST_FLOOR = 16384               // 見積もりに足す量（16 KiB — 機械スタック・塊の頁）
+const EST_MARK = 2199024304129        // 観測の前の表の値（EST_INIT + 1 task + 1 — 奇数の印: 観測の値は偶数〔確保は 8 の倍数〕）
+const VA_BUDGET = 70368744177664      // task のスロットに使ってよい VA（2^46 = 64 TiB — ユーザー空間 128 TiB の半分）
+
+func needAdmitRt(st mut St) {
+    st.pestG = addGlobalInit(mut st, int(strLit(mut st, "rt.pest")), 1, -1)
+    st.rtTaskInline = addFunc(mut st, int(strLit(mut st, "rt.task_inline")), desugar.ListRef(list4(mut st, TyPtr, TyI64, TyI64, TyI64)), -1)
+    st.rtEstUp = addFunc(mut st, int(strLit(mut st, "rt.est_up")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+}
+
+func buildAdmitRt(st mut St) {
+    // spawn の点の数はここで決まる（lower の最後 — buildTaskRt）
+    hset(mut st, st.pestG + G_WORDS, st.nsite + 1)
+    buildTaskInline(mut st)
+    buildEstUp(mut st)
+    if st.poolOn {
+        buildPoolNew(mut st)
+        buildLedger(mut st)
+    }
+}
+
+// ── 名前つきプール（段 6 P5-4 — std/par の NewPool / SpawnIn / Ledger）──
+// 節の表 rt.pools = [作った数, 節 0 の語…, 節 1 の語…, …]（POOL_MAX 本 × POOL_W 語・大域 — プールの札はどの region からも使える）。節の番地 = 語の先頭 − SR_LED 語
+// （scope の天井の節の記録と同じ位置に台帳の語と親の節 — admitIn の節の歩き・ledUndo・admitReturn がそのまま乗る）。台帳の語は task の数の欄に天井なし
+const POOL_MAX = 4096
+const POOL_W = 8
+const PL_CAP = SR_LED + 2     // 天井（バイト）
+const PL_ADMIT = SR_LED + 3   // 入場の数
+const PL_SHED = SR_LED + 4    // shed の数
+const PL_PIDX = SR_LED + 5    // 親の番号 + 1（0 = 根の下）
+
+// needPoolRt は名前つきプールの rt の宣言（NewPool / SpawnIn / Ledger を使うプログラムだけ — 使わないプログラムの IR は不変）
+func needPoolRt(st mut St) {
+    if st.poolOn {
+        return
+    }
+    st.poolOn = true
+    st.poolG = addGlobalInit(mut st, int(strLit(mut st, "rt.pools")), 1 + POOL_MAX * POOL_W, -1)
+    st.rtTaskNewIn = addFunc(mut st, int(strLit(mut st, "rt.task_new_in")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), TyPtr)
+    st.rtPoolNew = addFunc(mut st, int(strLit(mut st, "rt.pool_new")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
+    st.rtLedger = addFunc(mut st, int(strLit(mut st, "rt.ledger")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+}
+
+// buildPoolNew は rt.pool_new(budget, parent)（std/par の newPool — @intrinsic "par_pool"）: 表から節を 1 つ取って天井 budget バイト・親の節 parent（0 = 無し）で
+// 初めの値を書き、節の番地を返す（表が尽きたら -1 — NewPool が PoolLimit の panic）
+func buildPoolNew(st mut St) {
+    begin(mut st, st.rtPoolNew)
+    pg := globaladdr(mut st, st.poolG)
+    i := atomicXadd(mut st, pg, 0, iconst(mut st, 1))
+    bFull := newBlock(mut st)
+    bOk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, i, iconst(mut st, POOL_MAX)), bFull, -1, bOk, -1)
+    setCur(mut st, bFull)
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bOk)
+    slot := gepWord(mut st, pg, bin(mut st, BAdd, bin(mut st, BMul, i, iconst(mut st, POOL_W)), iconst(mut st, 1)))
+    b := imin(mut st, imax(mut st, 0, iconst(mut st, 0)), iconst(mut st, LED_BMAX))
+    store(mut st, slot, 0, bin(mut st, BSub, iconst(mut st, LED_BMAX), b))
+    store(mut st, slot, 1, 1)
+    store(mut st, slot, 2, b)
+    store(mut st, slot, 3, iconst(mut st, 0))
+    store(mut st, slot, 4, iconst(mut st, 0))
+    // 親の番号 = (親の節 + SR_LED 語 − 表の節 0) ÷ (POOL_W 語) + 1（親が無ければ 0）
+    base := bin(mut st, BAdd, ptoi(mut st, pg), iconst(mut st, 8))
+    pidx := bin(mut st, BAdd, bin(mut st, BSar, bin(mut st, BSub, bin(mut st, BAdd, 1, iconst(mut st, SR_LED * 8)), base), iconst(mut st, 6)), iconst(mut st, 1))
+    store(mut st, slot, 5, bin(mut st, BMul, pidx, cmp(mut st, CNe, 1, iconst(mut st, 0))))
+    ret(mut st, bin(mut st, BSub, ptoi(mut st, slot), iconst(mut st, SR_LED * 8)))
+}
+
+// buildLedger は rt.ledger(k)（std/par の ledgerWord — @intrinsic "par_ledger"・Ledger の読み口）: k = 0 プールの数・1 根の天井・2 計上中のバイト・
+// 3 計上中の task の数・4 縮退・5 天井を超えた入場・6 宣言超過・7 shed・8 ワーカー数・16 + 8p + f = プール p の {0 天井, 1 計上中のバイト, 2 task の数,
+// 3 入場, 4 shed, 5 親の番号 + 1}（範囲の外は 0）
+func buildLedger(st mut St) {
+    begin(mut st, st.rtLedger)
+    k := 0
+    pg := globaladdr(mut st, st.poolG)
+    mn := globaladdr(mut st, st.mnG)
+    cnt := imin(mut st, load(mut st, pg, 0), iconst(mut st, POOL_MAX))
+    led := load(mut st, mn, MN_LED)
+    usedB := bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, led, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX)))
+    usedT := bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, led, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX)))
+    rootV := []int{cnt, load(mut st, mn, MN_CAP), usedB, usedT, load(mut st, mn, MN_LINL), load(mut st, mn, MN_LOVER), load(mut st, mn, MN_LDOVER), load(mut st, mn, MN_LSHED), load(mut st, mn, MN_N)}
+    ledgerPick(mut st, k, rootV)
+    // プールの節
+    j := bin(mut st, BSub, k, iconst(mut st, 16))
+    p := bin(mut st, BSar, j, iconst(mut st, 3))
+    bA := newBlock(mut st)
+    bP := newBlock(mut st)
+    bZero := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, k, iconst(mut st, 16)), bA, -1, bZero, -1)
+    setCur(mut st, bA)
+    condbr(mut st, cmp(mut st, CLt, p, cnt), bP, -1, bZero, -1)
+    setCur(mut st, bP)
+    slot := gepWord(mut st, pg, bin(mut st, BAdd, bin(mut st, BMul, p, iconst(mut st, POOL_W)), iconst(mut st, 1)))
+    pl := load(mut st, slot, 0)
+    pc := load(mut st, slot, 2)
+    pu := bin(mut st, BAdd, pc, bin(mut st, BSub, bin(mut st, BAnd, pl, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX)))
+    pt := bin(mut st, BAnd, bin(mut st, BSar, pl, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1))
+    ledgerPick(mut st, bin(mut st, BAnd, j, iconst(mut st, 7)), []int{pc, pu, pt, load(mut st, slot, 3), load(mut st, slot, 4), load(mut st, slot, 5)})
+    br(mut st, bZero, -1)
+    setCur(mut st, bZero)
+    ret(mut st, iconst(mut st, 0))
+}
+
+// ledgerPick は x == i なら vs[i] を返す枝の列（どれでもなければ次のブロックへ続く）
+func ledgerPick(st mut St, x int, vs []int) {
+    for i <- iter.Range(0, len(vs)) {
+        bY := newBlock(mut st)
+        bN := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, x, iconst(mut st, i)), bY, -1, bN, -1)
+        setCur(mut st, bY)
+        ret(mut st, vs[i])
+        setCur(mut st, bN)
+    }
+}
+
+// imin は小さい方
+func imin(st mut St, a int, b int) int {
+    return bin(mut st, BSub, a, bin(mut st, BMul, cmp(mut st, CGt, a, b), bin(mut st, BSub, a, b)))
+}
+
+// ledInit は台帳の語（天井 cap バイト・tcap task — 入口で 1 度。rt.pcap_init から）: 欄 = 欄の最大 − 天井（天井は 0〜欄の最大に丸める）
+func ledInit(st mut St, capB int, capT int) {
+    b := imin(mut st, imax(mut st, capB, iconst(mut st, 0)), iconst(mut st, LED_BMAX))
+    t := imin(mut st, imax(mut st, capT, iconst(mut st, 0)), iconst(mut st, LED_TMAX))
+    v := bin(mut st, BOr, bin(mut st, BSub, iconst(mut st, LED_BMAX), b), bin(mut st, BShl, bin(mut st, BSub, iconst(mut st, LED_TMAX), t), iconst(mut st, LED_TSHIFT)))
+    store(mut st, globaladdr(mut st, st.mnG), MN_LED, v)
+}
+
+// Adm は入場の結果（IR の値 — 足した量〔0 = 計上しない〕と天井の節の最内）
+type Adm struct {
+    e int
+    node int
+}
+
+// admitIn は rt.task_new の頭の入場（仮引数の番号: code = spawn の点 × 4 + 根だけ × 2 + give〔0 = 計上しない〕・decl = 宣言の上界〔0 = 無し〕・
+// pool = プールの節〔rt.task_new_in — 段 6 P5-4 par.SpawnIn。-1 = rt.task_new〕）。
+// 足す量 e = 宣言があれば宣言（偶数へ丸め）+ 1 task・無ければ spawn の点の見積もり（観測の前は EST_MARK — 奇数の印）。天井の節（scope の budget: —
+// 今の task の TC_CNODE から SR_PNODE を辿る）と根の台帳の全部に足し、どれかがあふれたら足した分を全部戻して rt.task_new から 0 を返す（縮退 — 呼び手が
+// rt.task_inline）。give: の子は戻さず超過を記帳して入場（端点を受け取る子は縮退しない）。
+// pool の形: 節の鎖 = プールの節から親のプールへ（scope の天井の節は見ない）・節であふれたら全部戻して 0（shed — 呼び手が (nil, Shed{})）・根であふれたら
+// 超過で入場（縮退しない — give: と同じ）。入場・shed の数をプールの節（葉）に数える
+func admitIn(st mut St, code int, decl int, pool int) Adm {
+    mn := globaladdr(mut st, st.mnG)
+    zero := iconst(mut st, 0)
+    bA := newBlock(mut st)
+    bJ := newBlock(mut st)
+    re := param(mut st, bJ, TyI64)
+    rn := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CEq, code, zero), bJ, list2(mut st, zero, zero), bA, -1)
+    setCur(mut st, bA)
+    give := cmp(mut st, CNe, bin(mut st, BAnd, code, iconst(mut st, 1)), zero)
+    bDecl := newBlock(mut st)
+    bEst := newBlock(mut st)
+    bE := newBlock(mut st)
+    e := param(mut st, bE, TyI64)
+    condbr(mut st, cmp(mut st, CGt, decl, zero), bDecl, -1, bEst, -1)
+    setCur(mut st, bDecl)
+    br(mut st, bE, list1(mut st, bin(mut st, BAdd, bin(mut st, BAdd, decl, bin(mut st, BAnd, decl, iconst(mut st, 1))), iconst(mut st, LED_ONE))))
+    setCur(mut st, bEst)
+    br(mut st, bE, list1(mut st, load(mut st, gepWord(mut st, globaladdr(mut st, st.pestG), bin(mut st, BSar, code, iconst(mut st, 2))), 0)))
+    setCur(mut st, bE)
+    // 天井の節 = 今の task の今効いている節（TC_CNODE — budget: の無いプログラムは 0 = 根だけ）。rootOnly = 1 なら根だけ
+    mut n0 := pool
+    if pool < 0 {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        n0 = bin(mut st, BMul, load(mut st, me, TC_CNODE), bin(mut st, BSub, iconst(mut st, 1), bin(mut st, BAnd, bin(mut st, BSar, code, iconst(mut st, 1)), iconst(mut st, 1))))
+    }
+    loop := newBlock(mut st)
+    n := param(mut st, loop, TyI64)
+    bNode := newBlock(mut st)
+    bRoot := newBlock(mut st)
+    br(mut st, loop, list1(mut st, n0))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CEq, n, zero), bRoot, -1, bNode, -1)
+    setCur(mut st, bNode)
+    np := itop(mut st, n)
+    nw := bin(mut st, BAdd, atomicXadd(mut st, np, SR_LED, e), e)
+    bNOk := newBlock(mut st)
+    bNOv := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, nw, iconst(mut st, LED_OVF)), zero), bNOk, -1, bNOv, -1)
+    setCur(mut st, bNOv)
+    mut bNGive := BlkRef(-1)
+    if pool < 0 {
+        bNGive = newBlock(mut st)
+    }
+    bNFail := newBlock(mut st)
+    if pool >= 0 {
+        br(mut st, bNFail, -1)
+    } else {
+        condbr(mut st, give, bNGive, -1, bNFail, -1)
+        setCur(mut st, bNGive)
+        atomicXadd(mut st, mn, MN_LOVER, iconst(mut st, 1))
+        br(mut st, bNOk, -1)
+    }
+    // 節であふれた: この節と、ここまでに足した節（n0 から n の手前まで）から戻して縮退
+    setCur(mut st, bNFail)
+    atomicXadd(mut st, np, SR_LED, bin(mut st, BSub, zero, e))
+    ledUndo(mut st, n0, n, e)
+    if pool >= 0 {
+        atomicXadd(mut st, mn, MN_LSHED, iconst(mut st, 1))
+        atomicXadd(mut st, itop(mut st, n0), PL_SHED, iconst(mut st, 1))
+    } else {
+        atomicXadd(mut st, mn, MN_LINL, iconst(mut st, 1))
+    }
+    ret(mut st, itop(mut st, zero))
+    setCur(mut st, bNOk)
+    br(mut st, loop, list1(mut st, load(mut st, np, SR_PNODE)))
+    // 根
+    setCur(mut st, bRoot)
+    if pool >= 0 {
+        atomicXadd(mut st, itop(mut st, n0), PL_ADMIT, iconst(mut st, 1))
+    }
+    rw := bin(mut st, BAdd, atomicXadd(mut st, mn, MN_LED, e), e)
+    bOk := newBlock(mut st)
+    bNo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, rw, iconst(mut st, LED_OVF)), zero), bOk, -1, bNo, -1)
+    // 計上の高水位（計測のときだけ — 入場の時点の語は入場済みの和の上界〔並行に足しかけて戻す途中の分も含む〕で、入場は語があふれないときだけなので
+    // 高水位 ≤ 天井。天井の外の超過〔give:〕は over の側）
+    setCur(mut st, bOk)
+    bS := newBlock(mut st)
+    condbr(mut st, pstatOn(mut st), bS, -1, bJ, list2(mut st, e, n0))
+    setCur(mut st, bS)
+    atomicMax(mut st, mn, MN_LPEAKB, bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, rw, iconst(mut st, LED_BMAX)), iconst(mut st, LED_BMAX))))
+    atomicMax(mut st, mn, MN_LPEAKT, bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, rw, iconst(mut st, LED_TSHIFT)), iconst(mut st, LED_TMAX)), iconst(mut st, LED_TMAX))))
+    br(mut st, bJ, list2(mut st, e, n0))
+    setCur(mut st, bNo)
+    bGive := newBlock(mut st)
+    mut bInl := BlkRef(-1)
+    if pool >= 0 {
+        br(mut st, bGive, -1)
+    } else {
+        bInl = newBlock(mut st)
+        condbr(mut st, give, bGive, -1, bInl, -1)
+    }
+    setCur(mut st, bGive)
+    atomicXadd(mut st, mn, MN_LOVER, iconst(mut st, 1))
+    br(mut st, bJ, list2(mut st, e, n0))
+    if pool < 0 {
+        setCur(mut st, bInl)
+        atomicXadd(mut st, mn, MN_LED, bin(mut st, BSub, zero, e))
+        ledUndo(mut st, n0, zero, e)
+        atomicXadd(mut st, mn, MN_LINL, iconst(mut st, 1))
+        ret(mut st, itop(mut st, zero))
+    }
+    setCur(mut st, bJ)
+    return Adm{e: re, node: rn}
+}
+
+// ledUndo は天井の節の鎖を n0 から stop の手前まで辿り、各節から e を引く
+func ledUndo(st mut St, n0 int, stop int, e int) {
+    loop := newBlock(mut st)
+    n := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, n0))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CEq, n, stop), done, -1, body, -1)
+    setCur(mut st, body)
+    np := itop(mut st, n)
+    atomicXadd(mut st, np, SR_LED, bin(mut st, BSub, iconst(mut st, 0), e))
+    br(mut st, loop, list1(mut st, load(mut st, np, SR_PNODE)))
+    setCur(mut st, done)
+}
+
+// pestInit は見積もりの表を全部 EST_MARK に（入口で 1 度 — rt.pcap_init から）
+func pestInit(st mut St) {
+    pe := globaladdr(mut st, st.pestG)
+    for k <- iter.Range(0, st.nsite + 1) {
+        store(mut st, pe, k, iconst(mut st, EST_MARK))
+    }
+}
+
+// buildTaskInline は rt.task_inline(frame, kid, idx, koff)（縮退 — 入場できない子をその場で）: 今の塊の欄を子のものへ付け替えて罠を張って呼び、
+// 枠に死因・状態を書き、scope の記録の死の数を数え、欄を戻す。生きている子の数・出力の区間・起こしには触れない（子の handle はまだ誰も持っていない）
+func buildTaskInline(st mut St) {
+    begin(mut st, st.rtTaskInline)
+    frame := 0
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    f0 := load(mut st, me, TC_FRAME)
+    k0 := load(mut st, me, TC_KID)
+    o0 := load(mut st, me, TC_KOFF)
+    c0 := load(mut st, me, TC_CUTOK)
+    i0 := load(mut st, me, TC_IDX)
+    s0 := load(mut st, me, TC_SCOPE)
+    cn0 := load(mut st, me, TC_CNODE)
+    zero := iconst(mut st, 0)
+    store(mut st, me, TC_FRAME, ptoi(mut st, frame))
+    store(mut st, me, TC_KID, 1)
+    store(mut st, me, TC_KOFF, 3)
+    store(mut st, me, TC_CUTOK, zero)
+    store(mut st, me, TC_IDX, 2)
+    store(mut st, me, TC_SCOPE, zero)
+    // 罠の前の深度・宛先 / anchor のレジスタ（巻き戻りは子の epilogue を飛ばすので、ここで戻す — P3a の即時形と同じ後始末・trap.sober）
+    meta := globaladdr(mut st, st.meta)
+    d0 := regionDepth(mut st)
+    dest0 := load(mut st, meta, W_DEST)
+    anc0 := load(mut st, meta, W_ANCHOR)
+    mut r := zero
+    if st.rtMut == 8 {
+        // 変異 8（網の自己検査 — parbudget）: 縮退した子の罠を張らない（子の死が親の死に化ける）
+        callIndirect(mut st, 1, list1(mut st, fieldPtr(mut st, frame, FR_RES)), -1)
+    } else {
+        r = trapCall(mut st, 1, fieldPtr(mut st, frame, FR_RES))
+    }
+    regionSetDepth(mut st, d0)
+    store(mut st, meta, W_DEST, dest0)
+    store(mut st, meta, W_ANCHOR, anc0)
+    tg := globaladdr(mut st, st.trapG)
+    store(mut st, frame, FR_CAUSE, bin(mut st, BOr, bin(mut st, BShl, load(mut st, tg, TW_SITE), iconst(mut st, 8)), load(mut st, tg, TW_CODE)))
+    // 死んだら後ろの兄弟の打ち切りの印・開いている scope の子を待つ（rt.cut_end — 縮退した子は切られる側にならない: TC_CUTOK = 0）
+    cut := cutEnd(mut st, me, frame, r)
+    dead := bin(mut st, BMul, r, bin(mut st, BSub, iconst(mut st, 1), cut))
+    store(mut st, frame, FR_STATE, bin(mut st, BAdd, bin(mut st, BAdd, r, iconst(mut st, 1)), bin(mut st, BMul, cut, bin(mut st, BSub, iconst(mut st, 2), r))))
+    atomicXadd(mut st, itop(mut st, load(mut st, frame, FR_SREC)), SR_DEAD, dead)
+    store(mut st, me, TC_FRAME, f0)
+    store(mut st, me, TC_KID, k0)
+    store(mut st, me, TC_KOFF, o0)
+    store(mut st, me, TC_CUTOK, c0)
+    store(mut st, me, TC_IDX, i0)
+    store(mut st, me, TC_SCOPE, s0)
+    // 子が budget: の scope の中で死ぬと今効いている節が戻らない — ここで戻す
+    store(mut st, me, TC_CNODE, cn0)
+    ret(mut st, -1)
+}
+
+// admitReturn は task tcb の終わり（結果を公開した後・待ち手を起こす前 — 起こされた scope の出口より先に台帳が空く）: 入場で足した量を根と天井の節
+// （TC_NODE から）から引く（入場していない task〔走らせ直し〕は 0）
+func admitReturn(st mut St, tcb int) {
+    if st.rtMut == 7 {
+        // 変異 7（網の自己検査 — parbudget）: 終わりで台帳へ返さない（漏れ — 入場が細り続け縮退が増える）
+        return
+    }
+    a := load(mut st, tcb, TC_ADM)
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LED, bin(mut st, BSub, iconst(mut st, 0), a))
+    n0 := load(mut st, tcb, TC_NODE)
+    bU := newBlock(mut st)
+    bU2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, n0, iconst(mut st, 0)), bU, -1, bU2, -1)
+    setCur(mut st, bU)
+    ledUndo(mut st, n0, iconst(mut st, 0), a)
+    br(mut st, bU2, -1)
+    setCur(mut st, bU2)
+}
+
+// admitEnd は task tcb の終わり（acc = 自前のスロットの使った量の和 — slotRelease の数え）: 観測（acc + EST_FLOOR〔機械スタック・塊の頁 — 終わりの bump は
+// 数えない〕+ 1 task）が足した量 a を超えたか a が観測の前の印（奇数）なら rt.est_up（見積もりを上げる・宣言のある task は宣言超過を数える）。
+// 速い道は TCB の a と比べるだけ — 表を読まない
+func admitEnd(st mut St, tcb int, acc int) {
+    a := load(mut st, tcb, TC_ADM)
+    nwE := bin(mut st, BAdd, acc, iconst(mut st, EST_FLOOR + LED_ONE))
+    bW := newBlock(mut st)
+    bN := newBlock(mut st)
+    // 印〔奇数〕は 2^62 を引いて比べる = 最初の観測が必ず勝つ。a = 0（走らせ直し）は spawn の点 0 へ書く（使わない欄）
+    condbr(mut st, cmp(mut st, CGt, nwE, bin(mut st, BSub, a, bin(mut st, BShl, bin(mut st, BAnd, a, iconst(mut st, 1)), iconst(mut st, 62)))), bW, -1, bN, -1)
+    setCur(mut st, bW)
+    call(mut st, st.rtEstUp, list2(mut st, tcb, acc))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// buildEstUp は rt.est_up(tcb, acc): 宣言のある task は使用量 acc が宣言を超えたら宣言超過を数える（見積もりの表は動かさない — 宣言 > 見積もり）。
+// 無ければ spawn の点の見積もりを acc + EST_FLOOR + 1 task へ上げる（今の値が印〔奇数〕なら必ず書く・それ以外は大きいときだけ — CAS）
+func buildEstUp(st mut St) {
+    begin(mut st, st.rtEstUp)
+    d := load(mut st, 0, TC_DECL)
+    bDecl := newBlock(mut st)
+    bEst := newBlock(mut st)
+    bOver := newBlock(mut st)
+    bRet := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, d, iconst(mut st, 0)), bDecl, -1, bEst, -1)
+    setCur(mut st, bDecl)
+    condbr(mut st, cmp(mut st, CGt, 1, d), bOver, -1, bRet, -1)
+    setCur(mut st, bOver)
+    atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_LDOVER, iconst(mut st, 1))
+    br(mut st, bRet, -1)
+    setCur(mut st, bRet)
+    ret(mut st, -1)
+    setCur(mut st, bEst)
+    v := bin(mut st, BAdd, 1, iconst(mut st, EST_FLOOR + LED_ONE))
+    pe := gepWord(mut st, globaladdr(mut st, st.pestG), load(mut st, 0, TC_SITE))
+    loop := newBlock(mut st)
+    bTry := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    o := load(mut st, pe, 0)
+    condbr(mut st, cmp(mut st, CGt, v, bin(mut st, BSub, o, bin(mut st, BShl, bin(mut st, BAnd, o, iconst(mut st, 1)), iconst(mut st, 62)))), bTry, -1, done, -1)
+    setCur(mut st, bTry)
+    r := atomicCas(mut st, pe, 0, o, v)
+    condbr(mut st, cmp(mut st, CEq, r, o), done, -1, loop, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// ledNodeOpen は budget: の scope の記録 rec を天井の節にして今の task の今効いている節にする（b = 宣言のバイト — 0 以下なら節を作らない〔int? の nil〕）。
+// task の数の欄は天井なし（欄の最大 − 欄の最大 = 0）。外の節 = 今効いている節
+func ledNodeOpen(st mut St, rec int, b int) {
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, b, iconst(mut st, 0)), bY, -1, bN, -1)
+    setCur(mut st, bY)
+    bc := imin(mut st, b, iconst(mut st, LED_BMAX))
+    store(mut st, rec, SR_LED, bin(mut st, BSub, iconst(mut st, LED_BMAX), bc))
+    store(mut st, rec, SR_PNODE, load(mut st, me, TC_CNODE))
+    store(mut st, me, TC_CNODE, ptoi(mut st, rec))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// ledNodeClose は budget: の scope の出口（子は全部終わった後）: 今効いている節を外へ戻す（節を作らなかった scope は今効いている節が rec でない — 触らない）
+func ledNodeClose(st mut St, rec int) {
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, me, TC_CNODE), ptoi(mut st, rec)), bY, -1, bN, -1)
+    setCur(mut st, bY)
+    store(mut st, me, TC_CNODE, load(mut st, rec, SR_PNODE))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}

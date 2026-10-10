@@ -1,0 +1,52 @@
+package lower
+
+// hdr の資格の印の網（6.5 第 2 便 ④ — report-370）: 印の無い ptr 仮引数は、別の仮引数のデータへの store が自分のヘッダを書きうる（rt の補助は
+// slice のデータの中のヘッダを指しうる）ので、ヘッダの読みをまとめてはいけない。利用者のプログラムには印の無い ptr 仮引数で hdr に掛かるもの
+// （sret はヘッダの語を必ず書く）が無く、印を見ない変異は例・題材の全部でバイト一致になる — IR を手で組んで直に見る（`cd compiler && ../bin/sober test lower`）
+
+import "desugar"
+import "std/iter"
+
+// hdrT は `a = load P[1]; store itop(load Q[0])[0] ← a; c = load P[1]; store itop(load Q[0])[1] ← c` の関数に印 mask で hdr を掛け、
+// 残った `load P[1]` の数を返す（2 = まとめなかった・1 = まとめた）
+func hdrT(mask int) int {
+    mut st := St{}
+    initScalars(mut st)
+    hpush(mut st, 0)
+    pt := listN(mut st, 2)
+    hset(mut st, pt + 1, TyPtr)
+    hset(mut st, pt + 2, TyPtr)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    irSetFnMutP(mut st, f, mask)
+    st.fn = f
+    st.cur = newBlock(mut st)
+    a := load(mut st, 0, 1)
+    q := itop(mut st, load(mut st, 1, 0))
+    store(mut st, q, 0, a)
+    c := load(mut st, 0, 1)
+    store(mut st, q, 1, c)
+    ret(mut st, -1)
+    hdrFunc(mut st, f)
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpLoad && irInsA(mut st, i) == 0 && irInsB(mut st, i) == 1 {
+                n += 1
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+func TestHdrMutMark() {
+    // P と Q の両方が mut 仮引数なら Q の要素への store は P のヘッダに届かない — まとめる
+    assert(hdrT(3) == 1)
+    // どちらかに印が無ければまとめない（印を見ない変異はここで落ちる）
+    for m <- iter.Range(0, 3) {
+        assert(hdrT(m) == 2)
+    }
+}

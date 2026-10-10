@@ -1,0 +1,128 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
+          "ref": "iter#",
+          "path": "std/iter"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "isDigit",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "isAlpha",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "lex",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "freeze",
+            "int",
+            "isAlpha",
+            "isDigit",
+            "len"
+          ]
+        },
+        {
+          "name": "printToken",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "println"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "iter.Each",
+            "iter.Sum",
+            "lex",
+            "printToken",
+            "println"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/iter",
+      "name": "iter",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Slice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "Range",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k"
+          ]
+        },
+        {
+          "name": "Each",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Sum",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

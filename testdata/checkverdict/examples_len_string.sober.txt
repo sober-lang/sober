@@ -1,0 +1,2 @@
+sober: desugar error at examples/len_string.sober:6:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+exit=1

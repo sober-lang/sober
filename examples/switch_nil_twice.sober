@@ -1,0 +1,16 @@
+package main
+
+// 負例: nil の腕は 1 つだけ（2 つ目は到達しない）
+func pick(k int) int? {
+    return if k > 0 { k } else { nil }
+}
+
+func main() {
+    x := pick(3)
+    println(switch x {
+    case nil: 0
+    case 3: 1
+    case nil: 2
+    default: 3
+    })
+}

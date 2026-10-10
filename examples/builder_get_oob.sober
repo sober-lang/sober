@@ -1,0 +1,14 @@
+package main
+
+// std/builder の Get の範囲外（F-7）: fill より先は chunk の中身が確保時の写しで埋まっていて読めてしまうので、
+// Get は Len 以上の添字を境界検査の panic（exit 101）に落とす
+
+import "std/builder"
+
+func main() {
+    mut b := builder.Builder[int]{}
+    builder.Push(mut b, 1)
+    builder.Push(mut b, 2)
+    println("${builder.Get(mut b, 1)}")
+    println("${builder.Get(mut b, 2)}")
+}

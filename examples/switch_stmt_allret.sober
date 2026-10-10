@@ -1,0 +1,51 @@
+package main
+
+// 文の switch で腕が全部 return（Never）・default なし: 外れは何もせず switch の後ろへ続く（ Zig 版の時代からの
+// lower の穴。外れの経路まで Never にして switch の後ろを落とし、B-3 の IR 検証器が「終端なし」で拾っていた）
+
+func classify(k int) int {
+    switch k {
+    case 1 | 2:
+        return 10
+    case 3:
+        return 30
+    }
+    return -1
+}
+
+func name(k int) string {
+    switch k {
+    case 0:
+        return "zero"
+    }
+    if k < 0 {
+        return "neg"
+    }
+    return "pos"
+}
+
+// union の全 variant を覆い、腕が全部戻らない: 外れには来ない（コアの unreach と同じ — 外れのブロックは panic で閉じる）
+type Shape union {
+    Circle { r int }
+    Sq { s int }
+}
+
+func area(x Shape) int {
+    switch x {
+    case Circle{r}:
+        return r * r * 3
+    case Sq{s}:
+        return s * s
+    }
+}
+
+func main() {
+    println(classify(1))
+    println(classify(3))
+    println(classify(9))
+    println(name(0))
+    println(name(-5))
+    println(name(5))
+    println(area(Circle{r: 2}))
+    println(area(Sq{s: 3}))
+}

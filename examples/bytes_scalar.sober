@@ -1,0 +1,91 @@
+package main
+
+import "std/builder"
+import "std/iter"
+import "std/table"
+
+// byte スカラー（language.md 33 節）: 格納単位。比較は 6 種・算術は int(b) 経由・byte(n) は範囲検査・リテラルは byte の文脈に置ける
+
+type Tok struct {
+    c byte
+    n int
+}
+
+const Quote = 34
+
+func isDigit(c byte) bool {
+    return c >= '0' && c <= '9'
+}
+
+func upper(c byte) byte {
+    if c >= 'a' && c <= 'z' {
+        return byte(int(c) - 32)
+    }
+    return c
+}
+
+func classify(c byte) int {
+    return switch c {
+    case ' ' | '\t' | '\n': 0
+    case 'a' | 'e' | 'i' | 'o' | 'u': 1
+    case Quote: 2
+    default: if isDigit(c) { 3 } else { 4 }
+    }
+}
+
+func pick(first bool, c byte) byte {
+    return if first { c } else { 0 }
+}
+
+func findSep(s []byte) byte? {
+    return if len(s) > 2 { 44 } else { nil }
+}
+
+func orZero(v byte?) byte {
+    return if v != nil { v } else { 0 }
+}
+
+func main() {
+    b := byte(65)
+    println(b)
+    println(int(b) + 1)
+    mut c := b
+    c = 'z'
+    println(c, upper(c), upper('Q'), upper('3'))
+    println(b == 65, b != 'A', b < c, c <= 'z', c > b, b >= 66)
+    println(isDigit('7'), isDigit(b))
+    println(classify(' '), classify('e'), classify(34), classify('5'), classify('#'))
+    t := Tok{c: '+', n: 1}
+    println(t.c, t.n)
+    z := Tok{}
+    println(z.c)
+    mut xs := mut []byte{}
+    xs = append(xs, 'h')
+    xs = append(xs, 105)
+    xs = append(xs, b)
+    println(len(xs), xs[0], xs[1], xs[2])
+    ys := []byte{'o', 'k', 255}
+    println(ys[2], int(ys[0]) - int(ys[1]))
+    println(pick(true, 'x'), pick(false, 'x'))
+    o := findSep(ys)
+    if o != nil {
+        println(o)
+    }
+    println(orZero(findSep(ys[0:2])), orZero(findSep(freeze(xs))))
+    mut n := 0
+    for i <- iter.Range(0, 3) {
+        n = n + int(byte(i * 100))
+    }
+    println(n)
+    println(byte(255), byte(0), byte(b))
+    // ジェネリックの型引数（型なしの定数は型引数を int で縛らない — Push の T は mut bb の Builder[byte] から）
+    mut bb := builder.Builder[byte]{}
+    builder.Push(mut bb, 'a')
+    builder.Push(mut bb, c)
+    zs := builder.Build(mut bb)
+    println(len(zs), zs[0], zs[1])
+    mut tb := table.Table[byte]{}
+    table.Push(mut tb, 7)
+    table.Set(mut tb, 0, 200)
+    println(table.Get(mut tb, 0), table.Len(mut tb))
+}

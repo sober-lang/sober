@@ -1,0 +1,27 @@
+package main
+
+// 戻り値の無い関数の本体の最後の文が値を持つ式文でも、値は捨てる（決定 9 — func 本体は文位置。F-e の最小形 2 つ）
+
+func f(n int) int {
+    println(n)
+    return n
+}
+
+// 再帰する関数（Def）の最後の文が int を返す呼び出し
+func g(k int) {
+    if k > 0 {
+        g(k - 1)
+    }
+    f(k)
+}
+
+func main() {
+    g(2)
+    k := 3
+    // 本体の最後の文の if-else の腕が int を返す呼び出しで終わる
+    if k == 1 {
+        f(1)
+    } else {
+        f(k * 10)
+    }
+}

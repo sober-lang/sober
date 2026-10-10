@@ -1,0 +1,9 @@
+package lib
+
+type box[T] struct {
+    v T
+}
+
+func V(b box[int]) int {
+    return b.v
+}

@@ -1,0 +1,34 @@
+package main
+
+type Point struct {
+    x, y int
+}
+
+type Line struct {
+    from Point
+    to Point
+}
+
+func length2(l Line) int {
+    dx := l.to.x - l.from.x
+    dy := l.to.y - l.from.y
+    return dx * dx + dy * dy
+}
+
+func shift(p Point, d int) Point {
+    return Point{p.x + d, p.y + d}
+}
+
+func ends(l Line) (Point, Point) {
+    return l.from, l.to
+}
+
+func main() {
+    p := Point{1, 2}
+    q := Point{y: 6, x: 4}
+    l := Line{from: p, to: q}
+    mut m := Line{from: Point{}, to: shift(q, 10)}
+    m.from.x = 3
+    a, b := ends(m)
+    println(length2(l), shift(p, 1).y, m.from.x, m.from.y, a.x, b.x, b.y)
+}

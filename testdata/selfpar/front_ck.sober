@@ -1,0 +1,8 @@
+package main
+
+// selfpar 4（段 6 P6-2 — checkFront）: 脱糖の拒否（len は string を取らない — diag.LenString）だけを持つ
+
+func main() {
+    s := "abc"
+    println(len(s))
+}

@@ -1,0 +1,24 @@
+package main
+
+// shape[T] の `[]U?`（U? の slice — 要素の null を nil で受ける・書くときは nil を null に）。型の文法で `?` は直前の名前に付くので、
+// `[]int?` は「int? の slice」（slice 自体の T? ではない）
+
+import "std/json"
+
+type R struct {
+    xs []int?
+    names []string?
+}
+
+func main() {
+    d, err := json.Parse(bytes("{\"xs\": [1, null, 3], \"names\": [null, \"b\"]}"))
+    if err != nil {
+        return
+    }
+    r, e := json.Decode[R](d, json.Root(d))
+    if e != nil {
+        println("decode error")
+        return
+    }
+    println(len(r.xs), len(r.names), json.Encode[R](r))
+}

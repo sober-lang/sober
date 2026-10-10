@@ -1,0 +1,88 @@
+package main
+
+// R0（region 多相の裁定 — 系統 R）の検証例: error ラベルに string / slice のフィールドを持たせる。
+// 呼び手の string・callee で構築した string・slice がラベルに乗り、`?` で伝播し、戻り値の境界コピーで
+// 呼び手の region へ写る（opt / union の中の relocate — codegen はタグで分岐、Lean は relocR が値ラッパの中まで締める）
+
+type NotFound error {
+    path string
+}
+
+type Many error {
+    seen []int
+}
+
+type Bad error {
+    code int
+}
+
+// 呼び手の string をそのままラベルへ
+func open(p string, ok bool) (int, error?) {
+    if ok {
+        return len(bytes(p)), nil
+    }
+    return 0, NotFound{path: p}
+}
+
+// 1 段の `?` で伝播（ラベルの string が 2 回の境界を越える）
+func openBoth(p string, q string) (int, error?) {
+    a := open(p, true)?
+    b := open(q, false)?
+    return a + b, nil
+}
+
+// callee で構築した string をラベルへ
+func backup(p string) (int, error?) {
+    return 0, NotFound{path: p + ".bak"}
+}
+
+// callee で構築した slice をラベルへ（ループで伸ばしてから返す）
+func collect(n int) (int, error?) {
+    mut xs := []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i * i)
+        i += 1
+    }
+    if n > 3 {
+        return 0, Many{seen: xs}
+    }
+    return n, nil
+}
+
+// string ラベルと並ぶ int ラベル
+func codeOf(n int) (int, error?) {
+    if n > 0 {
+        return n, nil
+    }
+    return 0, Bad{code: n}
+}
+
+func show(e error?) {
+    if e != nil {
+        switch e {
+        case NotFound{path}:
+            println("not found: ${path}")
+        case Many{seen}:
+            println("many: ${len(seen)} last ${seen[len(seen) - 1]}")
+        case Bad{code}:
+            println("bad ${code}")
+        }
+    } else {
+        println("ok")
+    }
+}
+
+func main() {
+    n1, e1 := openBoth("a.txt", "b.txt")
+    show(e1)
+    _, e2 := backup("c.txt")
+    show(e2)
+    _, e3 := collect(5)
+    show(e3)
+    n4, e4 := collect(2)
+    show(e4)
+    _, e5 := codeOf(0 - 3)
+    show(e5)
+    println("${n1 + n4}")
+}

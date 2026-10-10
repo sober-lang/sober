@@ -1,0 +1,78 @@
+package main
+
+// 段 6 P3b-4: region を持つ task の結果（境界コピー — 子の region で作った値・捕獲した親の値を scope の region へ写す。formal.md の xfer）。
+// 子が待っている間に親が block の region を開いて閉じても、Join が読む結果は scope の region にある
+
+import "std/par"
+
+type Pair struct {
+    name string
+    n int
+}
+
+func describe(p Pair) string {
+    return p.name + "${p.n}"
+}
+
+func build(n int) []int {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i * 3)
+        i += 1
+    }
+    return freeze(xs)
+}
+
+func main() {
+    tag := "par"
+    r, e := par.Scope((s par.S) => {
+        h1 := par.Spawn(s, () => "lit")
+        h2 := par.Spawn(s, () => {
+            w := "co" + "py"
+            w + "-" + tag
+        })
+        h3 := par.Spawn(s, () => build(4))
+        h4 := par.Spawn(s, () => Pair{name: tag + "!", n: 7})
+        tx, rx := par.NewChan[int](cap: 1)
+        // 子は受信を待ってから結果を作る — その間に親は block の region で確保して閉じる
+        h5 := {
+            junk := "tmp" + tag
+            if len(bytes(junk)) > 99 {
+                println("never")
+            }
+            par.Spawn(s, (in) => {
+                k := par.Recv(in)
+                mut out := ""
+                if k != nil {
+                    out = "got" + "-" + "late"
+                }
+                out
+            }, give: rx)
+        }
+        x := {
+            pad := "pad" + tag + tag
+            len(bytes(pad))
+        }
+        par.Send(tx, x)
+        a := par.Join(h1)
+        b := par.Join(h2)
+        xs := par.Join(h3)
+        p := describe(par.Join(h4))
+        late := par.Join(h5)
+        t := switch par.Try(h2) {
+        case par.Ok{v}: v
+        case par.Failed{}: "dead"
+        case par.Died{cause}: "dead"
+        }
+        mut sum := 0
+        for v <- xs {
+            sum += v
+        }
+        a + " " + b + " " + p + " " + late + " " + t + " " + "${sum}"
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

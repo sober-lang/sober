@@ -1,0 +1,10 @@
+package lib
+
+type bad error {
+    n int
+}
+
+@errors(bad)
+func Fail(n int) (int, error?) {
+    return 0, bad{n: n}
+}

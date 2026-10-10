@@ -1,0 +1,12 @@
+package main
+
+// 負例（syntax.md 決定 7 の kind 2）: 名前付き関数型に無い仮引数名 — 名前は型の宣言のもの（ラムダの仮引数名 r ではない）
+type Fetch func(url int, timeout int?, retries int?) int
+
+func run(get Fetch) int {
+    return get(1, r: 3)
+}
+
+func main() {
+    println(run((u, t, r) => u))
+}

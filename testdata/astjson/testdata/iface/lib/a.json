@@ -1,0 +1,386 @@
+{
+  "package": "lib",
+  "imports": [
+    {
+      "alias": "$utf8",
+      "path": "std/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "f",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ]
+          },
+          "mutable": false
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "f",
+                    "tok": 19
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "f",
+                        "tok": 21
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 23
+                        }
+                      ],
+                      "tok": 22
+                    }
+                  ],
+                  "tok": 20
+                },
+                "rhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "helper",
+                    "tok": 27
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 29
+                    }
+                  ],
+                  "tok": 28
+                },
+                "tok": 26
+              }
+            ],
+            "tok": 18
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 34
+      },
+      "sig_end": 17
+    },
+    {
+      "name": "Bump",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "x",
+                "tok": 42
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 44
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "step",
+                  "tok": 46
+                },
+                "tok": 45
+              }
+            ],
+            "tok": 42
+          }
+        ]
+      },
+      "tok": 35,
+      "bodiless": false,
+      "span": {
+        "start": 34,
+        "end": 50
+      },
+      "sig_end": 41
+    },
+    {
+      "name": "helper",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 64
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 100,
+                  "tok": 66
+                },
+                "tok": 65
+              }
+            ],
+            "tok": 63
+          }
+        ]
+      },
+      "tok": 56,
+      "bodiless": false,
+      "span": {
+        "start": 55,
+        "end": 70
+      },
+      "sig_end": 62
+    },
+    {
+      "name": "Decode",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "$utf8",
+                    "tok": 84
+                  },
+                  "field": "Parse",
+                  "tok": 84
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 86
+                  }
+                ],
+                "tok": 85
+              }
+            ],
+            "tok": 80
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 90
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 92
+                },
+                "tok": 91
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "-",
+                        "lhs": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 95
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 97
+                        },
+                        "tok": 96
+                      }
+                    ],
+                    "tok": 94
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 89
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "len",
+                  "tok": 102
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "bytes",
+                      "tok": 104
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 106
+                      }
+                    ],
+                    "tok": 105
+                  }
+                ],
+                "tok": 103
+              }
+            ],
+            "tok": 101
+          }
+        ]
+      },
+      "tok": 71,
+      "bodiless": false,
+      "span": {
+        "start": 70,
+        "end": 112
+      },
+      "sig_end": 79
+    }
+  ],
+  "consts": [
+    {
+      "name": "step",
+      "expr": {
+        "k": "int",
+        "value": 4,
+        "tok": 53
+      },
+      "tok": 51,
+      "span": {
+        "start": 50,
+        "end": 55
+      }
+    }
+  ]
+}

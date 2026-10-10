@@ -1,0 +1,11 @@
+package main
+
+// 負例（check が拒否 — 位置つきの TypeMismatch）: int と float は交わらない。整数リテラルも float の文脈では使えない（language.md 37 節 — x * 2.0 と書く）
+
+func double(x float) float {
+    return x * 2
+}
+
+func main() {
+    println(int(double(1.5)))
+}

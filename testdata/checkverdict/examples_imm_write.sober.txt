@@ -1,0 +1,2 @@
+sober: error at examples/imm_write.sober:8:5 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
+exit=1

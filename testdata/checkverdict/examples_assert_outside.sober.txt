@@ -1,0 +1,2 @@
+sober: load error at examples/assert_outside.sober:5:5: assert is only available in _test.sober files
+exit=1

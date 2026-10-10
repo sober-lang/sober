@@ -1,0 +1,35 @@
+package main
+
+import "std/pool"
+
+// std/pool の最小形（V5-2）: 取り出し → 直後の defer で返却（analyzer が強制 — V5-3）、再利用で世代が進む、古い Handle は nil
+type Buf struct {
+    id int
+    used int
+}
+
+func touch(b Buf) Buf {
+    return Buf{id: b.id, used: b.used + 1}
+}
+
+func work(p mut pool.Pool[Buf], id int) pool.Handle {
+    h := pool.Acquire(mut p, Buf{id: id, used: 0})
+    defer pool.Release(mut p, h)
+    b := pool.Get(mut p, h)
+    ok := if b != nil { pool.Set(mut p, h, touch(b)) } else { false }
+    println("work", id, h.idx, h.gen, ok, pool.Len(mut p))
+    return h
+}
+
+func main() {
+    mut p := pool.Pool[Buf]{}
+    h1 := work(mut p, 1)
+    h2 := work(mut p, 2)
+    println("same slot", h1.idx == h2.idx, "gen", h1.gen, h2.gen)
+    println("stale", pool.Get(mut p, h1) == nil, pool.Set(mut p, h1, Buf{}))
+    a := pool.Acquire(mut p, Buf{id: 10, used: 0})
+    defer pool.Release(mut p, a)
+    b := pool.Acquire(mut p, Buf{id: 20, used: 0})
+    defer pool.Release(mut p, b)
+    println("two live", a.idx, b.idx, pool.Len(mut p))
+}

@@ -1,0 +1,20 @@
+package main
+
+type BadLine error {
+    line int
+}
+
+func parseAll(p Path) ([]User, error) {
+    mut n := 0
+    users := for l <- lines(p)? {
+        n += 1
+        u := parse(l)? BadLine{line: n}
+        yield u
+    }
+    return users |> collect, nil
+}
+
+func main() {
+    us, err := parseAll(path("users.txt"))
+    println(len(us), err)
+}

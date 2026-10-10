@@ -1,0 +1,60 @@
+{
+  "package": "side",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Half",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "/",
+                "lhs": {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 12
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 14
+                },
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 18
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

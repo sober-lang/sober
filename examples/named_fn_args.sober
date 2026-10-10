@@ -1,0 +1,53 @@
+package main
+
+// 名前付き関数型を通した呼び出しの名前付き実引数（syntax.md 決定 7 の第 2 便 — desugar/namedval.sober が位置へ写す）。
+// 名前は呼び先の静的な型（名前付き関数型の宣言）から取る — 値の実体（ラムダ）の仮引数名とは照合しない（名前は型の同一性に入らない — language.md 14 節）
+
+type Fetch func(url int, timeout int?, retries int?) int
+
+// 仮引数名のまとめ書き（Go の identifier_list）
+type Merge func(a, b int) int
+
+// 名前なしの関数型はそのまま（位置だけで呼ぶ）
+type Less func(int, int) bool
+
+func run(get Fetch) int {
+    a := get(1, retries: 3)
+    b := get(2, timeout: 5, retries: 7)
+    // 名前付きの無い呼び出しも、足りない仮引数が全部 T? なら nil
+    c := get(3)
+    d := get(4, timeout: 6)
+    return a * 1000000000 + b * 1000000 + c * 1000 + d
+}
+
+func pipe(get Fetch) int {
+    return 5 |> get(_, retries: 1)
+}
+
+// 名前付き関数型の値を別の関数へ渡しても、呼び先の静的な型の名前で並べる
+func forward(get Fetch) int {
+    return run(get) + get(9, timeout: 1, retries: 1)
+}
+
+func merge(m Merge, x int) int {
+    return m(a: x, b: 10)
+}
+
+func less(l Less) bool {
+    return l(1, 2)
+}
+
+// 名前つきの関数型リテラル（名前は文書 — 名前付き引数は名前付き関数型だけ）
+func apply(f func(x int, y int) int) int {
+    return f(3, 4)
+}
+
+func main() {
+    println(run((u, t, r) => u * 100 + (if t != nil { t } else { 9 }) * 10 + (if r != nil { r } else { 9 })))
+    println(pipe((u, t, r) => u * 100 + (if t != nil { t } else { 9 }) * 10 + (if r != nil { r } else { 9 })))
+    // ラムダの仮引数名は型の名前と違ってよい
+    println(forward((p, q, s) => p + (if q != nil { q } else { 0 }) + (if s != nil { s } else { 0 })))
+    println(merge((x, y) => x - y, 3))
+    println(less((x, y) => x < y))
+    println(apply((p, q) => p * q))
+}

@@ -1,0 +1,97 @@
+{
+  "package": "model",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/jsonpkg/geo",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "User",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 13
+          },
+          {
+            "name": "home",
+            "type": {
+              "k": "name",
+              "name": "geo.Pt"
+            },
+            "tok": 16
+          },
+          {
+            "name": "visits",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "geo.Pt"
+              },
+              "mut": false
+            },
+            "tok": 21
+          },
+          {
+            "name": "boss",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Ref"
+              }
+            },
+            "tok": 28
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 34
+      }
+    },
+    {
+      "name": "Ref",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 38
+          }
+        ]
+      },
+      "tok": 35,
+      "span": {
+        "start": 34,
+        "end": 43
+      }
+    }
+  ],
+  "funcs": [],
+  "consts": []
+}

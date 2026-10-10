@@ -1,0 +1,15 @@
+start
+a opens
+a.g waits
+a.g got 1
+a sends
+a joins
+a closes 1
+bb opens
+bb.g waits
+bb.g got 2
+bb sends
+bb joins
+bb closes 2
+parent
+total 3

@@ -1,0 +1,49 @@
+package main
+
+// 仮引数由来の imm を mut 局所の struct のフィールドへ代入する形（selfhost-drafts F-14 (3) の回帰例）。
+// フィールドの型を束縛点の座標で読むと値の型（仮引数の region）より緩いので、ann で緩めれば健全に受理できるが、
+// 脱糖器がフィールド代入の値に ann を付けず def error になっていた（compiler/loader の failed が `own` で迂回していた形）
+
+type Box struct {
+    n int
+    a []int
+}
+
+type Outer struct {
+    tag int
+    box Box
+}
+
+type Result struct {
+    ok bool
+    fail []int
+}
+
+func wrap(p []int) Box {
+    mut s := Box{}
+    s.n = len(p)
+    s.a = p
+    return s
+}
+
+func nest(p []int) Outer {
+    mut o := Outer{}
+    o.tag = 7
+    o.box.a = p
+    return o
+}
+
+func failed(msg string) Result {
+    mut r := Result{}
+    r.fail = bytes(msg)
+    return r
+}
+
+func main() {
+    b := wrap(bytes("hello"))
+    println(b.n, len(b.a), b.a[1])
+    o := nest(bytes("xy"))
+    println(o.tag, len(o.box.a), o.box.a[0])
+    r := failed("bad input")
+    println(r.ok, len(r.fail), r.fail[0])
+}

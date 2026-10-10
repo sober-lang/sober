@@ -1,0 +1,12 @@
+package main
+
+// 負例（language.md 32 節）: 下地 bool の named も条件にそのまま置けない — bool(f) で書く
+
+type Flag bool
+
+func main() {
+    f := Flag(true)
+    if f {
+        println(1)
+    }
+}

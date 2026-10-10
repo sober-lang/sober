@@ -1,0 +1,20 @@
+package main
+
+import "testdata/errpkg/lib"
+
+type Mine error {
+    n int
+}
+
+func code(e error) int {
+    return switch e {
+    case lib.Bad{at}: at.x + at.y
+    case Mine{n}: 100 + n
+    }
+}
+
+func main() {
+    v, e := lib.Check(-3)
+    w, e2 := lib.Check(4)
+    println(v, w, if e != nil { code(e) } else { 0 }, if e2 == nil { code(Mine{n: 5}) } else { 0 })
+}

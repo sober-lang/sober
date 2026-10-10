@@ -1,0 +1,20 @@
+package main
+
+// 写しのループの一括化の負例（範囲が通らない — 元のループに落ちて、同じ点で panic: src[j] の添字が範囲外 — exit 101）
+
+func appendCopy(src []int, n int) []int {
+    mut dst := mut []int{}
+    mut j := 0
+    while j < n {
+        dst = append(dst, src[j])
+        j += 1
+    }
+    return freeze(dst)
+}
+
+func main() {
+    xs := appendCopy([]int{1, 2, 3}, 2)
+    println(len(xs))
+    ys := appendCopy([]int{1, 2, 3}, 5)
+    println(len(ys))
+}

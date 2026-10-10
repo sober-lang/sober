@@ -1,0 +1,48 @@
+package main
+
+// Skynet（段 6 P4-6 — github.com/atemerev/skynet の形）: 各 task が 10 の子を生み、深さ 6 で葉が 100 万（task の数は 111 万）。葉は自分の
+// 番号を返し、親は子の和を返す。答え = 0 + 1 + … + 999999 = 499999500000。「1 scope に 100 万 spawn が崖なし」の木版の試験台
+// 実引数 = 葉の数（既定 1000000 — 10 のべき）。答えが違えば exit 1（M:N の初版はここで死んで部分和を返していた）
+
+import "std/iter"
+import "std/os"
+import "std/par"
+
+func skynet(num int, size int, div int) int {
+    if size == 1 {
+        return num
+    }
+    sub := size / div
+    mut ds := mut []int{}
+    for i <- iter.Range(0, div) {
+        ds = append(ds, i)
+    }
+    vs, e := par.Map(freeze(ds), (i) => skynet(num + i * sub, sub, div))
+    if e != nil {
+        // 子の死（資源の尽き等 — 定義された死）: 和を壊して main の照合で落とす（黙って部分和を返さない）
+        return -1
+    }
+    mut acc := 0
+    for j <- iter.Range(0, len(vs)) {
+        acc += vs[j]
+    }
+    return acc
+}
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) >= 2 { atoi(args[1]) } else { 1000000 }
+    r := skynet(0, n, 10)
+    println(r)
+    // 答え = 0 + 1 + … + (n - 1)
+    return if r == n * (n - 1) / 2 { 0 } else { 1 }
+}

@@ -1,0 +1,34 @@
+package main
+
+type Point struct {
+    x, y int
+}
+
+type Line struct {
+    from Point
+    to Point
+    tags []string
+    meta map[string]int
+    next Line?
+}
+
+type ID int
+
+type Pair[K, V] struct {
+    key K
+    val V
+}
+
+func length2(l Line) int {
+    dx := l.to.x - l.from.x
+    dy := l.to.y - l.from.y
+    return dx * dx + dy * dy
+}
+
+func main() {
+    p := Point{1, 2}
+    q := Point{x: 4, y: 6}
+    l := Line{from: p, to: q, tags: []string{"a", "b"}, meta: map[string]int{"k": 1}, next: nil}
+    grid := [2]Point{{0, 0}, {1, 1}}
+    println(length2(l), grid[1].x, l.tags[0])
+}

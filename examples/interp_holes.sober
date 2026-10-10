@@ -1,0 +1,55 @@
+package main
+
+// 補間の穴の中の呼び出しと `?` は囲みの関数のもの（cst_to_ast が穴を別の変換器で読むので、
+// FuncDecl.callees / has_try へ戻し忘れると壊れる）
+
+type Neg error { n int }
+
+func half(n int) (int, error?) {
+    if n < 0 {
+        return 0, Neg{n: n}
+    }
+    return n / 2, nil
+}
+
+// 穴の中の `?`: 結果の []int はゼロ値の入口束縛（Z1）を要る型
+func halves(ns []int) ([]int, error?) {
+    mut out := mut []int{}
+    mut i := 0
+    while i < len(ns) {
+        println("half ${ns[i]} = ${half(ns[i])?}")
+        out = append(out, ns[i])
+        i += 1
+    }
+    return freeze(out), nil
+}
+
+// 穴の中でだけ自分を呼ぶ mut 引数の関数: 再帰判定（mut_def）が穴の呼び出しを見る
+func walk(acc mut []int, n int) int {
+    if n == 0 {
+        return 0
+    }
+    acc = append(acc, n)
+    println("depth ${walk(mut acc, n - 1)}")
+    return n
+}
+
+func code(e error) int {
+    return switch e {
+    case Neg{n}: 1000 - n
+    }
+}
+
+func main() {
+    xs, e1 := halves([]int{4, 10})
+    println(len(xs))
+    if e1 == nil {
+        println("ok")
+    }
+    ys, e2 := halves([]int{6, -1, 8})
+    println(len(ys))
+    println(if e2 != nil { code(e2) } else { 0 })
+    mut acc := mut []int{}
+    println(walk(mut acc, 3))
+    println(len(acc))
+}

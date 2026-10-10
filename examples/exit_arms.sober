@@ -1,0 +1,33 @@
+package main
+
+// V4-4d: 値位置の if / switch の腕に脱出（return / break / continue）を書ける。
+// 脱出で終わる腕は「到達しない」で、腕の合流では相手の型に従う（codegen の never・desugar の jump 注釈）
+
+func f(c int) int {
+    x := if c > 5 { return 100 } else { c * 2 }
+    y := switch c {
+    case 1: return 7
+    case 2: 20
+    default: c
+    }
+    mut s := 0
+    mut i := 0
+    while i < 10 {
+        z := if i == 4 { break } else { i }
+        s += z
+        i += 1
+    }
+    return x + y + s
+}
+
+func g(c int) int? {
+    return if c < 0 { return nil } else { c + 1 }
+}
+
+func h(v int?) int {
+    return if v != nil { v } else { -1 }
+}
+
+func main() {
+    println(f(9), f(1), f(2), f(3), h(g(3)), h(g(-3)))
+}

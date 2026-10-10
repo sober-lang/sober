@@ -1,0 +1,73 @@
+# 凍結コーパスの check 側（Zig の脱糖器 → Lean の判定を Sober と比べる照合 — selfhost_e2e の Zig 側・pkgcheck）から退役させた entry。
+# 退役の理由（2026-10-01、byte の段 S4 — 草案 G1 の同方向の帰結・決定 A）: string = imm []byte に切り替えた（段 C）ので、
+# 凍結した Zig 版の脱糖器が出す string（`slice … int`）を新しい Lean（`slice … byte`）が拒否する。string を使う entry の「Zig の脱糖 → Lean」の判定が
+# 意味の差ではなく凍結物の語彙の差で食い違う。対になる lower 側の退役は scripts/frozen/lower-retired.list（全部）。
+# ここに載せた entry は check 側のゲートだけが飛ばす（gatelib の check_retired）。構文と名前解決の照合（lex / parse / fmt / load）は残る
+# （load は両側とも凍結時点の std を読む — scripts/selfhost_load.sh）。Zig ≡ Sober の**意味の照合は byte の段で実質終了** — 残る網 = obs・Lean・
+# Sober 生成の黄金・selfhost_check の corevec / 実コーパス / 変異体
+examples/arith_edge.sober
+testdata/frozen_src/examples/block_escape.sober
+examples/builder_empty.sober
+examples/builder_get_oob.sober
+testdata/frozen_src/examples/builder_string.sober
+testdata/frozen_src/examples/deep_return.sober
+examples/embed_demo.sober
+examples/errcause.sober
+examples/errlabel.sober
+examples/inline_anchor.sober
+examples/interp.sober
+examples/interp_holes.sober
+examples/io_args.sober
+examples/io_stdout.sober
+examples/map_keys.sober
+examples/map_str.sober
+examples/map_str_key.sober
+examples/map_value_coords.sober
+examples/nested.sober
+testdata/frozen_src/examples/pool_string.sober
+examples/ret_coords.sober
+examples/std_import.sober
+testdata/frozen_src/examples/strings_std.sober
+examples/strlit_rec.sober
+testdata/frozen_src/examples/bytes_view.sober
+testdata/frozen_src/examples/errlabel_pure.sober
+testdata/frozen_src/examples/errparse.sober
+testdata/frozen_src/examples/errparse_file.sober
+testdata/frozen_src/examples/errparse_pure.sober
+testdata/frozen_src/examples/field_param_ann.sober
+testdata/frozen_src/examples/io_basic.sober
+testdata/frozen_src/examples/io_readdir.sober
+testdata/frozen_src/examples/lexer.sober
+testdata/frozen_src/examples/lexer_iter.sober
+testdata/frozen_src/examples/parser_b.sober
+testdata/frozen_src/examples/parser_x.sober
+testdata/frozen_src/examples/parser_y.sober
+testdata/frozen_src/examples/utf8_pure.sober
+testdata/frozen_src/examples/utf8_std.sober
+testdata/iface/app
+testdata/frozen_src/testdata/minic/app
+testdata/frozen_src/testdata/minic_rd/app
+# S5（2026-10-01 — 鎖の最後の boot が byte の段 S4 の言語になった）: 起点の木の compiler/tools（道具の自己適用 — selfhost_e2e が起点の木の道具を
+# Zig と Sober の両方で検査して比べる）。起点の木は bytes(s) : []int の旧い言語で書かれていて、新しい言語の Sober（stage2）は型エラーで拒否する —
+# 意味の差でなく言語の版の差。compiler/tools/<名前> の行は selfhost_e2e の道具の段を飛ばす印（lower-retired.list の同じ印と対）。
+# 今の compiler/tools の自己適用は toolcheck・selfhost_check・leanbatch（stage2 と Lean — 今の言語）が見る
+compiler/tools/checkdump
+compiler/tools/desugardump
+compiler/tools/fmtdump
+compiler/tools/lexdump
+compiler/tools/lldump
+compiler/tools/loaderdump
+compiler/tools/lowerdump
+compiler/tools/parsedump
+compiler/tools/sobercheck
+# std 命名規則のリネーム（2026-10-01。pool.Outstanding → pool.Len 等）: 凍結の入力（testdata/frozen_src の写し）は旧い名前を呼ぶ。
+# Zig は凍結した std（src/stage1/std_frozen）を読んで受理し、主の sober は今の std を読んで拒否する — 意味の差でなく std の版の差
+testdata/frozen_src/examples/pool.sober
+testdata/frozen_src/testdata/pool/exits.sober
+testdata/frozen_src/testdata/pool/nested.sober
+# 退役（2026-10-02、F-e の修理 — 決定 9 に check を揃えた・決定）: 戻り値の無い関数の本体の末尾の式文の値を捨てるようにしたので、
+# main の最後の文が値を持つ式文の entry は判定の型が unit になる（凍結した Zig の脱糖器は末尾の式文の型 int を判定の型にする）。受理 / 拒否は同じで、
+# 型の印字だけの差
+examples/early_return_pure.sober
+examples/try_prop_pure.sober
+examples/try_wrap_pure.sober

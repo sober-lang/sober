@@ -1,0 +1,49 @@
+package main
+
+import "std/utf8"
+
+// 部分インライン（インライナーが error を返す道を数えずに写す）の意味の網: std/utf8.Str はループの中の呼び出し点で写される。
+// 写した本体の error の道（境界でない添字 → InvalidUtf8{pos}）を catch で拾う形と、? で伝播させて switch で取り出す形の観測（出力・errtrace）が
+// 写さない形と同じであること
+
+@errors(utf8.InvalidUtf8)
+func cut(v utf8.View, s int, i int) (string, error?) {
+    x := utf8.Str(v, s, i)?
+    return x, nil
+}
+
+func main() int {
+    // 「é」「あ」は複数バイト — 途中の添字は境界でない
+    b := bytes("aé;あb;cd;")
+    v := utf8.Check(b) catch return 1
+    mut ok := 0
+    mut bad := 0
+    mut i := 0
+    while i < len(b) {
+        mut j := i + 1
+        while j <= len(b) {
+            s := utf8.Str(v, i, j) catch ""
+            if s == "" {
+                bad += 1
+            } else {
+                ok += 1
+            }
+            j += 1
+        }
+        i += 1
+    }
+    println("ok ${ok} bad ${bad}")
+    mut k := 0
+    while k < len(b) {
+        x, err := cut(v, 0, k)
+        if err != nil {
+            switch err {
+            case utf8.InvalidUtf8{pos}: println("cut 0..${k}: invalid at ${pos}")
+            }
+        } else if k > 0 {
+            println("cut 0..${k}: ${x}")
+        }
+        k += 1
+    }
+    return 0
+}

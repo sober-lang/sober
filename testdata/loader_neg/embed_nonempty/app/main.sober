@@ -1,0 +1,9 @@
+package main
+
+// 受け皿は空の map リテラル（中身は loader が埋める）
+@embed("testdata/embed/*.txt")
+const X = map[string]string{"k": "v"}
+
+func main() {
+    println(len(X))
+}

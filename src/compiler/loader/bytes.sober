@@ -1,0 +1,95 @@
+package loader
+
+// 名前・パスの小道具。名前・パス（package のパス・参照名・ラベル名・ファイルのパス）は string で持つ（byte 型の段の入口）。
+// 木のデータプールの文字列（[n, バイト…]）から string を作る口は Name / NameOk の 2 つだけ（UTF-8 の検査とコピーはここで 1 回）:
+// - Name = 識別子の綴り（lexer が ASCII に限る）と、load が NameOk で検査済みの import のパス — 失敗しない
+// - NameOk = 文字列リテラル由来で検査が要るもの（import のパス・@embed のパターン）— 失敗は呼び手が loader の拒否に落とす
+// 比べるだけなら StrIs（コピーしない）
+
+import "ast"
+import "std/iter"
+
+// less はバイト順（辞書式）で a < b か
+func less(a []byte, b []byte) bool {
+    mut i := 0
+    while i < len(a) && i < len(b) {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+        i += 1
+    }
+    return len(a) < len(b)
+}
+
+// ByteLess はバイト順（辞書式 — LC_ALL=C sort と同じ）で a < b か（string に順序の比較は無い — 並べ替えの口はこれ 1 本）
+func ByteLess(a string, b string) bool {
+    return less(bytes(a), bytes(b))
+}
+
+// Bytes はデータプールの文字列 s（t.data[s] = バイト数、続く n 個がバイト — プールは int の列のまま）のバイト列（写し）
+func Bytes(t ast.Tree, s int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, t.data[s]) {
+        b = append(b, byte(t.data[s + 1 + i]))
+    }
+    return freeze(b)
+}
+
+// StrIs はデータプールの文字列 s が w と一致するか（コピーしない）
+func StrIs(t ast.Tree, s int, w string) bool {
+    wb := bytes(w)
+    if t.data[s] != len(wb) {
+        return false
+    }
+    for i <- iter.Range(0, len(wb)) {
+        if t.data[s + 1 + i] != int(wb[i]) {
+            return false
+        }
+    }
+    return true
+}
+
+// NameOk はデータプールの文字列 s の string（UTF-8 でなければ ok = false）
+func NameOk(t ast.Tree, s int) (string, bool) {
+    r := string(Bytes(t, s)) catch return "", false
+    return r, true
+}
+
+// Name はデータプールの文字列 s の string（識別子か検査済みの import のパス — 上の冒頭の注記。UTF-8 でない入力はここに届かない）
+func Name(t ast.Tree, s int) string {
+    r, ok := NameOk(t, s)
+    if !ok {
+        return "?"
+    }
+    return r
+}
+
+// lastSlash は最後の '/' の位置（無ければ -1）
+func lastSlash(p string) int {
+    b := bytes(p)
+    mut i := len(b) - 1
+    while i >= 0 && b[i] != '/' {
+        i -= 1
+    }
+    return i
+}
+
+// cut は p のバイト [a, b)（a・b は ASCII の区切り '/' '.' の前後 — UTF-8 の文字の途中では切らないので string(…) は失敗しない。
+// string には添字も部分列も無い — 24 節）
+func cut(p string, a int, b int) string {
+    r := string(bytes(p)[a:b]) catch return "?"
+    return r
+}
+
+// Dirname はパスの親（'/' が無ければ空）
+func Dirname(p string) string {
+    k := lastSlash(p)
+    return if k < 0 { "" } else { cut(p, 0, k) }
+}
+
+// Basename はパスの末尾の要素
+func Basename(p string) string {
+    k := lastSlash(p) + 1
+    n := len(bytes(p))
+    return cut(p, k, n)
+}

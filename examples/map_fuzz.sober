@@ -1,0 +1,122 @@
+package main
+
+// map の操作列の fuzz（map の表現の便）: 決定的な乱数の操作列（set / 引き / delete / keys / len）を string 鍵の map と
+// 挿入順の連想リスト（参照の実装 — 同じ列を素朴に解く）の両方に掛け、毎回突き合わせる。鍵は反復の region で作り直す（毎回別の番地 —
+// 格納点の写しの道）。鍵の長さは表現の境目（7・8・9・15・16・17・24・25）を跨ぎ、`\0` と非 ASCII のバイト・先頭 16 バイトが同じで
+// 後ろだけ違う鍵・"a" と "a\0" を含む。表現の差分オラクル（scripts/maprepr.sh）でも新旧の表現の出力を照合する
+
+import "std/iter"
+import "std/utf8"
+
+// mkKey は鍵の種 i の鍵（同じ i なら同じ鍵 — 毎回作り直す）
+func mkKey(i int) string {
+    lens := []int{0, 1, 2, 7, 8, 9, 15, 16, 17, 23, 24, 25, 40}
+    n := lens[i % len(lens)]
+    mut b := mut []byte{}
+    // 先頭 16 バイトは i / 52 から・16 バイト目より後ろは i / 13 % 4 から（同じ長さで先頭 16 バイトが同じで後ろだけ違う鍵の組を作る）
+    mut x := i / 52 * 2654435761 + 7
+    while len(b) < n {
+        x = x * 6364136223846793005 + 1442695040888963407
+        u := (x >> 33) & 7
+        if u == 0 {
+            b = append(b, byte(0))
+        } else if u == 1 && len(b) + 2 <= n {
+            b = append(b, byte(195))
+            b = append(b, byte(169))
+        } else if len(b) >= 16 {
+            b = append(b, byte('a' + i / 13 % 4))
+        } else {
+            b = append(b, byte('a' + u % 3))
+        }
+    }
+    v := utf8.Check(freeze(b)) catch panic(Unreachable{})
+    return utf8.Str(v, 0, len(b)) catch panic(Unreachable{})
+}
+
+func idx(ks []string, k string) int {
+    for i <- iter.Range(0, len(ks)) {
+        if ks[i] == k {
+            return i
+        }
+    }
+    return -1
+}
+
+func main() {
+    mut m := mut map[string]int{}
+    mut rk := mut []string{}
+    mut rv := mut []int{}
+    mut rl := mut []bool{}
+    mut x := 12345
+    mut fail := 0
+    mut checks := 0
+    for step <- iter.Range(0, 6000) {
+        x = x * 6364136223846793005 + 1442695040888963407
+        r := (x >> 33) & 65535
+        op := r % 20
+        // 種の幅を段ごとに広げる（短い map の走査 → 索引の道）
+        k := mkKey(r / 20 % (8 + step / 20))
+        i := idx(freeze(rk), k)
+        if op < 9 {
+            m[k] = step
+            if i >= 0 {
+                rv[i] = step
+                rl[i] = true
+            } else {
+                rk = append(rk, k)
+                rv = append(rv, step)
+                rl = append(rl, true)
+            }
+        } else if op < 13 {
+            delete(m, k)
+            if i >= 0 {
+                rl[i] = false
+            }
+        } else if op < 18 {
+            c := m[k]
+            checks += 1
+            if c != nil {
+                if i < 0 || !rl[i] || rv[i] != c {
+                    fail += 1
+                }
+            } else if i >= 0 && rl[i] {
+                fail += 1
+            }
+        } else {
+            ks := keys(m)
+            checks += 1
+            mut j := 0
+            for t <- iter.Range(0, len(rk)) {
+                if rl[t] {
+                    if j >= len(ks) || ks[j] != rk[t] {
+                        fail += 1
+                    }
+                    j += 1
+                }
+            }
+            if j != len(ks) || j != len(m) {
+                fail += 1
+            }
+        }
+    }
+    // 短い map（索引を作らない — 全部のセルと比べる走査の道）に、同じ長さで先頭 16 バイトが同じで後ろだけ違う鍵の組を入れる
+    // （索引の道はハッシュの上位の濾しで比較まで来ないので、比較の誤りは走査の道で捕まえる。g = 8〜12 = 長さ 17・23・24・25・40）
+    for g <- iter.Range(8, 13) {
+        mut sm := mut map[string]int{}
+        for t <- iter.Range(0, 4) {
+            sm[mkKey(52 * 3 + 13 * t + g)] = t
+        }
+        for t <- iter.Range(0, 4) {
+            c := sm[mkKey(52 * 3 + 13 * t + g)]
+            checks += 1
+            if c != nil {
+                if c != t {
+                    fail += 1
+                }
+            } else {
+                fail += 1
+            }
+        }
+    }
+    println(len(rk), len(m), checks, fail)
+}

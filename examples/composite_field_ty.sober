@@ -1,0 +1,14 @@
+package main
+
+// 負例（F-x — check ⊃ build の修理）: struct の composite で int の欄に string リテラルを書くと拒否（欄の値を使わなくても — 欄の宣言型の注釈）。
+// 修理の前は check が受理し build だけが Mismatch で拒否していた
+
+type L struct {
+    a int
+    b bool
+}
+
+func main() {
+    x := L{a: "s", b: true}
+    println(x.b)
+}

@@ -1,0 +1,61 @@
+package desugar
+
+// 脱糖の結果をプロセス内で渡す口（Sober 版 `sober check` の直結 — compiler/tools/sobercheck。JSON を経ない）。
+// 意味は Json と同じ: run の結果（関数表・持ち上げたラムダの鎖・根の式）を、ヒープの読み出し専用の眺めとして受け手 k に渡す。
+// 記録の形（Def の [param, ret, body, tparams, next]）は json.sober の印字が読む形そのまま。ラベルは Labels（CLabel の a = 添字）、型は Types（参照 − TBASE = 添字）、コア式は Exprs（参照 − CBASE = 添字）
+
+import "loader"
+import "std/table"
+import "diag"
+
+// Core はヒープの眺め。Defs = 名前付き関数の列 [n, def…]、Lifted = 持ち上げたラムダの鎖の頭（def + 4 = 次、-1 = 終わり）
+type Core struct {
+    H []int
+    Labels []Label
+    Types []Ty
+    Exprs []CoreExpr
+    Defs int
+    Lifted int
+    Root int
+}
+
+// WithCore は p を脱糖して k に結果を渡す（失敗なら k を呼ばず拒否を返す — diag のラベル）。
+// k を関数型引数にするのは、ヒープを返り値で持ち出さないため（Def の返り値は呼び手の region への境界コピーになる — ヒープは数十 MB）。
+// 結果の型 T はゼロ値の実引数 z で決める（拒否のときの戻り値も z — ラムダの結果からの型引数の推論は無い）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch)
+func WithCore[T](p loader.Program, z T, k func(Core) T) (T, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    defs, root, err := run(mut st)
+    if err != nil {
+        return z, err
+    }
+    lifted := st.liftedHead
+    // 検査器へは連続した imm の列で渡す（1 回だけ写す）
+    mut hs := mut []int{}
+    mut i := 0
+    while i < hlen(mut st) {
+        hs = append(hs, hget(mut st, i))
+        i += 1
+    }
+    h := freeze(hs)
+    mut ls := mut []Label{}
+    i = 0
+    while i < table.Len(mut st.labels) {
+        ls = append(ls, lab(mut st, i))
+        i += 1
+    }
+    mut ts := mut []Ty{}
+    i = 0
+    while i < table.Len(mut st.types) {
+        ts = append(ts, tyAt(mut st, TyRef(TBASE + i)))
+        i += 1
+    }
+    mut es := mut []CoreExpr{}
+    i = 0
+    while i < table.Len(mut st.cores) {
+        es = append(es, coreAt(mut st, CoreRef(CBASE + i)))
+        i += 1
+    }
+    return k(Core{h, freeze(ls), freeze(ts), freeze(es), int(defs), lifted, int(root)}), nil
+}

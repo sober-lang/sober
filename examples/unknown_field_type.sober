@@ -1,0 +1,12 @@
+package main
+
+// 負例（握り潰しの棚卸し）: struct の欄の型名が引けなければ拒否（旧: composite の欄の型の失敗を飛ばして check が受理 — check ⊃ build）
+
+type P struct {
+    x Foo
+}
+
+func main() int {
+    p := P{x: 3}
+    return 0
+}

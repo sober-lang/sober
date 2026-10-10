@@ -1,0 +1,56 @@
+package stdbuilder
+
+// std/builder の black-box テスト: PushAll / PushStr は要素ごとの Push と同じ列を作る（chunk の境界を跨ぐ長さ・空・Push との混在）
+
+import "std/builder"
+import "std/iter"
+
+func same(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func TestPushAllMatchesPush() {
+    mut xs := mut []int{}
+    for i <- iter.Range(0, 1000) {
+        xs = append(xs, i * 7 + 3)
+    }
+    src := freeze(xs)
+    // 長さ 0・1・7・8・9・100・1000 の片を交互に（Push と混ぜて）積む
+    lens := []int{0, 1, 7, 8, 9, 100, 1000, 3}
+    mut a := builder.Builder[int]{}
+    mut b := builder.Builder[int]{}
+    mut at := 0
+    for k <- iter.Range(0, len(lens)) {
+        n := lens[k]
+        lo := at % 500
+        hi := if lo + n > len(src) { len(src) } else { lo + n }
+        builder.PushAll(mut a, src[lo:hi])
+        for j <- iter.Range(lo, hi) {
+            builder.Push(mut b, src[j])
+        }
+        builder.Push(mut a, 0 - k)
+        builder.Push(mut b, 0 - k)
+        at += n + 11
+    }
+    assert(builder.Len(mut a) == builder.Len(mut b))
+    assert(same(builder.Build(mut a), builder.Build(mut b)))
+}
+
+func TestPushStr() {
+    mut o := builder.Builder[byte]{}
+    builder.PushStr(mut o, "héllo, ")
+    builder.PushStr(mut o, "")
+    builder.Push(mut o, 'w')
+    builder.PushStr(mut o, "orld")
+    s, err := string(builder.Build(mut o))
+    assert(err == nil)
+    assert(s == "héllo, world")
+}

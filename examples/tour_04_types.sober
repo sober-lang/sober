@@ -1,0 +1,41 @@
+package main
+
+// Tour 4: structs, unions, generics, dictionaries (docs/guide/tour.md)
+
+type Point struct {
+    x, y int
+}
+
+// A union (sum type) — take it apart with an exhaustive switch
+type Shape union {
+    Rect { w, h int }
+    Circle { r int }
+}
+
+func area(s Shape) int {
+    return switch s {
+    case Rect{w, h}: w * h
+    case Circle{r}: 3 * r * r
+    }
+}
+
+// Instead of methods: pass a struct of function values (a dictionary) explicitly
+type Ord[T] struct {
+    less func(T, T) bool
+}
+
+func min[T](a T, b T, ord Ord[T]) T {
+    return if ord.less(b, a) { b } else { a }
+}
+
+const ByX = Ord[Point]{less: (a, b) => a.x < b.x}
+
+func main() int {
+    p := Point{x: 3, y: 4}
+    q := Point{x: 1, y: 9}
+    println(p.x + p.y)
+    println(area(Rect{w: 2, h: 5}), area(Circle{r: 2}))
+    m := min(p, q, ByX)
+    println(m.x, m.y)
+    return 0
+}

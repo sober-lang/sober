@@ -1,0 +1,13 @@
+package main
+
+// 段 6 P3a: 札を関数の実引数に渡す（diag.Par kind 12 — コアの paramOk が拒否する形を check と build の同じ層で名指し）
+
+import "std/par"
+
+func helper(s par.S) int {
+    return par.Join(par.Spawn(s, () => 3))
+}
+func main() {
+    r, e := par.Scope((s par.S) => helper(s))
+    println(r)
+}

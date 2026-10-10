@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_target.sober:12:24: the type argument of layout.Decode / DecodeAt / Encode / Size must be a @layout struct
+exit=1

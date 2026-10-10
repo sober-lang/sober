@@ -1,0 +1,16 @@
+package main
+
+// for 式の本体で持ち上げたラムダ（関数型の欄）: 以前は生成元の型を取る試し生成の中でも IR 関数が作られ、誰も呼ばない @lambda#0 が残っていた（C5）。
+// 今は yield の型を表層型検査器の表から引くので、ラムダは 1 つだけ下りる
+
+import "std/iter"
+
+type Op struct {
+    f func(int) int
+}
+
+func main() {
+    xs := []int{1, 2, 3}
+    println(iter.Count(for x <- xs yield Op{f: (a) => a + 1}))
+    iter.Each(for x <- xs yield Op{f: (a) => a * 2}, (o) => { println(o.f(10)) })
+}

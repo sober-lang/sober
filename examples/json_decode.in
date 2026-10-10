@@ -1,0 +1,10 @@
+[
+  {"name": "tri", "closed": true, "scale": 1.5, "points": [{"x": 0, "y": 0}, {"x": 3, "y": 0}, {"x": 0, "y": 4, "z": 9}], "tags": ["a", "b"], "extra": {"ignored": [1, 2]}},
+  {"name": "line", "closed": false, "scale": 2e-1, "points": [], "tags": [], "note": "hi", "origin": {"x": -7, "y": 9223372036854775807}},
+  {"name": "w", "closed": false, "scale": 0, "points": [], "tags": [], "note": null},
+  {"name": "bad", "closed": false, "scale": 1, "tags": []},
+  {"name": "bad", "closed": "no", "scale": 1, "points": [], "tags": []},
+  {"name": "bad", "closed": true, "scale": 1, "points": [{"x": 1.5, "y": 0}], "tags": []},
+  {"name": "bad", "closed": true, "scale": 1, "points": [{"x": 9223372036854775808, "y": 0}], "tags": []},
+  [1]
+]

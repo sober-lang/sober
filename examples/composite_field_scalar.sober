@@ -1,0 +1,23 @@
+package main
+
+// F-x の修理（欄の宣言型の注釈）の正例: スカラーの欄に型なしの定数・名前つきの並べ替え・入れ子の struct・byte の欄
+type P struct {
+    x int
+    y int
+}
+
+type Q struct {
+    p P
+    ok bool
+    tag byte
+    n int
+}
+
+func main() {
+    q := Q{n: 7, tag: 65, ok: true, p: P{y: 2, x: 1}}
+    r := Q{p: P{x: q.n, y: q.p.x + q.p.y}, ok: !q.ok, tag: q.tag, n: 0}
+    println(q.p.x + q.p.y + q.n)
+    println(r.p.y)
+    println(r.ok)
+    println(int(r.tag))
+}

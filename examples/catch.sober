@@ -1,0 +1,109 @@
+package main
+
+// catch 式（language.md 13 節・syntax.md — 2026-10-02）: 可謬の呼び出しの後置 `f() catch D`。エラーなら D・でなければ値。
+// D は単項式・`return …`・`panic(L{…})` の閉集合（二項演算子より強い — `f() catch -1 + 1` は `(f() catch -1) + 1`）。
+// loader の固定テンプレート（compiler/loader/catchx.sober）が多値の束縛と if に写す — コア・Lean は無変更
+
+type Bad error {
+    code int
+}
+
+type Counter struct {
+    n int
+}
+
+func parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Bad{code: 1}
+    }
+    return len(bytes(s)), nil
+}
+
+func label(n int) (string, error?) {
+    if n < 0 {
+        return "", Bad{code: n}
+    }
+    return "n${n}", nil
+}
+
+// mut 引数を取る可謬の呼び出し
+func bump(c mut Counter, by int) (int, error?) {
+    if by < 0 {
+        return 0, Bad{code: by}
+    }
+    c.n = c.n + by
+    return c.n, nil
+}
+
+// 既定値（束縛の値そのもの — 束縛は文の直前へ）
+func orZero(s string) int {
+    n := parse(s) catch 0
+    return n
+}
+
+// 番兵（return の値そのもの）・region を持つ値
+func name(n int) string {
+    return label(n) catch "none"
+}
+
+// Never 腕（catch return）
+func early(s string) int {
+    n := parse(s) catch return -1
+    return n * 10
+}
+
+// 式の中（ブロック式に包む — 評価の順を保つ）・二項演算子より強い
+func sum(a string, b string) int {
+    return 100 + (parse(a) catch 0) + parse(b) catch -1 + 1
+}
+
+func width(n int) int {
+    return len(bytes(label(n) catch "?"))
+}
+
+// mut 呼び出し・代入の値
+func step(c mut Counter, by int) int {
+    mut last := 0
+    last = bump(mut c, by) catch -1
+    return last
+}
+
+type Entry struct {
+    name string
+    size int
+}
+
+func list(n int) ([]Entry, error?) {
+    if n < 0 {
+        return []Entry{}, Bad{code: n}
+    }
+    return []Entry{Entry{name: "a", size: 1}, Entry{name: "bb", size: 2}}, nil
+}
+
+// catch return の後の値の要素の欄読み（`es[i].name` — 写しの if の then が return でも、else の値から要素の宣言を読む）
+func total(n int) int {
+    es := list(n) catch return -1
+    mut acc := 0
+    mut i := 0
+    while i < len(es) {
+        e := es[i]
+        acc = acc + e.size + len(bytes(e.name))
+        i += 1
+    }
+    return acc
+}
+
+// Never 腕（catch panic(Unreachable{})）
+func must(s string) int {
+    return parse(s) catch panic(Unreachable{})
+}
+
+func main() {
+    println(orZero("abc"), orZero(""), name(3), name(0 - 1))
+    println(early("ab"), early(""), sum("a", "bb"), sum("", ""), width(12), width(0 - 1))
+    mut c := Counter{n: 0}
+    println(step(mut c, 2), step(mut c, 0 - 1), step(mut c, 3), c.n)
+    println(total(1), total(0 - 1))
+    println(must("xyz"))
+    println(must(""))
+}

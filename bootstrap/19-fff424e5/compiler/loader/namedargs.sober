@@ -1,0 +1,422 @@
+package loader
+
+// 名前付き実引数と `T?` 仮引数の省略（syntax.md 決定 7）を位置引数へ写す — 脱糖の固定テンプレート（nilcase と同じ: desugar・lower・typer・
+// analyzer は写した後の位置引数だけの木を読む。コア・Lean は無変更）:
+//
+//     func f(a int, b string?, c int?)      f(1, c: 2)  →  f(1, nil, 2)      f(1)  →  f(1, nil, nil)
+//
+// 写す相手は func 宣言の直接呼び出し（`f(…)`・`ref.F(…)`・`f[T](…)`）だけ（名前付き関数型の値を通した呼び出しは第 2 便 — 仮引数名を
+// 知るのに局所の型が要るので、型を知る層の desugar/namedval.sober が写す。ここは素通し）。名前付きは宣言の順に限る（並べ替えない — 評価の順 = 字面の順。night-adjudications 6）。名前付きの無い呼び出しは、
+// 位置引数が仮引数より少なく、足りない仮引数が全部 `T?` のときだけ nil を足す（他は今までどおり後段の拒否）。
+// パイプ段（`x |> f(…)`）は穴 `_` で左辺の位置を書いた段だけを写す（穴の無い段は左辺が第 1 引数に入り、多値の左辺もあって位置の数が字面で決まらない）。
+// 写せない形は loader の拒否（diag.NamedArg — 位置 = 名前付きの実引数か呼び出し・理由ごとの文言）
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "diag"
+
+// FnTab は func 宣言の表（package と名前で引く — 名前のハッシュの鎖。funcs.sober の FnIndex と同じ形）
+type FnTab struct {
+    pkg []int
+    file []int
+    node []int
+    opt []bool  // 末尾の仮引数が `T?`（名前付きの無い呼び出しで省略が起こりうる）
+    head []int
+    next []int
+    mask int
+}
+
+// namedArgsAll は全ファイルの木の名前付き実引数と省略を写す（写せない形は拒否）
+@errors(diag.NamedArg)
+func namedArgsAll(cx Cx) ([]ast.Tree, error?) {
+    ft := fnTab(cx)
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        r := namedArgs(cx, ft, f)
+        if r.bad != 0 {
+            return []ast.Tree{}, diag.NamedArg{at: diag.Pos{file: f, tok: r.tok}, kind: r.bad}
+        }
+        out = append(out, r.tree)
+    }
+    return freeze(out), nil
+}
+
+func fnTab(cx Cx) FnTab {
+    // 積みは builder（mut []T への append の繰り返しは region の上で写しが積もる — 関数の数ぶんの 2 乗）
+    mut pkg := builder.Builder[int]{}
+    mut file := builder.Builder[int]{}
+    mut node := builder.Builder[int]{}
+    mut opt := builder.Builder[bool]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        fs := t.nodes[t.file].d
+        for k <- iter.Range(0, ast.ListLen(t, fs)) {
+            d := ast.ListAt(t, fs, k)
+            ps := t.nodes[d].c
+            np := ast.ListLen(t, ps)
+            builder.Push(mut pkg, cx.file_pkg[f])
+            builder.Push(mut file, f)
+            builder.Push(mut node, d)
+            builder.Push(mut opt, np > 0 && t.nodes[t.nodes[ast.ListAt(t, ps, np - 1)].b].kind == ast.TOpt)
+        }
+    }
+    files := builder.Build(mut file)
+    nodes := builder.Build(mut node)
+    mut mask := 1023
+    while mask < len(files) * 2 {
+        mask = mask * 2 + 1
+    }
+    mut head := mut []int{}
+    for i <- iter.Range(0, mask + 1) {
+        head = append(head, -1)
+    }
+    mut next := builder.Builder[int]{}
+    for i <- iter.Range(0, len(files)) {
+        t := cx.trees[files[i]]
+        b := dataHash(t, t.nodes[nodes[i]].a, mask)
+        builder.Push(mut next, head[b])
+        head[b] = i
+    }
+    return FnTab{builder.Build(mut pkg), files, nodes, builder.Build(mut opt), freeze(head), builder.Build(mut next), mask}
+}
+
+// dataHash はデータプールの文字列 s のハッシュ（funcs.sober の nameHash と同じ式 — 文字列を作らない）
+func dataHash(t ast.Tree, s int, mask int) int {
+    mut h := 0
+    for i <- iter.Range(0, t.data[s]) {
+        h = (h * 31 + t.data[s + 1 + i]) & mask
+    }
+    return h
+}
+
+// dataEq は 2 つの木のデータプールの文字列が等しいか（文字列を作らない）
+func dataEq(a ast.Tree, sa int, b ast.Tree, sb int) bool {
+    if a.data[sa] != b.data[sb] {
+        return false
+    }
+    for i <- iter.Range(0, a.data[sa]) {
+        if a.data[sa + 1 + i] != b.data[sb + 1 + i] {
+            return false
+        }
+    }
+    return true
+}
+
+// fnFind は package pk の func 宣言（名前 = 木 t の文字列 s）の表の番号（無ければ -1）。optOnly なら末尾が `T?` の関数だけを見る
+func fnFind(cx Cx, ft FnTab, pk int, t ast.Tree, s int, optOnly bool) int {
+    mut h := ft.head[dataHash(t, s, ft.mask)]
+    while h >= 0 {
+        if (pk < 0 || ft.pkg[h] == pk) && (!optOnly || ft.opt[h]) && dataEq(cx.trees[ft.file[h]], cx.trees[ft.file[h]].nodes[ft.node[h]].a, t, s) {
+            return h
+        }
+        h = ft.next[h]
+    }
+    return -1
+}
+
+// calleeFn はファイル f の callee の節 c が指す func 宣言の表の番号（直接呼び出しでなければ -1）。optOnly なら末尾が `T?` の関数だけ
+// （名前付きの無い呼び出しの省略 — どの package にも同名の該当が無ければ import を引かずに済ませる）
+func calleeFn(cx Cx, ft FnTab, f int, c int, optOnly bool) int {
+    t := cx.trees[f]
+    // `f[T](…)` の明示インスタンス化は土台の名前で引く
+    x := if t.nodes[c].kind == ast.EIndex { t.nodes[t.nodes[c].a] } else { t.nodes[c] }
+    if x.kind == ast.EIdent {
+        return fnFind(cx, ft, cx.file_pkg[f], t, x.a, optOnly)
+    }
+    if x.kind == ast.ESelector && t.nodes[x.a].kind == ast.EIdent {
+        if optOnly && fnFind(cx, ft, -1, t, x.b, true) < 0 {
+            return -1
+        }
+        pk := fileImportOf(cx, f, Name(t, t.nodes[x.a].a))
+        return if pk < 0 { -1 } else { fnFind(cx, ft, pk, t, x.b, optOnly) }
+    }
+    return -1
+}
+
+// spawnGiveArgs は呼び出しの実引数 args（位置 2 本 = 札・ラムダ + 名前付き give — 名前付きは末尾にしか書けない文法）が std/par の Spawn（関数表の fi）への
+// 引き渡しなら give の値の節（でなければ -1）
+func spawnGiveArgs(cx Cx, ft FnTab, t ast.Tree, fi int, args int) int {
+    dt := cx.trees[ft.file[fi]]
+    if cx.pkg_path[ft.pkg[fi]] != "std/par" || Name(dt, dt.nodes[ft.node[fi]].a) != "Spawn" {
+        return -1
+    }
+    return namedArgOf(t, args, 2, "give")
+}
+
+// namedArgOf は実引数の列 args の from 番目以降の名前付き実引数 name の値の節（無ければ -1）。give: と budget: の組（段 6 P5-3）は give: の写しで
+// 並べ直す — 名前付き実引数は give と budget のほかに無いこと（あれば -2 — 普通の写しへ回して名指しの拒否に任せる）
+func namedArgOf(t ast.Tree, args int, from int, name string) int {
+    mut r := -1
+    for k <- iter.Range(from, ast.ListLen(t, args)) {
+        g := ast.ListAt(t, args, k)
+        if g < 0 || t.nodes[g].kind != ast.KNamedArg {
+            return -2
+        }
+        nm := Name(t, t.nodes[g].a)
+        if nm != "give" && nm != "budget" {
+            return -2
+        }
+        if nm == name {
+            r = t.nodes[g].b
+        }
+    }
+    return r
+}
+
+// recvGen は関数表の fi が std/par の Recv か（for の生成元に置かれた `par.Recv(rx)` は RecvAll へ付け替える — P3b-4 ③: 閉じて空になるまで受ける。
+// RecvAll(rx, k) は呼び出し形の生成元〔継続 k を末尾の実引数に足して呼ぶ — iter.Range と同じ〕）
+func recvGen(cx Cx, ft FnTab, fi int) bool {
+    dt := cx.trees[ft.file[fi]]
+    return cx.pkg_path[ft.pkg[fi]] == "std/par" && Name(dt, dt.nodes[ft.node[fi]].a) == "Recv"
+}
+
+func isIn(xs []int, v int) bool {
+    for x <- xs {
+        if x == v {
+            return true
+        }
+    }
+    return false
+}
+
+// NaOut は 1 ファイルの写しの結果（bad != 0 なら拒否 — 理由と字句）
+type NaOut struct {
+    tree ast.Tree
+    bad int
+    tok int
+}
+
+// naPlan は実引数の列 args（位置 np 本 + 名前付き）を func 宣言 fi の仮引数へ並べた新しい実引数の節の列（拒否なら bad / tok）。
+// 足りない `T?` 仮引数の nil は -2 で印し、呼び手が節を合成する
+type NaPlan struct {
+    args []int
+    bad int
+    tok int
+}
+
+func naPlan(cx Cx, ft FnTab, f int, args int, np int, fi int, ctok int) NaPlan {
+    t := cx.trees[f]
+    dt := cx.trees[ft.file[fi]]
+    ps := dt.nodes[ft.node[fi]].c
+    npar := ast.ListLen(dt, ps)
+    na := ast.ListLen(t, args)
+    mut out := mut []int{}
+    for k <- iter.Range(0, if np < npar { np } else { npar }) {
+        out = append(out, ast.ListAt(t, args, k))
+    }
+    mut j := np
+    for k <- iter.Range(np, npar) {
+        p := dt.nodes[ast.ListAt(dt, ps, k)]
+        pname := Name(dt, p.a)
+        if j < na && Name(t, t.nodes[ast.ListAt(t, args, j)].a) == pname {
+            out = append(out, t.nodes[ast.ListAt(t, args, j)].b)
+            j += 1
+        } else if dt.nodes[p.b].kind == ast.TOpt {
+            out = append(out, -2)
+        } else {
+            // 省略できない仮引数 k が無い。k を後ろの名前付きで渡していれば順でない（3）。残りの名前付きが k より前の仮引数・無い名前を
+            // 指すなら、そちらの理由を先に言う
+            for q <- iter.Range(j + 1, na) {
+                if Name(t, t.nodes[ast.ListAt(t, args, q)].a) == pname {
+                    return NaPlan{[]int{}, 3, t.nodes[ast.ListAt(t, args, q)].tok}
+                }
+            }
+            l := if j < na { naLeft(t, dt, args, j, ps, np, k) } else { NaPlan{[]int{}, 0, 0} }
+            return if l.bad != 0 { l } else { NaPlan{[]int{}, 5, ctok} }
+        }
+    }
+    if j < na {
+        return naLeft(t, dt, args, j, ps, np, npar)
+    }
+    return NaPlan{freeze(out), 0, 0}
+}
+
+// naLeft は写し切れなかった名前付きの実引数 j の理由（仮引数 at まで並べ終えた時点）: 位置で渡した仮引数の名前（4）・既に並べた仮引数の名前 =
+// 順でない / 重複（3）・無い名前（2）。まだ並べていない仮引数の名前なら 0（呼び手が「省略できない仮引数が無い」を言う）
+func naLeft(t ast.Tree, dt ast.Tree, args int, j int, ps int, np int, at int) NaPlan {
+    a := t.nodes[ast.ListAt(t, args, j)]
+    name := Name(t, a.a)
+    for k <- iter.Range(0, ast.ListLen(dt, ps)) {
+        if Name(dt, dt.nodes[ast.ListAt(dt, ps, k)].a) == name {
+            return NaPlan{[]int{}, if k < np { 4 } else if k < at { 3 } else { 0 }, a.tok}
+        }
+    }
+    return NaPlan{[]int{}, 2, a.tok}
+}
+
+// namedArgs はファイル f の木の呼び出し（ECall の実引数 b・EPipe の実引数 c）を写す
+func namedArgs(cx Cx, ft FnTab, f int) NaOut {
+    t := cx.trees[f]
+    n0 := len(t.nodes)
+    // 写す呼び出しが 1 つも無いファイルは木をそのまま返す（節の写しを作らない — 大半のファイル）。写すときは最初の 1 つで節と列を写す
+    mut ns := mut []ast.Node{}
+    mut db := builder.Builder[int]{}
+    mut nb := builder.Builder[ast.Node]{}
+    mut changed := false
+    // for の生成元に置かれた呼び出し（`for l <- par.Recv(rx)` の付け替えの候補 — 下の recvGen）
+    mut gsrc := mut []int{}
+    for i <- iter.Range(0, n0) {
+        if t.nodes[i].kind == ast.KGen {
+            gsrc = append(gsrc, t.nodes[i].b)
+        }
+    }
+    gs := freeze(gsrc)
+    for i <- iter.Range(0, n0) {
+        // 種類だけを先に読む（節の写しを全節ぶん作らない — 自己適用の load の RSS）
+        if t.nodes[i].kind != ast.ECall && t.nodes[i].kind != ast.EPipe {
+            continue
+        }
+        x := t.nodes[i]
+        pipe := x.kind == ast.EPipe
+        args := if pipe { x.c } else { x.b }
+        na := ast.ListLen(t, args)
+        mut np := 0
+        while np < na && !(ast.ListAt(t, args, np) >= 0 && t.nodes[ast.ListAt(t, args, np)].kind == ast.KNamedArg) {
+            np += 1
+        }
+        named := np < na
+        mut holes := false
+        for k <- iter.Range(0, na) {
+            holes = holes || ast.ListAt(t, args, k) < 0
+        }
+        if pipe && !holes {
+            if named {
+                return NaOut{t, 6, t.nodes[ast.ListAt(t, args, np)].tok}
+            }
+            // 穴の無い段 `xs |> f(a)` = f(xs, a): 末尾の省略した `T?` の仮引数を nil で埋める（段 6 P5-3 — `xs |> par.Map(g)` の budget:）
+            pf := calleeFn(cx, ft, f, x.b, false)
+            mut miss := 0
+            if pf >= 0 {
+                pdt := cx.trees[ft.file[pf]]
+                pps := pdt.nodes[ft.node[pf]].c
+                pnp := ast.ListLen(pdt, pps)
+                mut allOpt := na + 1 < pnp
+                for k <- iter.Range(na + 1, pnp) {
+                    allOpt = allOpt && pdt.nodes[pdt.nodes[ast.ListAt(pdt, pps, k)].b].kind == ast.TOpt
+                }
+                miss = if allOpt { pnp - na - 1 } else { 0 }
+            }
+            if miss > 0 {
+                if !changed {
+                    for j <- iter.Range(0, n0) {
+                        ns = append(ns, t.nodes[j])
+                    }
+                    for j <- iter.Range(0, len(t.data)) {
+                        builder.Push(mut db, t.data[j])
+                    }
+                    changed = true
+                }
+                mut out := mut []int{}
+                for k <- iter.Range(0, na) {
+                    out = append(out, ast.ListAt(t, args, k))
+                }
+                for k <- iter.Range(0, miss) {
+                    out = append(out, n0 + builder.Len(mut nb))
+                    builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, 0, 0})
+                }
+                l := ast.PutList(mut db, freeze(out))
+                ns[i] = ast.Node{x.kind, x.tok, x.a, x.b, l, x.d, x.e, x.f}
+            }
+            continue
+        }
+        if pipe && !named {
+            continue
+        }
+        if !named && !pipe && na == 1 && isIn(gs, i) {
+            rf := calleeFn(cx, ft, f, x.a, false)
+            if rf >= 0 && recvGen(cx, ft, rf) {
+                if !changed {
+                    for j <- iter.Range(0, n0) {
+                        ns = append(ns, t.nodes[j])
+                    }
+                    for j <- iter.Range(0, len(t.data)) {
+                        builder.Push(mut db, t.data[j])
+                    }
+                    changed = true
+                }
+                cn := t.nodes[x.a]
+                sel := n0 + builder.Len(mut nb)
+                nm := ast.PutLit(mut db, "RecvAll")
+                builder.Push(mut nb, if cn.kind == ast.ESelector { ast.Node{cn.kind, cn.tok, cn.a, nm, cn.c, cn.d, cn.e, cn.f} } else { ast.Node{cn.kind, cn.tok, nm, cn.b, cn.c, cn.d, cn.e, cn.f} })
+                ns[i] = ast.Node{x.kind, x.tok, sel, x.b, x.c, x.d, x.e, x.f}
+                continue
+            }
+        }
+        fi := calleeFn(cx, ft, f, if pipe { x.b } else { x.a }, !named)
+        if fi < 0 {
+            // func 宣言を引けない呼び先（関数の値）: 名前付き関数型を通した呼び出しなら型を知る層が写す（desugar/namedval.sober — 第 2 便）。
+            // 写せない形の拒否（kind 1）もそちら
+            continue
+        }
+        dt := cx.trees[ft.file[fi]]
+        npar := ast.ListLen(dt, dt.nodes[ft.node[fi]].c)
+        if !named && np >= npar {
+            continue
+        }
+        // `par.Spawn(s, (ep) => …, give: ep)`（段 6 P3b — 端点の引き渡し・language.md 11 節）: give の有無でラムダの仮引数の数が変わるので 1 つの総称の宣言では
+        // 型が付かない — 呼び先を std/par の SpawnGive(s, give, g) へ付け替える（実引数 = [s, ep, ラムダ]。以後は普通の呼び出しとして型が付く）
+        gv := if named && !pipe && np == 2 && (na == 3 || na == 4) { spawnGiveArgs(cx, ft, t, fi, args) } else { -1 }
+        if gv >= 0 {
+            // budget:（段 6 P5-3 — SpawnGive の末尾の仮引数・無ければ nil）
+            bv := namedArgOf(t, args, 2, "budget")
+            if !changed {
+                for j <- iter.Range(0, n0) {
+                    ns = append(ns, t.nodes[j])
+                }
+                for j <- iter.Range(0, len(t.data)) {
+                    builder.Push(mut db, t.data[j])
+                }
+                changed = true
+            }
+            cn := t.nodes[x.a]
+            sel := n0 + builder.Len(mut nb)
+            nm := ast.PutLit(mut db, "SpawnGive")
+            builder.Push(mut nb, if cn.kind == ast.ESelector { ast.Node{cn.kind, cn.tok, cn.a, nm, cn.c, cn.d, cn.e, cn.f} } else { ast.Node{cn.kind, cn.tok, nm, cn.b, cn.c, cn.d, cn.e, cn.f} })
+            mut bn := bv
+            if bn < 0 {
+                bn = n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, 0, 0})
+            }
+            l := ast.PutList(mut db, []int{ast.ListAt(t, args, 0), gv, ast.ListAt(t, args, 1), bn})
+            ns[i] = ast.Node{x.kind, x.tok, sel, l, x.c, x.d, x.e, x.f}
+            continue
+        }
+        plan := naPlan(cx, ft, f, args, np, fi, x.tok)
+        if plan.bad != 0 {
+            if !named && plan.bad == 5 {
+                // 名前付きの無い呼び出しで足りない仮引数が `T?` でない: 今までどおり後段（実引数の数の拒否）に任せる
+                continue
+            }
+            return NaOut{t, plan.bad, plan.tok}
+        }
+        if !changed {
+            for j <- iter.Range(0, n0) {
+                ns = append(ns, t.nodes[j])
+            }
+            for j <- iter.Range(0, len(t.data)) {
+                builder.Push(mut db, t.data[j])
+            }
+            changed = true
+        }
+        mut out := mut []int{}
+        for k <- iter.Range(0, len(plan.args)) {
+            if plan.args[k] == -2 {
+                out = append(out, n0 + builder.Len(mut nb))
+                builder.Push(mut nb, ast.Node{ast.ENil, x.tok, 0, 0, 0, 0, 0, 0})
+            } else {
+                out = append(out, plan.args[k])
+            }
+        }
+        l := ast.PutList(mut db, freeze(out))
+        ns[i] = if pipe { ast.Node{x.kind, x.tok, x.a, x.b, l, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, x.a, l, x.c, x.d, x.e, x.f} }
+    }
+    if !changed {
+        return NaOut{t, 0, 0}
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return NaOut{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, 0, 0}
+}

@@ -1,0 +1,13 @@
+tri closed=yes scale=1.5 points=3 tags=2
+  (0, 0)
+  (3, 0)
+  (0, 4)
+line closed=no scale=0.2 points=0 tags=0
+  note: hi
+  origin: (-7, 9223372036854775807)
+w closed=no scale=0 points=0 tags=0
+#3: missing points (object at 402)
+#4: want bool at 488
+#5: want int at 596
+#6: int out of range at 687
+#7: want object at 733

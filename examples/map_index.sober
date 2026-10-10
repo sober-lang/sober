@@ -1,0 +1,86 @@
+package main
+
+// map の索引（性能投資 M0 — 長い map は rt の開番地法の索引を引く）が意味論（language.md 22 節）を 1 ミリも動かさないことの回帰:
+// 挿入順の keys・墓石の再挿入が元の位置・値のヘッダ（コピーした旧ヘッダは成長の後も旧テーブルを見る — 先端の伸長と全コピーの両方）・
+// int / string のキー・struct の欄の map・関数から返す map（relocate — 索引を外して作り直す）・freeze
+
+import "std/iter"
+
+type Box struct {
+    m map[string]int
+}
+
+func names(n int) []string {
+    mut out := mut []string{}
+    for i <- iter.Range(0, n) {
+        out = append(out, "k${i}")
+    }
+    return freeze(out)
+}
+
+// fill は関数の region で作った map を返す（呼び手の region へ relocate）
+func fill(n int) map[int]int {
+    mut m := mut map[int]int{}
+    for i <- iter.Range(0, n) {
+        m[i * 7] = i
+    }
+    return freeze(m)
+}
+
+func get(m map[string]int, k string) int {
+    v := m[k]
+    if v != nil {
+        return v
+    }
+    return -1
+}
+
+func geti(m map[int]int, k int) int {
+    v := m[k]
+    if v != nil {
+        return v
+    }
+    return -1
+}
+
+func main() {
+    ns := names(40)
+    mut m := mut map[string]int{}
+    for i <- iter.Range(0, len(ns)) {
+        m[ns[i]] = i
+    }
+    println(len(m), get(freeze(m), "k0"), get(freeze(m), "k39"), get(freeze(m), "nope"))
+    // 墓石と再挿入（元の位置）
+    delete(m, "k3")
+    println(len(m), get(freeze(m), "k3"))
+    m["k3"] = 333
+    ks := keys(freeze(m))
+    println(ks[3], ks[4], len(ks))
+    // 値のヘッダ: old は成長の前のコピー — 新しいキーは見えず、既存のキーの値の更新は共有のセルなので見える
+    old := freeze(m)
+    m["new1"] = 1
+    m["k5"] = 555
+    println(get(old, "new1"), get(old, "k5"), len(old), get(freeze(m), "new1"))
+    // 2 つのコピーが別々に伸びる（片方は先端・もう片方は全コピー）
+    mut a := mut map[string]int{}
+    for i <- iter.Range(0, 20) {
+        a[ns[i]] = i
+    }
+    mut b := a
+    a["only_a"] = 1
+    b["only_b"] = 2
+    fa := freeze(a)
+    fb := freeze(b)
+    println(get(fa, "only_a"), get(fa, "only_b"), get(fb, "only_a"), get(fb, "only_b"), get(fb, "k19"))
+    // int キー・関数から返す map
+    f := fill(50)
+    println(len(f), geti(f, 0), geti(f, 343), geti(f, 7 * 49), geti(f, 1))
+    // struct の欄
+    bx := Box{m: freeze(m)}
+    println(get(bx.m, "k10"), get(bx.m, "k3"))
+    mut sum := 0
+    for k <- freeze(m) {
+        sum += get(freeze(m), k)
+    }
+    println(sum)
+}

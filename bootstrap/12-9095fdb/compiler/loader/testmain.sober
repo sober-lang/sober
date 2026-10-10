@@ -1,0 +1,73 @@
+package loader
+
+// テストのビルド（`sober test` — .pair/test-design-draft.md §2）: package の `_test.sober` の `TestXxx()`（引数・戻りなし）を列挙し、
+// 名前で振り分ける main を合成して load する（リンク時閉世界の配当 — reflection は要らない）。合成の main は実在しないパス TestMainPath() に置く
+// （readSrc が Manifest の test_main から読む）。合成の main は引数なしで走らせると名前の一覧を 1 行 1 つ印字し、引数 1 つ（名前）でそのテストだけを
+// 走らせる — 1 テスト 1 サブプロセスの回しは呼び手（今は bin/sober）。失敗 = panic（子の終了コードが 0 でない）
+
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+
+// TestMainPath は合成の main の置き場（実在しないパスの予約 — `$` は識別子にもパスにも書けない）
+func TestMainPath() string {
+    return "$test/main.sober"
+}
+
+// LoadTestFs は package pkg のテストのビルドの Program（LoadFs と同じく std は焼き込んだ表 sm から）
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.AssertOutsideTest, diag.Layout, diag.TestSignature)
+func LoadTestFs(pkg string, sm map[string]string) (Program, error?) {
+    // 1 回目: 名前を知るために、何も呼ばない main で読む（対象の package の _test.sober も読まれる）
+    p0, err0 := load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, []string{})}, true, sm)
+    if err0 != nil {
+        return p0, err0
+    }
+    names, nerr := TestNames(p0, pkg)
+    if nerr != nil {
+        return located(p0.file_path, p0.file_std), nerr
+    }
+    return load(Manifest{TestMainPath(), "", []string{}, pkg, testMain(pkg, names)}, true, sm)
+}
+
+// TestNames は p の package pkg の `_test.sober` にある `TestXxx()`（Test の後が小文字でない）の名前（宣言順）。
+// 型パラメータ・引数・戻りを持つものは拒否（黙って飛ばすと走っていないことに気づけない — T3）
+@errors(diag.TestSignature)
+func TestNames(p Program, pkg string) ([]string, error?) {
+    mut out := mut []string{}
+    for i <- iter.Range(0, len(p.fn_file)) {
+        f := p.fn_file[i]
+        if p.pkg_path[p.file_pkg[f]] == pkg && strings.HasSuffix(p.file_path[f], "_test.sober") {
+            t := p.trees[f]
+            x := t.nodes[p.fn_node[i]]
+            nm := Name(t, x.a)
+            if isTestName(nm) {
+                if ast.ListLen(t, x.b) != 0 || ast.ListLen(t, x.c) != 0 || ast.ListLen(t, x.d) != 0 {
+                    return []string{}, diag.TestSignature{at: diag.Pos{file: f, tok: x.tok}}
+                }
+                out = append(out, nm)
+            }
+        }
+    }
+    return freeze(out), nil
+}
+
+// isTestName は `Test` か `Test` + 小文字でない文字で始まる名前か（Go の TestXxx と同じ規則）
+func isTestName(nm string) bool {
+    b := bytes(nm)
+    return strings.HasPrefix(nm, "Test") && (len(b) == 4 || !(b[4] >= 'a' && b[4] <= 'z'))
+}
+
+// testMain は合成の main のソース（参照名 tp / tos は合成の main の中だけの名前）
+func testMain(pkg string, names []string) string {
+    mut s := "package main\n\nimport tp \"${pkg}\"\nimport tos \"std/os\"\n\nfunc main() {\n"
+    s = s + "    args, err := tos.Args()\n    if err != nil {\n        return\n    }\n    if len(args) < 2 {\n"
+    for i <- iter.Range(0, len(names)) {
+        s = s + "        println(\"${names[i]}\")\n"
+    }
+    s = s + "        return\n    }\n    n := args[1]\n"
+    for i <- iter.Range(0, len(names)) {
+        s = s + "    if n == \"${names[i]}\" {\n        tp.${names[i]}()\n    }\n"
+    }
+    return s + "}\n"
+}

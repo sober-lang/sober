@@ -1,0 +1,20 @@
+package main
+
+// selfpar 4（段 6 P6-2 — checkFront）: analyzer の指摘（公開関数の @errors なし）と検査の def error を持つ。逐次の優先順では analyzer の指摘だけが出る
+
+type A error
+
+func Missing(n int) (int, error?) {
+    if n < 0 {
+        return 0, A{}
+    }
+    return n, nil
+}
+
+func bad(n int) int {
+    return "no"
+}
+
+func main() {
+    println(bad(1))
+}

@@ -1,0 +1,37 @@
+package main
+
+func sign(n int) int {
+    return switch {
+    case n < 0: -1
+    case n == 0: 0
+    default: 1
+    }
+}
+
+func classify(n int) int {
+    return switch n {
+    case 1 | 2 | 3:
+        1
+    case 4:
+        4
+    default:
+        9
+    }
+}
+
+func pick(a, b int) int {
+    return switch a, b {
+    case 1, 2:
+        12
+    case _, 9:
+        9
+    case v, 0:
+        v
+    default:
+        0
+    }
+}
+
+func main() {
+    println(sign(-5), classify(2), pick(1, 2), pick(7, 9), pick(5, 0))
+}

@@ -1,0 +1,45 @@
+package main
+
+// mut 実引数の排他（language.md 26 節）の正当な側: 接頭でない綴り（ab と a）・兄弟の欄（t.p.x と t.p.y）・別の根・
+// mut と imm の重なり（imm 側は呼び出しの前の値を見る — 境界コピー）は受理。重なりの拒否は testdata/loader_neg/mut_alias*
+type P struct {
+    x int
+    y int
+}
+
+type T struct {
+    p P
+    n int
+}
+
+func two(a mut int, b mut int) {
+    a += 1
+    b += 2
+}
+
+func part(p mut P, y mut int) {
+    p.x += y
+    y += 10
+}
+
+@noinline
+func peek(t mut T, u T) int {
+    t.n += 100
+    return u.n
+}
+
+func main() {
+    mut a := 0
+    mut ab := 0
+    mut t := T{p: P{x: 0, y: 0}, n: 7}
+    two(mut ab, mut a)
+    two(mut t.p.x, mut t.p.y)
+    two(a: mut t.n, b: mut a)
+    part(mut t.p, mut ab)
+    println(peek(mut t, t))
+    println(t.n)
+    println(a)
+    println(ab)
+    println(t.p.x)
+    println(t.p.y)
+}

@@ -1,0 +1,34 @@
+package main
+
+import "std/iter"
+
+// byte(x) の x が switch 式の束縛（脱糖器の型の追跡が switch 式の型を知らない形 — 型が分からなくても tobyte に下ろし、
+// int でなければコアの検査が拒否する）。文字列リテラルの escape を解く形（compiler/parser の stringLit と同じ）
+
+func unescape(e byte) int {
+    return switch e {
+    case 110: 10
+    case 116: 9
+    case 48: 0
+    case 92: 92
+    case _: -1
+    }
+}
+
+func main() {
+    src := bytes("ntx0\\")
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(src)) {
+        esc := switch int(src[i]) {
+        case 120: 88
+        case _: unescape(src[i])
+        }
+        if esc >= 0 {
+            out = append(out, byte(esc))
+        }
+    }
+    println(len(out))
+    for i <- iter.Range(0, len(out)) {
+        println(out[i])
+    }
+}

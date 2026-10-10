@@ -1,0 +1,1 @@
+{"defs":[],"e":{"e":{"body":{"body":{"e":{"e":{"i":1,"k":"var"},"k":"deref"},"k":"len"},"e":{"e":{"e":{"e":{"k":"mkslice","m":true,"r":0,"t":{"k":"int"}},"k":"append","v":{"k":"lit","n":4}},"k":"assign","l":{"i":0,"k":"var"}},"k":"block"},"k":"let"},"e":{"e":{"k":"mkslice","m":true,"t":{"k":"int"}},"k":"alloc","mut":true},"k":"let"},"k":"block"}}

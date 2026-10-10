@@ -1,0 +1,176 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "A",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "E",
+            "fields": [
+              {
+                "name": "a",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 9
+              }
+            ],
+            "tok": 7
+          },
+          {
+            "name": "W",
+            "fields": [],
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 19
+      }
+    },
+    {
+      "name": "E",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 20,
+      "span": {
+        "start": 19,
+        "end": 28
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "E",
+                "elems": [
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 39
+                    }
+                  }
+                ],
+                "tok": 35,
+                "type_args": []
+              }
+            ],
+            "tok": 33
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 42
+              },
+              "args": [
+                {
+                  "k": "switch",
+                  "subjects": [
+                    {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 45
+                    }
+                  ],
+                  "cases": [
+                    {
+                      "patterns": [
+                        {
+                          "k": "type",
+                          "bind": null,
+                          "variant": "E",
+                          "fields": [
+                            {
+                              "name": "a",
+                              "sub": null,
+                              "tok": 50
+                            }
+                          ],
+                          "tok": 48
+                        }
+                      ],
+                      "body": {
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "ident",
+                              "name": "a",
+                              "tok": 53
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 47
+                    }
+                  ],
+                  "default": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 57
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 44
+                }
+              ],
+              "tok": 43
+            }
+          }
+        ]
+      },
+      "tok": 29,
+      "bodiless": false,
+      "span": {
+        "start": 28,
+        "end": 64
+      },
+      "sig_end": 32
+    }
+  ],
+  "consts": []
+}

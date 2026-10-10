@@ -1,0 +1,22 @@
+package main
+
+// 先端一致の concat（息継ぎ ①）: 左の片が深度の先端ならその場で伸ばす — 左の片のバイトは変えないので、同じ片から作った 2 本は独立
+func main() int {
+    mut s := "ab"
+    s = s + "cd"
+    t := s + "X"
+    u := s + "Y"
+    v := s + ""
+    w := "q" + s
+    println(s)
+    println(t)
+    println(u)
+    println(v)
+    println(w)
+    x := s + "${t}-${u}"
+    y := "${s}|${s}"
+    println(x)
+    println(y)
+    println(s)
+    return 0
+}

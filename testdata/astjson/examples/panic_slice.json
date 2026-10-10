@@ -1,0 +1,216 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "cut",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "len",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "slice3",
+                    "base": {
+                      "k": "ident",
+                      "name": "xs",
+                      "tok": 19
+                    },
+                    "lo": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 21
+                    },
+                    "hi": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 23
+                    },
+                    "tok": 20
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 29
+      },
+      "sig_end": 15
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 34
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "cut",
+                    "tok": 36
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 42
+                        },
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 44
+                        },
+                        {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 46
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 38
+                    },
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 49
+                    }
+                  ],
+                  "tok": 37
+                }
+              ],
+              "tok": 35
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 53
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "cut",
+                    "tok": 55
+                  },
+                  "args": [
+                    {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [
+                        {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 61
+                        },
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 63
+                        },
+                        {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 65
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 57
+                    },
+                    {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 68
+                    }
+                  ],
+                  "tok": 56
+                }
+              ],
+              "tok": 54
+            }
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 74
+      },
+      "sig_end": 33
+    }
+  ],
+  "consts": []
+}

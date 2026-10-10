@@ -1,0 +1,14 @@
+package main
+
+// 負例（syntax.md 決定 7 の kind 1）: 辞書の欄の関数値は位置だけ（欄の型が名前付き関数型でも）
+type Fetch func(url int, retries int?) int
+
+type Client struct {
+    get Fetch
+}
+
+const C = Client{get: (u, r) => u}
+
+func main() {
+    println(C.get(1, retries: 2))
+}

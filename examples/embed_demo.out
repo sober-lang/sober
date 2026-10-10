@@ -1,0 +1,11 @@
+4 files
+testdata/embed/B.txt: 4 bytes: top
+
+testdata/embed/a.txt: 6 bytes: alpha
+
+testdata/embed/deeper/x/c.txt: 8 bytes: charlie
+
+testdata/embed/sub/b.txt: 14 bytes: bravo — ✓
+
+testdata/embed/link.txt: (not embedded)
+testdata/embed/readme.md: (not embedded)

@@ -1,0 +1,1 @@
+panic: BadNode{node: 42, kind: "a\"b\\c\nd", leaf: true, tag: 7} at panic_label.sober:42:10

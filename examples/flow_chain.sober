@@ -1,0 +1,69 @@
+package main
+
+// flow typing の連鎖と早期脱出（F-w / F-y・loader/flowx.sober の固定テンプレート）:
+// `&&` の右辺と本体（else の無い if — else つきは F 台帳のピン）・`||` の否定側（then が脱出 1 文のとき）・`if x == nil { return }` の後ろで x は T
+
+type Bad error {
+    n int
+}
+
+func get(b bool) int? {
+    if b {
+        return 3
+    }
+    return nil
+}
+
+func fail(b bool) error? {
+    if b {
+        return Bad{n: 7}
+    }
+    return nil
+}
+
+func size(m int?, k int) int {
+    if m == nil || k < 0 {
+        return 0
+    }
+    return m + k
+}
+
+func code(b bool) int {
+    err := fail(b)
+    if err == nil {
+        return 0
+    }
+    return switch err {
+    case Bad{n}: n
+    }
+}
+
+func name(b bool) (string?, error?) {
+    if b {
+        return "x", nil
+    }
+    return nil, Bad{n: 1}
+}
+
+func main() {
+    v := get(true)
+    if true && v != nil && v > 2 {
+        println(v + 1)
+    }
+    w := get(false)
+    if w != nil && w > 0 {
+        println(w)
+    }
+    println("none")
+    println(size(4, 1))
+    println(size(nil, 1))
+    println(code(true))
+    println(code(false))
+    // F-v: catch nil の nil は兄弟の T? の型
+    s := name(false) catch nil
+    println(if s == nil { "nil" } else { s })
+    t := name(true) catch nil
+    if t != nil {
+        println(t)
+    }
+}

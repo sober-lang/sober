@@ -1,0 +1,47 @@
+package main
+
+// 交互に 2 本を伸ばす append（データ構造便 — rtgrow.sober の幾何成長）と、同じ割り当てを共有するヘッダの排他（値の意味論）
+
+import "std/iter"
+
+func sum(xs []int) int {
+    mut s := 0
+    for i <- iter.Range(0, len(xs)) {
+        s += xs[i]
+    }
+    return s
+}
+
+func main() {
+    mut xs := mut []int{}
+    mut ys := mut []int{}
+    mut bs := mut []byte{}
+    mut cs := mut []byte{}
+    for i <- iter.Range(0, 1000) {
+        xs = append(xs, i)
+        ys = append(ys, i * 2)
+        bs = append(bs, byte(97 + i % 26))
+        cs = append(cs, byte(65 + i % 26))
+    }
+    println(len(xs))
+    println(sum(freeze(xs)))
+    println(sum(freeze(ys)))
+    println(int(bs[0]) + int(bs[999]))
+    println(int(cs[995]) + int(cs[1]))
+    // 共有: 同じ値の 2 つの写しをそれぞれ伸ばしても互いに見えない
+    mut p := mut []int{}
+    mut q := mut []int{}
+    for i <- iter.Range(0, 10) {
+        p = append(p, i)
+        q = append(q, i)
+    }
+    mut a := p
+    mut b := p
+    a = append(a, 100)
+    b = append(b, 200)
+    p = append(p, 300)
+    println(a[10])
+    println(b[10])
+    println(p[10])
+    println(len(a) + len(b) + len(p) + len(q))
+}

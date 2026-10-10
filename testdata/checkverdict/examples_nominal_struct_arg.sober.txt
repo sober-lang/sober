@@ -1,0 +1,2 @@
+sober: desugar error at examples/nominal_struct_arg.sober:14:15 (TypeMismatch)
+exit=1

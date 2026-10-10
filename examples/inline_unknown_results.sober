@@ -1,0 +1,13 @@
+package main
+
+// 負例（C4 の握り潰しの棚卸し）: 多値の束縛の結果の型（inline 展開される関数）が引けなければ拒否
+// （旧: 型の失敗を -1 に化けさせて先へ進み、check が受理・build だけが拒否していた — check ⊃ build）
+
+func two(f func(int) int) (int, Foo) {
+    return f(1), 2
+}
+
+func main() int {
+    a, b := two((y) => y)
+    return a
+}

@@ -1,0 +1,63 @@
+package main
+
+// sobercheck: Sober 版 `sober check` の直結。標準入力の Manifest（loaderdump / desugardump と同じ形）から
+// lexer → parser → loader → desugar → checker をプロセス内でつなぎ、判定 JSON（checkdump と同じバイト列）を標準出力に書く。
+// 中間の JSON を経ない（脱糖器のヒープを検査器が直接写す — checker.CheckCore）。
+// load / 脱糖の拒否は `sobercheck: load error` / `sobercheck: desugar error`（診断の文言は持たない — Zig 版は stderr の診断 + exit 1）
+
+import "std/io"
+import "loader"
+import "desugar"
+import "checker"
+
+// lines は b を改行で割った行の列（空行は捨てる）
+func lines(b []int) [][]int {
+    mut out := mut [][]int{}
+    mut s := 0
+    mut i := 0
+    while i <= len(b) {
+        if i == len(b) || b[i] == 10 {
+            if i > s {
+                out = append(out, b[s:i])
+            }
+            s = i + 1
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// check は p を脱糖して検査する（判定 JSON。脱糖の拒否なら ok = false）。
+// 関数に割るのは region を分けるため: WithCore は展開される（関数型引数）ので、脱糖器のヒープは呼んだ関数の region に積まれる —
+// main で呼ぶと、長寿命の Program（表層 AST）とヒープ（AST の写し + コア）が同じ region に並んで上限を分け合う
+func check(p loader.Program) ([]int, bool) {
+    out, ok := desugar.WithCore(p, c => checker.CheckCore(c))
+    return out, ok
+}
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("sobercheck: cannot read /dev/stdin")
+        return
+    }
+    ls := lines(src)
+    if len(ls) < 2 {
+        println("sobercheck: bad manifest")
+        return
+    }
+    p := loader.Load(loader.Manifest{ls[0], ls[1], ls[2:len(ls)]})
+    if loader.Failed(p) {
+        println("sobercheck: load error")
+        return
+    }
+    out, ok := check(p)
+    if !ok {
+        println("sobercheck: desugar error")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", out)
+    if werr != nil {
+        println("sobercheck: cannot write /dev/stdout")
+    }
+}

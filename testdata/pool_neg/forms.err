@@ -1,0 +1,7 @@
+testdata/pool_neg/forms.sober:15:23: error: this defer must release the handle just acquired: write `defer pool.Release(mut p, g)` (Analyzer)
+testdata/pool_neg/forms.sober:16:22: error: acquired handle 'k' must be released by the next statement: insert `defer pool.Release(mut p, k)` right after this line (Analyzer)
+testdata/pool_neg/forms.sober:18:26: error: Acquire must be bound by `h := ...Acquire(...)` as a statement of its own, and released by the next statement (Analyzer)
+testdata/pool_neg/forms.sober:19:25: error: Acquire must be bound by `h := ...Acquire(...)` as a statement of its own, and released by the next statement (Analyzer)
+testdata/pool_neg/forms.sober:20:17: error: Release may only appear as `defer ...Release(p, h)` right after the `h := ...Acquire(...)` it releases (Analyzer)
+testdata/pool_neg/forms.sober:25:21: error: Acquire / Release cannot be called through `|>` (write the call form so the pairing is checkable) (Analyzer)
+testdata/pool_neg/forms.sober:26:23: error: Release may only appear as `defer ...Release(p, h)` right after the `h := ...Acquire(...)` it releases (Analyzer)

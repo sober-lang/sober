@@ -1,0 +1,2 @@
+sober: desugar error at examples/composite_dup.sober:11:10 (Malformed)
+exit=1

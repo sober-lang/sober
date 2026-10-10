@@ -1,0 +1,67 @@
+package utf8
+
+// UTF-8 の検査と bytes → string の戻し（language.md 27 節: 検査あり + (string, error?)）。
+// Go の unicode/utf8.Valid が仕様のオラクル（scripts/utf8_oracle.ts）。`string(b)` はこの FromBytes の呼び出しに
+// cst_to_ast が置き換える（予約参照名の暗黙 import — for の std/iter・補間の std/strings と同じ形）
+
+// pos = 最初の不正なシーケンスの先頭バイトのオフセット（b 上）
+type InvalidUtf8 error {
+    pos int
+}
+
+// cont は b[i] が継続バイト lo..hi（範囲は先頭バイトで狭まる — 過長符号化・サロゲート・U+10FFFF 超を弾く）か
+func cont(b []int, i int, lo int, hi int) bool {
+    return i < len(b) && b[i] >= lo && b[i] <= hi
+}
+
+// seqLen は b[i] から始まる妥当なシーケンスの長さ、不正なら 0
+func seqLen(b []int, i int) int {
+    c := b[i]
+    if c >= 0 && c < 128 {
+        return 1
+    }
+    if c >= 194 && c <= 223 {
+        return if cont(b, i + 1, 128, 191) { 2 } else { 0 }
+    }
+    if c >= 224 && c <= 239 {
+        lo := if c == 224 { 160 } else { 128 }
+        hi := if c == 237 { 159 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) { 3 } else { 0 }
+    }
+    if c >= 240 && c <= 244 {
+        lo := if c == 240 { 144 } else { 128 }
+        hi := if c == 244 { 143 } else { 191 }
+        return if cont(b, i + 1, lo, hi) && cont(b, i + 2, 128, 191) && cont(b, i + 3, 128, 191) { 4 } else { 0 }
+    }
+    return 0
+}
+
+// Invalid は最初の不正なシーケンスの位置、妥当なら -1
+func Invalid(b []int) int {
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        n := seqLen(b, i)
+        if n == 0 {
+            at = i
+        } else {
+            i += n
+        }
+    }
+    return at
+}
+
+func Valid(b []int) bool {
+    return Invalid(b) < 0
+}
+
+// FromBytes は妥当な UTF-8 だけを string にする。表現は同じなので、検査の後は恒等（std 専用の bytesToString）
+@errors(InvalidUtf8)
+func FromBytes(b []int) (string, error?) {
+    at := Invalid(b)
+    if at >= 0 {
+        return "", InvalidUtf8{pos: at}
+    }
+    s := bytesToString(b)
+    return s, nil
+}

@@ -1,0 +1,55 @@
+package main
+
+import "std/iter"
+import "std/par"
+
+// Tour 7: parallelism — structured concurrency, channels (docs/guide/tour.md)
+
+func fib(n int) int {
+    return if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+func main() int {
+    // par.Map: one task per element — results come back in input order
+    mut ns := mut []int{}
+    for i <- iter.Range(20, 26) {
+        ns = append(ns, i)
+    }
+    fs, err := par.Map(freeze(ns), (n) => fib(n))
+    if err != nil {
+        return 1
+    }
+    for f <- fs {
+        println(f)
+    }
+    // par.Scope: child tasks always join before the scope ends
+    r, e := par.Scope((s par.S) => {
+        a := par.Spawn(s, () => fib(24))
+        b := par.Spawn(s, () => fib(25))
+        par.Join(a) + par.Join(b)
+    })
+    if e == nil {
+        println(r)
+    }
+    // channels
+    r2, e2 := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[int](cap: 4)
+        h := par.Spawn(s, (out) => {
+            for i <- iter.Range(1, 4) {
+                par.Send(out, i * 10)
+            }
+            par.Close(out)
+            0
+        }, give: tx)
+        // for-Recv: receive until the channel is closed
+        mut got := 0
+        for v <- par.Recv(rx) {
+            got += v
+        }
+        par.Join(h) + got
+    })
+    if e2 == nil {
+        println(r2)
+    }
+    return 0
+}

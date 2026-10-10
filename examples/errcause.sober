@@ -1,0 +1,77 @@
+package main
+
+// R4b（region 多相の裁定 — cause K1''）の検証例: 包み替え `f()? L{...}` は内側の error を捨てず鎖に積み、
+// `case L{..., cause}` で 1 段ずつ辿れる。error = 先頭ラベル + 鎖（imm []L）。ラベルの string は
+// 呼び手の引数・callee で構築したものが混ざり、`?` の脱出（jump の境界コピー — R4b α）と戻りの深い relocate（R4a）で
+// 鎖ごと呼び手の region へ写る
+
+type NotFound error {
+    path string
+}
+
+type Wrapped error {
+    step int
+}
+
+type Bad error {
+    code int
+}
+
+func open(p string) (int, error?) {
+    if p == "ok" {
+        return 2, nil
+    }
+    return 0, NotFound{path: p + ".txt"}
+}
+
+func load(p string, step int) (int, error?) {
+    n := open(p)? Wrapped{step: step}
+    return n * 10, nil
+}
+
+func outer(p string) (int, error?) {
+    n := load(p, 2)? Wrapped{step: 1}
+    return n + 1, nil
+}
+
+// 包まない `?` は鎖を伸ばさない
+func plain(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{code: n}
+    }
+    return n, nil
+}
+
+func passThrough(n int) (int, error?) {
+    m := plain(n)?
+    return m, nil
+}
+
+// 鎖を外側から 1 段ずつ辿る（cause = 1 つ内側の error?）
+func show(e error?) {
+    if e != nil {
+        switch e {
+        case Wrapped{step, cause}:
+            println("wrapped ${step}")
+            show(cause)
+        case NotFound{path, cause}:
+            println("not found: ${path}")
+            show(cause)
+        case Bad{code, cause}:
+            println("bad ${code}")
+            show(cause)
+        }
+    } else {
+        println("end")
+    }
+}
+
+func main() {
+    n1, e1 := outer("a")
+    show(e1)
+    n2, e2 := outer("ok")
+    show(e2)
+    _, e3 := passThrough(0 - 4)
+    show(e3)
+    println("${n1 + n2}")
+}

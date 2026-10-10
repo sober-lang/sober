@@ -1,0 +1,361 @@
+package desugar
+
+// 部分検査（check --pkg・小分けの check — st.onlySet）の表層型検査の対象を絞る（3'' 第 2 段 (c) — 視点の固定費）: 視点には依存の package の
+// 本体つきの宣言（.sobi の whole — 展開される関数・mut 関数・総称・リンク可視）が全部入るが、P の脱糖が読むのは P の関数と、P から呼び出しで
+// 推移的に届く本体（展開・インスタンスの持ち上げで P の Def の中に写る分）の表だけ。全部を型付けると、desugar の mut 関数の本体を全部持つ
+// lower の視点では検査の量の大半が依存の本体の型付けになっていた。
+// 印（YInstNeeded）は呼び先 → 呼び手へ伝わる（YPropagate）ので、届く集合（呼び先について閉じている）の中の印は全体で型付けたときと同じ。
+// 脱糖テンプレートの暗黙の呼び出し（文字列の補間・string(b) 等 — 字面の呼び出しに出ない）は std の関数を呼ぶので、std の本体は常に入れる（保守的）
+
+import "ast"
+import "std/iter"
+
+// yReach は表層型を付ける関数の印の列（1 = 付ける）: P の関数・std の関数・const の初期化式から呼ばれる関数を種に、本体の中の呼び出しを辿って閉じる
+func yReach(st mut S) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    mut work := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        if fnPkg(mut st, i) == st.only || IsStdPkg(mut st, fnPkg(mut st, i)) {
+            lput(mut st, mark, i, 1)
+            work = append(work, i)
+        }
+    }
+    // 辺 [呼び手（-1 = 関数の外 — const の初期化式）, 呼び先] の平らな列
+    mut edges := mut []int{}
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        pk := FilePkg(mut st, f)
+        // このファイルの関数と本体の字句の範囲 [関数, 始め, 終わり]…
+        mut rs := mut []int{}
+        for i <- iter.Range(0, st.nfn) {
+            nd := fnNode(mut st, i)
+            if fileOf(mut st, nd) == f {
+                ext := nodeOf(mut st, nd).f
+                if ext >= 0 {
+                    rs = append(rs, i)
+                    rs = append(rs, latI(mut st, ListRef(ext), 1))
+                    rs = append(rs, latI(mut st, ListRef(ext), 2))
+                }
+            }
+        }
+        rr := freeze(rs)
+        for n <- iter.Range(0, len(t.nodes)) {
+            k := t.nodes[n].kind
+            if k == ast.ECall || k == ast.EPipe {
+                x := nodeOf(mut st, NodeRef(ABASE + f * FW + n))
+                callee := if k == ast.ECall { NodeRef(x.a) } else { NodeRef(x.b) }
+                ci := e2sCallee(mut st, pk, callee)
+                if ci >= 0 && int(fnBody(mut st, ci)) >= 0 {
+                    edges = append(edges, rangeOf(rr, t.nodes[n].tok))
+                    edges = append(edges, ci)
+                }
+            }
+        }
+    }
+    for e <- iter.Range(0, len(edges) / 2) {
+        if edges[e * 2] < 0 && latI(mut st, mark, edges[e * 2 + 1]) == 0 {
+            lput(mut st, mark, edges[e * 2 + 1], 1)
+            work = append(work, edges[e * 2 + 1])
+        }
+    }
+    mut h := 0
+    while h < len(work) {
+        g := work[h]
+        h += 1
+        for e <- iter.Range(0, len(edges) / 2) {
+            if edges[e * 2] == g && latI(mut st, mark, edges[e * 2 + 1]) == 0 {
+                lput(mut st, mark, edges[e * 2 + 1], 1)
+                work = append(work, edges[e * 2 + 1])
+            }
+        }
+    }
+    return mark
+}
+
+// rangeOf は字句 tok を本体に含む関数（rs = [関数, 始め, 終わり]…・無ければ -1）
+func rangeOf(rs []int, tok int) int {
+    for i <- iter.Range(0, len(rs) / 3) {
+        if tok >= rs[i * 3 + 1] && tok < rs[i * 3 + 2] {
+            return rs[i * 3]
+        }
+    }
+    return -1
+}
+
+// RefGraph は関数の参照の辺（呼び手ごとに束ねた CSR — 呼び手 + 1 で引く: 0 = 関数の外〔const の初期化式〕）。段 6 P6-3: 区間の計画（親）が
+// 1 回だけ作って子へ渡す（子ごとに全部の木を走査しない）
+type RefGraph struct {
+    head []int
+    adj []int
+}
+
+// refGraph は全部の木の名前と `package.名前` の節から、それが指す本体つきの関数への辺を作る（呼び出しに限らない — 関数値として渡す形も）
+func refGraph(st mut S) RefGraph {
+    mut src := mut []int{}
+    mut dst := mut []int{}
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        pk := FilePkg(mut st, f)
+        // このファイルの関数の本体の字句の範囲（始めの昇順 — 宣言順）: [関数, 始め, 終わり]…
+        mut rs := mut []int{}
+        for i <- iter.Range(0, st.nfn) {
+            nd := fnNode(mut st, i)
+            if fileOf(mut st, nd) == f {
+                ext := nodeOf(mut st, nd).f
+                if ext >= 0 {
+                    rs = append(rs, i)
+                    rs = append(rs, latI(mut st, ListRef(ext), 1))
+                    rs = append(rs, latI(mut st, ListRef(ext), 2))
+                }
+            }
+        }
+        rr := freeze(rs)
+        for n <- iter.Range(0, len(t.nodes)) {
+            k := t.nodes[n].kind
+            if k == ast.EIdent || k == ast.ESelector {
+                ci := e2sCallee(mut st, pk, NodeRef(ABASE + f * FW + n))
+                if ci >= 0 && int(fnBody(mut st, ci)) >= 0 {
+                    src = append(src, rangeOfSorted(rr, t.nodes[n].tok) + 1)
+                    dst = append(dst, ci)
+                }
+            }
+        }
+    }
+    mut head := mut []int{}
+    for c <- iter.Range(0, st.nfn + 2) {
+        head = append(head, 0)
+    }
+    for e <- iter.Range(0, len(src)) {
+        x := src[e] + 1
+        head[x] = head[x] + 1
+    }
+    for c <- iter.Range(0, st.nfn + 1) {
+        head[c + 1] = head[c + 1] + head[c]
+    }
+    mut fill := mut []int{}
+    mut adj := mut []int{}
+    for c <- iter.Range(0, st.nfn + 1) {
+        fill = append(fill, head[c])
+    }
+    for e <- iter.Range(0, len(src)) {
+        adj = append(adj, 0)
+    }
+    for e <- iter.Range(0, len(src)) {
+        c := src[e]
+        q := fill[c]
+        adj[q] = dst[e]
+        fill[c] = q + 1
+    }
+    return RefGraph{head: freeze(head), adj: freeze(adj)}
+}
+
+// rangeReach は Def の区間の子（段 6 P6-3 — st.rangeSet）の表層型検査の対象の印: 区間の中で本体を脱糖しうる関数（部分検査の視点の外・L0 の std を除く）・
+// 根の区間なら main・std の関数・const の初期化式が参照する関数を種に、参照の辺（st.refs — 親の refGraph）を辿って閉じる。参照は呼び出しに限らない
+// （関数値として渡す形 — 区間の本体の fnref が指す関数の印〔YInstNeeded〕も全体と同じにする。yReach より保守的）。
+// 印は呼び先 → 呼び手へ伝わるので、届く集合の中の印・表は全体で型付けたときと同じ（yReach と同じ論証）
+func rangeReach(st mut S) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    mut work := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        inRange := i >= st.rlo && i < st.rhi && !outsideOnly(mut st, i) && !(st.trustStd && IsStdPkg(mut st, fnPkg(mut st, i)))
+        isMain := st.rangeRoot && fnPkg(mut st, i) == st.mainPkg && strIs(mut st, fnName(mut st, i), "main")
+        if inRange || isMain || IsStdPkg(mut st, fnPkg(mut st, i)) {
+            lput(mut st, mark, i, 1)
+            work = append(work, i)
+        }
+    }
+    head := st.refs.head
+    adj := st.refs.adj
+    // const の初期化式（呼び手 0）の参照先は種
+    for e <- iter.Range(head[0], head[1]) {
+        if latI(mut st, mark, adj[e]) == 0 {
+            lput(mut st, mark, adj[e], 1)
+            work = append(work, adj[e])
+        }
+    }
+    mut h := 0
+    while h < len(work) {
+        g := work[h]
+        h += 1
+        for e <- iter.Range(head[g + 1], head[g + 2]) {
+            if latI(mut st, mark, adj[e]) == 0 {
+                lput(mut st, mark, adj[e], 1)
+                work = append(work, adj[e])
+            }
+        }
+    }
+    return mark
+}
+
+// rangeOfSorted は rangeOf の二分探索版（rs の範囲は始めの昇順で互いに素）
+func rangeOfSorted(rs []int, tok int) int {
+    mut lo := 0
+    mut hi := len(rs) / 3
+    while lo < hi {
+        m := (lo + hi) / 2
+        if rs[m * 3 + 2] <= tok {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    if lo < len(rs) / 3 && tok >= rs[lo * 3 + 1] && tok < rs[lo * 3 + 2] {
+        return rs[lo * 3]
+    }
+    return -1
+}
+
+// ExpCost は関数ごとの展開込みの大きさ（段 6 P6-3 — Def の区間の費用の代理）: own = 関数ごとの自分の節の数、
+// 展開込み = own + 本体の中の呼び出し点ごとに、呼び先が展開される関数（fnExpands — 前段の後）ならその展開込み（呼び出し点の数だけ）。
+// 展開される関数は再帰しない（する形は脱糖が拒否する）が、念のため辿り中の関数は own だけに数える。上限 EXP_CAP で頭打ち
+const EXP_CAP = 1073741824
+
+func ExpCost(st mut S, own []int) []int {
+    // 呼び出しの辺 [呼び手, 呼び先]（呼び先が展開される関数だけ）を呼び手ごとに束ねる
+    mut src := mut []int{}
+    mut dst := mut []int{}
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        pk := FilePkg(mut st, f)
+        mut rs := mut []int{}
+        for i <- iter.Range(0, st.nfn) {
+            nd := fnNode(mut st, i)
+            if fileOf(mut st, nd) == f {
+                ext := nodeOf(mut st, nd).f
+                if ext >= 0 {
+                    rs = append(rs, i)
+                    rs = append(rs, latI(mut st, ListRef(ext), 1))
+                    rs = append(rs, latI(mut st, ListRef(ext), 2))
+                }
+            }
+        }
+        rr := freeze(rs)
+        for n <- iter.Range(0, len(t.nodes)) {
+            k := t.nodes[n].kind
+            if k == ast.ECall || k == ast.EPipe {
+                x := nodeOf(mut st, NodeRef(ABASE + f * FW + n))
+                callee := if k == ast.ECall { NodeRef(x.a) } else { NodeRef(x.b) }
+                ci := e2sCallee(mut st, pk, callee)
+                if ci >= 0 && int(fnBody(mut st, ci)) >= 0 && fnExpands(mut st, ci) {
+                    g := rangeOfSorted(rr, t.nodes[n].tok)
+                    if g >= 0 {
+                        src = append(src, g)
+                        dst = append(dst, ci)
+                    }
+                }
+            }
+        }
+    }
+    mut head := mut []int{}
+    for c <- iter.Range(0, st.nfn + 1) {
+        head = append(head, 0)
+    }
+    for e <- iter.Range(0, len(src)) {
+        x := src[e] + 1
+        head[x] = head[x] + 1
+    }
+    for c <- iter.Range(0, st.nfn) {
+        head[c + 1] = head[c + 1] + head[c]
+    }
+    mut fill := mut []int{}
+    mut adj := mut []int{}
+    for c <- iter.Range(0, st.nfn) {
+        fill = append(fill, head[c])
+    }
+    for e <- iter.Range(0, len(src)) {
+        adj = append(adj, 0)
+    }
+    for e <- iter.Range(0, len(src)) {
+        c := src[e]
+        q := fill[c]
+        adj[q] = dst[e]
+        fill[c] = q + 1
+    }
+    // 後順の明示スタックで畳む（memo: -1 = まだ・-2 = 辿り中）
+    mut memo := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        memo = append(memo, -1)
+    }
+    mut stk := mut []int{}
+    mut sp := 0
+    for r <- iter.Range(0, st.nfn) {
+        if memo[r] == -1 {
+            if len(stk) > 0 {
+                stk[0] = r
+            } else {
+                stk = append(stk, r)
+            }
+            sp = 1
+            while sp > 0 {
+                g := stk[sp - 1]
+                if memo[g] == -1 {
+                    memo[g] = -2
+                    for e <- iter.Range(head[g], head[g + 1]) {
+                        if memo[adj[e]] == -1 {
+                            if sp < len(stk) {
+                                stk[sp] = adj[e]
+                            } else {
+                                stk = append(stk, adj[e])
+                            }
+                            sp += 1
+                        }
+                    }
+                } else {
+                    sp -= 1
+                    if memo[g] == -2 {
+                        mut sum := own[g]
+                        for e <- iter.Range(head[g], head[g + 1]) {
+                            v := memo[adj[e]]
+                            w := if v >= 0 { v } else { own[adj[e]] }
+                            sum = sum + w
+                            if sum > EXP_CAP {
+                                sum = EXP_CAP
+                            }
+                        }
+                        memo[g] = sum
+                    }
+                }
+            }
+        }
+    }
+    return freeze(memo)
+}
+
+
+// ParReach は入口（main package の main）と const の初期化式から参照の辺で届く関数に std/par の口（ParKey）があるか（並列 1.0× 段 2 — report-337）。
+// lower の並列モード（task の大域・M:N の rt・罠）の判定: import しただけで届かないプログラム（std/utf8 の内側が par を使っても、それを呼ばない
+// プログラム）は逐次のまま — trap.sober の「使わないプログラムの IR は不変」。辺は refGraph（名前の参照 — 呼び出しに限らず関数値として渡す形も・
+// ラムダと総称の本体の中の参照は囲む関数から）で保守的。届かない扱いの誤りは rt が欠けて壊れる向きなので、lower は par の口を下ろす点で表明する
+func ParReach(st mut S) bool {
+    g := refGraph(mut st)
+    mark := ListRef(listN(mut st, st.nfn))
+    mut work := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        if fnPkg(mut st, i) == st.mainPkg && strIs(mut st, fnName(mut st, i), "main") {
+            lput(mut st, mark, i, 1)
+            work = append(work, i)
+        }
+    }
+    // const の初期化式（呼び手 0）の参照先は種
+    for e <- iter.Range(g.head[0], g.head[1]) {
+        if latI(mut st, mark, g.adj[e]) == 0 {
+            lput(mut st, mark, g.adj[e], 1)
+            work = append(work, g.adj[e])
+        }
+    }
+    mut h := 0
+    while h < len(work) {
+        f := work[h]
+        h += 1
+        if ParKey(mut st, f) != 0 {
+            return true
+        }
+        for e <- iter.Range(g.head[f + 1], g.head[f + 2]) {
+            if latI(mut st, mark, g.adj[e]) == 0 {
+                lput(mut st, mark, g.adj[e], 1)
+                work = append(work, g.adj[e])
+            }
+        }
+    }
+    return false
+}

@@ -1,0 +1,152 @@
+package lower
+
+// 深度の流れ（性能投資 M2 — .pair/opt-draft.md ②）: mem2reg / GVN の後の SSA に掛ける。設計整合パスの P1（optDepth — ループの頭は後ろの辺があれば
+// 新しい版にする悲観的な形）の楽観版: 「今の深度 = SSA の値 x」をブロックの入口で前任の出口の合流（全部同じ x なら x・違えば不明）として
+// 不動点まで回す。ループの中で region を開かなければ、後ろの辺の出口の深度も頭の手前の region.depth の値のままなので、頭の `region.setdepth` が消える
+// （fannkuch のループの頭ごとの `mov [rt.meta], …`）。あわせて深度が x と分かっている点の `region.depth` は x に付け替える。
+// 転送: region.depth r（不明なら「深度 = r」・分かっていれば r を x へ付け替え）・region.enter（不明）・region.setdepth v（今が v なら消す・でなければ「深度 = v」）。
+// call / call.indirect は呼ばれた関数が入口の深度に戻して帰る（P1 と同じ根拠 — funcExit）ので深度を変えない（trap は巻き戻りが深度を戻さないので不明）。他の op は深度に触れない
+// 健全性: 「深度 = x」が全部の経路で成り立つ点だけで消す（合流で 1 本でも違えば不明）。x の定義は全経路の上にあるので点を支配する
+// 同じ深度の別名: 深度が x と分かっている点の `r = region.depth` は x と同じ値（rep[r] = x）。反復の中でも setdepth の実引数をこの表で x に寄せて読む
+// （寄せないと、付け替えの前の `setdepth r` が「深度 = r」を作り、後ろの辺の出口が x と食い違ってループの頭が不明になる — M3 の後の fannkuch で
+// ループの頭の setdepth が戻っていた）。rep が変われば不動点の反復を続ける（rep は「x → 自分」へ高々 1 回しか動かない）
+
+import "std/iter"
+
+const DF_TOP = -2   // まだ流れていない（楽観の初期値）
+const DF_UNK = -1   // 不明
+
+// depthFlowModule はモジュールの全関数に深度の流れを掛ける
+func depthFlowModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            depthFlowFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func depthFlowFunc(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    optReset(mut st, irFnNVal(mut st, f), nb)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut din := mut []int{}
+    xFill(mut din, nb, DF_TOP)
+    mut dout := mut []int{}
+    xFill(mut dout, nb, DF_TOP)
+    mut rep := mut []int{}
+    xFill(mut rep, irFnNVal(mut st, f) + 1, -1)
+    rep[len(rep) - 1] = 0
+    // 入口は不明から（呼び手の深度 — SSA の値ではない）
+    mut changed := true
+    while changed {
+        changed = false
+        for k <- iter.Range(0, w.nrpo) {
+            bb := w.rpo[k]
+            mut x := if k == 0 { DF_UNK } else { DF_TOP }
+            for j <- iter.Range(w.pcnt[bb], w.pcnt[bb + 1]) {
+                p := w.preds[j]
+                if w.rpoIx[p] >= 0 {
+                    x = dfMeet(x, dout[p])
+                }
+            }
+            if k == 0 && w.pcnt[bb] < w.pcnt[bb + 1] {
+                // 入口に戻る辺があっても入口の値は不明のまま
+                x = DF_UNK
+            }
+            din[bb] = x
+            o := dfBlock(mut st, mut rep, BlkRef(w.blk[bb]), x, false)
+            if o != dout[bb] || dfRepChanged(mut rep) {
+                dout[bb] = o
+                changed = true
+            }
+        }
+    }
+    // 適用（不動点の入口の値で 1 回）
+    mut any := false
+    for k <- iter.Range(0, w.nrpo) {
+        bb := w.rpo[k]
+        if din[bb] != DF_TOP {
+            dfBlock(mut st, mut rep, BlkRef(w.blk[bb]), din[bb], true)
+            any = true
+        }
+    }
+    if any {
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+}
+
+// dfMeet は合流（TOP は単位元・違えば不明）
+func dfMeet(a int, b int) int {
+    if a == DF_TOP {
+        return b
+    }
+    if b == DF_TOP || a == b {
+        return a
+    }
+    return DF_UNK
+}
+
+// dfRepChanged は rep の変化の印（rep の最後の語 — dfBlock が立てる）を読んで下ろす
+func dfRepChanged(rep mut []int) bool {
+    n := len(rep) - 1
+    if rep[n] == 1 {
+        rep[n] = 0
+        return true
+    }
+    return false
+}
+
+// dfRep は v を同じ深度の代表へ寄せる（rep の鎖を辿る — 反復の途中の表が輪になっても止まるよう歩数を値の数で打ち切る）
+func dfRep(rep mut []int, v int) int {
+    mut x := v
+    mut n := len(rep)
+    while rep[x] >= 0 && rep[x] != x && n > 0 {
+        x = rep[x]
+        n -= 1
+    }
+    return x
+}
+
+// dfBlock はブロック blk を入口の値 x から流し、出口の値を返す（apply なら冗長な setdepth を消し、分かっている region.depth を付け替える）。
+// rep は同じ深度の別名の表（値の数 + 1 語 — 最後の語は変化の印）
+func dfBlock(st mut St, rep mut []int, blk BlkRef, x0 int, apply bool) int {
+    mut x := x0
+    mut ins := irBlkIHead(mut st, blk)
+    while ins != -1 {
+        op := irInsOp(mut st, ins)
+        if op == OpRDepth {
+            r := irInsRes(mut st, ins)
+            nr := if x >= 0 { x } else { r }
+            if rep[r] != nr {
+                rep[r] = nr
+                rep[len(rep) - 1] = 1
+            }
+            if x >= 0 {
+                if apply {
+                    aliasTo(mut st, ins, r, x)
+                }
+            } else {
+                x = r
+            }
+        } else if op == OpREnter || rlEnterCall(mut st, ins) || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone {
+            // 軽い enter（rlight.sober — loopLightModule の後に掛け直すとき）も深度を進める。罠の呼び出し（trap）は中で死んで巻き戻ると深度を
+            // 戻さずに帰る（罠を張る側が罠の後で setdepth する — lower/par.sober。普通の call と違い「深度を変えない」と言えない）
+            x = DF_UNK
+        } else if op == OpRSetDepth {
+            v := dfRep(mut rep, resolve(mut st, irInsA(mut st, ins)))
+            if x >= 0 && v == x {
+                if apply {
+                    irSetInsOp(mut st, ins, OpDead)
+                }
+            } else {
+                x = v
+            }
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    return x
+}

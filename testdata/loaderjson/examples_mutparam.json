@@ -1,0 +1,71 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "bump",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "push",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append"
+          ]
+        },
+        {
+          "name": "Push",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append"
+          ]
+        },
+        {
+          "name": "PushTwice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Push"
+          ]
+        },
+        {
+          "name": "sum",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bump"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Push",
+            "PushTwice",
+            "len",
+            "println",
+            "push",
+            "sum"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": []
+}

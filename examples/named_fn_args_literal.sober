@@ -1,0 +1,10 @@
+package main
+
+// 負例（syntax.md 決定 7 の kind 1）: 名前つきの関数型リテラルの値に名前付き実引数 — 名前付き引数は名前付き関数型だけ
+func apply(f func(x int, y int) int) int {
+    return f(x: 3, y: 4)
+}
+
+func main() {
+    println(apply((p, q) => p * q))
+}

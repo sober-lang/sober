@@ -1,0 +1,86 @@
+package main
+
+import "std/builder"
+import "std/iter"
+
+// []byte の詰め表現（language.md 21 / 33 節・段 B）: セル 1 バイト。先端一致の伸長・全コピー・スライシング・境界コピー（戻り値の relocate）・
+// 語の列との交互の確保（整列）・ジェネリックの Builder[byte]。出力は Go の双子（scripts/oracles/bytes_packed.go）と一致
+
+type Rec struct {
+    tag int
+    body []byte
+}
+
+// fill は n バイトの列を作る（関数の中で確保 — 戻り値は呼び手の region へ写される）
+func fill(n int, base int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte((base + i) % 256))
+    }
+    return freeze(b)
+}
+
+func sum(b []byte) int {
+    mut s := 0
+    for i <- iter.Range(0, len(b)) {
+        s = s + int(b[i])
+    }
+    return s
+}
+
+func mkRec(t int) Rec {
+    return Rec{tag: t, body: fill(t, 100)}
+}
+
+func nested() [][]byte {
+    mut out := mut [][]byte{}
+    for i <- iter.Range(1, 4) {
+        out = append(out, fill(i * 3, i))
+    }
+    return freeze(out)
+}
+
+func main() {
+    // リテラル・添字・代入
+    mut a := mut []byte{'s', 'o', 'b', 'e', 'r'}
+    a[0] = 'S'
+    println(len(a), a[0], a[1], a[4])
+    // 先端一致の伸長（粒の境目 8 をまたぐ）
+    for i <- iter.Range(0, 20) {
+        a = append(a, byte(65 + i))
+    }
+    println(len(a), a[5], a[12], a[13], a[24])
+    // 語の列と交互に確保しても整列は崩れない
+    mut w := mut []int{}
+    mut c := mut []byte{}
+    for i <- iter.Range(0, 30) {
+        w = append(w, i * 1000003)
+        c = append(c, byte(i))
+    }
+    println(len(w), w[0], w[17], w[29], len(c), c[0], c[17], c[29])
+    // 同じセル列を指す 2 本のヘッダ: 先に伸ばした側がその場、後の側は全コピー（互いに見えない）
+    mut p := a
+    mut q := a
+    p = append(p, 'p')
+    q = append(q, 'q')
+    println(len(p), len(q), p[25], q[25], a[0], p[0], q[0])
+    // imm の append は常に全コピー・スライシング
+    s := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9}
+    s2 := append(s, 10)
+    mid := s2[3:7]
+    println(len(s), len(s2), s2[9], len(mid), mid[0], mid[3])
+    // 関数の戻り値（別の深度から写される）・struct の欄・入れ子
+    f := fill(300, 250)
+    println(len(f), f[0], f[5], f[6], f[299], sum(f))
+    r := mkRec(9)
+    println(r.tag, len(r.body), r.body[0], r.body[8])
+    ns := nested()
+    println(len(ns), len(ns[0]), len(ns[2]), ns[2][8], sum(ns[1]))
+    // ジェネリック: Builder[byte] の chunk も詰めた列
+    mut bb := builder.Builder[byte]{}
+    for i <- iter.Range(0, 70) {
+        builder.Push(mut bb, byte(i * 3 % 256))
+    }
+    zs := builder.Build(mut bb)
+    println(len(zs), zs[0], zs[33], zs[69], sum(zs))
+}

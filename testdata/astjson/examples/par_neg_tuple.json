@@ -1,0 +1,118 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Box",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "T"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "xs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "generic",
+                  "name": "Box",
+                  "args": [
+                    {
+                      "k": "tuple",
+                      "elems": [
+                        {
+                          "k": "name",
+                          "name": "int"
+                        },
+                        {
+                          "k": "opt",
+                          "type": {
+                            "k": "name",
+                            "name": "error"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "elems": [],
+                "mut": true,
+                "tok": 23
+              }
+            ],
+            "tok": 20
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 37
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 39
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "xs",
+                      "tok": 41
+                    }
+                  ],
+                  "tok": 40
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 47
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": []
+}

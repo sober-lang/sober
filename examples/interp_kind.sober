@@ -1,0 +1,11 @@
+package main
+
+// 回帰例（C1 B3）: 補間の穴の種類（string / int / bool）を表層型検査器の表から決める。
+// check は穴の型をコア型の推論（computeTy）で求めていて、if 式から束縛した string（`what`）を断片外にしていた（build は受理）
+
+func main() {
+    n := 2
+    what := if n > 1 { "many" } else { "one" }
+    ok := if n > 1 { true } else { false }
+    println("${what} ${n} ${ok}")
+}

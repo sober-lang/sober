@@ -1,0 +1,2 @@
+sober: load error at examples/builtin_rebind_append.sober:11:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)
+exit=1

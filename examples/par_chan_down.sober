@@ -1,0 +1,31 @@
+package main
+
+// 段 6 P3b-4b: 親（チャネルを作った task）が string を子へ送る — 送り手 = 作った task の側の写し（借りない）。子は受けた値で組み立てて返す
+
+import "std/par"
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        tx, rx := par.NewChan[string](cap: 1)
+        h := par.Spawn(s, (inp) => {
+            mut acc := ""
+            mut k := 0
+            while k < 3 {
+                v := par.Recv(inp)
+                if v != nil {
+                    acc = acc + v + "|"
+                }
+                k += 1
+            }
+            acc
+        }, give: rx)
+        mut i := 0
+        while i < 3 {
+            w := { "x" + "${i * 11}" }
+            par.Send(tx, w)
+            i += 1
+        }
+        par.Join(h)
+    })
+    println(r)
+}

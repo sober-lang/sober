@@ -1,0 +1,9 @@
+package main
+
+// loader の負例: const の定義の循環
+const A = B + 1
+const B = A * 2
+
+func main() {
+    println(A)
+}

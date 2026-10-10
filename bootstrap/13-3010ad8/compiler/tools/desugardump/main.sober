@@ -1,0 +1,36 @@
+package main
+
+// desugardump: 標準入力の Manifest から Program を load し、脱糖したコア AST の JSON（Zig 版 `sober check --core-json` と同じバイト列）を
+// 標準出力に書く。selfhost の脱糖器の差分オラクル（scripts/selfhost_desugar.sh）の Sober 側。Manifest の形は loaderdump と同じ
+
+import "std/io"
+import "loader"
+import "desugar"
+
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("desugardump: cannot read /dev/stdin")
+        return
+    }
+    m, valid := loader.ManifestOf(src)
+    if !valid {
+        println("desugardump: bad manifest")
+        return
+    }
+    p, lerr := loader.Load(m)
+    if lerr != nil {
+        println("desugardump: load error")
+        return
+    }
+    out, derr := desugar.Json(p, false, []int{})
+    if derr != nil {
+        println("desugardump: desugar error")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", out)
+    if werr != nil {
+        println("desugardump: cannot write /dev/stdout")
+    }
+}

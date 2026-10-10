@@ -1,0 +1,40 @@
+package main
+
+// 仮引数（呼び手の region）の値を mut 局所の名前へそのまま代入する（F-o = formal.md F-36 — 2026-10-02 まで check が def error・build は受理）。
+// 脱糖器は欄への代入（fieldValueAnn — field_param_ann）と同じく、値を束縛点の点座標へ ann で緩める
+
+type Item struct {
+    name string
+    n int
+}
+
+func last(v string, w string) string {
+    mut x := v
+    x = w
+    return x
+}
+
+func pick(v string, c bool) string {
+    mut x := "default"
+    if c {
+        x = v
+    }
+    return x
+}
+
+func total(xs []int, ys []int) int {
+    mut cur := xs
+    cur = ys
+    return len(cur)
+}
+
+func rename(v string) string {
+    mut it := Item{name: "a", n: 1}
+    it = Item{name: v, n: 2}
+    return it.name
+}
+
+func main() {
+    println(last("a", "b"), pick("given", true), pick("given", false))
+    println(total([]int{1}, []int{1, 2, 3}), rename("r"))
+}

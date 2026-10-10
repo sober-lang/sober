@@ -1,0 +1,980 @@
+package checker
+
+// JSON 境界の写し（Json.lean の tyFromJson / exprFromJson / programFromJson / partsFromJson）。
+//
+// 入力のバイト列を 1 回なめて、型・式の記録を直接組む（汎用の JSON の木は作らない — 入力 5MB 級でヒープを倹約する。仮決め R11-2）:
+// - parse は反復（明示の枠）。深さごとの枠に「語の番号 → (stamp, tag, val, gen)」の欄を持ち、object が閉じた時点で
+//   "k" の値を見て型か式の記録を組む。キーの順は問わず、同じキーは後勝ち（Lean の Json の object = RBNode.insert）
+// - 型の kind と式の kind は語が交わらないので、閉じた object は自分の k だけで型か式かが決まる。
+//   位置（Lean の tyFromJson / exprFromJson のどちらで読まれるか）との食い違いは、親が欄を読む時点で拒否する
+// - 組めない object（未知の k・欄の欠け）は V_ERR として運び、親が読んだときに初めて parse error にする
+//   （Lean は読まない欄の中身を検査しない — 余計なキーの中身は壊れていてよい）
+// - 深さ 3 以下の object は汎用の記録 gen も残す（根の object と defs の要素 — programFromJson / defFromJson が読む）
+//
+// 文字列は語の表（キーと kind の綴り）で番号に引く。escape を含む文字列は番号 0（どの語とも一致しない扱い）— Lean は escape を
+// 解いてから比べるので、`"k"` のような綴りは食い違う（コーパスに現れない — 仮決め R11-2 の注）
+
+// 語の番号（キー 1〜29・式の kind 30〜90・型の kind 91〜102）
+const W_K = 1
+const W_I = 2
+const W_N = 3
+const W_E = 4
+const W_BODY = 5
+const W_A = 6
+const W_B = 7
+const W_C = 8
+const W_T = 9
+const W_NIL = 10
+const W_SOME = 11
+const W_L = 12
+const W_R = 13
+const W_F = 14
+const W_TS = 15
+const W_MUT = 16
+const W_M = 17
+const W_V = 18
+const W_KEY = 19
+const W_CELL = 20
+const W_RC = 21
+const W_E1 = 22
+const W_E2 = 23
+const W_P = 24
+const W_DEFS = 25
+const W_PARAM = 26
+const W_RET = 27
+const W_TPARAMS = 28
+const W_PARTS = 29
+const W_LIT = 30
+const W_TRUE = 31
+const W_FALSE = 32
+const W_TRIV = 33
+const W_VAR = 34
+const W_LET = 35
+const W_ADD = 36
+const W_LT = 37
+const W_SUB = 38   // 38〜46 = arith（sub mul div mod and or xor shl shr）
+const W_SHR = 46
+const W_EQ = 47    // 47〜51 = cmp（eq ne le gt ge）
+const W_GE = 51
+const W_IF = 52
+const W_IFNIL = 53
+const W_INL = 54
+const W_INR = 55
+const W_CASE = 56
+const W_PAIR = 57
+const W_FST = 58
+const W_SND = 59
+const W_CALL = 60
+const W_CALLM = 61
+const W_FNREF = 62
+const W_CALLV = 63
+const W_ANN = 64
+const W_BLOCK = 65
+const W_LABEL = 66
+const W_JUMP = 67
+const W_ALLOC = 68
+const W_DEREF = 69
+const W_ASSIGN = 70
+const W_WHILE = 71
+const W_FREEZE = 72
+const W_MKSLICE = 73
+const W_INDEX = 74
+const W_LEN = 75
+const W_APPEND = 76
+const W_SETIDX = 77
+const W_SUBSLICE = 78
+const W_EQS = 79
+const W_CONCAT = 80
+const W_MKMAP = 81
+const W_GETM = 82
+const W_SETM = 83
+const W_DELM = 84
+const W_LENM = 85
+const W_PAR = 86
+const W_PARCH = 87
+const W_NEWCHAN = 88
+const W_SEND = 89
+const W_RECV = 90
+const W_INT = 91
+const W_TVAR = 92
+const W_BOOL = 93
+const W_UNIT = 94
+const W_OPT = 95
+const W_UNION = 96
+const W_PROD = 97
+const W_REF = 98
+const W_SLICE = 99
+const W_MAP = 100
+const W_CHAN = 101
+const W_FN = 102
+// strlit の段で足した語（既存の番号を動かさないため末尾に置く — 式の kind の範囲判定は isExprKind が W_STRLIT を明示で足す）
+const W_BS = 103
+const W_STRLIT = 104
+// keysm の段で足した語（同じく末尾）
+const W_KEYSM = 105
+const NW = 106
+// 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
+const K_BLOCKR = 106
+
+// 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
+func wordStr(c int) string {
+    return switch c {
+    case 1: "k"
+    case 2: "i"
+    case 3: "n"
+    case 4: "e"
+    case 5: "body"
+    case 6: "a"
+    case 7: "b"
+    case 8: "c"
+    case 9: "t"
+    case 10: "nil"
+    case 11: "some"
+    case 12: "l"
+    case 13: "r"
+    case 14: "f"
+    case 15: "ts"
+    case 16: "mut"
+    case 17: "m"
+    case 18: "v"
+    case 19: "key"
+    case 20: "cell"
+    case 21: "rc"
+    case 22: "e1"
+    case 23: "e2"
+    case 24: "p"
+    case 25: "defs"
+    case 26: "param"
+    case 27: "ret"
+    case 28: "tparams"
+    case 29: "parts"
+    case 30: "lit"
+    case 31: "true"
+    case 32: "false"
+    case 33: "triv"
+    case 34: "var"
+    case 35: "let"
+    case 36: "add"
+    case 37: "lt"
+    case 38: "sub"
+    case 39: "mul"
+    case 40: "div"
+    case 41: "mod"
+    case 42: "and"
+    case 43: "or"
+    case 44: "xor"
+    case 45: "shl"
+    case 46: "shr"
+    case 47: "eq"
+    case 48: "ne"
+    case 49: "le"
+    case 50: "gt"
+    case 51: "ge"
+    case 52: "if"
+    case 53: "ifnil"
+    case 54: "inl"
+    case 55: "inr"
+    case 56: "case"
+    case 57: "pair"
+    case 58: "fst"
+    case 59: "snd"
+    case 60: "call"
+    case 61: "callm"
+    case 62: "fnref"
+    case 63: "callv"
+    case 64: "ann"
+    case 65: "block"
+    case 66: "label"
+    case 67: "jump"
+    case 68: "alloc"
+    case 69: "deref"
+    case 70: "assign"
+    case 71: "while"
+    case 72: "freeze"
+    case 73: "mkslice"
+    case 74: "index"
+    case 75: "len"
+    case 76: "append"
+    case 77: "setidx"
+    case 78: "subslice"
+    case 79: "eqs"
+    case 80: "concat"
+    case 81: "mkmap"
+    case 82: "getm"
+    case 83: "setm"
+    case 84: "delm"
+    case 85: "lenm"
+    case 86: "par"
+    case 87: "parch"
+    case 88: "newchan"
+    case 89: "send"
+    case 90: "recv"
+    case 91: "int"
+    case 92: "tvar"
+    case 93: "bool"
+    case 94: "unit"
+    case 95: "opt"
+    case 96: "union"
+    case 97: "prod"
+    case 98: "ref"
+    case 99: "slice"
+    case 100: "map"
+    case 101: "chan"
+    case 102: "fn"
+    case 103: "bs"
+    case 104: "strlit"
+    default: "keysm"
+    }
+}
+
+func isExprKind(c int) bool {
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_KEYSM
+}
+
+func isTyKind(c int) bool {
+    return c >= W_INT && c <= W_FN
+}
+
+// 値の tag（parse 中の欄・配列の要素）
+const V_NUM = 1   // val = 整数（i64 に収まる）
+const V_BIG = 2   // i64 を超える整数（Int としては読める。Nat の欄では拒否 — コーパスに現れない）
+const V_FRAC = 3  // 小数・指数つき（Lean の getInt? / getNat? は通さない）
+const V_STR = 4   // val = 語の番号（0 = 語の表に無い）
+const V_TRUE = 5
+const V_FALSE = 6
+const V_NULL = 7
+const V_EXPR = 8  // val = 式の記録
+const V_TY = 9    // val = 型の記録
+const V_ERR = 10  // k はあるが型にも式にも組めない object
+const V_OBJ = 11  // k の無い object
+const V_ARR = 12  // val = [n, 先頭の cell]（cell = [tag, val, gen, next]）
+
+func isObjTag(t int) bool {
+    return t == V_EXPR || t == V_TY || t == V_ERR || t == V_OBJ
+}
+
+// ── 語の表（開番地法のハッシュ表。表の大きさ 1024、中身 = 語の番号）──
+
+const WTSZ = 1024
+
+func hashRange(src []int, s int, e int) int {
+    mut h := 7
+    mut i := s
+    while i < e {
+        h = (h * 31 + src[i]) % 1000003
+        i += 1
+    }
+    return h
+}
+
+// initWords は語の綴りをヒープへ置き（WSTR = G_WTAB の表の直後に番号順の綴りへの添字）、表を組む
+func initWords(st mut S) {
+    tab := block(mut st, WTSZ + NW)
+    st.h[G_WTAB] = tab
+    mut c := 1
+    while c < NW {
+        b := bytes(wordStr(c))
+        at := len(st.h)
+        st.h = append(st.h, len(b))
+        mut j := 0
+        while j < len(b) {
+            st.h = append(st.h, b[j])
+            j += 1
+        }
+        st.h[tab + WTSZ + c] = at
+        mut p := hashRange(b, 0, len(b)) % WTSZ
+        while st.h[tab + p] != 0 {
+            p = (p + 1) % WTSZ
+        }
+        st.h[tab + p] = c
+        c += 1
+    }
+}
+
+// wordOf は src[s:e] の綴りの語の番号（無ければ 0）
+func wordOf(st mut S, src []int, s int, e int) int {
+    tab := st.h[G_WTAB]
+    mut p := hashRange(src, s, e) % WTSZ
+    while st.h[tab + p] != 0 {
+        c := st.h[tab + p]
+        w := st.h[tab + WTSZ + c]
+        if st.h[w] == e - s {
+            mut j := 0
+            while j < e - s && st.h[w + 1 + j] == src[s + j] {
+                j += 1
+            }
+            if j == e - s {
+                return c
+            }
+        }
+        p = (p + 1) % WTSZ
+    }
+    return 0
+}
+
+// ── parse の枠（深さごと。[ctype, stamp, curKey, arrN, arrHead, arrTail] + 語ごとの欄 [stamp, tag, val, gen]）──
+
+const FS = 6 + 4 * NW
+const C_OBJ = 1
+const C_ARR = 2
+
+func frameAt(st mut S, dep int) int {
+    return st.h[G_PSTK] + (dep - 1) * FS
+}
+
+func slotOf(fb int, w int) int {
+    return fb + 6 + 4 * w
+}
+
+func has(st mut S, fb int, w int) bool {
+    return st.h[slotOf(fb, w)] == st.h[fb + 1]
+}
+
+func sTag(st mut S, fb int, w int) int {
+    return if has(mut st, fb, w) { st.h[slotOf(fb, w) + 1] } else { 0 }
+}
+
+func sVal(st mut S, fb int, w int) int {
+    return st.h[slotOf(fb, w) + 2]
+}
+
+// 欄の読み出し（読めなければ -1。Lean の getObjVal? >>= … の失敗 = parse error）
+func fE(st mut S, fb int, w int) int {
+    return if sTag(mut st, fb, w) == V_EXPR { sVal(mut st, fb, w) } else { -1 }
+}
+
+func fT(st mut S, fb int, w int) int {
+    return if sTag(mut st, fb, w) == V_TY { sVal(mut st, fb, w) } else { -1 }
+}
+
+func fN(st mut S, fb int, w int) int {
+    return if sTag(mut st, fb, w) == V_NUM && sVal(mut st, fb, w) >= 0 { sVal(mut st, fb, w) } else { -1 }
+}
+
+func fB(st mut S, fb int, w int) int {
+    t := sTag(mut st, fb, w)
+    return if t == V_TRUE { 1 } else if t == V_FALSE { 0 } else { -1 }
+}
+
+func fIntOk(st mut S, fb int, w int) bool {
+    t := sTag(mut st, fb, w)
+    return t == V_NUM || t == V_BIG
+}
+
+func nc(st mut S, e int) int {
+    return st.h[e + 1]
+}
+
+// node は式の記録 [kind, nc, a, b, c]
+func node(st mut S, k int, n int, a int, b int, c int) int {
+    return rec5(mut st, k, n, a, b, c)
+}
+
+// tsOf は "ts" の欄（省略 = -1、空の配列も -1）。要素が型でなければ -2（parse error）
+func tsOf(st mut S, fb int) int {
+    t := sTag(mut st, fb, W_TS)
+    if t == 0 {
+        return -1
+    }
+    if t != V_ARR {
+        return -2
+    }
+    hd := sVal(mut st, fb, W_TS)
+    n := st.h[hd]
+    if n == 0 {
+        return -1
+    }
+    mut c := st.h[hd + 1]
+    while c >= 0 {
+        if st.h[c] != V_TY {
+            return -2
+        }
+        c = st.h[c + 3]
+    }
+    at := len(st.h)
+    st.h = append(st.h, n)
+    c = st.h[hd + 1]
+    while c >= 0 {
+        st.h = append(st.h, st.h[c + 1])
+        c = st.h[c + 3]
+    }
+    return at
+}
+
+// buildTy は枠 fb の object を型 kind c として組む（組めなければ -1）
+func buildTy(st mut S, fb int, c int) int {
+    if c == W_INT {
+        return st.h[G_T_INT]
+    }
+    if c == W_BOOL {
+        return st.h[G_T_BOOL]
+    }
+    if c == W_UNIT {
+        return st.h[G_T_UNIT]
+    }
+    if c == W_TVAR {
+        i := fN(mut st, fb, W_I)
+        return if i < 0 { -1 } else { mk(mut st, TVar, i, 0, 0) }
+    }
+    if c == W_OPT {
+        t := fT(mut st, fb, W_T)
+        return if t < 0 { -1 } else { mk(mut st, TOpt, t, 0, 0) }
+    }
+    if c == W_UNION || c == W_PROD || c == W_FN {
+        l := fT(mut st, fb, if c == W_FN { W_P } else { W_L })
+        r := fT(mut st, fb, W_R)
+        if l < 0 || r < 0 {
+            return -1
+        }
+        return mk(mut st, if c == W_UNION { TUn } else if c == W_PROD { TPr } else { TFn }, l, r, 0)
+    }
+    if c == W_REF || c == W_SLICE || c == W_MAP {
+        m := fB(mut st, fb, W_M)
+        r := fN(mut st, fb, W_R)
+        if m < 0 || r < 0 {
+            return -1
+        }
+        if c == W_MAP {
+            if has(mut st, fb, W_CELL) {
+                cl := fT(mut st, fb, W_CELL)
+                return if cl < 0 { -1 } else { mk(mut st, TMp, m, r, cl) }
+            }
+            kt := fT(mut st, fb, W_KEY)
+            vt := fT(mut st, fb, W_T)
+            if kt < 0 || vt < 0 {
+                return -1
+            }
+            o := mk(mut st, TOpt, vt, 0, 0)
+            cl := mk(mut st, TPr, kt, o, 0)
+            return mk(mut st, TMp, m, r, cl)
+        }
+        t := fT(mut st, fb, W_T)
+        return if t < 0 { -1 } else { mk(mut st, if c == W_REF { TRef } else { TSl }, m, r, t) }
+    }
+    if c == W_CHAN {
+        rc := fN(mut st, fb, W_RC)
+        t := fT(mut st, fb, W_T)
+        return if rc < 0 || t < 0 { -1 } else { mk(mut st, TChan, rc, t, 0) }
+    }
+    return -1
+}
+
+// buildExpr は枠 fb の object を式 kind c として組む（組めなければ -1）
+func buildExpr(st mut S, fb int, c int) int {
+    if c == W_LIT {
+        return if fIntOk(mut st, fb, W_N) { node(mut st, c, 0, 0, 0, 0) } else { -1 }
+    }
+    if c == W_TRUE || c == W_FALSE || c == W_TRIV {
+        return node(mut st, c, 0, 0, 0, 0)
+    }
+    if c == W_VAR {
+        i := fN(mut st, fb, W_I)
+        return if i < 0 { -1 } else { node(mut st, c, 0, i, 0, 0) }
+    }
+    // 式 2 つ（欄の語 w1, w2）
+    if c == W_LET || c == W_ADD || c == W_LT || (c >= W_SUB && c <= W_GE) || c == W_PAIR || c == W_CALLV || c == W_ASSIGN || c == W_WHILE || c == W_APPEND || c == W_EQS || c == W_CONCAT || c == W_PAR || c == W_SEND {
+        w1 := if c == W_LET { W_E } else if c == W_CALLV { W_F } else if c == W_ASSIGN { W_L } else if c == W_WHILE { W_C } else if c == W_APPEND { W_E } else if c == W_PAR { W_E1 } else if c == W_SEND { W_C } else { W_A }
+        w2 := if c == W_LET || c == W_WHILE { W_BODY } else if c == W_CALLV || c == W_ASSIGN || c == W_SEND { W_E } else if c == W_APPEND { W_V } else if c == W_PAR { W_E2 } else { W_B }
+        a := fE(mut st, fb, w1)
+        b := fE(mut st, fb, w2)
+        if a < 0 || b < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, a) | nc(mut st, b), a, b, 0)
+    }
+    // 式 3 つ
+    if c == W_IF || c == W_IFNIL || c == W_CASE || c == W_SETIDX || c == W_SUBSLICE || c == W_SETM {
+        w1 := if c == W_IF { W_C } else { W_E }
+        w2 := if c == W_IF { W_T } else if c == W_IFNIL { W_NIL } else if c == W_CASE { W_L } else if c == W_SETIDX { W_I } else if c == W_SUBSLICE { W_A } else { W_KEY }
+        w3 := if c == W_IF { W_E } else if c == W_IFNIL { W_SOME } else if c == W_CASE { W_R } else if c == W_SUBSLICE { W_B } else { W_V }
+        a := fE(mut st, fb, w1)
+        b := fE(mut st, fb, w2)
+        d := fE(mut st, fb, w3)
+        if a < 0 || b < 0 || d < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, a) | nc(mut st, b) | nc(mut st, d), a, b, d)
+    }
+    // 式 1 つ
+    if c == W_SOME || c == W_FST || c == W_SND || c == W_DEREF || c == W_FREEZE || c == W_LEN || c == W_LENM || c == W_KEYSM || c == W_RECV {
+        a := fE(mut st, fb, if c == W_RECV { W_C } else { W_E })
+        return if a < 0 { -1 } else { node(mut st, c, nc(mut st, a), a, 0, 0) }
+    }
+    // 型 1 つ
+    if c == W_NIL {
+        t := fT(mut st, fb, W_T)
+        return if t < 0 { -1 } else { node(mut st, c, 0, t, 0, 0) }
+    }
+    // 型 + 式（inl r e / inr l e / ann e t / label t e）
+    if c == W_INL || c == W_INR || c == W_ANN || c == W_LABEL {
+        t := fT(mut st, fb, if c == W_INL { W_R } else if c == W_INR { W_L } else { W_T })
+        e := fE(mut st, fb, W_E)
+        if t < 0 || e < 0 {
+            return -1
+        }
+        return if c == W_ANN { node(mut st, c, nc(mut st, e), e, t, 0) } else { node(mut st, c, nc(mut st, e), t, e, 0) }
+    }
+    if c == W_CALL || c == W_CALLM || c == W_FNREF {
+        f := fN(mut st, fb, W_F)
+        ts := tsOf(mut st, fb)
+        if f < 0 || ts == -2 {
+            return -1
+        }
+        if c == W_FNREF {
+            return node(mut st, c, 0, f, ts, 0)
+        }
+        e := fE(mut st, fb, W_E)
+        return if e < 0 { -1 } else { node(mut st, c, nc(mut st, e), f, ts, e) }
+    }
+    if c == W_STRLIT {
+        // Lean: bs は int の配列（getArr? >>= mapM getInt?）、r は Nat。検査はバイトを読まないので記録には r だけ持つ
+        r := fN(mut st, fb, W_R)
+        if r < 0 || sTag(mut st, fb, W_BS) != V_ARR {
+            return -1
+        }
+        hd := sVal(mut st, fb, W_BS)
+        mut x := if st.h[hd] > 0 { st.h[hd + 1] } else { -1 }
+        while x >= 0 {
+            if st.h[x] != V_NUM && st.h[x] != V_BIG {
+                return -1
+            }
+            x = st.h[x + 3]
+        }
+        return node(mut st, c, 0, r, 0, 0)
+    }
+    if c == W_BLOCK {
+        e := fE(mut st, fb, W_E)
+        if e < 0 {
+            return -1
+        }
+        if has(mut st, fb, W_T) {
+            t := fT(mut st, fb, W_T)
+            return if t < 0 { -1 } else { node(mut st, K_BLOCKR, nc(mut st, e), e, t, 0) }
+        }
+        return node(mut st, c, nc(mut st, e), e, 0, 0)
+    }
+    if c == W_JUMP {
+        n := fN(mut st, fb, W_N)
+        t := fT(mut st, fb, W_T)
+        e := fE(mut st, fb, W_E)
+        if n < 0 || t < 0 || e < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, e), n, t, e)
+    }
+    if c == W_ALLOC {
+        m := fB(mut st, fb, W_MUT)
+        e := fE(mut st, fb, W_E)
+        if m < 0 || e < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, e), m, e, 0)
+    }
+    if c == W_MKSLICE {
+        m := fB(mut st, fb, W_M)
+        t := fT(mut st, fb, W_T)
+        if m < 0 || t < 0 {
+            return -1
+        }
+        return node(mut st, c, 0, m, t, 0)
+    }
+    if c == W_INDEX {
+        e := fE(mut st, fb, W_E)
+        i := fE(mut st, fb, W_I)
+        if e < 0 || i < 0 {
+            return -1
+        }
+        mut t := -1
+        if has(mut st, fb, W_T) {
+            t = fT(mut st, fb, W_T)
+            if t < 0 {
+                return -1
+            }
+        }
+        return node(mut st, c, nc(mut st, e) | nc(mut st, i), e, i, t)
+    }
+    if c == W_MKMAP {
+        m := fB(mut st, fb, W_M)
+        if m < 0 {
+            return -1
+        }
+        if has(mut st, fb, W_CELL) {
+            cl := fT(mut st, fb, W_CELL)
+            return if cl < 0 { -1 } else { node(mut st, c, 0, m, cl, 0) }
+        }
+        kt := fT(mut st, fb, W_KEY)
+        vt := fT(mut st, fb, W_T)
+        if kt < 0 || vt < 0 {
+            return -1
+        }
+        o := mk(mut st, TOpt, vt, 0, 0)
+        cl := mk(mut st, TPr, kt, o, 0)
+        return node(mut st, c, 0, m, cl, 0)
+    }
+    if c == W_GETM || c == W_DELM {
+        t := fT(mut st, fb, W_T)
+        e := fE(mut st, fb, W_E)
+        k := fE(mut st, fb, W_KEY)
+        if t < 0 || e < 0 || k < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, e) | nc(mut st, k), t, e, k)
+    }
+    if c == W_PARCH {
+        t := fT(mut st, fb, W_T)
+        a := fE(mut st, fb, W_E1)
+        b := fE(mut st, fb, W_E2)
+        if t < 0 || a < 0 || b < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, a) | nc(mut st, b), t, a, b)
+    }
+    if c == W_NEWCHAN {
+        rc := fN(mut st, fb, W_RC)
+        t := fT(mut st, fb, W_T)
+        if rc < 0 || t < 0 {
+            return -1
+        }
+        return node(mut st, c, 1, rc, t, 0)
+    }
+    return -1
+}
+
+// genRec は枠 fb の立っている欄を汎用の記録 [n, (語, tag, val, gen)…] に写す
+func genRec(st mut S, fb int) int {
+    mut n := 0
+    mut w := 1
+    while w < NW {
+        if has(mut st, fb, w) {
+            n += 1
+        }
+        w += 1
+    }
+    at := len(st.h)
+    st.h = append(st.h, n)
+    w = 1
+    while w < NW {
+        if has(mut st, fb, w) {
+            s := slotOf(fb, w)
+            st.h = append(st.h, w)
+            st.h = append(st.h, st.h[s + 1])
+            st.h = append(st.h, st.h[s + 2])
+            st.h = append(st.h, st.h[s + 3])
+        }
+        w += 1
+    }
+    return at
+}
+
+// gField は汎用の記録 g の語 w の欄（[tag, val, gen] の先頭の添字。無ければ -1）
+func gField(st mut S, g int, w int) int {
+    if g < 0 {
+        return -1
+    }
+    mut i := 0
+    while i < st.h[g] {
+        at := g + 1 + i * 4
+        if st.h[at] == w {
+            return at + 1
+        }
+        i += 1
+    }
+    return -1
+}
+
+func isWs(c int) bool {
+    return c == 32 || c == 9 || c == 10 || c == 13
+}
+
+func skipWs(src []int, i0 int) int {
+    mut i := i0
+    while i < len(src) && isWs(src[i]) {
+        i += 1
+    }
+    return i
+}
+
+func isDigit(c int) bool {
+    return c >= 48 && c <= 57
+}
+
+// Parsed は parse の結果。ok = false は parse error
+type Parsed struct {
+    ok bool
+    tag int
+    val int
+    gen int
+}
+
+// maxDepth は入力の入れ子の最大の深さ（文字列の中は数えない）。作業の枠の大きさを決める
+func maxDepth(src []int) int {
+    mut d := 0
+    mut m := 0
+    mut i := 0
+    mut instr := false
+    while i < len(src) {
+        c := src[i]
+        if instr {
+            if c == 92 {
+                i += 1
+            } else if c == 34 {
+                instr = false
+            }
+        } else if c == 34 {
+            instr = true
+        } else if c == 123 || c == 91 {
+            d += 1
+            if d > m {
+                m = d
+            }
+        } else if c == 125 || c == 93 {
+            d -= 1
+        }
+        i += 1
+    }
+    return m
+}
+
+// parseJson は src 全体を 1 つの JSON 値として読む（反復）
+func parseJson(st mut S, src []int) Parsed {
+    bad := Parsed{false, 0, 0, -1}
+    n := len(src)
+    mut i := skipWs(src, 0)
+    mut dep := 0
+    mut have := false
+    mut vt := 0
+    mut vv := 0
+    mut vg := -1
+    // 次に読むのが object のキーか（'{' か ',' の直後）
+    mut wantKey := false
+    while true {
+        if wantKey {
+            wantKey = false
+            if i >= n || src[i] != 34 {
+                return bad
+            }
+            s := i + 1
+            mut j := s
+            mut esc := false
+            while j < n && src[j] != 34 {
+                if src[j] == 92 {
+                    esc = true
+                    j += 1
+                }
+                j += 1
+            }
+            if j >= n {
+                return bad
+            }
+            fb := frameAt(mut st, dep)
+            st.h[fb + 2] = if esc { 0 } else { wordOf(mut st, src, s, j) }
+            i = skipWs(src, j + 1)
+            if i >= n || src[i] != 58 {
+                return bad
+            }
+            i = skipWs(src, i + 1)
+            continue
+        }
+        if !have {
+            if i >= n {
+                return bad
+            }
+            c := src[i]
+            if c == 123 || c == 91 {
+                dep += 1
+                fb := frameAt(mut st, dep)
+                st.h[fb] = if c == 123 { C_OBJ } else { C_ARR }
+                sp := st.h[G_STAMP] + 1
+                st.h[G_STAMP] = sp
+                st.h[fb + 1] = sp
+                st.h[fb + 2] = 0
+                st.h[fb + 3] = 0
+                st.h[fb + 4] = -1
+                st.h[fb + 5] = -1
+                i = skipWs(src, i + 1)
+                if i < n && src[i] == (if c == 123 { 125 } else { 93 }) {
+                    i += 1
+                    // 空の object / 配列は閉じる処理へ（下の close）
+                } else {
+                    if c == 123 {
+                        wantKey = true
+                    }
+                    continue
+                }
+            } else if c == 34 {
+                s := i + 1
+                mut j := s
+                mut esc := false
+                while j < n && src[j] != 34 {
+                    if src[j] == 92 {
+                        esc = true
+                        j += 1
+                    }
+                    j += 1
+                }
+                if j >= n {
+                    return bad
+                }
+                vt = V_STR
+                vv = if esc { 0 } else { wordOf(mut st, src, s, j) }
+                vg = -1
+                i = j + 1
+                have = true
+                continue
+            } else if c == 45 || isDigit(c) {
+                mut j := i
+                neg := c == 45
+                if neg {
+                    j += 1
+                }
+                if j >= n || !isDigit(src[j]) {
+                    return bad
+                }
+                mut x := 0
+                mut big := false
+                while j < n && isDigit(src[j]) {
+                    dg := src[j] - 48
+                    if x > (9223372036854775807 - dg) / 10 {
+                        big = true
+                    } else {
+                        x = x * 10 + dg
+                    }
+                    j += 1
+                }
+                mut frac := false
+                if j < n && src[j] == 46 {
+                    frac = true
+                    j += 1
+                    if j >= n || !isDigit(src[j]) {
+                        return bad
+                    }
+                    while j < n && isDigit(src[j]) {
+                        j += 1
+                    }
+                }
+                if j < n && (src[j] == 101 || src[j] == 69) {
+                    frac = true
+                    j += 1
+                    if j < n && (src[j] == 43 || src[j] == 45) {
+                        j += 1
+                    }
+                    if j >= n || !isDigit(src[j]) {
+                        return bad
+                    }
+                    while j < n && isDigit(src[j]) {
+                        j += 1
+                    }
+                }
+                vt = if frac { V_FRAC } else if big { V_BIG } else { V_NUM }
+                vv = if neg { 0 - x } else { x }
+                vg = -1
+                i = j
+                have = true
+                continue
+            } else if c == 116 && i + 4 <= n && src[i + 1] == 114 && src[i + 2] == 117 && src[i + 3] == 101 {
+                vt = V_TRUE
+                vv = 0
+                vg = -1
+                i += 4
+                have = true
+                continue
+            } else if c == 102 && i + 5 <= n && src[i + 1] == 97 && src[i + 2] == 108 && src[i + 3] == 115 && src[i + 4] == 101 {
+                vt = V_FALSE
+                vv = 0
+                vg = -1
+                i += 5
+                have = true
+                continue
+            } else if c == 110 && i + 4 <= n && src[i + 1] == 117 && src[i + 2] == 108 && src[i + 3] == 108 {
+                vt = V_NULL
+                vv = 0
+                vg = -1
+                i += 4
+                have = true
+                continue
+            } else {
+                return bad
+            }
+        }
+        if have {
+            // 値を 1 つ持っている: 親の枠へ渡す
+            if dep == 0 {
+                i = skipWs(src, i)
+                if i != n {
+                    return bad
+                }
+                return Parsed{true, vt, vv, vg}
+            }
+            fb := frameAt(mut st, dep)
+            if st.h[fb] == C_OBJ {
+                w := st.h[fb + 2]
+                if w > 0 {
+                    s := slotOf(fb, w)
+                    st.h[s] = st.h[fb + 1]
+                    st.h[s + 1] = vt
+                    st.h[s + 2] = vv
+                    st.h[s + 3] = vg
+                }
+            } else {
+                cell := rec4(mut st, vt, vv, vg, -1)
+                if st.h[fb + 4] < 0 {
+                    st.h[fb + 4] = cell
+                } else {
+                    st.h[st.h[fb + 5] + 3] = cell
+                }
+                st.h[fb + 5] = cell
+                st.h[fb + 3] = st.h[fb + 3] + 1
+            }
+            have = false
+            i = skipWs(src, i)
+            if i >= n {
+                return bad
+            }
+            if src[i] == 44 {
+                i = skipWs(src, i + 1)
+                if st.h[fb] == C_OBJ {
+                    wantKey = true
+                }
+                continue
+            }
+            if src[i] != (if st.h[fb] == C_OBJ { 125 } else { 93 }) {
+                return bad
+            }
+            i += 1
+        }
+        // close: 枠 dep の object / 配列を値にする
+        fb := frameAt(mut st, dep)
+        if st.h[fb] == C_ARR {
+            vt = V_ARR
+            vv = rec4(mut st, st.h[fb + 3], st.h[fb + 4], 0, 0)
+            vg = -1
+        } else {
+            vg = if dep <= 3 { genRec(mut st, fb) } else { -1 }
+            kt := sTag(mut st, fb, W_K)
+            if kt == 0 {
+                vt = V_OBJ
+                vv = 0
+            } else if kt != V_STR {
+                vt = V_ERR
+                vv = 0
+            } else {
+                k := sVal(mut st, fb, W_K)
+                if isExprKind(k) {
+                    e := buildExpr(mut st, fb, k)
+                    vt = if e < 0 { V_ERR } else { V_EXPR }
+                    vv = e
+                } else if isTyKind(k) {
+                    t := buildTy(mut st, fb, k)
+                    vt = if t < 0 { V_ERR } else { V_TY }
+                    vv = t
+                } else {
+                    vt = V_ERR
+                    vv = 0
+                }
+            }
+        }
+        dep -= 1
+        have = true
+    }
+    return bad
+}

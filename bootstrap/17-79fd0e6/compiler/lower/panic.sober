@@ -1,0 +1,380 @@
+package lower
+
+// panic の観測性 第一便（NOTES — ユーザー裁定 2026-10-03）: 閉世界で panic しうる点を lower が全部数え、点の番号 → 種類 + file:line:col の表を
+// 実行ファイルに焼く。死ぬときは stderr に 1 行（`panic: index out of range at lexer/token.sober:84:12`）を書いてから exit 101。
+// 点の番号は IR の既存の op で運ぶ（`call @rt.panic(const 番号)` の後に今までどおり `exit 101` — IR のテキスト形式は変えない: stage1 の
+// 正規バックエンドが同じ IR テキストを建てる照合〔elfeq〕を保つ）。表は大域 @rt.psites（1 点 1 語 — 種類 | ファイル << 8 | 行 << 24 | 列 << 48）。
+// region の超過（exit 102）は rt.panic_mem（種類）が深度とスロットごとの使用量を stderr に書く（region のメタから — madvise の高水位と同じ座標）
+
+import "desugar"
+import "diag"
+import "loader"
+import "lexer"
+import "std/io"
+import "std/iter"
+import "std/table"
+
+// 点の種類（rt.panic の文面の番号）
+const PK_INDEX = 1     // 添字が範囲外
+const PK_SLICE = 2     // 部分列の境界が範囲外
+const PK_BYTE = 3      // byte への変換が 0〜255 の外
+const PK_SHIFT = 4     // シフトの量が負
+const PK_DIV = 5       // ゼロ除算（/ と %）
+const PK_EXPLICIT = 6  // 裸の `panic()`（廃止 — loader が拒否するので出ない。番号と文面は rt.panic の IR を変えないために残す）
+const PK_UNREACH = 7   // 到達しないはずの点（覆っていない switch の外れ）
+const PK_FTOINT = 9   // float → int の変換で NaN・±Inf・int の範囲外（language.md 37 節）
+const PK_LABEL = 8     // `panic(L{…})` — `panic: L{…}` までは点で印字済み（rt.panic は ` at …` だけ）
+
+// region の超過の種類（rt.panic_mem）
+const PM_DEPTH = 1     // region の入れ子が深度の上限を超えた
+const PM_SLOT = 2      // 1 つの region がスロットの容量を超えた
+
+// panicSite は点 at（種類 kind）の panic: 今のブロックを rt.panic(番号) → exit 101 で閉じる（呼び手は cur を次のブロックに置き直す）
+func panicSite(st mut St, kind int, at desugar.NodeRef) {
+    needPanic(mut st)
+    pos := posOf(mut st, at)
+    id := table.Len(mut st.psites) / 3
+    table.Push(mut st.psites, kind)
+    table.Push(mut st.psites, pos.file)
+    table.Push(mut st.psites, pos.tok)
+    call(mut st, st.rtPanic, list1(mut st, iconst(mut st, id)))
+    exit(mut st, PANIC)
+}
+
+// panicCall は `panic(…)`（loader の panicx.sober が写した形 — 実引数は [ラベルの名前の文字列] か [名前, 欄の struct の composite]）:
+// 欄の値を書いた順に評価してから、標準エラーへ `panic: L{a: 1, s: "x"}` を書き（欄は宣言順・string は引用 + エスケープ）、rt.panic が ` at file:line:col` を足す。
+// 実引数なし = 裸の `panic()`（廃止 — loader が拒否するのでここには来ない）
+func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    n := lenL(mut st, args)
+    if n == 0 {
+        panicSite(mut st, PK_EXPLICIT, at)
+        return -1, nil
+    }
+    mut sv := Val{t: -1, v: -1}
+    if n == 2 {
+        sv = expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, sv.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, sv.t, TStruct) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+    }
+    toStderr(mut st, globaladdr(mut st, st.meta))
+    printLit(mut st, "panic: ")
+    call(mut st, st.rtPstr, list1(mut st, strlit(mut st, sA(nodeOf(mut st, latN(mut st, args, 0))))))
+    printLit(mut st, "{")
+    if n == 2 {
+        fs := hgetL(mut st, hget(mut st, sv.t + 1) + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            f := latI(mut st, fs, i)
+            if i > 0 {
+                printLit(mut st, ", ")
+            }
+            call(mut st, st.rtPstr, list1(mut st, strlit(mut st, hgetS(mut st, f))))
+            printLit(mut st, ": ")
+            t := hget(mut st, f + 1)
+            v := loadVal(mut st, sv.v, hget(mut st, f + 2), t)
+            if isString(mut st, t) {
+                needQstr(mut st)
+                call(mut st, st.rtPqstr, list1(mut st, v))
+            } else if isTag(mut st, t, TBool) {
+                choose(mut st, v, []string{"false", "true"}, 0)
+            } else {
+                call(mut st, st.rtPint, list1(mut st, v))
+            }
+        }
+    }
+    printLit(mut st, "}")
+    panicSite(mut st, PK_LABEL, at)
+    return -1, nil
+}
+
+func needQstr(st mut St) {
+    if st.rtPqstr == -1 {
+        st.rtPqstr = addFunc(mut st, int(strLit(mut st, "rt.print_qstr")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    }
+}
+
+// buildPrintQstr は rt.print_qstr(s) の本体: `"` + 中身（`"` と `\` は前に `\`・改行は `\n`）+ `"`
+func buildPrintQstr(st mut St) {
+    begin(mut st, st.rtPqstr)
+    p := itop(mut st, load(mut st, 0, 0))
+    n := load(mut st, 0, 1)
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '"')))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    esc := newBlock(mut st)
+    nl := newBlock(mut st)
+    plain := newBlock(mut st)
+    other := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    c := load8(mut st, gepByte(mut st, p, i), 0)
+    condbr(mut st, bin(mut st, BOr, cmp(mut st, CEq, c, iconst(mut st, '"')), cmp(mut st, CEq, c, iconst(mut st, '\\'))), esc, -1, other, -1)
+    setCur(mut st, esc)
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\\')))
+    br(mut st, plain, -1)
+    setCur(mut st, other)
+    condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, '\n')), nl, -1, plain, -1)
+    setCur(mut st, nl)
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\\')))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 'n')))
+    br(mut st, next, -1)
+    setCur(mut st, plain)
+    call(mut st, st.rtPchar, list1(mut st, c))
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '"')))
+    ret(mut st, -1)
+}
+
+func needPanic(st mut St) {
+    if st.rtPanic == -1 {
+        st.rtPanic = addFunc(mut st, int(strLit(mut st, "rt.panic")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    }
+}
+
+// memPanic は region の超過（種類 kind）の死亡: rt.panic_mem → exit 102
+func memPanic(st mut St, kind int) {
+    call(mut st, st.rtPanicMem, list1(mut st, iconst(mut st, kind)))
+    exit(mut st, PANIC_MEM)
+}
+
+// buildPanicMem は rt.panic_mem(種類) の本体: 種類の 1 行と、今の深度・深度ごとの region の高水位（high_water — スロットの先頭から bump まで・バイト）を
+// stderr へ書いて exit 102（region のメタ — madvise の高水位と同じ座標）
+func buildPanicMem(st mut St) {
+    begin(mut st, st.rtPanicMem)
+    kind := 0
+    meta := globaladdr(mut st, st.meta)
+    toStderr(mut st, meta)
+    // 綴りは将来の panic のラベル（第二便 — panic(RegionExceeded{…}) の表層・NOTES の次の小波で裁定済み）の欄に揃える:
+    // `panic: RegionExceeded{cause: <depth_limit | slot_capacity>, depth: <今の深度>}` + region ごとに `  region{depth: d, high_water: バイト}`
+    printLit(mut st, "panic: RegionExceeded{cause: ")
+    choose(mut st, kind, []string{"depth_limit", "slot_capacity"}, 1)
+    printLit(mut st, ", depth: ")
+    depth := load(mut st, meta, W_DEPTH)
+    call(mut st, st.rtPint, list1(mut st, depth))
+    printLit(mut st, "}\n")
+    bs := load(mut st, meta, W_SLOTS)
+    size := load(mut st, meta, W_SLOT_SIZE)
+    // 深度 1 から今の深度まで、使用量が 0 でない region を最大 16 行（残りは数だけ）
+    loop := newBlock(mut st)
+    d := param(mut st, loop, TyI64)
+    shown := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    show := newBlock(mut st)
+    skip := newBlock(mut st)
+    next := newBlock(mut st)
+    nshown := param(mut st, next, TyI64)
+    done := newBlock(mut st)
+    dshown := param(mut st, done, TyI64)
+    br(mut st, loop, list2(mut st, iconst(mut st, 1), iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, d, depth), body, -1, done, list1(mut st, shown))
+    setCur(mut st, body)
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, d), W_BUMP), bin(mut st, BAdd, bs, bin(mut st, BMul, d, size)))
+    condbr(mut st, cmp(mut st, CGt, used, iconst(mut st, 0)), show, -1, next, list1(mut st, shown))
+    setCur(mut st, show)
+    condbr(mut st, cmp(mut st, CLt, shown, iconst(mut st, 16)), skip, -1, next, list1(mut st, bin(mut st, BAdd, shown, iconst(mut st, 1))))
+    setCur(mut st, skip)
+    printLit(mut st, "  region{depth: ")
+    call(mut st, st.rtPint, list1(mut st, d))
+    printLit(mut st, ", high_water: ")
+    call(mut st, st.rtPint, list1(mut st, used))
+    printLit(mut st, "}\n")
+    br(mut st, next, list1(mut st, bin(mut st, BAdd, shown, iconst(mut st, 1))))
+    setCur(mut st, next)
+    br(mut st, loop, list2(mut st, bin(mut st, BAdd, d, iconst(mut st, 1)), nshown))
+    setCur(mut st, done)
+    more := newBlock(mut st)
+    fin := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, dshown, iconst(mut st, 16)), more, -1, fin, -1)
+    setCur(mut st, more)
+    printLit(mut st, "  … ")
+    call(mut st, st.rtPint, list1(mut st, bin(mut st, BSub, dshown, iconst(mut st, 16))))
+    printLit(mut st, " more regions with high_water > 0\n")
+    br(mut st, fin, -1)
+    setCur(mut st, fin)
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, PANIC_MEM)
+}
+
+// buildPanic は点の表の大域と rt.panic の本体を組む（program の最後 — 点が 1 つも無ければ何もしない）。行・列はソースを読み直して出す
+// （loader.SourceFs — 診断の位置と同じ読み方。読めないファイルは行 0・列 = 字句の番号）
+func buildPanic(st mut St, p loader.Program) {
+    buildPanicMem(mut st)
+    if st.rtPqstr != -1 {
+        buildPrintQstr(mut st)
+    }
+    if st.rtPanic == -1 {
+        return
+    }
+    n := table.Len(mut st.psites) / 3
+    // ファイルごとに 1 回だけ字句化して、点の字句の行・列を出す
+    ws := listN(mut st, n)
+    // 点のあるファイル（初出の順）
+    seen := listN(mut st, len(p.file_path))
+    mut files := mut []int{}
+    for i <- iter.Range(0, n) {
+        f := table.Get(mut st.psites, i * 3 + 1)
+        if f >= 0 && f < len(p.file_path) && hget(mut st, seen + 1 + f) == 0 {
+            hset(mut st, seen + 1 + f, 1)
+            files = append(files, f)
+        }
+    }
+    fs := freeze(files)
+    for k <- iter.Range(0, len(fs)) {
+        f := fs[k]
+        lcs := tokLineCols(p, f)
+        for i <- iter.Range(0, n) {
+            if table.Get(mut st.psites, i * 3 + 1) == f {
+                tok := table.Get(mut st.psites, i * 3 + 2)
+                // 字句が引けなければ 行 0・列 = 字句の番号
+                lc := if tok >= 0 && tok * 2 + 1 < len(lcs) { lcs[tok * 2] | (minI(lcs[tok * 2 + 1], 32767) << 24) } else { minI(if tok < 0 { 0 } else { tok }, 32767) << 24 }
+                kind := table.Get(mut st.psites, i * 3)
+                hset(mut st, ws + 1 + i, kind | (k << 8) | (lc << 24))
+            }
+        }
+    }
+    g := addGlobalInit(mut st, int(strLit(mut st, "rt.psites")), n, ws)
+    begin(mut st, st.rtPanic)
+    id := 0
+    meta := globaladdr(mut st, st.meta)
+    w := load(mut st, gepWord(mut st, globaladdr(mut st, g), id), 0)
+    kind := bin(mut st, BAnd, w, iconst(mut st, 255))
+    fsl := bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 8)), iconst(mut st, 65535))
+    line := bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 24)), iconst(mut st, 16777215))
+    col := bin(mut st, BAnd, bin(mut st, BSar, w, iconst(mut st, 48)), iconst(mut st, 32767))
+    toStderr(mut st, meta)
+    // `panic(L{…})` の点（PK_LABEL）は `panic: L{…}` を点で印字済み。分岐はラベルの点があるプログラムにだけ出す（無いプログラムの IR は第一便のまま）
+    mut labels := false
+    for i <- iter.Range(0, n) {
+        labels = labels || table.Get(mut st.psites, i * 3) == PK_LABEL
+    }
+    // float → int の点（PK_FTOINT）があるプログラムでだけ文面の表を伸ばす（無いプログラムの IR は不変）
+    mut ftoi := false
+    for i <- iter.Range(0, n) {
+        ftoi = ftoi || table.Get(mut st.psites, i * 3) == PK_FTOINT
+    }
+    if labels {
+        head := newBlock(mut st)
+        tail := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, kind, iconst(mut st, PK_LABEL)), tail, -1, head, -1)
+        setCur(mut st, head)
+        printLit(mut st, "panic: ")
+        choose(mut st, kind, panicTextsFor(ftoi), 1)
+        br(mut st, tail, -1)
+        setCur(mut st, tail)
+    } else {
+        printLit(mut st, "panic: ")
+        choose(mut st, kind, panicTextsFor(ftoi), 1)
+    }
+    printLit(mut st, " at ")
+    mut paths := mut []string{}
+    for k <- iter.Range(0, len(fs)) {
+        paths = append(paths, sitePath(p, fs[k]))
+    }
+    choose(mut st, fsl, freeze(paths), 0)
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, ':')))
+    call(mut st, st.rtPint, list1(mut st, line))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, ':')))
+    call(mut st, st.rtPint, list1(mut st, col))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    call(mut st, st.rtFlush, list0(mut st))
+    exit(mut st, PANIC)
+}
+
+// sitePath は点のファイルの綴り（置き場所に依らない — hermetic: main package のファイルは名前だけ・他は import のパス + "/" + 名前。
+// エントリの綴り〔相対 / 絶対〕や cwd を焼かない）
+func sitePath(p loader.Program, f int) string {
+    path := p.file_path[f]
+    b := bytes(path)
+    mut k := len(b)
+    while k > 0 && b[k - 1] != '/' {
+        k -= 1
+    }
+    base := string(b[k:len(b)]) catch path
+    pk := p.pkg_path[p.file_pkg[f]]
+    if pk == "main" {
+        return base
+    }
+    return pk + "/" + base
+}
+
+// panicTexts は種類の番号 − 1 の文面
+func panicTexts() []string {
+    return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached"}
+}
+
+// panicTextsFor は文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで）
+func panicTextsFor(ftoi bool) []string {
+    if !ftoi {
+        return panicTexts()
+    }
+    return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int"}
+}
+
+// toStderr は行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
+func toStderr(st mut St, meta int) {
+    call(mut st, st.rtFlush, list0(mut st))
+    store(mut st, meta, W_FD, iconst(mut st, 2))
+}
+
+// printLit は文字列 w を印字する（rt.print_str — 大域の文字列）
+func printLit(st mut St, w string) {
+    call(mut st, st.rtPstr, list1(mut st, strlit(mut st, strLit(mut st, w))))
+}
+
+// choose は v に合う文面を印字する（v = base + k のとき ts[k] — 比較の鎖）
+func choose(st mut St, v int, ts []string, base int) {
+    done := newBlock(mut st)
+    for k <- iter.Range(0, len(ts)) {
+        hit := newBlock(mut st)
+        next := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, base + k)), hit, -1, next, -1)
+        setCur(mut st, hit)
+        printLit(mut st, ts[k])
+        br(mut st, done, -1)
+        setCur(mut st, next)
+    }
+    br(mut st, done, -1)
+    setCur(mut st, done)
+}
+
+// tokLineCols は p のファイル f の各字句の [行, 列]（1 起点 — diag.Where と同じ数え方）の平らな列。ソースが読めなければ空
+func tokLineCols(p loader.Program, f int) []int {
+    src0, ok := loader.SourceFs(p, f, p.std_src)
+    // std の焼き込みの表を持たない Program（Manifest で読む道具 — lldump 等。std はファイルの置き場から）はファイルを直に読む
+    src := if ok { src0 } else { io.ReadFile(p.file_path[f]) catch []byte{} }
+    toks := lexer.Lex(src)
+    mut out := mut []int{}
+    mut line := 1
+    mut col := 1
+    mut at := 0
+    for t <- iter.Range(0, len(toks)) {
+        while at < toks[t].start && at < len(src) {
+            if src[at] == '\n' {
+                line += 1
+                col = 1
+            } else {
+                col += 1
+            }
+            at += 1
+        }
+        out = append(out, line)
+        out = append(out, col)
+    }
+    return freeze(out)
+}
+
+func minI(a int, b int) int {
+    return if a < b { a } else { b }
+}

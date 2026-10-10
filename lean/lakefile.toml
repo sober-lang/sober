@@ -1,0 +1,22 @@
+name = "FeatherweightSober"
+defaultTargets = ["FeatherweightSober"]
+
+[[lean_lib]]
+name = "FeatherweightSober"
+moreLeanArgs = ["--tstack=131072", "-DmaxHeartbeats=1000000"]
+
+[[lean_exe]]
+name = "sober-check"
+root = "Main"
+
+[[lean_exe]]
+name = "sober-gen"
+root = "GenMain"
+
+[[lean_lib]]
+name = "Extract"
+
+[[lean_exe]]
+name = "sober-extract"
+root = "ExtractMain"
+supportInterpreter = true

@@ -1,0 +1,20 @@
+package main
+
+// lexdump: 標準入力のソースを字句に分け、Zig 版 `sober lex` と同じ形（1 行 1 字句: 種類 開始 終わり 綴り）で
+// 標準出力に書く。selfhost の lexer 差分オラクル（scripts/selfhost_lex.sh）の Sober 側。
+// 形の本体は lexer.Dump（`sober lex` — compiler/app — と共有）
+
+import "std/io"
+import "lexer"
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("lexdump: cannot read /dev/stdin")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", lexer.Dump(src))
+    if werr != nil {
+        println("lexdump: cannot write /dev/stdout")
+    }
+}

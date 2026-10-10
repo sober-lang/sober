@@ -1,0 +1,524 @@
+package loader
+
+// パッケージローダ（src/loader.zig の写し — language.md 20 節「名前解決の最小形」）。
+// ファイル集合の読み込み → parse → package 構成（dir 名 = package 名）→ import 解決（未ロードの import を読み足して繰り返す）→
+// 循環の拒否 → expands の確定（名前付き関数型の引数）→ markMutDefs（呼び出しグラフの循環）→ 組み込み error の合成 → const の畳み込み。
+//
+// Zig 版との差（仮決め — selfhost-drafts の R8-2 / R8-3）:
+// - ディレクトリの列挙（readdir）と argv が無いので、入力は Manifest（entry・std の置き場・ファイル一覧）で受ける。
+//   package のディレクトリを読む = 一覧から dirname が一致するものをファイル名順に拾う
+// - std の焼き込みの代わりに、`std/` で始まる package は std の置き場から読む（一覧の `std/…` はその置き場の相対パス）
+// - 局所名の衝突（localnames）と式文の検査（exprstmt）はまだ写していない（受理の範囲が Zig 版より広い — 拒否側の検査は後の段）
+
+import "std/io"
+import "ast"
+import "lexer"
+import "parser"
+
+// Manifest は load の入力。files はルート相対のパス（ファイル名順に並んでいること）。
+// `std/` で始まるものは std_root の下から読む（それ以外はルート = cwd から）
+type Manifest struct {
+    entry []int
+    std_root []int
+    files [][]int
+}
+
+// Program は load の結果（Zig の ast.Program のうち loader が決める部分）。表は全部「ロード順」の平らな列
+type Program struct {
+    // ファイル（ロード順 — package ごとに連続する）
+    trees []ast.Tree
+    file_pkg []int
+    // package（ロード順）。files は [pkg_lo, pkg_hi)
+    pkg_path [][]int
+    pkg_name [][]int
+    pkg_lo []int
+    pkg_hi []int
+    // import 表（package ごと、参照名は package 内で一意）
+    imp_pkg []int
+    imp_ref [][]int
+    imp_path [][]int
+    // 関数（ファイル順 × 宣言順）。callees は [fn_clo, fn_chi) が callees の範囲
+    fn_file []int
+    fn_node []int
+    fn_expands []bool
+    fn_mut_def []bool
+    fn_closed []bool
+    fn_has_try []bool
+    fn_clo []int
+    fn_chi []int
+    callees [][]int
+    // const（ファイル順 × 宣言順）
+    c_file []int
+    c_node []int
+    c_value []int
+    c_has []bool
+    c_dict []bool
+    // 組み込み error の variant（ロード順 × ファイル順 × 宣言順）
+    err_name [][]int
+    err_pkg []int
+    // 失敗の理由（成功なら空）
+    fail []int
+    // ファイルのパスと std の印（trees と同じ順 — 診断の位置を引くためにソースを読み直す: SourceFs）
+    file_path [][]int
+    file_std []bool
+}
+
+func failed(msg string) Program {
+    mut p := Program{}
+    p.fail = bytes(msg)
+    return p
+}
+
+// has は xs に x があるか
+func has(xs [][]int, x []int) bool {
+    mut i := 0
+    while i < len(xs) {
+        if Eq(xs[i], x) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// isStd は予約 prefix `std/` の package か
+func isStd(p []int) bool {
+    return HasPrefix(p, "std/")
+}
+
+// readSrc はファイルを読む（std は置き場の下から。fsm = LoadFs のときは焼き込んだ表 sm から）
+func readSrc(m Manifest, fsm bool, sm map[string]string, path []int, std bool) ([]int, bool) {
+    if std && fsm {
+        sk, kerr := string(path)
+        if kerr != nil {
+            return []int{}, false
+        }
+        v := sm[sk]
+        if v != nil {
+            return bytes(v), true
+        }
+        return []int{}, false
+    }
+    if std {
+        return readPath(cat(cat(m.std_root, bytes("/")), path))
+    }
+    return readPath(path)
+}
+
+func readPath(full []int) ([]int, bool) {
+    name, err := string(full)
+    if err != nil {
+        return []int{}, false
+    }
+    b, rerr := io.ReadFile(name)
+    if rerr != nil {
+        return []int{}, false
+    }
+    return b, true
+}
+
+// parseFile は 1 ファイルを読んで parse する（失敗なら理由の綴り、成功なら ""）。
+// 1 ファイル 1 region（language.md 21 節の「長寿命の結果 + フェーズ scratch」）: ソースのバイト列・字句列・parser の作業領域は
+// この関数の region に置いて捨て、戻りの境界コピーで木（節の表とデータプール）だけを呼び手へ持ち出す
+func parseFile(m Manifest, fsm bool, sm map[string]string, path []int, std bool) (ast.Tree, string) {
+    src, ok := readSrc(m, fsm, sm, path, std)
+    if !ok {
+        return ast.Tree{[]ast.Node{}, []int{}, 0 - 1}, "cannot read file"
+    }
+    t, pok := parser.Parse(src, lexer.Lex(src))
+    if !pok {
+        return t, "source does not match the grammar"
+    }
+    return t, ""
+}
+
+// dirFiles は package のディレクトリ dir の .sober ファイル（ファイル名順）。Manifest なら一覧のうち dirname が dir のもの（一覧の順）、
+// fsm（LoadFs）なら io.ReadDir の通常ファイルで .sober で終わるもの（Zig 版 readPkgDir と同じ規則 — ReadDir は名前のバイト順）。
+// fsm の std は焼き込んだ表 sm のキーから（keysm の段 — stage2 は cwd の std/ に依存しない）
+func dirFiles(m Manifest, fsm bool, sm map[string]string, dir []int) [][]int {
+    if fsm && isStd(dir) {
+        return stdFiles(sm, dir)
+    }
+    if fsm {
+        return readPkgDir(dir)
+    }
+    mut out := mut [][]int{}
+    mut i := 0
+    while i < len(m.files) {
+        f := m.files[i]
+        if Eq(Dirname(f), dir) && !Eq(f, dir) {
+            out = append(out, f)
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// readPkgDir はディレクトリ dir の通常ファイルで名前が .sober で終わるもの（パス = dir/名前、名前のバイト順）。開けなければ空
+func readPkgDir(dir []int) [][]int {
+    mut out := mut [][]int{}
+    name, nerr := string(dir)
+    if nerr != nil {
+        return freeze(out)
+    }
+    es, err := io.ReadDir(name)
+    if err != nil {
+        return freeze(out)
+    }
+    mut i := 0
+    while i < len(es) {
+        isFile := switch es[i].Kind {
+        case io.File{}: true
+        default: false
+        }
+        nm := bytes(es[i].Name)
+        if isFile && HasSuffix(nm, ".sober") {
+            out = append(out, cat(cat(dir, bytes("/")), nm))
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// stdFiles は焼き込んだ表 sm のキーのうち dir 直下の .sober ファイル（パスのバイト順 — readPkgDir の名前順と同じ並び）
+func stdFiles(sm map[string]string, dir []int) [][]int {
+    mut out := mut [][]int{}
+    ks := keys(sm)
+    mut i := 0
+    while i < len(ks) {
+        p := bytes(ks[i])
+        if Eq(Dirname(p), dir) && HasSuffix(p, ".sober") {
+            // 挿入ソート（表の順は @embed の走査順 — 並びの約束をここで閉じる）
+            out = append(out, p)
+            mut j := len(out) - 1
+            while j > 0 && Less(out[j], out[j - 1]) {
+                t := out[j]
+                out[j] = out[j - 1]
+                out[j - 1] = t
+                j -= 1
+            }
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// isDir は path が開けるディレクトリか（Zig 版 readEntry の openDir と同じ判定）
+func isDir(path []int) bool {
+    name, nerr := string(path)
+    if nerr != nil {
+        return false
+    }
+    es, err := io.ReadDir(name)
+    return err == nil
+}
+
+// Load は Manifest の entry（.sober ファイルか main package のディレクトリ）から Program を組む（失敗なら fail が空でない）
+func Load(m Manifest) Program {
+    return load(m, false, map[string]string{})
+}
+
+// LoadFs は stage2 の CLI の入口: entry（.sober ファイルか main package のディレクトリ — cwd 相対）から、package のディレクトリを
+// io.ReadDir で読み、`std/` の中身は焼き込んだ表 sm（パス → ソース — `@embed("std/**/*.sober")`）から取る。
+// std の package のファイル一覧も表のキーから引く（keysm の段 — R35-2 の暫定 ReadDir を撤去）
+func LoadFs(entry []int, sm map[string]string) Program {
+    return load(Manifest{entry, []int{}, [][]int{}}, true, sm)
+}
+
+// SourceFs は LoadFs で読んだ Program p の f 番目のファイルのソースを読み直す（診断の位置を引く — 読めなければ ok = false）
+func SourceFs(p Program, f int, sm map[string]string) ([]int, bool) {
+    if f < 0 || f >= len(p.file_path) {
+        return []int{}, false
+    }
+    return readSrc(Manifest{p.file_path[f], []int{}, [][]int{}}, true, sm, p.file_path[f], p.file_std[f])
+}
+
+func load(m Manifest, fsm bool, sm map[string]string) Program {
+    // ── ファイル集合（未ロードの import を読み足して繰り返す — Zig の linkLoop）──
+    mut trees := mut []ast.Tree{}
+    mut fpkg := mut [][]int{}
+    mut fpath := mut [][]int{}
+    mut fstd := mut []bool{}
+    main := bytes("main")
+    entryIsFile := if fsm { !isDir(m.entry) } else { has(m.files, m.entry) }
+    if entryIsFile {
+        t, why := parseFile(m, fsm, sm, m.entry, false)
+        if why != "" {
+            return failed(why)
+        }
+        trees = append(trees, t)
+        fpkg = append(fpkg, main)
+        fpath = append(fpath, m.entry)
+        fstd = append(fstd, false)
+    } else {
+        fs := dirFiles(m, fsm, sm, m.entry)
+        if len(fs) == 0 {
+            return failed("cannot open package directory")
+        }
+        mut i := 0
+        while i < len(fs) {
+            t, why := parseFile(m, fsm, sm, fs[i], false)
+            if why != "" {
+                return failed(why)
+            }
+            trees = append(trees, t)
+            fpkg = append(fpkg, main)
+            fpath = append(fpath, fs[i])
+            fstd = append(fstd, false)
+            i += 1
+        }
+    }
+    mut seen := mut [][]int{}
+    mut going := true
+    while going {
+        // 1 巡: 全ファイルの import のうち、まだ package が無く試してもいないもの（出現順）
+        loaded := freeze(fpkg)
+        mut pending := mut [][]int{}
+        mut i := 0
+        while i < len(trees) {
+            t := trees[i]
+            imps := t.nodes[t.file].b
+            mut k := 0
+            while k < ast.ListLen(t, imps) {
+                path := Str(t, t.nodes[ast.ListAt(t, imps, k)].b)
+                if !has(loaded, path) && !has(freeze(seen), path) {
+                    pending = append(pending, path)
+                }
+                k += 1
+            }
+            i += 1
+        }
+        mut j := 0
+        while j < len(pending) {
+            p := pending[j]
+            if !has(freeze(seen), p) {
+                seen = append(seen, p)
+                fs := dirFiles(m, fsm, sm, p)
+                if len(fs) == 0 {
+                    return failed(if isStd(p) { "no such std package" } else { "cannot open package directory" })
+                }
+                mut q := 0
+                while q < len(fs) {
+                    t, why := parseFile(m, fsm, sm, fs[q], isStd(p))
+                    if why != "" {
+                        return failed(why)
+                    }
+                    trees = append(trees, t)
+                    fpkg = append(fpkg, p)
+                    fpath = append(fpath, fs[q])
+                    fstd = append(fstd, isStd(p))
+                    q += 1
+                }
+            }
+            j += 1
+        }
+        going = len(pending) > 0
+    }
+    // `@embed("glob")` の const を「パス → 内容」の map リテラルに畳む（以降は辞書 const — 参照点で展開。節は末尾に足すだけなので既存の添字は動かない）
+    ts, ewhy := embedAll(freeze(trees))
+    if ewhy != "" {
+        return failed(ewhy)
+    }
+    fp := freeze(fpkg)
+
+    // ── package の表（ファイルの出現順。package のファイルは連続する）と package 名の一致 ──
+    mut ppath := mut [][]int{}
+    mut pname := mut [][]int{}
+    mut plo := mut []int{}
+    mut phi := mut []int{}
+    mut filePkg := mut []int{}
+    mut i := 0
+    while i < len(ts) {
+        t := ts[i]
+        pn := Str(t, t.nodes[t.file].a)
+        want := if Eq(fp[i], main) { main } else { Basename(fp[i]) }
+        if !Eq(pn, want) {
+            return failed("package name must match the directory name")
+        }
+        if i == 0 || !Eq(fp[i], fp[i - 1]) {
+            if len(plo) > 0 {
+                phi = append(phi, i)
+            }
+            ppath = append(ppath, fp[i])
+            pname = append(pname, pn)
+            plo = append(plo, i)
+        }
+        filePkg = append(filePkg, len(plo) - 1)
+        i += 1
+    }
+    phi = append(phi, len(ts))
+    paths := freeze(ppath)
+
+    // ── import 表（参照名 → path。同じ参照名で別の path は拒否）──
+    mut ipkg := mut []int{}
+    mut iref := mut [][]int{}
+    mut ipath := mut [][]int{}
+    mut pk := 0
+    while pk < len(paths) {
+        mut f := plo[pk]
+        while f < phi[pk] {
+            t := ts[f]
+            imps := t.nodes[t.file].b
+            mut k := 0
+            while k < ast.ListLen(t, imps) {
+                im := t.nodes[ast.ListAt(t, imps, k)]
+                path := Str(t, im.b)
+                ref := if im.a >= 0 { Str(t, im.a) } else { Basename(path) }
+                mut dup := false
+                mut e := 0
+                while e < len(ipkg) {
+                    if ipkg[e] == pk && Eq(iref[e], ref) {
+                        if !Eq(ipath[e], path) {
+                            return failed("import reference name collides (use an alias)")
+                        }
+                        dup = true
+                    }
+                    e += 1
+                }
+                if !dup {
+                    ipkg = append(ipkg, pk)
+                    iref = append(iref, ref)
+                    ipath = append(ipath, path)
+                }
+                k += 1
+            }
+            f += 1
+        }
+        pk += 1
+    }
+    cx := Cx{ts, freeze(filePkg), paths, freeze(plo), freeze(phi), freeze(ipkg), freeze(iref), freeze(ipath)}
+
+    // ── 循環 import の拒否（外せる package — import 先が全部外れたもの — を外していき、残れば循環）──
+    if cyclic(cx) {
+        return failed("import cycle")
+    }
+
+    // ── 関数: expands の確定・callees / has_try・markMutDefs ──
+    fs := scanFuncs(cx)
+    if fs.bad_noinline {
+        return failed("@noinline applies to a function with mut parameters and no function-typed parameters")
+    }
+
+    // ── 組み込み error（ロード順 × ファイル順 × 宣言順）──
+    mut ename := mut [][]int{}
+    mut epkg := mut []int{}
+    mut f := 0
+    while f < len(ts) {
+        t := ts[f]
+        tys := t.nodes[t.file].c
+        mut k := 0
+        while k < ast.ListLen(t, tys) {
+            td := t.nodes[ast.ListAt(t, tys, k)]
+            body := t.nodes[td.c]
+            if body.kind == ast.BError {
+                if holdsError(t, body.a) {
+                    return failed("an error label cannot hold an error")
+                }
+                ename = append(ename, Str(t, td.a))
+                epkg = append(epkg, cx.file_pkg[f])
+            }
+            k += 1
+        }
+        f += 1
+    }
+
+    // ── const の畳み込み ──
+    cs := foldConsts(cx, fs)
+    if !cs.ok {
+        return failed("const expression")
+    }
+
+    return Program{ts, cx.file_pkg, paths, freeze(pname), cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path,
+        fs.file, fs.node, fs.expands, fs.mut_def, fs.closed, fs.has_try, fs.clo, fs.chi, fs.callees,
+        cs.file, cs.node, cs.value, cs.has, cs.dict, freeze(ename), freeze(epkg), []int{}, freeze(fpath), freeze(fstd)}
+}
+
+// holdsError は error ラベルのフィールドの列 l に error / error? があるか（再帰型 — cause は V4 に無い）
+func holdsError(t ast.Tree, l int) bool {
+    mut i := 0
+    while i < ast.ListLen(t, l) {
+        mut ty := t.nodes[t.nodes[ast.ListAt(t, l, i)].b]
+        if ty.kind == ast.TOpt {
+            ty = t.nodes[ty.a]
+        }
+        if ty.kind == ast.TName && EqLit(Str(t, ty.a), "error") {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Cx は解決済みの表（load の後段が読む — 全部 imm）
+type Cx struct {
+    trees []ast.Tree
+    file_pkg []int
+    pkg_path [][]int
+    pkg_lo []int
+    pkg_hi []int
+    imp_pkg []int
+    imp_ref [][]int
+    imp_path [][]int
+}
+
+// pkgOf は path の package の番号（無ければ -1）
+func pkgOf(cx Cx, path []int) int {
+    mut i := 0
+    while i < len(cx.pkg_path) {
+        if Eq(cx.pkg_path[i], path) {
+            return i
+        }
+        i += 1
+    }
+    return 0 - 1
+}
+
+// importOf は package pk の参照名 ref の import 先 package（無ければ -1）
+func importOf(cx Cx, pk int, ref []int) int {
+    mut e := 0
+    while e < len(cx.imp_pkg) {
+        if cx.imp_pkg[e] == pk && Eq(cx.imp_ref[e], ref) {
+            return pkgOf(cx, cx.imp_path[e])
+        }
+        e += 1
+    }
+    return 0 - 1
+}
+
+func cyclic(cx Cx) bool {
+    n := len(cx.pkg_path)
+    mut gone := mut []bool{}
+    mut i := 0
+    while i < n {
+        gone = append(gone, false)
+        i += 1
+    }
+    mut left := n
+    mut progress := true
+    while progress && left > 0 {
+        progress = false
+        mut p := 0
+        while p < n {
+            if !gone[p] {
+                mut free := true
+                mut e := 0
+                while e < len(cx.imp_pkg) {
+                    if cx.imp_pkg[e] == p {
+                        d := pkgOf(cx, cx.imp_path[e])
+                        if d >= 0 && !gone[d] {
+                            free = false
+                        }
+                    }
+                    e += 1
+                }
+                if free {
+                    gone[p] = true
+                    left -= 1
+                    progress = true
+                }
+            }
+            p += 1
+        }
+    }
+    return left > 0
+}

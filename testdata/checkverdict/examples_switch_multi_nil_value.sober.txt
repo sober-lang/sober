@@ -1,0 +1,2 @@
+sober: load error at examples/switch_multi_nil_value.sober:16:5: in a (value, error?) switch, a case for a non-nil error takes _ as its value pattern (case _, e:)
+exit=1

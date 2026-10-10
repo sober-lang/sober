@@ -1,0 +1,2 @@
+sober: load error at examples/layout_neg_literal.sober:16:36: an integer literal does not fit the width of its @layout field
+exit=1

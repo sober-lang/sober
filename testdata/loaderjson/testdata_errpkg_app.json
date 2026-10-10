@@ -1,0 +1,61 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [
+        {
+          "ref": "lib",
+          "path": "testdata/errpkg/lib"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "code",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "code",
+            "lib.Check",
+            "println"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "testdata/errpkg/lib",
+      "name": "lib",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Check",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": [
+    {
+      "name": "Mine",
+      "pkg": "main"
+    },
+    {
+      "name": "Bad",
+      "pkg": "testdata/errpkg/lib"
+    }
+  ]
+}

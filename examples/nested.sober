@@ -1,0 +1,58 @@
+package main
+
+// 入れ子コンテナの要素型は、書かれた点の座標で読む（language.md 21 節の点座標規約）。
+// 関数本体（自フレーム region）・式位置のブロック（1 段深い region）・ループ本体（透過）でも、
+// 内側の mut slice が外側と同じ region に乗る
+
+type Chunks[T] struct {
+    outer mut []mut []T
+    n int
+}
+
+func grid(n int) int {
+    mut rows := mut []mut []int{}
+    mut i := 0
+    while i < n {
+        mut row := mut []int{}
+        row = append(row, i)
+        row = append(row, i * 10)
+        rows = append(rows, row)
+        i += 1
+    }
+    // 全行を観測する（ループ内で作った行が外の rows に積まれて生き残る — if / while は region 境界ではない）
+    mut sum := 0
+    mut k := 0
+    while k < n {
+        sum = sum * 100 + rows[k][0] * 10 + rows[k][1] / 10
+        k += 1
+    }
+    return len(rows) * 1000000 + sum
+}
+
+func chunked(x int) int {
+    mut c := Chunks[int]{mut []mut []int{}, 0}
+    mut a := mut []int{}
+    a = append(a, x)
+    c.outer = append(c.outer, a)
+    c.n = c.n + 1
+    return c.outer[0][0] + c.n
+}
+
+func words() int {
+    ws := []string{"ab", "cde"}
+    return len(ws)
+}
+
+func main() {
+    println(grid(3))
+    println(chunked(41))
+    println(words())
+    inner := {
+        mut xs := mut []mut []int{}
+        mut y := mut []int{}
+        y = append(y, 7)
+        xs = append(xs, y)
+        len(xs[0])
+    }
+    println(inner)
+}

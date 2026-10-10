@@ -1,0 +1,86 @@
+package main
+
+// Go の slice との突き合わせ（std/table）。生成物 — scripts/table_oracle.ts から再生成する
+
+import "std/table"
+
+type P struct {
+    a int
+    b int
+}
+
+func next(x int) int {
+    return (x * 1103515245 + 12345) % 2147483648
+}
+
+func run(n int, sets int, seed int) {
+    mut t := table.Table[int]{}
+    mut x := seed
+    mut i := 0
+    while i < n {
+        table.Push(mut t, x % 1000)
+        x = next(x)
+        i += 1
+    }
+    i = 0
+    while i < sets && n > 0 {
+        j := x % n
+        table.Set(mut t, j, table.Get(mut t, j) + i)
+        x = next(x)
+        i += 1
+    }
+    mut sum := 0
+    i = 0
+    while i < table.Len(mut t) {
+        sum = (sum * 31 + table.Get(mut t, i)) % 1000000007
+        i += 1
+    }
+    println("${n} ${table.Len(mut t)} ${sum}")
+    if n > 0 {
+        println("${table.Get(mut t, 0)} ${table.Get(mut t, n - 1)}")
+    }
+}
+
+// getP は非ジェネリックの包み（ジェネリックな Get の結果の struct は欄の型が脱糖器に見えない — selfhost-drafts F-10）
+func getP(t mut table.Table[P], i int) P {
+    return table.Get(mut t, i)
+}
+
+func runP(n int, sets int, seed int) {
+    mut t := table.Table[P]{}
+    mut x := seed
+    mut i := 0
+    while i < n {
+        table.Push(mut t, P{a: x % 100, b: i})
+        x = next(x)
+        i += 1
+    }
+    i = 0
+    while i < sets {
+        j := x % n
+        p := getP(mut t, j)
+        table.Set(mut t, j, P{a: p.b % 7, b: p.a + i})
+        x = next(x)
+        i += 1
+    }
+    mut sum := 0
+    i = 0
+    while i < table.Len(mut t) {
+        p := getP(mut t, i)
+        sum = (sum * 31 + p.a * 3 + p.b) % 1000000007
+        i += 1
+    }
+    println("P ${n} ${sum}")
+}
+
+func main() {
+    run(0, 0, 1)
+    run(1, 3, 7)
+    run(8191, 100, 42)
+    run(8192, 100, 43)
+    run(8193, 5000, 44)
+    run(20000, 20000, 45)
+    run(40000, 1000, 46)
+    runP(3, 2, 9)
+    runP(16385, 3000, 10)
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/json_doc_forge.sober:9:10 (Malformed)
+exit=1

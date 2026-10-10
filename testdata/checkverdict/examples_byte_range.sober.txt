@@ -1,0 +1,2 @@
+sober: desugar error at examples/byte_range.sober:9:15 (TypeMismatch)
+exit=1

@@ -1,0 +1,27 @@
+package main
+
+func repeat(n int, f func(int)) {
+    mut i := 0
+    while i < n {
+        f(i)
+        i += 1
+    }
+}
+
+func apply2(a, b int, f func(int, int) int) int {
+    return f(a, b)
+}
+
+func find(limit int) int {
+    repeat(limit, i => {
+        if i * i > 50 {
+            return i
+        }
+    })
+    return -1
+}
+
+func main() {
+    repeat(3, i => println(i * 10))
+    println(apply2(3, 4, (a, b) => a * b), find(20), find(3))
+}

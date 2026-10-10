@@ -1,0 +1,172 @@
+package main
+
+// シリアライザの参考列 (c) json.Encode[T]（shape の写しの関数 — mut builder 形の合成）。(a) / (b) と同じ木・同じ綴り
+
+import "std/json"
+import "std/conv"
+import "std/iter"
+import "std/os"
+import "std/strings"
+
+type N0 struct {
+    id int
+    name string
+    score float
+    kids []N1
+}
+
+type N1 struct {
+    id int
+    name string
+    score float
+    kids []N2
+}
+
+type N2 struct {
+    id int
+    name string
+    score float
+    kids []N3
+}
+
+type N3 struct {
+    id int
+    name string
+    score float
+    kids []N4
+}
+
+type N4 struct {
+    id int
+    name string
+    score float
+    kids []N5
+}
+
+type N5 struct {
+    id int
+    name string
+    score float
+}
+
+func mkN0(id int, f int) N0 {
+    mut ks := mut []N1{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN1(id * f + i, f))
+    }
+    return N0{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN1(id int, f int) N1 {
+    mut ks := mut []N2{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN2(id * f + i, f))
+    }
+    return N1{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN2(id int, f int) N2 {
+    mut ks := mut []N3{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN3(id * f + i, f))
+    }
+    return N2{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN3(id int, f int) N3 {
+    mut ks := mut []N4{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN4(id * f + i, f))
+    }
+    return N3{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN4(id int, f int) N4 {
+    mut ks := mut []N5{}
+    for i <- iter.Range(0, f) {
+        ks = append(ks, mkN5(id * f + i, f))
+    }
+    return N4{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25, kids: freeze(ks)}
+}
+
+func mkN5(id int, f int) N5 {
+    return N5{id: id, name: "n${id % 1000}", score: float(id % 4000) * 0.25}
+}
+
+type Top0 struct {
+    xs []N0
+}
+
+func topN0(f int) string {
+    mut xs := mut []N0{}
+    for i <- iter.Range(0, f) {
+        xs = append(xs, mkN0(i, f))
+    }
+    s := json.Encode[Top0](Top0{xs: freeze(xs)})
+    // 根の配列だけ取り出す（{"xs":[…]} → […] — (a) / (b) と同じバイト列にする）
+    p := bytes(s)
+    r, e := string(p[6:len(p) - 1])
+    return r
+}
+
+type Top2 struct {
+    xs []N2
+}
+
+func topN2(f int) string {
+    mut xs := mut []N2{}
+    for i <- iter.Range(0, f) {
+        xs = append(xs, mkN2(i, f))
+    }
+    s := json.Encode[Top2](Top2{xs: freeze(xs)})
+    // 根の配列だけ取り出す（{"xs":[…]} → […] — (a) / (b) と同じバイト列にする）
+    p := bytes(s)
+    r, e := string(p[6:len(p) - 1])
+    return r
+}
+
+type Top4 struct {
+    xs []N4
+}
+
+func topN4(f int) string {
+    mut xs := mut []N4{}
+    for i <- iter.Range(0, f) {
+        xs = append(xs, mkN4(i, f))
+    }
+    s := json.Encode[Top4](Top4{xs: freeze(xs)})
+    // 根の配列だけ取り出す（{"xs":[…]} → […] — (a) / (b) と同じバイト列にする）
+    p := bytes(s)
+    r, e := string(p[6:len(p) - 1])
+    return r
+}
+
+// fanout は葉の数がほぼ同じ（30 万前後）になるように深さごとに選ぶ
+func fanout(d int) int {
+    return if d == 2 { 550 } else if d == 4 { 24 } else { 8 }
+}
+
+// fnv は出力の照合用（FNV-1a）
+func fnv(s string) int {
+    p := bytes(s)
+    mut h := -3750763034065230579
+    for i <- iter.Range(0, len(p)) {
+        h = (h ^ int(p[i])) * 1099511628211
+    }
+    return h
+}
+
+func main() {
+    args, aerr := os.Args()
+    if aerr != nil || len(args) < 2 {
+        return
+    }
+    d := if args[1] == "2" { 2 } else if args[1] == "4" { 4 } else { 6 }
+    f := fanout(d)
+    s := switch d {
+    case 2: topN4(f)
+    case 4: topN2(f)
+    default: topN0(f)
+    }
+    println(len(bytes(s)), fnv(s))
+}

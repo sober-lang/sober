@@ -1,0 +1,9 @@
+package main
+
+// 負例: named scalar と byte の間は変換しない（下地へ戻してから）（language.md 33 節）
+type N int
+
+func main() {
+    n := N(3)
+    println(byte(n))
+}

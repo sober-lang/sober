@@ -1,0 +1,2 @@
+sober: load error at examples/switch_multi_nil_cover.sober:16:5: case _, e also matches a nil error: the nil cases must cover every value (case v, nil:)
+exit=1

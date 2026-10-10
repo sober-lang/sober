@@ -1,0 +1,1062 @@
+package desugar
+
+// 式の型の静的計算（src/desugar.zig の computeTy / declOfExpr / elemDeclOfExpr 一族の写し）。
+// 分からなければ -1（Zig 版の null。中の失敗は握りつぶす — catch null）
+
+import "diag"
+import "ast"
+import "lexer"
+import "std/iter"
+
+// tailExpr はブロック（KBlock / EBlock — どちらも a = 文の列）の末尾の式（末尾が式文でなければ -1）
+func tailExpr(st mut S, blk NodeRef) NodeRef {
+    l := lA(nodeOf(mut st, blk))
+    n := lenL(mut st, l)
+    if n == 0 {
+        return -1
+    }
+    s := latN(mut st, l, n - 1)
+    return if kindN(mut st, s) == ast.SExpr { nA(nodeOf(mut st, s)) } else { -1 }
+}
+
+// dictConstOf は式が辞書 const の参照（`N` / `pkg.N`）ならその const の表の添字（でなければ -1）
+func dictConstOf(st mut S, e NodeRef, eb int) int {
+    k := kindN(mut st, e)
+    if k == ast.EIdent {
+        name := sA(nodeOf(mut st, e))
+        if lookup(mut st, eb, name) >= 0 {
+            return -1
+        }
+        c := lookupConst(mut st, st.curPkg, name, 0)
+        return if c >= 0 && ConDict(mut st, c) { c } else { -1 }
+    }
+    if k == ast.ESelector {
+        name := qualName(mut st, e, eb, st.curPkg)
+        if name == -1 {
+            return -1
+        }
+        pk, lo := resolveIn(mut st, st.curPkg, name)
+        if pk < 0 {
+            return -1
+        }
+        c := lookupConst(mut st, pk, name, lo)
+        return if c >= 0 && ConDict(mut st, c) { c } else { -1 }
+    }
+    return -1
+}
+
+// dictEnter は辞書 const の文脈（宣言側 package・空の型環境・型パラメータ無し）に切り替え、戻す文脈を返す
+func dictEnter(st mut S, pk int) FnCtx {
+    saved := fnCtx(mut st)
+    st.curPkg = pk
+    st.tenv = -1
+    st.curTparams = 0
+    st.hasOuter = b2i(false)
+    st.inDict = b2i(true)
+    return saved
+}
+
+func dictLeave(st mut S, c FnCtx) {
+    setFnCtx(mut st, c)
+}
+
+// computeTy は式のコア型（T? の暗黙 some の判定・string の演算の分岐・型引数の推論用）
+func computeTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    k := kindN(mut st, e)
+    if k == ast.EFor {
+        return forIterTy(mut st, e, eb, ef)
+    }
+    if k == ast.EMutArg {
+        if isDotted(mut st, e) {
+            return computeTy(mut st, mutArgExpr(mut st, e), eb, ef)
+        }
+        b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
+        return if b >= 0 { bnd(mut st, b).ty } else { TyRef(-1) }
+    }
+    if k == ast.ETry {
+        if kindN(mut st, nA(nodeOf(mut st, e))) != ast.ECall {
+            return -1
+        }
+        st.trySkip = 1
+        t := computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        st.trySkip = 0
+        return t
+    }
+    if k == ast.EInt {
+        return st.tInt
+    }
+    if k == ast.EIdent {
+        name := sA(nodeOf(mut st, e))
+        b := lookup(mut st, eb, name)
+        if b >= 0 {
+            return bnd(mut st, b).ty
+        }
+        c := lookupConst(mut st, st.curPkg, name, 0)
+        if c >= 0 {
+            if !ConDict(mut st, c) {
+                return st.tInt
+            }
+            r := dictEnter(mut st, st.curPkg)
+            t := computeTy(mut st, nB(nodeOf(mut st, ConNode(mut st, c))), -1, -1)
+            dictLeave(mut st, r)
+            return t
+        }
+        if strIs(mut st, name, "true") || strIs(mut st, name, "false") {
+            return st.tBool
+        }
+        fi := findFn(mut st, e, eb)
+        if fi < 0 {
+            return -1
+        }
+        t, err := sigTy(mut st, fi)
+        return if err != nil { TyRef(-1) } else { t }
+    }
+    if k == ast.EStrlit || k == ast.EInterp {
+        return tString(mut st)
+    }
+    if k == ast.EIndex {
+        bt := computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        if bt == -1 {
+            return -1
+        }
+        if tg(mut st, bt) == TSl {
+            return tElem(mut st, bt)
+        }
+        if tg(mut st, bt) == TMp {
+            // V はセルが組まれた点の座標（F-34 — getm の注釈と同じ読み）
+            return tOpt(mut st, mapValueAt(mut st, nA(nodeOf(mut st, e)), bt, eb))
+        }
+        return -1
+    }
+    if k == ast.ESlice3 {
+        return computeTy(mut st, nA(nodeOf(mut st, e)), eb, ef)
+    }
+    if k == ast.EMaplit {
+        key, err := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), e, TYFUEL)
+        if err != nil {
+            return -1
+        }
+        value, err2 := tyOf(mut st, st.curPkg, nB(nodeOf(mut st, e)), e, TYFUEL)
+        if err2 != nil {
+            return -1
+        }
+        return tMap(mut st, nodeOf(mut st, e).d != 0, st.rdepth - 1, key, value)
+    }
+    if k == ast.ESlicelit {
+        elem, err := tyOf(mut st, st.curPkg, nA(nodeOf(mut st, e)), e, TYFUEL)
+        if err != nil {
+            return -1
+        }
+        return tSlice(mut st, nodeOf(mut st, e).c != 0, st.rdepth - 1, elem, false)
+    }
+    if k == ast.EBinary {
+        op := nodeOf(mut st, e).a
+        if op == lexer.Plus {
+            lt := computeTy(mut st, nB(nodeOf(mut st, e)), eb, ef)
+            rt := if isStringTy(mut st, lt) { lt } else { computeTy(mut st, nC(nodeOf(mut st, e)), eb, ef) }
+            if isStringTy(mut st, rt) {
+                return tSlice(mut st, false, st.rdepth - 1, tByte(mut st), true)
+            }
+            return st.tInt
+        }
+        if op == lexer.Minus || op == lexer.Star || op == lexer.Slash || op == lexer.Percent || op == lexer.Ampersand || op == lexer.Pipe || op == lexer.Caret || op == lexer.Shl || op == lexer.Shr {
+            return st.tInt
+        }
+        if op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual || op == lexer.AmpersandAmpersand || op == lexer.PipePipe {
+            return st.tBool
+        }
+        return -1
+    }
+    if k == ast.EUnary {
+        op := nodeOf(mut st, e).a
+        if op == lexer.Minus || op == lexer.Caret {
+            return st.tInt
+        }
+        return if op == lexer.Bang { st.tBool } else { TyRef(-1) }
+    }
+    if k == ast.ECall {
+        return callTy(mut st, e, eb, ef)
+    }
+    if k == ast.EComposite {
+        return compositeTy(mut st, e)
+    }
+    if k == ast.ESelector {
+        dc := dictConstOf(mut st, e, eb)
+        if dc >= 0 {
+            r := dictEnter(mut st, ConPkg(mut st, dc))
+            t := computeTy(mut st, nB(nodeOf(mut st, ConNode(mut st, dc))), -1, -1)
+            dictLeave(mut st, r)
+            return t
+        }
+        return selectorTy(mut st, e, eb, ef)
+    }
+    if k == ast.EBlock {
+        tl := tailExpr(mut st, e)
+        return if tl == -1 { TyRef(-1) } else { computeTy(mut st, tl, eb, ef) }
+    }
+    // F-c: if 式の値の型（`bytes(if …)`・`s := if …` の束縛 — 無いと bytes の文字列判定が Malformed。build は受理していた）。
+    // switch 式（switchTy）は同じ穴だが、配線すると switch を返す本体に ann が付き既存のコア黄金 28 本が変わるので裁定待ち（report-82 §5）
+    if k == ast.EIf {
+        return ifTy(mut st, e, eb, ef)
+    }
+    return -1
+}
+
+// selectorTy は `x.f` のフィールド型（base の型宣言から。分からなければ -1）
+func selectorTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    base := declOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+    fs := structFields(mut st, base)
+    if fs == -1 {
+        return -1
+    }
+    i := fieldIndex(mut st, fs, sB(nodeOf(mut st, e)))
+    if i < 0 {
+        return -1
+    }
+    t, err := tyIn(mut st, hget(mut st, base + 1), hget(mut st, base + 2), nB(nodeOf(mut st, latN(mut st, fs, i))), e)
+    return if err != nil { TyRef(-1) } else { t }
+}
+
+func compositeTy(st mut S, e NodeRef) TyRef {
+    name := sA(nodeOf(mut st, e))
+    at := e
+    dr := lookupType(mut st, st.curPkg, name)
+    if dr >= 0 && declKind(mut st, hgetN(mut st, dr)) == ast.BStruct {
+        fs := lA(nodeOf(mut st, nC(nodeOf(mut st, hgetN(mut st, dr)))))
+        targs := lC(nodeOf(mut st, e))
+        if lenL(mut st, targs) > 0 {
+            genv, err := genericEnv(mut st, st.curPkg, dr, targs, at)
+            if err != nil {
+                return -1
+            }
+            saved := st.tenv
+            st.tenv = genv
+            t, err2 := fieldsTy(mut st, hget(mut st, dr + 1), fs, at, TYFUEL)
+            st.tenv = saved
+            return if err2 != nil { TyRef(-1) } else { t }
+        }
+        t, err := fieldsTy(mut st, hget(mut st, dr + 1), fs, at, TYFUEL)
+        return if err != nil { TyRef(-1) } else { t }
+    }
+    vr := findVariant(mut st, st.curPkg, name)
+    if vr.decl == -1 {
+        return -1
+    }
+    if vr.decl == NodeRef(ERRS) {
+        t, err := errTy(mut st, vr.pkg, at, TYFUEL)
+        return if err != nil { TyRef(-1) } else { t }
+    }
+    t, err := unionTreeTy(mut st, vr.pkg, vr.decl, 0, at, TYFUEL)
+    return if err != nil { TyRef(-1) } else { t }
+}
+
+// callTy は呼び出しの結果型（単値）
+func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    skip := st.trySkip
+    st.trySkip = 0
+    callee0 := nA(nodeOf(mut st, e))
+    args := lB(nodeOf(mut st, e))
+    na := lenL(mut st, args)
+    at := e
+    cv := if skip == 0 { convTarget(mut st, callee0, eb, st.curPkg) } else { CONV_NONE }
+    if cv == CONV_BYTE {
+        return tByte(mut st)
+    }
+    if cv != CONV_NONE {
+        u := if cv >= 0 { namedUnder(mut st, NodeRef(cv)) } else if cv == CONV_INT { 0 } else { 1 }
+        return if u == 0 { st.tInt } else if u == 1 { st.tBool } else { TyRef(-1) }
+    }
+    if skip == 0 && kindN(mut st, callee0) == ast.EIdent {
+        name := sA(nodeOf(mut st, callee0))
+        if strIs(mut st, name, "len") {
+            return st.tInt
+        }
+        // keys(m): 最内 region の imm slice（要素 = キー型）
+        if strIs(mut st, name, "keys") && na == 1 {
+            mt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            return if isTag(mut st, mt, TMp) { tSlice(mut st, false, st.rdepth - 1, tKey(mut st, mt), false) } else { TyRef(-1) }
+        }
+        if strIs(mut st, name, "append") {
+            return if na != 2 { TyRef(-1) } else { computeTy(mut st, latN(mut st, args, 0), eb, ef) }
+        }
+        if strIs(mut st, name, "freeze") {
+            if na != 1 {
+                return -1
+            }
+            aty := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if aty == -1 {
+                return -1
+            }
+            if tg(mut st, aty) == TSl {
+                return tSliceOf(mut st, 0, tRegion(mut st, aty), tElem(mut st, aty), tStrBit(mut st, aty))
+            }
+            if tg(mut st, aty) == TMp {
+                return tMapOf(mut st, 0, tRegion(mut st, aty), tKey(mut st, aty), tVal(mut st, aty))
+            }
+            return -1
+        }
+        if IsStdPkg(mut st, st.curPkg) {
+            if strIs(mut st, name, "sysErrno") || strIs(mut st, name, "sysWriteFile") || strIs(mut st, name, "sysWriteFd") || strIs(mut st, name, "sysRun") {
+                return st.tInt
+            }
+            if strIs(mut st, name, "sysReadFile") || strIs(mut st, name, "sysReadDir") || strIs(mut st, name, "sysArgs") {
+                return tSlice(mut st, false, st.rdepth - 1, tByte(mut st), false)
+            }
+        }
+        if strIs(mut st, name, "bytesToString") && IsStdPkg(mut st, st.curPkg) {
+            if na != 1 {
+                return -1
+            }
+            bt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if bt == -1 || tg(mut st, bt) != TSl || tStrBit(mut st, bt) != 0 {
+                return -1
+            }
+            return tSlice(mut st, false, tRegion(mut st, bt), tElem(mut st, bt), true)
+        }
+        if strIs(mut st, name, "bytes") {
+            if na != 1 {
+                return -1
+            }
+            bt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if !isStringTy(mut st, bt) {
+                return -1
+            }
+            return tSlice(mut st, false, tRegion(mut st, bt), tElem(mut st, bt), false)
+        }
+    }
+    if skip == 0 {
+        ft := fnValueTy(mut st, callee0, eb, ef)
+        if ft != -1 {
+            return tRight(mut st, ft)
+        }
+    }
+    mut callee := callee0
+    mut explicit := NodeRef(-1)
+    if kindN(mut st, callee) == ast.EIndex {
+        explicit = nB(nodeOf(mut st, callee))
+        callee = nA(nodeOf(mut st, callee))
+    }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 {
+        return -1
+    }
+    rs := fnResults(mut st, fi)
+    if lenL(mut st, rs) != 1 + skip {
+        return -1
+    }
+    tps := fnTParams(mut st, fi)
+    if lenL(mut st, tps) > 0 {
+        ts, err := inferTs(mut st, fi, callee0, explicit, args, eb, ef, at, fnExpands(mut st, fi))
+        if err != nil {
+            return -1
+        }
+        penv := listN(mut st, lenL(mut st, tps) * 3)
+        hset(mut st, penv, lenL(mut st, tps))
+        for i <- iter.Range(0, lenL(mut st, tps)) {
+            hset(mut st, penv + 1 + i * 3, latI(mut st, tps, i))
+            hset(mut st, penv + 2 + i * 3, latI(mut st, ts, i))
+            hset(mut st, penv + 3 + i * 3, -1)
+        }
+        t, err2 := tyIn(mut st, fnPkg(mut st, fi), penv, latN(mut st, rs, 0), at)
+        return if err2 != nil { TyRef(-1) } else { plainResult(mut st, fi, t) }
+    }
+    t, err := tyOf(mut st, fnPkg(mut st, fi), latN(mut st, rs, 0), at, TYFUEL)
+    return if err != nil { TyRef(-1) } else { plainResult(mut st, fi, t) }
+}
+
+// plainResult は素の Def 呼び出し（展開されない・callM でない）の結果型を呼び手座標（最内 region）で読む（Lean の ret.relocR d — F-25）。
+// 展開される関数・mut_def は署名の座標のまま
+func plainResult(st mut S, fi int, t TyRef) TyRef {
+    if fnExpands(mut st, fi) || fnMutDef(mut st, fi) {
+        return t
+    }
+    ps := fnParams(mut st, fi)
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if ast.ParamIsMut(nodeOf(mut st, latN(mut st, ps, i))) {
+            return t
+        }
+    }
+    c := callResultTop(mut st, t)
+    return if c != -1 { c } else { t }
+}
+
+// declOfExpr は式の値の型宣言（struct / union）を静的に辿る
+func declOfExpr(st mut S, e NodeRef, eb int, ef int) int {
+    dc := dictConstOf(mut st, e, eb)
+    if dc >= 0 {
+        r := dictEnter(mut st, ConPkg(mut st, dc))
+        d := declOfExpr(mut st, nB(nodeOf(mut st, ConNode(mut st, dc))), -1, -1)
+        dictLeave(mut st, r)
+        return d
+    }
+    k := kindN(mut st, e)
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
+        return if b >= 0 { bnd(mut st, b).decl } else { -1 }
+    }
+    if k == ast.ETry {
+        if kindN(mut st, nA(nodeOf(mut st, e))) != ast.ECall {
+            return -1
+        }
+        st.trySkip = 1
+        d := declOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        st.trySkip = 0
+        return d
+    }
+    if k == ast.ECall {
+        skip := st.trySkip
+        st.trySkip = 0
+        mut callee := nA(nodeOf(mut st, e))
+        mut explicit := NodeRef(-1)
+        if kindN(mut st, callee) == ast.EIndex {
+            explicit = nB(nodeOf(mut st, callee))
+            callee = nA(nodeOf(mut st, callee))
+        }
+        fi := findFn(mut st, callee, eb)
+        if fi < 0 {
+            return -1
+        }
+        rs := fnResults(mut st, fi)
+        if lenL(mut st, rs) != 1 + skip {
+            return -1
+        }
+        if lenL(mut st, fnTParams(mut st, fi)) == 0 {
+            return declOfTypeExpr(mut st, fnPkg(mut st, fi), latN(mut st, rs, 0))
+        }
+        penv, err := callEnv(mut st, fi, nA(nodeOf(mut st, e)), explicit, lB(nodeOf(mut st, e)), eb, ef, e)
+        if err != nil {
+            return -1
+        }
+        saved := st.tenv
+        st.tenv = penv
+        d := declOfTypeExpr(mut st, fnPkg(mut st, fi), latN(mut st, rs, 0))
+        st.tenv = saved
+        return d
+    }
+    if k == ast.EComposite {
+        name := sA(nodeOf(mut st, e))
+        dr := lookupType(mut st, st.curPkg, name)
+        if dr >= 0 && declKind(mut st, hgetN(mut st, dr)) == ast.BStruct {
+            targs := lC(nodeOf(mut st, e))
+            if lenL(mut st, targs) > 0 {
+                genv, err := genericEnv(mut st, st.curPkg, dr, targs, e)
+                if err != nil {
+                    return -1
+                }
+                return declRef(mut st, hget(mut st, dr), hget(mut st, dr + 1), genv)
+            }
+            return dr
+        }
+        vr := findVariant(mut st, st.curPkg, name)
+        if vr.decl == -1 {
+            return -1
+        }
+        return declRef(mut st, int(vr.decl), vr.pkg, -1)
+    }
+    if k == ast.ESelector {
+        base := declOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        fs := structFields(mut st, base)
+        if fs == -1 {
+            return -1
+        }
+        i := fieldIndex(mut st, fs, sB(nodeOf(mut st, e)))
+        if i < 0 {
+            return -1
+        }
+        ft := nB(nodeOf(mut st, latN(mut st, fs, i)))
+        fk := kindN(mut st, ft)
+        if fk == ast.TName {
+            return lookupType(mut st, hget(mut st, base + 1), sA(nodeOf(mut st, ft)))
+        }
+        if fk == ast.TGeneric {
+            saved := st.tenv
+            st.tenv = hget(mut st, base + 2)
+            d := declOfTypeExpr(mut st, hget(mut st, base + 1), ft)
+            st.tenv = saved
+            return d
+        }
+        return -1
+    }
+    if k == ast.EIndex {
+        return elemDeclOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+    }
+    if k == ast.EBlock {
+        tl := tailExpr(mut st, e)
+        return if tl == -1 { -1 } else { declOfExpr(mut st, tl, eb, ef) }
+    }
+    if k == ast.EIf {
+        tl := tailExpr(mut st, nB(nodeOf(mut st, e)))
+        return if tl == -1 { -1 } else { declOfExpr(mut st, tl, eb, ef) }
+    }
+    return -1
+}
+
+// elemDeclOfExpr は式が slice のとき、その要素型の宣言
+func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
+    k := kindN(mut st, e)
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
+        return if b >= 0 { bnd(mut st, b).elem } else { -1 }
+    }
+    if k == ast.ETry {
+        if kindN(mut st, nA(nodeOf(mut st, e))) != ast.ECall {
+            return -1
+        }
+        st.trySkip = 1
+        d := elemDeclOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        st.trySkip = 0
+        return d
+    }
+    if k == ast.ESlicelit {
+        return declOfTypeExpr(mut st, st.curPkg, nA(nodeOf(mut st, e)))
+    }
+    if k == ast.ESlice3 {
+        return elemDeclOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+    }
+    if k == ast.ESelector {
+        base := declOfExpr(mut st, nA(nodeOf(mut st, e)), eb, ef)
+        fs := structFields(mut st, base)
+        if fs == -1 {
+            return -1
+        }
+        i := fieldIndex(mut st, fs, sB(nodeOf(mut st, e)))
+        if i < 0 {
+            return -1
+        }
+        saved := st.tenv
+        st.tenv = hget(mut st, base + 2)
+        d := elemDeclOfTypeExpr(mut st, hget(mut st, base + 1), nB(nodeOf(mut st, latN(mut st, fs, i))))
+        st.tenv = saved
+        return d
+    }
+    if k == ast.ECall {
+        skip := st.trySkip
+        st.trySkip = 0
+        c0 := nA(nodeOf(mut st, e))
+        args := lB(nodeOf(mut st, e))
+        if skip == 0 && kindN(mut st, c0) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c0)), "freeze") && lenL(mut st, args) == 1 {
+            return elemDeclOfExpr(mut st, latN(mut st, args, 0), eb, ef)
+        }
+        mut callee := c0
+        mut explicit := NodeRef(-1)
+        if kindN(mut st, callee) == ast.EIndex {
+            explicit = nB(nodeOf(mut st, callee))
+            callee = nA(nodeOf(mut st, callee))
+        }
+        fi := findFn(mut st, callee, eb)
+        if fi < 0 {
+            return -1
+        }
+        rs := fnResults(mut st, fi)
+        if lenL(mut st, rs) != 1 + skip {
+            return -1
+        }
+        if lenL(mut st, fnTParams(mut st, fi)) == 0 {
+            return elemDeclOfTypeExpr(mut st, fnPkg(mut st, fi), latN(mut st, rs, 0))
+        }
+        penv, err := callEnv(mut st, fi, nA(nodeOf(mut st, e)), explicit, args, eb, ef, e)
+        if err != nil {
+            return -1
+        }
+        saved := st.tenv
+        st.tenv = penv
+        d := elemDeclOfTypeExpr(mut st, fnPkg(mut st, fi), latN(mut st, rs, 0))
+        st.tenv = saved
+        return d
+    }
+    return -1
+}
+
+// targetTy は代入先の期待型（T? coercion 用。分からなければ -1）
+func targetTy(st mut S, target NodeRef, eb int, ef int) TyRef {
+    k := kindN(mut st, target)
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, target)))
+        return if b >= 0 { bnd(mut st, b).ty } else { TyRef(-1) }
+    }
+    if k == ast.ESelector {
+        return selectorTy(mut st, target, eb, ef)
+    }
+    return -1
+}
+
+// callResultTop は call 結果の imm slice / map を呼び手座標（最内 region）で読む（mut を含むものは -1）
+func callResultTop(st mut S, rt TyRef) TyRef {
+    if tyArgOk(mut st, rt) {
+        return rt
+    }
+    r := st.rdepth - 1
+    k := tg(mut st, rt)
+    if k == TSl {
+        if tMutBit(mut st, rt) != 0 {
+            return -1
+        }
+        t2 := callResultTop(mut st, tElem(mut st, rt))
+        return if t2 == -1 { TyRef(-1) } else { tSliceOf(mut st, 0, r, t2, tStrBit(mut st, rt)) }
+    }
+    if k == TMp {
+        if tMutBit(mut st, rt) != 0 {
+            return -1
+        }
+        k2 := callResultTop(mut st, tKey(mut st, rt))
+        if k2 == -1 {
+            return -1
+        }
+        t2 := callResultTop(mut st, tVal(mut st, rt))
+        return if t2 == -1 { TyRef(-1) } else { tMapOf(mut st, 0, r, k2, t2) }
+    }
+    if k == TOpt {
+        t2 := callResultTop(mut st, tInner(mut st, rt))
+        return if t2 == -1 { TyRef(-1) } else { tOpt(mut st, t2) }
+    }
+    if k == TUn || k == TPr {
+        l := callResultTop(mut st, tLeft(mut st, rt))
+        if l == -1 {
+            return -1
+        }
+        r2 := callResultTop(mut st, tRight(mut st, rt))
+        return if r2 == -1 { TyRef(-1) } else { tPair(mut st, k, l, r2) }
+    }
+    return -1
+}
+
+// patFieldTy はパターンで束縛したフィールドの型
+func patFieldTy(st mut S, pk int, te NodeRef, at NodeRef) TyRef {
+    t, err := tyOf(mut st, pk, te, at, TYFUEL)
+    if err != nil {
+        return -1
+    }
+    return callResultTop(mut st, t)
+}
+
+// sigTy は関数のシグネチャ → 関数値の型（defOf の param / ret と同じ）
+func sigTy(st mut S, fi int) (TyRef, error?) {
+    pk := fnPkg(mut st, fi)
+    at := fnNode(mut st, fi)
+    pl := fnParams(mut st, fi)
+    ps := ListRef(listN(mut st, lenL(mut st, pl)))
+    for i <- iter.Range(0, lenL(mut st, pl)) {
+        hsetTy(mut st, int(ps) + 1 + i, tyOf(mut st, pk, nB(nodeOf(mut st, latN(mut st, pl, i))), at, TYFUEL)?)
+    }
+    rl := fnResults(mut st, fi)
+    rs := ListRef(listN(mut st, lenL(mut st, rl)))
+    for i <- iter.Range(0, lenL(mut st, rl)) {
+        rt := tyOf(mut st, pk, latN(mut st, rl, i), at, TYFUEL)?
+        hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, rt))
+    }
+    p := tyChain(mut st, ps)
+    return tFn(mut st, p, tyChain(mut st, rs)), nil
+}
+
+// fnValueTy は callee が関数値（関数型のローカル / フィールド）ならその型（名前付き関数・builtin・ラムダは -1）
+func fnValueTy(st mut S, callee NodeRef, eb int, ef int) TyRef {
+    k := kindN(mut st, callee)
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, callee)))
+        if b < 0 {
+            return -1
+        }
+        t := bnd(mut st, b).ty
+        return if isTag(mut st, t, TFn) { t } else { TyRef(-1) }
+    }
+    if k == ast.ESelector {
+        base := nA(nodeOf(mut st, callee))
+        if kindN(mut st, base) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, base))) < 0 && importRef(mut st, st.curPkg, sA(nodeOf(mut st, base))) {
+            return -1
+        }
+        t := computeTy(mut st, callee, eb, ef)
+        return if isTag(mut st, t, TFn) { t } else { TyRef(-1) }
+    }
+    return -1
+}
+
+// typeNameOf は index 位置の式を型名として読む（`f[int]`）— 名前なら同じ綴りの TName 節、でなければ -1
+func typeNameOf(st mut S, e NodeRef) NodeRef {
+    if kindN(mut st, e) != ast.EIdent {
+        return -1
+    }
+    return NodeRef(rec8(mut st, ast.TName, e, nodeOf(mut st, e).a, 0, 0, 0, 0, 0))
+}
+
+// inferTs はジェネリック関数の型引数（明示か、値引数の型からの推論）。inl は展開されるジェネリック（型引数は region を含んでよい）。
+// cn は呼び出しの callee の節（明示の型引数なら EIndex の節 — 表層型検査器の YTArgsOf のキー）。差分オラクルの間は表と突き合わせる
+// （規則は検査器と同じ — 表の型引数はコア型の座標を持たないので、コア型はここで単一化して取る: C1 B3-3 は D4 と一緒に持ち越し）
+func inferTs(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef, inl bool) (ListRef, error?) {
+    ts, err := inferTs0(mut st, fi, explicit, args, eb, ef, at, inl)
+    if st.ydiff != 0 {
+        yCompareTArgs(mut st, cn, ts, err == nil)
+    }
+    return ts, err
+}
+
+func inferTs0(st mut S, fi int, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef, inl bool) (ListRef, error?) {
+    tps := fnTParams(mut st, fi)
+    n := lenL(mut st, tps)
+    mut binds := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        lput(mut st, binds, i, -1)
+    }
+    if explicit != -1 {
+        if n != 1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        te := typeNameOf(mut st, explicit)
+        if te == -1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        hsetTy(mut st, int(binds) + 1, tyOf(mut st, st.curPkg, te, at, TYFUEL)?)
+    }
+    ph := tvarEnv(mut st, tps, PH)
+    ps := fnParams(mut st, fi)
+    if lenL(mut st, args) != lenL(mut st, ps) {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    // 型なしの定数の実引数は一度外して推論し、決まらなければ入れて推論し直す（Go の既定型 — 表層型検査器の yNamedCall・lower と同じ。
+    // byte の型引数を int の定数で縛らない: `builder.Push(mut b, 'a')` — language.md 33 節）
+    first := ListRef(listN(mut st, n))
+    for i <- iter.Range(0, n) {
+        lput(mut st, first, i, latI(mut st, binds, i))
+    }
+    unifyArgs(mut st, fi, ph, ps, args, eb, ef, at, first, true)?
+    mut all := true
+    for i <- iter.Range(0, n) {
+        if latTy(mut st, first, i) == -1 {
+            all = false
+        }
+    }
+    if all {
+        binds = first
+    } else {
+        unifyArgs(mut st, fi, ph, ps, args, eb, ef, at, binds, false)?
+    }
+    for i <- iter.Range(0, n) {
+        t := latTy(mut st, binds, i)
+        if t == -1 {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        if inl {
+            if !tyArgValueOk(mut st, t) {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+        } else if !tyArgOk(mut st, t) {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+    }
+    return binds, nil
+}
+
+// unifyArgs は実引数の型を仮引数の型の型（型変数は ph）へ単一化して binds を埋める（skipConst なら型なしの定数の実引数は見ない）
+func unifyArgs(st mut S, fi int, ph int, ps ListRef, args ListRef, eb int, ef int, at NodeRef, binds ListRef, skipConst bool) error? {
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        a := latN(mut st, args, i)
+        if !(skipConst && isUntypedConst(mut st, a, eb, st.curPkg)) {
+            pat := tyIn(mut st, fnPkg(mut st, fi), ph, nB(nodeOf(mut st, latN(mut st, ps, i))), at)?
+            act := computeTy(mut st, a, eb, ef)
+            if act != -1 && !unifyTy(mut st, pat, act, binds) {
+                return diag.Malformed{at: posOf(mut st, at)}
+            }
+        }
+    }
+    return nil
+}
+
+// callEnv はジェネリック呼び出しの束縛（型引数 + 分かる範囲で型引数の struct 宣言）
+func callEnv(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, eb int, ef int, at NodeRef) (int, error?) {
+    ts := inferTs(mut st, fi, cn, explicit, args, eb, ef, at, true)?
+    tps := fnTParams(mut st, fi)
+    n := lenL(mut st, tps)
+    penv := listN(mut st, n * 3)
+    hset(mut st, penv, n)
+    for i <- iter.Range(0, n) {
+        hset(mut st, penv + 1 + i * 3, latI(mut st, tps, i))
+        hset(mut st, penv + 2 + i * 3, latI(mut st, ts, i))
+        hset(mut st, penv + 3 + i * 3, -1)
+    }
+    ps := fnParams(mut st, fi)
+    for j <- iter.Range(0, lenL(mut st, ps)) {
+        pt := nB(nodeOf(mut st, latN(mut st, ps, j)))
+        mut pn := StrRef(-1)
+        mut is_elem := false
+        if kindN(mut st, pt) == ast.TName {
+            pn = sA(nodeOf(mut st, pt))
+        } else if kindN(mut st, pt) == ast.TSlice && kindN(mut st, nA(nodeOf(mut st, pt))) == ast.TName {
+            pn = sA(nodeOf(mut st, nA(nodeOf(mut st, pt))))
+            is_elem = true
+        }
+        if pn != -1 {
+            arg := latN(mut st, args, j)
+            for i <- iter.Range(0, n) {
+                if strEq(mut st, hgetS(mut st, penv + 1 + i * 3), pn) && hget(mut st, penv + 3 + i * 3) == -1 {
+                    hset(mut st, penv + 3 + i * 3, if is_elem { elemDeclOfExpr(mut st, arg, eb, ef) } else { declOfExpr(mut st, arg, eb, ef) })
+                }
+            }
+        }
+    }
+    return penv, nil
+}
+
+// isClosureName は e が閉包（関数型の引数に束縛されたラムダ）の名前か
+func isClosureName(st mut S, e NodeRef, eb int, ef int) bool {
+    if kindN(mut st, e) != ast.EIdent {
+        return false
+    }
+    n := sA(nodeOf(mut st, e))
+    return lookup(mut st, eb, n) < 0 && lookupF(mut st, ef, n) >= 0
+}
+
+// forOut は for 式が断片外か（V3-4 は単一ジェネレータ・単一束縛）
+func forOut(st mut S, fe NodeRef) bool {
+    gens := lA(nodeOf(mut st, fe))
+    if lenL(mut st, gens) != 1 {
+        return true
+    }
+    return lenL(mut st, lA(nodeOf(mut st, latN(mut st, gens, 0)))) != 1
+}
+
+// forIterTy は for 式の型 = Iter[T]（func(func(T))）。推論に使えるのは生成元が slice のときだけ
+func forIterTy(st mut S, fe NodeRef, eb int, ef int) TyRef {
+    if forOut(mut st, fe) {
+        return -1
+    }
+    g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
+    src := nB(nodeOf(mut st, g))
+    if isClosureName(mut st, src, eb, ef) {
+        return -1
+    }
+    t := computeTy(mut st, src, eb, ef)
+    // map の生成元はキーを回す（keysm の段）
+    isMap := isTag(mut st, t, TMp)
+    if !isTag(mut st, t, TSl) && !isMap {
+        // 他の生成元（呼び出し形・Iter の値）: yield の型を表層型検査器の表から（region を持たない型だけ — 座標は付けない）
+        y := yLocFreeTy(mut st, YYieldOf(mut st, fe))
+        if y == -1 {
+            return -1
+        }
+        return tFn(mut st, tFn(mut st, y, st.tUnit), st.tUnit)
+    }
+    ed := if isMap { -1 } else { elemDeclOfExpr(mut st, src, eb, ef) }
+    eb2 := bind(mut st, eb, latS(mut st, lA(nodeOf(mut st, g)), 0), 0, false, ed, tElem(mut st, t), -1, 0, -1, false, elemSty(mut st, exprSty(mut st, src, eb, ef)))
+    y := if nodeOf(mut st, fe).b == 0 { computeTy(mut st, nC(nodeOf(mut st, fe)), eb2, ef) } else { yieldTyIn(mut st, lC(nodeOf(mut st, fe)), eb2, ef) }
+    if y == -1 {
+        return -1
+    }
+    kf := tFn(mut st, y, st.tUnit)
+    return tFn(mut st, kf, st.tUnit)
+}
+
+// bindsOf は束縛の文の各名前を型追跡つきで束縛した環境（yieldTyIn / blockTailTy — 名前と値の数が違えば -2）
+func bindsOf(st mut S, s NodeRef, eb0 int, ef int) int {
+    names := lA(nodeOf(mut st, s))
+    vals := lC(nodeOf(mut st, s))
+    if lenL(mut st, names) != lenL(mut st, vals) {
+        return -2
+    }
+    mut eb := eb0
+    for i <- iter.Range(0, lenL(mut st, names)) {
+        v := latN(mut st, vals, i)
+        t := computeTy(mut st, v, eb, ef)
+        d := declOfExpr(mut st, v, eb, ef)
+        el := elemDeclOfExpr(mut st, v, eb, ef)
+        eb = bind(mut st, eb, latS(mut st, names, i), 0, nodeOf(mut st, s).b != 0, d, t, el, 0, -1, false, bindSty(mut st, v, eb, ef))
+    }
+    return eb
+}
+
+// yieldTyIn はブロック形の本体で最初に現れる yield の値の型（束縛・if・while の中まで見る）
+func yieldTyIn(st mut S, l ListRef, eb0 int, ef int) TyRef {
+    mut eb := eb0
+    for i <- iter.Range(0, lenL(mut st, l)) {
+        s := latN(mut st, l, i)
+        k := kindN(mut st, s)
+        if k == ast.SYield {
+            return computeTy(mut st, nA(nodeOf(mut st, s)), eb, ef)
+        }
+        if k == ast.SBind {
+            e2 := bindsOf(mut st, s, eb, ef)
+            if e2 != -2 {
+                eb = e2
+            }
+        } else if k == ast.SWhile {
+            t := yieldTyIn(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, s)))), eb, ef)
+            if t != -1 {
+                return t
+            }
+        } else if k == ast.SExpr && kindN(mut st, nA(nodeOf(mut st, s))) == ast.EIf {
+            mut cur := nA(nodeOf(mut st, s))
+            while cur != -1 {
+                if kindN(mut st, cur) != ast.EIf {
+                    if kindN(mut st, cur) == ast.EBlock {
+                        t := yieldTyIn(mut st, lA(nodeOf(mut st, cur)), eb, ef)
+                        if t != -1 {
+                            return t
+                        }
+                    }
+                    cur = -1
+                } else {
+                    t := yieldTyIn(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, cur)))), eb, ef)
+                    if t != -1 {
+                        return t
+                    }
+                    cur = nC(nodeOf(mut st, cur))
+                }
+            }
+        }
+    }
+    return -1
+}
+
+// blockTailTy はブロックの末尾値の型（文の束縛を辿ってから末尾の式を型付ける）
+func blockTailTy(st mut S, l ListRef, eb0 int, ef int) TyRef {
+    n := lenL(mut st, l)
+    if n == 0 || kindN(mut st, latN(mut st, l, n - 1)) != ast.SExpr {
+        return -1
+    }
+    mut eb := eb0
+    mut i := 0
+    while i < n - 1 {
+        s := latN(mut st, l, i)
+        if kindN(mut st, s) == ast.SBind {
+            e2 := bindsOf(mut st, s, eb, ef)
+            if e2 == -2 {
+                return -1
+            }
+            eb = e2
+        }
+        i += 1
+    }
+    return computeTy(mut st, nA(nodeOf(mut st, latN(mut st, l, n - 1))), eb, ef)
+}
+
+// armTy は腕の末尾の値の型（式文なら computeTy、値を持たない文・空の腕は unit、脱出の文は不明）
+func armTy(st mut S, l ListRef, eb int, ef int) TyRef {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return st.tUnit
+    }
+    s := latN(mut st, l, n - 1)
+    k := kindN(mut st, s)
+    if k == ast.SExpr {
+        tl := nA(nodeOf(mut st, s))
+        t := computeTy(mut st, tl, eb, ef)
+        if t == -1 && kindN(mut st, tl) == ast.EIdent {
+            // 末尾が同じ腕の中で束縛した名前（`{ v := x; v }` — `case v, nil:` の写し mvcase.sober が作る形）なら、その束縛の値の型
+            return boundTy(mut st, l, n - 1, sA(nodeOf(mut st, tl)), eb, ef)
+        }
+        return t
+    }
+    if k == ast.SRet || k == ast.SBreak || k == ast.SContinue || k == ast.SYield {
+        return -1
+    }
+    return st.tUnit
+}
+
+// boundTy は文の列 l の先頭 n 文のうち、名前 name 1 つだけを束縛する最後の SBind の値の型（無ければ -1）
+func boundTy(st mut S, l ListRef, n int, name StrRef, eb int, ef int) TyRef {
+    mut i := n - 1
+    while i >= 0 {
+        s := latN(mut st, l, i)
+        if kindN(mut st, s) == ast.SBind {
+            names := lA(nodeOf(mut st, s))
+            vals := lC(nodeOf(mut st, s))
+            if lenL(mut st, names) == 1 && lenL(mut st, vals) == 1 && StrEq(mut st, latS(mut st, names, 0), name) {
+                return computeTy(mut st, latN(mut st, vals, 0), eb, ef)
+            }
+        }
+        i -= 1
+    }
+    return -1
+}
+
+// switchTy は switch の値の型（腕の末尾から。上の case → default の順に分かる方）
+func switchTy(st mut S, sw NodeRef, eb int, ef int) TyRef {
+    cs := lB(nodeOf(mut st, sw))
+    for i <- iter.Range(0, lenL(mut st, cs)) {
+        t := armTy(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, latN(mut st, cs, i))))), eb, ef)
+        if t != -1 {
+            return t
+        }
+    }
+    dflt := nC(nodeOf(mut st, sw))
+    return if dflt != -1 { armTy(mut st, lA(nodeOf(mut st, dflt)), eb, ef) } else { TyRef(-1) }
+}
+
+// ifTy は if 式の値の型（then → else の順に分かる方）
+func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    els := nC(nodeOf(mut st, e))
+    if els == -1 {
+        return -1
+    }
+    then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+    t := armTy(mut st, then, eb, ef)
+    if t != -1 {
+        // then の腕が型なしの定数なら else の腕の byte に割り当てる（language.md 33 節 — if 式の兄弟の腕。32 節の named scalar と同じ語彙）
+        se := singleExpr(mut st, then)
+        if se == -1 || !isUntypedConst(mut st, se, eb, st.curPkg) {
+            return t
+        }
+        o := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eb, ef) } else { computeTy(mut st, els, eb, ef) }
+        return if isTag(mut st, o, TByte) { o } else { t }
+    }
+    if kindN(mut st, els) == ast.EBlock {
+        return armTy(mut st, lA(nodeOf(mut st, els)), eb, ef)
+    }
+    return computeTy(mut st, els, eb, ef)
+}
+
+// singleExpr は文の列がちょうど式文 1 つならその式（でなければ -1）
+func singleExpr(st mut S, l ListRef) NodeRef {
+    if lenL(mut st, l) != 1 {
+        return -1
+    }
+    s := latN(mut st, l, 0)
+    return if kindN(mut st, s) == ast.SExpr { nA(nodeOf(mut st, s)) } else { -1 }
+}
+
+// retExprTy は return の値の式の型（if 式は両腕が単一式で型が一致すればその型）
+func retExprTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    if kindN(mut st, e) == ast.EIf {
+        els := nC(nodeOf(mut st, e))
+        if els == -1 {
+            return computeTy(mut st, e, eb, ef)
+        }
+        te := singleExpr(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))))
+        if te == -1 {
+            return computeTy(mut st, e, eb, ef)
+        }
+        t1 := retExprTy(mut st, te, eb, ef)
+        if t1 == -1 {
+            return -1
+        }
+        mut t2 := TyRef(-1)
+        if kindN(mut st, els) == ast.EBlock {
+            ee := singleExpr(mut st, lA(nodeOf(mut st, els)))
+            if ee != -1 {
+                t2 = retExprTy(mut st, ee, eb, ef)
+            }
+        } else if kindN(mut st, els) == ast.EIf {
+            t2 = retExprTy(mut st, els, eb, ef)
+        }
+        if t2 == -1 {
+            return -1
+        }
+        return if tyEql(mut st, t1, t2) { t1 } else { TyRef(-1) }
+    }
+    return computeTy(mut st, e, eb, ef)
+}
+
+// readAnn は読み出しの注釈（imm slice の要素型が注釈を持つならその型。でなければ -1）
+func readAnn(st mut S, bt TyRef) TyRef {
+    if bt == -1 || tg(mut st, bt) != TSl || tMutBit(mut st, bt) != 0 || tyAnnFree(mut st, tElem(mut st, bt)) {
+        return -1
+    }
+    return tElem(mut st, bt)
+}
+
+// isErrOpt は error?（組み込み error の opt）か。region は見ない
+func isErrOpt(st mut S, t TyRef) (bool, error?) {
+    if tg(mut st, t) != TOpt {
+        return false, nil
+    }
+    et := errTy(mut st, st.curPkg, NodeRef(-1), TYFUEL)?
+    return tyEqlLoose(mut st, tInner(mut st, t), et), nil
+}

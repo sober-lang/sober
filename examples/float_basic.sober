@@ -1,0 +1,64 @@
+package main
+
+// float の段（language.md 37 節）: IEEE 754 binary64 の算術・比較・変換・特殊値（±Inf・NaN・-0）。印字は M5 まで math.Bits と int への変換で見る
+// （期待値は Go の双子 scripts/oracles/float_basic.go — 同じ計算を float64 で）
+
+import "std/iter"
+import "std/math"
+
+type P struct {
+    x float
+    y float
+}
+
+func norm(p P) float {
+    return math.Sqrt(p.x * p.x + p.y * p.y)
+}
+
+func sum(xs []float) float {
+    mut s := 0.0
+    for i <- iter.Range(0, len(xs)) {
+        s += xs[i]
+    }
+    return s
+}
+
+func main() int {
+    a := 0.1
+    b := 0.2
+    println(math.Bits(a + b), math.Bits(0.3), a + b == 0.3)
+    println(math.Bits(1.0 / 3.0), math.Bits(2.0 / 3.0 - 1.0 / 3.0))
+    // 特殊値
+    inf := 1.0 / 0.0
+    nan := 0.0 / 0.0
+    println(math.Bits(inf), math.Bits(0.0 - inf), inf > 1.0e308)
+    println(nan == nan, nan != nan, nan < 1.0, nan >= 1.0, math.Bits(nan) != 0)
+    // -0
+    nz := -0.0
+    println(math.Bits(nz), nz == 0.0, math.Bits(0.0 - 0.0), math.Bits(-(0.0)), math.Bits(1.0 / nz))
+    // 変換
+    println(int(7.99), int(-7.99), int(float(-3) / 2.0), int(1.0e18), math.Bits(float(9007199254740993)))
+    println(int(float(123456789) * 1000.0))
+    // sqrt・abs
+    println(math.Bits(math.Sqrt(2.0)), int(math.Sqrt(1.0e16)), math.Bits(math.Sqrt(-1.0)) != 0, math.Bits(math.Sqrt(-0.0)))
+    println(math.Bits(math.Abs(-2.5)), math.Bits(math.Abs(-0.0)))
+    // struct の欄・関数・slice・複合代入
+    p := P{x: 3.0, y: 4.0}
+    println(int(norm(p)), math.Bits(norm(P{x: 1.0, y: 1.0})))
+    mut xs := mut []float{}
+    for i <- iter.Range(0, 10) {
+        xs = append(xs, float(i) * 0.1)
+    }
+    println(math.Bits(sum(freeze(xs))))
+    mut acc := 1.0
+    for i <- iter.Range(0, 60) {
+        acc *= 2.0
+        acc -= 0.5
+    }
+    println(math.Bits(acc), math.Bits(math.FromBits(4607182418800017408) + 1.0))
+    // 比較の 6 種
+    x := 1.5
+    y := 2.5
+    println(x < y, x <= y, x > y, x >= y, x == y, x != y, x <= 1.5, x >= 1.5)
+    return 0
+}

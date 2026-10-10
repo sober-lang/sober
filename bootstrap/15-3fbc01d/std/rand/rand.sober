@@ -1,0 +1,94 @@
+package rand
+
+// Rand はシードを明示する決定的な擬似乱数（xoshiro128** — Blackman / Vigna。状態 128 bit・出力 32 bit）。
+// グローバルな乱数の状態は持たない — 乱数が要る関数は Rand を mut 引数で受ける（非決定は入力のシードに外出し: 同じシードなら同じ列。
+// 失敗の再現はシード 1 つで足りる — PBT・差分ファジングの第一顧客）。
+//
+//     mut r := rand.New(42)
+//     x := rand.Intn(mut r, 10)   // 0..9
+//
+// 算術は全部 32 bit の値の上で閉じる（各語は [0, 2^32)・積は小さい定数か 16 bit の桁どうし）— int の 64 bit の溢れに触れない
+// （溢れの意味論は Lean の約束〔値が 64 bit に収まる限り一致 — formal.md〕の外なので、64 bit の積を使う SplitMix64 / PCG は採らない）。
+// シードの拡散は SplitMix32（Murmur3 の fmix32 の定数 — 積は 16 bit の桁に割る mul32）。暗号用途には使わない（OS の乱数は io の面の口 — 未実装）
+type Rand struct {
+    s0, s1, s2, s3 int
+}
+
+const mask32 = 0xffffffff
+
+// New はシード seed（任意の int — 負でもよい）の Rand。状態の 4 語を SplitMix32 で埋める（下位 32 bit を数え上げ、上位 32 bit を 2 語目と 4 語目に混ぜる —
+// 違うシードは違う状態になる。全部 0 にはしない）
+func New(seed int) Rand {
+    lo := seed & mask32
+    hi := (seed >> 32) & mask32
+    a := fmix32((lo + 0x9e3779b9) & mask32)
+    b := fmix32(((lo + 2 * 0x9e3779b9) & mask32) ^ hi)
+    c := fmix32((lo + 3 * 0x9e3779b9) & mask32)
+    d := fmix32(((lo + 4 * 0x9e3779b9) & mask32) ^ fmix32(hi))
+    return if a | b | c | d == 0 { Rand{1, 0, 0, 0} } else { Rand{a, b, c, d} }
+}
+
+// Next は次の 32 bit の値（[0, 2^32)）
+func Next(r mut Rand) int {
+    out := mul32(rotl32(mul32(r.s1, 5), 7), 9)
+    t := (r.s1 << 9) & mask32
+    r.s2 = r.s2 ^ r.s0
+    r.s3 = r.s3 ^ r.s1
+    r.s1 = r.s1 ^ r.s2
+    r.s0 = r.s0 ^ r.s3
+    r.s2 = r.s2 ^ t
+    r.s3 = rotl32(r.s3, 11)
+    return out
+}
+
+// Int62 は [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
+func Int62(r mut Rand) int {
+    hi := Next(mut r) >> 2
+    lo := Next(mut r)
+    return (hi << 32) | lo
+}
+
+// Intn は [0, n) の値（n は 1 以上 — 0 以下は添字の境界検査で panic）。偏りなし（棄却法: n の倍数に収まる範囲の値だけ使う）
+func Intn(r mut Rand, n int) int {
+    if n <= 0 {
+        return panic()
+    }
+    lim := (1 << 62) - (1 << 62) % n
+    mut v := Int62(mut r)
+    while v >= lim {
+        v = Int62(mut r)
+    }
+    return v % n
+}
+
+// Bool は真偽を 1 つ
+func Bool(r mut Rand) bool {
+    return Next(mut r) & 1 == 1
+}
+
+// Split は r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+func Split(r mut Rand) Rand {
+    return New((Next(mut r) << 30) ^ Next(mut r))
+}
+
+// mul32 は a × b mod 2^32（a, b は [0, 2^32) — 16 bit の桁に割って、部分積を 2^49 未満に保つ）
+func mul32(a int, b int) int {
+    al := a & 0xffff
+    ah := a >> 16
+    bl := b & 0xffff
+    bh := b >> 16
+    return (al * bl + (((ah * bl + al * bh) & 0xffff) << 16)) & mask32
+}
+
+// rotl32 は 32 bit の左回転（x は [0, 2^32)・k は 1..31）
+func rotl32(x int, k int) int {
+    return ((x << k) | (x >> (32 - k))) & mask32
+}
+
+// fmix32 は SplitMix32 の出力の撹拌（Murmur3 の fmix32 と同じ定数）
+func fmix32(x0 int) int {
+    mut x := x0
+    x = mul32(x ^ (x >> 16), 0x85ebca6b)
+    x = mul32(x ^ (x >> 13), 0xc2b2ae35)
+    return x ^ (x >> 16)
+}

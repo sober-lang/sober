@@ -1,0 +1,2 @@
+sober: desugar error at examples/float_neg_mix.sober:6:14 (TypeMismatch)
+exit=1

@@ -1,0 +1,97 @@
+package main
+
+// V4-4b の突き合わせの対（Lean 側: Examples.lean の v44）。try_prop.sober から出力を抜いた形。
+// main の末尾の値 r を codegen は println で、Lean は脱糖したコアを機械で走らせて照合する
+
+type Neg error {
+    v int
+}
+
+type Big error {
+    v int
+    max int
+}
+
+func check(k int) (int, error?) {
+    if k < 0 {
+        return 0, Neg{v: k}
+    }
+    if k > 99 {
+        return 0, Big{v: k, max: 99}
+    }
+    return k, nil
+}
+
+// 3 成分の結果（成功値は多値のまま分解点へ流れる）
+func split(k int) (int, int, error?) {
+    c := check(k)?
+    return c / 10, c % 10, nil
+}
+
+// ループ内の ? と多値の分解。slice の結果成分のゼロ値は空 slice
+func digits(ks []int) ([]int, int, error?) {
+    mut out := mut []int{}
+    mut i := 0
+    while i < len(ks) {
+        a, b := split(ks[i])?
+        out = append(out, a + b)
+        i += 1
+    }
+    return freeze(out), i, nil
+}
+
+// defer は ? の脱出でも走る。式ブロック（region 境界）の中の ?
+func guarded(k int) (int, error?) {
+    defer append([]int{}, k)
+    v := {
+        c := check(k)?
+        c + 1
+    }
+    return v, nil
+}
+
+// inline 関数の ? は自分の結果へ、ラムダの ? は定義した関数（viaLambda）から抜ける
+func apply(k int, f func(int) int) (int, error?) {
+    c := check(k)?
+    return f(c), nil
+}
+
+func viaLambda(k int) (int, error?) {
+    r := apply(k, x => check(x * 3)? + 1)?
+    return r, nil
+}
+
+// (error?) 単値の関数の ? は文として
+func mustSmall(k int) error? {
+    check(k)?
+    return nil
+}
+
+func code(e error?) int {
+    return if e != nil {
+        switch e {
+        case Neg{v}: 1000 - v
+        case Big{v, max}: 2000 + v - max
+        }
+    } else {
+        0
+    }
+}
+
+func main() {
+    xs, n, e1 := digits([]int{12, 34, 5})
+    ys, m, e2 := digits([]int{12, -7, 5})
+    g1, e3 := guarded(41)
+    g2, e4 := guarded(150)
+    l1, e5 := viaLambda(20)
+    l2, e6 := viaLambda(40)
+    l3, e7 := viaLambda(-2)
+    a := len(xs) + xs[0] + xs[1] + xs[2] + n + code(e1)
+    b := len(ys) + m + code(e2)
+    c := g1 + code(e3) + g2 + code(e4)
+    d := l1 + code(e5) + l2 + code(e6) + l3 + code(e7)
+    f := code(mustSmall(3)) + code(mustSmall(-3))
+    r := a + b * 10 + c * 100 + d * 1000 + f * 100000
+    println(r)
+    r
+}

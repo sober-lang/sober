@@ -1,0 +1,2 @@
+sober: error at examples/json_view_nonexh.sober:12:5 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default
+exit=1

@@ -1,0 +1,17 @@
+package main
+
+// 負例（load が拒否 — diag.RecursiveType）: union の variant の欄が自分の型を []T で持つ（コアに再帰型が無い — 以前は build でコンパイラ自身が depth_limit で死んだ）
+
+type Value union {
+    Null {}
+    Num { n int }
+    Arr { xs []Value }
+}
+
+func main() {
+    v := Arr{xs: []Value{Num{n: 1}, Null{}}}
+    println(switch v {
+    case Arr{xs}: len(xs)
+    default: 0
+    })
+}

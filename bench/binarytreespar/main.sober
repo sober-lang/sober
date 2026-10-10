@@ -1,0 +1,83 @@
+package main
+
+// binary-trees の並列版（段 6 総取り — 逐次の bench/binarytrees と同じ木・同じ出力）: 深さごとに 1 つの子（par.Map — benchmarks game の
+// 並列の定番と同じ切り方）。子は自分の深さの木を iters 本、作って数えて捨てる（木ごとに one の region が捨てる — 子の間に確保の共有点なし）。
+// 素直縛り — ワーカーの数は書かない。Go の双子（go/）は深さごとに goroutine（ポインタの木と GC）
+
+import "std/iter"
+import "std/os"
+import "std/par"
+
+// bottomUp は深さ d の木を a に積み、根の番号を返す
+func bottomUp(a mut []int, d int) int {
+    mut l := -1
+    mut r := -1
+    if d > 0 {
+        l = bottomUp(mut a, d - 1)
+        r = bottomUp(mut a, d - 1)
+    }
+    a = append(a, l)
+    a = append(a, r)
+    return len(a) / 2 - 1
+}
+
+// check は節 n の部分木の節の数
+func check(a []int, n int) int {
+    l := a[n * 2]
+    if l < 0 {
+        return 1
+    }
+    return 1 + check(a, l) + check(a, a[n * 2 + 1])
+}
+
+// one は深さ d の木を作って数え、捨てる（この関数の region ごと）
+func one(d int) int {
+    mut a := mut []int{}
+    r := bottomUp(mut a, d)
+    return check(freeze(a), r)
+}
+
+// depth は深さ d の木を iters 本作って数えた合計
+func depth(d int, iters int) int {
+    mut c := 0
+    for i <- iter.Range(0, iters) {
+        c += one(d)
+    }
+    return c
+}
+
+func atoi(s string) int {
+    b := bytes(s)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        n = n * 10 + int(b[i]) - '0'
+    }
+    return n
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    n := if len(args) > 1 { atoi(args[1]) } else { 10 }
+    minDepth := 4
+    maxDepth := if minDepth + 2 > n { minDepth + 2 } else { n }
+    stretch := maxDepth + 1
+    println("stretch tree of depth ${stretch}\t check: ${one(stretch)}")
+    mut long := mut []int{}
+    lr := bottomUp(mut long, maxDepth)
+    mut ds := mut []int{}
+    mut d := minDepth
+    while d <= maxDepth {
+        ds = append(ds, d)
+        d += 2
+    }
+    cs, e := par.Map(freeze(ds), (x) => depth(x, 1 << (maxDepth - x + minDepth)))
+    if e != nil {
+        return 1
+    }
+    for k <- iter.Range(0, len(cs)) {
+        dk := minDepth + k * 2
+        println("${1 << (maxDepth - dk + minDepth)}\t trees of depth ${dk}\t check: ${cs[k]}")
+    }
+    println("long lived tree of depth ${maxDepth}\t check: ${check(freeze(long), lr)}")
+    return 0
+}

@@ -1,0 +1,8 @@
+package main
+
+// loader の負例: 無い package の import
+import "testdata/loader_neg/missing/nope"
+
+func main() {
+    println(nope.F())
+}

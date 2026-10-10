@@ -1,0 +1,626 @@
+package desugar
+
+// 表層型の解決表（S-b 段 1 — language.md 32 節）。型宣言の型は nominal だが、コアの型は構造型（名前が無い）なので、名前の区別はここで見る。
+// 表層型は int 1 つ:
+// - SUNK（-1）= 分からない（照合しない — 型パラメータ・error・推論できない式）
+// - SFREE（0）= 名前を含まない型（int・bool・string・名前なしの関数型・その slice / map / T?）
+// - SUNTYPED（-2）= 型なしのリテラル（整数リテラル・true / false — Go の untyped constant）。named scalar にも下地にも割り当てられる
+// - 正 = st.stys の記録（STBASE + 添字 — 同じ形は同じ参照に intern）: 型宣言（struct / union / error ラベル / 名前付き関数型 / named scalar）か、
+//   名前を含む slice / map
+// 規則（Assignable / Comparable / Convertible）はこのファイルの 1 か所。check（脱糖器）はここを呼び、build（lower）は同じ区別を型の記録で持つ（段 2 で共有）
+
+import "ast"
+import "lexer"
+import "std/iter"
+import "std/table"
+
+const SUNK = -1
+const SFREE = 0
+const SUNTYPED = -2
+const STBASE = 1
+
+const SKDecl = 1  // decl = 型宣言の節
+const SKSlice = 2 // a = 要素の表層型
+const SKMap = 3   // a = キー, b = 値
+
+// STy は表層型の記録
+type STy struct {
+    k int
+    decl int
+    a int
+    b int
+}
+
+func styAt(st mut S, s int) STy {
+    return table.Get(mut st.stys, s - STBASE)
+}
+
+// ── メモ（2 つの int のキー → 値。鎖つきハッシュ — resolve.sober の tyMemo と同じ形）: 型名の解決（型式 × package → 型宣言）と intern に使う。
+// 表層型の解決は束縛・照合点ごとに呼ばれる（展開の数だけ）ので、型名の線形探索と intern の線形探索を毎回やると check が 3 割重くなった ──
+
+type SMemo struct {
+    x int
+    y int
+    v int
+    next int
+}
+
+const SMEMOBUCKETS = 4096
+const SMISS = -3
+
+func smemoAt(st mut S, i int) SMemo {
+    return table.Get(mut st.smemo, i)
+}
+
+func smemoHash(x int, y int) int {
+    return ((x % 1000003 + 1000003) % 1000003 * 31 + (y % 1000003 + 1000003) % 1000003) % SMEMOBUCKETS
+}
+
+func smemoGet(st mut S, x int, y int) int {
+    if table.Len(mut st.smemoBucket) == 0 {
+        return SMISS
+    }
+    mut i := table.Get(mut st.smemoBucket, smemoHash(x, y))
+    while i >= 0 {
+        m := smemoAt(mut st, i)
+        if m.x == x && m.y == y {
+            return m.v
+        }
+        i = m.next
+    }
+    return SMISS
+}
+
+func smemoPut(st mut S, x int, y int, v int) {
+    if table.Len(mut st.smemoBucket) == 0 {
+        for _ <- iter.Range(0, SMEMOBUCKETS) {
+            table.Push(mut st.smemoBucket, -1)
+        }
+    }
+    h := smemoHash(x, y)
+    table.Push(mut st.smemo, SMemo{x: x, y: y, v: v, next: table.Get(mut st.smemoBucket, h)})
+    table.Set(mut st.smemoBucket, h, table.Len(mut st.smemo) - 1)
+}
+
+// sIntern は記録 {k, decl, a, b} の参照（同じ形があればそれ）。キー: 型宣言は (decl, 0)、slice / map は (-k, a × 2^20 + b)
+func sIntern(st mut S, k int, decl int, a int, b int) int {
+    kx := if k == SKDecl { decl } else { 0 - k }
+    ky := if k == SKDecl { 0 } else { a * 1048576 + b }
+    m := smemoGet(mut st, kx, ky)
+    if m != SMISS {
+        return m
+    }
+    table.Push(mut st.stys, STy{k: k, decl: decl, a: a, b: b})
+    s := STBASE + table.Len(mut st.stys) - 1
+    smemoPut(mut st, kx, ky, s)
+    return s
+}
+
+// typeDeclOf は型式 te（型名の節）の型宣言を package pk の文脈で引く（メモつき — 型式の節 × package で決まる）
+func typeDeclOf(st mut S, pk int, te int) int {
+    m := smemoGet(mut st, te, pk)
+    if m != SMISS {
+        return m
+    }
+    td := LookupTypeDecl(mut st, pk, nodeAt(mut st, te).a)
+    smemoPut(mut st, te, pk, td)
+    return td
+}
+
+func sDecl(st mut S, decl int) int {
+    return sIntern(mut st, SKDecl, decl, 0, 0)
+}
+
+// valueSty は型宣言 decl の値の表層型。error ラベルは型として使えず、値は組み込みの error（13 節 — どのラベルも入る受け皿）なので SUNK。
+// ラベルのリテラルの束縛は declOfExpr が閉じた error の union（ERRS）を返す — これも組み込みの error で SUNK（SurfaceOf の "error" と同じ）
+func valueSty(st mut S, decl int) int {
+    if decl == ERRS {
+        return SUNK
+    }
+    return if kindOf(mut st, nodeAt(mut st, decl).c) == ast.BError { SUNK } else { sDecl(mut st, decl) }
+}
+
+// sDeclOf は表層型 s が型宣言ならその節（でなければ -1）
+func sDeclOf(st mut S, s int) int {
+    if s < STBASE {
+        return -1
+    }
+    x := styAt(mut st, s)
+    return if x.k == SKDecl { x.decl } else { -1 }
+}
+
+// sBodyKind は表層型 s が型宣言なら本体の種類（BStruct / BUnion / BError / BFunc / BDefined — でなければ -1）
+func sBodyKind(st mut S, s int) int {
+    d := sDeclOf(mut st, s)
+    return if d < 0 { -1 } else { kindOf(mut st, nodeAt(mut st, d).c) }
+}
+
+func isNamedScalar(st mut S, s int) bool {
+    return sBodyKind(mut st, s) == ast.BDefined
+}
+
+// namedUnder は named scalar の型宣言 decl の下地（0 = int、1 = bool、-1 = 下地の制限に反する — int / bool 以外）
+func namedUnder(st mut S, decl int) int {
+    te := nodeAt(mut st, nodeAt(mut st, decl).c).a
+    if kindOf(mut st, te) != ast.TName {
+        return -1
+    }
+    n := nodeAt(mut st, te).a
+    if strIs(mut st, n, "int") {
+        return 0
+    }
+    if strIs(mut st, n, "bool") {
+        return 1
+    }
+    return -1
+}
+
+// noteNamedFn は名前付き関数型 td の展開の結果 te（合成の関数型の節）を覚える（展開で名前が消えるので — report-43 §3）
+func noteNamedFn(st mut S, te int, td int) {
+    if te != td {
+        table.Push(mut st.fnNamed, te)
+        table.Push(mut st.fnNamed, td)
+    }
+}
+
+// namedFnOf は関数型の節 te が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
+func namedFnOf(st mut S, te int) int {
+    mut i := 0
+    while i < table.Len(mut st.fnNamed) {
+        if table.Get(mut st.fnNamed, i) == te {
+            return table.Get(mut st.fnNamed, i + 1)
+        }
+        i += 2
+    }
+    return -1
+}
+
+// SurfaceOf は型式 te（package pk の文脈・今の型環境 st.tenv）の表層型
+func SurfaceOf(st mut S, pk int, te int) int {
+    if te < 0 {
+        return SUNK
+    }
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        name := nodeAt(mut st, te).a
+        if tbindAt(mut st, st.tenv, name) >= 0 {
+            return SUNK
+        }
+        if strIs(mut st, name, "int") || strIs(mut st, name, "bool") || strIs(mut st, name, "string") {
+            return SFREE
+        }
+        if strIs(mut st, name, "error") {
+            return SUNK
+        }
+        td := typeDeclOf(mut st, pk, te)
+        return if td < 0 { SUNK } else { sDecl(mut st, td) }
+    }
+    if k == ast.TGeneric {
+        td := typeDeclOf(mut st, pk, te)
+        return if td < 0 { SUNK } else { sDecl(mut st, td) }
+    }
+    if k == ast.TFunc {
+        td := namedFnOf(mut st, te)
+        return if td < 0 { SFREE } else { sDecl(mut st, td) }
+    }
+    if k == ast.TOpt {
+        return SurfaceOf(mut st, pk, nodeAt(mut st, te).a)
+    }
+    if k == ast.TSlice {
+        e := SurfaceOf(mut st, pk, nodeAt(mut st, te).a)
+        return if e == SFREE || e == SUNK { e } else { sIntern(mut st, SKSlice, 0, e, 0) }
+    }
+    if k == ast.TMap {
+        a := SurfaceOf(mut st, pk, nodeAt(mut st, te).a)
+        b := SurfaceOf(mut st, pk, nodeAt(mut st, te).b)
+        if a == SUNK || b == SUNK {
+            return SUNK
+        }
+        return if a == SFREE && b == SFREE { SFREE } else { sIntern(mut st, SKMap, 0, a, b) }
+    }
+    return SUNK
+}
+
+// ── 規則（language.md 32 節）──
+
+// Assignable は表層型 src の値を表層型 dst の場所（引数・代入・戻り・欄・要素）に置けるか（Go の assignability — 片方が名前なしの関数型なら可）
+func Assignable(st mut S, dst int, src int) bool {
+    if dst == SUNK || src == SUNK || dst == src {
+        return true
+    }
+    if src == SUNTYPED {
+        return dst == SFREE || isNamedScalar(mut st, dst)
+    }
+    if dst == SUNTYPED {
+        return true
+    }
+    dk := sBodyKind(mut st, dst)
+    sk := sBodyKind(mut st, src)
+    if dst == SFREE {
+        // 名前付き → 名前なし: 関数型だけ可。named scalar・名前を含む slice / map は不可。struct / union は形の違いなので Lean に任せる
+        return !(sk == ast.BDefined || styAt(mut st, src).k != SKDecl)
+    }
+    if src == SFREE {
+        return !(dk == ast.BDefined || styAt(mut st, dst).k != SKDecl)
+    }
+    return false
+}
+
+// Comparable は `==` / `!=` の両辺の表層型が比べられるか（struct / union / error ラベルの == は無い — X2。named scalar は同じ型か型なしのリテラルと）
+func Comparable(st mut S, l int, r int) bool {
+    lk := sBodyKind(mut st, l)
+    rk := sBodyKind(mut st, r)
+    if lk == ast.BStruct || lk == ast.BUnion || lk == ast.BError || rk == ast.BStruct || rk == ast.BUnion || rk == ast.BError {
+        return false
+    }
+    if lk == ast.BDefined || rk == ast.BDefined {
+        return l == r || l == SUNK || r == SUNK || l == SUNTYPED || r == SUNTYPED
+    }
+    return true
+}
+
+// ── 式の表層型（段 1: 脱糖器の型の追跡に沿って求める。lower は自分の型の記録で同じ区別を持つ — 段 2 で共有）──
+
+// isUntypedConst は式 e が型なしの定数か（整数リテラル・その単項 - / ^・括弧・束縛されていない true / false・const の名前）
+func isUntypedConst(st mut S, e int, eb int, pk int) bool {
+    k := kindOf(mut st, e)
+    if k == ast.EInt {
+        return true
+    }
+    if k == ast.EParen {
+        return isUntypedConst(mut st, nodeAt(mut st, e).a, eb, pk)
+    }
+    if k == ast.EUnary {
+        op := nodeAt(mut st, e).a
+        return (op == lexer.Minus || op == lexer.Caret) && isUntypedConst(mut st, nodeAt(mut st, e).b, eb, pk)
+    }
+    if k == ast.EIdent {
+        n := nodeAt(mut st, e).a
+        if lookup(mut st, eb, n) >= 0 {
+            return false
+        }
+        if strIs(mut st, n, "true") || strIs(mut st, n, "false") {
+            return true
+        }
+        // const は値の式で決める（数の const は型なし、辞書 const — struct のリテラル — は型つき）
+        c := constOf(mut st, e, pk)
+        if c < 0 {
+            return false
+        }
+        return isUntypedConst(mut st, nodeAt(mut st, ConNode(mut st, c)).b, -1, ConPkg(mut st, c))
+    }
+    return false
+}
+
+// exprSty は式 e の表層型
+func exprSty(st mut S, e int, eb int, ef int) int {
+    if e < 0 {
+        return SUNK
+    }
+    // 型なしの定数の判定（isUntypedConst）は種類ごとの枝に畳んである — 照合点ごとに呼ばれる（自己適用で 50 万回級）ので、束縛の名前の lookup と
+    // const の探索を 1 回ずつに
+    k := kindOf(mut st, e)
+    if k == ast.EInt {
+        return SUNTYPED
+    }
+    if k == ast.EBinary || k == ast.EStrlit || k == ast.EInterp {
+        return SFREE
+    }
+    if k == ast.EUnary {
+        return if isUntypedConst(mut st, e, eb, st.curPkg) { SUNTYPED } else { SFREE }
+    }
+    if k == ast.EParen {
+        return exprSty(mut st, nodeAt(mut st, e).a, eb, ef)
+    }
+    if k == ast.EIdent {
+        n := nodeAt(mut st, e).a
+        b := lookup(mut st, eb, n)
+        if b >= 0 {
+            return bnd(mut st, b).sty
+        }
+        if strIs(mut st, n, "true") || strIs(mut st, n, "false") {
+            return SUNTYPED
+        }
+        c := constOf(mut st, e, st.curPkg)
+        if c >= 0 && isUntypedConst(mut st, nodeAt(mut st, ConNode(mut st, c)).b, -1, ConPkg(mut st, c)) {
+            return SUNTYPED
+        }
+        if lookupF(mut st, ef, n) >= 0 {
+            return SUNK
+        }
+        if c >= 0 {
+            saved := st.curPkg
+            st.curPkg = ConPkg(mut st, c)
+            s := exprSty(mut st, nodeAt(mut st, ConNode(mut st, c)).b, -1, -1)
+            st.curPkg = saved
+            return s
+        }
+        // 関数の名前（値として）— 関数の線形探索を照合点ごとに繰り返さない。キーの 2 つ目は負（const のメモ (e, pk) と分ける）
+        m := smemoGet(mut st, e, -2 - st.curPkg)
+        if m != SMISS {
+            return m
+        }
+        fs := if findFn(mut st, e, eb) >= 0 { SFREE } else { SUNK }
+        smemoPut(mut st, e, -2 - st.curPkg, fs)
+        return fs
+    }
+    if k == ast.ECall {
+        callee := nodeAt(mut st, e).a
+        args := nodeAt(mut st, e).b
+        ck := kindOf(mut st, callee)
+        // 束縛の名前の呼び出し（関数値）: 変換ではない（convTarget は束縛を先に見る）
+        if ck == ast.EIdent && lookup(mut st, eb, nodeAt(mut st, callee).a) >= 0 {
+            n := nodeAt(mut st, callee).a
+            if strIs(mut st, n, "len") {
+                return SFREE
+            }
+            if strIs(mut st, n, "append") && llen(mut st, args) > 0 {
+                return exprSty(mut st, lat(mut st, args, 0), eb, ef)
+            }
+            return SUNK
+        }
+        // append の結果は第 1 引数の表層型（引数の束縛で決まるのでメモしない）
+        if ck == ast.EIdent && strIs(mut st, nodeAt(mut st, callee).a, "append") && llen(mut st, args) > 0 {
+            cv := convTarget(mut st, callee, eb, st.curPkg)
+            if cv >= 0 {
+                return sDecl(mut st, cv)
+            }
+            return exprSty(mut st, lat(mut st, args, 0), eb, ef)
+        }
+        // 他は呼び出しの節 × package で決まる（変換の行き先・len・関数の結果の型 — callee の名前の解決は字句の位置で決まる）ので結果ごとメモ。
+        // 変換の判定（型宣言の探索）を照合点ごとに繰り返さない（S-b 段 2 の軽い版）
+        m := smemoGet(mut st, e, st.curPkg)
+        if m != SMISS {
+            return m
+        }
+        s := callStyOf(mut st, callee, eb)
+        smemoPut(mut st, e, st.curPkg, s)
+        return s
+    }
+    if k == ast.ETry {
+        return SUNK
+    }
+    if k == ast.EComposite {
+        td := LookupTypeDecl(mut st, st.curPkg, nodeAt(mut st, e).a)
+        if td >= 0 {
+            return valueSty(mut st, td)
+        }
+        vr := findVariant(mut st, st.curPkg, nodeAt(mut st, e).a)
+        return if vr.decl >= 0 { sDecl(mut st, vr.decl) } else { SUNK }
+    }
+    if k == ast.ESelector {
+        base := declOfExpr(mut st, nodeAt(mut st, e).a, eb, ef)
+        fs := structFields(mut st, base)
+        if fs < 0 {
+            return SUNK
+        }
+        i := fieldIndex(mut st, fs, nodeAt(mut st, e).b)
+        if i < 0 {
+            return SUNK
+        }
+        saved := st.tenv
+        st.tenv = hget(mut st, base + 2)
+        s := SurfaceOf(mut st, hget(mut st, base + 1), nodeAt(mut st, lat(mut st, fs, i)).b)
+        st.tenv = saved
+        return s
+    }
+    if k == ast.EIndex {
+        b := exprSty(mut st, nodeAt(mut st, e).a, eb, ef)
+        if b == SFREE || b == SUNK {
+            return b
+        }
+        if b < STBASE {
+            return SUNK
+        }
+        x := styAt(mut st, b)
+        return if x.k == SKSlice { x.a } else if x.k == SKMap { x.b } else { SUNK }
+    }
+    if k == ast.EBlock {
+        tl := tailExpr(mut st, e)
+        return if tl < 0 { SUNK } else { exprSty(mut st, tl, eb, ef) }
+    }
+    if k == ast.EIf {
+        tl := tailExpr(mut st, nodeAt(mut st, e).b)
+        s1 := if tl < 0 { SUNK } else { exprSty(mut st, tl, eb, ef) }
+        // 型なしの定数の腕は兄弟の腕の型に割り当てる（32 節）— then が型なしなら else の表層型
+        el := nodeAt(mut st, e).c
+        if s1 != SUNTYPED || el < 0 {
+            return s1
+        }
+        te := if kindOf(mut st, el) == ast.EBlock { tailExpr(mut st, el) } else { el }
+        return if te < 0 { SUNK } else { exprSty(mut st, te, eb, ef) }
+    }
+    return SUNK
+}
+
+// callStyOf は呼び出し（callee が束縛の名前でも append でもない）の結果の表層型: 変換なら行き先、len は SFREE、他は関数の結果
+func callStyOf(st mut S, callee int, eb int) int {
+    cv := convTarget(mut st, callee, eb, st.curPkg)
+    if cv >= 0 {
+        return sDecl(mut st, cv)
+    }
+    if cv == CONV_INT || cv == CONV_BOOL {
+        return SFREE
+    }
+    if kindOf(mut st, callee) == ast.EIdent && strIs(mut st, nodeAt(mut st, callee).a, "len") {
+        return SFREE
+    }
+    return callSty(mut st, callee, eb)
+}
+
+// callSty は関数 callee の呼び出しの結果の表層型（単値・非ジェネリックだけ — 他は SUNK）
+func callSty(st mut S, callee int, eb int) int {
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 || llen(mut st, fnTParams(mut st, fi)) > 0 {
+        return SUNK
+    }
+    rs := fnResults(mut st, fi)
+    if llen(mut st, rs) != 1 {
+        return SUNK
+    }
+    saved := st.tenv
+    st.tenv = -1
+    s := SurfaceOf(mut st, fnPkg(mut st, fi), lat(mut st, rs, 0))
+    st.tenv = saved
+    return s
+}
+
+// constOf は名前の節 e（package pk の文脈）の const の表の添字（無ければ -1 — メモつき）
+func constOf(st mut S, e int, pk int) int {
+    m := smemoGet(mut st, e, pk)
+    if m != SMISS {
+        return m
+    }
+    c := lookupConst(mut st, pk, nodeAt(mut st, e).a, 0)
+    smemoPut(mut st, e, pk, c)
+    return c
+}
+
+func cmpOp(op int) bool {
+    return op == lexer.EqualEqual || op == lexer.BangEqual || op == lexer.Less || op == lexer.LessEqual || op == lexer.Greater || op == lexer.GreaterEqual
+}
+
+// ── 変換 `X(e)` / `int(x)` / `bool(x)` ──
+
+const CONV_NONE = -1
+const CONV_INT = -2
+const CONV_BOOL = -3
+
+// convTarget は呼び出しの callee が変換なら行き先（named scalar の型宣言 / CONV_INT / CONV_BOOL — でなければ CONV_NONE）
+func convTarget(st mut S, callee int, eb int, pk int) int {
+    mut name := -1
+    k := kindOf(mut st, callee)
+    if k == ast.EIdent {
+        name = nodeAt(mut st, callee).a
+        if lookup(mut st, eb, name) >= 0 {
+            return CONV_NONE
+        }
+        if strIs(mut st, name, "int") {
+            return CONV_INT
+        }
+        if strIs(mut st, name, "bool") {
+            return CONV_BOOL
+        }
+    } else if k == ast.ESelector {
+        name = qualName(mut st, callee, eb)
+    }
+    if name < 0 {
+        return CONV_NONE
+    }
+    td := LookupTypeDecl(mut st, pk, name)
+    if td < 0 || kindOf(mut st, nodeAt(mut st, td).c) != ast.BDefined {
+        return CONV_NONE
+    }
+    return td
+}
+
+// convOk は変換 cv（convTarget の結果）を、核の型 t・表層型 s の値に掛けられるか（下地が同じ — named ⇄ 下地・同じ下地の named どうし）
+func convOk(st mut S, cv int, t TyRef, s int) bool {
+    mut want := -1
+    if cv >= 0 {
+        want = namedUnder(mut st, cv)
+        if want < 0 {
+            return false
+        }
+    } else {
+        want = if cv == CONV_INT { 0 } else { 1 }
+    }
+    if s != SFREE && s != SUNTYPED && s != SUNK && !isNamedScalar(mut st, s) {
+        return false
+    }
+    if t == -1 {
+        return true
+    }
+    return if want == 0 { isTag(mut st, t, TInt) } else { isTag(mut st, t, TBool) }
+}
+
+// ── 照合の小道具（拒否は KNominal — 診断の種類 TypeMismatch）──
+
+func wantAssignable(st mut S, dst int, e int, eb int, ef int) error? {
+    // 式の表層型は安くないので、結果が決まっている場合は求めない: 行き先が不明なら常に可、名前を含まない行き先を拒否するのは named scalar だけ
+    if dst == SUNK || (dst == SFREE && !st.hasNamed) {
+        return nil
+    }
+    if !Assignable(mut st, dst, exprSty(mut st, e, eb, ef)) {
+        return Fail{k: KNominal, tok: tokOf(mut st, e)}
+    }
+    return nil
+}
+
+// notNamed は式 e が named scalar でないこと（算術・順序・論理・条件・添字の被演算子 — 演算は == / != だけ）
+func notNamed(st mut S, e int, eb int, ef int) error? {
+    if !st.hasNamed {
+        return nil
+    }
+    if isNamedScalar(mut st, exprSty(mut st, e, eb, ef)) {
+        return Fail{k: KNominal, tok: tokOf(mut st, e)}
+    }
+    return nil
+}
+
+// varSty は `:=` で束縛する値の表層型（型なしのリテラルは下地の型になる — `x := 5` の x は int）
+func varSty(s int) int {
+    return if s == SUNTYPED { SFREE } else { s }
+}
+
+// elemSty は slice の表層型 s の要素の表層型
+func elemSty(st mut S, s int) int {
+    if s == SFREE || s == SUNK {
+        return s
+    }
+    if s < STBASE {
+        return SUNK
+    }
+    x := styAt(mut st, s)
+    return if x.k == SKSlice { x.a } else { SUNK }
+}
+
+// retSty は今の return の行き先（関数のラベル）の j 番目の結果の表層型（値の数 nv が結果の数と違えば SUNK — 多値の転送は照合しない）
+func retSty(st mut S, j int, nv int) int {
+    if st.retTarget < 0 {
+        return SUNK
+    }
+    x := lab(mut st, labelAt(mut st, st.retTarget))
+    if x.res < 0 || llen(mut st, x.res) != nv {
+        return SUNK
+    }
+    return SurfaceOf(mut st, x.resPkg, lat(mut st, x.res, j))
+}
+
+// ── lower（build 経路）が読む公開の口（式の表層型は lower が自分の型の記録で持つ — 段 2 で共有）──
+
+// NamedUnder は named scalar の型宣言の下地（0 = int、1 = bool、-1 = 制限違反）
+func NamedUnder(st mut S, decl int) int {
+    return namedUnder(mut st, decl)
+}
+
+// NamedFnOf は関数型の節が名前付き関数型の展開の結果ならその型宣言（でなければ -1）
+func NamedFnOf(st mut S, te int) int {
+    return namedFnOf(mut st, te)
+}
+
+// IsUntypedConst は式 e（package pk の文脈）が型なしの定数か（束縛の有無は呼び手が先に見る — lower は自分のスコープで）
+func IsUntypedConst(st mut S, e int, pk int) bool {
+    return isUntypedConst(mut st, e, -1, pk)
+}
+
+// ConvTarget は callee（package pk の文脈、束縛でないことは呼び手が見る）が変換なら行き先（convTarget）
+func ConvTarget(st mut S, callee int, pk int) int {
+    return convTarget(mut st, callee, -1, pk)
+}
+
+// bindSty は `:=` の束縛の表層型。named scalar の無いプログラムでは、既に求めた型宣言 d・要素の型宣言 el から作る
+// （照合で要るのは struct / union / error ラベルとその slice の区別だけ — 式の表層型を求め直さない）
+func bindSty(st mut S, ve int, eb int, ef int, d int, el int) int {
+    if st.hasNamed {
+        return varSty(exprSty(mut st, ve, eb, ef))
+    }
+    if d >= 0 {
+        return valueSty(mut st, hget(mut st, d))
+    }
+    if el >= 0 {
+        e := valueSty(mut st, hget(mut st, el))
+        return if e == SUNK { SUNK } else { sIntern(mut st, SKSlice, 0, e, 0) }
+    }
+    return SUNK
+}

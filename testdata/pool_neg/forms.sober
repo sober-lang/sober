@@ -1,0 +1,33 @@
+package main
+
+// analyzer（R-a）の拒否の形を全部並べた負例 — 期待する指摘は forms.err（scripts/pool_oracle.sh が主の sober と Zig 版の両方で照合）
+
+import "std/pool"
+
+type Buf struct {
+    n int
+}
+
+func a(p mut pool.Pool[Buf]) int {
+    h := pool.Acquire(mut p, Buf{n: 1})
+    defer pool.Release(mut p, h)
+    g := pool.Acquire(mut p, Buf{n: 2})
+    defer pool.Release(mut p, h)
+    k := pool.Acquire(mut p, Buf{n: 3})
+    println(1)
+    mut m := pool.Acquire(mut p, Buf{n: 4})
+    println(pool.Acquire(mut p, Buf{n: 5}).idx)
+    pool.Release(mut p, k)
+    q := pool.Acquire[Buf](mut p, Buf{n: 6})
+    defer pool.Release[Buf](mut p, q)
+    r := pool.Acquire(mut p, Buf{n: 7})
+    defer pool.Release(p, r)
+    k2 := Buf{n: 8} |> pool.Acquire(mut p, _)
+    defer pool.Release(mut p, k2)
+    return 0
+}
+
+func main() {
+    mut p := pool.New[Buf]()
+    println(a(mut p))
+}

@@ -1,0 +1,617 @@
+package lower
+
+// ジェネリクスの単相化（src/lower_types.zig の instStruct / typeKey / unify / tyArgOk、src/lower_inline.zig の genericCall / genericInline /
+// inferTypeArgs / instFunc の写し）と辞書 const（dictConst）。
+// 型環境 = 型パラメータの束縛の列 [n, (名前, 型)…]（L_TENV — 下ろし中の関数・展開・ジェネリック struct のレイアウト中のもの）
+
+import "desugar"
+import "ast"
+
+// envLookup は型環境 env の名前 name の型（無ければ -1）
+func envLookup(st mut desugar.S, env int, name int) int {
+    if env < 0 {
+        return -1
+    }
+    mut i := 0
+    while i < st.h[env] {
+        if strEq(mut st, st.h[env + 1 + i * 2], name) {
+            return st.h[env + 2 + i * 2]
+        }
+        i += 1
+    }
+    return -1
+}
+
+// bindsOf は型パラメータの名前の列 names（文字列の列）と型引数の列 targs の型環境
+func bindsOf(st mut desugar.S, names int, targs int) int {
+    n := llen(mut st, names)
+    env := recN(mut st, 1 + n * 2)
+    st.h[env] = n
+    mut i := 0
+    while i < n {
+        st.h[env + 1 + i * 2] = lat(mut st, names, i)
+        st.h[env + 2 + i * 2] = lat(mut st, targs, i)
+        i += 1
+    }
+    return env
+}
+
+// tyArgOk は Def として呼ぶジェネリックの型引数として許される型（region を持たない）
+func tyArgOk(st mut desugar.S, t int) bool {
+    k := st.h[t]
+    if k == TInt || k == TBool || k == TFnv {
+        return true
+    }
+    if k == TOpt {
+        return tyArgOk(mut st, st.h[t + 1])
+    }
+    if k == TStruct || k == TUnion {
+        return tyArgFields(mut st, t, false)
+    }
+    return false
+}
+
+// tyArgValueOk は展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
+func tyArgValueOk(st mut desugar.S, t int) bool {
+    k := st.h[t]
+    if k == TInt || k == TBool || k == TFnv {
+        return true
+    }
+    if k == TSlice || k == TOpt {
+        return tyArgValueOk(mut st, st.h[t + 1])
+    }
+    if k == TMap {
+        return tyArgValueOk(mut st, st.h[t + 1]) && tyArgValueOk(mut st, st.h[t + 2])
+    }
+    if k == TStruct || k == TUnion {
+        return tyArgFields(mut st, t, true)
+    }
+    return false
+}
+
+// tyArgFields は struct / union のフィールドがすべて型引数として許されるか
+func tyArgFields(st mut desugar.S, t int, value bool) bool {
+    info := st.h[t + 1]
+    fs := st.h[info + SI_FIELDS]
+    if st.h[t] == TStruct {
+        mut i := 0
+        while i < llen(mut st, fs) {
+            ft := st.h[lat(mut st, fs, i) + 1]
+            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
+            if !ok {
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+    mut v := 0
+    while v < llen(mut st, fs) {
+        vfs := st.h[lat(mut st, fs, v) + 2]
+        mut i := 0
+        while i < llen(mut st, vfs) {
+            ft := st.h[lat(mut st, vfs, i) + 1]
+            ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
+            if !ok {
+                return false
+            }
+            i += 1
+        }
+        v += 1
+    }
+    return true
+}
+
+// ── 型の綴り（インスタンスのキー — IR の関数名に出る）──
+// 綴りはヒープの先端へ 1 バイト 1 語で直接積む（綴りの途中でヒープの他の記録を作らない — 連続した文字列になる）。
+// 出力先を別の mut slice にして再帰の Def に渡す形は sober check が def error にした（mut 引数 2 本の再帰 — F-31）
+
+func putLit(st mut desugar.S, w string) {
+    b := bytes(w)
+    mut i := 0
+    while i < len(b) {
+        st.h = append(st.h, b[i])
+        i += 1
+    }
+}
+
+func putStr(st mut desugar.S, s int) {
+    n := st.h[s]
+    mut i := 0
+    while i < n {
+        st.h = append(st.h, st.h[s + 1 + i])
+        i += 1
+    }
+}
+
+func typeKey(st mut desugar.S, t int) {
+    k := st.h[t]
+    if k == TInt {
+        putLit(mut st, "int")
+        return
+    }
+    if k == TBool {
+        putLit(mut st, "bool")
+        return
+    }
+    if k == TStruct {
+        putStr(mut st, st.h[st.h[t + 1] + SI_KEY])
+        return
+    }
+    if k == TUnion {
+        info := st.h[t + 1]
+        if st.h[info + SI_DECL] == -1 {
+            putLit(mut st, "error")
+        } else {
+            putStr(mut st, st.h[info + SI_KEY])
+        }
+        return
+    }
+    if k == TOpt {
+        st.h = append(st.h, 63)
+        typeKey(mut st, st.h[t + 1])
+        return
+    }
+    if k == TFnv || k == TFunc {
+        ft := st.h[t + 1]
+        putLit(mut st, "fn(")
+        mut i := 0
+        while i < llen(mut st, st.h[ft]) {
+            typeKey(mut st, lat(mut st, st.h[ft], i))
+            st.h = append(st.h, 44)
+            i += 1
+        }
+        st.h = append(st.h, 41)
+        i = 0
+        while i < llen(mut st, st.h[ft + 1]) {
+            typeKey(mut st, lat(mut st, st.h[ft + 1], i))
+            i += 1
+        }
+        return
+    }
+    if k == TSlice {
+        putLit(mut st, if st.h[t + 2] != 0 { "mut[]" } else { "[]" })
+        typeKey(mut st, st.h[t + 1])
+        return
+    }
+    if k == TMap {
+        putLit(mut st, "map[")
+        typeKey(mut st, st.h[t + 1])
+        putLit(mut st, "]")
+        typeKey(mut st, st.h[t + 2])
+        return
+    }
+    st.h = append(st.h, 63)
+}
+
+// instKey は `base[T1,T2]`（base は文字列）の文字列
+func instKey(st mut desugar.S, base int, targs int) int {
+    at := len(st.h)
+    st.h = append(st.h, 0)
+    putStr(mut st, base)
+    st.h = append(st.h, 91)
+    mut i := 0
+    while i < llen(mut st, targs) {
+        if i > 0 {
+            st.h = append(st.h, 44)
+        }
+        typeKey(mut st, lat(mut st, targs, i))
+        i += 1
+    }
+    st.h = append(st.h, 93)
+    st.h[at] = len(st.h) - at - 1
+    return at
+}
+
+// ── ジェネリック struct ──
+
+// structByKey は型表のキー（文字列）の struct の情報（無ければ -1）
+func structByKey(st mut desugar.S, key int) int {
+    mut x := gv(mut st, L_TYPES)
+    while x >= 0 {
+        if st.h[x] == TStruct && st.h[x + SI_KEY] >= 0 && strEq(mut st, st.h[x + SI_KEY], key) {
+            return x
+        }
+        x = st.h[x + SI_NEXT]
+    }
+    return -1
+}
+
+// instStruct はジェネリック struct の適用 `Name[args]`（型引数は呼び手の文脈で読む）。レイアウトは呼び手が済ませる
+func instStruct(st mut desugar.S, pk int, name int, args int, tok int) (int, error?) {
+    td := lookupTypeDecl(mut st, pk, name)
+    if td < 0 || llen(mut st, st.h[td + NB]) == 0 {
+        return 0, LowerFail{k: KUndefined, tok: tok}
+    }
+    if llen(mut st, args) != llen(mut st, st.h[td + NB]) {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    n := llen(mut st, args)
+    targs := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        t := resolveType(mut st, pk, lat(mut st, args, i), false)?
+        if !tyArgValueOk(mut st, t) {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        st.h[targs + 1 + i] = t
+        i += 1
+    }
+    dpk := declPkg(mut st, pk, name)
+    ik := instKey(mut st, strDot(mut st, pkgPath(mut st, dpk), st.h[td + NA]), targs)
+    x := structByKey(mut st, ik)
+    if x >= 0 {
+        return x, nil
+    }
+    if kindOf(mut st, st.h[td + NC]) != ast.BStruct {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    info := recN(mut st, SISZ)
+    st.h[info] = TStruct
+    st.h[info + SI_DECL] = td
+    st.h[info + SI_PKG] = dpk
+    st.h[info + SI_WORDS] = 0
+    st.h[info + SI_STATE] = LPending
+    st.h[info + SI_NEXT] = gv(mut st, L_TYPES)
+    hv1 := rec4(mut st, TStruct, info, 0, 0)
+    st.h[info + SI_TY] = hv1
+    st.h[info + SI_KEY] = ik
+    hv2 := bindsOf(mut st, st.h[td + NB], targs)
+    st.h[info + SI_ENV] = hv2
+    st.h[info + SI_TARGS] = targs
+    gs(mut st, L_TYPES, info)
+    return info, nil
+}
+
+// declPkg は型の名前（"N" か "ref.N"）の宣言側 package
+func declPkg(st mut desugar.S, pk int, name int) int {
+    dot := dotAt(mut st, name)
+    if dot >= 0 {
+        return importOf(mut st, pk, name, 0, dot)
+    }
+    return pk
+}
+
+// unify は仮引数の型式 te（型パラメータ tps を含む — callee の package 文脈 pk）と実引数の型 t から束縛 binds（型の列、未定は -1）を集める
+func unify(st mut desugar.S, pk int, te int, t int, tps int, binds int, tok int) error? {
+    k := kindOf(mut st, te)
+    if k == ast.TName {
+        mut i := 0
+        while i < llen(mut st, tps) {
+            if strEq(mut st, lat(mut st, tps, i), st.h[te + NA]) {
+                if isTag(mut st, t, TNil) || isTag(mut st, t, TNone) {
+                    return nil
+                }
+                b := st.h[binds + 1 + i]
+                if b >= 0 {
+                    if !tEql(mut st, b, t) {
+                        return LowerFail{k: KMismatch, tok: tok}
+                    }
+                } else {
+                    st.h[binds + 1 + i] = t
+                }
+                return nil
+            }
+            i += 1
+        }
+        return nil
+    }
+    if k == ast.TGeneric {
+        if !isTag(mut st, t, TStruct) {
+            return nil
+        }
+        td := lookupTypeDecl(mut st, pk, st.h[te + NA])
+        info := st.h[t + 1]
+        if td < 0 || llen(mut st, st.h[td + NB]) == 0 || st.h[info + SI_DECL] != td {
+            return nil
+        }
+        ga := st.h[te + NB]
+        ta := st.h[info + SI_TARGS]
+        if ta < 0 || llen(mut st, ta) != llen(mut st, ga) {
+            return nil
+        }
+        mut i := 0
+        while i < llen(mut st, ga) {
+            unify(mut st, pk, lat(mut st, ga, i), lat(mut st, ta, i), tps, binds, tok)?
+            i += 1
+        }
+        return nil
+    }
+    if k == ast.TSlice {
+        if isTag(mut st, t, TSlice) {
+            return unify(mut st, pk, st.h[te + NA], st.h[t + 1], tps, binds, tok)
+        }
+        return nil
+    }
+    if k == ast.TOpt {
+        if isTag(mut st, t, TOpt) {
+            return unify(mut st, pk, st.h[te + NA], st.h[t + 1], tps, binds, tok)
+        }
+        return nil
+    }
+    if k == ast.TMap {
+        if isTag(mut st, t, TMap) {
+            return unify(mut st, pk, st.h[te + NB], st.h[t + 2], tps, binds, tok)
+        }
+        return nil
+    }
+    if k == ast.TFunc {
+        if !isTag(mut st, t, TFnv) && !isTag(mut st, t, TFunc) {
+            return nil
+        }
+        tf := st.h[t + 1]
+        eps := st.h[te + NA]
+        ers := st.h[te + NB]
+        if llen(mut st, st.h[tf]) != llen(mut st, eps) || llen(mut st, st.h[tf + 1]) != llen(mut st, ers) {
+            return nil
+        }
+        mut i := 0
+        while i < llen(mut st, eps) {
+            unify(mut st, pk, lat(mut st, eps, i), lat(mut st, st.h[tf], i), tps, binds, tok)?
+            i += 1
+        }
+        i = 0
+        while i < llen(mut st, ers) {
+            unify(mut st, pk, lat(mut st, ers, i), lat(mut st, st.h[tf + 1], i), tps, binds, tok)?
+            i += 1
+        }
+    }
+    return nil
+}
+
+// ── ジェネリック関数 ──
+
+// sigIn は関数宣言 decl の署名を package pk・型環境 env で読む
+func sigIn(st mut desugar.S, decl int, pk int, env int) (int, int, error?) {
+    saved := gv(mut st, L_TENV)
+    gs(mut st, L_TENV, env)
+    ps, rs, err := sigOf(mut st, decl, pk)
+    gs(mut st, L_TENV, saved)
+    if err != nil {
+        return 0, 0, err
+    }
+    return ps, rs, nil
+}
+
+// inferTypeArgs は型引数の束縛を集める（明示 `f[T](...)` は第 1 型パラメータ — explicit は型式の節か -1）。vts は値の仮引数の型（他は -1）
+func inferTypeArgs(st mut desugar.S, pk int, decl int, explicit int, vts int, tok int, value_ok bool) (int, error?) {
+    tps := st.h[decl + NB]
+    n := llen(mut st, tps)
+    binds := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        st.h[binds + 1 + i] = -1
+        i += 1
+    }
+    if explicit >= 0 {
+        if n != 1 {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        hv1 := resolveType(mut st, gv(mut st, L_CUR_PKG), explicit, false)?
+        st.h[binds + 1] = hv1
+    }
+    ps := st.h[decl + NC]
+    i = 0
+    while i < llen(mut st, ps) {
+        t := lat(mut st, vts, i)
+        if t >= 0 {
+            unify(mut st, pk, st.h[lat(mut st, ps, i) + NB], t, tps, binds, tok)?
+        }
+        i += 1
+    }
+    i = 0
+    while i < n {
+        t := lat(mut st, binds, i)
+        if t < 0 {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        ok := if value_ok { tyArgValueOk(mut st, t) } else { tyArgOk(mut st, t) }
+        if !ok {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        i += 1
+    }
+    return binds, nil
+}
+
+// instFunc はジェネリック関数のインスタンス（単相コピー）。キー = "pkg.name[型…]"、本体は作業列で下ろす
+func instFunc(st mut desugar.S, fidx int, targs int) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    k := instKey(mut st, strDot(mut st, pkgPath(mut st, pk), fnName(mut st, fidx)), targs)
+    mut x := gv(mut st, L_INSTS)
+    while x >= 0 {
+        if strEq(mut st, st.h[x + 1], k) {
+            return st.h[x + 2], nil
+        }
+        x = st.h[x]
+    }
+    env := bindsOf(mut st, st.h[decl + NB], targs)
+    params, results := sigIn(mut st, decl, pk, env)?
+    fi := newFuncSig(mut st, k, decl, pk, params, results)
+    st.h[fi + FI_ENV] = env
+    hv1 := rec4(mut st, gv(mut st, L_INSTS), k, fi, 0)
+    gs(mut st, L_INSTS, hv1)
+    return fi, nil
+}
+
+// genericCall はジェネリック関数の呼び出し: 引数を左から評価して退避 → 型引数を推論（明示があればそれを優先）→ インスタンスを呼ぶ
+func genericCall(st mut desugar.S, fidx int, explicit int, args int, tok int) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    if fnExpands(mut st, fidx) {
+        return genericInline(mut st, fidx, explicit, args, tok)
+    }
+    ps := st.h[decl + NC]
+    n := llen(mut st, ps)
+    if llen(mut st, args) != n {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    vsrcs := listN(mut st, n)
+    vts := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        a := lat(mut st, args, i)
+        if st.h[lat(mut st, ps, i) + NC] != 0 {
+            // mut 仮引数（mut_def）: 実引数は呼び手のセルのまま渡す（評価してコピーしない）
+            l := mutArgCell(mut st, a, tok)?
+            st.h[vts + 1 + i] = st.h[l + 3]
+            st.h[vsrcs + 1 + i] = a
+        } else {
+            t, v0 := expr(mut st, a)?
+            if isTag(mut st, t, TNever) {
+                return -1, nil
+            }
+            v := copyVal(mut st, t, v0)
+            st.h[vts + 1 + i] = t
+            hv1 := node(mut st, EVal, tok, t, v, 0, 0)
+            st.h[vsrcs + 1 + i] = hv1
+        }
+        i += 1
+    }
+    targs := inferTypeArgs(mut st, pk, decl, explicit, vts, tok, false)?
+    fi := instFunc(mut st, fidx, targs)?
+    return emitCall(mut st, st.h[fi + FI_IR], -1, st.h[fi + FI_PARAMS], st.h[fi + FI_RESULTS], vsrcs, tok, decl)
+}
+
+// genericInline はジェネリックかつ関数型 / mut の仮引数を持つ関数: 値の引数を先に評価して単一化し、閉包は型引数が決まってから作る。
+// 本体は束縛した型環境で展開する
+func genericInline(st mut desugar.S, fidx int, explicit int, args int, tok int) (int, error?) {
+    pk := fnPkg(mut st, fidx)
+    decl := fnNode(mut st, fidx)
+    ps := st.h[decl + NC]
+    n := llen(mut st, ps)
+    if llen(mut st, args) != n {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    outs := listN(mut st, n)
+    vts := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        a := lat(mut st, args, i)
+        prm := lat(mut st, ps, i)
+        st.h[outs + 1 + i] = a
+        st.h[vts + 1 + i] = -1
+        if st.h[prm + NC] != 0 {
+            l := mutArgCell(mut st, a, tok)?
+            st.h[vts + 1 + i] = st.h[l + 3]
+        } else if kindOf(mut st, st.h[prm + NB]) == ast.TFunc {
+            // for 式は Iter[T] の型を試し生成で取って単一化に使う
+            if kindOf(mut st, a) == ast.EFor {
+                hv1 := forIterType(mut st, a)?
+                st.h[vts + 1 + i] = hv1
+            }
+        } else {
+            t, v0 := expr(mut st, a)?
+            if isTag(mut st, t, TNever) {
+                return -1, nil
+            }
+            v := copyVal(mut st, t, v0)
+            hv2 := node(mut st, EVal, tok, t, v, 0, 0)
+            st.h[outs + 1 + i] = hv2
+            st.h[vts + 1 + i] = t
+        }
+        i += 1
+    }
+    targs := inferTypeArgs(mut st, pk, decl, explicit, vts, tok, true)?
+    env := bindsOf(mut st, st.h[decl + NB], targs)
+    params, results := sigIn(mut st, decl, pk, env)?
+    return inlineCall(mut st, decl, pk, params, results, outs, tok, env)
+}
+
+// ── 辞書 const ──
+
+// dictConst は辞書 const の参照点での展開: 宣言側の文脈（package・空の可視範囲・空の型環境）で struct リテラルを作り直す
+func dictConst(st mut desugar.S, c int, pk int) (int, int, error?) {
+    saved_chain := gv(mut st, L_CHAIN)
+    saved_pkg := gv(mut st, L_CUR_PKG)
+    saved_env := gv(mut st, L_TENV)
+    saved_in := gv(mut st, L_IN_DICT)
+    hv1 := list2(mut st, gv(mut st, L_NSCOPE), VOPEN)
+    gs(mut st, L_CHAIN, hv1)
+    gs(mut st, L_CUR_PKG, pk)
+    gs(mut st, L_TENV, -1)
+    gs(mut st, L_IN_DICT, 1)
+    t, v, err := expr(mut st, st.h[conNode(mut st, c) + NB])
+    gs(mut st, L_CHAIN, saved_chain)
+    gs(mut st, L_CUR_PKG, saved_pkg)
+    gs(mut st, L_TENV, saved_env)
+    gs(mut st, L_IN_DICT, saved_in)
+    if err != nil {
+        return 0, 0, err
+    }
+    return t, v, nil
+}
+
+// ── 試し生成の巻き戻し（型だけを取る — for 式の型推論。src/ir.zig の Builder.mark / rollback）──
+
+// mark は組み立て中の関数の状態を記録する: [cur, nval, nslot, slot 末尾, nblk, block 末尾, (既存ブロックごとに 命令末尾・引数末尾・終端 6 語・前任数)…]
+func mark(st mut desugar.S) int {
+    f := gv(mut st, L_FN)
+    nb := st.h[f + F_NBLK]
+    m := recN(mut st, 7 + nb * 10)
+    st.h[m] = gv(mut st, L_CUR)
+    st.h[m + 1] = st.h[f + F_NVAL]
+    st.h[m + 2] = st.h[f + F_NSLOT]
+    st.h[m + 3] = st.h[f + F_STAIL]
+    st.h[m + 4] = nb
+    st.h[m + 5] = st.h[f + F_BTAIL]
+    mut b := st.h[f + F_BHEAD]
+    mut i := 0
+    while b >= 0 {
+        r := m + 7 + i * 10
+        st.h[r] = st.h[b + B_ITAIL]
+        st.h[r + 1] = st.h[b + B_PTAIL]
+        mut j := 0
+        while j < 6 {
+            st.h[r + 2 + j] = st.h[b + B_TERM + j]
+            j += 1
+        }
+        st.h[r + 8] = st.h[b + B_PREDS]
+        b = st.h[b + B_NEXT]
+        i += 1
+    }
+    return m
+}
+
+func rollback(st mut desugar.S, m int) {
+    f := gv(mut st, L_FN)
+    gs(mut st, L_CUR, st.h[m])
+    st.h[f + F_NVAL] = st.h[m + 1]
+    st.h[f + F_NSLOT] = st.h[m + 2]
+    st.h[f + F_STAIL] = st.h[m + 3]
+    if st.h[m + 3] < 0 {
+        st.h[f + F_SHEAD] = -1
+    } else {
+        st.h[st.h[m + 3]] = -1
+    }
+    nb := st.h[m + 4]
+    st.h[f + F_NBLK] = nb
+    st.h[f + F_BTAIL] = st.h[m + 5]
+    st.h[st.h[m + 5] + B_NEXT] = -1
+    mut b := st.h[f + F_BHEAD]
+    mut i := 0
+    while i < nb {
+        r := m + 7 + i * 10
+        st.h[b + B_ITAIL] = st.h[r]
+        if st.h[r] < 0 {
+            st.h[b + B_IHEAD] = -1
+        } else {
+            st.h[st.h[r] + I_NEXT] = -1
+        }
+        st.h[b + B_PTAIL] = st.h[r + 1]
+        if st.h[r + 1] < 0 {
+            st.h[b + B_PHEAD] = -1
+        } else {
+            st.h[st.h[r + 1]] = -1
+        }
+        mut j := 0
+        while j < 6 {
+            st.h[b + B_TERM + j] = st.h[r + 2 + j]
+            j += 1
+        }
+        st.h[b + B_PREDS] = st.h[r + 8]
+        b = st.h[b + B_NEXT]
+        i += 1
+    }
+}

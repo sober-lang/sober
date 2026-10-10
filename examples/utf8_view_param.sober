@@ -1,0 +1,23 @@
+package main
+
+// utf8.View を引数の型に書ける（封の形 — 2026-10-04 掃除枠 E。以前の非公開の型 view では関数に受け渡せなかった）
+
+import "std/utf8"
+
+func count(v utf8.View, sep byte) int {
+    b := utf8.Bytes(v)
+    mut n := 0
+    mut i := 0
+    while i < len(b) {
+        if b[i] == sep {
+            n += 1
+        }
+        i += 1
+    }
+    return n
+}
+
+func main() {
+    v := utf8.Check(bytes("あ;い;う")) catch return
+    println(count(v, ';'))
+}

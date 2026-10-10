@@ -1,0 +1,2 @@
+sober: load error at examples/switch_multi_nil_noerr.sober:14:13: a non-nil error has no case: add case _, e: or a default
+exit=1

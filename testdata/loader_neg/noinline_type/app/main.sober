@@ -1,0 +1,11 @@
+package main
+
+// @noinline は関数宣言にだけ付けられる
+@noinline
+type P struct {
+    x int
+}
+
+func main() {
+    println(P{1}.x)
+}

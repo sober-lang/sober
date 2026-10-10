@@ -1,0 +1,4 @@
+testdata/analyzer_neg/errors_decl.sober:23:6: error: public function 'Missing' returns an error but has no @errors: add `@errors(A)` (Analyzer)
+testdata/analyzer_neg/errors_decl.sober:28:1: error: 'Leaky' may return B not listed in its @errors (Analyzer)
+testdata/analyzer_neg/errors_decl.sober:37:1: error: @errors of 'Stale' lists B which it never returns: write `@errors(A)` (Analyzer)
+testdata/analyzer_neg/errors_decl.sober:57:1: error: 'tight' may return A not listed in its @errors (Analyzer)

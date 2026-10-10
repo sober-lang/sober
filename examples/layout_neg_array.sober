@@ -1,0 +1,11 @@
+package main
+
+// 負例: 固定長配列の欄 [N]T は @layout の struct の中だけ（language.md 36 節 — loader の拒否 diag.Layout）
+
+type H struct {
+    ident [4]u8
+}
+
+func main() {
+    println(1)
+}

@@ -1,0 +1,96 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Fail",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 32
+              },
+              {
+                "k": "composite",
+                "type_name": "bad",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 38
+                    }
+                  }
+                ],
+                "tok": 34,
+                "type_args": []
+              }
+            ],
+            "tok": 31
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 43
+      },
+      "sig_end": 30
+    }
+  ],
+  "consts": []
+}

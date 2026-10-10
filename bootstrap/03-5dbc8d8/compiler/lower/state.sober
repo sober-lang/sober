@@ -1,0 +1,547 @@
+package lower
+
+// Sober 版 lower（src/lower*.zig の写し — 表層 AST → 独自 SSA IR → IR テキスト。docs/ir.md が境界の正）の状態と土台。
+//
+// 表現（仮決め R24-1 — selfhost-drafts）: 状態 St は脱糖器の desugar.S（int ヒープ 1 本 st.d.h）を包む。表層 AST と表（package・関数・const）は
+// desugar.Init が組んだものをそのまま読む（節 = nodeAt — loader の木か合成の表、列 = [n, 要素…]、文字列 = [n, バイト…] — 木の列・文字列は参照で指す）。
+// lower 自身の状態のスカラーは St の欄に置き、IR（モジュール・関数・ブロック・命令）と
+// 型・スコープの記録はすべて同じヒープ st.d.h に積む（記録は添字で指し、無しは -1）。
+// 再帰する関数は `st mut St` を持ち回る Def（R2 の callM）になる。渡す imm の値は int と string リテラルだけにする（F-6）
+
+import "ast"
+import "desugar"
+import "std/table"
+
+// Fail は lower の拒否（Zig 版の error.Unsupported 等 — 文言は持たない。差分オラクルは拒否の有無だけを比べる）
+type LowerFail error {
+    k int
+    tok int
+}
+
+const KUnsupported = 1
+const KUndefined = 2
+const KMismatch = 3
+const KMissing = 4
+
+// Val は式を下ろした結果: 型 t と IR の値 v（多値の (型, 値) の組を名前つきの struct に — 多値は「複数の結果」でタプルではない）
+type Val struct {
+    t int
+    v int
+}
+
+// Sig は関数の署名: 引数の型の列 ps と結果の型の列 rs
+type Sig struct {
+    ps int
+    rs int
+}
+
+// Layout はフィールドの並び: フィールドの記録の列 fields と語数 words
+type Layout struct {
+    fields int
+    words int
+}
+
+// Arg は展開の引数 1 つの束縛: 種類 k（LCell / LClosure / LVal、到達しなければ -1）・型 t・値 v
+type Arg struct {
+    k int
+    t int
+    v int
+}
+
+// St は lower の状態: 脱糖器の状態 d（表層 AST・表・ヒープ）を包み、lower 自身の状態のスカラーを欄に持つ
+type St struct {
+    d desugar.S
+    infos table.Table[FnInfo]  // 下ろす関数（FnInfo）の表
+    closures table.Table[Closure]  // ラムダ引数の閉包の表
+    scopes table.Table[Scope]
+    loops table.Table[Loop]
+    fhead int // 関数の記録の鎖（追加順 = 印字順）
+    ftail int
+    ghead int // グローバルの鎖（追加順）
+    gtail int
+    fn int // 組み立て中の関数
+    cur int // 組み立て中のブロック（-1 = 到達しない）
+    meta int // @rt.meta
+    rtFlush int
+    rtPchar int
+    rtPint int
+    rtRenter int
+    rtRalloc int
+    rtReloc int
+    rtCopy int
+    rtStreq int
+    rtMapfind int
+    rtPstr int
+    rtRead int
+    rtWrite int
+    iobuf int
+    nstr int // 文字列リテラルの rodata の数
+    fninfo int // 関数表の添字 → FnInfo（列、無しは -1）
+    work int // 本体を下ろす作業列（FnInfo の鎖 — 積んだ順の逆に取る = Zig の work.pop）
+    info int // 下ろし中の FnInfo
+    curPkg int
+    scopeTop int // スコープの鎖の先頭（内側）
+    nscope int
+    loop int // ループの鎖の先頭
+    nloop int
+    entryDepth int
+    sret int
+    tNone int // 型の定数
+    tInt int
+    tBool int
+    tNever int
+    tNil int
+    types int // 型宣言の記録の鎖（StructInfo / UnionInfo）
+    strs int // 文字列リテラルの rodata の鎖（[next, 綴り, global]）
+    ninterp int // 補間の穴の合成名の通し番号
+    errs int // error ラベルの union の情報（errs.sober — 初出で作る）
+    errstruct int // 組み込み error の struct の情報（初出で作る）
+    chain int // 名前の可視範囲の鎖（[n, (lo, hi)…] — スコープ番号の区間。hi = VOPEN は先頭まで）
+    rets int // return の行き先のスタック（[prev, ctx] — ctx = -1 は実体の関数、他は InlineCtx）
+    floors int // break / continue が届くループの下限のスタック（[prev, 床]）
+    inlining int // 展開中の inline 関数の宣言の節の列（再帰の展開の拒否 — declListHas）
+    nlambda int // 持ち上げたラムダの通し番号
+    tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
+    insts int // ジェネリック関数のインスタンスの鎖（[next, キー, FnInfo]）
+    inDict int // 辞書 const の展開中か（0 / 1）
+    transparent bool // `--passes`: 関数型の引数を持たない展開関数を region 透過の実体関数として呼ぶ（language.md 26 節）
+    dlifts int // 辞書 const の中で持ち上げたラムダ（[next, ラムダの節, IR の関数]）— 参照点の間で共有する
+    rtArgs int // rt.read_args / rt.read_dir / rt.write_fd（std/os・std/io の sysArgs / sysReadDir / sysWriteFd — R31）
+    rtDir int
+    rtWfd int
+    toks table.Table[int] // tokOf が位置を読んだ直近 TOKRING 個の節（環 — 拒否の位置からファイルを引く: failFile）
+    ntok int
+    // スロットの使い回し（ir.sober newSlot / lower.sober releaseSlots — S-1）
+    slive table.Table[int] // 使用中の一時スロット（記録）の積み — 文の出口で自分の分を返す
+    slen int               // slive の使用中の長さ
+    sfree table.Table[int] // 語数 → 空きスロットの鎖の先頭（記録、無しは -1）
+    slast int              // 直前の newSlot の記録
+    strial int             // 試し生成（mark / rollback）の入れ子の深さ — 0 でないあいだは使い回さない
+    // 設計整合パスの作業域（opt.sober）
+    optw table.Table[int] // 値ごと
+    optb table.Table[int] // ブロックごと
+}
+
+// initScalars は状態のスカラーを「無し」（-1）にする（build が必要なものを上書きする）
+func initScalars(st mut St) {
+    st.fhead = -1
+    st.ftail = -1
+    st.ghead = -1
+    st.gtail = -1
+    st.fn = -1
+    st.cur = -1
+    st.meta = -1
+    st.rtFlush = -1
+    st.rtPchar = -1
+    st.rtPint = -1
+    st.rtRenter = -1
+    st.rtRalloc = -1
+    st.rtReloc = -1
+    st.rtCopy = -1
+    st.rtStreq = -1
+    st.rtMapfind = -1
+    st.rtPstr = -1
+    st.rtRead = -1
+    st.rtWrite = -1
+    st.iobuf = -1
+    st.work = -1
+    st.info = -1
+    st.curPkg = -1
+    st.scopeTop = -1
+    st.loop = -1
+    st.entryDepth = -1
+    st.sret = -1
+    st.types = -1
+    st.strs = -1
+    st.chain = -1
+    st.rets = -1
+    st.floors = -1
+    st.inlining = -1
+    st.rtArgs = -1
+    st.rtDir = -1
+    st.rtWfd = -1
+}
+
+const VOPEN = 1099511627776
+
+// ── ヒープの読み書き（st.h = std/table の Table）──
+// 包みは展開される（呼び出し点ごとの一時領域は lower の文の出口で返して使い回す — S-1。以前は @noinline で暫定回避していた: 展開すると
+// LLVM 経路（-O0）で呼び出し点ごとに一時領域が積もり、再帰する関数のフレームが 3〜4 倍に膨らんで 8MB のスタックを溢れた — reaudit ① report-15）
+
+func hget(st mut St, i int) int {
+    return table.Get(mut st.d.h, i)
+}
+
+func hset(st mut St, i int, v int) {
+    table.Set(mut st.d.h, i, v)
+}
+
+func hpush(st mut St, v int) {
+    table.Push(mut st.d.h, v)
+}
+
+func hlen(st mut St) int {
+    return table.Len(mut st.d.h)
+}
+
+// ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
+
+func put(st mut St, x int) {
+    hpush(mut st, x)
+}
+
+func top(st mut St) int {
+    return hlen(mut st)
+}
+
+// recN は n 語の記録を確保する（中身は -1 — 呼び手が埋める）
+@noinline
+func recN(st mut St, n int) int {
+    at := hlen(mut st)
+    mut i := 0
+    while i < n {
+        hpush(mut st, -1)
+        i += 1
+    }
+    return at
+}
+
+@noinline
+func rec4(st mut St, a int, b int, c int, d int) int {
+    at := hlen(mut st)
+    hpush(mut st, a)
+    hpush(mut st, b)
+    hpush(mut st, c)
+    hpush(mut st, d)
+    return at
+}
+
+// listN は長さ n の列（中身は 0）
+@noinline
+func listN(st mut St, n int) int {
+    at := hlen(mut st)
+    hpush(mut st, n)
+    mut i := 0
+    while i < n {
+        hpush(mut st, 0)
+        i += 1
+    }
+    return at
+}
+
+func list0(st mut St) int {
+    at := hlen(mut st)
+    hpush(mut st, 0)
+    return at
+}
+
+@noinline
+func list1(st mut St, x int) int {
+    at := hlen(mut st)
+    hpush(mut st, 1)
+    hpush(mut st, x)
+    return at
+}
+
+@noinline
+func list2(st mut St, x int, y int) int {
+    at := hlen(mut st)
+    hpush(mut st, 2)
+    hpush(mut st, x)
+    hpush(mut st, y)
+    return at
+}
+
+@noinline
+func list3(st mut St, x int, y int, z int) int {
+    at := hlen(mut st)
+    hpush(mut st, 3)
+    hpush(mut st, x)
+    hpush(mut st, y)
+    hpush(mut st, z)
+    return at
+}
+
+@noinline
+func list4(st mut St, x int, y int, z int, w int) int {
+    at := hlen(mut st)
+    hpush(mut st, 4)
+    hpush(mut st, x)
+    hpush(mut st, y)
+    hpush(mut st, z)
+    hpush(mut st, w)
+    return at
+}
+
+func llen(st mut St, l int) int {
+    return desugar.Llen(mut st.d, l)
+}
+
+func lat(st mut St, l int, i int) int {
+    return desugar.Lat(mut st.d, l, i)
+}
+
+// dat は生の 1 語（文字列のバイト — 木の文字列もヒープの文字列も読める。desugar.Dat）
+func dat(st mut St, x int) int {
+    return desugar.Dat(mut st.d, x)
+}
+
+// ── 文字列（[n, バイト…]）──
+
+@noinline
+func strLit(st mut St, w string) int {
+    b := bytes(w)
+    at := hlen(mut st)
+    hpush(mut st, len(b))
+    mut i := 0
+    while i < len(b) {
+        hpush(mut st, b[i])
+        i += 1
+    }
+    return at
+}
+
+// strCat は文字列 a + "." + b（関数・型のキー "pkg_path.Name"）
+@noinline
+func strDot(st mut St, a int, b int) int {
+    na := dat(mut st, a)
+    nb := dat(mut st, b)
+    at := hlen(mut st)
+    hpush(mut st, na + 1 + nb)
+    mut i := 0
+    while i < na {
+        hpush(mut st, dat(mut st, a + 1 + i))
+        i += 1
+    }
+    hpush(mut st, 46)
+    i = 0
+    while i < nb {
+        hpush(mut st, dat(mut st, b + 1 + i))
+        i += 1
+    }
+    return at
+}
+
+// strPart は文字列 s のバイト [lo, hi) を新しい文字列にする
+@noinline
+func strPart(st mut St, s int, lo int, hi int) int {
+    at := hlen(mut st)
+    hpush(mut st, hi - lo)
+    mut i := lo
+    while i < hi {
+        hpush(mut st, dat(mut st, s + 1 + i))
+        i += 1
+    }
+    return at
+}
+
+func strEq(st mut St, a int, b int) bool {
+    return desugar.StrEq(mut st.d, a, b)
+}
+
+func strIs(st mut St, a int, w string) bool {
+    return desugar.StrIs(mut st.d, a, w)
+}
+
+// strEqPart は文字列 a と、文字列 s のバイト [lo, hi) の一致
+func strEqPart(st mut St, a int, s int, lo int, hi int) bool {
+    return desugar.StrEqPart(mut st.d, a, s, lo, hi)
+}
+
+// dotAt は文字列 s の最初の '.' の位置（無ければ -1）
+func dotAt(st mut St, s int) int {
+    mut i := 0
+    while i < dat(mut st, s) {
+        if dat(mut st, s + 1 + i) == 46 {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// ── 表層 AST の読み出し（desugar と同じ — 木か合成の表の節を ast.Node で読む。参照は desugar/astref.sober）──
+
+// EVal は評価済みの値の節（lower が合成する — Zig の ArgSrc.val。pipe の左辺を引数へ渡す）: a = 型, b = 値
+const EVal = 90
+
+// node は表層 AST の節を足す（lower が合成する — 補間の連結の連鎖・pipe の値）
+func node(st mut St, k int, tok int, a int, b int, c int, d int) int {
+    return desugar.SynNode(mut st.d, ast.Node{kind: k, tok: tok, a: a, b: b, c: c, d: d, e: 0, f: 0})
+}
+
+// nodeAt は節 n を、欄を参照にして返す（desugar.NodeAt — 木・合成・ヒープのどの参照でも）
+func nodeAt(st mut St, n int) ast.Node {
+    return desugar.NodeAt(mut st.d, n)
+}
+
+func kindOf(st mut St, n int) int {
+    return desugar.KindAt(mut st.d, n)
+}
+
+// TOKRING は拒否の位置の手がかりに覚える節の数（failFile）
+const TOKRING = 32
+
+// failFile は拒否の位置 tok のファイル: tokOf が直近に読んだ節のうち位置が tok のものが全部同じファイルならそれ、無いか食い違えば -1（正確か無しか）
+func failFile(st mut St, tok int) int {
+    mut file := -1
+    mut i := 0
+    while i < table.Len(mut st.toks) {
+        f := desugar.FileAt(mut st.d, table.Get(mut st.toks, i), tok)
+        if f >= 0 {
+            if file >= 0 && file != f {
+                return -1
+            }
+            file = f
+        }
+        i += 1
+    }
+    return file
+}
+
+func tokOf(st mut St, n int) int {
+    if n >= 0 {
+        if table.Len(mut st.toks) < TOKRING {
+            table.Push(mut st.toks, n)
+        } else {
+            table.Set(mut st.toks, st.ntok % TOKRING, n)
+        }
+        st.ntok += 1
+    }
+    return desugar.TokAt(mut st.d, n)
+}
+
+// ── 表: package（[path, name, flo, fhi, imports（[n, (ref, pkg)…]）, 0]）・ファイル（[根, package]）・関数・const ──
+
+func pkgPath(st mut St, pk int) int {
+    return hget(mut st, st.d.pkgs + pk * desugar.PKSZ)
+}
+
+func pkgFlo(st mut St, pk int) int {
+    return hget(mut st, st.d.pkgs + pk * desugar.PKSZ + 2)
+}
+
+func pkgFhi(st mut St, pk int) int {
+    return hget(mut st, st.d.pkgs + pk * desugar.PKSZ + 3)
+}
+
+func fileRoot(st mut St, f int) int {
+    return hget(mut st, st.d.files + f * 2)
+}
+
+// importOf は package pk の import の参照名（文字列 s のバイト [lo, hi)）の行き先 package（無ければ -1）
+func importOf(st mut St, pk int, s int, lo int, hi int) int {
+    im := hget(mut st, st.d.pkgs + pk * desugar.PKSZ + 4)
+    mut i := 0
+    while i < hget(mut st, im) {
+        if strEqPart(mut st, hget(mut st, im + 1 + i * 2), s, lo, hi) {
+            return hget(mut st, im + 2 + i * 2)
+        }
+        i += 1
+    }
+    return -1
+}
+
+func isStdPkg(st mut St, pk int) bool {
+    p := pkgPath(mut st, pk)
+    return hget(mut st, p) >= 4 && hget(mut st, p + 1) == 115 && hget(mut st, p + 2) == 116 && hget(mut st, p + 3) == 100 && hget(mut st, p + 4) == 47
+}
+
+func nfn(st mut St) int {
+    return st.d.nfn
+}
+
+func fnNode(st mut St, i int) int {
+    return desugar.FnAt(mut st.d, i).node
+}
+
+func fnPkg(st mut St, i int) int {
+    return desugar.FnAt(mut st.d, i).pkg
+}
+
+func fnExpands(st mut St, i int) bool {
+    return desugar.FnAt(mut st.d, i).expands
+}
+
+// fnTransparent は関数 i を region 透過の実体関数として呼ぶか（`--passes` のときの、関数型の引数を持たない展開関数）
+func fnTransparent(st mut St, i int) bool {
+    return st.transparent && desugar.FnAt(mut st.d, i).closed
+}
+
+func fnMutDef(st mut St, i int) bool {
+    return desugar.FnAt(mut st.d, i).mutDef
+}
+
+// 関数宣言の欄（KFuncDecl: a = 名前, b = type_params, c = params, d = results, e = body, f = 付加 [bodiless, …]）
+func fnName(st mut St, i int) int {
+    return nodeAt(mut st, fnNode(mut st, i)).a
+}
+
+func fnTParams(st mut St, i int) int {
+    return nodeAt(mut st, fnNode(mut st, i)).b
+}
+
+func fnParams(st mut St, i int) int {
+    return nodeAt(mut st, fnNode(mut st, i)).c
+}
+
+func fnResults(st mut St, i int) int {
+    return nodeAt(mut st, fnNode(mut st, i)).d
+}
+
+func fnBody(st mut St, i int) int {
+    return nodeAt(mut st, fnNode(mut st, i)).e
+}
+
+func fnBodiless(st mut St, i int) bool {
+    x := nodeAt(mut st, fnNode(mut st, i)).f
+    return x >= 0 && lat(mut st, x, 0) != 0
+}
+
+func ncon(st mut St) int {
+    return st.d.ncon
+}
+
+func conNode(st mut St, i int) int {
+    return hget(mut st, st.d.cons + i * desugar.CNSZ)
+}
+
+func conPkg(st mut St, i int) int {
+    return hget(mut st, st.d.cons + i * desugar.CNSZ + 1)
+}
+
+func conValue(st mut St, i int) int {
+    return hget(mut st, st.d.cons + i * desugar.CNSZ + 2)
+}
+
+func conHas(st mut St, i int) bool {
+    return hget(mut st, st.d.cons + i * desugar.CNSZ + 3) != 0
+}
+
+func conDict(st mut St, i int) bool {
+    return hget(mut st, st.d.cons + i * desugar.CNSZ + 4) != 0
+}
+
+// findFnIn は package pk の関数 name（文字列 s のバイト [lo, hi)）の関数表の添字（無ければ -1）
+func findFnIn(st mut St, pk int, s int, lo int, hi int) int {
+    mut i := 0
+    while i < nfn(mut st) {
+        if fnPkg(mut st, i) == pk && strEqPart(mut st, fnName(mut st, i), s, lo, hi) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// findConIn は package pk の const name の表の添字（無ければ -1）
+func findConIn(st mut St, pk int, s int, lo int, hi int) int {
+    mut i := 0
+    while i < ncon(mut st) {
+        if conPkg(mut st, i) == pk && strEqPart(mut st, nodeAt(mut st, conNode(mut st, i)).a, s, lo, hi) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}

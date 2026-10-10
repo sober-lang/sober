@@ -1,0 +1,826 @@
+package lower
+
+// region op の展開（src/ir_rtlower.zig の写し）と IR → LLVM テキスト（src/ir_llvm.zig の写し — 開発時専用の差分オラクル経路。docs/ir.md 8 節）。
+// - rtlower: region_enter → call rt.region_enter / region_depth → load @rt.meta[W_DEPTH] / region_setdepth → store / region_alloc → call rt.region_alloc /
+//   region_bump → load.ptr (gep.word @rt.meta, d)[W_BUMP] / region_relocate → call rt.region_relocate(hdr, const cellw, floor)。
+//   結果の値の番号は元の op のものを引き継ぎ、中間の値は関数の末尾に番号を足す
+// - .ll: ブロック引数は φ（前任は IR ブロックの末尾ラベル — div のガード等でブロック内にラベルが増える）。condbr の辺は中継ブロックを通す。
+//   φ の前任を先に知るため、ラベルの採番（fresh）だけをなぞる前走査で入り辺を集めてから印字する（Zig 版はブロックごとの本文を溜めて後から φ を前に付ける）
+
+import "desugar"
+
+const W_BUMP_OFF = 1
+
+// ── rtlower ──
+
+func newValueIn(st mut St, f int) int {
+    v := hget(mut st, f + F_NVAL)
+    hset(mut st, f + F_NVAL, v + 1)
+    return v
+}
+
+// linkInst は命令の記録 r をブロック b の命令の鎖の末尾へつなぐ
+func linkInst(st mut St, b int, r int) {
+    hset(mut st, r + I_NEXT, -1)
+    tail := hget(mut st, b + B_ITAIL)
+    if tail < 0 {
+        hset(mut st, b + B_IHEAD, r)
+    } else {
+        hset(mut st, tail + I_NEXT, r)
+    }
+    hset(mut st, b + B_ITAIL, r)
+}
+
+func mkInst(st mut St, res int, op int, a int, b int, c int) int {
+    r := recN(mut st, ISZ)
+    hset(mut st, r + I_RES, res)
+    hset(mut st, r + I_OP, op)
+    hset(mut st, r + I_A, a)
+    hset(mut st, r + I_B, b)
+    hset(mut st, r + I_C, c)
+    return r
+}
+
+// metaAddr は globaladdr @rt.meta の命令を b へ足して値を返す
+func metaAddr(st mut St, f int, b int) int {
+    v := newValueIn(mut st, f)
+    linkInst(mut st, b, mkInst(mut st, v, OpGlobal, st.meta, 0, 0))
+    return v
+}
+
+func rtlower(st mut St) {
+    mut f := st.fhead
+    while f >= 0 {
+        mut b := hget(mut st, f + F_BHEAD)
+        while b >= 0 {
+            mut ins := hget(mut st, b + B_IHEAD)
+            hset(mut st, b + B_IHEAD, -1)
+            hset(mut st, b + B_ITAIL, -1)
+            while ins >= 0 {
+                nx := hget(mut st, ins + I_NEXT)
+                op := hget(mut st, ins + I_OP)
+                res := hget(mut st, ins + I_RES)
+                a := hget(mut st, ins + I_A)
+                if op == OpREnter {
+                    linkInst(mut st, b, mkInst(mut st, -1, OpCall, st.rtRenter, list0(mut st), 0))
+                } else if op == OpRDepth {
+                    m := metaAddr(mut st, f, b)
+                    linkInst(mut st, b, mkInst(mut st, res, OpLoad, m, W_DEPTH, 0))
+                } else if op == OpRSetDepth {
+                    m := metaAddr(mut st, f, b)
+                    linkInst(mut st, b, mkInst(mut st, -1, OpStore, m, W_DEPTH, a))
+                } else if op == OpRAlloc {
+                    linkInst(mut st, b, mkInst(mut st, res, OpCall, st.rtRalloc, list2(mut st, a, hget(mut st, ins + I_B)), 0))
+                } else if op == OpRBump {
+                    m := metaAddr(mut st, f, b)
+                    p := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, p, OpGepW, m, a, 0))
+                    linkInst(mut st, b, mkInst(mut st, res, OpLoad, p, W_BUMP_OFF, 1))
+                } else if op == OpRReloc {
+                    c := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, c, OpConst, hget(mut st, ins + I_B), 0, 0))
+                    linkInst(mut st, b, mkInst(mut st, -1, OpCall, st.rtReloc, list3(mut st, a, c, hget(mut st, ins + I_C)), 0))
+                } else {
+                    linkInst(mut st, b, ins)
+                }
+                ins = nx
+            }
+            b = hget(mut st, b + B_NEXT)
+        }
+        f = hget(mut st, f + F_NEXT)
+    }
+}
+
+// ── 値の型の表（印字に要る — store の値・呼び出しの引数・ret）──
+
+// valueTypes は関数 f の値の型の列（添字 = 値の番号）
+func valueTypes(st mut St, f int) int {
+    n := hget(mut st, f + F_NVAL)
+    vt := listN(mut st, n)
+    ptys := hget(mut st, f + F_PTYS)
+    mut i := 0
+    while i < hget(mut st, ptys) {
+        hset(mut st, vt + 1 + i, hget(mut st, ptys + 1 + i))
+        i += 1
+    }
+    mut b := hget(mut st, f + F_BHEAD)
+    while b >= 0 {
+        mut p := hget(mut st, b + B_PHEAD)
+        while p >= 0 {
+            hset(mut st, vt + 1 + hget(mut st, p + 1), hget(mut st, p + 2))
+            p = hget(mut st, p)
+        }
+        mut ins := hget(mut st, b + B_IHEAD)
+        while ins >= 0 {
+            r := hget(mut st, ins + I_RES)
+            if r >= 0 {
+                op := hget(mut st, ins + I_OP)
+                mut t := TyI64
+                if op == OpGepW || op == OpGepB || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpRAlloc || op == OpRBump {
+                    t = TyPtr
+                } else if op == OpLoad {
+                    t = if hget(mut st, ins + I_C) == 1 { TyPtr } else { TyI64 }
+                } else if op == OpCall {
+                    t = hget(mut st, hget(mut st, ins + I_A) + F_RET)
+                } else if op == OpCallI {
+                    t = hget(mut st, ins + I_C)
+                }
+                hset(mut st, vt + 1 + r, t)
+            }
+            ins = hget(mut st, ins + I_NEXT)
+        }
+        b = hget(mut st, b + B_NEXT)
+    }
+    return vt
+}
+
+// ── ラベル（"b<N>" か "b<N>.<tag><k>"）──
+
+const LbNone = 0
+const LbT = 1
+const LbE = 2
+const LbDz = 3
+const LbDnz = 4
+const LbDm1 = 5
+const LbDop = 6
+const LbDj = 7
+
+func llLabel(out mut []int, bi int, tag int, k int) {
+    out = append(out, 98)
+    num(mut out, bi)
+    if tag == LbNone {
+        return
+    }
+    out = append(out, 46)
+    if tag == LbT {
+        lit(mut out, "t")
+    } else if tag == LbE {
+        lit(mut out, "e")
+    } else if tag == LbDz {
+        lit(mut out, "dz")
+    } else if tag == LbDnz {
+        lit(mut out, "dnz")
+    } else if tag == LbDm1 {
+        lit(mut out, "dm1")
+    } else if tag == LbDop {
+        lit(mut out, "dop")
+    } else {
+        lit(mut out, "dj")
+    }
+    num(mut out, k)
+}
+
+// divGuarded は div / rem の除数 y にガードが要るか（y が 0 でも -1 でもない定数 — それまでに印字した iconst — ならガードを省く）
+func divGuarded(st mut St, cs int, y int) bool {
+    return !(hget(mut st, cs + 1 + y * 2) != 0 && hget(mut st, cs + 2 + y * 2) != 0 && hget(mut st, cs + 2 + y * 2) != -1)
+}
+
+// incoming はブロックの入り辺の鎖の末尾へ 1 辺足す（[next, from の bi, tag, k, 引数]）
+func incomingAdd(st mut St, inc int, to int, bi int, tag int, k int, args int) {
+    id := hget(mut st, to + B_ID)
+    e := recN(mut st, 5)
+    hset(mut st, e + 1, bi)
+    hset(mut st, e + 2, tag)
+    hset(mut st, e + 3, k)
+    hset(mut st, e + 4, args)
+    tail := hget(mut st, inc + 1 + id * 2 + 1)
+    if tail < 0 {
+        hset(mut st, inc + 1 + id * 2, e)
+    } else {
+        hset(mut st, tail, e)
+    }
+    hset(mut st, inc + 1 + id * 2 + 1, e)
+}
+
+// collectIncoming は印字と同じ順にラベルの採番をなぞって、ブロックごとの入り辺（[head, tail] の対の列）を集める
+func collectIncoming(st mut St, f int) int {
+    nb := hget(mut st, f + F_NBLK)
+    inc := listN(mut st, nb * 2)
+    mut i := 0
+    while i < nb * 2 {
+        hset(mut st, inc + 1 + i, -1)
+        i += 1
+    }
+    cs := listN(mut st, hget(mut st, f + F_NVAL) * 2)
+    mut fresh := 0
+    mut b := hget(mut st, f + F_BHEAD)
+    while b >= 0 {
+        bi := hget(mut st, b + B_ID)
+        mut tag := LbNone
+        mut k := 0
+        mut ins := hget(mut st, b + B_IHEAD)
+        while ins >= 0 {
+            op := hget(mut st, ins + I_OP)
+            if op == OpConst {
+                r := hget(mut st, ins + I_RES)
+                hset(mut st, cs + 1 + r * 2, 1)
+                hset(mut st, cs + 2 + r * 2, hget(mut st, ins + I_A))
+            } else if op == OpStore || op == OpStore8 || op == OpCallI {
+                fresh += 1
+            } else if op == OpBin && (hget(mut st, ins + I_A) == BDiv || hget(mut st, ins + I_A) == BRem) && divGuarded(mut st, cs, hget(mut st, ins + I_C)) {
+                fresh += 5
+                tag = LbDj
+                k = fresh
+            }
+            ins = hget(mut st, ins + I_NEXT)
+        }
+        t := hget(mut st, b + B_TERM)
+        if t == TmBr {
+            incomingAdd(mut st, inc, hget(mut st, b + B_X1), bi, tag, k, hget(mut st, b + B_X2))
+        } else if t == TmCondbr {
+            incomingAdd(mut st, inc, hget(mut st, b + B_X2), bi, LbT, fresh + 1, hget(mut st, b + B_X3))
+            incomingAdd(mut st, inc, hget(mut st, b + B_X4), bi, LbE, fresh + 2, hget(mut st, b + B_X5))
+            fresh += 2
+        }
+        b = hget(mut st, b + B_NEXT)
+    }
+    return inc
+}
+
+// ── 印字 ──
+
+// llHead は .ll の冒頭（target triple・_start の module asm・属性 — ir_llvm.emit の固定部）
+func llHead(out mut []int) {
+    lit(mut out, "; 生成物（sober build --emit=ll）\ntarget triple = \"x86_64-unknown-linux-none\"\n\n")
+    lit(mut out, "module asm \".globl _start\"\nmodule asm \"_start:\"\nmodule asm \"  movq %rsp, %rdi\"\n")
+    lit(mut out, "module asm \"  andq \$-16, %rsp\"\nmodule asm \"  call sober_entry\"\nmodule asm \"  ud2\"\n\n")
+    lit(mut out, "attributes #0 = { nounwind \"no-builtins\" \"frame-pointer\"=\"all\" }\n\n")
+}
+
+func llTy(out mut []int, t int) {
+    if t == TyPtr {
+        lit(mut out, "ptr")
+    } else if t == TyI64 {
+        lit(mut out, "i64")
+    } else {
+        lit(mut out, "void")
+    }
+}
+
+// llName は `@"name"`（引用は常に — ir_llvm は名前を escape しない）
+func llName(st mut St, out mut []int, s int) {
+    lit(mut out, "@\"")
+    mut i := 0
+    while i < dat(mut st, s) {
+        out = append(out, dat(mut st, s + 1 + i))
+        i += 1
+    }
+    out = append(out, 34)
+}
+
+func llArgs(st mut St, out mut []int, vt int, args int) {
+    if args >= 0 {
+        mut i := 0
+        while i < hget(mut st, args) {
+            if i > 0 {
+                lit(mut out, ", ")
+            }
+            v := hget(mut st, args + 1 + i)
+            llTy(mut out, hget(mut st, vt + 1 + v))
+            lit(mut out, " %v")
+            num(mut out, v)
+            i += 1
+        }
+    }
+    lit(mut out, ")\n")
+}
+
+func llExit(out mut []int, code int) {
+    lit(mut out, "  call i64 asm sideeffect \"syscall\", \"={rax},{rax},{rdi},~{rcx},~{r11},~{memory}\"(i64 60, i64 ")
+    num(mut out, code)
+    lit(mut out, ")\n  unreachable\n")
+}
+
+func regName(out mut []int, k int) {
+    if k == 0 {
+        lit(mut out, "rax")
+    } else if k == 1 {
+        lit(mut out, "rdi")
+    } else if k == 2 {
+        lit(mut out, "rsi")
+    } else if k == 3 {
+        lit(mut out, "rdx")
+    } else if k == 4 {
+        lit(mut out, "r10")
+    } else if k == 5 {
+        lit(mut out, "r8")
+    } else {
+        lit(mut out, "r9")
+    }
+}
+
+// vreg は "%v<N>"
+func vreg(out mut []int, v int) {
+    lit(mut out, "%v")
+    num(mut out, v)
+}
+
+func llCmpName(out mut []int, op int) {
+    if op == CEq {
+        lit(mut out, "eq")
+    } else if op == CNe {
+        lit(mut out, "ne")
+    } else if op == CLt {
+        lit(mut out, "slt")
+    } else if op == CLe {
+        lit(mut out, "sle")
+    } else if op == CGt {
+        lit(mut out, "sgt")
+    } else if op == CGe {
+        lit(mut out, "sge")
+    } else if op == CUlt {
+        lit(mut out, "ult")
+    } else {
+        lit(mut out, "uge")
+    }
+}
+
+func llBinName(out mut []int, op int) {
+    if op == BAdd {
+        lit(mut out, "add")
+    } else if op == BSub {
+        lit(mut out, "sub")
+    } else if op == BMul {
+        lit(mut out, "mul")
+    } else if op == BAnd {
+        lit(mut out, "and")
+    } else if op == BOr {
+        lit(mut out, "or")
+    } else {
+        lit(mut out, "xor")
+    }
+}
+
+// llFunc は関数 1 つの .ll（入り辺は collectIncoming が先に集めたもの）
+func llFunc(st mut St, out mut []int, f int) {
+    vt := hget(mut st, f + F_LLVT)
+    inc := hget(mut st, f + F_LLINC)
+    cs := hget(mut st, f + F_LLCS)
+    lit(mut out, if hget(mut st, f + F_EXPORT) != 0 { "\ndefine " } else { "\ndefine internal " })
+    llTy(mut out, hget(mut st, f + F_RET))
+    out = append(out, 32)
+    llName(mut st, mut out, hget(mut st, f + F_NAME))
+    out = append(out, 40)
+    ptys := hget(mut st, f + F_PTYS)
+    mut i := 0
+    while i < hget(mut st, ptys) {
+        if i > 0 {
+            lit(mut out, ", ")
+        }
+        llTy(mut out, hget(mut st, ptys + 1 + i))
+        out = append(out, 32)
+        vreg(mut out, i)
+        i += 1
+    }
+    lit(mut out, ") #0 {\n")
+    mut fresh := 0
+    mut b := hget(mut st, f + F_BHEAD)
+    while b >= 0 {
+        bi := hget(mut st, b + B_ID)
+        llLabel(mut out, bi, LbNone, 0)
+        lit(mut out, ":\n")
+        // φ（入り辺の順 = 前任の jump の順）
+        mut p := hget(mut st, b + B_PHEAD)
+        mut pi := 0
+        while p >= 0 {
+            lit(mut out, "  ")
+            vreg(mut out, hget(mut st, p + 1))
+            lit(mut out, " = phi ")
+            llTy(mut out, hget(mut st, p + 2))
+            out = append(out, 32)
+            mut e := hget(mut st, inc + 1 + bi * 2)
+            mut first := true
+            while e >= 0 {
+                if !first {
+                    lit(mut out, ", ")
+                }
+                first = false
+                lit(mut out, "[ ")
+                vreg(mut out, hget(mut st, hget(mut st, e + 4) + 1 + pi))
+                lit(mut out, ", %")
+                llLabel(mut out, hget(mut st, e + 1), hget(mut st, e + 2), hget(mut st, e + 3))
+                lit(mut out, " ]")
+                e = hget(mut st, e)
+            }
+            out = append(out, 10)
+            p = hget(mut st, p)
+            pi += 1
+        }
+        if bi == 0 {
+            // スロットは入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
+            mut s := hget(mut st, f + F_SHEAD)
+            mut si := 0
+            while s >= 0 {
+                lit(mut out, "  %s")
+                num(mut out, si)
+                lit(mut out, " = alloca [")
+                num(mut out, hget(mut st, s + 1))
+                lit(mut out, " x i64], align 8\n")
+                mut w := 0
+                while w < hget(mut st, s + 1) {
+                    lit(mut out, "  %s")
+                    num(mut out, si)
+                    lit(mut out, ".z")
+                    num(mut out, w)
+                    lit(mut out, " = getelementptr i64, ptr %s")
+                    num(mut out, si)
+                    lit(mut out, ", i64 ")
+                    num(mut out, w)
+                    lit(mut out, "\n  store i64 0, ptr %s")
+                    num(mut out, si)
+                    lit(mut out, ".z")
+                    num(mut out, w)
+                    out = append(out, 10)
+                    w += 1
+                }
+                s = hget(mut st, s)
+                si += 1
+            }
+        }
+        mut ctag := LbNone
+        mut ck := 0
+        mut ins := hget(mut st, b + B_IHEAD)
+        while ins >= 0 {
+            op := hget(mut st, ins + I_OP)
+            r := hget(mut st, ins + I_RES)
+            ia := hget(mut st, ins + I_A)
+            ib := hget(mut st, ins + I_B)
+            ic := hget(mut st, ins + I_C)
+            if op == OpConst {
+                hset(mut st, cs + 1 + r * 2, 1)
+                hset(mut st, cs + 2 + r * 2, ia)
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = add i64 0, ")
+                num(mut out, ia)
+                out = append(out, 10)
+            } else if op == OpBin && (ia == BDiv || ia == BRem) {
+                sname := if ia == BDiv { "sdiv" } else { "srem" }
+                if !divGuarded(mut st, cs, ic) {
+                    lit(mut out, "  ")
+                    vreg(mut out, r)
+                    lit(mut out, " = ")
+                    lit(mut out, sname)
+                    lit(mut out, " i64 ")
+                    vreg(mut out, ib)
+                    lit(mut out, ", ")
+                    vreg(mut out, ic)
+                    out = append(out, 10)
+                } else {
+                    kz := fresh + 1
+                    fresh += 5
+                    lit(mut out, "  ")
+                    vreg(mut out, r)
+                    lit(mut out, ".z = icmp eq i64 ")
+                    vreg(mut out, ic)
+                    lit(mut out, ", 0\n  br i1 ")
+                    vreg(mut out, r)
+                    lit(mut out, ".z, label %")
+                    llLabel(mut out, bi, LbDz, kz)
+                    lit(mut out, ", label %")
+                    llLabel(mut out, bi, LbDnz, kz + 1)
+                    out = append(out, 10)
+                    llLabel(mut out, bi, LbDz, kz)
+                    lit(mut out, ":\n")
+                    llExit(mut out, PANIC)
+                    llLabel(mut out, bi, LbDnz, kz + 1)
+                    lit(mut out, ":\n  ")
+                    vreg(mut out, r)
+                    lit(mut out, ".m = icmp eq i64 ")
+                    vreg(mut out, ic)
+                    lit(mut out, ", -1\n  br i1 ")
+                    vreg(mut out, r)
+                    lit(mut out, ".m, label %")
+                    llLabel(mut out, bi, LbDm1, kz + 2)
+                    lit(mut out, ", label %")
+                    llLabel(mut out, bi, LbDop, kz + 3)
+                    out = append(out, 10)
+                    llLabel(mut out, bi, LbDm1, kz + 2)
+                    lit(mut out, ":\n  ")
+                    vreg(mut out, r)
+                    if ia == BDiv {
+                        lit(mut out, ".n = sub i64 0, ")
+                        vreg(mut out, ib)
+                        out = append(out, 10)
+                    } else {
+                        lit(mut out, ".n = add i64 0, 0\n")
+                    }
+                    lit(mut out, "  br label %")
+                    llLabel(mut out, bi, LbDj, kz + 4)
+                    out = append(out, 10)
+                    llLabel(mut out, bi, LbDop, kz + 3)
+                    lit(mut out, ":\n  ")
+                    vreg(mut out, r)
+                    lit(mut out, ".q = ")
+                    lit(mut out, sname)
+                    lit(mut out, " i64 ")
+                    vreg(mut out, ib)
+                    lit(mut out, ", ")
+                    vreg(mut out, ic)
+                    lit(mut out, "\n  br label %")
+                    llLabel(mut out, bi, LbDj, kz + 4)
+                    out = append(out, 10)
+                    llLabel(mut out, bi, LbDj, kz + 4)
+                    lit(mut out, ":\n  ")
+                    vreg(mut out, r)
+                    lit(mut out, " = phi i64 [ ")
+                    vreg(mut out, r)
+                    lit(mut out, ".n, %")
+                    llLabel(mut out, bi, LbDm1, kz + 2)
+                    lit(mut out, " ], [ ")
+                    vreg(mut out, r)
+                    lit(mut out, ".q, %")
+                    llLabel(mut out, bi, LbDop, kz + 3)
+                    lit(mut out, " ]\n")
+                    ctag = LbDj
+                    ck = kz + 4
+                }
+            } else if op == OpBin && (ia == BShl || ia == BSar) {
+                // 量を 6 bit にマスクしてから（LLVM は量 ≥ 64 を poison にする — IR の意味は x86 のマスク）
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, ".n = and i64 ")
+                vreg(mut out, ic)
+                lit(mut out, ", 63\n  ")
+                vreg(mut out, r)
+                lit(mut out, if ia == BShl { " = shl i64 " } else { " = ashr i64 " })
+                vreg(mut out, ib)
+                lit(mut out, ", ")
+                vreg(mut out, r)
+                lit(mut out, ".n\n")
+            } else if op == OpBin {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = ")
+                llBinName(mut out, ia)
+                lit(mut out, " i64 ")
+                vreg(mut out, ib)
+                lit(mut out, ", ")
+                vreg(mut out, ic)
+                out = append(out, 10)
+            } else if op == OpCmp {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, ".c = icmp ")
+                llCmpName(mut out, ia)
+                lit(mut out, " i64 ")
+                vreg(mut out, ib)
+                lit(mut out, ", ")
+                vreg(mut out, ic)
+                lit(mut out, "\n  ")
+                vreg(mut out, r)
+                lit(mut out, " = zext i1 ")
+                vreg(mut out, r)
+                lit(mut out, ".c to i64\n")
+            } else if op == OpLoad {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, ".p = getelementptr i64, ptr ")
+                vreg(mut out, ia)
+                lit(mut out, ", i64 ")
+                num(mut out, ib)
+                lit(mut out, "\n  ")
+                vreg(mut out, r)
+                lit(mut out, " = load ")
+                llTy(mut out, if ic == 1 { TyPtr } else { TyI64 })
+                lit(mut out, ", ptr ")
+                vreg(mut out, r)
+                lit(mut out, ".p\n")
+            } else if op == OpStore {
+                n := fresh
+                fresh += 1
+                lit(mut out, "  %st")
+                num(mut out, n)
+                lit(mut out, " = getelementptr i64, ptr ")
+                vreg(mut out, ia)
+                lit(mut out, ", i64 ")
+                num(mut out, ib)
+                lit(mut out, "\n  store ")
+                llTy(mut out, hget(mut st, vt + 1 + ic))
+                out = append(out, 32)
+                vreg(mut out, ic)
+                lit(mut out, ", ptr %st")
+                num(mut out, n)
+                out = append(out, 10)
+            } else if op == OpLoad8 {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, ".p = getelementptr i8, ptr ")
+                vreg(mut out, ia)
+                lit(mut out, ", i64 ")
+                num(mut out, ib)
+                lit(mut out, "\n  ")
+                vreg(mut out, r)
+                lit(mut out, ".b = load i8, ptr ")
+                vreg(mut out, r)
+                lit(mut out, ".p\n  ")
+                vreg(mut out, r)
+                lit(mut out, " = zext i8 ")
+                vreg(mut out, r)
+                lit(mut out, ".b to i64\n")
+            } else if op == OpStore8 {
+                n := fresh
+                fresh += 1
+                lit(mut out, "  %st")
+                num(mut out, n)
+                lit(mut out, " = getelementptr i8, ptr ")
+                vreg(mut out, ia)
+                lit(mut out, ", i64 ")
+                num(mut out, ib)
+                lit(mut out, "\n  %st")
+                num(mut out, n)
+                lit(mut out, ".b = trunc i64 ")
+                vreg(mut out, ic)
+                lit(mut out, " to i8\n  store i8 %st")
+                num(mut out, n)
+                lit(mut out, ".b, ptr %st")
+                num(mut out, n)
+                out = append(out, 10)
+            } else if op == OpGepW || op == OpGepB {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, if op == OpGepW { " = getelementptr i64, ptr " } else { " = getelementptr i8, ptr " })
+                vreg(mut out, ia)
+                lit(mut out, ", i64 ")
+                vreg(mut out, ib)
+                out = append(out, 10)
+            } else if op == OpPtoi || op == OpItop {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, if op == OpPtoi { " = ptrtoint ptr " } else { " = inttoptr i64 " })
+                vreg(mut out, ia)
+                lit(mut out, if op == OpPtoi { " to i64\n" } else { " to ptr\n" })
+            } else if op == OpSlotaddr {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = getelementptr i64, ptr %s")
+                num(mut out, ia)
+                lit(mut out, ", i64 0\n")
+            } else if op == OpGlobal {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = getelementptr i64, ptr ")
+                llName(mut st, mut out, hget(mut st, ia + G_NAME))
+                lit(mut out, ", i64 0\n")
+            } else if op == OpCall {
+                lit(mut out, "  ")
+                if r >= 0 {
+                    vreg(mut out, r)
+                    lit(mut out, " = ")
+                }
+                lit(mut out, "call ")
+                llTy(mut out, hget(mut st, ia + F_RET))
+                out = append(out, 32)
+                llName(mut st, mut out, hget(mut st, ia + F_NAME))
+                out = append(out, 40)
+                llArgs(mut st, mut out, vt, ib)
+            } else if op == OpFuncaddr {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = ptrtoint ptr ")
+                llName(mut st, mut out, hget(mut st, ia + F_NAME))
+                lit(mut out, " to i64\n")
+            } else if op == OpCallI {
+                n := fresh
+                fresh += 1
+                lit(mut out, "  %fp")
+                num(mut out, n)
+                lit(mut out, " = inttoptr i64 ")
+                vreg(mut out, ia)
+                lit(mut out, " to ptr\n  ")
+                if r >= 0 {
+                    vreg(mut out, r)
+                    lit(mut out, " = ")
+                }
+                lit(mut out, "call ")
+                llTy(mut out, ic)
+                lit(mut out, " %fp")
+                num(mut out, n)
+                out = append(out, 40)
+                llArgs(mut st, mut out, vt, ib)
+            } else if op == OpSyscall {
+                lit(mut out, "  ")
+                vreg(mut out, r)
+                lit(mut out, " = call i64 asm sideeffect \"syscall\", \"={rax}")
+                mut k := 0
+                while k < hget(mut st, ia) {
+                    lit(mut out, ",{")
+                    regName(mut out, k)
+                    out = append(out, 125)
+                    k += 1
+                }
+                lit(mut out, ",~{rcx},~{r11},~{memory}\"(")
+                k = 0
+                while k < hget(mut st, ia) {
+                    if k > 0 {
+                        lit(mut out, ", ")
+                    }
+                    lit(mut out, "i64 ")
+                    vreg(mut out, hget(mut st, ia + 1 + k))
+                    k += 1
+                }
+                lit(mut out, ")\n")
+            }
+            ins = hget(mut st, ins + I_NEXT)
+        }
+        t := hget(mut st, b + B_TERM)
+        x1 := hget(mut st, b + B_X1)
+        if t == TmBr {
+            lit(mut out, "  br label %b")
+            num(mut out, hget(mut st, x1 + B_ID))
+            out = append(out, 10)
+        } else if t == TmCondbr {
+            kt := fresh + 1
+            fresh += 2
+            lit(mut out, "  %c.")
+            llLabel(mut out, bi, ctag, ck)
+            lit(mut out, " = icmp ne i64 ")
+            vreg(mut out, x1)
+            lit(mut out, ", 0\n  br i1 %c.")
+            llLabel(mut out, bi, ctag, ck)
+            lit(mut out, ", label %")
+            llLabel(mut out, bi, LbT, kt)
+            lit(mut out, ", label %")
+            llLabel(mut out, bi, LbE, kt + 1)
+            out = append(out, 10)
+            llLabel(mut out, bi, LbT, kt)
+            lit(mut out, ":\n  br label %b")
+            num(mut out, hget(mut st, hget(mut st, b + B_X2) + B_ID))
+            out = append(out, 10)
+            llLabel(mut out, bi, LbE, kt + 1)
+            lit(mut out, ":\n  br label %b")
+            num(mut out, hget(mut st, hget(mut st, b + B_X4) + B_ID))
+            out = append(out, 10)
+        } else if t == TmRet {
+            if x1 >= 0 {
+                lit(mut out, "  ret ")
+                llTy(mut out, hget(mut st, vt + 1 + x1))
+                out = append(out, 32)
+                vreg(mut out, x1)
+                out = append(out, 10)
+            } else {
+                lit(mut out, "  ret void\n")
+            }
+        } else {
+            llExit(mut out, x1)
+        }
+        b = hget(mut st, b + B_NEXT)
+    }
+    lit(mut out, "}\n")
+}
+
+// llPrepare は全関数の印字の表（値の型・入り辺・定数の表）を先に作る。印字の間はヒープを伸ばさない —
+// 出力 out は同じ region にあるので、交互に伸びると先端の伸長が効かず全コピーが続く（F-27 の交錯成長 — 自己適用の大きい入力で exit 102 になった）
+func llPrepare(st mut St) {
+    mut f := st.fhead
+    while f >= 0 {
+        hv1 := valueTypes(mut st, f)
+        hset(mut st, f + F_LLVT, hv1)
+        hv2 := collectIncoming(mut st, f)
+        hset(mut st, f + F_LLINC, hv2)
+        hv3 := listN(mut st, hget(mut st, f + F_NVAL) * 2)
+        hset(mut st, f + F_LLCS, hv3)
+        f = hget(mut st, f + F_NEXT)
+    }
+}
+
+// llModule はモジュール全体の .ll（冒頭の固定部 → グローバル → 関数）。呼び手が rtlower と llPrepare を先に掛ける
+func llModule(st mut St, out mut []int) {
+    llHead(mut out)
+    mut g := st.ghead
+    while g >= 0 {
+        llName(mut st, mut out, hget(mut st, g + G_NAME))
+        init := hget(mut st, g + G_INIT)
+        if init >= 0 {
+            lit(mut out, " = internal constant [")
+            num(mut out, hget(mut st, g + G_WORDS))
+            lit(mut out, " x i64] ")
+            if hget(mut st, init) == 0 {
+                lit(mut out, "zeroinitializer")
+            } else {
+                out = append(out, 91)
+                mut i := 0
+                while i < hget(mut st, init) {
+                    if i > 0 {
+                        lit(mut out, ", ")
+                    }
+                    lit(mut out, "i64 ")
+                    num(mut out, hget(mut st, init + 1 + i))
+                    i += 1
+                }
+                out = append(out, 93)
+            }
+            out = append(out, 10)
+        } else {
+            lit(mut out, " = internal global [")
+            num(mut out, hget(mut st, g + G_WORDS))
+            lit(mut out, " x i64] zeroinitializer\n")
+        }
+        g = hget(mut st, g + G_NEXT)
+    }
+    mut f := st.fhead
+    while f >= 0 {
+        llFunc(mut st, mut out, f)
+        f = hget(mut st, f + F_NEXT)
+    }
+}

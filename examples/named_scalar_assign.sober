@@ -1,0 +1,37 @@
+package main
+
+// 回帰例（language.md 32 節 — リテラルは代入の文脈の named に割り当てられる）: 型なしのリテラル・const を
+// named scalar の局所・mut struct の欄・mut 仮引数の欄へ代入する。lower（build）が代入の右辺を期待型なしで評価して拒否していた（check は受理）
+
+type Ref int
+
+type Flag bool
+
+const NONE = -1
+
+type St struct {
+    want Ref
+    seen Flag
+    n int
+}
+
+func reset(st mut St) {
+    st.want = -1
+    st.seen = false
+}
+
+func main() {
+    mut r := Ref(3)
+    println(int(r))
+    r = 7
+    println(int(r))
+    r = NONE
+    println(r == -1)
+    mut st := St{want: Ref(1), seen: Flag(true), n: 5}
+    st.want = 9
+    println(int(st.want))
+    reset(mut st)
+    println(st.want == NONE)
+    println(bool(st.seen))
+    println(st.n)
+}

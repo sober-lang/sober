@@ -1,0 +1,40 @@
+package main
+
+// 正例（syntax.md 決定 13）: 兄弟のスコープで同じ名前を束縛するのはシャドーイングでない（ブロック・for・ラムダ・case）
+
+import "std/iter"
+
+type U union {
+    A{v int}
+    B{v int}
+}
+
+func pick(u U) int {
+    return switch u {
+    case A{v}: v
+    case B{v}: v * 10
+    default: 0
+    }
+}
+
+func twice(f func(int) int, x int) int {
+    return f(f(x))
+}
+
+func main() {
+    mut t := 0
+    for i <- iter.Range(0, 3) {
+        t += i
+    }
+    for i <- iter.Range(0, 2) {
+        t += i * 100
+    }
+    a := if t > 0 {
+        z := 1
+        z
+    } else {
+        z := 2
+        z
+    }
+    println(t + twice((k) => k + 1, 1) + twice((k) => k * 2, 2) + a + pick(A{v: 1}) + pick(B{v: 2}))
+}

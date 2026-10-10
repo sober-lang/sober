@@ -1,0 +1,29 @@
+package main
+
+// F-6 のリテラル形（selfhost-drafts F-6・strlit の段）: 再帰する mut 引数の関数（Def として anchor つきで呼ぶ — R2）に
+// 文字列リテラルを渡す。リテラルは Def 呼び出しの実引数の位置で region 0（呼び手空間）に置かれるので、imm 引数の条件
+// （anchor 以下の region）を満たす。旧テンプレート（最内 region の freeze(append 連鎖)）では check が def error だった
+
+import "std/builder"
+
+func walk(nb mut builder.Builder[int], w string, n int) int {
+    builder.Push(mut nb, len(bytes(w)))
+    if n == 0 {
+        return len(bytes(w))
+    }
+    if n % 2 == 0 {
+        return walk(mut nb, "abc", n - 1)
+    }
+    return walk(mut nb, "hello", n - 1)
+}
+
+func main() {
+    mut nb := builder.Builder[int]{}
+    println(walk(mut nb, "z", 4))
+    xs := builder.Build(mut nb)
+    mut i := 0
+    while i < len(xs) {
+        println(xs[i])
+        i += 1
+    }
+}

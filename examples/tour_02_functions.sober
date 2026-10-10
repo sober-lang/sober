@@ -1,0 +1,30 @@
+package main
+
+// Tour 2: functions, multiple results, lambdas, pipes (docs/guide/tour.md)
+
+// returns two results
+func divmod(a int, b int) (int, int) {
+    return a / b, a % b
+}
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func twice(f func(int) int, x int) int {
+    return f(f(x))
+}
+
+func main() int {
+    q, r := divmod(17, 5)
+    println("17 = 5 * ${q} + ${r}")
+    // multiple results flow through a pipe into the next call (_ is a hole)
+    s := divmod(17, 5) |> add(_, _)
+    println(s)
+    // a pipe feeds the first argument by default
+    n := 3 |> add(10)
+    println(n)
+    // a lambda
+    println(twice((v) => v * 3, 2))
+    return 0
+}

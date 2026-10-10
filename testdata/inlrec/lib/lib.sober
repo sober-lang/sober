@@ -1,0 +1,28 @@
+package lib
+
+// 別 package の同名の mut 関数（main.llen → lib.Llen → lib.llen）。入れ子の展開は再帰でない — 展開中の再帰の検査は名前でなく宣言で引く
+// （名前で引いていた lower は main.llen を展開中に lib.llen を再帰と取り違えて拒否した — S-4 M1、report-32）
+
+type T struct {
+    xs []int
+}
+
+type S struct {
+    h int
+    trees []T
+}
+
+func llen(st mut S, l int) int {
+    if l >= 100 {
+        return st.trees[0].xs[l - 100]
+    }
+    return st.h
+}
+
+func Llen(st mut S, l int) int {
+    return llen(mut st, l)
+}
+
+func Mk(ts []T) S {
+    return S{h: 3, trees: ts}
+}

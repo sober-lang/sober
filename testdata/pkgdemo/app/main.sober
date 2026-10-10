@@ -1,0 +1,16 @@
+package main
+
+import "testdata/pkgdemo/geo"
+
+const Local = geo.Scale + 1
+
+func main() {
+    c := geo.Circle{r: 2}
+    p := geo.Point{3, 4}
+    println(geo.Area(c), geo.Sum(p), geo.Double(5), geo.Scale, Local)
+    println(switch c {
+    case geo.Circle{r}: r
+    case geo.Empty{}: -1
+    })
+    println(geo.AreaMetric.size(c), geo.AreaMetric.unit, if geo.ByWeight.less(p, geo.Point{1, 9}) { 1 } else { 0 })
+}

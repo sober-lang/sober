@@ -1,0 +1,14 @@
+package main
+
+// 回帰例（X5 — C1 B3）: 生成元が呼び出し形の for 式を、yield の型（表層型検査器の表）で check も受理する
+// （build は前から受理 — check は生成元が slice / map のときしか for 式の型を持たなかった）
+
+import "std/iter"
+
+type N int
+
+func main() {
+    println(iter.Count(for x <- iter.Range(0, 5) yield x * 2))
+    println(iter.Count(for x <- iter.Range(0, 5) yield N(x)))
+    println(iter.Count(for x <- iter.Range(0, 3) yield x > 1))
+}

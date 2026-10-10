@@ -1,0 +1,73 @@
+package main
+
+// errtrace のコーパス: error を仮引数で受けて転送・switch する（呼び手の実引数の合併 — P-b）と、包み替えの cause（C-b）
+
+import "std/iter"
+
+type A error {
+    n int
+}
+
+type B error
+
+type W error {
+    step int
+}
+
+type Unused error
+
+func mk(n int) error? {
+    if n < 0 {
+        return A{n: n}
+    }
+    if n == 0 {
+        return B{}
+    }
+    return nil
+}
+
+func pass(e error?) error? {
+    return e
+}
+
+func val(n int) (int, error?) {
+    e := pass(mk(n))
+    if e != nil {
+        return 0, e
+    }
+    return n, nil
+}
+
+func wrapped(n int) (int, error?) {
+    m := val(n)? W{step: 3}
+    return m, nil
+}
+
+func inner(e error) int {
+    return switch e {
+    case A{n}: n
+    case B{}: 100
+    case W{step}: 200
+    case Unused{}: 300
+    }
+}
+
+func outer(e error) int {
+    return switch e {
+    case W{step, cause}: if cause != nil { step * 1000 + inner(cause) } else { step }
+    case A{n}: n
+    case B{}: 1
+    case Unused{}: 2
+    }
+}
+
+func main() {
+    ns := []int{-4, 0, 5}
+    for i <- iter.Range(0, 3) {
+        n := ns[i]
+        _, err := wrapped(n)
+        if err != nil {
+            println(outer(err))
+        }
+    }
+}

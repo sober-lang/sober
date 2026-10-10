@@ -1,0 +1,47 @@
+package main
+
+// 文字列のキーのハッシュ（rt.map_hash — 第三便 M12 で 8 バイトの語ずつに）の回帰例: キーは大きいバッファの部分列で、キーの後ろのバイトが
+// 置き場ごとに違う（`名前;数`）。ハッシュがキーの長さを越えて読むと、同じ名前が別のキーになって数え違える。索引が使われる件数・長さ 1〜23
+
+import "std/iter"
+
+func main() int {
+    mut buf := mut []byte{}
+    for r <- iter.Range(0, 3) {
+        for k <- iter.Range(0, 40) {
+            n := 1 + k % 23
+            for j <- iter.Range(0, n) {
+                buf = append(buf, byte('a' + (k + j) % 26))
+            }
+            buf = append(buf, ';')
+            buf = append(buf, byte('0' + (r * 7 + k) % 10))
+            buf = append(buf, '\n')
+        }
+    }
+    b := freeze(buf)
+    mut ix := mut map[string]int{}
+    mut counts := mut []int{}
+    mut i := 0
+    while i < len(b) {
+        s := i
+        while b[i] != ';' {
+            i += 1
+        }
+        name := string(b[s:i]) catch return 1
+        i += 3
+        k := ix[name]
+        if k != nil {
+            counts[k] = counts[k] + 1
+        } else {
+            ix[name] = len(counts)
+            counts = append(counts, 1)
+        }
+    }
+    println(len(counts))
+    mut total := 0
+    for k <- iter.Range(0, len(counts)) {
+        total = total * 3 + counts[k]
+    }
+    println(total)
+    return 0
+}

@@ -1,0 +1,25 @@
+package lib
+
+type Ord struct {
+    less func(int, int) bool
+}
+
+// 辞書 const のラムダが非公開関数 mod を参照する
+const ByMod = Ord{less: (a, b) => mod(a) < mod(b)}
+
+func mod(x int) int {
+    return x % 5
+}
+
+// 非公開の error ラベルも .sobi に載る（閉じた union の要素）
+type broken error
+
+type Mark struct {
+    n int
+}
+
+// 公開の非展開関数の本体で持ち上げるラムダ（lib の持ち上げ）
+func Tag(m Mark) int {
+    p := Ord{less: (a, b) => a < b}
+    return if p.less(m.n, 3) { 1 } else { 0 }
+}

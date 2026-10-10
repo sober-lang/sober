@@ -1,0 +1,20 @@
+package main
+
+type Pair struct {
+    x, y int
+}
+
+func pairs(xs, ys []int) Iter[Pair] {
+    return for x <- xs if x > 0; y <- ys(x) if y != x yield Pair{x, y}
+}
+
+func users(p Path) Iter[User] {
+    return for l <- lines(p) {
+        u := parse(l)
+        yield u
+    }
+}
+
+func main() {
+    println(pairs([]int{1, 2}, []int{3}) |> count)
+}

@@ -1,0 +1,15 @@
+package wire
+
+// @layout の struct を他 package に置く（language.md 36 節）: 写しの関数は呼ぶ側のファイルごとに合成される — この package は宣言だけ
+
+@layout
+type Frame struct {
+    kind u8
+    len u16be
+    seq u32le
+}
+
+// Ping は kind 1 の Frame
+func Ping(seq int) Frame {
+    return Frame{kind: 1, len: 0, seq: seq}
+}

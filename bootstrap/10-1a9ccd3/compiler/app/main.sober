@@ -1,0 +1,557 @@
+package main
+
+// stage2 の CLI（selfhost の R35 / 主役交代 R39）: Sober で書いたコンパイラの単体の入口。Zig 版 `sober`（src/main.zig）の綴りに合わせて
+//   sober build <entry> [--emit=ll|ir|elf] [--passes] [--no-opt] [-o <out>]   .ll（既定）/ IR テキスト / ELF（Sober の正規バックエンド — B-1d。
+//                                                   ELF は mem2reg を掛ける — --no-opt で外す。B-3）を書く
+//                                                   （-o が無ければ標準出力）。bin/sober の既定は IR テキストを凍結した Zig の正規バックエンドへ渡す
+//                                                   （B-4 で切り替え）か、.ll を `zig cc -target x86_64-linux-none -nostdlib -static` で下ろす
+//   sober check <entry> [--core-json]               analyzer（compiler/analyzer — 指摘は `<位置>: error: <本文> (Analyzer)` を標準エラーへ・判定は出さない）→
+//                                                   脱糖 → 型検査（Checker.lean の移植 — compiler/checker）の判定 JSON を標準出力へ
+//                                                   （--core-json は脱糖したコア AST の JSON — Lean の sober-check に渡す形 — を出して終わる）
+//   sober lex <file>                                字句の列（1 行 1 字句: 種類 開始 終わり 綴り）
+//   sober parse --ast-json <file>                   1 ファイルの表層 AST の JSON（C4 黄金の形）
+//   sober parse --loader-json <entry>               load した Program の、loader が決める情報の JSON（第 2 黄金の形）
+//   sober fmt <file>                                AST から整形したソース（compiler/printer — Zig 版の CST printer とは綴りが違う）
+// を持つ。entry は .sober ファイルか main package のディレクトリ（cwd 相対 — import もルート = cwd 相対）。
+// 終了コードは Zig 版と同じ: 成功 0・失敗（使い方・load / parse / 脱糖 / lower の拒否・型エラー・読み書きの失敗）1。診断は 1 行（`sober: load error` 等 — 質は別レーン）。
+// std はコンパイラの一部（language.md 20 節 R8-2）: `@embed` で自分に焼き込み、`std/…` の import はここから読む
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/strings"
+import "lexer"
+import "parser"
+import "ast"
+import "printer"
+import "loader"
+import "lower"
+import "desugar"
+import "checker"
+import "diag"
+import "analyzer"
+
+@embed("std/**/*.sober")
+const Std = map[string]string{}
+
+func fail(msg string) int {
+    werr := io.WriteStderr(bytes("sober: ${msg}\n"))
+    if werr != nil {
+        return 1
+    }
+    return 1
+}
+
+func usage() int {
+    return fail("usage: sober build <entry> [--emit=ll|ir|elf] [--passes] [--no-opt] [-o <out>] | sober check <entry> [--core-json] | sober lex <file> | sober parse (--ast-json <file> | --loader-json <entry>) | sober fmt <file>")
+}
+
+func writeStdout(out []byte) int {
+    werr := io.WriteStdout(out)
+    return if werr != nil { fail("cannot write the standard output") } else { 0 }
+}
+
+func writeFile(path string, out []byte) int {
+    werr := io.WriteFile(path, out)
+    return if werr != nil { fail("cannot write ${path}") } else { 0 }
+}
+
+// check は p を脱糖して検査する（判定 JSON。脱糖の拒否なら diag のラベル）。関数に割るのは脱糖器のヒープの region を分けるため（sobercheck と同じ）
+func check(p loader.Program) ([]byte, error?) {
+    // 転送の return（多値に分解してから返すと、総称 Def の多値の戻りの後の読みを check が CoreFragment で拒否する — F-d の同族）
+    return desugar.WithCore(p, []byte{}, c => checker.CheckCore(c))
+}
+
+// analyze は analyzer 層（受理の定義に含む — language.md 30 節）の指摘を Zig 版と同じ形 `<位置>: error: <本文> (Analyzer)` で
+// 標準エラーへ全部出す（指摘があれば 1 — 判定 JSON は出さない）。--core-json と開発用のフラグでは走らせない（Zig 版と同じ）
+func analyze(p loader.Program, std map[string]string) int {
+    fs := analyzer.Run(p)
+    for i <- iter.Range(0, len(fs)) {
+        werr := io.WriteStderr(bytes("${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)\n"))
+        if werr != nil {
+            return 1
+        }
+    }
+    return if len(fs) > 0 { 1 } else { 0 }
+}
+
+// defFail は p の検査の def error の Def の添字（[j] — 無ければ [-1]。region を分けるため関数に割る — check と同じ）
+func defFail(p loader.Program) ([]int, error?) {
+    return desugar.WithCore(p, []int{}, c => checker.DefFail(c))
+}
+
+// coreJson は p を脱糖したコア AST の JSON（脱糖の拒否なら diag のラベル）。region を分けるため関数に割る（check と同じ）
+func coreJson(p loader.Program) ([]byte, error?) {
+    out, err := desugar.Json(p)
+    return out, err
+}
+
+// loadDiag は load の拒否の診断（diag.Format — `load error: <理由>`、位置があれば `load error at <path>:<行>:<列>: <理由>`）
+func loadDiag(p loader.Program, std map[string]string, err error?) string {
+    return diag.Format(err, where(p, std, diag.At(err)))
+}
+
+// errDiag は脱糖 / lower の拒否の診断（diag.Format — `desugar error at <path>:<行>:<列> (<種類>)` / `lower error at … (<種類>)`。
+// 種類の綴りは Zig 版の error 名）
+func errDiag(p loader.Program, std map[string]string, err error?) string {
+    return diag.Format(err, where(p, std, diag.At(err)))
+}
+
+// srcPos はファイル file の字句の位置 tok の `<path>:<行>:<列>`（ファイルが引けなければ `token <tok>`）
+func srcPos(p loader.Program, std map[string]string, file int, tok int) string {
+    return where(p, std, diag.Pos{file: file, tok: tok})
+}
+
+// where は位置 at の `<path>:<行>:<列>`（diag.Where — ファイルが引けなければ `token <tok>`）
+func where(p loader.Program, std map[string]string, at diag.Pos) string {
+    if at.file >= 0 {
+        src, ok := loader.SourceFs(p, at.file, std)
+        if ok {
+            return diag.Where(p.file_path[at.file], src, at.tok)
+        }
+    }
+    return "token ${at.tok}"
+}
+
+// verdictOk は判定 JSON が受理（`{"ok":true` で始まる）か
+func verdictOk(out []byte) bool {
+    w := bytes("{\"ok\":true")
+    if len(out) < len(w) {
+        return false
+    }
+    for i <- iter.Range(0, len(w)) {
+        if out[i] != w[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// typerReport は表層型検査器の突き合わせ（lower.TyperDiff の [一致, 不一致, 表に無い, 比べない, n, (ファイル, 字句, 表層型の種類, lower の型の種類)…]）を印字する
+func typerReport(p loader.Program, std map[string]string, r []int) int {
+    mut msg := "typer match=${r[0]} mismatch=${r[1]} absent=${r[2]} skip=${r[3]}\n"
+    for k <- iter.Range(0, 100) {
+        if r[5 + k] > 0 {
+            msg = msg + "  absent kind=${k} n=${r[5 + k]}\n"
+        }
+    }
+    for i <- iter.Range(0, r[4]) {
+        b := 105 + i * 4
+        msg = msg + "  ${srcPos(p, std, r[b], r[b + 1])} y=${r[b + 2]} t=${r[b + 3]}\n"
+    }
+    return writeStdout(bytes(msg))
+}
+
+// emit は lower の結果を args[oi]（oi < 0 なら標準出力）へ（拒否なら位置つきの診断 — errDiag）
+func emit(p loader.Program, std map[string]string, args []string, oi int, out []byte, err error?) int {
+    if err != nil {
+        return fail(errDiag(p, std, err))
+    }
+    if oi < 0 {
+        return writeStdout(out)
+    }
+    return writeFile(args[oi], out)
+}
+
+// loadEntry は build の entry を読む（test なら package のテストのビルド — loader.LoadTestFs）
+func loadEntry(entry string, test bool, std map[string]string) (loader.Program, error?) {
+    if test {
+        return loader.LoadTestFs(entry, std)
+    }
+    return loader.LoadFs(entry, std)
+}
+
+// cmdBuild の引数は添字で持つ（`mut entry := ""` に仮引数の string を代入する形は check が拒否する — F-36。値は最後に 1 度だけ引く）
+func cmdBuild(args []string) int {
+    mut ei := 0 - 1
+    mut oi := 0 - 1
+    mut ir := false
+    mut elfOut := false
+    mut noOpt := false
+    mut passes := false
+    mut typer := 0
+    mut trace := false
+    mut test := false
+    mut i := 2
+    while i < len(args) {
+        a := args[i]
+        if a == "-o" {
+            if i + 1 >= len(args) {
+                return usage()
+            }
+            oi = i + 1
+            i += 2
+        } else if a == "--emit=ll" {
+            ir = false
+            i += 1
+        } else if a == "--emit=ir" {
+            ir = true
+            i += 1
+        } else if a == "--emit=elf" {
+            // 正規バックエンド（compiler/lower/x86.sober — B-1d。既定の切り替えは B-4）。ファイルの実行ビットは呼び手（bin/sober）が付ける
+            elfOut = true
+            i += 1
+        } else if a == "--passes" {
+            passes = true
+            i += 1
+        } else if a == "--no-opt" {
+            // --emit=elf の IR パス（mem2reg — stage1 の `build x.ir` の既定）を外す
+            noOpt = true
+            i += 1
+        } else if a == "--trace-errors" {
+            trace = true
+            i += 1
+        } else if a == "--test" {
+            // テストのビルド（`sober test` — entry は package のディレクトリ。loader.LoadTestFs が合成の main を足す）
+            test = true
+            i += 1
+        } else if a == "--typer" {
+            typer = 1
+            i += 1
+        } else if a == "--typer-diff" {
+            typer = 2
+            i += 1
+        } else if ei < 0 {
+            ei = i
+            i += 1
+        } else {
+            return usage()
+        }
+    }
+    if ei < 0 {
+        return usage()
+    }
+    // 焼き込んだ表は参照点で展開される辞書 const なので、一度束縛して渡す（参照ごとに組み直さない）
+    std := Std
+    p, lerr := loadEntry(args[ei], test, std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    if typer == 2 {
+        out, err := lower.TyperDiff(p)
+        if err != nil {
+            return fail(errDiag(p, std, err))
+        }
+        return typerReport(p, std, out)
+    }
+    if typer == 1 {
+        out, berr := lower.LlTyper(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if trace {
+        // 開発用: error を返す出口の計装つき IR（lower.IrTraceErrors — error 網羅 analyzer の動的オラクル scripts/errtrace.sh）
+        out, berr := lower.IrTraceErrors(p, passes)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if elfOut && noOpt {
+        out, berr := lower.ElfRaw(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if elfOut && passes {
+        out, berr := lower.ElfPasses(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if elfOut {
+        out, berr := lower.Elf(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if ir && passes {
+        out, berr := lower.IrPasses(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if ir {
+        out, berr := lower.Ir(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    if passes {
+        out, berr := lower.LlPasses(p)
+        return emit(p, std, args, oi, out, berr)
+    }
+    out, berr := lower.Ll(p)
+    return emit(p, std, args, oi, out, berr)
+}
+
+func cmdCheck(args []string) int {
+    core := len(args) == 4 && args[3] == "--core-json"
+    tdiff := len(args) == 4 && args[3] == "--typer-diff"
+    nall := len(args) == 4 && args[3] == "--nominal-all"
+    didx := len(args) == 4 && args[3] == "--def-index"
+    edump := len(args) == 4 && args[3] == "--errors-dump"
+    xrep := len(args) == 4 && args[3] == "--expansion-report"
+    // テストのビルド（entry = package のディレクトリ — 合成の main と _test.sober ごと検査する。T12）
+    tst := len(args) == 4 && args[3] == "--test"
+    if len(args) != 3 && !core && !tdiff && !nall && !didx && !edump && !xrep && !tst {
+        return usage()
+    }
+    std := Std
+    p, lerr := loadEntry(args[2], tst, std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    if edump {
+        // 開発用: error のラベル集合の導出（compiler/analyzer の errors.sober — error 網羅 analyzer A2 の影）
+        fs := analyzer.ErrorsDump(p)
+        mut msg := ""
+        for i <- iter.Range(0, len(fs)) {
+            msg = if fs[i].at.file < 0 { msg + "${fs[i].what}\n" } else { msg + "${where(p, std, fs[i].at)}: ${fs[i].what}\n" }
+        }
+        return writeStdout(bytes(msg))
+    }
+    if xrep {
+        // 開発用: 関数ごとの展開の寄与（コア式の節の数）の上位 40（desugar.ExpansionReport — コスト可視化の口）
+        r, xerr := desugar.ExpansionReport(p, 40)
+        if xerr != nil {
+            return fail(errDiag(p, std, xerr))
+        }
+        return writeStdout(r)
+    }
+    if nall {
+        // 開発用: 表層型の照合の拒否を全部（desugar.NominalAll — 1 件で止めない）
+        r, derr := desugar.NominalAll(p)
+        if derr != nil {
+            return fail(errDiag(p, std, derr))
+        }
+        mut msg := "nominal ${len(r) / 2}\n"
+        for i <- iter.Range(0, len(r) / 2) {
+            msg = msg + "  ${srcPos(p, std, r[i * 2], r[i * 2 + 1])}\n"
+        }
+        return writeStdout(bytes(msg))
+    }
+    if didx {
+        // 開発用: 検査の判定が def error なら、何番目の Def か（名前付き関数 → 持ち上げた Def の順）とその出所の位置
+        r, derr := defFail(p)
+        if derr != nil {
+            return fail(errDiag(p, std, derr))
+        }
+        if r[0] == -2 {
+            return writeStdout(bytes("checker: too deep\n"))
+        }
+        if r[0] < 0 {
+            return writeStdout(bytes("no def error\n"))
+        }
+        at, aerr := desugar.DefAt(p, r[0])
+        if aerr != nil {
+            return fail(errDiag(p, std, aerr))
+        }
+        return writeStdout(bytes("def error: def ${r[0]} at ${where(p, std, at)}\n"))
+    }
+    if tdiff {
+        // 表層型検査器 × exprSty の突き合わせ（desugar.TyperDiff — C1 B3 の入口）
+        r, derr := desugar.TyperDiff(p)
+        if derr != nil {
+            return fail(errDiag(p, std, derr))
+        }
+        mut msg := "typer-sty same=${r[0]} gain=${r[1]} loss=${r[2]} mismatch=${r[3]} skip=${r[4]} targs-same=${r[5]} targs-diff=${r[6]}\n"
+        for i <- iter.Range(0, r[7]) {
+            b := 8 + i * 4
+            if r[b + 2] == 2 {
+                msg = msg + "  ${srcPos(p, std, r[b], r[b + 1])} targs inferTs-ok=${r[b + 3] == 1}\n"
+            } else {
+                msg = msg + "  ${srcPos(p, std, r[b], r[b + 1])} lost=${r[b + 2] == 0} y=${r[b + 3]}\n"
+            }
+        }
+        return writeStdout(bytes(msg))
+    }
+    if core {
+        cj, cerr := coreJson(p)
+        if cerr != nil {
+            return fail(errDiag(p, std, cerr))
+        }
+        return writeStdout(cj)
+    }
+    if analyze(p, std) != 0 {
+        return 1
+    }
+    out, cerr := check(p)
+    if cerr != nil {
+        return fail(errDiag(p, std, cerr))
+    }
+    if writeStdout(out) != 0 {
+        return 1
+    }
+    return if verdictOk(out) { 0 } else { 1 }
+}
+
+// readSrc は args[i] のファイルの中身（読めなければ ok = false）
+func readSrc(args []string, i int) ([]byte, bool) {
+    src, err := io.ReadFile(args[i])
+    if err != nil {
+        return []byte{}, false
+    }
+    return src, true
+}
+
+func cmdLex(args []string) int {
+    if len(args) != 3 {
+        return usage()
+    }
+    src, ok := readSrc(args, 2)
+    if !ok {
+        return fail("cannot read ${args[2]}")
+    }
+    return writeStdout(lexer.Dump(src))
+}
+
+// cmdTree は args[i] を parse して、AST から整形したソース（pr）か AST JSON（!pr）を書く
+func cmdTree(args []string, i int, pr bool) int {
+    src, ok := readSrc(args, i)
+    if !ok {
+        return fail("cannot read ${args[i]}")
+    }
+    t, pok := parser.Parse(src, lexer.Lex(src))
+    if !pok {
+        return fail("parse error")
+    }
+    if pr {
+        return writeStdout(printer.Print(t))
+    }
+    return writeStdout(ast.Json(t))
+}
+
+func cmdLoaderJson(args []string) int {
+    std := Std
+    p, lerr := loader.LoadFs(args[3], std)
+    if lerr != nil {
+        return fail(loadDiag(p, std, lerr))
+    }
+    return writeStdout(loader.Json(p))
+}
+
+func cmdParse(args []string) int {
+    if len(args) != 4 {
+        return usage()
+    }
+    if args[2] == "--ast-json" {
+        return cmdTree(args, 3, false)
+    }
+    if args[2] == "--loader-json" {
+        return cmdLoaderJson(args)
+    }
+    return usage()
+}
+
+// cmdTest は `sober test <package>… --backend <stage1> --work <dir> [-run <接頭辞>] [-v]`（.pair/test-design-draft.md — T1・T8）: package ごとに
+// テストのビルド（loader.LoadTestFs — 合成の main）を IR へ下ろし、正規バックエンド（--backend — bin/sober が凍結した Zig の stage1 を渡す）で
+// <work>/t に建て、TestXxx を 1 つずつ別プロセス（std/os.Run）で走らせて終了コードを集計する。子の出力は親の標準出力をそのまま継ぐ
+// （捕まえない — os.Run は終了コードだけの最小面。-v は受けるが今は常に見せる形と同じ）。-run は名前の接頭辞で絞る。終了コード = 失敗があれば 1
+func cmdTest(args []string) int {
+    mut pkgs := mut []int{}
+    mut bi := 0 - 1
+    mut wi := 0 - 1
+    mut ri := 0 - 1
+    mut i := 2
+    while i < len(args) {
+        a := args[i]
+        if a == "--backend" || a == "--work" || a == "-run" {
+            if i + 1 >= len(args) {
+                return usage()
+            }
+            if a == "--backend" {
+                bi = i + 1
+            } else if a == "--work" {
+                wi = i + 1
+            } else {
+                ri = i + 1
+            }
+            i += 2
+        } else if a == "-v" {
+            i += 1
+        } else {
+            pkgs = append(pkgs, i)
+            i += 1
+        }
+    }
+    if len(pkgs) == 0 || bi < 0 || wi < 0 {
+        return usage()
+    }
+    std := Std
+    mut pass := 0
+    mut failn := 0
+    for k <- iter.Range(0, len(pkgs)) {
+        r := testPkg(args[pkgs[k]], std, args[bi], args[wi], if ri < 0 { "" } else { args[ri] })
+        pass += r.pass
+        failn += r.fail
+    }
+    println("${pass} passed, ${failn} failed")
+    return if failn == 0 { 0 } else { 1 }
+}
+
+// TestTally は package 1 つ分の集計
+type TestTally struct {
+    pass int
+    fail int
+}
+
+// testPkg は package pkg のテストを建てて走らせる（建たなければ FAIL 1 件として数える）
+func testPkg(pkg string, std map[string]string, backend string, work string, prefix string) TestTally {
+    p, lerr := loader.LoadTestFs(pkg, std)
+    if lerr != nil {
+        println("FAIL ${pkg} (build)")
+        // 診断は標準エラーへ（書けなくても集計は同じ — 失敗 1 件）
+        if io.WriteStderr(bytes("sober: ${loadDiag(p, std, lerr)}\n")) != nil {
+            return TestTally{pass: 0, fail: 1}
+        }
+        return TestTally{pass: 0, fail: 1}
+    }
+    names, nerr := loader.TestNames(p, pkg)
+    ir, berr := lower.IrPasses(p)
+    if nerr != nil || berr != nil {
+        println("FAIL ${pkg} (build)")
+        return TestTally{pass: 0, fail: 1}
+    }
+    irp := work + "/t.ir"
+    bin := work + "/t"
+    if io.WriteFile(irp, ir) != nil {
+        println("FAIL ${pkg} (build)")
+        return TestTally{pass: 0, fail: 1}
+    }
+    c, rerr := os.Run(backend, []string{"build", irp, "-o", bin})
+    if rerr != nil || c != 0 {
+        println("FAIL ${pkg} (build)")
+        return TestTally{pass: 0, fail: 1}
+    }
+    mut pass := 0
+    mut failn := 0
+    for k <- iter.Range(0, len(names)) {
+        if prefix == "" || strings.HasPrefix(names[k], prefix) {
+            ec, eerr := os.Run(bin, []string{names[k]})
+            if eerr == nil && ec == 0 {
+                println("ok   ${pkg}.${names[k]}")
+                pass += 1
+            } else {
+                println("FAIL ${pkg}.${names[k]} (exit ${ec})")
+                failn += 1
+            }
+        }
+    }
+    return TestTally{pass: pass, fail: failn}
+}
+
+func main() int {
+    args, err := os.Args()
+    if err != nil || len(args) < 2 {
+        return usage()
+    }
+    if args[1] == "build" {
+        return cmdBuild(args)
+    }
+    if args[1] == "check" {
+        return cmdCheck(args)
+    }
+    if args[1] == "test" {
+        return cmdTest(args)
+    }
+    if args[1] == "lex" {
+        return cmdLex(args)
+    }
+    if args[1] == "parse" {
+        return cmdParse(args)
+    }
+    if args[1] == "fmt" {
+        if len(args) != 3 {
+            return usage()
+        }
+        return cmdTree(args, 2, true)
+    }
+    return usage()
+}

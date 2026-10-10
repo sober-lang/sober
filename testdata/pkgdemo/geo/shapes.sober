@@ -1,0 +1,46 @@
+package geo
+
+const Scale = 3
+
+type Point struct {
+    x, y int
+}
+
+type Shape union {
+    Circle { r int }
+    Empty {}
+}
+
+func Area(s Shape) int {
+    return switch s {
+    case Circle{r}: r * r * Scale
+    case Empty{}: 0
+    }
+}
+
+func Sum(p Point) int {
+    return p.x + p.y
+}
+
+func hidden(n int) int {
+    return n * 2
+}
+
+func Double(n int) int {
+    return hidden(n)
+}
+
+// 公開の辞書 const（language.md 25 節）: 名前付き関数の参照 + int const、
+// ラムダは宣言側 package の文脈で持ち上げる（非公開の hidden を呼べる）
+type Metric struct {
+    size func(Shape) int
+    unit int
+}
+
+const AreaMetric = Metric{size: Area, unit: Scale}
+
+type Cmp struct {
+    less func(Point, Point) bool
+}
+
+const ByWeight = Cmp{less: (a, b) => hidden(a.x) + a.y < hidden(b.x) + b.y}

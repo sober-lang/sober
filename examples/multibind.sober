@@ -1,0 +1,11 @@
+package main
+
+// 負例（load が拒否 — diag.MultiBind）: 値 1 つの束縛に (T, error?) を返す呼び出し（全部を束縛するか `?` / catch で受ける — 多値は分解点まで流すだけ・
+// 丸ごとの保存は無い。language.md 2 節）。以前は check が位置なしの type error・build が lower の Mismatch だった
+
+import "std/io"
+
+func main() {
+    d := io.ReadStdin()
+    println(len(d))
+}

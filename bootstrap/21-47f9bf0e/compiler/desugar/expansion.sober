@@ -1,0 +1,128 @@
+package desugar
+
+// 開発用（`sober check --expansion-report` — NOTES「コスト可視化の口」②）: 展開される関数の呼び出し点展開（inlineCall）と Def の本体（defOf）が
+// コア式の表（st.cores）に足した節の数を関数ごとに集計する。閉世界なので静的に正確（脱糖そのものは変えない — 数えるだけ。st.expRep = 0 なら素通り）。
+// 寄与は 2 通り: 含む（入れ子の展開ぶんを含む）と自分だけ（入れ子の展開ぶんを引く）。検算: 自分だけの総和 + その他（main の本体の外側・インスタンス化など
+// 区間で囲んでいない所）= 表の総数
+
+import "std/table"
+import "std/iter"
+import "loader"
+import "obuf"
+import "diag"
+
+// expBegin は計測の区間の入口
+func expBegin(st mut S) {
+    if st.expRep == 0 {
+        return
+    }
+    expPut(mut st, st.expSp, table.Len(mut st.cores))
+    expPut(mut st, st.expSp + 1, st.expChild)
+    st.expSp += 2
+    st.expChild = 0
+}
+
+// expPut は積み（Table は縮まない — 使い終わった段は上書きで使い回す）の i 番目に x
+func expPut(st mut S, i int, x int) {
+    if i < table.Len(mut st.expStk) {
+        table.Set(mut st.expStk, i, x)
+    } else {
+        table.Push(mut st.expStk, x)
+    }
+}
+
+// expEnd は区間の出口: 関数 fi（kind 0 = 呼び出し点展開・1 = Def の本体）の寄与を足す
+func expEnd(st mut S, fi int, kind int) {
+    if st.expRep == 0 {
+        return
+    }
+    start := table.Get(mut st.expStk, st.expSp - 2)
+    saved := table.Get(mut st.expStk, st.expSp - 1)
+    st.expSp -= 2
+    delta := table.Len(mut st.cores) - start
+    excl := delta - st.expChild
+    st.expChild = saved + delta
+    k := fi * 2 + kind
+    table.Set(mut st.expCnt, k, table.Get(mut st.expCnt, k) + 1)
+    table.Set(mut st.expIncl, k, table.Get(mut st.expIncl, k) + delta)
+    table.Set(mut st.expExcl, k, table.Get(mut st.expExcl, k) + excl)
+}
+
+// ExpansionReport は p を脱糖して寄与（自分だけ）の多い順に上位 ntop 件の表（テキスト）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = true
+    st.expRep = 1
+    for i <- iter.Range(0, st.nfn * 2) {
+        table.Push(mut st.expCnt, 0)
+        table.Push(mut st.expIncl, 0)
+        table.Push(mut st.expExcl, 0)
+    }
+    run(mut st)?
+    total := table.Len(mut st.cores)
+    mut sum := 0
+    for k <- iter.Range(0, st.nfn * 2) {
+        sum += table.Get(mut st.expExcl, k)
+    }
+    mut out := mut []byte{}
+    obuf.Lit(mut out, "core nodes ")
+    obuf.Int(mut out, total)
+    obuf.Lit(mut out, " (measured ")
+    obuf.Int(mut out, sum)
+    obuf.Lit(mut out, ", other ")
+    obuf.Int(mut out, total - sum)
+    obuf.Lit(mut out, ")\n  self%   self      incl     count  kind    function\n")
+    // 上位 ntop（選択 — 毎回残りの最大を拾う。使った行は -1 に印）
+    mut used := mut []bool{}
+    for k <- iter.Range(0, st.nfn * 2) {
+        used = append(used, false)
+    }
+    for r <- iter.Range(0, ntop) {
+        mut best := -1
+        for k <- iter.Range(0, st.nfn * 2) {
+            if !used[k] && table.Get(mut st.expCnt, k) > 0 && (best < 0 || table.Get(mut st.expExcl, k) > table.Get(mut st.expExcl, best)) {
+                best = k
+            }
+        }
+        if best >= 0 {
+            used[best] = true
+            ex := table.Get(mut st.expExcl, best)
+            pad(mut out, (ex * 1000 / (if total > 0 { total } else { 1 })), 6, true)
+            pad(mut out, ex, 10, false)
+            pad(mut out, table.Get(mut st.expIncl, best), 10, false)
+            pad(mut out, table.Get(mut st.expCnt, best), 10, false)
+            obuf.Lit(mut out, if best % 2 == 0 { "  inline  " } else { "  def     " })
+            fi := best / 2
+            nameOut(mut st, mut out, PkgPath(mut st, fnPkg(mut st, fi)))
+            out = append(out, '.')
+            nameOut(mut st, mut out, fnName(mut st, fi))
+            out = append(out, '\n')
+        }
+    }
+    return freeze(out), nil
+}
+
+// pad は n を幅 w の右寄せで（permille なら千分率を小数 1 桁の百分率で）
+func pad(out mut []byte, n int, w int, permille bool) {
+    mut d := mut []byte{}
+    obuf.Int(mut d, if permille { n / 10 } else { n })
+    if permille {
+        d = append(d, '.')
+        obuf.Int(mut d, n % 10)
+    }
+    for i <- iter.Range(len(d), w) {
+        out = append(out, ' ')
+    }
+    for i <- iter.Range(0, len(d)) {
+        out = append(out, d[i])
+    }
+}
+
+// nameOut はヒープの文字列 s のバイトを out へ
+func nameOut(st mut S, out mut []byte, s StrRef) {
+    for i <- iter.Range(0, slen(mut st, s)) {
+        out = append(out, byte(sat(mut st, s, i)))
+    }
+}

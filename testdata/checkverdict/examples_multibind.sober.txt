@@ -1,0 +1,2 @@
+sober: load error at examples/multibind.sober:9:5: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
+exit=1

@@ -1,0 +1,17 @@
+package main
+
+// 負例（load が拒否 — diag.RecursiveType）: 2 つの struct が map と T? を通して互いを持つ
+
+type Dir struct {
+    name string
+    files map[string]File
+}
+
+type File struct {
+    name string
+    parent Dir?
+}
+
+func main() {
+    println(len(bytes(File{name: "a", parent: nil}.name)))
+}

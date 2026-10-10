@@ -1,0 +1,21 @@
+package main
+
+// @layout の固定長配列の欄に長さ違いの値を書くと panic（language.md 36 節 Y2 — exit 101）
+
+import "std/builder"
+import "std/layout"
+
+@layout
+type H struct {
+    k u16le
+    s i8
+    a [2]u8
+}
+
+func main() {
+    mut out := builder.Builder[byte]{}
+    layout.Encode[H](mut out, H{k: 1, s: 0, a: bytes("ok")})
+    println(builder.Len(mut out))
+    layout.Encode[H](mut out, H{k: 1, s: 0, a: bytes("abc")})
+    println("unreachable")
+}

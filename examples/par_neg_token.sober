@@ -1,0 +1,10 @@
+package main
+
+// 段 6 P3a-1d: 札（par.S）の捕獲（diag.Par kind 5 — check と build が同じ拒否。desugar/parcheck.sober）
+
+import "std/par"
+
+func main() {
+    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, () => par.Join(par.Spawn(s, () => 1)))))
+    println(r)
+}

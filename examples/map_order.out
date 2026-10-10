@@ -1,0 +1,12 @@
+del 18: k0=0 long-key-for-the-prefix-test-0=100 k2=2 long-key-for-the-prefix-test-2=102 k3=3 long-key-for-the-prefix-test-3=103 k4=4 long-key-for-the-prefix-test-4=104 k6=6 long-key-for-the-prefix-test-6=106 k7=7 long-key-for-the-prefix-test-7=107 k8=8 long-key-for-the-prefix-test-8=108 k10=10 long-key-for-the-prefix-test-10=110 k11=11 long-key-for-the-prefix-test-11=111
+re 21: k0=0 long-key-for-the-prefix-test-0=100 k2=2 long-key-for-the-prefix-test-2=102 k3=3 long-key-for-the-prefix-test-3=103 k4=4 long-key-for-the-prefix-test-4=104 k5=55 k6=6 long-key-for-the-prefix-test-6=106 k7=7 long-key-for-the-prefix-test-7=107 k8=8 long-key-for-the-prefix-test-8=108 long-key-for-the-prefix-test-9=99 k10=10 long-key-for-the-prefix-test-10=110 k11=11 long-key-for-the-prefix-test-11=111 fresh=7
+moved0 12: inner-scope-key-number-1-0-xyz=1 s1=0 inner-scope-key-number-2-0-xyz=2 s2=0 inner-scope-key-number-4-0-xyz=4 s4=0 inner-scope-key-number-5-0-xyz=5 s5=0 inner-scope-key-number-7-0-xyz=7 s7=0 inner-scope-key-number-8-0-xyz=8 s8=0
+true true
+moved1 14: inner-scope-key-number-0-1-xyz=0 s0=1 inner-scope-key-number-2-1-xyz=2 s2=1 inner-scope-key-number-3-1-xyz=3 s3=1 inner-scope-key-number-5-1-xyz=5 s5=1 inner-scope-key-number-6-1-xyz=6 s6=1 inner-scope-key-number-8-1-xyz=8 s8=1 inner-scope-key-number-9-1-xyz=9 s9=1
+true true
+moved2 14: inner-scope-key-number-0-2-xyz=0 s0=2 inner-scope-key-number-1-2-xyz=1 s1=2 inner-scope-key-number-3-2-xyz=3 s3=2 inner-scope-key-number-4-2-xyz=4 s4=2 inner-scope-key-number-6-2-xyz=6 s6=2 inner-scope-key-number-7-2-xyz=7 s7=2 inner-scope-key-number-9-2-xyz=9 s9=2
+true true
+64
+old 2: x=1 y=2
+22
+edge 2: =3 a=2

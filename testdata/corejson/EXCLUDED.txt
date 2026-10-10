@@ -1,0 +1,156 @@
+examples/annot.sober: examples/annot.sober:12:1: error: annotation (Unsupported)
+examples/assert_outside.sober: sober: load error at examples/assert_outside.sober:5:5: assert is only available in _test.sober files
+examples/bind.sober: examples/bind.sober:3:1: error: top-level declaration kind (Unsupported)
+examples/builtin_decl.sober: sober: load error at examples/builtin_decl.sober:5:6: a top-level declaration cannot reuse a builtin name
+examples/builtin_rebind.sober: sober: load error at examples/builtin_rebind.sober:6:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false)
+examples/builtin_rebind_append.sober: sober: load error at examples/builtin_rebind_append.sober:11:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)
+examples/builtin_rebind_delete.sober: sober: load error at examples/builtin_rebind_delete.sober:5:6: a top-level declaration cannot reuse a builtin name
+examples/builtin_rebind_fn.sober: sober: load error at examples/builtin_rebind_fn.sober:10:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false)
+examples/byte_arith.sober: sober: desugar error at examples/byte_arith.sober:6:15 (TypeMismatch)
+examples/byte_compound.sober: sober: desugar error at examples/byte_compound.sober:6:5 (TypeMismatch)
+examples/byte_cond.sober: sober: desugar error at examples/byte_cond.sober:6:8 (TypeMismatch)
+examples/byte_generic_range.sober: sober: desugar error at examples/byte_generic_range.sober:8:26 (TypeMismatch)
+examples/byte_interp.sober: sober: desugar error at examples/byte_interp.sober:6:13 (CoreFragment)
+examples/byte_mapkey.sober: sober: desugar error at examples/byte_mapkey.sober:5:10 (CoreFragment)
+examples/byte_mix.sober: sober: desugar error at examples/byte_mix.sober:7:18 (TypeMismatch)
+examples/byte_named.sober: sober: desugar error at examples/byte_named.sober:8:17 (TypeMismatch)
+examples/byte_range.sober: sober: desugar error at examples/byte_range.sober:9:15 (TypeMismatch)
+examples/byte_range_conv.sober: sober: desugar error at examples/byte_range_conv.sober:5:15 (TypeMismatch)
+examples/byte_setidx_range.sober: sober: desugar error at examples/byte_setidx_range.sober:6:12 (TypeMismatch)
+examples/byte_unary.sober: sober: desugar error at examples/byte_unary.sober:6:14 (TypeMismatch)
+examples/catch_infallible.sober: sober: load error at examples/catch_infallible.sober:9:17: the left of catch must be a call that returns (T, error?)
+examples/catch_infallible_pkg.sober: sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
+examples/char_lit_nonascii.sober: sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
+examples/composite_dup.sober: sober: desugar error at examples/composite_dup.sober:11:10 (Malformed)
+examples/composite_field_ty.sober: sober: desugar error at examples/composite_field_ty.sober:12:15 (FieldType): the value does not have the field's declared type
+examples/composite_mixed.sober: sober: desugar error at examples/composite_mixed.sober:11:10 (Malformed)
+examples/composite_slice_elem_ty.sober: sober: desugar error at examples/composite_slice_elem_ty.sober:10:15 (FieldType): the value does not have the field's declared type
+examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)
+examples/float_neg_mapkey.sober: sober: desugar error at examples/float_neg_mapkey.sober:6:18 (TypeMismatch)
+examples/float_neg_mix.sober: sober: desugar error at examples/float_neg_mix.sober:6:14 (TypeMismatch)
+examples/for.sober: examples/for.sober:7:6: error: type outside the core fragment (CoreFragment)
+examples/generic_union_arity.sober: sober: desugar error at examples/generic_union_arity.sober:11:10 (Malformed)
+examples/generic_union_noargs.sober: sober: desugar error at examples/generic_union_noargs.sober:18:17 (CoreFragment)
+examples/imm_write.sober: sober: error at examples/imm_write.sober:8:5 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
+examples/inline_unknown_fnparam.sober: sober: desugar error at examples/inline_unknown_fnparam.sober:6:24 (UnknownName)
+examples/inline_unknown_mutparam.sober: sober: desugar error at examples/inline_unknown_mutparam.sober:6:12 (UnknownName)
+examples/inline_unknown_param.sober: sober: desugar error at examples/inline_unknown_param.sober:6:12 (UnknownName)
+examples/inline_unknown_result.sober: sober: desugar error at examples/inline_unknown_result.sober:6:27 (UnknownName)
+examples/inline_unknown_results.sober: sober: desugar error at examples/inline_unknown_results.sober:6:33 (UnknownName)
+examples/interp_tparam_named.sober: sober: desugar error at examples/interp_tparam_named.sober:9:12 (CoreFragment)
+examples/json_decode_neg_field.sober: sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode supports struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
+examples/json_decode_neg_type.sober: sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode must be a struct type without type parameters
+examples/json_doc_forge.sober: sober: desugar error at examples/json_doc_forge.sober:9:10 (Malformed)
+examples/json_view_nonexh.sober: sober: desugar error at examples/json_view_nonexh.sober:12:5 (Malformed)
+examples/layout_neg_array.sober: sober: load error at examples/layout_neg_array.sober:6:11: a fixed-length array field ([N]T) is only allowed in a @layout struct
+examples/layout_neg_empty.sober: sober: load error at examples/layout_neg_empty.sober:6:6: a @layout struct needs at least one field and no type parameters
+examples/layout_neg_field.sober: sober: load error at examples/layout_neg_field.sober:7:7: a @layout field has a width type (u8, i8, u16le, u32be, …) or a fixed-length array [N] of one (N ≥ 1)
+examples/layout_neg_form.sober: sober: load error at examples/layout_neg_form.sober:13:21: layout.Decode / DecodeAt / Encode are called with a type argument (layout.Decode[T](…)); layout.Size[T] is a constant
+examples/layout_neg_literal.sober: sober: load error at examples/layout_neg_literal.sober:16:36: an integer literal does not fit the width of its @layout field
+examples/layout_neg_target.sober: sober: load error at examples/layout_neg_target.sober:12:24: the type argument of layout.Decode / DecodeAt / Encode / Size must be a @layout struct
+examples/layout_neg_union.sober: sober: load error at examples/layout_neg_union.sober:6:6: @layout applies only to a struct type declaration
+examples/layout_neg_width.sober: sober: load error at examples/layout_neg_width.sober:6:13: width types (u8, u16le, …) are only allowed as @layout struct field types
+examples/len_string.sober: sober: desugar error at examples/len_string.sober:6:15 (LenString): len is not defined on string — use len(bytes(s)) for the byte count
+examples/lit_leading_zero.sober: sober: load error at examples/lit_leading_zero.sober:6:13: a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros
+examples/localname_const.sober: sober: load error at examples/localname_const.sober:8:5: a local binding cannot reuse a top-level name (const, func or type)
+examples/localname_import.sober: sober: load error at examples/localname_import.sober:8:5: a local binding cannot reuse an import reference name
+examples/localname_named.sober: sober: load error at examples/localname_named.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
+examples/localname_tparam.sober: sober: load error at examples/localname_tparam.sober:9:6: a type parameter cannot reuse a top-level type name
+examples/multibind.sober: sober: load error at examples/multibind.sober:9:5: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
+examples/mutarg_decl_mismatch.sober: sober: desugar error
+examples/named_args_missing.sober: sober: load error at examples/named_args_missing.sober:14:17: a parameter that is not optional (T?) is missing — only T? parameters can be left out
+examples/named_args_nonfunc.sober: sober: load error at examples/named_args_nonfunc.sober:15:15: named arguments can only be passed in a direct call of a func declaration
+examples/named_args_order.sober: sober: load error at examples/named_args_order.sober:14:37: named arguments must follow the order of the parameters
+examples/named_args_pipe.sober: sober: load error at examples/named_args_pipe.sober:14:26: a pipe stage with named arguments marks the piped value with _
+examples/named_args_positional.sober: sober: load error at examples/named_args_positional.sober:14:21: this parameter is already given by position
+examples/named_args_unknown.sober: sober: load error at examples/named_args_unknown.sober:14:21: the function has no parameter with this name
+examples/named_fn_args_dup.sober: sober: load error at examples/named_fn_args_dup.sober:7:31: named arguments must follow the order of the parameters
+examples/named_fn_args_field.sober: sober: load error at examples/named_fn_args_field.sober:13:22: named arguments can only be passed to a func declaration or a value of a named function type with parameter names
+examples/named_fn_args_literal.sober: sober: load error at examples/named_fn_args_literal.sober:5:14: named arguments can only be passed to a func declaration or a value of a named function type with parameter names
+examples/named_fn_args_nonames.sober: sober: load error at examples/named_fn_args_nonames.sober:7:17: named arguments can only be passed to a func declaration or a value of a named function type with parameter names
+examples/named_fn_args_unknown.sober: sober: load error at examples/named_fn_args_unknown.sober:7:19: the function has no parameter with this name
+examples/named_fn_type_mixed.sober: sober: load error at examples/named_fn_type_mixed.sober:4:29: source does not match the grammar
+examples/named_scalar_arith.sober: sober: desugar error at examples/named_scalar_arith.sober:9:17 (TypeMismatch)
+examples/named_scalar_cond.sober: sober: desugar error at examples/named_scalar_cond.sober:9:8 (TypeMismatch)
+examples/named_scalar_generic.sober: sober: desugar error at examples/named_scalar_generic.sober:15:10 (TypeMismatch)
+examples/named_scalar_mix.sober: sober: desugar error at examples/named_scalar_mix.sober:13:17 (TypeMismatch)
+examples/named_scalar_order.sober: sober: desugar error at examples/named_scalar_order.sober:10:13 (TypeMismatch)
+examples/named_scalar_targ.sober: sober: desugar error at examples/named_scalar_targ.sober:16:17 (TypeMismatch)
+examples/named_scalar_targ_union.sober: sober: desugar error at examples/named_scalar_targ_union.sober:24:22 (TypeMismatch)
+examples/named_scalar_under.sober: sober: desugar error at examples/named_scalar_under.sober:8:14 (TypeMismatch)
+examples/nil_untyped.sober: sober: desugar error at examples/nil_untyped.sober:7:31 (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)
+examples/no_main.sober: sober: desugar error at examples/no_main.sober:1:1 (Malformed)
+examples/nominal_fn.sober: sober: desugar error at examples/nominal_fn.sober:13:15 (TypeMismatch)
+examples/nominal_struct_arg.sober: sober: desugar error at examples/nominal_struct_arg.sober:14:15 (TypeMismatch)
+examples/nominal_struct_eq.sober: sober: desugar error at examples/nominal_struct_eq.sober:10:15 (TypeMismatch)
+examples/nominal_struct_slice.sober: sober: desugar error at examples/nominal_struct_slice.sober:20:17 (TypeMismatch)
+examples/panic_neg_arg.sober: sober: load error at examples/panic_neg_arg.sober:5:10: the argument of panic is a single panic label literal L{…}
+examples/panic_neg_bare.sober: sober: load error at examples/panic_neg_bare.sober:5:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
+examples/panic_neg_builtin.sober: sober: load error at examples/panic_neg_builtin.sober:4:6: Unreachable, InvariantBroken and RegionExceeded are built-in panic labels
+examples/panic_neg_fields.sober: sober: load error at examples/panic_neg_fields.sober:10:11: a panic label literal names every field of the label once (name: value)
+examples/panic_neg_fieldty.sober: sober: load error at examples/panic_neg_fieldty.sober:5:5: a panic label field is int, byte, bool or string
+examples/panic_neg_notlabel.sober: sober: load error at examples/panic_neg_notlabel.sober:9:11: not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)
+examples/panic_neg_runtime.sober: sober: load error at examples/panic_neg_runtime.sober:5:11: RegionExceeded is raised by the runtime only
+examples/panic_neg_use.sober: sober: load error at examples/panic_neg_use.sober:8:13: a panic label is only used as the argument of panic(L{…})
+examples/par_neg_budget.sober: sober: load error at examples/par_neg_budget.sober:12:79: budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only
+examples/par_neg_cap.sober: sober: load error at examples/par_neg_cap.sober:10:35: par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)
+examples/par_neg_chan_endpoint.sober: sober: load error at examples/par_neg_chan_endpoint.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+examples/par_neg_chan_handle.sober: sober: load error at examples/par_neg_chan_handle.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+examples/par_neg_cross.sober: sober: load error at examples/par_neg_cross.sober:10:43: par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)
+examples/par_neg_endpoint.sober: sober: load error at examples/par_neg_endpoint.sober:11:22: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
+examples/par_neg_escape.sober: sober: load error at examples/par_neg_escape.sober:10:13: return, ? and break / continue cannot leave a par.Scope / par.Spawn body (the scope waits for its children at its end)
+examples/par_neg_fnparam.sober: sober: load error at examples/par_neg_fnparam.sober:7:64: a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)
+examples/par_neg_handle.sober: sober: load error at examples/par_neg_handle.sober:10:46: a spawned task cannot capture a task handle (par.Task) — join it in the scope body
+examples/par_neg_handles.sober: sober: load error at examples/par_neg_handles.sober:9:19: handles (par.Task) go in a mut slice: mut hs := mut []par.Task[T]{} (an imm slice copies its elements, and a handle is not copied)
+examples/par_neg_handles_err.sober: sober: load error at examples/par_neg_handles_err.sober:15:34: an error-returning task's handle cannot go in a handle slice (par.Task[(T, error?)] cannot be written) — Join or Try it directly
+examples/par_neg_lambda.sober: sober: load error at examples/par_neg_lambda.sober:9:58: par.Scope / par.Spawn take a lambda literal written at the call ((s) => … for Scope, () => … for Spawn)
+examples/par_neg_mut.sober: sober: load error at examples/par_neg_mut.sober:9:64: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
+examples/par_neg_result.sober: sober: load error at examples/par_neg_result.sober:8:71: the result of a spawned task must be loc-free (int, bool, byte, float, or structs / options of them — not string, slice, map, function, error, par.S or par.Task)
+examples/par_neg_scope_result.sober: sober: load error at examples/par_neg_scope_result.sober:8:33: the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)
+examples/par_neg_spawnin.sober: sober: load error at examples/par_neg_spawnin.sober:11:52: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
+examples/par_neg_token.sober: sober: load error at examples/par_neg_token.sober:8:83: a spawned task cannot capture the scope token (par.S) — spawn from the scope body
+examples/par_neg_tuple.sober: sober: load error at examples/par_neg_tuple.sober:10:21: a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)
+examples/par_neg_tuple_shape.sober: sober: load error at examples/par_neg_tuple_shape.sober:9:34: a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)
+examples/par_neg_wrap_endpoint.sober: sober: load error at examples/par_neg_wrap_endpoint.sober:16:27: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
+examples/par_neg_wrap_handle.sober: sober: load error at examples/par_neg_wrap_handle.sober:19:42: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
+examples/par_neg_wrap_token.sober: sober: load error at examples/par_neg_wrap_token.sober:14:52: a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body
+examples/partial_lit.sober: sober: desugar error
+examples/partial_lit_nozero.sober: sober: desugar error
+examples/pipe.sober: examples/pipe.sober:9:66: error: unknown or builtin function is outside the core fragment (CoreFragment)
+examples/println_opt.sober: sober: desugar error at examples/println_opt.sober:8:14 (PrintArg): println prints int, byte, bool and string values
+examples/scope.sober: examples/scope.sober:10:13: error: primary expression kind (Unsupported)
+examples/shadow_block.sober: sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
+examples/shadow_lambda.sober: sober: load error at examples/shadow_lambda.sober:7:14: a local binding cannot shadow or redeclare another local binding
+examples/shadow_pattern.sober: sober: load error at examples/shadow_pattern.sober:13:12: a local binding cannot shadow or redeclare another local binding
+examples/shape.sober: examples/shape.sober:23:12: error: switch without a single subject is outside the core fragment (CoreFragment)
+examples/struct.sober: examples/struct.sober:15:9: error: type other than struct, union, error, or a function type (Unsupported)
+examples/switch_multi_nil_cover.sober: sober: load error at examples/switch_multi_nil_cover.sober:16:5: case _, e also matches a nil error: the nil cases must cover every value (case v, nil:)
+examples/switch_multi_nil_default.sober: sober: load error at examples/switch_multi_nil_default.sober:14:13: a default here would be needed for both a nil and a non-nil error: cover every value in the nil cases (case v, nil:)
+examples/switch_multi_nil_noerr.sober: sober: load error at examples/switch_multi_nil_noerr.sober:14:13: a non-nil error has no case: add case _, e: or a default
+examples/switch_multi_nil_order.sober: sober: load error at examples/switch_multi_nil_order.sober:16:5: case nil must come before name patterns (_ or a binding also matches nil)
+examples/switch_multi_nil_value.sober: sober: load error at examples/switch_multi_nil_value.sober:16:5: in a (value, error?) switch, a case for a non-nil error takes _ as its value pattern (case _, e:)
+examples/switch_nested_uncovered.sober: sober: desugar error at examples/switch_nested_uncovered.sober:21:10 (CoreFragment)
+examples/switch_nil_alt.sober: sober: load error at examples/switch_nil_alt.sober:10:5: case nil cannot be combined with other alternatives (nil | …)
+examples/switch_nil_catchall.sober: sober: load error at examples/switch_nil_catchall.sober:12:5: case nil must come before name patterns (_ or a binding also matches nil)
+examples/switch_nil_only.sober: sober: load error at examples/switch_nil_only.sober:10:5: a switch with case nil needs another case or a default
+examples/switch_nil_twice.sober: sober: load error at examples/switch_nil_twice.sober:13:5: case nil appears more than once in the switch
+examples/switch_nonexh_union.sober: sober: error at examples/switch_nonexh_union.sober:13:5 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: A)
+examples/top_dup.sober: sober: load error at examples/top_dup.sober:6:6: a top-level name is declared more than once in the package
+examples/top_dup_kinds.sober: sober: load error at examples/top_dup_kinds.sober:7:6: a top-level name is declared more than once in the package
+examples/tour_04_types.sober: sober: desugar error at examples/tour_04_types.sober:31:42 (CoreFragment)
+examples/try.sober: examples/try.sober:7:6: error: type outside the core fragment (CoreFragment)
+examples/type_recursive.sober: sober: load error at examples/type_recursive.sober:5:6: recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)
+examples/type_recursive_mutual.sober: sober: load error at examples/type_recursive_mutual.sober:5:6: recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)
+examples/union.sober: examples/union.sober:24:12: error: switch without a single subject is outside the core fragment (CoreFragment)
+examples/unknown_field_type.sober: sober: desugar error at examples/unknown_field_type.sober:6:7 (UnknownName)
+examples/unknown_mutparam_type.sober: sober: desugar error at examples/unknown_mutparam_type.sober:9:13 (UnknownName)
+examples/unknown_type_def.sober: sober: desugar error at examples/unknown_type_def.sober:5:16 (UnknownName)
+examples/unknown_type_main.sober: sober: desugar error at examples/unknown_type_main.sober:5:13 (UnknownName)
+examples/utf8_view_neg.sober: sober: desugar error at examples/utf8_view_neg.sober:8:10 (CoreFragment)
+examples/variant_dup.sober: sober: load error at examples/variant_dup.sober:6:5: a variant name must be unique among the package's top-level names
+examples/variant_label_dup.sober: sober: load error at examples/variant_label_dup.sober:6:5: a variant name must be unique among the package's top-level names
+testdata/import_file/app: sober: load error at testdata/import_file/app/helper.sober:5:19: this file does not import the package it names (imports are per file — add the import to this file)
+testdata/vis_generic/app: sober: desugar error at testdata/vis_generic/app/main.sober:7:10 (CoreFragment)
+testdata/vis_label/app: sober: desugar error at testdata/vis_label/app/main.sober:8:15 (CoreFragment)
+testdata/vis_struct/app: sober: desugar error at testdata/vis_struct/app/main.sober:7:10 (CoreFragment)
+testdata/vis_variant/app: sober: desugar error at testdata/vis_variant/app/main.sober:10:10 (UnknownName)

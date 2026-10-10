@@ -1,0 +1,76 @@
+package main
+
+import "std/iter"
+
+// 写しのループの一括化（宛先構築レーン M1b — lower/copyloop.sober・--passes の経路だけ）: 形 (A) append の写し・(B) 添字の写し・(C) 同じ値の詰め。
+// 一括の経路（範囲が通る）と元のループ（範囲が通らない — 回らない・途中から等）の両方を通す。no-opt ≟ opt（optdiff）と Go の双子が網
+
+func appendCopy(src []int, from int, to int) []int {
+    mut dst := mut []int{100}
+    mut j := from
+    while j < to {
+        dst = append(dst, src[j])
+        j += 1
+    }
+    return freeze(dst)
+}
+
+func bytesCopy(src []byte, n int) []byte {
+    mut dst := mut []byte{'<'}
+    mut j := 0
+    while j < n {
+        dst = append(dst, src[j])
+        j += 1
+    }
+    dst = append(dst, '>')
+    return freeze(dst)
+}
+
+func indexCopy(src []int, a int, b int, n int) []int {
+    mut d := mut []int{0, 0, 0, 0, 0, 0, 0, 0}
+    mut j := 0
+    while j < n {
+        d[a + j] = src[b + j]
+        j += 1
+    }
+    return freeze(d)
+}
+
+func fill(x int, n int) []int {
+    mut c := mut []int{}
+    mut j := 0
+    while j < n {
+        c = append(c, x)
+        j += 1
+    }
+    return freeze(c)
+}
+
+func show(xs []int) {
+    mut s := 0
+    for i <- iter.Range(0, len(xs)) {
+        s = s * 31 + xs[i]
+    }
+    println(len(xs), s)
+}
+
+func main() {
+    src := []int{1, 2, 3, 4, 5, 6}
+    show(appendCopy(src, 0, 6))
+    show(appendCopy(src, 2, 5))
+    show(appendCopy(src, 4, 2))
+    b := bytes("hello, world")
+    s1, e1 := string(bytesCopy(b, 12))
+    s2, e2 := string(bytesCopy(b, 0))
+    println(s1, s2, e1 == nil && e2 == nil)
+    show(indexCopy(src, 1, 2, 4))
+    show(indexCopy(src, 0, 0, 0))
+    show(fill(7, 5))
+    show(fill(7, 0))
+    // 大きい写し（chunk の境目を跨ぐ — Builder.Build / PushAll の経路は std 側）
+    mut big := mut []int{}
+    for i <- iter.Range(0, 5000) {
+        big = append(big, i)
+    }
+    show(appendCopy(freeze(big), 10, 4990))
+}

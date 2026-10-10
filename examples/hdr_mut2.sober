@@ -1,0 +1,77 @@
+package main
+
+import "std/iter"
+
+// mut slice の仮引数のヘッダの読みのまとめ（hdr）の網: 別の mut 仮引数の要素への書き込みはヘッダを書かない（まとめてよい）・
+// 自分への append はヘッダを書く（まとめてはいけない）。language.md 26 節の排他（同じ呼び出しの mut 実引数は重ならない）が資格の論拠
+
+type Pair struct {
+    a mut []int
+    b mut []int
+}
+
+// 一方を書き、他方をループで読む（u のヘッダの読みは入口の 1 本に・境界検査は消える）
+func dot(v mut []int, u mut []int) {
+    for i <- iter.Range(0, len(v)) {
+        mut s := 0
+        for j <- iter.Range(0, len(u)) {
+            s += u[j] * (i + 1)
+        }
+        v[i] = s
+    }
+}
+
+// 自分への append の後で長さを読む（P のヘッダは書かれる — まとめてはいけない）・他方の要素へ長さを書く
+func grow(xs mut []int, ys mut []int) {
+    for i <- iter.Range(0, len(ys)) {
+        xs = append(xs, i * 7)
+        ys[i] = len(xs) + xs[len(xs) - 1]
+    }
+}
+
+// 自分のヘッダを差し替えながら長さと先頭を読む（呼び出しの無い自分への書き込み — まとめてはいけない）
+func drain(xs mut []int, ys mut []int, zs mut []int) {
+    mut k := 0
+    while len(xs) > 0 && k < 6 {
+        ys[k % len(ys)] = ys[k % len(ys)] + xs[0] + len(xs)
+        if k % 2 == 0 {
+            xs = zs
+        } else {
+            xs = mut []int{}
+        }
+        k += 1
+    }
+}
+
+// 呼び出しの鎖で順を入れ替える
+func swapped(a mut []int, b mut []int) {
+    dot(mut b, mut a)
+    grow(mut a, mut b)
+}
+
+func sum(xs mut []int) int {
+    mut s := 0
+    for i <- iter.Range(0, len(xs)) {
+        s = s * 31 + xs[i]
+    }
+    return s
+}
+
+func main() {
+    mut v := mut []int{0, 0, 0}
+    mut u := mut []int{1, 2, 3, 4}
+    dot(mut v, mut u)
+    println(sum(mut v))
+    grow(mut u, mut v)
+    println(sum(mut u), sum(mut v), len(u))
+    swapped(mut u, mut v)
+    println(sum(mut u), sum(mut v), len(u))
+    // 同じ struct の別の欄
+    mut p := Pair{a: mut []int{5, 6}, b: mut []int{0, 0, 0, 0}}
+    dot(mut p.b, mut p.a)
+    grow(mut p.a, mut p.b)
+    println(sum(mut p.a), sum(mut p.b), len(p.a))
+    mut w := mut []int{9, 8}
+    drain(mut u, mut v, mut w)
+    println(sum(mut u), sum(mut v), len(u))
+}

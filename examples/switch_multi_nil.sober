@@ -1,0 +1,96 @@
+package main
+
+// `(T, error?)` の 2 位置の switch（13 節 — `case v, nil:` / `case _, e:` / `case _, Label{…}:`）。loader の固定テンプレート（compiler/loader/mvcase.sober）で
+// `$v, $e := S; if $e != nil { … } else { … }` に写す。switch が文の値そのものなら束縛はその文の直前に置く
+
+import "std/iter"
+
+type Bad error {
+    n int
+}
+
+type Odd error
+
+func call(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{n: n}
+    }
+    return n * 2, nil
+}
+
+func half(n int) (int, error?) {
+    if n % 2 == 1 {
+        return 0, Odd{}
+    }
+    if n < 0 {
+        return 0, Bad{n: n}
+    }
+    return n / 2, nil
+}
+
+// エラーを無名で畳む（値位置 + エラーの腕の return）
+func use(n int) (int, error?) {
+    value := switch call(n) {
+    case v, nil: v
+    case _, e: return 0, e
+    }
+    return value + 1, nil
+}
+
+// 値の腕 + ラベルの腕（return の先頭の値）
+func fallback(n int) int {
+    return switch call(n) {
+    case v, nil: v
+    case _, Bad{}: 0 - 1
+    }
+}
+
+// default（エラーがあるときの行き先）
+func orZero(n int) int {
+    x := switch half(n) {
+    case v, nil: v
+    default: 0
+    }
+    return x
+}
+
+// string の値（文の値そのもの — ブロック式にならない）
+func describe(k int) string {
+    msg := switch half(k) {
+    case v, nil: "half ${v}"
+    case _, Bad{n}: "bad ${n}"
+    case _, Odd{}: "odd"
+    }
+    return msg
+}
+
+func main() {
+    a, _ := use(5)
+    println(a)
+    b, berr := use(0 - 1)
+    println(b, berr == nil)
+    println(fallback(0 - 3), fallback(4))
+    println(orZero(8), orZero(3))
+    for k <- iter.Range(0 - 2, 3) {
+        println(describe(k))
+    }
+    // 文の switch
+    for k <- iter.Range(3, 5) {
+        switch half(k) {
+        case v, nil: println(v)
+        case _, Odd{}: println("odd")
+        case _, Bad{n}: println(n)
+        }
+    }
+    // 2 subject（名前）
+    x, y := call(7)
+    switch x, y {
+    case v, nil: println(v + 1)
+    case _, _: println("err")
+    }
+    // 式の中の位置（ブロックに包む）
+    println(switch call(0 - 9) {
+    case v, nil: v
+    case _, _: 99
+    })
+}

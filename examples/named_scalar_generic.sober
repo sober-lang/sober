@@ -1,0 +1,18 @@
+package main
+
+// 負例（language.md 32 節）: ジェネリック関数の結果の named の区別（check は表層型検査器の表で見る — C1 B3。旧 check は受理していた）
+
+type Meters int
+type Seconds int
+
+func id[T](x T) T {
+    return x
+}
+
+func main() {
+    s := Seconds(3)
+    m := Meters(1)
+    if m == id(s) {
+        println(1)
+    }
+}

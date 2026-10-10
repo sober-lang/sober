@@ -1,0 +1,243 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "S",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "sum",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 25
+              }
+            ],
+            "tok": 22
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "x"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 30
+                  },
+                  "guards": [],
+                  "tok": 28
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 32
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 34
+                      }
+                    ],
+                    "tok": 32
+                  }
+                ]
+              },
+              "tok": 27
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "t",
+                "tok": 39
+              }
+            ],
+            "tok": 38
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 43
+      },
+      "sig_end": 21
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ys"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "S"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "S",
+                    "elems": [
+                      {
+                        "key": "a",
+                        "value": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 58
+                        }
+                      }
+                    ],
+                    "tok": 54,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "S",
+                    "elems": [
+                      {
+                        "key": "a",
+                        "value": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 65
+                        }
+                      }
+                    ],
+                    "tok": 61,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 50
+              }
+            ],
+            "tok": 48
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 69
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "sum",
+                    "tok": 71
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "ys",
+                      "tok": 73
+                    }
+                  ],
+                  "tok": 72
+                }
+              ],
+              "tok": 70
+            }
+          }
+        ]
+      },
+      "tok": 44,
+      "bodiless": false,
+      "span": {
+        "start": 43,
+        "end": 79
+      },
+      "sig_end": 47
+    }
+  ],
+  "consts": []
+}

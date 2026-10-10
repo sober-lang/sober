@@ -1,0 +1,188 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "fib",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 13
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 15
+                  },
+                  "tok": 14
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "n",
+                        "tok": 17
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "fib",
+                            "tok": 21
+                          },
+                          "args": [
+                            {
+                              "k": "binary",
+                              "op": "-",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 23
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 25
+                              },
+                              "tok": 24
+                            }
+                          ],
+                          "tok": 22
+                        },
+                        "rhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "fib",
+                            "tok": 28
+                          },
+                          "args": [
+                            {
+                              "k": "binary",
+                              "op": "-",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 30
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 2,
+                                "tok": 32
+                              },
+                              "tok": 31
+                            }
+                          ],
+                          "tok": 29
+                        },
+                        "tok": 27
+                      }
+                    }
+                  ]
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 38
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 43
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "fib",
+                    "tok": 45
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 10,
+                      "tok": 47
+                    }
+                  ],
+                  "tok": 46
+                }
+              ],
+              "tok": 44
+            }
+          }
+        ]
+      },
+      "tok": 39,
+      "bodiless": false,
+      "span": {
+        "start": 38,
+        "end": 53
+      },
+      "sig_end": 42
+    }
+  ],
+  "consts": []
+}

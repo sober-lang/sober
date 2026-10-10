@@ -1,0 +1,735 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Shape",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Circle",
+            "fields": [
+              {
+                "name": "r",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 76
+              }
+            ],
+            "tok": 74
+          },
+          {
+            "name": "Sq",
+            "fields": [
+              {
+                "name": "s",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 82
+              }
+            ],
+            "tok": 80
+          }
+        ]
+      },
+      "tok": 71,
+      "span": {
+        "start": 70,
+        "end": 88
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "classify",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 12
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 15
+                        },
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 17
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "int",
+                            "value": 10,
+                            "tok": 20
+                          }
+                        ],
+                        "tok": 19
+                      }
+                    ]
+                  },
+                  "tok": 14
+                },
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "int",
+                          "value": 3,
+                          "tok": 23
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "int",
+                            "value": 30,
+                            "tok": 26
+                          }
+                        ],
+                        "tok": 25
+                      }
+                    ]
+                  },
+                  "tok": 22
+                }
+              ],
+              "default": null,
+              "tok": 11
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "unary",
+                "op": "-",
+                "operand": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 32
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 36
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "name",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 45
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 48
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "strlit",
+                            "value": "zero",
+                            "tok": 51
+                          }
+                        ],
+                        "tok": 50
+                      }
+                    ]
+                  },
+                  "tok": 47
+                }
+              ],
+              "default": null,
+              "tok": 44
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "<",
+                "lhs": {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 56
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 58
+                },
+                "tok": 57
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "neg",
+                        "tok": 61
+                      }
+                    ],
+                    "tok": 60
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 55
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "strlit",
+                "value": "pos",
+                "tok": 66
+              }
+            ],
+            "tok": 65
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 70
+      },
+      "sig_end": 43
+    },
+    {
+      "name": "area",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "Shape"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 97
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "type",
+                      "bind": null,
+                      "variant": "Circle",
+                      "fields": [
+                        {
+                          "name": "r",
+                          "sub": null,
+                          "tok": 102
+                        }
+                      ],
+                      "tok": 100
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "binary",
+                            "op": "*",
+                            "lhs": {
+                              "k": "binary",
+                              "op": "*",
+                              "lhs": {
+                                "k": "ident",
+                                "name": "r",
+                                "tok": 106
+                              },
+                              "rhs": {
+                                "k": "ident",
+                                "name": "r",
+                                "tok": 108
+                              },
+                              "tok": 107
+                            },
+                            "rhs": {
+                              "k": "int",
+                              "value": 3,
+                              "tok": 110
+                            },
+                            "tok": 109
+                          }
+                        ],
+                        "tok": 105
+                      }
+                    ]
+                  },
+                  "tok": 99
+                },
+                {
+                  "patterns": [
+                    {
+                      "k": "type",
+                      "bind": null,
+                      "variant": "Sq",
+                      "fields": [
+                        {
+                          "name": "s",
+                          "sub": null,
+                          "tok": 115
+                        }
+                      ],
+                      "tok": 113
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "ret",
+                        "values": [
+                          {
+                            "k": "binary",
+                            "op": "*",
+                            "lhs": {
+                              "k": "ident",
+                              "name": "s",
+                              "tok": 119
+                            },
+                            "rhs": {
+                              "k": "ident",
+                              "name": "s",
+                              "tok": 121
+                            },
+                            "tok": 120
+                          }
+                        ],
+                        "tok": 118
+                      }
+                    ]
+                  },
+                  "tok": 112
+                }
+              ],
+              "default": null,
+              "tok": 96
+            }
+          }
+        ]
+      },
+      "tok": 89,
+      "bodiless": false,
+      "span": {
+        "start": 88,
+        "end": 127
+      },
+      "sig_end": 95
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 132
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "classify",
+                    "tok": 134
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 136
+                    }
+                  ],
+                  "tok": 135
+                }
+              ],
+              "tok": 133
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 140
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "classify",
+                    "tok": 142
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 144
+                    }
+                  ],
+                  "tok": 143
+                }
+              ],
+              "tok": 141
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 148
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "classify",
+                    "tok": 150
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 9,
+                      "tok": 152
+                    }
+                  ],
+                  "tok": 151
+                }
+              ],
+              "tok": 149
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 156
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 158
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 160
+                    }
+                  ],
+                  "tok": 159
+                }
+              ],
+              "tok": 157
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 164
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 166
+                  },
+                  "args": [
+                    {
+                      "k": "unary",
+                      "op": "-",
+                      "operand": {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 169
+                      },
+                      "tok": 168
+                    }
+                  ],
+                  "tok": 167
+                }
+              ],
+              "tok": 165
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 173
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "name",
+                    "tok": 175
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 177
+                    }
+                  ],
+                  "tok": 176
+                }
+              ],
+              "tok": 174
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 181
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "area",
+                    "tok": 183
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Circle",
+                      "elems": [
+                        {
+                          "key": "r",
+                          "value": {
+                            "k": "int",
+                            "value": 2,
+                            "tok": 189
+                          }
+                        }
+                      ],
+                      "tok": 185,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 184
+                }
+              ],
+              "tok": 182
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 194
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "area",
+                    "tok": 196
+                  },
+                  "args": [
+                    {
+                      "k": "composite",
+                      "type_name": "Sq",
+                      "elems": [
+                        {
+                          "key": "s",
+                          "value": {
+                            "k": "int",
+                            "value": 3,
+                            "tok": 202
+                          }
+                        }
+                      ],
+                      "tok": 198,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 197
+                }
+              ],
+              "tok": 195
+            }
+          }
+        ]
+      },
+      "tok": 128,
+      "bodiless": false,
+      "span": {
+        "start": 127,
+        "end": 209
+      },
+      "sig_end": 131
+    }
+  ],
+  "consts": []
+}

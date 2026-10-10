@@ -1,0 +1,25 @@
+package main
+
+type Shape union {
+    Circle { r int }
+    Empty {}
+}
+
+func twice(x int, f func(int) int) int {
+    return f(x) + f(x)
+}
+
+func main() {
+    mut acc := 0
+    mut i := 0
+    while i < 100 {
+        s := if i < 50 { Circle{r: i} } else { Empty{} }
+        n := switch s {
+        case Circle{r}: r + 1
+        case Empty{}: 0
+        }
+        acc += twice(n, a => a + n)
+        i += 1
+    }
+    return acc
+}

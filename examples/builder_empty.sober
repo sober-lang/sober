@@ -1,0 +1,34 @@
+package main
+
+// std/builder の回帰例（F-12 / F-7）: 一度も Push していない Builder の Build は空の列（以前は無い chunk 0 を読んで panic）。
+// Get は chunk の境目（8 / 24 / 56 要素目）をまたいで積んだ順に読み返す
+
+import "std/builder"
+
+func main() {
+    mut e := builder.Builder[int]{}
+    xs := builder.Build(mut e)
+    println("${len(xs)} ${builder.Len(mut e)}")
+
+    mut b := builder.Builder[int]{}
+    mut i := 0
+    while i < 60 {
+        builder.Push(mut b, i * 3)
+        i += 1
+    }
+    println("${builder.Get(mut b, 0)} ${builder.Get(mut b, 7)} ${builder.Get(mut b, 8)} ${builder.Get(mut b, 23)} ${builder.Get(mut b, 24)} ${builder.Get(mut b, 59)}")
+    mut sum := 0
+    mut j := 0
+    while j < builder.Len(mut b) {
+        sum += builder.Get(mut b, j)
+        j += 1
+    }
+    ys := builder.Build(mut b)
+    mut sum2 := 0
+    mut k := 0
+    while k < len(ys) {
+        sum2 += ys[k]
+        k += 1
+    }
+    println("${sum} ${sum2}")
+}

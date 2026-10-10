@@ -1,0 +1,67 @@
+package main
+
+// error の switch の網羅は「リンク集合の全ラベル」でなく analyzer の導出集合（language.md 13 節 — error 網羅 analyzer A5・F-33 の解決）。
+// std/io を import する（io のラベル NotFound / Denied / Other が組み込み error の union に入る）が、parse が返しうるのは
+// BadDigit と Empty だけなので、その 2 つを覆えば default は要らない。覆っていないラベルの腕はコアの到達しない項（来たら panic）
+
+import "std/io"
+
+type BadDigit error {
+    at int
+}
+
+type Empty error
+
+// Unused はこのプログラムのどこからも返らないラベル（union には入るが導出集合には入らない）
+type Unused error
+
+func parse(s []byte) (int, error?) {
+    if len(s) == 0 {
+        return 0, Empty{}
+    }
+    mut n := 0
+    mut i := 0
+    while i < len(s) {
+        c := int(s[i])
+        if c < 48 || c > 57 {
+            return 0, BadDigit{at: i}
+        }
+        n = n * 10 + c - 48
+        i += 1
+    }
+    return n, nil
+}
+
+// 値の位置の switch（腕の型 = int — 覆っていない腕は unreach int）
+func code(s []byte) int {
+    n, err := parse(s)
+    if err != nil {
+        return switch err {
+        case BadDigit{at}: 0 - 100 - at
+        case Empty{}: 0 - 1
+        }
+    }
+    return n
+}
+
+// 文の位置の switch
+func show(s []byte) {
+    _, err := parse(s)
+    if err != nil {
+        switch err {
+        case BadDigit{at}: println("bad digit at", at)
+        case Empty{}: println("empty")
+        }
+    } else {
+        println("ok")
+    }
+}
+
+func main() {
+    println(code(bytes("42")), code(bytes("4x2")), code(bytes("")))
+    show(bytes("7"))
+    show(bytes("a"))
+    show(bytes(""))
+    _, werr := io.ReadFile("/nonexistent/errors_derived")
+    println(werr != nil)
+}

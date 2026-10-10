@@ -1,0 +1,2 @@
+sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
+exit=1

@@ -1,0 +1,40 @@
+package main
+
+// 関数値の呼び出しへの後置 `?`（13 節 — 名前付き関数から束縛した imm の関数値）。以前は build だけが受理し check は断片外だった
+
+type Bad error {
+    n int
+}
+
+func mk(k int) (int, error?) {
+    if k < 0 {
+        return 0, Bad{n: k}
+    }
+    return k * 2, nil
+}
+
+func use(k int) (int, error?) {
+    f := mk
+    v := f(k)?
+    return v + 1, nil
+}
+
+func use2(k int) int {
+    f := mk
+    v, err := f(k)
+    if err != nil {
+        return -1
+    }
+    return v
+}
+
+func main() {
+    a, e := use(2)
+    println(a)
+    println(e == nil)
+    b, e2 := use(-2)
+    println(b)
+    println(e2 != nil)
+    println(use2(3))
+    println(use2(-3))
+}

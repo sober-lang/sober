@@ -1,0 +1,60 @@
+package main
+
+// フィールドの mut 実引数（language.md 26 節 — F-17 案 2α で解禁）と、欄ごとのセルに割った mut struct の読み・代入・値としての使用・
+// 丸ごとの代入・再帰する mut 引数の Def（R2）の中の欄の別名渡し（struct の欄 = Builder / Pt、int の欄）
+
+import "std/builder"
+
+type Pt struct {
+    x int
+    y int
+}
+
+type St struct {
+    nodes builder.Builder[int]
+    p Pt
+    n int
+    name string
+    xs mut []int
+}
+
+func bump(n mut int) {
+    n += 1
+}
+
+func movePt(p mut Pt, d int) {
+    p.x += d
+    p.y = p.y + d * 2
+}
+
+func walk(st mut St, k int) {
+    if k > 0 {
+        builder.Push(mut st.nodes, k)
+        bump(mut st.n)
+        movePt(mut st.p, 1)
+        st.xs = append(st.xs, k * 10)
+        walk(mut st, k - 1)
+    }
+}
+
+func snapshot(s St) int {
+    return s.n * 100 + s.p.x
+}
+
+func main() {
+    mut st := St{}
+    walk(mut st, 3)
+    builder.Push(mut st.nodes, 99)
+    println(builder.Len(mut st.nodes), st.n, st.p.x, st.p.y, len(st.xs), st.xs[2])
+    st.p = Pt{x: 7, y: 8}
+    st.p.y += 1
+    println(st.p.x, st.p.y, snapshot(st))
+    mut q := st.p
+    q.x = 0
+    println(q.x, st.p.x)
+    mut t := st
+    t.n = 50
+    println(t.n, st.n)
+    st = t
+    println(st.n)
+}

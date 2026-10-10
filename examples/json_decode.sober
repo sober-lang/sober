@@ -1,0 +1,69 @@
+package main
+
+// shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
+// 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntRange
+
+import "std/conv"
+import "std/io"
+import "std/iter"
+import "std/json"
+
+type Point struct {
+    x int
+    y int
+}
+
+type Shape struct {
+    name string
+    closed bool
+    scale float
+    points []Point
+    tags []string
+    note string?
+    origin Point?
+}
+
+func show(s Shape) {
+    println("${s.name} closed=${if s.closed { "yes" } else { "no" }} scale=${conv.FormatFloat(s.scale)} points=${len(s.points)} tags=${len(s.tags)}")
+    for i <- iter.Range(0, len(s.points)) {
+        println("  (${s.points[i].x}, ${s.points[i].y})")
+    }
+    nt := s.note
+    if nt != nil {
+        println("  note: ${nt}")
+    }
+    showOrigin(s.origin)
+}
+
+// T? の欄は仮引数で受けて絞る（欄から束縛した struct の T? の絞り込みは check が拒否 — F-ac）
+func showOrigin(o Point?) {
+    if o != nil {
+        println("  origin: (${o.x}, ${o.y})")
+    }
+}
+
+
+func main() {
+    b, rerr := io.ReadStdin()
+    if rerr != nil {
+        return
+    }
+    d, err := json.Parse(b)
+    if err != nil {
+        println("parse error")
+        return
+    }
+    xs := switch json.At(d, json.Root(d)) {
+    case json.Arr{items}: items
+    default: []int{}
+    }
+    for i <- iter.Range(0, len(xs)) {
+        s, derr := json.Decode[Shape](d, xs[i])
+        switch derr {
+        case nil: show(s)
+        case json.Missing{pos, field}: println("#${i}: missing ${field} (object at ${pos})")
+        case json.WrongType{pos, want}: println("#${i}: want ${want} at ${pos}")
+        case json.IntRange{pos}: println("#${i}: int out of range at ${pos}")
+        }
+    }
+}

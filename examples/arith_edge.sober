@@ -1,0 +1,13 @@
+package main
+
+// 64bit の端（Go 準拠）: 最小値 / -1 は被除数・余り 0（x86 の idiv は SIGFPE なので codegen が先に捌く）、
+// 負の被除数は 0 方向への切り捨て、最小値の印字
+func q(a int, b int) int { return a / b }
+func r(a int, b int) int { return a % b }
+
+func main() {
+    m := 0 - 9223372036854775807 - 1
+    println(m, q(m, 0 - 1), r(m, 0 - 1))
+    println(q(0 - 7, 2), r(0 - 7, 2), q(7, 0 - 2), r(7, 0 - 2))
+    println("${m}")
+}

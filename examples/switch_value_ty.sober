@@ -1,0 +1,32 @@
+package main
+
+// switch 式の値の型を脱糖器が読む（F-n・F-p・F-m の if の腕の中の形 — 2026-10-02 まで check が拒否・build は受理）:
+// computeTy・declOfExpr・retExprTy・exprSty0 が if 式と同じく switch 式の腕の末尾を辿る
+
+type T struct {
+    a int
+    s string
+}
+
+// F-n: struct 値の switch 式を束縛して欄を読む（旧: desugar CoreFragment）
+func field(k int) int {
+    v := switch k { case 0: T{a: 1, s: "x"}; default: T{a: 3, s: "y"} }
+    return v.a
+}
+
+// F-p: string 値の switch 式を bytes に通す — 束縛を挟む形と直の形（旧: desugar Malformed）
+func width(k int) int {
+    x := switch k { case 0: "bc"; default: "a" }
+    return len(bytes(x)) + len(bytes(switch k { case 0: "def"; default: "" }))
+}
+
+// F-m の if の腕の中の形: if の else の腕が仮引数を値に持つ switch 式（旧: def error）
+func pick(v string, k int) string {
+    return if v == "a" { v } else { switch k { case 0: "x"; default: v } }
+}
+
+func main() {
+    println(field(0), field(1))
+    println(width(0), width(1))
+    println(pick("a", 0), pick("b", 0), pick("c", 1))
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/partial_lit.sober:14:10 (Malformed)
+exit=1

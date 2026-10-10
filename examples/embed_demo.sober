@@ -1,0 +1,29 @@
+package main
+
+// @embed（language.md 20 節 — go:embed の意味論）: パターンに合うファイルの中身をビルド時に確定した const として持つ。
+// 受け皿は map[string]string{}（パス → 内容）。パスはルート相対・`**` は 0 個以上のディレクトリ・symlink と
+// パターンに合わないファイル（readme.md）は入らない。リポジトリのルートを cwd にしてビルドする
+
+@embed("testdata/embed/**/*.txt")
+const Files = map[string]string{}
+
+func show(fs map[string]string, p string) {
+    v := fs[p]
+    if v != nil {
+        println("${p}: ${len(bytes(v))} bytes: ${v}")
+    } else {
+        println("${p}: (not embedded)")
+    }
+}
+
+func main() {
+    // 辞書 const は参照点で展開される（参照ごとに map を組む）ので、一度束縛して回す
+    fs := Files
+    println("${len(fs)} files")
+    show(fs, "testdata/embed/B.txt")
+    show(fs, "testdata/embed/a.txt")
+    show(fs, "testdata/embed/deeper/x/c.txt")
+    show(fs, "testdata/embed/sub/b.txt")
+    show(fs, "testdata/embed/link.txt")
+    show(fs, "testdata/embed/readme.md")
+}

@@ -1,0 +1,2 @@
+sober: load error at examples/panic_neg_fieldty.sober:5:5: a panic label field is int, byte, bool or string
+exit=1

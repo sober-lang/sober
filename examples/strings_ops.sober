@@ -1,0 +1,13 @@
+package main
+
+func main() {
+    s := "hello world"
+    b := bytes(s)
+    t := b[0:5]
+    u := b[6:11]
+    println(len(t), len(u))
+    println(s == "hello world", s == "hello", s != "hello")
+    v := "hello" + " " + "world"
+    println(v == s, len(bytes(v)))
+    println(v)
+}

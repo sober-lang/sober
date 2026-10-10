@@ -1,0 +1,40 @@
+package main
+
+// 値位置の if の腕の region の合流（F-g — 2026-10-02 まで check が def error・build は受理）: 仮引数の region（呼び手）の string / struct と、
+// 本体のリテラル・呼び出しの結果を同じ if で合流させる。脱糖器は両腕を最内の region の型へ ann で緩める
+
+type Item struct {
+    name string
+    n int
+}
+
+func size(s string) int {
+    return len(bytes(s))
+}
+
+func bump(t Item) Item {
+    return Item{name: "bumped", n: t.n + 1}
+}
+
+func argOr(args []string, i int) int {
+    return size(if i < 0 { "" } else { args[i] })
+}
+
+func label(p string, c bool) string {
+    x := if c { p } else { "default" }
+    return x
+}
+
+func pick(items []Item, c bool) int {
+    mut out := mut []Item{}
+    out = append(out, if c { bump(items[0]) } else { items[0] })
+    return out[0].n
+}
+
+func main() {
+    args := []string{"abc", "de"}
+    println(argOr(args, 0 - 1), argOr(args, 1))
+    println(label("given", true), label("given", false))
+    items := []Item{Item{name: "a", n: 1}}
+    println(pick(items, true), pick(items, false))
+}

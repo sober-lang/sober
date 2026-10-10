@@ -1,0 +1,46 @@
+package main
+
+// sobercheck: Sober 版 `sober check` の直結。標準入力の Manifest（loaderdump / desugardump と同じ形）から
+// lexer → parser → loader → desugar → checker をプロセス内でつなぎ、判定 JSON（checkdump と同じバイト列）を標準出力に書く。
+// 中間の JSON を経ない（脱糖器のヒープを検査器が直接写す — checker.CheckCore）。
+// load / 脱糖の拒否は `sobercheck: load error` / `sobercheck: desugar error`（診断の文言は持たない — Zig 版は stderr の診断 + exit 1）
+
+import "std/io"
+import "loader"
+import "checker"
+
+
+// check は p を脱糖して検査する（判定 JSON。脱糖の拒否なら diag のラベル）。
+// 関数に割るのは region を分けるため: WithCore は展開される（関数型引数）ので、脱糖器のヒープは呼んだ関数の region に積まれる —
+// main で呼ぶと、長寿命の Program（表層 AST）とヒープ（AST の写し + コア）が同じ region に並んで上限を分け合う
+func check(p loader.Program) ([]byte, error?) {
+    // E2-S の逃げの周回込み（checker/e2s.sober）
+    return checker.CheckE2(p)
+}
+
+func main() {
+    src, err := io.ReadFile("/dev/stdin")
+    if err != nil {
+        println("sobercheck: cannot read /dev/stdin")
+        return
+    }
+    m, valid := loader.ManifestOf(src)
+    if !valid {
+        println("sobercheck: bad manifest")
+        return
+    }
+    p, lerr := loader.Load(m)
+    if lerr != nil {
+        println("sobercheck: load error")
+        return
+    }
+    out, derr := check(p)
+    if derr != nil {
+        println("sobercheck: desugar error")
+        return
+    }
+    werr := io.WriteFile("/dev/stdout", out)
+    if werr != nil {
+        println("sobercheck: cannot write /dev/stdout")
+    }
+}

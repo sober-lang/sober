@@ -1,0 +1,45 @@
+package main
+
+// R31: io.ReadDir — 名前のバイト順（大文字が先）・`.` / `..` なし・種類つき（symlink とディレクトリを区別する — loader は通常ファイルの .sober だけ拾う）。
+// リポジトリのルートを cwd にして実行する（io_basic と同じ）
+
+import "std/io"
+
+func kind(k io.EntryKind) string {
+    return switch k {
+    case io.File{}: "file"
+    case io.Dir{}: "dir"
+    case io.Symlink{}: "symlink"
+    case io.Irregular{}: "irregular"
+    }
+}
+
+func why(e error) string {
+    return switch e {
+    case io.NotFound{}: "not found"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    default: "other"
+    }
+}
+
+func show(p string) {
+    es, err := io.ReadDir(p)
+    if err != nil {
+        println("${p}: ${why(err)}")
+    } else {
+        println("${p}: ${len(es)} entries")
+        mut i := 0
+        while i < len(es) {
+            println("  ${es[i].Name} ${kind(es[i].Kind)}")
+            i += 1
+        }
+    }
+}
+
+func main() {
+    show("testdata/readdir")
+    show("testdata/readdir/sub")
+    show("testdata/readdir/missing")
+    show("testdata/readdir/b.txt")
+}

@@ -1,0 +1,112 @@
+package main
+
+import "std/iter"
+
+// cause の入れ子のパターン（`case W{cause: A{…}}` — language.md 13 節 wrap の規則）: 包み替えの内側を 1 つの switch で覗く。
+// 網羅は analyzer がラベルごとの cause の導出集合（wrap の地点の内側の合併）で判定する。
+// 新しい形（show）と、前から受理していた「cause を束縛して次の switch へ」の形（show2）の出力が全入力で一致することの回帰例
+
+type NotFound error {
+    n int
+}
+
+type Denied error {
+    uid int
+}
+
+type Wrapped error {
+    step int
+}
+
+func open(x int) error? {
+    if x == 0 {
+        return NotFound{n: 5}
+    }
+    if x == 1 {
+        return Denied{uid: 7}
+    }
+    return nil
+}
+
+func load(x int) error? {
+    open(x)? Wrapped{step: x}
+    return nil
+}
+
+func twice(x int) error? {
+    load(x)? Wrapped{step: 10}
+    return nil
+}
+
+func show(e error?) {
+    if e != nil {
+        switch e {
+        case Wrapped{step, cause: NotFound{n}}:
+            println("wrapped ${step}: not found ${n}")
+        case Wrapped{step, cause: Denied{uid}}:
+            println("wrapped ${step}: denied ${uid}")
+        case Wrapped{step, cause: Wrapped{cause: Denied{uid}}}:
+            println("wrapped ${step} twice: denied ${uid}")
+        case Wrapped{step, cause: w Wrapped{cause}}:
+            println("wrapped ${step} twice")
+            show(w)
+        case NotFound{n}:
+            println("not found ${n}")
+        case Denied{uid}:
+            println("denied ${uid}")
+        }
+    } else {
+        println("ok")
+    }
+}
+
+func show2(e error?) {
+    if e != nil {
+        switch e {
+        case Wrapped{step, cause}:
+            inner(step, cause)
+        case NotFound{n}:
+            println("not found ${n}")
+        case Denied{uid}:
+            println("denied ${uid}")
+        }
+    } else {
+        println("ok")
+    }
+}
+
+func inner(step int, c error?) {
+    if c != nil {
+        switch c {
+        case NotFound{n}:
+            println("wrapped ${step}: not found ${n}")
+        case Denied{uid}:
+            println("wrapped ${step}: denied ${uid}")
+        case w Wrapped{cause}:
+            inner2(step, w, cause)
+        }
+    }
+}
+
+func inner2(step int, w error, c error?) {
+    if c != nil {
+        switch c {
+        case Denied{uid}:
+            println("wrapped ${step} twice: denied ${uid}")
+        default:
+            println("wrapped ${step} twice")
+            show2(w)
+        }
+    }
+}
+
+func main() {
+    for x <- iter.Range(0, 3) {
+        show(open(x))
+        show2(open(x))
+        show(load(x))
+        show2(load(x))
+        show(twice(x))
+        show2(twice(x))
+    }
+}

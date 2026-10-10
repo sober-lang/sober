@@ -1,0 +1,61 @@
+{
+  "main": "main",
+  "pkgs": [
+    {
+      "path": "main",
+      "name": "main",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "lookup",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "code",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "show",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "code",
+            "lookup"
+          ]
+        },
+        {
+          "name": "main",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "println",
+            "show"
+          ]
+        }
+      ],
+      "consts": []
+    }
+  ],
+  "errors": [
+    {
+      "name": "NotFound",
+      "pkg": "main"
+    },
+    {
+      "name": "OutOfRange",
+      "pkg": "main"
+    },
+    {
+      "name": "Empty",
+      "pkg": "main"
+    }
+  ]
+}

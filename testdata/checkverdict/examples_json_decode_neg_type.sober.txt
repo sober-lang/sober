@@ -1,0 +1,2 @@
+sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode / Encode must be a struct type without type parameters
+exit=1

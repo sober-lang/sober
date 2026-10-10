@@ -1,0 +1,2 @@
+sober: load error at examples/scope.sober:9:39: source does not match the grammar
+exit=1

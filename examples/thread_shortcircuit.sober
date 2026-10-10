@@ -1,0 +1,43 @@
+package main
+
+import "std/iter"
+
+// 短絡（&& / ||）の合流の飛び越し（cfgclean の ccThread — 否定 `!f(…)`・仮引数つきの中継・辺の実引数）の正例。
+// 展開される小さい bool 関数を否定してループの中で分岐する形（std/utf8.Str の boundary と同じ）と、短絡の値を変数に取って後で使う形
+
+func edge(b []int, p int) bool {
+    return p == 0 || p == len(b) || (p > 0 && p < len(b) && b[p] & 192 != 128)
+}
+
+func both(x int, y int) bool {
+    return (x > 3 && y < 7) || (x == y && !(x > 10))
+}
+
+func main() int {
+    xs := []int{65, 128, 129, 200, 66, 191, 67, 0}
+    mut n := 0
+    mut m := 0
+    for i <- iter.Range(0, len(xs) + 1) {
+        if !edge(xs, i) {
+            n += 1
+        } else if !(edge(xs, i) && i > 4) {
+            m += i
+        }
+    }
+    println(n)
+    println(m)
+    mut c := 0
+    for x <- iter.Range(0, 14) {
+        for y <- iter.Range(0, 14) {
+            v := both(x, y)
+            w := !both(y, x) || x == 0
+            if v && !w {
+                c += 1
+            } else if !v && w {
+                c += 100
+            }
+        }
+    }
+    println(c)
+    return 0
+}

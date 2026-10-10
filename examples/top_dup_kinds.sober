@@ -1,0 +1,17 @@
+package main
+
+// 負例（load が拒否 — 同上）: const と func、型と func のように種類の違うトップレベル名の重複も同じ扱い
+
+const f = 3
+
+type g struct {
+    a int
+}
+
+func g() int {
+    return 2
+}
+
+func main() {
+    println(f)
+}

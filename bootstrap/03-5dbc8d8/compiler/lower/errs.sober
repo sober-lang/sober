@@ -1,0 +1,260 @@
+package lower
+
+// 組み込み error（K1'' — src/lower_types.zig の errType / lower.zig の labelToErr / lower_inline.zig の tryResults / lower_cont.zig の chainPush・causeOf の写し）。
+// - ラベルの型 = 全 error ラベルの union（st.errs — variant の並びは desugar の errv = ロード順 × ファイル順 × 宣言順、タグ = 添字）
+// - error = (先頭ラベル, 鎖) の struct（st.errstruct — フィールド #top / #chain。鎖は内側の error を外側から積んだ imm の []ラベル）
+
+import "desugar"
+import "ast"
+
+// errsInfo はラベルの union の情報（初出で作る。SI_DECL = -1 が印）
+func errsInfo(st mut St) int {
+    x := st.errs
+    if x >= 0 {
+        return x
+    }
+    info := recN(mut st, SISZ)
+    hset(mut st, info, TUnion)
+    hset(mut st, info + SI_DECL, -1)
+    hset(mut st, info + SI_PKG, st.d.mainPkg)
+    hset(mut st, info + SI_WORDS, 0)
+    hset(mut st, info + SI_STATE, LPending)
+    hv1 := rec4(mut st, TUnion, info, 0, 0)
+    hset(mut st, info + SI_TY, hv1)
+    st.errs = info
+    return info
+}
+
+// layoutErrs はラベルの union のレイアウト（ラベルのフィールド型は宣言側 package で解決する）
+func layoutErrs(st mut St, info int) error? {
+    hset(mut st, info + SI_STATE, LLaying)
+    saved_env := st.tenv
+    st.tenv = -1
+    err := layoutErrsBody(mut st, info)
+    st.tenv = saved_env
+    return err
+}
+
+func layoutErrsBody(st mut St, info int) error? {
+    ev := st.d.errv
+    n := llen(mut st, ev) / 2
+    vs := listN(mut st, n)
+    mut mx := 0
+    mut i := 0
+    while i < n {
+        td := hget(mut st, ev + 1 + i * 2)
+        pk := hget(mut st, ev + 2 + i * 2)
+        lay := layoutFields(mut st, pk, nodeAt(mut st, nodeAt(mut st, td).c).a)?
+        vr := rec4(mut st, nodeAt(mut st, td).a, i, lay.fields, 0)
+        hset(mut st, vs + 1 + i, vr)
+        if lay.words > mx {
+            mx = lay.words
+        }
+        i += 1
+    }
+    hset(mut st, info + SI_FIELDS, vs)
+    hset(mut st, info + SI_WORDS, 1 + mx)
+    hset(mut st, info + SI_STATE, LDone)
+    return nil
+}
+
+// errLabelOf は型の名前（"N" か "ref.N"）の error ラベルの添字（無ければ -1）。pk は参照側の package
+func errLabelOf(st mut St, pk int, name int) int {
+    mut from := pk
+    mut lo := 0
+    dot := dotAt(mut st, name)
+    if dot >= 0 {
+        from = importOf(mut st, pk, name, 0, dot)
+        lo = dot + 1
+    }
+    ev := st.d.errv
+    n := llen(mut st, ev) / 2
+    mut i := 0
+    while i < n {
+        if hget(mut st, ev + 2 + i * 2) == from && strEqPart(mut st, nodeAt(mut st, hget(mut st, ev + 1 + i * 2)).a, name, lo, dat(mut st, name)) {
+            return i
+        }
+        i += 1
+    }
+    return -1
+}
+
+// errType は組み込み error の型（初出で作る）
+func errType(st mut St) (int, error?) {
+    x := st.errstruct
+    if x >= 0 {
+        return hget(mut st, x + SI_TY), nil
+    }
+    u := errsInfo(mut st)
+    layoutInfo(mut st, u)?
+    lt := hget(mut st, u + SI_TY)
+    lw := tWords(mut st, lt)
+    fs := list2(mut st, rec4(mut st, strLit(mut st, "#top"), lt, 0, 0), rec4(mut st, strLit(mut st, "#chain"), mkSlice(mut st, lt, false), lw, 0))
+    info := recN(mut st, SISZ)
+    hset(mut st, info, TStruct)
+    hset(mut st, info + SI_DECL, -2)
+    hset(mut st, info + SI_PKG, st.d.mainPkg)
+    hset(mut st, info + SI_FIELDS, fs)
+    hset(mut st, info + SI_WORDS, lw + 3)
+    hset(mut st, info + SI_STATE, LDone)
+    hv1 := rec4(mut st, TStruct, info, 0, 0)
+    hset(mut st, info + SI_TY, hv1)
+    st.errstruct = info
+    return hv1, nil
+}
+
+// isErr は t が組み込み error か
+func isErr(st mut St, t int) bool {
+    x := st.errstruct
+    return x >= 0 && isTag(mut st, t, TStruct) && hget(mut st, t + 1) == x
+}
+
+func isErrOpt(st mut St, t int) bool {
+    return isTag(mut st, t, TOpt) && isErr(mut st, hget(mut st, t + 1))
+}
+
+// isLabel は error ラベルのリテラルの型（全ラベルの union）か
+func isLabel(st mut St, t int) bool {
+    x := st.errs
+    return x >= 0 && isTag(mut st, t, TUnion) && hget(mut st, t + 1) == x
+}
+
+// labelToErr はラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
+func labelToErr(st mut St, t int, v int) (Val, error?) {
+    et := errType(mut st)?
+    p := newAgg(mut st, et)
+    storeVal(mut st, p, 0, t, v)
+    zero := iconst(mut st, 0)
+    mut w := 0
+    while w < 3 {
+        store(mut st, p, tWords(mut st, t) + w, zero)
+        w += 1
+    }
+    return Val{t: et, v: p}, nil
+}
+
+// chainPush は error の鎖に内側の error を積む（包み替え）: dst_chain ← append(内側の鎖, 内側の先頭)。
+// 内側の error は src + src_off 語（先頭ラベル lt、その後に鎖のヘッダ）。imm の append なので最内 region へ全コピー + 1 セル
+func chainPush(st mut St, dst_chain int, src int, src_off int, lt int) {
+    inner := fieldPtr(mut st, src, src_off)
+    lw := tWords(mut st, lt)
+    inner_chain := fieldPtr(mut st, inner, lw)
+    d := regionDepth(mut st)
+    gp, gd := grow(mut st, inner_chain, lw, d, false)
+    storeVal(mut st, gd, 0, lt, inner)
+    store(mut st, dst_chain, 0, ptoi(mut st, gp))
+    store(mut st, dst_chain, 1, bin(mut st, BAdd, load(mut st, inner_chain, 1), iconst(mut st, 1)))
+    store(mut st, dst_chain, 2, d)
+}
+
+// causeOf は error の cause: e（error の値のアドレス）の 1 つ内側の error?。鎖が空なら nil、
+// でなければ (鎖の末尾, 鎖の [0 : len-1])（部分列はビュー — 同じセル・同じ深度）
+func causeOf(st mut St, e int, et int, lt int) int {
+    ot := optOf(mut st, et)
+    out := newAgg(mut st, ot)
+    lw := tWords(mut st, lt)
+    chain := fieldPtr(mut st, e, lw)
+    ln := load(mut st, chain, 1)
+    some := newBlock(mut st)
+    none := newBlock(mut st)
+    join := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, ln, iconst(mut st, 0)), some, -1, none, -1)
+    setCur(mut st, none)
+    store(mut st, out, 0, iconst(mut st, 0))
+    br(mut st, join, -1)
+    setCur(mut st, some)
+    store(mut st, out, 0, iconst(mut st, 1))
+    n1 := bin(mut st, BSub, ln, iconst(mut st, 1))
+    last := cellAt(mut st, itop(mut st, load(mut st, chain, 0)), n1, lw)
+    storeVal(mut st, out, 1, lt, last)
+    oc := fieldPtr(mut st, out, 1 + lw)
+    store(mut st, oc, 0, load(mut st, chain, 0))
+    store(mut st, oc, 1, n1)
+    store(mut st, oc, 2, load(mut st, chain, 2))
+    br(mut st, join, -1)
+    setCur(mut st, join)
+    return out
+}
+
+// tryResults は後置 `?`: 呼び出しの最後の結果 error? のタグが非 0 なら、関数の結果へゼロ値 + err（`? L{…}` なら包み替え）を書いて
+// 出口の後半（defer → relocate → 深度復元 → ret）へ。一致側は残りの結果の列
+func tryResults(st mut St, e int) (int, error?) {
+    tok := tokOf(mut st, e)
+    call0 := nodeAt(mut st, e).a
+    if kindOf(mut st, call0) != ast.ECall {
+        return 0, LowerFail{k: KUnsupported, tok: tok}
+    }
+    ctx := hget(mut st, st.rets + 1)
+    rts := if ctx >= 0 { hget(mut st, ctx + IC_RESULTS) } else { infoAt(mut st, st.info).results }
+    n := llen(mut st, rts)
+    if n == 0 || !isErrOpt(mut st, lat(mut st, rts, n - 1)) {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    mut i := 0
+    while i < n - 1 {
+        requireZero(mut st, lat(mut st, rts, i), tok)?
+        i += 1
+    }
+    r := evalMulti(mut st, call0)?
+    if r < 0 {
+        return r, nil
+    }
+    k := hget(mut st, r)
+    if k == 0 || !isErrOpt(mut st, hget(mut st, r + 1 + (k - 1) * 2)) {
+        return 0, LowerFail{k: KMismatch, tok: tok}
+    }
+    errt := hget(mut st, r + 1 + (k - 1) * 2)
+    errv := hget(mut st, r + 2 + (k - 1) * 2)
+    err_b := newBlock(mut st)
+    ok_b := newBlock(mut st)
+    tagv := load(mut st, errv, 0)
+    condbr(mut st, cmp(mut st, CNe, tagv, iconst(mut st, 0)), err_b, -1, ok_b, -1)
+    // エラー側: ゼロ値（語を 0 埋め → slice / map は空ヘッダ）+ err を結果の置き場へ（結果は error? を含むので常に sret）
+    setCur(mut st, err_b)
+    dst := if ctx >= 0 { hget(mut st, ctx + IC_SLOT) } else { st.sret }
+    mut off := 0
+    zero := iconst(mut st, 0)
+    i = 0
+    while i < n - 1 {
+        rt := lat(mut st, rts, i)
+        mut w := 0
+        while w < tWords(mut st, rt) {
+            store(mut st, dst, off + w, zero)
+            w += 1
+        }
+        zeroFill(mut st, dst, off, rt)
+        off += tWords(mut st, rt)
+        i += 1
+    }
+    wrap := nodeAt(mut st, e).b
+    if wrap >= 0 {
+        // 包み替え: 内側の error (top, 鎖) から (W{…}, append(鎖, top)) を作る。フィールドはエラーの経路でだけ評価する
+        if errLabelOf(mut st, st.curPkg, nodeAt(mut st, wrap).a) < 0 {
+            return 0, LowerFail{k: KMismatch, tok: tok}
+        }
+        wrapped := composite(mut st, wrap)?
+        if isTag(mut st, wrapped.t, TNever) {
+            return -1, nil
+        }
+        ev := labelToErr(mut st, wrapped.t, wrapped.v)?
+        chainPush(mut st, fieldPtr(mut st, ev.v, tWords(mut st, wrapped.t)), errv, 1, wrapped.t)
+        c := coerce(mut st, ev.t, ev.v, lat(mut st, rts, n - 1), tok)?
+        storeVal(mut st, dst, off, c.t, c.v)
+    } else {
+        storeVal(mut st, dst, off, errt, errv)
+    }
+    if ctx >= 0 {
+        inlineExit(mut st, ctx, tok)?
+    } else {
+        funcExit(mut st, -1, tok)?
+    }
+    setCur(mut st, ok_b)
+    out := listN(mut st, (k - 1) * 2)
+    hset(mut st, out, k - 1)
+    i = 0
+    while i < (k - 1) * 2 {
+        hset(mut st, out + 1 + i, hget(mut st, r + 1 + i))
+        i += 1
+    }
+    return out, nil
+}

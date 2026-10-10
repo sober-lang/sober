@@ -1,0 +1,32 @@
+package main
+
+// 文字リテラル（language.md 33 節）: ASCII 限定の型なし整数定数。byte の文脈にも int の文脈にも置ける — ここは int の文脈
+const Dot = '.'
+
+func isDigit(c int) bool {
+    return c >= '0' && c <= '9'
+}
+
+func kind(c int) int {
+    return switch c {
+    case 'a' | 'e' | 'i' | 'o' | 'u': 1
+    case ' ' | '\t' | '\n': 2
+    default: 0
+    }
+}
+
+func main() {
+    println('a')
+    println(Dot)
+    println('\n', '\t', '\r', '\0', '\\', '\'')
+    println(' ', '~', '"')
+    println(isDigit('7'), isDigit('x'))
+    println(kind('e'), kind('\t'), kind('z'))
+    s := bytes("a.b")
+    println(s[1] == '.', int(s[0]) - 'a' + 'A')
+    braces()
+}
+
+func braces() {
+    println("${'}'} ${'"'} ${'{'}")
+}

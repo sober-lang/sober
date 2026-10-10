@@ -1,0 +1,312 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "dot",
+      "type_params": [],
+      "params": [
+        {
+          "name": "v",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": true
+          },
+          "mutable": true
+        },
+        {
+          "name": "u",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": true
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 25
+                      },
+                      "field": "Range",
+                      "tok": 27
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 29
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 31
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "v",
+                            "tok": 33
+                          }
+                        ],
+                        "tok": 32
+                      }
+                    ],
+                    "tok": 28
+                  },
+                  "guards": [],
+                  "tok": 23
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "v",
+                          "tok": 37
+                        },
+                        "idx": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 39
+                        },
+                        "tok": 38
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "*",
+                        "lhs": {
+                          "k": "index",
+                          "base": {
+                            "k": "ident",
+                            "name": "u",
+                            "tok": 42
+                          },
+                          "idx": {
+                            "k": "ident",
+                            "name": "i",
+                            "tok": 44
+                          },
+                          "tok": 43
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 47
+                        },
+                        "tok": 46
+                      }
+                    ],
+                    "tok": 37
+                  }
+                ]
+              },
+              "tok": 22
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 53
+      },
+      "sig_end": 21
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 66
+                  },
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 68
+                  },
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 70
+                  },
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 72
+                  }
+                ],
+                "mut": true,
+                "tok": 62
+              }
+            ],
+            "tok": 58
+          },
+          {
+            "k": "bind",
+            "names": [
+              "u"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 83
+                  },
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 85
+                  },
+                  {
+                    "k": "int",
+                    "value": 3,
+                    "tok": 87
+                  }
+                ],
+                "mut": true,
+                "tok": 79
+              }
+            ],
+            "tok": 75
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "dot",
+                "tok": 90
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "v",
+                  "tok": 93
+                },
+                {
+                  "k": "mut_arg",
+                  "name": "u",
+                  "tok": 96
+                }
+              ],
+              "tok": 91
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 99
+              },
+              "args": [
+                {
+                  "k": "index",
+                  "base": {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 101
+                  },
+                  "idx": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 103
+                  },
+                  "tok": 102
+                }
+              ],
+              "tok": 100
+            }
+          }
+        ]
+      },
+      "tok": 54,
+      "bodiless": false,
+      "span": {
+        "start": 53,
+        "end": 109
+      },
+      "sig_end": 57
+    }
+  ],
+  "consts": []
+}

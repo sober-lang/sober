@@ -1,0 +1,41 @@
+package main
+
+// 展開される関数から anchor つきの mut Def へ imm 引数を転送する形（selfhost-drafts F-11 の回帰例）。
+// top は再帰するので Def（mut 引数 = anchor つき callM）、ahead は再帰しない mut 関数なので呼び出し点に展開される。
+// 展開の値引数を展開点の点座標（Def 本体では r1）へ緩めて ann していたため、ahead の中から rec へ渡す w が
+// mut 束縛 nb（r0）より深い扱いになり、手で展開すれば通る形が def error になっていた
+
+import "std/builder"
+
+type Cx struct {
+    ts []int
+}
+
+func rec(nb mut builder.Builder[int], cx Cx, p int) (int, int) {
+    builder.Push(mut nb, p)
+    if p <= 0 {
+        return 0, cx.ts[0]
+    }
+    return rec(mut nb, cx, p - 1)
+}
+
+func ahead(nb mut builder.Builder[int], cx Cx, p int) bool {
+    a, r := rec(mut nb, cx, p)
+    return a == 0 && r > p
+}
+
+func top(nb mut builder.Builder[int], cx Cx, p int) int {
+    if ahead(mut nb, cx, p) {
+        return p
+    }
+    if p > 0 {
+        return top(mut nb, cx, p - 1)
+    }
+    return 0 - 1
+}
+
+func main() {
+    mut nb := builder.Builder[int]{}
+    cx := Cx{ts: []int{3}}
+    println("${top(mut nb, cx, 5)} ${builder.Len(mut nb)}")
+}

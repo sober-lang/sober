@@ -1,0 +1,991 @@
+{
+  "package": "stdutf8",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/utf8",
+      "tok": 7
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$strings",
+      "path": "std/strings",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Case",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "b",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "byte"
+              },
+              "mut": false
+            },
+            "tok": 13
+          },
+          {
+            "name": "at",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 18
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 23
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "TestIndexInvalid",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "cases"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "Case"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [],
+                          "mut": false,
+                          "tok": 38
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "binary",
+                          "op": "-",
+                          "lhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 46
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 48
+                          },
+                          "tok": 47
+                        }
+                      }
+                    ],
+                    "tok": 34,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 104,
+                              "tok": 59
+                            },
+                            {
+                              "k": "int",
+                              "value": 105,
+                              "tok": 61
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 55
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "binary",
+                          "op": "-",
+                          "lhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 66
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 68
+                          },
+                          "tok": 67
+                        }
+                      }
+                    ],
+                    "tok": 51,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 195,
+                              "tok": 79
+                            },
+                            {
+                              "k": "int",
+                              "value": 169,
+                              "tok": 81
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 75
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "binary",
+                          "op": "-",
+                          "lhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 86
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 88
+                          },
+                          "tok": 87
+                        }
+                      }
+                    ],
+                    "tok": 71,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 192,
+                              "tok": 99
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 101
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 95
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 106
+                        }
+                      }
+                    ],
+                    "tok": 91,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 194,
+                              "tok": 117
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 113
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 122
+                        }
+                      }
+                    ],
+                    "tok": 109,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 65,
+                              "tok": 133
+                            },
+                            {
+                              "k": "int",
+                              "value": 227,
+                              "tok": 135
+                            },
+                            {
+                              "k": "int",
+                              "value": 129,
+                              "tok": 137
+                            },
+                            {
+                              "k": "int",
+                              "value": 65,
+                              "tok": 139
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 129
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 144
+                        }
+                      }
+                    ],
+                    "tok": 125,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 237,
+                              "tok": 155
+                            },
+                            {
+                              "k": "int",
+                              "value": 160,
+                              "tok": 157
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 159
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 151
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 164
+                        }
+                      }
+                    ],
+                    "tok": 147,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 240,
+                              "tok": 175
+                            },
+                            {
+                              "k": "int",
+                              "value": 159,
+                              "tok": 177
+                            },
+                            {
+                              "k": "int",
+                              "value": 152,
+                              "tok": 179
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 181
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 171
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "binary",
+                          "op": "-",
+                          "lhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 186
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 188
+                          },
+                          "tok": 187
+                        }
+                      }
+                    ],
+                    "tok": 167,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 244,
+                              "tok": 199
+                            },
+                            {
+                              "k": "int",
+                              "value": 144,
+                              "tok": 201
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 203
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 205
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 195
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 210
+                        }
+                      }
+                    ],
+                    "tok": 191,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "b",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "byte"
+                          },
+                          "elems": [
+                            {
+                              "k": "int",
+                              "value": 97,
+                              "tok": 221
+                            },
+                            {
+                              "k": "int",
+                              "value": 98,
+                              "tok": 223
+                            },
+                            {
+                              "k": "int",
+                              "value": 128,
+                              "tok": 225
+                            },
+                            {
+                              "k": "int",
+                              "value": 99,
+                              "tok": 227
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 217
+                        }
+                      },
+                      {
+                        "key": "at",
+                        "value": {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 232
+                        }
+                      }
+                    ],
+                    "tok": 213,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 30
+              }
+            ],
+            "tok": 28
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 240
+                      },
+                      "field": "Range",
+                      "tok": 242
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 244
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 246
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "cases",
+                            "tok": 248
+                          }
+                        ],
+                        "tok": 247
+                      }
+                    ],
+                    "tok": 243
+                  },
+                  "guards": [],
+                  "tok": 238
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "c"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "cases",
+                          "tok": 254
+                        },
+                        "idx": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 256
+                        },
+                        "tok": 255
+                      }
+                    ],
+                    "tok": 252
+                  },
+                  {
+                    "k": "bind",
+                    "names": [
+                      "got"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "utf8",
+                            "tok": 261
+                          },
+                          "field": "IndexInvalid",
+                          "tok": 263
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 265
+                            },
+                            "field": "b",
+                            "tok": 267
+                          }
+                        ],
+                        "tok": 264
+                      }
+                    ],
+                    "tok": 259
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 270
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "got",
+                            "tok": 272
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 274
+                            },
+                            "field": "at",
+                            "tok": 276
+                          },
+                          "tok": 273
+                        }
+                      ],
+                      "tok": 271
+                    }
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 279
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "utf8",
+                                "tok": 281
+                              },
+                              "field": "Valid",
+                              "tok": 283
+                            },
+                            "args": [
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "c",
+                                  "tok": 285
+                                },
+                                "field": "b",
+                                "tok": 287
+                              }
+                            ],
+                            "tok": 284
+                          },
+                          "rhs": {
+                            "k": "binary",
+                            "op": "<",
+                            "lhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "c",
+                                "tok": 291
+                              },
+                              "field": "at",
+                              "tok": 293
+                            },
+                            "rhs": {
+                              "k": "int",
+                              "value": 0,
+                              "tok": 295
+                            },
+                            "tok": 294
+                          },
+                          "tok": 289
+                        }
+                      ],
+                      "tok": 280
+                    }
+                  }
+                ]
+              },
+              "tok": 237
+            }
+          }
+        ]
+      },
+      "tok": 24,
+      "bodiless": false,
+      "span": {
+        "start": 23,
+        "end": 303
+      },
+      "sig_end": 27
+    },
+    {
+      "name": "TestParse",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "utf8",
+                    "tok": 312
+                  },
+                  "field": "Parse",
+                  "tok": 314
+                },
+                "args": [
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "byte"
+                    },
+                    "elems": [
+                      {
+                        "k": "int",
+                        "value": 104,
+                        "tok": 320
+                      },
+                      {
+                        "k": "int",
+                        "value": 105,
+                        "tok": 322
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 316
+                  }
+                ],
+                "tok": 315
+              }
+            ],
+            "tok": 308
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 326
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "err",
+                    "tok": 328
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 330
+                  },
+                  "tok": 329
+                }
+              ],
+              "tok": 327
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 333
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 335
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "hi",
+                    "tok": 337
+                  },
+                  "tok": 336
+                }
+              ],
+              "tok": 334
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "_",
+              "bad"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "utf8",
+                    "tok": 344
+                  },
+                  "field": "Parse",
+                  "tok": 346
+                },
+                "args": [
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "byte"
+                    },
+                    "elems": [
+                      {
+                        "k": "int",
+                        "value": 97,
+                        "tok": 352
+                      },
+                      {
+                        "k": "int",
+                        "value": 255,
+                        "tok": 354
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 348
+                  }
+                ],
+                "tok": 347
+              }
+            ],
+            "tok": 340
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 358
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "!=",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "bad",
+                    "tok": 360
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 362
+                  },
+                  "tok": 361
+                }
+              ],
+              "tok": 359
+            }
+          }
+        ]
+      },
+      "tok": 304,
+      "bodiless": false,
+      "span": {
+        "start": 303,
+        "end": 367
+      },
+      "sig_end": 307
+    }
+  ],
+  "consts": []
+}
