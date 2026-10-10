@@ -4,6 +4,16 @@ package main
 
 import "std/strings"
 
+func showCut(s string, sep string) {
+    a, b, ok := strings.Cut(s, sep)
+    println(a, b, ok)
+}
+
+func showCutLast(s string, sep string) {
+    a, b, ok := strings.CutLast(s, sep)
+    println(a, b, ok)
+}
+
 func main() {
     println(strings.HasPrefix("hello world", "hello"))
     println(strings.HasPrefix("hello world", "world"))
@@ -53,4 +63,30 @@ func main() {
     println(strings.IndexByte("", 97))
     println(strings.IndexByte("aaa", 97))
     println(strings.IndexByte("abc", 99))
+    println(strings.TrimPrefix(":id", ":"))
+    println(strings.TrimPrefix("id", ":"))
+    println(strings.TrimPrefix("abc", ""))
+    println(strings.TrimPrefix("", ""))
+    println(strings.TrimPrefix("ab", "abc"))
+    println(strings.TrimPrefix("あいう", "あ"))
+    println(strings.TrimPrefix("abcabc", "abc"))
+    showCut("k=v", "=")
+    showCut("k=v=w", "=")
+    showCut("kv", "=")
+    showCut("", "=")
+    showCut("abc", "")
+    showCut("=v", "=")
+    showCut("k=", "=")
+    showCut("あ=い", "=")
+    showCut("aXXbXXc", "XX")
+    showCut("あいう", "い")
+    showCutLast("a/b/c", "/")
+    showCutLast("abc", "/")
+    showCutLast("/abc", "/")
+    showCutLast("abc/", "/")
+    showCutLast("abc", "")
+    showCutLast("", "")
+    showCutLast("aXXbXXc", "XX")
+    showCutLast("あ/い/う", "/")
+    showCutLast("aaa", "aa")
 }

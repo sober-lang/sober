@@ -18,6 +18,7 @@ const ALLOW: Record<string, string> = {
   opk: "tbl", tmk: "tbl",
   hfOn: "ro", hf: "ro",   // x86 の読み口 xg — 束の子では既定の偽（ヒープを読む）
   noVec: "cfg",
+  ubCheck: "cfg", ubBound: "cfg",   // UTF-8 の境界の畳み（ubf.sober — Check の呼び出しの点・boundary の写しの印の有無）
   lkid: "kid", lret: "kid",   // 群の子の印と呼び先の戻りの型の表（lFnRet — move.sober）
 };
 
@@ -116,5 +117,27 @@ for (const [k, users] of [...fields].sort()) {
   frozenN = xs.size;
 }
 fail += heapFail;
-console.log(`lparcfg: ${seen.size} functions reachable from ${ENTRIES.length} entries, ${fields.size} St fields; ${frozenN} functions after the heap freeze (xModuleFrozen), fail=${fail}`);
+// x86 の群の子（xParGroup — 関数ごとの xFunc を並列に吐く）: xFunc の閉包（読み口 xg で止める）が読む St の欄が、xParGroup が子の St に
+// 写す欄（`st.〈欄〉 =`）に入っていること。外の欄は子では St{} の既定値を読み、W1 と ELF が黙って食い違う（呼び出し規約の段 1 / 2 — rt.panic の欄が
+// 写されず、群の中だけ panic の call を見分けられなかった 2026-10-10）
+let x86Fields = 0;
+{
+  if (!fns.has("xParGroup")) { console.log("FAIL: xParGroup is not defined in src/compiler/lower"); fail += 1; }
+  else {
+    const set = new Set([...fns.get("xParGroup")!.body.matchAll(/\bst\.([A-Za-z_][A-Za-z0-9_]*) =/g)].map(m => m[1]));
+    const xs = closure(["xFunc"], new Set(["xg"]));
+    const xf = new Map<string, Set<string>>();
+    for (const n of xs) for (const m of fns.get(n)!.body.matchAll(/\bst\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
+      if (!xf.has(m[1])) xf.set(m[1], new Set());
+      xf.get(m[1])!.add(n);
+    }
+    for (const [k, users] of [...xf].sort()) {
+      const ok = set.has(k);
+      if (!ok) fail += 1;
+      if (!ok || verbose) console.log(`${ok ? "ok  " : "FAIL"} x86 group st.${k} (${ok ? "set by xParGroup" : "not copied by xParGroup"}): ${[...users].sort().join(" ")}`);
+    }
+    x86Fields = xf.size;
+  }
+}
+console.log(`lparcfg: ${seen.size} functions reachable from ${ENTRIES.length} entries, ${fields.size} St fields; ${frozenN} functions after the heap freeze (xModuleFrozen); ${x86Fields} St fields read by the x86 group (xFunc), fail=${fail}`);
 process.exit(fail === 0 ? 0 : 1);

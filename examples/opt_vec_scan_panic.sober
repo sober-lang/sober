@@ -17,6 +17,6 @@ func main() int {
     for k <- iter.Range(0, 37) {
         b = append(b, byte('a' + k % 26))
     }
-    println(scanSemi(freeze(b), 0))
+    println(scanSemi(b, 0))
     return 0
 }

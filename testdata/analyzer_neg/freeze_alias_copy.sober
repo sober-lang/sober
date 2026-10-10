@@ -1,0 +1,12 @@
+package main
+
+// 写しの別名（`mut a := m`）からの書き（U1 の別名 — 診断は書いた場所と別名ができた場所の 2 行）
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    mut a := m
+    im := freeze(m)
+    a[0] = 200
+    println("${int(im[0])}")
+    return 0
+}

@@ -1,0 +1,22 @@
+package main
+
+// ループの同じ周回で imm の引数に渡してから書く（暗黙の freeze・U2）
+
+func first(xs []int) int {
+    return xs[0]
+}
+
+func main() int {
+    mut m := mut []int{0, 0}
+    mut sum := 0
+    mut i := 0
+    while i < 3 {
+        mut w := mut []int{i, i}
+        sum += first(w)
+        w[1] = 5
+        m[0] = sum
+        i += 1
+    }
+    println("${sum} ${m[0]}")
+    return 0
+}

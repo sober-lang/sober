@@ -1,0 +1,2 @@
+sober: load error at examples/par_neg_mutalias.sober:12:33: a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))
+exit=1

@@ -1,0 +1,16 @@
+package main
+
+// imm の slice の要素へ格納した後に mut で渡す（暗黙の freeze・U2 — 呼び先が書きうる）
+
+func set0(xs mut []int, v int) {
+    xs[0] = v
+}
+
+func main() int {
+    mut ys := mut [][]int{[]int{}}
+    mut m := mut []int{1, 2}
+    ys[0] = m
+    set0(mut m, 9)
+    println("${ys[0][0]}")
+    return 0
+}

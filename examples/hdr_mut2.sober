@@ -35,7 +35,12 @@ func drain(xs mut []int, ys mut []int, zs mut []int) {
     while len(xs) > 0 && k < 6 {
         ys[k % len(ys)] = ys[k % len(ys)] + xs[0] + len(xs)
         if k % 2 == 0 {
-            xs = zs
+            // zs の中身の写しで差し替える（`xs = zs` は mut の仮引数の中身を別の mut の仮引数へ逃がす — U3・language.md 26 節）
+            mut c := mut []int{}
+            for i <- iter.Range(0, len(zs)) {
+                c = append(c, zs[i])
+            }
+            xs = c
         } else {
             xs = mut []int{}
         }

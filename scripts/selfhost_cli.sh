@@ -6,7 +6,7 @@
 #   2. check: 同じ entry について `stage2 check <entry>` の stdout と exit code が Zig 版 `sober check`（Lean の判定）と一致
 #      （Zig 版が Lean の前で拒否した — stdout が空の — ときは exit code だけを比べる。診断の文言は比べない）
 #   3. 器: 使い方の誤り・読めない entry は exit 1、`-o` 無しは標準出力（F-20 — `>>` の追記先で前の出力を消さない）、ディレクトリ entry、
-#      --emit の無い既定 = `--emit=elf --passes`（-o 無しは a.out）
+#      --emit の無い既定 = `--emit=elf --passes`（-o 無しは a.out）・help / --version・test の --work の既定
 # stage2 は $STAGE2（scripts/stages.sh が渡す）。無ければ scripts/stage2.sh の共有の stage2（古ければ作り直す — 約 40 秒）。
 #
 #   scripts/selfhost_cli.sh
@@ -95,6 +95,14 @@ if (cd "$W/defout" && "$S2ABS" build "$ROOT/examples/hello.sober" > "$W/defout.l
     && cmp -s "$W/def.bin" "$W/elf.bin" || { echo "FAIL edge: default build ≢ --emit=elf --passes"; fail=$((fail + 1)); }
 "$STAGE2" build examples/hello.sober --no-opt -o "$W/defno.bin" > /dev/null 2>&1 && "$STAGE2" build examples/hello.sober --emit=elf --no-opt -o "$W/elfno.bin" > /dev/null 2>&1 \
     && cmp -s "$W/defno.bin" "$W/elfno.bin" || { echo "FAIL edge: default build --no-opt ≢ --emit=elf --no-opt"; fail=$((fail + 1)); }
+edge=$((edge + 3))
+# help / version（exit 0・標準出力）と test の --work の既定（<cache>/sober-test/<pid> — --work を渡したときと同じ出力）— 2026-10-10
+"$STAGE2" help > "$W/help.txt" 2> /dev/null && head -n 1 "$W/help.txt" | grep -q '^usage: sober' || { echo "FAIL edge: help (exit 0, usage on stdout)"; fail=$((fail + 1)); }
+[ "$("$STAGE2" --version 2> /dev/null)" = "sober dev" ] || { echo "FAIL edge: --version"; fail=$((fail + 1)); }
+mkdir -p "$W/twork"
+SOBER_CACHE="$W/tcache" "$STAGE2" test testdata/sobertest/calc > "$W/tdef.txt" 2>&1; tdef=$?
+"$STAGE2" test testdata/sobertest/calc --work "$W/twork" > "$W/twk.txt" 2>&1; twk=$?
+{ [ "$tdef" = "$twk" ] && cmp -s "$W/tdef.txt" "$W/twk.txt" && ls -d "$W"/tcache/sober-test/* > /dev/null 2>&1; } || { echo "FAIL edge: test without --work (exit $tdef vs $twk)"; fail=$((fail + 1)); }
 edge=$((edge + 3))
 
 echo "selfhost_cli: entries=$n ok=$ok (build wider than Zig: $wider), edge=$edge, fail=$fail"

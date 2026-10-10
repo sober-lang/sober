@@ -44,7 +44,7 @@ func lex(text string) []Token {
             i += 1
         }
     }
-    return freeze(toks)
+    return toks
 }
 
 func printToken(t Token) {

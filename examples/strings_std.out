@@ -46,3 +46,29 @@ false
 -1
 0
 2
+id
+id
+abc
+
+ab
+いう
+abc
+k v true
+k v=w true
+kv  false
+  false
+ abc true
+ v true
+k  true
+あ い true
+a bXXc true
+あ う true
+a/b c true
+abc  false
+ abc true
+abc  true
+abc  true
+  true
+aXXb c true
+あ/い う true
+a  true

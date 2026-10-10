@@ -1,0 +1,1 @@
+testdata/analyzer_neg/freeze_keep_param.sober:10:12: error: the contents of the mut parameter `x` must not escape the call (here: `x`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`x = …`) (Analyzer)

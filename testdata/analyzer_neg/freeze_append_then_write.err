@@ -1,0 +1,1 @@
+testdata/analyzer_neg/freeze_append_then_write.sober:9:6: error: this writes to `m[…]` after it was frozen by `freeze(m)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)

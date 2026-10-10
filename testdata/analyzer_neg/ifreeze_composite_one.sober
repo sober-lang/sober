@@ -1,0 +1,15 @@
+package main
+
+// 1 欄の struct の composite に入れてから元の束縛に書く（暗黙の freeze・U2 — F-an の形）
+
+type B struct {
+    xs []int
+}
+
+func main() int {
+    mut m := mut []int{1, 2}
+    b := B{xs: m}
+    m[0] = 5
+    println("${b.xs[0]}")
+    return 0
+}

@@ -36,7 +36,7 @@ func lex(text string) []Token {
             i += 1
         }
     }
-    return freeze(toks)
+    return toks
 }
 
 func numValue(text string, t Token) int {
@@ -70,7 +70,7 @@ func buildNodes(src string, toks []Token) []Node {
         }
         i += 1
     }
-    return freeze(nodes)
+    return nodes
 }
 
 func buildKids(toks []Token) []Pair {
@@ -91,7 +91,7 @@ func buildKids(toks []Token) []Pair {
         }
         i += 1
     }
-    return freeze(kids)
+    return kids
 }
 
 func parse(src string) ([]Node, []Pair, int) {

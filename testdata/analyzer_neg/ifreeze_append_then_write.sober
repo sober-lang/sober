@@ -1,0 +1,16 @@
+package main
+
+// imm の引数に渡した後の append は可（凍結した範囲の外にしか書かない）— その後の添字の書きは拒否（暗黙の freeze・U2）
+
+func hold(xs []byte) []byte {
+    return xs
+}
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    im := hold(m)
+    m = append(m, 68)
+    m[0] = 200
+    println("${int(im[0])} ${len(im)}")
+    return 0
+}

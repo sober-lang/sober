@@ -46,7 +46,7 @@ func repeatChunk(alu []byte, pos0 int, count int) int {
         out = append(out, '\n')
         left -= line
     }
-    _ = io.WriteStdout(freeze(out))
+    _ = io.WriteStdout(out)
     return pos
 }
 
@@ -68,7 +68,7 @@ func randomChunk(syms []byte, thr []int, seed0 int, count int) int {
         out = append(out, '\n')
         left -= line
     }
-    _ = io.WriteStdout(freeze(out))
+    _ = io.WriteStdout(out)
     return seed
 }
 

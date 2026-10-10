@@ -88,6 +88,46 @@ func countFrom(b []byte, p []byte) int {
     return n
 }
 
+// lastIndexAt は b で p が最後に現れる位置、無ければ -1（p が空なら len(b) — Go の strings.LastIndex と同じ）
+func lastIndexAt(b []byte, p []byte) int {
+    mut i := len(b) - len(p)
+    while i >= 0 && !hasPrefixAt(b, i, p) {
+        i -= 1
+    }
+    return i
+}
+
+// Cut は s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s・""・false）。
+// 割った 2 つは検査し直さない: 妥当な s の中で妥当な sep にバイト列として一致した位置は文字の頭（sep の頭は継続バイトでない）、一致の末尾も
+// 文字の頭（完結した列の直後に継続バイトは来ない）— 自己同期。`bytes(s)` に落として切って `string(…) catch` で戻す回り道が要らない
+func Cut(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := indexAt(b, 0, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// CutLast は s を最後の sep の前と後に割る（無ければ s・""・false — Cut の最後の出現版。検査し直さない理由は Cut と同じ）
+func CutLast(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := lastIndexAt(b, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// TrimPrefix は s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
+func TrimPrefix(s string, prefix string) string {
+    b := bytes(s)
+    p := bytes(prefix)
+    return if len(b) >= len(p) && hasPrefixAt(b, 0, p) { bytesToString(b[len(p):len(b)]) } else { s }
+}
+
 // IndexByte は c が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1
 func IndexByte(s string, c byte) int {
     b := bytes(s)

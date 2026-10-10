@@ -1,0 +1,72 @@
+package main
+
+import "std/iter"
+
+// 冷たい呼び出しの局所 caller-save の網（report-462 (c)）: 成長の rt（rt.slice_grow・rt.map_grow）は跨ぎの集合に入らず、それだけを
+// 跨ぐ値は caller-saved にも置ける — 呼び手が呼び出しの前後で退避・復元する。退避が働く形を毎反復走らせる:
+// 2 本の slice を交互に伸ばす（先端でない側の append が毎回 rt.slice_grow を呼ぶ）・反復ごとに map を作って育てる（rt.map_grow）。
+// どちらもループの運搬値 8 本以上をその呼び出しに跨がせ、各値に別の重みを掛けて取り違えが値に出るようにする
+
+func twoSlices(n int) int {
+    mut a := mut []int{}
+    mut b := mut []int{}
+    mut x0 := 1
+    mut x1 := 2
+    mut x2 := 3
+    mut x3 := 4
+    mut x4 := 5
+    mut x5 := 6
+    mut x6 := 7
+    mut x7 := 8
+    for i <- iter.Range(0, n) {
+        a = append(a, x0 + x3)
+        b = append(b, x1 * 3 + x6)
+        x0 = x0 + x1 % 7
+        x1 = x1 + x2 % 5
+        x2 = x2 + x4 % 11
+        x3 = x3 + x5 % 13 + i
+        x4 = x4 + x7 % 3
+        x5 = x5 * 3 % 1000 + 1
+        x6 = x6 + x0 % 17
+        x7 = x7 + i % 19
+    }
+    mut s := 0
+    for k <- iter.Range(0, len(a)) {
+        s = s * 31 % 1000000007 + a[k] * 7 + b[k]
+    }
+    return s + x0 * 3 + x1 * 5 + x2 * 7 + x3 * 11 + x4 * 13 + x5 * 17 + x6 * 19 + x7 * 23
+}
+
+// 反復ごとに小さい map を作って育てる（rt.map_grow を何度も跨ぐ）
+func maps(n int) int {
+    mut x0 := 11
+    mut x1 := 12
+    mut x2 := 13
+    mut x3 := 14
+    mut x4 := 15
+    mut x5 := 16
+    mut x6 := 17
+    mut x7 := 18
+    mut t := 0
+    for i <- iter.Range(0, n) {
+        mut m := mut map[int]int{}
+        for j <- iter.Range(0, 12) {
+            m[j * 7 + i] = x0 + x1 * j + x2
+            x3 = x3 + j % 3
+        }
+        t = t + len(m) + x4 + x5 * 2
+        x0 = x0 + x6 % 5
+        x1 = x1 + x7 % 7
+        x2 = x2 + x3 % 9
+        x4 = x4 + i % 4
+        x5 = x5 + x0 % 6
+        x6 = x6 + 1
+        x7 = x7 + x1 % 3
+    }
+    return t + x0 * 3 + x1 * 5 + x2 * 7 + x3 * 11 + x4 * 13 + x5 * 17 + x6 * 19 + x7 * 23
+}
+
+func main() {
+    println(twoSlices(1000))
+    println(maps(300))
+}

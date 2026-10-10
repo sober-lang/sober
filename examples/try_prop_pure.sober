@@ -37,7 +37,7 @@ func digits(ks []int) ([]int, int, error?) {
         out = append(out, a + b)
         i += 1
     }
-    return freeze(out), i, nil
+    return out, i, nil
 }
 
 // defer は ? の脱出でも走る。式ブロック（region 境界）の中の ?

@@ -53,7 +53,27 @@ func fail(msg string) int {
 }
 
 func usage() int {
-    return fail("usage: sober build <entry> [-o <out>] [--no-opt] [--emit=ll|ir|elf] [--passes] | sober check <entry> [--core-json] | sober lex <file> | sober parse (--ast-json <file> | --loader-json <entry>) | sober fmt <file>")
+    return fail(usageText())
+}
+
+// version は `sober --version` の版。リポジトリでは "dev"。Release（.github/workflows/release.yml）はタグの名前で下の return の行を
+// 書き換えてから stage2 を建てる（版を焼き込む口はこの 1 行だけ — 言語機能も鎖も増やさない）
+func version() string {
+    return "dev" // sober-version
+}
+
+// usageText は使い方の一覧（使い方の誤りは標準エラーへ exit 1・`sober help` は標準出力へ exit 0）
+func usageText() string {
+    return "usage: sober <command> [arguments]\n" +
+    "  build <entry> [-o <out>] [--no-opt]   build an executable (default a.out; --emit=ll|ir|elf [--passes] for other outputs)\n" +
+    "  run <entry> [--] [<args>...]          build and run\n" +
+    "  check <entry> [--test] [--core-json]  type-check and analyze without building\n" +
+    "  test <package>... [-run <prefix>] [-v] [--work <dir>]   run the TestXxx() functions in the packages' *_test.sober\n" +
+    "  watch <entry>                         re-check on every change\n" +
+    "  fmt <file>                            print the formatted source\n" +
+    "  iface <entry> [--pkg <path>]          print package interfaces (.sobi)\n" +
+    "  lex <file> | parse (--ast-json <file> | --loader-json <entry>)   front-end dumps\n" +
+    "  help | version"
 }
 
 func writeStdout(out []byte) int {
@@ -227,6 +247,23 @@ func analyze(p loader.Program, std map[string]string) int {
     return if len(ls) > 0 { 1 } else { 0 }
 }
 
+// lowerFail は lower の拒否を出して 1（健全性の規則の拒否〔diag.Frozen — lower の build が表層型の表の上で掛ける〕は analyzer.Freeze で
+// 行を引き直して analyze と同じ形で全部・他は errDiag の 1 行）
+func lowerFail(p loader.Program, std map[string]string, err error?) int {
+    return if diag.IsFrozen(err) { frozenLines(p, std) } else { fail(errDiag(p, std, err)) }
+}
+
+// frozenLines は健全性の規則の指摘の行を全部出して 1
+func frozenLines(p loader.Program, std map[string]string) int {
+    fs := analyzer.Freeze(p)
+    for i <- iter.Range(0, len(fs)) {
+        if io.WriteStderr(bytes("${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)\n")) != nil {
+            return 1
+        }
+    }
+    return 1
+}
+
 // analyzeLines は analyzer の指摘の行（analyze と watch が共有）
 func analyzeLines(p loader.Program, std map[string]string) []string {
     fs := analyzer.Run(p)
@@ -324,7 +361,7 @@ func typerReport(p loader.Program, std map[string]string, r []int) int {
 // emit は lower の結果を args[oi]（oi < 0 なら標準出力）へ（拒否なら位置つきの診断 — errDiag）
 func emit(p loader.Program, std map[string]string, args []string, oi int, out []byte, err error?) int {
     if err != nil {
-        return fail(errDiag(p, std, err))
+        return lowerFail(p, std, err)
     }
     if oi < 0 {
         return writeStdout(out)
@@ -349,6 +386,16 @@ func loadEntry(entry string, test bool, std map[string]string) (loader.Program, 
         return p, lerr
     }
     return surface(p)
+}
+
+// loadNamed は lower へ渡す entry を読む（名前付き実引数の写しまで — std/par の呼び出し点の形の検査〔ParCheck〕は lower の build が自分の表の上で掛ける。
+// TypeAll は 1 回が重い — 自己 build で 1.9 G 命令）
+func loadNamed(entry string, test bool, std map[string]string) (loader.Program, error?) {
+    p, lerr := loadRaw(entry, test, std)
+    if lerr != nil {
+        return p, lerr
+    }
+    return desugar.NamedValueArgs(p)
 }
 
 // surface は読んだ木を check・build・analyzer が共有する形へ（名前付き関数型を通した名前付き実引数の写し・std/par の呼び出し点の形の検査 —
@@ -399,6 +446,9 @@ func cmdBuild(args []string) int {
     mut probe := false
     mut mutant := 0
     mut cutStat := false
+    mut callStat := false
+    mut ubfStat := false
+    mut callSite := false
     mut lay := 0
     mut emitSet := false
     mut i := 2
@@ -465,17 +515,30 @@ func cmdBuild(args []string) int {
             // テストのビルド（`sober test` — entry は package のディレクトリ。loader.LoadTestFs が合成の main を足す）
             test = true
             i += 1
-        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" {
+        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" || a == "--rt-mutant=12" {
             // 開発用: M:N の rt の変異（段 6 P4-4 — schedfuzz の自己検査: 1 = 未回収の失敗を到着順で選ぶ・2 = 待ちの登録と起こしを素の store / load に。
             // 3 = キャンセルの検査点を置かない — 段 6 P4-6 の税率の計測）
             // 4 = 計測の数え口（rt.mn_stat）・5 = スロットを返すときの MADV_DONTNEED を省く・6 = 盗み手が被害者の鍵を取らない
             // 7 = task の終わりで入場の台帳へ返さない・8 = 縮退した子の罠を張らない（段 6 P5-2 — parbudget の自己検査）
             // 9 = 検査点の間引きの数え口が 0 に戻らない（切れない）・10 = 間引かない（N = 1）— 検査点の間引きの網の自己検査（scripts/cutstat.sh）
             // 11 = map の string 鍵を旧表現（セル [鍵][tag][値] — compiler/lower/maprepr.sober の MR_BASE）で — 表現の差分オラクル（scripts/maprepr.sh）
-            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else { 11 }
+            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else { 12 }
             i += 1
         } else if a == "--cut-stat" {
             cutStat = true
+            i += 1
+        } else if a == "--ubf-stat" {
+            // 開発用: UTF-8 の境界の畳みが畳めた数（`ubf <関数> <数>` を stdout へ — scripts/ubfstat.sh）
+            ubfStat = true
+            i += 1
+        } else if a == "--call-stat" {
+            // 開発用: 関数ごとの呼び出しの数を数える実行ファイル（終わりに `callstat <関数名> <回数>` を stderr へ — report-453 段 0）
+            callStat = true
+            i += 1
+        } else if a == "--call-stat=site" {
+            // 開発用: 呼び出し点ごと（`callsite <呼び手> <番号> <callee> <ループの深さ> <回数>` — 展開便の段 0・report-466）
+            callStat = true
+            callSite = true
             i += 1
         } else if strings.HasPrefix(a, "--layout=") && layOf(bytes(a), 9) > 0 {
             // 開発用: 配置の計器 v2（S = 1〜999 で配置を振る — 関数の前に 64 B の倍数）
@@ -511,7 +574,7 @@ func cmdBuild(args []string) int {
         return usage()
     }
     // 開発の口（計器・変異・差分オラクル）は --emit の無い形も従来どおり（.ll / 標準出力）— 既定の切り替えは素の build（entry・-o・--no-opt・--passes・--test）だけ
-    devFlag := typer > 0 || trace || probe || cutStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noVfy
+    devFlag := typer > 0 || trace || probe || cutStat || callStat || ubfStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noVfy
     if !emitSet && !devFlag {
         // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
         if oi < 0 {
@@ -522,7 +585,7 @@ func cmdBuild(args []string) int {
     }
     // 焼き込んだ表は参照点で展開される辞書 const なので、一度束縛して渡す（参照ごとに組み直さない）
     std := Std
-    p, lerr := loadEntry(args[ei], test, std)
+    p, lerr := loadNamed(args[ei], test, std)
     if lerr != nil {
         return fail(loadDiag(p, std, lerr))
     }
@@ -530,6 +593,14 @@ func cmdBuild(args []string) int {
         // 開発用: 検査点の間引きの表（scripts/cutstat.sh — 変異と組める）
         out, berr := lower.CutStat(p, mutant, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
         return emit(p, std, args, oi, out, berr)
+    }
+    if ubfStat {
+        out, berr := lower.UbfStat(p)
+        return emitExe(p, std, args, oi, out, berr)
+    }
+    if callStat {
+        out, berr := lower.CallStat(p, callSite, if verifyEach() { lower.VfyEach } else { lower.VfyLast })
+        return emitExe(p, std, args, oi, out, berr)
     }
     if mutant > 0 || lay != 0 {
         // --emit=syms と組めば、変異 / 配置つきの関数の先頭番地の表（配置ごとのプロファイルの口）
@@ -543,7 +614,7 @@ func cmdBuild(args []string) int {
     if typer == 2 {
         out, err := lower.TyperDiff(p)
         if err != nil {
-            return fail(errDiag(p, std, err))
+            return lowerFail(p, std, err)
         }
         return typerReport(p, std, out)
     }
@@ -911,9 +982,13 @@ func cmdCheck(args []string) int {
     didx := len(args) == 4 && args[3] == "--def-index"
     edump := len(args) == 4 && args[3] == "--errors-dump"
     xrep := len(args) == 4 && args[3] == "--expansion-report"
+    // 開発用: 外すと同じ点で暗黙の freeze になる明示の freeze の位置（暗黙 ≡ 明示のオラクル scripts/implicitfreeze.sh）
+    fsites := len(args) == 4 && args[3] == "--freeze-sites"
+    // 開発用: 暗黙の freeze の点の位置（std を含む — typer の表）
+    ipts := len(args) == 4 && args[3] == "--implicit-points"
     // テストのビルド（entry = package のディレクトリ — 合成の main と _test.sober ごと検査する。T12）
     tst := len(args) == 4 && args[3] == "--test"
-    if len(args) != 3 && !core && !corex && !tdiff && !nall && !didx && !edump && !xrep && !tst {
+    if len(args) != 3 && !core && !corex && !tdiff && !nall && !didx && !edump && !xrep && !tst && !fsites && !ipts {
         return usage()
     }
     std := Std
@@ -955,6 +1030,14 @@ func cmdCheck(args []string) int {
             msg = msg + "  ${srcPos(p, std, r[i * 2], r[i * 2 + 1])}\n"
         }
         return writeStdout(bytes(msg))
+    }
+    if fsites || ipts {
+        ps := if fsites { desugar.FreezeSites(p) } else { desugar.ImplicitPoints(p) }
+        mut out := ""
+        for i <- iter.Range(0, len(ps)) {
+            out = out + "${where(p, std, ps[i])}\n"
+        }
+        return writeStdout(bytes(out))
     }
     if didx {
         // 開発用: 検査の判定が def error なら、何番目の Def か（名前付き関数 → 持ち上げた Def の順）とその出所の位置
@@ -1065,7 +1148,8 @@ type CkMsg struct {
 // 子は印字しない（診断の行の文字列を返す — ソースの読み直しは読みの io だけ）。どれかの子が死んだら（前の層が拒否した入力で後ろの層が死ぬ形を含む）
 // 結果を全部捨てて逐次の経路で走らせ直す（死の順・死因も逐次と同じ — P6-3 の拒否の走らせ直しと同じ形）。
 // budget: = 木の節の数 × 係数 + 余白（親で計算 — 宣言の段。校正 = 自己 check〔37 万節〕の実測: ParCheck 15 MB・analyzer 3.8 MB・check は自分 2.4 MB +
-// 区間の子の最大 197 MB〔逐次の上界は子を含む〕→ 64 / 16 / 768 B / 節 — どれも 1.5〜2.6 倍の側）
+// 区間の子の最大 197 MB〔逐次の上界は子を含む〕→ 64 / 16 / 768 B / 節 — どれも 1.5〜2.6 倍の側。analyzer は便② 段 1 から表層型の表〔TypeAll —
+// 暗黙の freeze の点〕を組むので ParCheck の分を足して 80）
 func checkFront(entry string, tst bool, std map[string]string) int {
     p0, lerr := loadRaw(entry, tst, std)
     if lerr != nil {
@@ -1077,7 +1161,7 @@ func checkFront(entry string, tst bool, std map[string]string) int {
     }
     n := nodeCount(p)
     bpc := n * 64 + 4 * par.MB
-    ban := n * 16 + 4 * par.MB
+    ban := n * 80 + 4 * par.MB
     bck := n * 768 + 16 * par.MB
     r, serr := par.Scope((s par.S) => {
         hp := par.Spawn(s, () => pcMsg(p, std), budget: bpc)
@@ -1365,19 +1449,40 @@ func cmdTest(args []string) int {
             i += 1
         }
     }
-    if len(pkgs) == 0 || wi < 0 {
+    if len(pkgs) == 0 {
         return usage()
+    }
+    // --work が無ければ置き場を自分で作る（cacheDir()/sober-test/<pid> — 置き場が無ければ /tmp/sober-test/<pid>。同時に走る別のプロセスと
+    // テストの実行ファイルを取り合わない。std に削除の口が無いので後片付けはしない — 中身は最後のテストの実行ファイル 1 本）
+    work := if wi >= 0 { args[wi] } else { testWork() }
+    if work == "" {
+        return fail("sober: test: cannot make a work directory (pass --work <dir>)")
     }
     std := Std
     mut pass := 0
     mut failn := 0
     for k <- iter.Range(0, len(pkgs)) {
-        r := testPkg(args[pkgs[k]], std, args[wi], if ri < 0 { "" } else { args[ri] })
+        r := testPkg(args[pkgs[k]], std, work, if ri < 0 { "" } else { args[ri] })
         pass += r.pass
         failn += r.fail
     }
     println("${pass} passed, ${failn} failed")
     return if failn == 0 { 0 } else { 1 }
+}
+
+// testWork は `sober test` の既定の作業場所（--work が無いとき）。pid は /proc/self/stat の最初の欄
+func testWork() string {
+    st := io.ReadFile("/proc/self/stat") catch return ""
+    mut n := 0
+    while n < len(st) && st[n] != ' ' {
+        n += 1
+    }
+    pid := string(st[0:n]) catch return ""
+    cd := cacheDir()
+    base := if cd == "" { "/tmp/sober-test" } else { cd + "/sober-test" }
+    dir := "${base}/${pid}"
+    mkdirs(dir)
+    return dir
 }
 
 // TestTally は package 1 つ分の集計
@@ -1388,7 +1493,7 @@ type TestTally struct {
 
 // testPkg は package pkg のテストを建てて走らせる（建たなければ FAIL 1 件として数える）
 func testPkg(pkg string, std map[string]string, work string, prefix string) TestTally {
-    p, lerr := loadEntry(pkg, true, std)
+    p, lerr := loadNamed(pkg, true, std)
     if lerr != nil {
         println("FAIL ${pkg} (build)")
         // 診断は標準エラーへ（書けなくても集計は同じ — 失敗 1 件）
@@ -1429,6 +1534,14 @@ func main() int {
     args, err := os.Args()
     if err != nil || len(args) < 2 {
         return usage()
+    }
+    if args[1] == "help" || args[1] == "-h" || args[1] == "--help" {
+        println(usageText())
+        return 0
+    }
+    if args[1] == "version" || args[1] == "--version" {
+        println("sober ${version()}")
+        return 0
     }
     if args[1] == "build" {
         return cmdBuild(args)
@@ -1485,7 +1598,7 @@ func cmdRun(args []string) int {
         i += 1
     }
     std := Std
-    p, lerr := loadEntry(args[e0], false, std)
+    p, lerr := loadNamed(args[e0], false, std)
     if lerr != nil {
         return fail(loadDiag(p, std, lerr))
     }
@@ -1506,7 +1619,7 @@ func cmdRun(args []string) int {
     if len(self) == 0 || mt < 0 {
         out, berr := lower.ElfPasses(p)
         if berr != nil {
-            return fail(errDiag(p, std, berr))
+            return lowerFail(p, std, berr)
         }
         mkdirs(dir)
         tmp := exe + ".tmp"
@@ -1695,15 +1808,8 @@ func mkdirs(path string) {
 
 // parentOf は path の最後の `/` より前（無ければ "."）
 func parentOf(path string) string {
-    b := bytes(path)
-    mut k := len(b) - 1
-    while k > 0 && b[k] != '/' {
-        k -= 1
-    }
-    if k <= 0 {
-        return "."
-    }
-    return string(b[0:k]) catch "."
+    dir, _, slashed := strings.CutLast(path, "/")
+    return if !slashed || dir == "" { "." } else { dir }
 }
 
 // cacheDir は置き場: 環境変数 SOBER_CACHE（空文字なら無効 = ""）。無ければ $XDG_CACHE_HOME/sober・$HOME/.cache/sober（どれも無ければ無効）

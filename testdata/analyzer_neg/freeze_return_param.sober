@@ -1,0 +1,16 @@
+package main
+
+// 呼び先が mut の仮引数の中身を返す（U3 — 戻り値で逃げる）
+
+func mk(x mut []int) mut []int {
+    return x
+}
+
+func main() int {
+    mut m := mut []int{1, 2}
+    mut a := mk(mut m)
+    im := freeze(m)
+    a[0] = 9
+    println("${im[0]}")
+    return 0
+}

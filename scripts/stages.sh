@@ -149,6 +149,14 @@ if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
 else
     echo "ratchet: stage3 の自己 build の peak RSS ${rss} MB ≤ ${rlim} MB"
 fi
+# ELF の大きさのラチェット（bench/ratchet.txt の self/elf size — stage3 の ELF・MB = 10^6 バイト。展開の膨張の網 — report-465）
+elim=$(awk '$1 == "self/elf" && $2 == "size" { print $3 }' "$ROOT/bench/ratchet.txt")
+esz=$(stat -c %s "$W/stage3")
+if [ -n "$elim" ] && awk -v v="$esz" -v l="$elim" 'BEGIN { exit !(v > l * 1000000) }'; then
+    echo "FAIL: ratchet — stage3 の ELF ${esz} バイト > ${elim} MB（bench/ratchet.txt）"; fail=1
+else
+    echo "ratchet: stage3 の ELF ${esz} バイト ≤ ${elim} MB"
+fi
 if cmp -s "$W/stage3" "$W/stage4"; then
     echo "fixed point (binary): stage3 の ELF ≡ stage4 の ELF ($(stat -c %s "$W/stage3") bytes)"
 else

@@ -40,7 +40,6 @@
           "has_try": true,
           "callees": [
             "append",
-            "freeze",
             "int",
             "isDigit",
             "len",
@@ -92,7 +91,6 @@
           "has_try": false,
           "callees": [
             "append",
-            "freeze",
             "len"
           ]
         },
@@ -625,6 +623,52 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "lastIndexAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "Cut",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "indexAt",
+            "len"
+          ]
+        },
+        {
+          "name": "CutLast",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "lastIndexAt",
+            "len"
+          ]
+        },
+        {
+          "name": "TrimPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
             "hasPrefixAt",
             "len"
           ]

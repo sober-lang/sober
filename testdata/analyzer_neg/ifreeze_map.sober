@@ -1,0 +1,18 @@
+package main
+
+// map を imm の引数に渡した後の set / delete（暗黙の freeze・U2 — slice と同じ規則）
+
+func count(m map[string]int) int {
+    return len(m)
+}
+
+func main() int {
+    mut m := mut map[string]int{}
+    m["a"] = 1
+    m["b"] = 2
+    n := count(m)
+    m["a"] = 100
+    delete(m, "b")
+    println("len ${n}")
+    return 0
+}

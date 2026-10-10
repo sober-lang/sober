@@ -16,7 +16,7 @@ func mk(k int) T {
         b = append(b, k * 100 + i)
         i += 1
     }
-    return T{xs: freeze(b)}
+    return T{xs: b}
 }
 
 func sumLast(ts []T) int {
@@ -36,12 +36,12 @@ func main() {
         t := mk(q)
         ts = append(ts, t)
     }
-    println(sumLast(freeze(ts)))
+    println(sumLast(ts))
     // パイプに渡すブロック本体のラムダ
     ks := []int{3, 1, 4, 1, 5}
     mut us := mut []T{}
     ks |> iter.Slice(_, (k) => {
         us = append(us, mk(k))
     })
-    println(sumLast(freeze(us)))
+    println(sumLast(us))
 }

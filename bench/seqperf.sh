@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# seqperf.sh（bench/README.md の逐次の表）: scripts/bench.sh が建てた逐次 9 題材の双子（out/bench/<題材>-sober / -go）を perf stat で測る。
+# seqperf.sh（bench/README.md の逐次の表）: scripts/bench.sh が建てた逐次 9 題材 + Web コア（jsonapi・routing・logagg）の双子（out/bench/<題材>-sober / -go）を perf stat で測る。
 # 各題材 N 回（Sober → Go の交互）で、cycles:u の最小・instructions:u（決定的）・wall の最小（EPOCHREALTIME の差 — perf の起動を含む）・最大 RSS（perf → time → 本体の順なので taskset の床なし）。
 # 規模は bench.sh の既定と同じ。先に scripts/bench.sh を一度走らせて実行ファイルと入力を置くこと
 #   bench/seqperf.sh [-n 回数] [-o 結果の TSV] [--cpu K] [--rust]
@@ -35,7 +35,10 @@ trap 'rm -rf "$W"' EXIT
 mkdir -p "$(dirname "$res")" && res=$(realpath -m "$res")
 IN=$B/measurements-10000000.txt
 FIN=$B/fasta-2500000.txt
-for f in "$IN" "$FIN"; do [ -s "$f" ] || { echo "seqperf.sh: $f が無い（先に scripts/bench.sh）" >&2; exit 2; }; done
+JAIN=$B/jsonapi-100000.ndjson
+RTIN=$B/routing-500000.txt
+LAIN=$B/logagg-500000.txt
+for f in "$IN" "$FIN" "$JAIN" "$RTIN" "$LAIN"; do [ -s "$f" ] || { echo "seqperf.sh: $f が無い（先に scripts/bench.sh）" >&2; exit 2; }; done
 : > "$res"
 one() { # one <名前> <実行ファイル> <引数>: `名前 wall user rssKB cycles insts load` を足す
     local name=$1 exe=$2 a=$3 ld t0 t1
@@ -46,8 +49,8 @@ one() { # one <名前> <実行ファイル> <引数>: `名前 wall user rssKB cy
     t1=$EPOCHREALTIME
     echo "$name $(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.4f", b - a }') $(cat "$W/t") $(grep cycles "$W/p" | cut -d, -f1) $(grep instructions "$W/p" | cut -d, -f1) $ld" >> "$res"
 }
-PS="1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot"
-arg() { case $1 in 1brc) echo "$IN" ;; binarytrees) echo 18 ;; fannkuch) echo 11 ;; fasta) echo 2500000 ;; revcomp|knucleotide) echo "$FIN" ;; nbody) echo 5000000 ;; spectralnorm) echo 2000 ;; mandelbrot) echo 4000 ;; esac; }
+PS="1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot jsonapi routing logagg"
+arg() { case $1 in 1brc) echo "$IN" ;; binarytrees) echo 18 ;; fannkuch) echo 11 ;; fasta) echo 2500000 ;; revcomp|knucleotide) echo "$FIN" ;; nbody) echo 5000000 ;; spectralnorm) echo 2000 ;; mandelbrot) echo 4000 ;; jsonapi) echo "$JAIN" ;; routing) echo "$RTIN" ;; logagg) echo "$LAIN" ;; esac; }
 for r in $(seq "$N"); do
     for p in $PS; do
         a=$(arg "$p")

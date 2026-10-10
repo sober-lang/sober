@@ -8,6 +8,7 @@ package loader
 
 import "ast"
 import "std/iter"
+import "std/strings"
 
 // less はバイト順（辞書式）で a < b か
 func less(a []byte, b []byte) bool {
@@ -64,16 +65,6 @@ func Name(t ast.Tree, s int) string {
     return r
 }
 
-// lastSlash は最後の '/' の位置（無ければ -1）
-func lastSlash(p string) int {
-    b := bytes(p)
-    mut i := len(b) - 1
-    while i >= 0 && b[i] != '/' {
-        i -= 1
-    }
-    return i
-}
-
 // cut は p のバイト [a, b)（a・b は ASCII の区切り '/' '.' の前後 — UTF-8 の文字の途中では切らないので string(…) は失敗しない。
 // string には添字も部分列も無い — 24 節）
 func cut(p string, a int, b int) string {
@@ -83,13 +74,12 @@ func cut(p string, a int, b int) string {
 
 // Dirname はパスの親（'/' が無ければ空）
 func Dirname(p string) string {
-    k := lastSlash(p)
-    return if k < 0 { "" } else { cut(p, 0, k) }
+    dir, _, slashed := strings.CutLast(p, "/")
+    return if slashed { dir } else { "" }
 }
 
 // Basename はパスの末尾の要素
 func Basename(p string) string {
-    k := lastSlash(p) + 1
-    n := len(bytes(p))
-    return cut(p, k, n)
+    _, base, slashed := strings.CutLast(p, "/")
+    return if slashed { base } else { p }
 }

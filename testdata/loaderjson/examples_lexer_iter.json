@@ -37,7 +37,6 @@
           "callees": [
             "append",
             "bytes",
-            "freeze",
             "int",
             "isAlpha",
             "isDigit",

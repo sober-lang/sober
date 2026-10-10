@@ -27,7 +27,7 @@ func main() int {
         ns = append(ns, i)
     }
     // a parallel Map — the output is the same for any number of workers
-    ks, err := par.Map(freeze(ns), (n) => steps(n) catch -1)
+    ks, err := par.Map(ns, (n) => steps(n) catch -1)
     if err != nil {
         return 1
     }

@@ -15,7 +15,7 @@ func main() int {
     for i <- iter.Range(20, 26) {
         ns = append(ns, i)
     }
-    fs, err := par.Map(freeze(ns), (n) => fib(n))
+    fs, err := par.Map(ns, (n) => fib(n))
     if err != nil {
         return 1
     }

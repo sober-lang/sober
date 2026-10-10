@@ -56,3 +56,15 @@ path = "../spectralnorm/rust/main.rs"
 [[bin]]
 name = "mandelbrot"
 path = "../mandelbrot/rust/main.rs"
+
+[[bin]]
+name = "jsonapi"
+path = "../jsonapi/rust/main.rs"
+
+[[bin]]
+name = "routing"
+path = "../routing/rust/main.rs"
+
+[[bin]]
+name = "logagg"
+path = "../logagg/rust/main.rs"

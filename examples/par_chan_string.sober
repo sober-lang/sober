@@ -28,7 +28,7 @@ func row(i int) Row {
         xs = append(xs, k * i)
         k += 1
     }
-    return Row{xs: freeze(xs), tag: "r${i}"}
+    return Row{xs: xs, tag: "r${i}"}
 }
 
 func total(r Row) int {

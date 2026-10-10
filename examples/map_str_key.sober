@@ -11,14 +11,14 @@ func build(k string, v string) map[string]string {
     if len(bytes(k)) > 1 {
         m[k] = v
     }
-    return freeze(m)
+    return m
 }
 
 func counts(k string) map[string]int {
     mut m := mut map[string]int{}
     m["one"] = 1
     m[k] = 2
-    return freeze(m)
+    return m
 }
 
 func main() {

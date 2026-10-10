@@ -166,6 +166,8 @@ sorry なし、公理は propext / Quot.sound のみ。
   `(m = true → b ≤ r)` と `(m = false → m' = false)` の 2 本。
   mut loc は型のみに結ぶ（セルタグ不問） — freeze 後も古い mut エイリアスの型付けは
   壊れない（preservation に必須）。imm loc はタグ false のセルにだけ結ぶ。
+  （改定 2026-10-10 — F-al: 実装は実行時タグを持たない。受理の側で一意でない freeze と freeze の後の書きを拒否し〔language.md 17 節 U1〜U3〕、
+  機械のタグと panic は「受理された範囲では倒れたセルに書かない」の観測点として残す。照合 = Lean の述語 uniqFreeze ⊇ analyzer の受理・定理は積み）
   帰結: 「凍結済みセルを指す mut loc」に型が付く — その書き込みは実行時タグ検査（panic）
   が受ける。動的検査が健全性の底、は見積もりどおり
 - StoreLE を「型は保存、タグは mut → imm の一方向順序」に再定義

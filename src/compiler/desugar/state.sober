@@ -161,6 +161,12 @@ type S struct {
     // ジェネリック Def のインスタンスの表（鎖 [関数, 型引数の列, Def の添字, next]）
     yfi int
     ymark int
+    ylam int     // 型付け中のラムダの入れ子の深さ（中の return は関数の return でない — 暗黙の freeze の点にしない）
+    nimpl int    // 暗黙の freeze の点の数（0 なら IsImplicit は表を引かない）
+    yexplOn bool   // 開発の口 FreezeSites: 外すと同じ点で暗黙の freeze になる明示の freeze の呼び出しを集める
+    yexpl table.Table[int]
+    ypts table.Table[int]   // 暗黙の freeze の点の節の列（開発の口 ImplicitPoints — 積んだ順）
+    implAt NodeRef  // 脱糖中の暗黙の freeze の点（expr が CFreeze で包んだ節 — 中身の脱糖では包まない）
     instEnvs int
     insts int
     yedges int   // 型パラメータを型引数に渡す呼び出しの辺（鎖 [呼び手の関数, 呼ばれる関数, next] — 印の伝播）

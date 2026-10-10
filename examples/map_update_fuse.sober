@@ -12,7 +12,7 @@ func count(xs []string) map[string]int {
         c := m[xs[i]]
         m[xs[i]] = if c != nil { c + 1 } else { 1 }
     }
-    return freeze(m)
+    return m
 }
 
 func get(m map[string]int, k string) int {
@@ -31,14 +31,14 @@ func main() int {
     c := m2[k]
     m2[k2] = 5
     m2[k] = if c != nil { c + 100 } else { 1 }
-    println(len(m2), get(freeze(m2), "x"))
+    println(len(m2), get(m2, "x"))
 
     // 間に削除: 1 回目は在る・2 回目は墓石
     mut m3 := mut map[string]int{"y": 7}
     c3 := m3["y"]
     delete(m3, "y")
     m3["y"] = if c3 != nil { c3 + 1 } else { 0 }
-    println(len(m3), get(freeze(m3), "y"))
+    println(len(m3), get(m3, "y"))
 
     // 間に成長（索引の閾値を越える挿入 — セル列が写る）: 1 回目のセルは古いセル列
     mut m4 := mut map[int]int{0: 1}
@@ -47,7 +47,7 @@ func main() int {
         m4[i] = i
     }
     m4[0] = if c4 != nil { c4 + 1000 } else { 0 }
-    println(len(m4), m4[0] != nil, sum(freeze(m4)))
+    println(len(m4), m4[0] != nil, sum(m4))
     return 0
 }
 

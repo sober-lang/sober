@@ -1,0 +1,12 @@
+package main
+
+// freeze の後の append は可（凍結した範囲の外にしか書かない）— その後の添字の書きは拒否（U2）
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    im := freeze(m)
+    m = append(m, 68)
+    m[0] = 200
+    println("${int(im[0])} ${len(im)}")
+    return 0
+}

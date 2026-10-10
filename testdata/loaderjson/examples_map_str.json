@@ -21,7 +21,6 @@
           "callees": [
             "count",
             "delete",
-            "freeze",
             "len",
             "println"
           ]

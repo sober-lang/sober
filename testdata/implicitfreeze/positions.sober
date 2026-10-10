@@ -1,0 +1,76 @@
+package main
+
+// 暗黙 ≡ 明示のオラクル（scripts/implicitfreeze.sh）の入力: 暗黙の freeze が起きる位置の全種に、明示の freeze(x) を意図して残した形。
+// 外した形は examples/implicit_freeze.sober（同じプログラム — 出力も同じ）
+
+import "std/iter"
+import "std/strings"
+
+type H struct {
+    xs []int
+    ys mut []int
+}
+
+type B struct {
+    xs []int
+}
+
+func total(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func first[T](xs []T) T {
+    return xs[0]
+}
+
+func build(n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, i)
+    }
+    return freeze(out)
+}
+
+func count(m map[string]int) int {
+    return len(m)
+}
+
+func main() int {
+    mut a := mut []int{1, 2, 3}
+    a[0] = 5
+    t := total(freeze(a))
+    mut b := mut []int{7}
+    f := first(freeze(b))
+    mut c := mut []int{4}
+    h := H{xs: freeze(c), ys: mut []int{0}}
+    h.ys[0] = 9
+    mut d := mut []int{6}
+    bb := B{xs: freeze(d)}
+    mut e := mut []int{8}
+    ls := [][]int{freeze(e)}
+    mut g := mut []int{3}
+    mm := map[string][]int{"g": freeze(g)}
+    mut k := mut []int{2}
+    mut keep := mut [][]int{}
+    keep = append(keep, freeze(k))
+    mut p := mut []int{1}
+    mut ys := mut [][]int{[]int{}}
+    ys[0] = freeze(p)
+    mut q := mut []int{0}
+    mut store := mut map[string][]int{}
+    store["q"] = freeze(q)
+    mut r := mut []int{11}
+    mut im := []int{}
+    im = freeze(r)
+    mut mp := mut map[string]int{}
+    mp["z"] = 1
+    n := count(freeze(mp))
+    sum := total(build(4))
+    s := strings.Join([]string{"x"}, ",")
+    println("${t} ${f} ${h.xs[0]} ${h.ys[0]} ${bb.xs[0]} ${ls[0][0]} ${len(mm)} ${keep[0][0]} ${ys[0][0]} ${len(store)} ${im[0]} ${n} ${sum} ${s}")
+    return 0
+}

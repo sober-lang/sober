@@ -16,7 +16,7 @@
 | package | 用途 | 主なもの |
 |---|---|---|
 | `std/utf8` | UTF-8 の検査と部分列 | `Check`（全体を 1 回検査して見方 `View` を得る）・`Str`（検査済みの見方から部分列を写さずに取る）・`Parse`・`Valid`・`IndexInvalid` |
-| `std/strings` | 文字列の操作 | `Contains`・`HasPrefix`・`HasSuffix`・`Index`・`IndexByte`・`Count`・`Join`・`FormatInt`・`Clone` |
+| `std/strings` | 文字列の操作 | `Contains`・`HasPrefix`・`HasSuffix`・`Index`・`IndexByte`・`Count`・`Cut`・`CutLast`・`TrimPrefix`・`Join`・`FormatInt`・`Clone`（`Cut` などで切った片は検査し直さない — 区切りに一致した位置は必ず文字の境界） |
 | `std/builder` | 列の組み立て | `Builder[T]` に `Push`・`PushAll`・`PushStr` で積み、`Build` で取り出す |
 | `std/conv` | 数と文字列の変換 | `ParseFloat`・`FormatFloat`・`FormatFixed` |
 | `std/hex` | 16 進 | `Encode` |

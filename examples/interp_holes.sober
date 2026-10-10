@@ -21,7 +21,7 @@ func halves(ns []int) ([]int, error?) {
         out = append(out, ns[i])
         i += 1
     }
-    return freeze(out), nil
+    return out, nil
 }
 
 // 穴の中でだけ自分を呼ぶ mut 引数の関数: 再帰判定（mut_def）が穴の呼び出しを見る

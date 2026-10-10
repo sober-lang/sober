@@ -14,7 +14,7 @@ func words(n int) []string {
         out = append(out, "w" + strings.FormatInt(i))
         i += 1
     }
-    return freeze(out)
+    return out
 }
 
 // grid は n × n の九九の表を返す（[][]int）
@@ -28,10 +28,10 @@ func grid(n int) [][]int {
             row = append(row, i * j)
             j += 1
         }
-        rows = append(rows, freeze(row))
+        rows = append(rows, row)
         i += 1
     }
-    return freeze(rows)
+    return rows
 }
 
 // 2 段の呼び出し越しに転送する（call 結果の再転送 — 深く締めた型が一致する）

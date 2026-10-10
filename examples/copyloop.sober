@@ -12,7 +12,7 @@ func appendCopy(src []int, from int, to int) []int {
         dst = append(dst, src[j])
         j += 1
     }
-    return freeze(dst)
+    return dst
 }
 
 func bytesCopy(src []byte, n int) []byte {
@@ -23,7 +23,7 @@ func bytesCopy(src []byte, n int) []byte {
         j += 1
     }
     dst = append(dst, '>')
-    return freeze(dst)
+    return dst
 }
 
 func indexCopy(src []int, a int, b int, n int) []int {
@@ -33,7 +33,7 @@ func indexCopy(src []int, a int, b int, n int) []int {
         d[a + j] = src[b + j]
         j += 1
     }
-    return freeze(d)
+    return d
 }
 
 func fill(x int, n int) []int {
@@ -43,7 +43,7 @@ func fill(x int, n int) []int {
         c = append(c, x)
         j += 1
     }
-    return freeze(c)
+    return c
 }
 
 func show(xs []int) {
@@ -72,5 +72,5 @@ func main() {
     for i <- iter.Range(0, 5000) {
         big = append(big, i)
     }
-    show(appendCopy(freeze(big), 10, 4990))
+    show(appendCopy(big, 10, 4990))
 }

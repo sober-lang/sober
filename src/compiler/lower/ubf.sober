@@ -1,0 +1,381 @@
+package lower
+
+// UTF-8 の境界の畳み（UTF-8 の検査消去便 段 1 — report-470 の (L)・展開の後の関数ごとの段 lB2Func）: std/utf8.Str の写しの中の
+// std/utf8.boundary の写しの判定 `load8 P[X] & 192 != 128`（X が文字の頭か）を、呼び手で分かっている事実から真と証明できたら br に畳む。
+// 対象の読みは印つき（irinl.sober — boundary の本体の byte の読みの写しにだけ付き、写しを重ねても継ぐ）なので、P は View の中身を指す。
+// 前提（どれも言語の約束から — 新しい仮定は足さない）:
+//   ①不変の読み: View の中身は imm で、freeze の一意性（language.md 17 節 U1〜U3 — 一意でない freeze は検査器が拒否）により凍結の後に書く
+//     別名が静的に存在しない。よって同じ番地・同じ添字の byte の読みは、間に store / call があっても同じ値（2026-10-11 — D0 の前は実行時タグの
+//     未実装で成り立っていなかった — F-al）
+//   ②View の中身は有効な UTF-8（Check だけが作る — 封）。完結した 1 バイト文字（ASCII）の次の位置は文字の頭（補題 — s 側）
+// 証明の形（どれも支配する condbr の辺の事実だけ — bce と同じ骨格）:
+//   i 側: 支配する辺で `load8 P'[X] == K`（K は ASCII の定数・P' と P は同じ番地の値）→ その byte は K で、K & 192 != 128（算術だけ — ②を使わない）
+//   s 側: X = Y + 1 で、支配する辺で `load8 P'[Y] == K`（ASCII）→ ②で X は文字の頭。X がループの頭の仮引数なら、入りの値が全部
+//         「0（boundary の写しは p > 0 の後でしか読まないので読みに届かない）か、その辺で ASCII と分かっている byte の次」
+// Str の写しの View の P が呼び手の b と同じ値になるのは lower の束縛の事実から（lower.sober の ubBind — `v := utf8.Check(b) catch <脱出>` の v を
+// View{b: b のヘッダ} に組み直す — Check の契約〔成功なら View.b = b〕を std の語彙として lower に置く。report-478 の裁定 (A)）。
+// 事実の読みの条件: 同じ番地を検査する Check の呼び出し（写さない — irinl.sober）がこの関数にあれば、その点が事実の読みを支配すること
+
+import "std/iter"
+
+// UB_MARK は boundary の写しの byte の読みの印（load8 の C 欄 — 他の段は load8 の C を読まない。ubfFunc が消す）
+const UB_MARK = 2
+
+// ubfModule は全関数に掛ける（逐次の経路 — 群の子の経路は lB2Func）。--ubf-stat なら畳めた数を `ubf <関数> <数>` で印字
+func ubfModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            n := ubfFunc(mut st, f)
+            if st.ubStat && n > 0 {
+                mut out := mut []byte{}
+                printName(mut st, mut out, irFnName(mut st, f))
+                println("ubf", string(freeze(out)) catch "?", n)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// ubMarked は命令 x が boundary の写しの byte の読みか
+func ubMarked(st mut St, x InsRef) bool {
+    return irInsOp(mut st, x) == OpLoad8 && irInsC(mut st, x) == UB_MARK
+}
+
+// UbW は関数の作業域（値 → 定義の命令・定義のブロック・仮引数のブロックと位置 — bce の BceW と同じ形）
+type UbW struct {
+    defIns mut []int
+    defBlk mut []int
+    parBlk mut []int
+    parIx mut []int
+}
+
+// ubfFunc は畳めた判定の数を返す
+func ubfFunc(st mut St, f FnRef) int {
+    if st.ubBound == -1 {
+        return 0
+    }
+    // 先に安い走査: 印つきの読みが無ければ何もしない
+    mut any := false
+    mut b0 := irFnBHead(mut st, f)
+    while b0 != -1 && !any {
+        mut ins := irBlkIHead(mut st, b0)
+        while ins != -1 && !any {
+            if ubMarked(mut st, ins) {
+                any = true
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b0 = irBlkNext(mut st, b0)
+    }
+    if !any {
+        return 0
+    }
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    mut uw := UbW{defIns: mut []int{}, defBlk: mut []int{}, parBlk: mut []int{}, parIx: mut []int{}}
+    xFill(mut uw.defIns, nv, -1)
+    xFill(mut uw.defBlk, nv, -1)
+    xFill(mut uw.parBlk, nv, -1)
+    xFill(mut uw.parIx, nv, -1)
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut p := irBlkPHead(mut st, b)
+            mut k := 0
+            while p >= 0 {
+                uw.parBlk[hget(mut st, p + 1)] = bi
+                uw.parIx[hget(mut st, p + 1)] = k
+                k += 1
+                p = hget(mut st, p)
+            }
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 {
+                    uw.defIns[r] = int(ins)
+                    uw.defBlk[r] = bi
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    mut folded := 0
+    for k <- iter.Range(0, w.nrpo) {
+        bb := w.rpo[k]
+        b := BlkRef(w.blk[bb])
+        if irBlkTerm(mut st, b) == TmCondbr {
+            c := irBlkX1(mut st, b)
+            if ubBoundaryTrue(mut st, mut w, mut uw, bb, c) {
+                irSetBlkTerm(mut st, b, TmBr)
+                irSetBlkX1(mut st, b, irBlkX2(mut st, b))
+                irSetBlkX2(mut st, b, irBlkX3(mut st, b))
+                irSetBlkX3(mut st, b, -1)
+                irSetBlkX4(mut st, b, -1)
+                irSetBlkX5(mut st, b, -1)
+                folded += 1
+            }
+        }
+    }
+    // 印を消す（後段は load8 の C を 0 として読む）
+    mut b1 := irFnBHead(mut st, f)
+    while b1 != -1 {
+        mut ins := irBlkIHead(mut st, b1)
+        while ins != -1 {
+            if ubMarked(mut st, ins) {
+                irSetInsC(mut st, ins, 0)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b1 = irBlkNext(mut st, b1)
+    }
+    if folded > 0 {
+        optReset(mut st, nv, nb)
+        optBlocks(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
+    return folded
+}
+
+// ubBoundaryTrue は条件 c が「印つきの読み L で `and L, 192` != 128」で、番号 bb のブロックの点で真と証明できるか
+func ubBoundaryTrue(st mut St, w mut m2rW, uw mut UbW, bb int, c int) bool {
+    cd := uw.defIns[c]
+    if cd < 0 || irInsOp(mut st, InsRef(cd)) != OpCmp || irInsA(mut st, InsRef(cd)) != CNe || !ubIsConst(mut st, mut uw, irInsC(mut st, InsRef(cd)), 128) {
+        return false
+    }
+    ad := uw.defIns[irInsB(mut st, InsRef(cd))]
+    if ad < 0 || irInsOp(mut st, InsRef(ad)) != OpBin || irInsA(mut st, InsRef(ad)) != BAnd || !ubIsConst(mut st, mut uw, irInsC(mut st, InsRef(ad)), 192) {
+        return false
+    }
+    ld := uw.defIns[irInsB(mut st, InsRef(ad))]
+    if ld < 0 || irInsOp(mut st, InsRef(ld)) != OpLoad8 || !ubMarked(mut st, InsRef(ld)) {
+        return false
+    }
+    p, x, ok := ubAddr(mut st, mut uw, InsRef(ld))
+    if !ok {
+        return false
+    }
+    // i 側: その byte 自身が ASCII と分かっている
+    if ubAsciiAt(mut st, mut w, mut uw, bb, p, x) {
+        return true
+    }
+    // s 側: X = Y + 1 で b[Y] が ASCII
+    xd := uw.defIns[x]
+    if xd >= 0 {
+        y := ubPred1(mut st, mut uw, x)
+        return y >= 0 && ubAsciiAt(mut st, mut w, mut uw, bb, p, y)
+    }
+    // X がブロックの仮引数（ループの頭）: 入りの値が全部「0」か「その辺で ASCII と分かっている byte の次」
+    hb := uw.parBlk[x]
+    if hb < 0 {
+        return false
+    }
+    ix := uw.parIx[x]
+    if w.pcnt[hb + 1] == w.pcnt[hb] {
+        return false
+    }
+    for q <- iter.Range(w.pcnt[hb], w.pcnt[hb + 1]) {
+        pb := w.preds[q]
+        if !ubEdgeArgOk(mut st, mut w, mut uw, pb, hb, ix, p) {
+            return false
+        }
+    }
+    return true
+}
+
+// ubEdgeArgOk は前任 pb から頭 hb への辺の ix 番目の実引数が「0」か「pb の点で ASCII と分かっている byte の次」か（辺が複数ある終端は全部見る）
+func ubEdgeArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, hb int, ix int, p int) bool {
+    b := BlkRef(w.blk[pb])
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        return irBlkId(mut st, BlkRef(irBlkX1(mut st, b))) != hb || ubArgOk(mut st, mut w, mut uw, pb, irBlkX2(mut st, b), ix, p)
+    }
+    if t == TmCondbr {
+        okT := irBlkId(mut st, BlkRef(irBlkX2(mut st, b))) != hb || ubArgOk(mut st, mut w, mut uw, pb, irBlkX3(mut st, b), ix, p)
+        okE := irBlkId(mut st, BlkRef(irBlkX4(mut st, b))) != hb || ubArgOk(mut st, mut w, mut uw, pb, irBlkX5(mut st, b), ix, p)
+        return okT && okE
+    }
+    return false
+}
+
+func ubArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, l int, ix int, p int) bool {
+    if l < 0 || ix >= hget(mut st, l) {
+        return false
+    }
+    a := hget(mut st, l + 1 + ix)
+    if ubIsConst(mut st, mut uw, a, 0) {
+        return true
+    }
+    y := ubPred1(mut st, mut uw, a)
+    return y >= 0 && ubAsciiAt(mut st, mut w, mut uw, pb, p, y)
+}
+
+// ubPred1 は値 x が `y + 1`（`1 + y`）なら y（でなければ -1）
+func ubPred1(st mut St, uw mut UbW, x int) int {
+    d := uw.defIns[x]
+    if d < 0 || irInsOp(mut st, InsRef(d)) != OpBin || irInsA(mut st, InsRef(d)) != BAdd {
+        return -1
+    }
+    u := irInsB(mut st, InsRef(d))
+    v := irInsC(mut st, InsRef(d))
+    if ubIsConst(mut st, mut uw, v, 1) {
+        return u
+    }
+    if ubIsConst(mut st, mut uw, u, 1) {
+        return v
+    }
+    return -1
+}
+
+func ubIsConst(st mut St, uw mut UbW, v int, n int) bool {
+    if v < 0 {
+        return false
+    }
+    d := uw.defIns[v]
+    return d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst && irInsA(mut st, InsRef(d)) == n
+}
+
+// ubAddr は byte の読み L の番地 `gep.byte P, X`（変位 0）の (P, X)
+func ubAddr(st mut St, uw mut UbW, l InsRef) (int, int, bool) {
+    if irInsB(mut st, l) != 0 {
+        return -1, -1, false
+    }
+    gd := uw.defIns[irInsA(mut st, l)]
+    if gd < 0 || irInsOp(mut st, InsRef(gd)) != OpGepB {
+        return -1, -1, false
+    }
+    return irInsA(mut st, InsRef(gd)), irInsB(mut st, InsRef(gd)), true
+}
+
+// ubSameBase は番地の値 a・b が同じ番地か（itop / ptoi の鎖を両側とも剥がした根が同じ値 — 語と番地の行き来はビット列を変えない。Check の実引数は
+// ヘッダの語〔i64〕・読みの番地はその itop なので、片側だけの鎖も同じと見る — ubFrozenAt が Check の呼び出しを見落とさない）
+func ubSameBase(st mut St, uw mut UbW, a int, b int, fuel int) bool {
+    return a >= 0 && b >= 0 && ubRoot(mut st, mut uw, a, fuel) == ubRoot(mut st, mut uw, b, fuel)
+}
+
+// ubRoot は値 v から itop / ptoi の鎖を（fuel 段まで）剥がした値
+func ubRoot(st mut St, uw mut UbW, v int, fuel int) int {
+    mut x := v
+    mut k := fuel
+    while k > 0 && x >= 0 && x < len(uw.defIns) && uw.defIns[x] >= 0 {
+        op := irInsOp(mut st, InsRef(uw.defIns[x]))
+        if op != OpItop && op != OpPtoi {
+            return x
+        }
+        x = irInsA(mut st, InsRef(uw.defIns[x]))
+        k -= 1
+    }
+    return x
+}
+
+// ubAsciiAt は番号 bb のブロックの点で「`load8 P'[X]` が ASCII の定数」（P' と P は同じ番地）と分かっているか（支配する condbr の辺 —
+// `eq L, K` の then の辺・`ne L, K` の else の辺。K は 0〜127 の定数）
+func ubAsciiAt(st mut St, w mut m2rW, uw mut UbW, bb int, p int, x int) bool {
+    mut cb := bb
+    while cb != 0 && w.idom[cb] >= 0 && w.idom[cb] != cb {
+        pi := w.idom[cb]
+        pb := BlkRef(w.blk[pi])
+        if irBlkTerm(mut st, pb) == TmCondbr && irBlkX2(mut st, pb) != irBlkX4(mut st, pb) && w.pcnt[cb + 1] - w.pcnt[cb] == 1 {
+            side := if irBlkId(mut st, BlkRef(irBlkX2(mut st, pb))) == cb { 1 } else if irBlkId(mut st, BlkRef(irBlkX4(mut st, pb))) == cb { 0 } else { -1 }
+            fd := uw.defIns[irBlkX1(mut st, pb)]
+            if side >= 0 && fd >= 0 && irInsOp(mut st, InsRef(fd)) == OpCmp {
+                cop := irInsA(mut st, InsRef(fd))
+                if (cop == CEq && side == 1) || (cop == CNe && side == 0) {
+                    if ubLoadIsAscii(mut st, mut w, mut uw, irInsB(mut st, InsRef(fd)), irInsC(mut st, InsRef(fd)), p, x) ||
+                        ubLoadIsAscii(mut st, mut w, mut uw, irInsC(mut st, InsRef(fd)), irInsB(mut st, InsRef(fd)), p, x) {
+                        return true
+                    }
+                }
+            }
+        }
+        cb = pi
+    }
+    return false
+}
+
+// ubFrozenAt は番地の値 p の buffer について、ブロック番号 fb の命令 l の点で中身が凍結済みと言えるか: この関数に p と同じ番地を実引数に取る
+// std/utf8.Check の呼び出しがあれば、その呼び出しの点が l の点を支配すること（Check の手前では freeze の前の mut の別名から書けうる — 凍結の後の
+// 書きだけが静的に不在〔17 節 U2〕。同じブロックなら呼び出しが先）。呼び出しが無ければ View は関数の外から来た（作られた時点で凍結済み）— どこでも可
+func ubFrozenAt(st mut St, w mut m2rW, uw mut UbW, p int, fb int, l InsRef) bool {
+    mut seen := false
+    for bi <- iter.Range(0, w.nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                if irInsOp(mut st, ins) == OpCall && irInsFn(mut st, ins) == st.ubCheck && ubCallTakes(mut st, mut uw, ins, p) {
+                    seen = true
+                    if bi == fb {
+                        if ubBefore(mut st, ins, l) {
+                            return true
+                        }
+                    } else if ubDominates(mut w, bi, fb) {
+                        return true
+                    }
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    return !seen
+}
+
+// ubCallTakes は呼び出し c の実引数に番地 p と同じ番地の値があるか
+func ubCallTakes(st mut St, uw mut UbW, c InsRef, p int) bool {
+    args := irInsB(mut st, c)
+    for j <- iter.Range(0, if args < 0 { 0 } else { hget(mut st, args) }) {
+        a := hget(mut st, args + 1 + j)
+        if a >= 0 && a < len(uw.defIns) && ubSameBase(mut st, mut uw, a, p, 4) {
+            return true
+        }
+    }
+    return false
+}
+
+// ubBefore は同じブロックの命令 a が命令 b より前か
+func ubBefore(st mut St, a InsRef, b InsRef) bool {
+    mut x := irInsNext(mut st, a)
+    while x != -1 {
+        if x == b {
+            return true
+        }
+        x = irInsNext(mut st, x)
+    }
+    return false
+}
+
+// ubDominates は番号 a のブロックが番号 b のブロックを支配するか
+func ubDominates(w mut m2rW, a int, b int) bool {
+    mut x := b
+    while x >= 0 {
+        if x == a {
+            return true
+        }
+        if w.idom[x] == x || w.idom[x] < 0 {
+            return false
+        }
+        x = w.idom[x]
+    }
+    return false
+}
+
+// ubLoadIsAscii は l が `load8 gep.byte(P', X)`（P' と P が同じ番地）で k が ASCII の定数か
+func ubLoadIsAscii(st mut St, w mut m2rW, uw mut UbW, l int, k int, p int, x int) bool {
+    if l < 0 || k < 0 {
+        return false
+    }
+    kd := uw.defIns[k]
+    if kd < 0 || irInsOp(mut st, InsRef(kd)) != OpConst || irInsA(mut st, InsRef(kd)) < 0 || irInsA(mut st, InsRef(kd)) > 127 {
+        return false
+    }
+    ld := uw.defIns[l]
+    if ld < 0 || irInsOp(mut st, InsRef(ld)) != OpLoad8 {
+        return false
+    }
+    p2, x2, ok := ubAddr(mut st, mut uw, InsRef(ld))
+    return ok && x2 == x && ubSameBase(mut st, mut uw, p2, p, 4) && ubFrozenAt(mut st, mut w, mut uw, p, uw.defBlk[l], InsRef(uw.defIns[l]))
+}

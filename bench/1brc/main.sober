@@ -64,7 +64,7 @@ func main() int {
             st = append(st, 1)
         }
     }
-    order := sorted(freeze(names))
+    order := sorted(names)
     stats := freeze(st)
     ix2 := freeze(ix)
     mut out := mut []byte{'{'}
@@ -88,7 +88,7 @@ func main() int {
     }
     out = append(out, '}')
     out = append(out, '\n')
-    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }
 
 func indexOf(ix map[string]int, name string) int {
@@ -136,7 +136,7 @@ func sorted(names []string) []string {
             j -= 1
         }
     }
-    return freeze(xs)
+    return xs
 }
 
 func less(a string, b string) bool {

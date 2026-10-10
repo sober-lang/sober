@@ -61,5 +61,5 @@ func main() int {
             out = append(out, '\n')
         }
     }
-    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }

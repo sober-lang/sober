@@ -1,0 +1,19 @@
+# uniqfreeze の代表（scripts/uniqfreeze.sh — analyzer が受理する正例: Lean の述語 uniqFreeze も受理すること）
+examples/freeze_unique.sober
+examples/map_index.sober
+examples/map_order.sober
+examples/hdr_mut2.sober
+examples/field_mutarg.sober
+examples/builder_string.sober
+# examples/json_decode.sober — json を通る 2 本は述語が 35〜46 秒（入れ子のループを 2 回ずつ評価 × リストの表）— --all だけ
+examples/table_std.sober
+examples/table_get_oob.sober
+examples/pool_string.sober
+examples/utf8_simd.sober
+# bench/jsonapi/main.sober — 同上
+bench/routing/main.sober
+bench/1brc/main.sober
+examples/par_chan.sober
+examples/strings_std.sober
+examples/par_chan_hold.sober
+testdata/implicitfreeze/freeze_if_ok.sober

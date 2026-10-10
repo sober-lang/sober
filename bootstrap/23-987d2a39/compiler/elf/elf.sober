@@ -1,0 +1,105 @@
+package elf
+
+// 2 セグメントの静的 ELF（src/stage1/format/elf.zig の写し — 正規バックエンドの Sober 化 B-1c）。ヘッダは @layout（language.md 36 節）で書く。
+//   セグメント 1（R+X）: ELF ヘッダ + phdr 2 本、code、8 整列の rodata（読み取り専用の語列 — 文字列リテラル）
+//   セグメント 2（R+W）: .bss（filesz 0 / memsz n — カーネルが 0 で埋める。IR ランタイムの rt.meta・rt.iobuf）
+// 番地は 0x400000 帯（< 2^31）なので、コードは global / 関数の番地を imm32 の絶対値で持てる。入口はコードの先頭
+
+import "std/builder"
+import "std/iter"
+import "std/layout"
+import "std/table"
+
+@layout
+type header struct {
+    ident [16]u8
+    kind u16le
+    machine u16le
+    version u32le
+    entry u64le
+    phoff u64le
+    shoff u64le
+    flags u32le
+    ehsize u16le
+    phentsize u16le
+    phnum u16le
+    shentsize u16le
+    shnum u16le
+    shstrndx u16le
+}
+
+@layout
+type phdr struct {
+    kind u32le
+    flags u32le
+    offset u64le
+    vaddr u64le
+    paddr u64le
+    filesz u64le
+    memsz u64le
+    align u64le
+}
+
+const base = 0x400000
+const page = 4096
+
+// CodeOffset はコードの始まるファイル内の位置（= ELF ヘッダ + phdr 2 本 = 0xB0）
+const CodeOffset = layout.Size[header] + 2 * layout.Size[phdr]
+
+// Layout は各部の番地（コードの後埋めの前に決める）
+type Layout struct {
+    Code int
+    Rodata int
+    Bss int
+    // ファイルの大きさ（= セグメント 1 の大きさ）
+    FileSize int
+}
+
+func align(n int, a int) int {
+    return (n + a - 1) / a * a
+}
+
+// LayoutOf は code と rodata の大きさ（バイト）から各部の番地を決める
+func LayoutOf(codeLen int, rodataLen int) Layout {
+    rodataOff := align(CodeOffset + codeLen, 8)
+    fileSize := rodataOff + rodataLen
+    return Layout{Code: base + CodeOffset, Rodata: base + rodataOff, Bss: align(base + fileSize, page), FileSize: fileSize}
+}
+
+// ident は e_ident（ELFCLASS64・ELFDATA2LSB・EV_CURRENT・残りは 0）
+func ident() []byte {
+    mut b := builder.Builder[byte]{}
+    builder.Push(mut b, 127)
+    builder.Push(mut b, 'E')
+    builder.Push(mut b, 'L')
+    builder.Push(mut b, 'F')
+    builder.Push(mut b, 2)
+    builder.Push(mut b, 1)
+    builder.Push(mut b, 1)
+    for i <- iter.Range(0, 9) {
+        builder.Push(mut b, 0)
+    }
+    return builder.Build(mut b)
+}
+
+// Executable は実行ファイルのバイト列（code の全部・rodata・.bss の大きさ bssBytes）
+func Executable(code mut table.Table[byte], rodata []byte, bssBytes int) []byte {
+    n := table.Len(mut code)
+    lay := LayoutOf(n, len(rodata))
+    mut out := builder.Builder[byte]{}
+    layout.Encode[header](mut out, header{ident: ident(), kind: 2, machine: 62, version: 1, entry: lay.Code, phoff: layout.Size[header], shoff: 0, flags: 0,
+        ehsize: layout.Size[header], phentsize: layout.Size[phdr], phnum: 2, shentsize: 0, shnum: 0, shstrndx: 0})
+    // R+X（ファイルの先頭から全部）・R+W（ファイルの中身は無い）
+    layout.Encode[phdr](mut out, phdr{kind: 1, flags: 5, offset: 0, vaddr: base, paddr: base, filesz: lay.FileSize, memsz: lay.FileSize, align: page})
+    layout.Encode[phdr](mut out, phdr{kind: 1, flags: 6, offset: 0, vaddr: lay.Bss, paddr: lay.Bss, filesz: 0, memsz: bssBytes, align: page})
+    for i <- iter.Range(0, n) {
+        builder.Push(mut out, table.Get(mut code, i))
+    }
+    for i <- iter.Range(CodeOffset + n, lay.Rodata - base) {
+        builder.Push(mut out, 0)
+    }
+    for i <- iter.Range(0, len(rodata)) {
+        builder.Push(mut out, rodata[i])
+    }
+    return builder.Build(mut out)
+}

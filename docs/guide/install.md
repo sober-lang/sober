@@ -16,7 +16,7 @@ The Sober compiler is made by starting from stage1, a frozen first compiler writ
 git clone <this repository> sober
 cd sober
 (cd src/stage1 && zig build)   # stage1 — src/stage1/zig-out/bin/sober
-scripts/stage2.sh              # build the 22 stages of bootstrap/ in order; the last stage builds the current compiler (stage2)
+scripts/stage2.sh              # build the 25 stages of bootstrap/ in order; the last stage builds the current compiler (stage2)
 ```
 
 The first run of `scripts/stage2.sh` takes a few minutes (the result of each stage is cached in `out/stage2/`, and later runs rebuild only when the sources change).
@@ -45,7 +45,7 @@ Main commands:
 
 ## For developers: running the verification net
 
-When you work on the compiler itself, `scripts/gates.sh --full` runs every check (53 of them). The net additionally needs:
+When you work on the compiler itself, `scripts/gates.sh --full` runs every check (54 of them). The net additionally needs:
 [Lean 4](https://lean-lang.org/) (the version in `lean/lean-toolchain` — `cd lean && lake build`), Go (independent oracles and the benchmark twins), Rust (the benchmark twins), Node.js (some tools), `perf` (benchmarks), and GNU as (checking the instruction encoder).
 
 Next: [Your first program](first-program.md)

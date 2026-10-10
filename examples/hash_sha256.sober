@@ -14,7 +14,7 @@ func pattern(n int) []byte {
     for i <- iter.Range(0, n) {
         b = append(b, byte((i * 31 + 7) % 256))
     }
-    return freeze(b)
+    return b
 }
 
 // repeat は c を n 個並べたバイト列
@@ -23,7 +23,7 @@ func repeat(c byte, n int) []byte {
     for i <- iter.Range(0, n) {
         b = append(b, c)
     }
-    return freeze(b)
+    return b
 }
 
 func main() {

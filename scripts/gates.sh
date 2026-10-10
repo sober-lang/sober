@@ -86,6 +86,8 @@ declare -A GTAG=(
     [pool_oracle]="load desugar analyzer"
     [errtrace]="load desugar analyzer lower backend"
     [analyzer_neg]="parse load desugar analyzer"
+    [uniqfreeze]="desugar analyzer lean"
+    [implicitfreeze]="desugar analyzer lower backend"
     [sobertest]="load lower backend"
     [jsonsuite]="load lower backend"
     [unittest]="lex parse load desugar check lower backend"
@@ -101,13 +103,15 @@ declare -A GTAG=(
     [partinl]="lower"
     [docsync]="docs"
     [maprepr]="lower"
+    [streq]="lower"
+    [ubfstat]="lower"
     [fitcheck]="lower backend"
     [selfpar]="check desugar load"
     [elfeq]="lex parse load desugar lower backend"
     [sobi]="lex parse fmt load desugar check"
 )
 # 長いものから（並列の詰め順）
-ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext astjson loaderjson selfhost_lex pool_oracle analyzer_neg sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync maprepr fitcheck corevec extract obs_zig hermetic_zig ir_roundtrip)
+ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync maprepr streq ubfstat fitcheck corevec extract obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -143,9 +147,11 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/fitcheck.sh|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check ;;
             lean/Main.lean|scripts/leanbatch.sh) echo lean ;;
+            lean/FeatherweightSober/UniqFreeze.lean|scripts/uniqfreeze.sh|scripts/uniqfreeze.list) echo lean; echo analyzer ;;
+            scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
             docs/guide/*|README.md|README.ja.md|scripts/docsync.*) echo docs ;;
             docs/*|*.md) ;;

@@ -1,0 +1,247 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$strings",
+      "path": "std/strings",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "maplit",
+                "key": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "value": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "entries": [],
+                "mut": true,
+                "tok": 13
+              }
+            ],
+            "tok": 9
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 21
+                },
+                "idx": {
+                  "k": "strlit",
+                  "value": "a",
+                  "tok": 23
+                },
+                "tok": 22
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 26
+              }
+            ],
+            "tok": 21
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 28
+                },
+                "idx": {
+                  "k": "strlit",
+                  "value": "b",
+                  "tok": 30
+                },
+                "tok": 29
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 33
+              }
+            ],
+            "tok": 28
+          },
+          {
+            "k": "bind",
+            "names": [
+              "im"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "freeze",
+                  "tok": 37
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "m",
+                    "tok": 39
+                  }
+                ],
+                "tok": 38
+              }
+            ],
+            "tok": 35
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "index",
+                "base": {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 42
+                },
+                "idx": {
+                  "k": "strlit",
+                  "value": "a",
+                  "tok": 44
+                },
+                "tok": 43
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 100,
+                "tok": 47
+              }
+            ],
+            "tok": 42
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "delete",
+                "tok": 49
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "m",
+                  "tok": 51
+                },
+                {
+                  "k": "strlit",
+                  "value": "b",
+                  "tok": 53
+                }
+              ],
+              "tok": 50
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 56
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "len ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 58
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "im",
+                            "tok": 58
+                          }
+                        ],
+                        "tok": 58
+                      }
+                    ]
+                  },
+                  "tok": 58
+                }
+              ],
+              "tok": 57
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 62
+              }
+            ],
+            "tok": 61
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 66
+      },
+      "sig_end": 8
+    }
+  ],
+  "consts": []
+}

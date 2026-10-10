@@ -21,7 +21,7 @@ func build(n int) []int {
         xs = append(xs, i * 3)
         i += 1
     }
-    return freeze(xs)
+    return xs
 }
 
 func main() {

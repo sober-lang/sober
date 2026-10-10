@@ -6,6 +6,16 @@ package lower
 //
 // 呼び出し規約（自前 — ABI は揃えない）: 引数は全部スタック（呼び手が後ろから push、callee は [rbp + 16 + 8k]、call の後に呼び手が add rsp, 8n）・
 // 戻り値は rax・割り当て可能な 10 本はすべて callee-saved・一時は rax / rcx / rdx / r11（割り当てない）。
+// 最適化のバックエンド（!st.xcopy — 呼び出し規約の段 1）は 10 本を callee-saved 5 本（rbx・r12〜r15）と caller-saved 5 本（rsi・rdi・r8〜r10）に割る:
+// 呼び出し（xIsCallOp）を跨ぐ区間は callee-saved だけ・入口は使った callee-saved だけを退避・罠と切替の記録も callee-saved だけ（xCtxRegs）。
+// 段 2: スロット・spill・退避・呼び出しの無い関数はフレームを立てない（e.nofr）。
+// 段 3: 番地を取られない関数（st.xAddr — OpFuncaddr の行き先でない）への直の call は、先頭 4 引数を rsi・r8・r9・r10 で渡し（xArgReg）、
+// 5 本目以降を今までどおり後ろから push（呼ばれ側は [rbp + 16 + 8(k − 4)]）。番地を取られる関数（task の入口・par の子・罠の行き先・比較関数・
+// シグナルの口）と間接の道（OpCallI・罠・開始・clone の子）は旧規約。関数の番地の即値を作るのは OpFuncaddr だけ（xAbs kind 1）なので、
+// 間接に呼ばれうる関数は必ず印を持つ。手書きの呼び手を持つ sober_entry（_start が初期の rsp を push）も印あり。並びに rdi を入れないのは、入口のスロットのゼロ初期化（rep stosq）が rdi を壊すため（逃がしの mov が要らない）。
+// 冷たい呼び出し（xColdCall — 成長の rt への呼び出し）は跨ぎの集合に入れない: それだけを跨ぐ区間は 10 本ぜんぶ（callee-saved を先に）
+// に置け、呼び手がその呼び出しの前後で跨ぐ caller-saved を退避・復元する（xColdSave / xColdLoad — 熱い道の命令は増えない・report-462 (c)）。
+// 写しのバックエンドは旧規約のまま（elfeq の照合と optdiff の参照）。
 // フレーム: push rbp; mov rbp, rsp; sub rsp, F。[rbp - …] に IR スロット（入口で rep stosq のゼロ初期化）→ 退避域 → spill の順。
 // 命令選択はオペランドを全部読んでから結果を書く（割り当て器が同じ位置で終わる区間のレジスタを始まる区間へ渡す前提）。
 // 到達しないブロックは吐かない。ブロックは後続を後ろから辿る逆後順に並べる。番地は 0x400000 帯の imm32 の絶対値、call / jmp は rel32 — 配置の後で埋める。
@@ -117,6 +127,8 @@ func xAllocReg(k int) int {
 }
 
 const xNAlloc = 10
+// 最適化のバックエンドの規約（呼び出し規約の段 1）: xAllocReg の前 5 本（rbx・r12〜r15）が callee-saved・後ろ 5 本（rsi・rdi・r8〜r10）が caller-saved
+const xNCallee = 5
 
 // float のクラス（第二便 float の段 — opt のバックエンドだけ）: xmm k は置き場の番号 xX0 + k（xLocReg(xX0 + k)）。割り当ての組は xmm8〜15
 // （xmm0〜7 は scanb の作業と float の演算の scratch〔xmm0 / xmm1〕）。callee-saved（汎用レジスタと同じ規約 — 使った xmm を入口で退避・出口で戻す）
@@ -148,6 +160,42 @@ func xIsXmm(l int) bool { return xIsReg(l) && xLocVal(l) >= xX0 }
 func xIsGpr(l int) bool { return xIsReg(l) && xLocVal(l) < xX0 }
 
 func xParamDisp(k int) int { return 16 + 8 * k }
+
+// 呼び出し規約の段 3: 引数レジスタ（k < xNArgReg）
+const xNArgReg = 4
+func xArgReg(k int) int {
+    regs := []int{x86.Rsi, x86.R8, x86.R9, x86.R10}
+    return regs[k]
+}
+
+// xRegCc は関数 f が段 3 の規約（先頭 4 引数をレジスタで）で呼ばれるか — 呼び手と呼ばれ側が同じ述語を引く
+func xRegCc(st mut St, f FnRef, frecs []int) bool {
+    return !st.xcopy && st.xAddr[xIndex(frecs, int(f))] == 0
+}
+
+// xParamHome は仮引数 k の呼び手が積んだ置き場（[rbp + 返り値]）・レジスタで来る仮引数は -1
+func xParamHome(e mut xF, k int) int { return if k < e.nreg { -1 } else { xParamDisp(k - e.nreg) } }
+
+// xAddrTaken は fr の添字ごとに「OpFuncaddr の行き先か」（段 3 の例外の印）。sober_entry も印あり（_start が初期の rsp を push して呼ぶ — 手書きの呼び手）
+func xAddrTaken(st mut St, fr []int, entryRec int) []int {
+    mut out := mut []int{}
+    xFill(mut out, len(fr), 0)
+    out[xIndex(fr, entryRec)] = 1
+    for k <- iter.Range(0, len(fr)) {
+        mut b := xfBHead(mut st, FnRef(fr[k]))
+        while int(b) != -1 {
+            mut i := xbIHead(mut st, b)
+            while i != -1 {
+                if xiOp(mut st, i) == OpFuncaddr {
+                    out[xIndex(fr, xiA(mut st, i))] = 1
+                }
+                i = xiNext(mut st, i)
+            }
+            b = xbNext(mut st, b)
+        }
+    }
+    return freeze(out)
+}
 
 // xFill は a に v を n 個積む（作業域の確保 — 1 本ずつ連続に積むので先端一致でコピーしない）
 func xFill(a mut []int, n int, v int) {
@@ -200,6 +248,7 @@ func xModuleFrozen(st mut St, syms bool, entryRec int, names [][]byte) []byte {
         f = xfNext(mut st, f)
     }
     nf := len(frecs)
+    st.xAddr = xAddrTaken(mut st, freeze(frecs), entryRec)
     mut grecs := mut []int{}
     mut g := st.ghead
     while g >= 0 {
@@ -386,7 +435,7 @@ type XGroup struct {
 // xParCfg は子の St に写す欄（xFunc が読む St の欄の全部 — 上の注意）
 func xParCfg(st mut St) []int {
     return []int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay}
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem)}
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -467,7 +516,8 @@ func xParEmit(st mut St, c mut table.Table[byte], fx mut table.Table[int], fstar
     bud := big * 128 + 4 * par.MB
     hf := st.hf
     cfg := xParCfg(mut st)
-    outs, serr := par.Map(freeze(gs), (g) => xParGroup(g, hf, cfg, fr, gr), budget: bud)
+    addr := st.xAddr
+    outs, serr := par.Map(freeze(gs), (g) => xParGroup(g, hf, cfg, addr, fr, gr), budget: bud)
     if serr != nil {
         return panic(InvariantBroken{})
     }
@@ -512,7 +562,7 @@ func xFnCost(st mut St, f FnRef) int {
 }
 
 // xParGroup は子の本体: 凍らせた表を読む St を組み、群の関数を吐く
-func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, fr []int, gr []int) XPar {
+func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, gr []int) XPar {
     mut st := St{}
     kindsInit(mut st)
     st.hfOn = true
@@ -530,6 +580,11 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, fr []int, gr []int) XP
     st.taskUse = cfg[10] == 1
     st.xcopy = cfg[11] == 1
     st.xLay = cfg[12]
+    // 呼び出し規約の段 1 / 段 2（xIsCallOp・xNoCall）が戻らない panic の call を見分ける — 無いと群の中だけ St{} の 0 を panic とみなし、W1 と ELF が食い違う
+    st.rtPanic = FnRef(cfg[13])
+    st.rtPanicMem = FnRef(cfg[14])
+    // 段 3 の例外の印（xRegCc）
+    st.xAddr = addr
     st.xXmm = 0
     mut c := table.Table[byte]{}
     mut fx := table.Table[int]{}
@@ -684,6 +739,19 @@ type xF struct {
     // 割れた値の spill 先が正しいか（第 1 便 (d) ③）: svOk[j × nb + ブロックの番号] = 1 なら、割れた値 e.sv[j] の spill 先は
     // そのブロックの終わりで値を持っている（xSlotValid）。reg → mem の境目の写し（store）はそこでは要らない
     svOk mut []int
+    // 呼び出し規約の段 1（opt のときだけ）: 呼び出しの位置（昇順 — xLive）。区間がどれかを跨ぐ部分区間は callee-saved の組だけ（xPrioPick）
+    cp mut []int
+    // 冷たい呼び出しの局所 caller-save（report-462 (c)）: 冷たい呼び出しの位置（昇順 — 跨ぎの集合 cp には入れない）・その位置で真に生きる
+    // caller-saved のレジスタの組（ビット — xAllocFrame）・レジスタごとの退避の枠の変位（0 = 無し）
+    cpc mut []int
+    cpm mut []int
+    csd mut []int
+    // 段 2（葉のフレームの省略 — opt）: スロット・spill・退避・呼び出しの無い関数は rbp を立てない（xNoFrame）。引数は [rsp + 8 + 8k]・出口は ret だけ
+    nofr bool
+    // 段 3（引数のレジスタ渡し — opt）: この関数が段 3 の規約で呼ばれるか・レジスタで来る仮引数の数・値ごとのレジスタのヒント（-1 = 無し）
+    rc bool
+    nreg int
+    hR mut []int
 }
 
 // xFunc は関数 f を c / fx へ吐く（ab = c の位置 0 の絶対の番地 — 親は elf.CodeOffset・群の子は 0〔子の表は親の 64 B に整列した位置へ
@@ -693,8 +761,10 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
         nsave: 0, blockAt: mut []int{}, jAt: mut []int{}, jTo: mut []int{}, nj: 0, eoA: mut []int{}, eoP: mut []int{}, eoT: mut []int{}, eoX: mut []int{}, bdep: mut []int{}, hvV: mut []int{}, hvB: mut []int{}, hdB: mut []int{}, div0: mut []int{}, nd: 0, pos: 0, mvD: mut []int{}, mvS: mut []int{}, mvLive: mut []int{},
-        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, svOk: mut []int{}}
+        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, rc: false, nreg: 0, hR: mut []int{}}
     xFill(mut e.blk, e.nb, -1)
+    e.rc = xRegCc(mut st, f, frecs)
+    e.nreg = if !e.rc { 0 } else if e.np < xNArgReg { e.np } else { xNArgReg }
     mut b := xfBHead(mut st, f)
     mut ninst := 0
     mut maxArgs := 7
@@ -785,6 +855,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         xSlotValid(mut st, mut e)
     }
     frame := (0 - bottom + 15) / 16 * 16
+    e.nofr = e.opt && slotWords == 0 && e.nsave == 0 && nsp == 0 && xNoCall(mut st, mut e)
     xFill(mut e.blockAt, e.nb, 0)
     xFill(mut e.jAt, 4 * e.nb, 0)
     xFill(mut e.jTo, 4 * e.nb, 0)
@@ -941,6 +1012,17 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
 
 // xProlog は関数の入口（フレーム・callee-saved の退避・スロットのゼロ初期化・レジスタに載る引数）。本番と、線の跨ぎの詰め物の窓（xFunc）の両方
 func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords int) {
+    if e.nofr {
+        // 段 2: フレームなし — 引数は呼び手の積んだ [rsp + 8 + 8k]（戻り番地の上）。段 3: レジスタで来る引数を先に並行コピー
+        xArgMoves(mut e, mut c)
+        for k <- iter.Range(e.nreg, e.np) {
+            l := xLocAt(mut e, k, e.bpos[0])
+            if xIsReg(l) {
+                x86.MovRegMem(mut c, xLocVal(l), x86.Rsp, xParamHome(mut e, k) - 8)
+            }
+        }
+        return
+    }
     // フレーム → フレーム → 使う callee-saved の退避 → スロットのゼロ初期化（rdi / rcx / rax を壊す）→ レジスタに載る引数
     x86.PushReg(mut c, x86.Rbp)
     x86.MovRegReg(mut c, x86.Rbp, x86.Rsp)
@@ -962,12 +1044,27 @@ func xProlog(st mut St, e mut xF, c mut table.Table[byte], frame int, slotWords 
         x86.XorRegReg(mut c, x86.Rax, x86.Rax)
         x86.RepStosq(mut c)
     }
-    for k <- iter.Range(0, e.np) {
+    // 段 3: レジスタで来る引数（rsi・r8〜r10 — rep stosq は壊さない）の並行コピーを先に（スタックで来る引数の書き先が引数レジスタでありうる）
+    xArgMoves(mut e, mut c)
+    for k <- iter.Range(e.nreg, e.np) {
         l := xLocAt(mut e, k, e.bpos[0])
         if xIsReg(l) {
-            x86.MovRegMem(mut c, xLocVal(l), x86.Rbp, xParamDisp(k))
+            x86.MovRegMem(mut c, xLocVal(l), x86.Rbp, xParamHome(mut e, k))
         }
     }
+}
+
+// xArgMoves はレジスタで来た仮引数（段 3）を入口の置き場（レジスタか spill 先）へ並行コピーする。使われない仮引数（区間が入口の 1 点）は写さない
+func xArgMoves(e mut xF, c mut table.Table[byte]) {
+    mut n := 0
+    for k <- iter.Range(0, e.nreg) {
+        if e.pnx[k] >= 0 || e.ivE[k] > e.ivS[k] {
+            e.mvD[n] = xLocAt(mut e, k, e.bpos[0])
+            e.mvS[n] = xLocReg(xArgReg(k))
+            n += 1
+        }
+    }
+    xParallelMove(mut e, mut c, n)
 }
 
 // xEmitBlk は吐く順の k 番目のブロック（命令と終端）を吐き、終端が次のブロックへ落ちたかを返す（本表と、線の跨ぎの詰め物の窓の表の両方）
@@ -1518,6 +1615,13 @@ func xLive(st mut St, e mut xF) {
             if r >= 0 && e.fold[r] == 0 {
                 xTouch(mut e, r, ip)
             }
+            if e.opt && xIsCallOp(mut st, i) {
+                if xColdCall(mut st, i) {
+                    e.cpc = append(e.cpc, ip)
+                } else {
+                    e.cp = append(e.cp, ip)
+                }
+            }
             n += 1
             i = xiNext(mut st, i)
         }
@@ -1536,6 +1640,8 @@ func xLive(st mut St, e mut xF) {
         }
     }
     if e.opt {
+        xSortInts(mut e.cp)
+        xSortInts(mut e.cpc)
         // 熱いブロックに使用の無い値（冷たい道でだけ働く — 熱い部分では定義と恒等の辺の実引数だけ）は冷たいブロックを深さ 0 で数えた重みに（S3a）
         for v <- iter.Range(0, nv) {
             if e.hu[v] == 0 {
@@ -1543,6 +1649,117 @@ func xLive(st mut St, e mut xF) {
             }
         }
     }
+}
+
+// xIsCallOp は命令 i が呼び出し（呼び出し規約の段 1 — 呼ばれ側が caller-saved の組を壊す）か: call・間接 call・罠・task の切替と開始・clone。
+// 除くもの: rep movs に置き換える rt.copy / rt.copy8（xInst — rsi / rdi を自分で積む）・戻らない rt.panic / rt.panic_mem（後ろで生きる値が無い —
+// 罠への巻き戻りは罠の記録が callee-saved を戻す）・syscall（rcx / r11 しか壊さない — 引数レジスタに載って跨ぐ値は xSyscall が積む）
+func xIsCallOp(st mut St, i InsRef) bool {
+    op := xiOp(mut st, i)
+    if op == OpCall {
+        g := FnRef(xiA(mut st, i))
+        return g != st.rtCopy && g != st.rtCopy8 && g != st.rtPanic && g != st.rtPanicMem
+    }
+    return op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone
+}
+
+// xColdCall は呼び出し i（xIsCallOp）が冷たい呼び出しか（report-462 (c) — 跨ぎの集合から外し、呼び手が前後で caller-saved を退避・復元する）:
+// 成長の rt（slice_grow・slice_grow8・grow_try・map_grow — 容器ごとの償却 O(1)）への直の call。根拠は「まれ」ではなく「退避の往復〔最大 5 語〕の
+// 費用が呼び出しそのものの費用で抑えられる」こと（要求ごとの容器の成長は反復に比例して走る — routing の map_grow 16 万回）。
+// region_relocate(8) は入れない（反復ごとの境界のコピー — logagg 395 万回 — xColdBlocks の種とは別）。棄てた案: 死ぬブロック（exit でしか
+// 終わらない道 — panic の文言の印字の rt.flush）の呼び出しも入れる形 — 題材 8 本の命令が同じで cycles にも符号一致の差が無く、判定の分だけ
+// 自己 build の仕事が増えた（report-464）。ループの運搬値だけに caller-saved を許す形 — routing の予測ミスの悪化は消えず fasta の回収が半分（report-464）
+func xColdCall(st mut St, i InsRef) bool {
+    if xiOp(mut st, i) != OpCall {
+        return false
+    }
+    g := FnRef(xiA(mut st, i))
+    return g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow
+}
+
+// xCrossCold は部分区間 v が冷たい呼び出しを跨ぐか（xCrossCall と同じ判定 — 列は cpc）
+func xCrossCold(e mut xF, v int) bool {
+    j := xFirstAfter(mut e.cpc, len(e.cpc), e.ivS[v])
+    return j < len(e.cpc) && e.cpc[j] < e.ivE[v]
+}
+
+// xColdMask は位置 p の冷たい呼び出しで退避する caller-saved の組（p が冷たい呼び出しでなければ 0）
+func xColdMask(e mut xF, p int) int {
+    if len(e.cpc) == 0 {
+        return 0
+    }
+    mut lo := 0
+    mut hi := len(e.cpc)
+    while lo < hi {
+        m := (lo + hi) / 2
+        if e.cpc[m] < p {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    return if lo < len(e.cpc) && e.cpc[lo] == p { e.cpm[lo] } else { 0 }
+}
+
+// xColdSave は冷たい呼び出しの前（実引数の前）に組 m のレジスタを枠へ・xColdLoad は呼び出しと結果の写しの後で戻す
+func xColdSave(e mut xF, c mut table.Table[byte], m int) {
+    for r <- iter.Range(0, if m == 0 { 0 } else { 16 }) {
+        if (m >> r & 1) == 1 {
+            x86.MovMemReg(mut c, x86.Rbp, e.csd[r], r)
+        }
+    }
+}
+
+func xColdLoad(e mut xF, c mut table.Table[byte], m int) {
+    for r <- iter.Range(0, if m == 0 { 0 } else { 16 }) {
+        if (m >> r & 1) == 1 {
+            x86.MovRegMem(mut c, r, x86.Rbp, e.csd[r])
+        }
+    }
+}
+
+// xCrossCall は部分区間 v が呼び出しを跨ぐか（始まり < 呼び出しの位置 < 終わり — 呼び出しの結果は位置で始まり、最後の実引数は位置で終わる）
+func xCrossCall(e mut xF, v int) bool {
+    s := e.ivS[v]
+    t := e.ivE[v]
+    mut lo := 0
+    mut hi := len(e.cp)
+    while lo < hi {
+        m := (lo + hi) / 2
+        if e.cp[m] <= s {
+            lo = m + 1
+        } else {
+            hi = m
+        }
+    }
+    return lo < len(e.cp) && e.cp[lo] < t
+}
+
+// xNoCall は関数に呼び出しが無いか（段 2 — フレームを省いてよい形の一部）: rep movs に置き換える rt.copy / rt.copy8 と戻らない rt.panic /
+// rt.panic_mem の call は許す（panic は rsp の 16 B の揃いを読まない — 揃えを要る命令〔aligned の load / store〕をメモリに使わない）。
+// 罠・切替・開始・clone・間接 call・ほかの call があれば偽
+func xNoCall(st mut St, e mut xF) bool {
+    for k <- iter.Range(0, e.norder) {
+        mut i := xbIHead(mut st, BlkRef(e.blk[e.order[k]]))
+        while i != -1 {
+            op := xiOp(mut st, i)
+            if op == OpCall {
+                g := FnRef(xiA(mut st, i))
+                if g != st.rtCopy && g != st.rtCopy8 && g != st.rtPanic && g != st.rtPanicMem {
+                    return false
+                }
+            } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
+                return false
+            }
+            i = xiNext(mut st, i)
+        }
+    }
+    return true
+}
+
+// xCalleeSaved は汎用レジスタ r が callee-saved の組（rbx・r12〜r15）か — opt の規約（呼び出し規約の段 1）。写しのバックエンドは 10 本すべて
+func xCalleeSaved(r int) bool {
+    return r == x86.Rbx || r == x86.R12 || r == x86.R13 || r == x86.R14 || r == x86.R15
 }
 
 // xPieces は区間を部分区間の表に（S1b — 値ごとに 1 本: 部分区間の番号 = 値の番号）。割るのは一段目の割り当ての後（xSplitLoops）
@@ -2464,9 +2681,9 @@ func xSplitMoves(st mut St, e mut xF, to BlkRef, n0 int) int {
         ka := if xIsParamOf(mut st, to, v) { -1 } else { xPieceAt(mut e, v, a) }
         if ka >= 0 {
             kb := xPieceAt(mut e, v, b)
-            // 関数の引数の置き場（呼び手が積んだ番地）へ書く写しは要らない — そこは入口からずっとその値を持つ（ほかの値は置かれない）
+            // 関数の引数の置き場（呼び手が積んだ番地 — スタックで来た引数だけ）へ書く写しは要らない — そこは入口からずっとその値を持つ（ほかの値は置かれない）
             // reg → spill 先の写しは、spill 先がこの辺の元のブロックの終わりで既に値を持っていれば要らない（SSA の値は変わらない — xSlotValid）
-            if kb >= 0 && e.loc[ka] != e.loc[kb] && !(v < e.np && e.loc[kb] == xLocFrame(xParamDisp(v))) && !(xIsReg(e.loc[ka]) && !xIsReg(e.loc[kb]) && len(e.svOk) > 0 && e.svOk[j * e.nb + xBlkOfPos(mut e, a)] == 1) {
+            if kb >= 0 && e.loc[ka] != e.loc[kb] && !(v < e.np && v >= e.nreg && e.loc[kb] == xLocFrame(xParamHome(mut e, v))) && !(xIsReg(e.loc[ka]) && !xIsReg(e.loc[kb]) && len(e.svOk) > 0 && e.svOk[j * e.nb + xBlkOfPos(mut e, a)] == 1) {
                 e.mvD[n] = e.loc[kb]
                 e.mvS[n] = e.loc[ka]
                 n += 1
@@ -2880,9 +3097,14 @@ func xPrioPlace(e mut xF, used mut []int, r int, v int) {
 
 // xPrioPick は部分区間 v のレジスタ（無ければ -1）: 空きの判定は「重ならない」— xHintReg の free の口をこの部分区間で作り、ヒント → 空きの最初。
 // float のクラスは xmm の組・他は汎用の組（組をまたがない）
+// 汎用の組（呼び出し規約の段 1）: 呼び出しを跨ぐ部分区間は callee-saved の 5 本だけ・跨がない部分区間は caller-saved の 5 本を先に
+// （xAllocReg の後ろ 5 本 → 前 5 本。入口で退避しなくて済む）
 func xPrioPick(e mut xF, free mut []int, v int) int {
     fl := e.fcls[e.pv[v]] == 1
-    n := if fl { e.nx } else { xNAlloc }
+    cross := !fl && xCrossCall(mut e, v)
+    // 冷たい呼び出しだけを跨ぐ部分区間は 10 本ぜんぶ（callee-saved を先に — 冷たい呼び出しが毎反復走る形で退避の往復を払わないように）
+    ccold := !fl && !cross && xCrossCold(mut e, v)
+    n := if fl { e.nx } else if cross { xNCallee } else { xNAlloc }
     for j <- iter.Range(0, 32) {
         free[j] = 0
     }
@@ -2891,13 +3113,29 @@ func xPrioPick(e mut xF, free mut []int, v int) int {
         free[r] = if xPrioFits(mut e, r, v) { 1 } else { 0 }
     }
     mut r := xHintReg(mut e, v, mut free)
-    for j <- iter.Range(0, n) {
-        rj := if fl { xXmmReg(j) } else { xAllocReg(j) }
-        if r < 0 && free[rj] == 1 {
-            r = rj
+    // 段 3: ヒントの無い部分区間は、まだ割り当てていないレジスタ引数が重なる区間で待っている引数レジスタを後回しにする
+    // （先に取ると引数が入口で写される — スタックで来た引数が r8 / r9 を先に取っていた）
+    wait := if r < 0 && !fl { xArgWait(mut e, v) } else { 0 }
+    for pass <- iter.Range(0, if wait == 0 { 1 } else { 2 }) {
+        for j <- iter.Range(0, n) {
+            rj := if fl { xXmmReg(j) } else if cross || ccold { xAllocReg(j) } else { xAllocReg((j + xNCallee) % xNAlloc) }
+            if r < 0 && free[rj] == 1 && (pass == 1 || (wait >> rj & 1) == 0) {
+                r = rj
+            }
         }
     }
     return r
+}
+
+// xArgWait は部分区間 v と重なる未割り当てのレジスタ引数（入口の部分区間）がヒントにしている引数レジスタの組（ビット = レジスタの番号）
+func xArgWait(e mut xF, v int) int {
+    mut m := 0
+    for k <- iter.Range(0, e.nreg) {
+        if k != v && e.loc[k] == xSpill && e.ivS[k] >= 0 && (e.ivS[v] == e.ivS[k] || (e.ivS[v] < e.ivE[k] && e.ivS[k] < e.ivE[v])) {
+            m = m | (1 << xArgReg(k))
+        }
+    }
+    return m
 }
 
 // xPrioFits はレジスタ r に割り当て済みの区間のどれとも v が重ならないか（重なり = s < 終わり かつ 開始 < t・または同じ点で始まる —
@@ -3111,8 +3349,9 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
             st.xXmm = st.xXmm | (1 << k)
         }
     }
-    // 割り当てに使わなくても壊すレジスタも退避する: スロットのゼロ初期化の rdi と syscall の引数レジスタ（rdx は割り当てない）
-    if xfSHead(mut st, e.f) >= 0 {
+    // 割り当てに使わなくても壊すレジスタも退避する: スロットのゼロ初期化の rdi と syscall の引数レジスタ（rdx は割り当てない）。
+    // opt の規約（呼び出し規約の段 1）ではどちらも caller-saved なので退避しない
+    if !e.opt && xfSHead(mut st, e.f) >= 0 {
         used[x86.Rdi] = 1
     }
     // scanb は xmm0〜7 を作業に使う — 呼び手が xmm2〜7 に値を置く（scanb を含まない関数の広い組 — xNXmmWide）ので、壊す分を退避する
@@ -3122,7 +3361,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         }
     }
     sysRegs := []int{x86.Rdi, x86.Rsi, x86.Rdx, x86.R10, x86.R8, x86.R9}
-    for bi <- iter.Range(0, e.nb) {
+    for bi <- iter.Range(0, if e.opt { 0 } else { e.nb }) {
         mut i := xbIHead(mut st, BlkRef(e.blk[bi]))
         while i != -1 {
             if xiOp(mut st, i) == OpSyscall {
@@ -3139,19 +3378,37 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
     mut d := frameTop
     for k <- iter.Range(0, xNAlloc + xNXmmWide) {
         r := if k < xNAlloc { xAllocReg(k) } else { xXmmReg(k - xNAlloc) }
-        if used[r] == 1 {
+        if used[r] == 1 && (!e.opt || k >= xNAlloc || xCalleeSaved(r)) {
             d = d - 8
             e.saveReg = append(e.saveReg, r)
             e.saveDisp = append(e.saveDisp, d)
             e.nsave = e.nsave + 1
         }
     }
+    // 冷たい呼び出しの退避（report-462 (c)）: 位置ごとに、割り当てた部分区間が真に含む（s < 位置 < t）caller-saved の組。枠はレジスタごとに 1 つ
+    xFill(mut e.cpm, len(e.cpc), 0)
+    xFill(mut e.csd, 16, 0)
+    for k <- iter.Range(0, if len(e.cpc) > 0 { nv } else { 0 }) {
+        l := e.loc[k]
+        if e.ivS[k] >= 0 && xIsReg(l) && xLocVal(l) < 16 && !xCalleeSaved(xLocVal(l)) {
+            r := xLocVal(l)
+            mut j := xFirstAfter(mut e.cpc, len(e.cpc), e.ivS[k])
+            while j < len(e.cpc) && e.cpc[j] < e.ivE[k] {
+                e.cpm[j] = e.cpm[j] | (1 << r)
+                if e.csd[r] == 0 {
+                    d = d - 8
+                    e.csd[r] = d
+                }
+                j += 1
+            }
+        }
+    }
     // spill 先は値ごとに 1 つ（同じ値の部分区間で共有 — 最初に spill された部分区間の順に変位を配る）
     xFill(mut e.spd, e.nv, 0)
     for k <- iter.Range(0, nsp) {
         u := e.pv[spills[k]]
-        if u < e.np {
-            e.loc[spills[k]] = xLocFrame(xParamDisp(u))
+        if u < e.np && u >= e.nreg {
+            e.loc[spills[k]] = xLocFrame(xParamHome(mut e, u))
         } else {
             if e.spd[u] == 0 {
                 d = d - 8
@@ -3164,7 +3421,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
     for v <- iter.Range(0, nv) {
         if e.loc[v] == xSpill {
             u := e.pv[v]
-            e.loc[v] = if u < e.np { xLocFrame(xParamDisp(u)) } else { xLocFrame(frameTop - 8) }
+            e.loc[v] = if u < e.np && u >= e.nreg { xLocFrame(xParamHome(mut e, u)) } else { xLocFrame(frameTop - 8) }
         }
     }
     return if d < frameTop - 8 { d } else { frameTop - 8 }
@@ -3447,12 +3704,31 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         }
         x86.PopReg(mut c, x86.Rdi)
         x86.PopReg(mut c, x86.Rsi)
+    } else if op == OpCall && xRegCc(mut st, FnRef(a), frecs) {
+        // 段 3: 5 本目以降を後ろから push・先頭 4 本は引数レジスタへ並行コピー（ここで caller-saved に載るのはこの呼び出しの実引数と結果だけ — 段 1。
+        // 冷たい呼び出しは跨ぐ caller-saved を実引数の前に退避し、結果の写しの後で戻す — xColdCall）
+        cm := xColdMask(mut e, e.pos)
+        xColdSave(mut e, mut c, cm)
+        n := xLen(mut st, b)
+        nr := if n < xNArgReg { n } else { xNArgReg }
+        xPushArgs(mut st, mut e, mut c, b, nr)
+        for k <- iter.Range(0, nr) {
+            e.mvD[k] = xLocReg(xArgReg(k))
+            e.mvS[k] = xSrcLoc(mut e, xAt(mut st, b, k))
+        }
+        xParallelMove(mut e, mut c, nr)
+        xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
+        xAfterCall(mut e, mut c, res, n - nr)
+        xColdLoad(mut e, mut c, cm)
     } else if op == OpCall {
-        xPushArgs(mut st, mut e, mut c, b, -1)
+        cm := xColdMask(mut e, e.pos)
+        xColdSave(mut e, mut c, cm)
+        xPushArgs(mut st, mut e, mut c, b, 0)
         xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
         xAfterCall(mut e, mut c, res, xLen(mut st, b))
+        xColdLoad(mut e, mut c, cm)
     } else if op == OpCallI {
-        xPushArgs(mut st, mut e, mut c, b, -1)
+        xPushArgs(mut st, mut e, mut c, b, 0)
         xGetInto(mut e, mut c, a, x86.R11)
         x86.CallReg(mut c, x86.R11)
         xAfterCall(mut e, mut c, res, xLen(mut st, b))
@@ -3489,9 +3765,10 @@ func xAbs(e mut xF, c mut table.Table[byte], fx mut table.Table[int], r int, kin
     xFixAdd(mut fx, x86.Here(mut c) - 4, kind, id)
 }
 
-func xPushArgs(st mut St, e mut xF, c mut table.Table[byte], args int, unused int) {
+// xPushArgs は実引数 lo 本目以降を後ろから積む（段 3 の規約では lo = レジスタで渡す本数）
+func xPushArgs(st mut St, e mut xF, c mut table.Table[byte], args int, lo int) {
     mut k := xLen(mut st, args)
-    while k > 0 {
+    while k > lo {
         k -= 1
         x := xGet(mut e, mut c, xAt(mut st, args, k), x86.Rax)
         x86.PushReg(mut c, x)
@@ -3600,7 +3877,9 @@ func xTermEmit(st mut St, e mut xF, c mut table.Table[byte], b BlkRef) {
                 x86.MovRegMem(mut c, e.saveReg[k], x86.Rbp, e.saveDisp[k])
             }
         }
-        x86.Leave(mut c)
+        if !e.nofr {
+            x86.Leave(mut c)
+        }
         x86.Ret(mut c)
     } else if t == TmExit {
         xExit(mut c, xTermX(mut st, b, 1), st.taskUse)
@@ -4497,11 +4776,18 @@ func xScanLanes(st mut St, c mut table.Table[byte], desc int, np int, useX80 boo
 
 // xHints は割り当てのヒントを集める（M5）: 辺の実引数 v → 仮引数 p（hP）・仮引数 p → 入りの実引数（hA1 / hA2）・
 // 算術 / ptoi / itop の結果 → 左の被演算子（hOp — 被演算子がそこで死ねば同じレジスタで mov が要らない）
+// 棄てた案（段 3 — report-459）: 呼び手側のヒント（呼び出しで区間が終わる実引数を引数レジスタへ）。命令は −0.1〜−0.6 ポイント得だが、
+// cycles（8 配置の中央）は routing が呼ばれ側だけの形より +5.3%（最小〜最大で符号一致・予測ミス +17%）・ほかは揺れの幅
 func xHints(st mut St, e mut xF) {
     xFill(mut e.hP, e.nv, -1)
     xFill(mut e.hA1, e.nv, -1)
     xFill(mut e.hA2, e.nv, -1)
     xFill(mut e.hOp, e.nv, -1)
+    // 段 3: レジスタで来る仮引数は引数レジスタへ（合えば入口の写しが 0 本）
+    xFill(mut e.hR, e.nv, -1)
+    for k <- iter.Range(0, e.nreg) {
+        e.hR[k] = xArgReg(k)
+    }
     for k <- iter.Range(0, e.norder) {
         b := BlkRef(e.blk[e.order[k]])
         mut i := xbIHead(mut st, b)
@@ -4576,6 +4862,9 @@ func xHintReg(e mut xF, k int, free mut []int) int {
             }
             q = e.pnx[q]
         }
+    }
+    if e.hR[v] >= 0 && free[e.hR[v]] == 1 && !fl {
+        return e.hR[v]
     }
     for j <- iter.Range(0, 4) {
         h := if j == 0 { e.hP[v] } else if j == 1 { e.hA1[v] } else if j == 2 { e.hA2[v] } else { e.hOp[v] }
@@ -4852,6 +5141,12 @@ func xTrapRegs() []int {
 func xCtxRegs(e mut xF, p int, xm int) []int {
     mut keep := mut []int{}
     xFill(mut keep, 16, 1)
+    // opt の規約（呼び出し規約の段 1）: caller-saved の組には呼び手の値が載らず、切替 / 罠を跨ぐ値も載らない（xPrioPick）— 積まない
+    for k <- iter.Range(0, if e.opt { xNAlloc } else { 0 }) {
+        if !xCalleeSaved(xAllocReg(k)) {
+            keep[xAllocReg(k)] = 0
+        }
+    }
     for k <- iter.Range(0, e.nsave) {
         if e.saveReg[k] < xX0 {
             keep[e.saveReg[k]] = 0

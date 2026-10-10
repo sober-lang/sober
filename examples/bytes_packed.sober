@@ -17,7 +17,7 @@ func fill(n int, base int) []byte {
     for i <- iter.Range(0, n) {
         b = append(b, byte((base + i) % 256))
     }
-    return freeze(b)
+    return b
 }
 
 func sum(b []byte) int {
@@ -37,7 +37,7 @@ func nested() [][]byte {
     for i <- iter.Range(1, 4) {
         out = append(out, fill(i * 3, i))
     }
-    return freeze(out)
+    return out
 }
 
 func main() {

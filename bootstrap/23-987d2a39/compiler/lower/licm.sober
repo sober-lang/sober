@@ -1,0 +1,186 @@
+package lower
+
+// LICM（性能投資 M3）: ループ不変の純粋な命令をループの手前（前置きのブロック）へ巻き上げる。GVN の後の SSA に掛ける。
+// ループ = 後ろの辺 t → h（h が t を支配）の自然ループ。前置き = h の前任のうちループの外のものがちょうど 1 つで、その終端が h への br のとき。
+// 巻き上げるのは純粋で落ちない命令（算術〔div / rem を除く — ループが回らない経路でゼロ除算を起こさない〕・比較・gep・ptoi / itop・
+// slotaddr・globaladdr・funcaddr）で、被演算子が全部ループの外（か巻き上げ済み）のもの。load は巻き上げない（ループの中の store / call が書きうる）
+
+import "std/iter"
+
+// licmModule はモジュールの全関数に LICM を掛ける
+func licmModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            licmFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func licmFunc(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    // 値 → 定義のブロック番号（引数も）
+    mut dblk := mut []int{}
+    xFill(mut dblk, nv, -1)
+    for bi <- iter.Range(0, nb) {
+        b := BlkRef(w.blk[bi])
+        if int(b) >= 0 {
+            mut p := irBlkPHead(mut st, b)
+            while p >= 0 {
+                dblk[hget(mut st, p + 1)] = bi
+                p = hget(mut st, p)
+            }
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                r := irInsRes(mut st, ins)
+                if r >= 0 {
+                    dblk[r] = bi
+                }
+                ins = irInsNext(mut st, ins)
+            }
+        }
+    }
+    // ループの頭ごとに（逆後順で外側から）
+    mut inl := mut []int{}
+    xFill(mut inl, nb, 0)
+    mut mark := 0
+    for k <- iter.Range(0, w.nrpo) {
+        h := w.rpo[k]
+        outside := loopPre(mut st, mut w, h)
+        if outside < 0 {
+            continue
+        }
+        pre := BlkRef(w.blk[outside])
+        mark += 1
+        loopMark(mut w, mut inl, mark, h)
+        // 本体のブロックを逆後順で見て、不変の命令を前置きの末尾へ移す（移した値の定義のブロックは前置きに — 後の命令の判定に効く）
+        for kk <- iter.Range(k, w.nrpo) {
+            bi := w.rpo[kk]
+            if inl[bi] != mark {
+                continue
+            }
+            b := BlkRef(w.blk[bi])
+            mut prev := InsRef(-1)
+            mut ins := irBlkIHead(mut st, b)
+            while ins != -1 {
+                nx := irInsNext(mut st, ins)
+                if licmMovable(mut st, ins) && licmOperandsOutside(mut st, ins, mut dblk, mut inl, mark) {
+                    // b から外して前置きの末尾へ
+                    if prev == -1 {
+                        irSetBlkIHead(mut st, b, nx)
+                    } else {
+                        irSetInsNext(mut st, prev, nx)
+                    }
+                    if irBlkITail(mut st, b) == ins {
+                        irSetBlkITail(mut st, b, prev)
+                    }
+                    irSetInsNext(mut st, ins, -1)
+                    linkInst(mut st, pre, ins)
+                    dblk[irInsRes(mut st, ins)] = outside
+                } else {
+                    prev = ins
+                }
+                ins = nx
+            }
+        }
+    }
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optRenumber(mut st, f)
+}
+
+// loopPre はブロック h が自然ループの頭（後ろの辺 t → h〔h が t を支配〕がある）で、外の前任がちょうど 1 つ・その終端が br なら
+// その前任（前置き）の番号（違えば -1）— licm と promote が共有
+func loopPre(st mut St, w mut m2rW, h int) int {
+    mut outside := -1
+    mut nout := 0
+    mut back := false
+    for j <- iter.Range(w.pcnt[h], w.pcnt[h + 1]) {
+        p := w.preds[j]
+        if w.rpoIx[p] < 0 {
+            continue
+        }
+        if licmDominates(mut w, h, p) {
+            back = true
+        } else {
+            outside = p
+            nout += 1
+        }
+    }
+    if !back || nout != 1 || irBlkTerm(mut st, BlkRef(w.blk[outside])) != TmBr {
+        return -1
+    }
+    return outside
+}
+
+// loopMark は頭 h のループの本体（後ろの辺の前任から h まで逆に辿る）に印 mark を付ける
+func loopMark(w mut m2rW, inl mut []int, mark int, h int) {
+    inl[h] = mark
+    mut stack := mut []int{}
+    for j <- iter.Range(w.pcnt[h], w.pcnt[h + 1]) {
+        p := w.preds[j]
+        if w.rpoIx[p] >= 0 && licmDominates(mut w, h, p) && inl[p] != mark {
+            inl[p] = mark
+            stack = append(stack, p)
+        }
+    }
+    mut sp := len(stack)
+    while sp > 0 {
+        sp -= 1
+        x := stack[sp]
+        for j <- iter.Range(w.pcnt[x], w.pcnt[x + 1]) {
+            p := w.preds[j]
+            if w.rpoIx[p] >= 0 && inl[p] != mark {
+                inl[p] = mark
+                if sp < len(stack) {
+                    stack[sp] = p
+                } else {
+                    stack = append(stack, p)
+                }
+                sp += 1
+            }
+        }
+    }
+}
+
+// licmDominates は番号 a のブロックが b を支配するか（idom を辿る）
+func licmDominates(w mut m2rW, a int, b int) bool {
+    mut x := b
+    while true {
+        if x == a {
+            return true
+        }
+        if x == 0 || w.idom[x] < 0 || w.idom[x] == x {
+            return false
+        }
+        x = w.idom[x]
+    }
+    return false
+}
+
+func licmMovable(st mut St, ins InsRef) bool {
+    op := irInsOp(mut st, ins)
+    if irInsRes(mut st, ins) < 0 {
+        return false
+    }
+    if op == OpBin {
+        k := irInsA(mut st, ins)
+        return k != BDiv && k != BRem
+    }
+    // const は巻き上げない（使う点で作り直すのが安い — 生存区間を延ばすとレジスタを食う）
+    return op == OpCmp || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr
+}
+
+func licmOperandsOutside(st mut St, ins InsRef, dblk mut []int, inl mut []int, mark int) bool {
+    for k <- iter.Range(0, xNOps(mut st, ins)) {
+        v := xOpnd(mut st, ins, k)
+        d := dblk[v]
+        if d >= 0 && inl[d] == mark {
+            return false
+        }
+    }
+    return true
+}

@@ -288,6 +288,22 @@ type Par error {
     kind int
 }
 
+// Frozen は健全性の規則（analyzer の freeze の U1〜U3 — language.md 17 節）の拒否（build — lower の build が表層型の表の上で掛ける。n = 指摘の数）。
+// 行は app が analyzer.Freeze で引き直して analyze と同じ形で出す（拒否の経路だけ — slice を持つラベルを default つきの switch で受けると
+// 検査器が def error にする — 最小形は report-484）
+type Frozen error {
+    n int
+}
+
+// IsFrozen は err が Frozen か
+func IsFrozen(err error?) bool {
+    return switch err {
+    case nil: false
+    case Frozen{n}: true
+    default: false
+    }
+}
+
 // PanicLabel は panic ラベル（language.md 27 節 — loader/panicx.sober の PL_*）の拒否。kind = 1 裸の `panic()`・2 実引数がラベルのリテラル 1 つでない・
 // 3 リテラルの型が panic ラベルでない・4 RegionExceeded を書いた・5 欄の書き方・6 宣言の欄の型・7 組み込みのラベルの名前の宣言・8 実引数の外の使用
 type PanicLabel error {
@@ -350,6 +366,7 @@ func At(err error?) Pos {
     case Shadow{at}: at
     case PureExprStmt{at}: at
     case TestSignature{at}: at
+    case Frozen{n}: None()
     case NilCase{at}: at
     case NamedArg{at}: at
     case LeadingZero{at}: at
@@ -417,6 +434,7 @@ func Format(err error?, where string) string {
     case Shadow{at}: loadLine(err, where, "a local binding cannot shadow or redeclare another local binding")
     case PureExprStmt{at}: loadLine(err, where, "an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)")
     case TestSignature{at}: loadLine(err, where, "a test function (Test… in a _test.sober file) takes no parameters, type parameters or results")
+    case Frozen{n}: "error: ${n} soundness findings (Analyzer)"
     case AssertOutsideTest{at}: loadLine(err, where, "assert is only available in _test.sober files")
     case CatchLhs{at}: loadLine(err, where, "the left of catch must be a call that returns (T, error?)")
     case MultiBind{at}: loadLine(err, where, "this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)")
@@ -458,6 +476,7 @@ func Format(err error?, where string) string {
         case 20: "budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only"
         case 19: "a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them"
         case 16: "handles (par.Task) go in a mut slice: mut hs := mut []par.Task[T]{} (an imm slice copies its elements, and a handle is not copied)"
+        case 21: "a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))"
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
         default: "par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)"
     }) }

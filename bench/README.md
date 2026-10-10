@@ -3,7 +3,7 @@
 - 逐次 9 題材: cycles で 7 題材が Go より少なく、mandelbrot は互角（1.00×）。負けは fannkuch（1.03×）だけ。binary-trees は 0.27×、1BRC は UTF-8 を全量検査したうえで 0.82×、spectral-norm は 6.5 便で反転（1.01× → 0.99×）
 - RSS は 9 題材中 8 題材で Go を下回る（0.07〜0.84 倍）。上回るのは revcomp（1.63×）。k-nucleotide は Go の RSS が回ごとに 74〜98 MB と揺れ、今回の中央で 0.84×（前回の表では 1.06×）
 - 対 Rust の双子（逐次 9 題材・2026-10-09）: Sober の 4 勝・2 互角・3 敗（負けは k-nucleotide 1.70×・1BRC 1.42×・n-body 1.26× — 下の「Rust の双子との比較」）
-- 並列: Skynet（111 万 task）は Go の 4 倍速く、binary-trees 並列は W8 で 2.5 倍速い。RSS は 1/14〜1/600。メモリの天井を細めても死なず、逐次の速さまで滑らかに落ちる（[par/README.md](par/README.md)）
+- 並列: Skynet（111 万 task）は Go の 5 倍速く、binary-trees 並列は W8 で 2.5 倍速い。RSS は 1/17〜1/500（Skynet — 2026-10-10 取り直し）。メモリの天井を細めても死なず、逐次の速さまで滑らかに落ちる（[par/README.md](par/README.md)）
 
 最終更新 2026-10-08（逐次は配置の便の後 — 鎖 44 行目 ee71316f の木。並列は commit 4e1bdb65 の木 — -O2 水準レーン 6.5 第 1・2 便「命令選択とループの形」の後）。生データと測り方は [par/README.md](par/README.md)（並列）と本ファイルの末尾（逐次）。前回の全表は 2026-10-05（非公開の作業メモ）。
 

@@ -1,0 +1,2 @@
+testdata/analyzer_neg/freeze_alias_copy.sober:9:6: error: this writes through `a[…]`, which may hold the contents frozen by `freeze(m)` — the frozen value would change. Build the value through one binding only, or copy it before freezing (Analyzer)
+testdata/analyzer_neg/freeze_alias_copy.sober:7:5: error: (note) the contents are shared from here — the binding written above and the frozen one may hold the same buffer (Analyzer)

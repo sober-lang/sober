@@ -1,0 +1,24 @@
+package main
+
+// ループの中で imm の引数に渡す: 次の周回の書きは「後」（暗黙の freeze・U2 — 束縛がループの外で宣言されているとき）
+
+func total(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() int {
+    mut m := mut []int{0, 0}
+    mut sum := 0
+    mut i := 0
+    while i < 3 {
+        m[0] = i
+        sum += total(m)
+        i += 1
+    }
+    println("${sum}")
+    return 0
+}

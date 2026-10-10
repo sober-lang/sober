@@ -1,0 +1,15 @@
+package main
+
+// freeze の後に mut で渡す（呼び先が書きうる — U2）
+
+func set0(xs mut []int, v int) {
+    xs[0] = v
+}
+
+func main() int {
+    mut m := mut []int{1, 2}
+    im := freeze(m)
+    set0(mut m, 9)
+    println("${im[0]}")
+    return 0
+}

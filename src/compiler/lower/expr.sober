@@ -658,7 +658,22 @@ func expr(st mut St, e desugar.NodeRef) (Val, error?) {
     if st.ymode == 2 {
         yCompare(mut st, e, v.t)
     }
+    // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じく型の付け替えだけ（命令は出さない）
+    if st.d.nimpl > 0 && desugar.IsImplicit(mut st.d, e) {
+        return Val{t: freezeTy(mut st, v.t), v: v.v}, nil
+    }
     return v, nil
+}
+
+// freezeTy は組み込みの freeze の結果の型（slice / map の外側の mut を落とす — string はそのまま。他は変えない）
+func freezeTy(st mut St, t int) int {
+    if isTag(mut st, t, TSlice) {
+        return if isString(mut st, t) { t } else { mkSlice(mut st, hget(mut st, t + 1), false) }
+    }
+    if isTag(mut st, t, TMap) {
+        return mkMap(mut st, hget(mut st, t + 1), hget(mut st, t + 2), false)
+    }
+    return t
 }
 
 func expr0(st mut St, e desugar.NodeRef) (Val, error?) {

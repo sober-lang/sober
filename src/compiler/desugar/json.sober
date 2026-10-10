@@ -531,9 +531,12 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
     }
 }
 
-// defJson は Def 1 つ（[param, ret, body, tparams]）を印字する
-func defJson(st mut S, out mut []byte, d int) {
+// defJson は Def 1 つ（[param, ret, body, tparams]）を印字する（trust = std の信頼の口の Def — trustDefs）
+func defJson(st mut S, out mut []byte, d int, trust bool) {
     out = append(out, '{')
+    if trust {
+        obuf.Lit(mut out, "\"trust\":true,")
+    }
     if hget(mut st, d + 3) > 0 {
         obuf.Lit(mut out, "\"tparams\":")
         obuf.Int(mut out, hget(mut st, d + 3))

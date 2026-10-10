@@ -1,0 +1,97 @@
+package main
+
+// freeze の一意性の規則（language.md 17 節 U1〜U3・26 節 U3）が受理する形: 書き終えてから freeze・欄の freeze（書き終えた struct の欄）・
+// freeze の後の append（凍結した範囲の外 — スナップショットを取りながら伸ばす）・mut で渡して積んでから freeze・ループの中で宣言した束縛の freeze
+// （周回ごとに新しい値）・兄弟のスコープの同名の束縛・凍結した値を imm の欄に入れる・要素を返す読み口（mut の仮引数の要素は返してよい）
+
+import "std/iter"
+
+type Nodes struct {
+    kind mut []int
+    a mut []int
+    n int
+}
+
+type Snap struct {
+    vals []int
+    n int
+}
+
+func fill(ns mut Nodes, k int) {
+    ns.kind = append(ns.kind, k)
+    ns.a = append(ns.a, k * 10)
+    ns.n = ns.n + 1
+}
+
+func at(xs mut []int, i int) int {
+    return xs[i]
+}
+
+func build(n int) []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, n) {
+        out = append(out, i * i)
+    }
+    return out
+}
+
+func sum(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() {
+    // 書き終えてから freeze
+    println(sum(build(5)))
+    // mut で渡して積んでから欄を freeze（その後は ns を使わない）
+    mut ns := Nodes{kind: mut []int{}, a: mut []int{}, n: 0}
+    for k <- iter.Range(1, 4) {
+        fill(mut ns, k)
+    }
+    n := ns.n
+    fk := freeze(ns.kind)
+    fa := freeze(ns.a)
+    println(n, sum(fk), sum(fa))
+    // freeze の後の append（スナップショット — 凍結した値は伸びない）
+    mut xs := mut []int{1}
+    mut snaps := mut []int{}
+    for i <- iter.Range(0, 3) {
+        loaded := freeze(xs)
+        snaps = append(snaps, len(loaded))
+        xs = append(xs, i)
+    }
+    println(sum(snaps), len(xs))
+    // ループの中で宣言した束縛の freeze（次の周回は新しい値）
+    mut total := 0
+    for i <- iter.Range(0, 3) {
+        mut b := mut []int{}
+        b = append(b, i)
+        b[0] = b[0] + 1
+        total += sum(b)
+    }
+    println(total)
+    // 兄弟のスコープの同名の束縛
+    mut t2 := 0
+    mut j := 0
+    while j < 2 {
+        mut m := mut []int{j}
+        t2 += sum(m)
+        j += 1
+    }
+    mut q := 0
+    while q < 2 {
+        mut m := mut []int{q + 10}
+        m[0] = m[0] + 1
+        t2 += sum(m)
+        q += 1
+    }
+    println(t2)
+    // 凍結した値を imm の欄へ・要素を返す読み口
+    mut ys := mut []int{7, 8, 9}
+    first := at(mut ys, 0)
+    s := Snap{vals: ys, n: first}
+    println(sum(s.vals), s.n)
+}

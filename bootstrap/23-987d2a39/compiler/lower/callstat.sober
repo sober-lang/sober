@@ -1,0 +1,107 @@
+package lower
+
+// 呼び出しの計数（開発用 `sober build --call-stat` — report-453 段 0: 呼び出しの固定費の値札の重み）。パスの後（検査点の後 — 最適化が展開した
+// 関数は数えない・実際に call される関数だけ）に、本体を持つ関数ごとに入口のブロックへ `cnt[k] += 1` を足し、main の後の rt.depth_report の頭で
+// `callstat <関数名> <回数>` を回数が 0 でない関数ごとに stderr へ出す。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
+// 入口のブロックがループの頭を兼ねる関数は反復ごとに数える（今の IR では入口へ戻る辺を作らない — 作るなら数え口の置き場を変える）
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+
+// CallStat は呼び出しの計数つきの実行ファイル
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par)
+func CallStat(p loader.Program, vmode int) ([]byte, error?) {
+    mut st := St{}
+    st.callStat = true
+    return elfOutSt(mut st, p, true, true, false, false, 0, vmode)
+}
+
+// callStatDump は表を stderr へ（rt.depth_report の頭 — 今の cur から続けて組み、印字の fd を 1 に戻して cur を返す）
+func callStatDump(st mut St, meta int) {
+    // 大域は program を組む途中で作る（elfOutSt が St の大域の鎖を作り直すので CallStat の入口では作れない）
+    st.csCnt = addGlobalInit(mut st, int(strLit(mut st, "callstat.cnt")), 1, -1)
+    st.csTbl = addGlobalInit(mut st, int(strLit(mut st, "callstat.tbl")), 1, -1)
+    st.csBlob = addGlobalInit(mut st, int(strLit(mut st, "callstat.names")), 1, -1)
+    toStderr(mut st, meta)
+    tbl := globaladdr(mut st, st.csTbl)
+    cnt := globaladdr(mut st, st.csCnt)
+    blob := globaladdr(mut st, st.csBlob)
+    n := load(mut st, tbl, 0)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    hit := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    c := load(mut st, gepWord(mut st, cnt, i), 0)
+    condbr(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)), hit, -1, next, -1)
+    setCur(mut st, hit)
+    ent := gepWord(mut st, tbl, bin(mut st, BAdd, bin(mut st, BMul, i, iconst(mut st, 2)), iconst(mut st, 1)))
+    name := newHeader(mut st, mkString(mut st), gepByte(mut st, blob, load(mut st, ent, 0)), load(mut st, ent, 1), iconst(mut st, 0))
+    printLit(mut st, "callstat ")
+    call(mut st, st.rtPstr, list1(mut st, name))
+    printLit(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, c))
+    printLit(mut st, "\n")
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    call(mut st, st.rtFlush, list0(mut st))
+    store(mut st, meta, W_FD, iconst(mut st, 1))
+}
+
+// callStatInsert は本体を持つ関数ごとに入口の数え口を足し、表と名前の大域の初期値を埋める
+func callStatInsert(st mut St) {
+    mut names := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        b0 := irFnBHead(mut st, f)
+        if b0 != -1 {
+            k := len(names)
+            names = append(names, irFnName(mut st, f))
+            st.fn = f
+            setCur(mut st, b0)
+            g := globaladdr(mut st, st.csCnt)
+            store(mut st, g, k, bin(mut st, BAdd, load(mut st, g, k), iconst(mut st, 1)))
+        }
+        f = irFnNext(mut st, f)
+    }
+    n := len(names)
+    // 名前のバイト列を 8 バイトの語に詰める（strlit と同じリトルエンディアン）・表 = [n, 位置 0, 長さ 0, …]
+    mut bytesAll := mut []int{}
+    tw := listN(mut st, 1 + 2 * n)
+    hset(mut st, tw + 1, n)
+    for k <- iter.Range(0, n) {
+        s := desugar.StrRef(names[k])
+        hset(mut st, tw + 2 + 2 * k, len(bytesAll))
+        hset(mut st, tw + 3 + 2 * k, slen(mut st, s))
+        for j <- iter.Range(0, slen(mut st, s)) {
+            bytesAll = append(bytesAll, sat(mut st, s, j))
+        }
+    }
+    nb := len(bytesAll)
+    nw := (nb + 7) / 8 + 1
+    bw := listN(mut st, nw)
+    for w <- iter.Range(0, nw) {
+        mut v := 0
+        mut j := 7
+        while j >= 0 {
+            q := w * 8 + j
+            v = (v << 8) | (if q < nb { bytesAll[q] } else { 0 })
+            j -= 1
+        }
+        hset(mut st, bw + 1 + w, v)
+    }
+    hset(mut st, st.csTbl + G_WORDS, 1 + 2 * n)
+    hset(mut st, st.csTbl + G_INIT, tw)
+    hset(mut st, st.csBlob + G_WORDS, nw)
+    hset(mut st, st.csBlob + G_INIT, bw)
+    hset(mut st, st.csCnt + G_WORDS, n + 1)
+}

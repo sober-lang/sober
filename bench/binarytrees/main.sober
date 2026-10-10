@@ -33,7 +33,7 @@ func check(a []int, n int) int {
 func one(d int) int {
     mut a := mut []int{}
     r := bottomUp(mut a, d)
-    return check(freeze(a), r)
+    return check(a, r)
 }
 
 func atoi(s string) int {
@@ -64,6 +64,6 @@ func main() int {
         println("${iters}\t trees of depth ${d}\t check: ${c}")
         d += 2
     }
-    println("long lived tree of depth ${maxDepth}\t check: ${check(freeze(long), lr)}")
+    println("long lived tree of depth ${maxDepth}\t check: ${check(long, lr)}")
     return 0
 }

@@ -35,7 +35,7 @@ func main() int {
         ns = append(ns, i)
     }
     // a parallel Map — the output is the same for any number of workers
-    ks, err := par.Map(freeze(ns), (n) => steps(n) catch -1)
+    ks, err := par.Map(ns, (n) => steps(n) catch -1)
     if err != nil {
         return 1
     }
@@ -114,7 +114,7 @@ bin/sober build examples/hello.sober -o hello && ./hello
 
 ## 検証の網
 
-コンパイラの変更は `scripts/gates.sh --full` の 53 本の検査を全部通してから入ります: 自己コンパイルの固定点（stage3 ≡ stage4）・黄金のテスト・最適化あり / なしの観測の一致・凍結した Zig 版との照合・独立のオラクル（Go の UTF-8・GNU as）・Lean で証明した形式モデル（`lean/` — 型安全性と並列の合流性）との照合。
+コンパイラの変更は `scripts/gates.sh --full` の 54 本の検査を全部通してから入ります: 自己コンパイルの固定点（stage3 ≡ stage4）・黄金のテスト・最適化あり / なしの観測の一致・凍結した Zig 版との照合・独立のオラクル（Go の UTF-8・GNU as）・Lean で証明した形式モデル（`lean/` — 型安全性と並列の合流性）との照合。
 
 ## 文書
 

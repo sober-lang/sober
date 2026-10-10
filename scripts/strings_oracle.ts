@@ -37,22 +37,39 @@ const cases: Case[] = [
   // IndexByte
   ["IndexByte", "golang", 108], ["IndexByte", "gophers", 104], ["IndexByte", "golang", 120],
   ["IndexByte", "", 97], ["IndexByte", "aaa", 97], ["IndexByte", "abc", 99],
+  // TrimPrefix
+  ["TrimPrefix", ":id", ":"], ["TrimPrefix", "id", ":"], ["TrimPrefix", "abc", ""], ["TrimPrefix", "", ""],
+  ["TrimPrefix", "ab", "abc"], ["TrimPrefix", "あいう", "あ"], ["TrimPrefix", "abcabc", "abc"],
+  // Cut（3 つの結果 — 助け手 showCut が並べて印字）
+  ["Cut", "k=v", "="], ["Cut", "k=v=w", "="], ["Cut", "kv", "="], ["Cut", "", "="], ["Cut", "abc", ""],
+  ["Cut", "=v", "="], ["Cut", "k=", "="], ["Cut", "あ=い", "="], ["Cut", "aXXbXXc", "XX"], ["Cut", "あいう", "い"],
+  // CutLast（Go に無い — 双子は strings.LastIndex で同じ形を書く）
+  ["CutLast", "a/b/c", "/"], ["CutLast", "abc", "/"], ["CutLast", "/abc", "/"], ["CutLast", "abc/", "/"], ["CutLast", "abc", ""],
+  ["CutLast", "", ""], ["CutLast", "aXXbXXc", "XX"], ["CutLast", "あ/い/う", "/"], ["CutLast", "aaa", "aa"],
 ];
 
 const q = (s: string) => JSON.stringify(s); // 両言語とも "..." のエスケープで足りる範囲に留める
 const arg = (b: string | number) => (typeof b === "number" ? String(b) : q(b));
 
+// 3 つの結果を返す Cut / CutLast は助け手（showCut / showCutLast）が並べて印字する（両言語とも空白区切り）
+const multi = (f: string) => f === "Cut" || f === "CutLast";
 const sober = [
   "package main", "", "// Go の strings パッケージとの突き合わせ。生成物 — scripts/strings_oracle.ts から再生成する",
-  "", 'import "std/strings"', "", "func main() {",
-  ...cases.map(([f, a, b]) => `    println(strings.${f}(${q(a)}, ${arg(b)}))`),
+  "", 'import "std/strings"', "",
+  "func showCut(s string, sep string) {", "    a, b, ok := strings.Cut(s, sep)", "    println(a, b, ok)", "}", "",
+  "func showCutLast(s string, sep string) {", "    a, b, ok := strings.CutLast(s, sep)", "    println(a, b, ok)", "}", "",
+  "func main() {",
+  ...cases.map(([f, a, b]) => multi(f) ? `    show${f}(${q(a)}, ${arg(b)})` : `    println(strings.${f}(${q(a)}, ${arg(b)}))`),
   "}", "",
 ].join("\n");
 
 // IndexByte の c は両言語とも byte（範囲外の定数は Sober でもコンパイルエラー — std 命名規則 5）
-const goCall = ([f, a, b]: Case) => `strings.${f}(${q(a)}, ${arg(b)})`;
+const goCall = ([f, a, b]: Case) => f === "CutLast" ? `cutLast(${q(a)}, ${arg(b)})` : `strings.${f}(${q(a)}, ${arg(b)})`;
 const go = [
-  "package main", "", 'import (\n\t"fmt"\n\t"strings"\n)', "", "func main() {",
+  "package main", "", 'import (\n\t"fmt"\n\t"strings"\n)', "",
+  "func cutLast(s, sep string) (string, string, bool) {",
+  "\ti := strings.LastIndex(s, sep)", "\tif i < 0 {", "\t\treturn s, \"\", false", "\t}", "\treturn s[:i], s[i+len(sep):], true", "}", "",
+  "func main() {",
   ...cases.map((c) => `\tfmt.Println(${goCall(c)})`),
   "}", "",
 ].join("\n");

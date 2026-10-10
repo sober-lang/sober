@@ -13,6 +13,7 @@ import "lexer"
 import "std/io"
 import "std/iter"
 import "std/table"
+import "std/strings"
 
 // 点の種類（rt.panic の文面の番号）
 const PK_INDEX = 1     // 添字が範囲外
@@ -232,6 +233,9 @@ func buildPanicMem(st mut St) {
 func buildDepthReport(st mut St) {
     begin(mut st, st.rtDrep)
     meta := globaladdr(mut st, st.meta)
+    if st.callStat {
+        callStatDump(mut st, meta)
+    }
     on := newBlock(mut st)
     off := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, load(mut st, meta, W_DREP), iconst(mut st, 0)), off, -1, on, -1)
@@ -442,12 +446,8 @@ func printPos(st mut St, fsl int, line int, col int, paths []string) {
 // エントリの綴り〔相対 / 絶対〕や cwd を焼かない）
 func sitePath(p loader.Program, f int) string {
     path := p.file_path[f]
-    b := bytes(path)
-    mut k := len(b)
-    while k > 0 && b[k - 1] != '/' {
-        k -= 1
-    }
-    base := string(b[k:len(b)]) catch path
+    _, after, slashed := strings.CutLast(path, "/")
+    base := if slashed { after } else { path }
     pk := p.pkg_path[p.file_pkg[f]]
     if pk == "main" {
         return base

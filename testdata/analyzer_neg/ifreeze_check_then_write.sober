@@ -1,0 +1,14 @@
+package main
+
+// utf8.Check（imm の引数）に渡した後に書くと、検査済みの証人（View）が嘘になる（暗黙の freeze・U2）
+
+import "std/utf8"
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    v := utf8.Check(m) catch return 1
+    m[0] = 200
+    s := utf8.Str(v, 0, 1) catch "bad"
+    println(s)
+    return 0
+}

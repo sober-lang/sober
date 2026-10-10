@@ -29,7 +29,7 @@ func mkKey(i int) string {
             b = append(b, byte('a' + u % 3))
         }
     }
-    v := utf8.Check(freeze(b)) catch panic(Unreachable{})
+    v := utf8.Check(b) catch panic(Unreachable{})
     return utf8.Str(v, 0, len(b)) catch panic(Unreachable{})
 }
 
@@ -56,7 +56,7 @@ func main() {
         op := r % 20
         // 種の幅を段ごとに広げる（短い map の走査 → 索引の道）
         k := mkKey(r / 20 % (8 + step / 20))
-        i := idx(freeze(rk), k)
+        i := idx(rk, k)
         if op < 9 {
             m[k] = step
             if i >= 0 {

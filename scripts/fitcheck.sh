@@ -2,7 +2,7 @@
 # 線の跨ぎの詰め物の網（配置の便 案 A）: 詰め物の量が決まるまで、落ちない点からの窓を別の表へ本番として吐き、本表へ継ぐ
 # （compiler/lower/x86.sober の xFitSplice — 窓の中で積んだ位置の記録〔ブロックの番地・飛び・ゼロ除算・外置きの辺・fx〕に継いだ位置を足す）。
 # `build --fit-check`（窓を作るが詰めない）と `build --fit-off`（窓を作らない）の ELF がバイト一致すること = 継ぎの足し直しに漏れが無いこと。
-# 列 = obs の列（examples/*.out・testdata/*/app.out）+ bench の 9 題材 + 粒度の葉 + compiler 自身（compiler/ + std/ の木）
+# 列 = obs の列（examples/*.out・testdata/*/app.out）+ bench の 9 題材 + Web コア + 粒度の葉 + compiler 自身（compiler/ + std/ の木）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -13,7 +13,7 @@ trap 'rm -rf "$W"' EXIT
 entries=()
 for f in examples/*.out; do entries+=("examples/$(basename "$f" .out).sober"); done
 for f in testdata/*/app.out; do entries+=("${f%.out}"); done
-for b in 1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot skynet/gran; do entries+=("bench/$b/main.sober"); done
+for b in 1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot jsonapi routing logagg skynet/gran; do entries+=("bench/$b/main.sober"); done
 n=0; fail=0
 one() { # $1 = cwd $2 = src $3 = 名前
     if ! (cd "$1" && "$S2" build "$2" --emit=elf --passes --fit-off -o "$W/off") > "$W/err" 2>&1; then

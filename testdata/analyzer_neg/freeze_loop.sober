@@ -1,0 +1,17 @@
+package main
+
+// ループの中の freeze: 次の周回の書きは「後」（束縛がループの外で宣言されているとき）
+
+func main() int {
+    mut m := mut []int{0, 0}
+    mut sum := 0
+    mut i := 0
+    while i < 3 {
+        m[0] = i
+        im := freeze(m)
+        sum += im[0]
+        i += 1
+    }
+    println("${sum}")
+    return 0
+}

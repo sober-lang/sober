@@ -14,7 +14,7 @@ func build(n int) map[string]int {
         c := m[k]
         m[k] = if c != nil { c + len(bytes(filler)) } else { i }
     }
-    return freeze(m)
+    return m
 }
 
 func main() {

@@ -1,0 +1,112 @@
+package lower
+
+// task の罠（段 6 P3a-2a — docs/ir.md「罠」）: IR の op `trap callee(arg)`（OpTrapI — 罠を張って呼ぶ・結果 0 = 戻った / 1 = 中で死んだ）と
+// `unwind`（OpUnwind — 罠があれば最内の罠へ巻き戻る）。死（exit 101 / 102）の手前で rt.panic / rt.panic_mem が罠を見て、張られていれば
+// 死因を @rt.trap に書いて巻き戻る（印字しない — 死を受けるのは罠を張った側）。罠が無ければ今までどおり印字して exit。
+// 罠を使うモジュール（st.trapUse — 入口の前に立てる）だけが @rt.trap と巻き戻しの分岐を持つ（使わないプログラムの IR は不変）。
+// 機械語（x86.sober の xTrap / xUnwind）: 罠の記録は機械のスタックに積む [前の罠, 再開番地, xmm2〜15, 呼び手の callee-saved 11 本]・
+// @rt.trap[0] = 最内の記録の番地。巻き戻し = rsp を記録へ戻し、前の罠を戻して再開番地へ（callee-saved は記録から戻す — 子の epilogue は飛ばされる）。
+// 巻き戻しは region の深度・宛先 / anchor のレジスタ・rtgrow の水位を戻さない（P3a-2c — 罠を張る側の後始末）
+
+import "desugar"
+import "std/iter"
+
+// @rt.trap の配置（語）: [0] 最内の罠の記録の番地（0 = 無し）・[1] 死因の終了コード（101 / 102）・[2] 死因の点（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
+const TRAP_WORDS = 3
+const TW_TOP = 0
+const TW_CODE = 1
+const TW_SITE = 2
+
+// trapDie は rt.panic / rt.panic_mem の入口の分岐: 罠が張られていれば死因（終了コード code・点 site）を書いて巻き戻る
+func trapDie(st mut St, code int, site int) {
+    if !st.trapUse {
+        return
+    }
+    tg := globaladdr(mut st, st.trapG)
+    tTop := load(mut st, tg, TW_TOP)
+    tDead := newBlock(mut st)
+    tLive := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tTop, iconst(mut st, 0)), tDead, -1, tLive, -1)
+    setCur(mut st, tDead)
+    store(mut st, tg, TW_CODE, iconst(mut st, code))
+    store(mut st, tg, TW_SITE, site)
+    unwind(mut st)
+    br(mut st, tLive, -1)
+    setCur(mut st, tLive)
+}
+
+// ── 罠の単体の例（`sober build --trap-probe` — 開発用・scripts/trapprobe.sh の網）──
+// 入口が main の代わりに trap.probe を呼ぶ。子 = 戻る・index の死（101）・region の死（102）・ゼロ除算（x86 の死の口）・罠の入れ子・
+// 深い再帰の中の死。罠を跨いで生きる値（callee-saved に乗る）の和で巻き戻しの callee-saved の復元を見る。最後に罠の外で死ぬ（今までどおり印字して 101）
+
+// probeLine は文字列 w と値 v を 1 行に印字する
+func probeLine(st mut St, w string, v int) {
+    printLit(mut st, w)
+    call(mut st, st.rtPint, list1(mut st, v))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+}
+
+// probeKid は子の関数 trap.<name>（引数 1 語・結果なし）を作り、本体の入口に立った状態で返す（引数の値 = 0）
+func probeKid(st mut St, name string) FnRef {
+    f := addFunc(mut st, int(strLit(mut st, name)), desugar.ListRef(list1(mut st, TyI64)), -1)
+    begin(mut st, f)
+    return f
+}
+
+// buildTrapProbe は子と trap.probe を作って trap.probe を返す（at = 点の位置 — main の宣言）
+func buildTrapProbe(st mut St, at desugar.NodeRef) FnRef {
+    needPanic(mut st)
+    kOk := probeKid(mut st, "trap.ok")
+    probeLine(mut st, "kid ok ", 0)
+    ret(mut st, -1)
+    kIdx := probeKid(mut st, "trap.idx")
+    probeLine(mut st, "kid idx ", 0)
+    panicSite(mut st, PK_UNREACH, at)
+    kMem := probeKid(mut st, "trap.mem")
+    probeLine(mut st, "kid mem ", 0)
+    memPanic(mut st, PM_DEPTH)
+    kDiv := probeKid(mut st, "trap.div")
+    tQ := bin(mut st, BDiv, 0, bin(mut st, BSub, 0, 0))
+    probeLine(mut st, "kid div ", tQ)
+    ret(mut st, -1)
+    kNest := probeKid(mut st, "trap.nest")
+    tS := trapCall(mut st, funcaddr(mut st, kIdx), 0)
+    probeLine(mut st, "nest inner died=", tS)
+    panicSite(mut st, PK_UNREACH, at)
+    // 深い再帰: kDeep(n) = n == 0 なら死・でなければ callee-saved に値を載せて kDeep(n - 1)
+    kDeep := probeKid(mut st, "trap.deep")
+    tBottom := newBlock(mut st)
+    tDown := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, 0, iconst(mut st, 0)), tBottom, -1, tDown, -1)
+    setCur(mut st, tDown)
+    tKeep := bin(mut st, BMul, 0, iconst(mut st, 3))
+    call(mut st, kDeep, list1(mut st, bin(mut st, BSub, 0, iconst(mut st, 1))))
+    probeLine(mut st, "deep unreachable ", tKeep)
+    ret(mut st, -1)
+    setCur(mut st, tBottom)
+    probeLine(mut st, "deep bottom ", 0)
+    panicSite(mut st, PK_UNREACH, at)
+
+    p := addFunc(mut st, int(strLit(mut st, "trap.probe")), desugar.ListRef(list0(mut st)), -1)
+    begin(mut st, p)
+    // 罠を跨いで生きる値（定数に畳まれないよう @rt.meta の FD〔= 1〕から作る）
+    tOne := load(mut st, globaladdr(mut st, st.meta), W_FD)
+    v1 := bin(mut st, BMul, tOne, iconst(mut st, 3))
+    v2 := bin(mut st, BMul, tOne, iconst(mut st, 50))
+    v3 := bin(mut st, BMul, tOne, iconst(mut st, 700))
+    v4 := bin(mut st, BMul, tOne, iconst(mut st, 9000))
+    tg := globaladdr(mut st, st.trapG)
+    tKids := []FnRef{kOk, kIdx, kMem, kDiv, kNest, kDeep}
+    tNames := []string{"ok", "idx", "mem", "div", "nest", "deep"}
+    for k <- iter.Range(0, len(tKids)) {
+        r := trapCall(mut st, funcaddr(mut st, tKids[k]), if tNames[k] == "deep" { iconst(mut st, 40) } else { iconst(mut st, k) })
+        probeLine(mut st, "${tNames[k]} died=", r)
+        probeLine(mut st, "  code=", load(mut st, tg, TW_CODE))
+        probeLine(mut st, "  top=", load(mut st, tg, TW_TOP))
+    }
+    probeLine(mut st, "live ", bin(mut st, BAdd, bin(mut st, BAdd, v1, v2), bin(mut st, BAdd, v3, v4)))
+    // 罠の外の死: 今までどおり印字して exit 101
+    call(mut st, kIdx, list1(mut st, iconst(mut st, 99)))
+    ret(mut st, -1)
+    return p
+}

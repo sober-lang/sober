@@ -1,0 +1,17 @@
+package main
+
+// 欄を imm の slice のリテラルの要素にした後、兄弟の欄から書く（暗黙の freeze・U2 — 欄の凍結は根ごと）
+
+type B struct {
+    xs mut []byte
+    ys mut []byte
+}
+
+func main() int {
+    mut b := B{xs: mut []byte{65, 66, 67}, ys: mut []byte{}}
+    b.ys = b.xs
+    ls := [][]byte{b.xs}
+    b.ys[0] = 200
+    println("${int(ls[0][0])}")
+    return 0
+}

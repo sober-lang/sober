@@ -15,7 +15,7 @@ func names(n int) []string {
     for i <- iter.Range(0, n) {
         out = append(out, "k${i}")
     }
-    return freeze(out)
+    return out
 }
 
 // fill は関数の region で作った map を返す（呼び手の region へ relocate）
@@ -24,10 +24,19 @@ func fill(n int) map[int]int {
     for i <- iter.Range(0, n) {
         m[i * 7] = i
     }
-    return freeze(m)
+    return m
 }
 
 func get(m map[string]int, k string) int {
+    v := m[k]
+    if v != nil {
+        return v
+    }
+    return -1
+}
+
+// getm は mut の map を凍結せずに引く（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
+func getm(m mut map[string]int, k string) int {
     v := m[k]
     if v != nil {
         return v
@@ -49,18 +58,19 @@ func main() {
     for i <- iter.Range(0, len(ns)) {
         m[ns[i]] = i
     }
-    println(len(m), get(freeze(m), "k0"), get(freeze(m), "k39"), get(freeze(m), "nope"))
+    println(len(m), getm(mut m, "k0"), getm(mut m, "k39"), getm(mut m, "nope"))
     // 墓石と再挿入（元の位置）
     delete(m, "k3")
-    println(len(m), get(freeze(m), "k3"))
+    println(len(m), getm(mut m, "k3"))
     m["k3"] = 333
-    ks := keys(freeze(m))
+    ks := keys(m)
     println(ks[3], ks[4], len(ks))
-    // 値のヘッダ: old は成長の前のコピー — 新しいキーは見えず、既存のキーの値の更新は共有のセルなので見える
-    old := freeze(m)
+    // 値のヘッダ: old は成長の前のコピー（mut の別名 — 2026-10-10 まで freeze した旧ヘッダで試していた形は F-al の穴の上だった）。
+    // 新しいキーの挿入で m は全コピーへ伸びるので、old は旧テーブルを見続ける（新しいキーも、その後の既存のキーの更新も見えない）
+    mut old := m
     m["new1"] = 1
     m["k5"] = 555
-    println(get(old, "new1"), get(old, "k5"), len(old), get(freeze(m), "new1"))
+    println(getm(mut old, "new1"), getm(mut old, "k5"), len(old), getm(mut m, "new1"))
     // 2 つのコピーが別々に伸びる（片方は先端・もう片方は全コピー）
     mut a := mut map[string]int{}
     for i <- iter.Range(0, 20) {
@@ -76,11 +86,11 @@ func main() {
     f := fill(50)
     println(len(f), geti(f, 0), geti(f, 343), geti(f, 7 * 49), geti(f, 1))
     // struct の欄
-    bx := Box{m: freeze(m)}
+    bx := Box{m: m}
     println(get(bx.m, "k10"), get(bx.m, "k3"))
     mut sum := 0
     for k <- freeze(m) {
-        sum += get(freeze(m), k)
+        sum += get(m, k)
     }
     println(sum)
 }

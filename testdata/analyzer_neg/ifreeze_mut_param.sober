@@ -1,0 +1,15 @@
+package main
+
+// mut の仮引数の中身を imm の結果として返す（暗黙の freeze・U1 の仮引数 — 呼び手が同じ中身を書ける）
+
+func fr(x mut []byte) []byte {
+    return x
+}
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    im := fr(mut m)
+    m[0] = 200
+    println("${int(im[0])}")
+    return 0
+}

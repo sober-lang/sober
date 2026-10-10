@@ -508,11 +508,63 @@ func stringBinary(st mut St, e desugar.NodeRef, lt int, lv int) (Val, error?) {
         call(mut st, st.rtCopy8, list3(mut st, q, hdrPtr(mut st, r.v), l2))
         return Val{t: lt, v: newHeader(mut st, lt, p, n, d)}, nil
     }
-    eq := call(mut st, st.rtStreq, list2(mut st, lv, r.v))
+    eq := strEqual(mut st, e, lv, r.v)
     if op == lexer.EqualEqual {
         return Val{t: tBool(mut st), v: eq}, nil
     }
     return Val{t: tBool(mut st), v: bin(mut st, BXor, eq, iconst(mut st, 1))}, nil
+}
+
+// strEqual は string の等値（i64 の真偽）。呼び出しの多くは長さの不一致で抜けるので（report-450 — logagg 70%・routing 39%）、
+// 呼ぶ前にその場で長さを比べる（S1）。片側が 8 バイト以下のリテラルなら呼ばずに閉じる（S2）: 長さ = 定数 K と比べ、もう片側の先頭 8 バイトを
+// 1 回読んでリテラルの語（rodata と同じ詰め方の定数）と下位 K バイトだけ比べる — 8 バイトの load はページの末尾 7 バイトに掛からなければフォルトしない
+// （掛かるときだけ rt.str_eq）。開発用 --rt-mutant=12 は常に rt.str_eq を呼ぶ（短い等値の速い道の差分オラクル — scripts/streq.sh）
+func strEqual(st mut St, e desugar.NodeRef, lv int, rv int) int {
+    if st.rtMut == 12 {
+        return call(mut st, st.rtStreq, list2(mut st, lv, rv))
+    }
+    x := nodeOf(mut st, e)
+    lit := if kindN(mut st, nC(x)) == ast.EStrlit { nC(x) } else if kindN(mut st, nB(x)) == ast.EStrlit { nB(x) } else { desugar.NodeRef(-1) }
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    same := newBlock(mut st)
+    if int(lit) < 0 {
+        condbr(mut st, cmp(mut st, CNe, load(mut st, lv, 1), load(mut st, rv, 1)), done, list1(mut st, iconst(mut st, 0)), same, -1)
+        setCur(mut st, same)
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+        setCur(mut st, done)
+        return res
+    }
+    s := sA(nodeOf(mut st, lit))
+    k := slen(mut st, s)
+    other := if lit == nC(x) { lv } else { rv }
+    condbr(mut st, cmp(mut st, CNe, load(mut st, other, 1), iconst(mut st, k)), done, list1(mut st, iconst(mut st, 0)), same, -1)
+    setCur(mut st, same)
+    if k == 0 {
+        br(mut st, done, list1(mut st, iconst(mut st, 1)))
+    } else if k > 8 {
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+    } else {
+        word := newBlock(mut st)
+        slow := newBlock(mut st)
+        pi := load(mut st, other, 0)
+        fits := bin(mut st, BSub, bin(mut st, BAnd, pi, iconst(mut st, 4095)), iconst(mut st, 4089))
+        condbr(mut st, cmp(mut st, CLt, fits, iconst(mut st, 0)), word, -1, slow, -1)
+        setCur(mut st, word)
+        mut lw := 0
+        mut j := k - 1
+        while j >= 0 {
+            lw = (lw << 8) | sat(mut st, s, j)
+            j -= 1
+        }
+        d := bin(mut st, BXor, load(mut st, itop(mut st, pi), 0), iconst(mut st, lw))
+        dm := if k == 8 { d } else { bin(mut st, BShl, d, iconst(mut st, 64 - 8 * k)) }
+        br(mut st, done, list1(mut st, cmp(mut st, CEq, dm, iconst(mut st, 0))))
+        setCur(mut st, slow)
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+    }
+    setCur(mut st, done)
+    return res
 }
 
 // concatHead は連結の結果のセル列（左の片 lv を先頭に写した・残り rest バイトを書ける — 深度 d）: 左の片のヘッダの深度が d で終わりが d の先端なら
@@ -621,11 +673,8 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
         }
         return one1(mut st, mkString(mut st), x.v), nil
     case 3:
-        if isTag(mut st, x.t, TSlice) {
-            return one1(mut st, if isString(mut st, x.t) { x.t } else { mkSlice(mut st, hget(mut st, x.t + 1), false) }, x.v), nil
-        }
-        if isTag(mut st, x.t, TMap) {
-            return one1(mut st, mkMap(mut st, hget(mut st, x.t + 1), hget(mut st, x.t + 2), false), x.v), nil
+        if isTag(mut st, x.t, TSlice) || isTag(mut st, x.t, TMap) {
+            return one1(mut st, freezeTy(mut st, x.t), x.v), nil
         }
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     case 4:

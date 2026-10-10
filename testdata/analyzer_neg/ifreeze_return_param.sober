@@ -1,0 +1,17 @@
+package main
+
+// 呼び先が mut の仮引数の中身を返す（U3）— 凍結は imm の値の map への格納（暗黙の freeze）
+
+func mk(x mut []int) mut []int {
+    return x
+}
+
+func main() int {
+    mut mm := mut map[string][]int{}
+    mut m := mut []int{1, 2}
+    mut a := mk(mut m)
+    mm["k"] = m
+    a[0] = 9
+    println("${len(mm)}")
+    return 0
+}

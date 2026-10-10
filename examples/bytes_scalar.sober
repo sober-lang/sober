@@ -71,7 +71,7 @@ func main() {
     if o != nil {
         println(o)
     }
-    println(orZero(findSep(ys[0:2])), orZero(findSep(freeze(xs))))
+    println(orZero(findSep(ys[0:2])), orZero(findSep(xs)))
     mut n := 0
     for i <- iter.Range(0, 3) {
         n = n + int(byte(i * 100))

@@ -3,7 +3,8 @@ package analyzer
 // analyzer 層（受理の定義に含む — docs/design-dev.md 層の線引き。language.md 30 節）: `sober check` が desugar の前に走らせ、build は走らせない。
 // 入力はローダの後の表層 AST（脱糖後は defer が出口ごとに展開され関数名も消えるので、照合はここでしかできない）。
 // 読みは desugar の公開の口（Init が立てる表 — 名前解決・関数表・ラベル表）。出力は指摘の列（1 件で止めない — Zig 版 src/stage1/analyzer.zig と同じ）。
-// 規則: pool.sober（acquire / release の局所照合 R-a — Zig 版の移植）・annot.sober（`@errors` の項の解決）。導出: errors.sober（今は影）
+// 規則: pool.sober（acquire / release の局所照合 R-a — Zig 版の移植）・annot.sober（`@errors` の項の解決）・freeze.sober（freeze の健全性 U1〜U3 —
+// 健全性の規則なのでこれだけは build でも走る: Freeze）。導出: errors.sober（今は影）
 
 import "ast"
 import "desugar"
@@ -47,17 +48,29 @@ type Az struct {
     swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
     swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
     lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
+    fz Fz                    // freeze の規則の作業域（freeze.sober — 関数ごとに使い回す）
 }
 
 
 // Run は Program p の全 package の全関数本体と const の式を照合して指摘を返す（空なら受理）
 func Run(p loader.Program) []Finding {
+    return runAz(p, false)
+}
+
+// runAz は Run の本体（only = freeze の規則〔健全性 — build でも走る〕だけ）。表層型の表（TypeAll）は暗黙の freeze の点を引くのに要る。
+// 表は lower と共有しない: mut の仮引数の S を Az の欄へ写す形は検査器の Def で落ち、E2-S の逃げ（展開）で自己 check が 3 周になる（report-484）
+func runAz(p loader.Program, only bool) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
-    desugar.Init(mut az.d, p)
-    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, fz: Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
+        esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
+        hs: table.Table[int]{}, seen: table.Table[int]{}, work: table.Table[int]{}, dkey: table.Table[int]{}, dval: table.Table[int]{}, rstart: table.Table[int]{}, rlist: table.Table[int]{}, bhead: table.Table[int]{}, bstamp: table.Table[int]{}, bnext: table.Table[int]{}, stamp: 0, nNames: 0, nHold: 0, nEsc: 0, nEv: 0, nLoops: 0, nRoots: 0, nSeen: 0}}
+    desugar.Typed(mut az.d, p)
+    if only {
+        freezeRules(mut az, true)
+    }
+    for f <- iter.Range(0, if only { 0 } else { desugar.Nfile(mut az.d) }) {
         az.pk = desugar.FilePkg(mut az.d, f)
         root := desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f))
         fs := desugar.ListRef(root.d)
@@ -72,18 +85,23 @@ func Run(p loader.Program) []Finding {
             expr(mut az, desugar.NodeRef(desugar.NodeOf(mut az.d, nat(mut az, cs, i)).b))
         }
     }
-    checkAnnots(mut az)
-    errInit(mut az)
-    errSolve(mut az)
-    checkErrors(mut az)
-    checkSwitches(mut az)
+    if !only {
+        checkAnnots(mut az)
+        errInit(mut az)
+        errSolve(mut az)
+        checkErrors(mut az)
+        checkSwitches(mut az)
+        freezeRules(mut az, false)
+    }
     // 綴りはここで組む（走査の mut の関数の中で作った文字列を az に積むと、region の座標が呼び手の外へ出る）
     mut fs := mut []Finding{}
     for i <- iter.Range(0, table.Len(mut az.out) / 3) {
         k := table.Get(mut az.out, i * 3)
         at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
         x := desugar.NodeRef(table.Get(mut az.out, i * 3 + 2))
-        if k == MSwGap || k == MSwDeadDefault {
+        if (k >= MFzWrite && k <= MFzParam) || k == MFzEscape || k == MFzImplicitAt {
+            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: fzMessage(mut az, k, at, x)})
+        } else         if k == MSwGap || k == MSwDeadDefault {
             fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
         } else if k == MSwDeadArm || k == MSwDeadCase {
             fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: armMessage(mut az, k, int(x))})
@@ -311,7 +329,9 @@ func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, fz: Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
+        esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
+        hs: table.Table[int]{}, seen: table.Table[int]{}, work: table.Table[int]{}, dkey: table.Table[int]{}, dval: table.Table[int]{}, rstart: table.Table[int]{}, rlist: table.Table[int]{}, bhead: table.Table[int]{}, bstamp: table.Table[int]{}, bnext: table.Table[int]{}, stamp: 0, nNames: 0, nHold: 0, nEsc: 0, nEv: 0, nLoops: 0, nRoots: 0, nSeen: 0}}
     desugar.Init(mut az.d, p)
     errInit(mut az)
     errSolve(mut az)

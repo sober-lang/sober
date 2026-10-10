@@ -150,6 +150,13 @@ type St struct {
     // （[次, 関数, 頭のブロックの番号, 本体の重み B, N, 形]）
     cutStat bool
     cutRecs int
+    // 呼び出しの計数（開発用 `sober build --call-stat` — report-453 段 0）: 関数ごとの入口の数え口の大域（csCnt）・名前の表（csTbl = [n, 位置, 長さ…]）・
+    // 名前のバイト列（csBlob）。表と名前は数え口を入れるとき（callStatInsert — パスの後）に大域の初期値として埋める
+    callStat bool
+    csSite bool
+    csCnt int
+    csTbl int
+    csBlob int
     // 配置の計器（開発用 `sober build --layout=S` = S〔v2〕/ `--layout-v1=S` = 1000 + S〔v1〕— x86.sober xLayPad / xLayInner）。0 = ずらしなし
     xLay int
     rtKidKeep FnRef
@@ -159,6 +166,18 @@ type St struct {
     rtPint FnRef
     rtRenter FnRef
     rtRenterLL FnRef // rt.region_enter_lloop（ループの反復の軽い enter — 幾何成長の世代を進める。-1 = まだ無い）
+    // UTF-8 の境界の畳み（ubf.sober — UTF-8 の検査消去便 段 1）: std/utf8.Check（写さない — 呼び出しの点が中身の凍結済みの点）・std/utf8.boundary
+    // （写しの byte の読みに印 — load8 の C 欄 UB_MARK）。-1 = 無い。ubStat = 畳めた数を関数ごとに印字（開発の口 --ubf-stat — 1 本の経路だけ）
+    ubCheck FnRef
+    ubBound FnRef
+    ubStat bool
+    // lower の束縛の事実（lower.sober の ubBind — `$k, $e := utf8.Check(b)` の直後の `v := if $e != nil { 脱出 } else { $k }`）: 文の通し番号・
+    // 待ちの束縛の文の番号・$k / $e の名前・b の値（スロットの番地）
+    ubSeq int
+    ubPendSeq int
+    ubPendK desugar.StrRef
+    ubPendE desugar.StrRef
+    ubPendB int
     rtRenterL FnRef  // rt.region_enter_light（第二便 M9 — rlight.sober。-1 = まだ無い）
     rtRalloc FnRef
     rtReloc FnRef
@@ -244,6 +263,7 @@ type St struct {
     vfyLast bool     // ELF の build の既定: 検証器を段ごとでなく最後に 1 回だけ（vfyFinal — 段ごとは SOBER_VERIFY=each・gates が立てる。仕上げ便）
     vfyRuns bool     // 最後の段の段ごとの検証の間だけ立つ（全展開の直線の長さの検査 — unroll.sober の urRunMsg。vfyFinal が立てる）
     xXmm int         // 割り当てが使う xmm の和（ビット k = xmm k — 段 6 P4-6）: 切替と罠はこの組だけ積む（xModule が切替 / 罠を持つ関数を最後に吐く）
+    xAddr []int      // 番地を取られる関数（OpFuncaddr の行き先 — fr の添字ごとに 1）: 呼び出し規約の段 3 の例外（旧規約 = 引数は全部スタック）。xModuleFrozen が作る
     hfOn bool        // ヒープを凍らせた表 hf から読む（x86 の段 — xModule の入口で table.Freeze。凍結の口 — 仮裁定 2026-10-07 夜間）
     hf table.Frozen[int]
     xseq bool        // バックエンドの関数の並列を外す（段 6 P6-4 — 1 本の経路: 照合用 — ElfPassesSeq）
@@ -313,6 +333,9 @@ func initScalars(st mut St) {
     st.rtRenter = -1
     st.rtRenterL = -1
     st.rtRenterLL = -1
+    st.ubCheck = -1
+    st.ubBound = -1
+    st.ubPendSeq = -2
     st.rtRalloc = -1
     st.rtReloc = -1
     st.rtCopy = -1

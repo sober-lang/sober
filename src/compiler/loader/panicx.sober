@@ -11,6 +11,7 @@ package loader
 
 import "std/builder"
 import "std/iter"
+import "std/strings"
 import "ast"
 import "diag"
 
@@ -87,18 +88,11 @@ func printableTy(t ast.Tree, ty int) bool {
 
 // labelAt はファイル f から綴り name（`L` / `ref.L`）で引ける panic ラベル（表 lt の項の番号 — 無ければ -1）
 func labelAt(cx Cx, lt []int, f int, name string) int {
-    b := bytes(name)
-    mut dot := 0 - 1
-    for i <- iter.Range(0, len(b)) {
-        if b[i] == '.' {
-            dot = i
-        }
-    }
+    ref, after, dotted := strings.CutLast(name, ".")
     mut pk := cx.file_pkg[f]
     mut base := name
-    if dot >= 0 {
-        ref := string(b[0:dot]) catch ""
-        base = string(b[dot + 1:len(b)]) catch ""
+    if dotted {
+        base = after
         pk = fileImportOf(cx, f, ref)
         if pk < 0 {
             return 0 - 1

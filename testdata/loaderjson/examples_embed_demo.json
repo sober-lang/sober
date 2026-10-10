@@ -146,6 +146,52 @@
           ]
         },
         {
+          "name": "lastIndexAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "Cut",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "indexAt",
+            "len"
+          ]
+        },
+        {
+          "name": "CutLast",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "lastIndexAt",
+            "len"
+          ]
+        },
+        {
+          "name": "TrimPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
           "name": "IndexByte",
           "expands": false,
           "mut_def": false,

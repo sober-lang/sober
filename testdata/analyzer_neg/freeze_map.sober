@@ -1,0 +1,14 @@
+package main
+
+// map の freeze の後の set / delete（U2 — slice と同じ規則）
+
+func main() int {
+    mut m := mut map[string]int{}
+    m["a"] = 1
+    m["b"] = 2
+    im := freeze(m)
+    m["a"] = 100
+    delete(m, "b")
+    println("len ${len(im)}")
+    return 0
+}

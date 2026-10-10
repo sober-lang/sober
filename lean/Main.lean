@@ -1,4 +1,5 @@
 import FeatherweightSober.Json
+import FeatherweightSober.UniqFreeze
 
 /-!
 # sober-check: Lean 製型検査器バイナリ（formal.md「守る 2 条件」の 2: プロセス分離）
@@ -25,7 +26,42 @@ partial def batchLoop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO Unit :
   stdout.flush
   batchLoop stdin stdout
 
+/-- `--uniq-batch`（F-al の修理 — 凍結の一意性の述語 uniqFreeze の照合）: 入力の形は `--batch` と同じ NDJSON。
+1 行ごとに `{"uniq":true}` か `{"uniq":false,"why":…,"def":添字}`（main の式は -1）。パース失敗は `{"uniq":null,"why":…}` -/
+def uniqInput (input : String) : Lean.Json :=
+  let parseErr (msg : String) := Lean.Json.mkObj [("uniq", Lean.Json.null), ("why", s!"parse error: {msg}")]
+  let verdict (r : Option (String × Int)) := match r with
+    | none => Lean.Json.mkObj [("uniq", true)]
+    | some (m, i) => Lean.Json.mkObj [("uniq", false), ("why", m), ("def", i)]
+  match Lean.Json.parse input with
+  | .error msg => parseErr msg
+  | .ok j =>
+    -- Def の `"trust":true`（std の信頼の口 — 脱糖器の trustDefs）
+    let trust : List Bool := match j.getObjValAs? (Array Lean.Json) "defs" with
+      | .ok ds => ds.toList.map (fun d => (d.getObjValAs? Bool "trust").toOption.getD false)
+      | .error _ => []
+    let tr := fun i => trust.getD i false
+    match j.getObjValAs? Bool "parts" with
+    | .ok true =>
+      match FS.JsonBoundary.partsFromJson (input.length + 1) j with
+      | .ok (Δ, mask, eo) => verdict (FS.Uniq.check Δ (fun i => mask.getD i false) eo tr)
+      | .error msg => parseErr msg
+    | _ =>
+      match FS.JsonBoundary.programFromJson (input.length + 1) j with
+      | .ok (Δ, e) => verdict (FS.Uniq.check Δ (fun _ => true) (some e) tr)
+      | .error msg => parseErr msg
+
+partial def uniqLoop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO Unit := do
+  let line ← stdin.getLine
+  if line.isEmpty then return
+  stdout.putStrLn (uniqInput (chompLine line)).compress
+  stdout.flush
+  uniqLoop stdin stdout
+
 def main (args : List String) : IO UInt32 := do
+  if args == ["--uniq-batch"] then
+    uniqLoop (← IO.getStdin) (← IO.getStdout)
+    return 0
   if args == ["--batch"] then
     batchLoop (← IO.getStdin) (← IO.getStdout)
     return 0

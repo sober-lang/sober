@@ -1,0 +1,15 @@
+package main
+
+// utf8.Check の後に古い別名で書くと、検査済みの証人（View）が嘘になる（U2 — F-al の再現 e）
+
+import "std/utf8"
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    im := freeze(m)
+    v := utf8.Check(im) catch return 1
+    m[0] = 200
+    s := utf8.Str(v, 0, 1) catch "bad"
+    println(s)
+    return 0
+}

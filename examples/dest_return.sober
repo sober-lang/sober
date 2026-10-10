@@ -27,7 +27,7 @@ func pair(n int, name string) Pair {
     for i <- iter.Range(0, n) {
         xs = append(xs, i)
     }
-    return Pair{xs: freeze(xs), tag: "${name}#${n}"}
+    return Pair{xs: xs, tag: "${name}#${n}"}
 }
 
 // 関数またぎ（M1c）: 呼び出しの結果が return に流れ着く — 呼び手の宛先の深度をレジスタで渡し、squares のリテラルは outer の呼び手の region に作られる
@@ -49,7 +49,7 @@ func counts(n int) map[int]int {
     for i <- iter.Range(0, n) {
         m[i % 3] = i
     }
-    return freeze(m)
+    return m
 }
 
 func main() int {
@@ -62,5 +62,5 @@ func main() int {
     // main の中の return に流れ着くリテラル（印は使わない）
     mut out := mut []byte{'o', 'k'}
     out = append(out, '\n')
-    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }

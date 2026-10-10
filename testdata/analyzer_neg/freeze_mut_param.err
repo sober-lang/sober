@@ -1,0 +1,1 @@
+testdata/analyzer_neg/freeze_mut_param.sober:6:18: error: `freeze(x)` freezes the contents of the mut parameter `x` — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut x`), or build a new value here and freeze that (Analyzer)

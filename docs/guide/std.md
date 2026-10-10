@@ -16,7 +16,7 @@ A map of the packages you use with `import "std/<name>"`. For the exact form of 
 | Package | Purpose | Main items |
 |---|---|---|
 | `std/utf8` | UTF-8 validation and substrings | `Check` (validate the whole input once and get a `View`), `Str` (take a substring from a validated view without copying), `Parse`, `Valid`, `IndexInvalid` |
-| `std/strings` | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `Join`, `FormatInt`, `Clone` |
+| `std/strings` | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `Cut`, `CutLast`, `TrimPrefix`, `Join`, `FormatInt`, `Clone` (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary) |
 | `std/builder` | Building sequences | push onto a `Builder[T]` with `Push`, `PushAll`, `PushStr`, and take the result with `Build` |
 | `std/conv` | Converting between numbers and strings | `ParseFloat`, `FormatFloat`, `FormatFixed` |
 | `std/hex` | Hexadecimal | `Encode` |

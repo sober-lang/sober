@@ -644,9 +644,11 @@ func yStmt(st mut S, s NodeRef) int {
     case ast.SAssign:
         yExprs(mut st, lA(nodeOf(mut st, s)))
         yExprs(mut st, lC(nodeOf(mut st, s)))
+        yNoteAssign(mut st, lA(nodeOf(mut st, s)), lC(nodeOf(mut st, s)))
         return yBase(YNone)
     case ast.SRet:
         yExprs(mut st, lA(nodeOf(mut st, s)))
+        yNoteRet(mut st, lA(nodeOf(mut st, s)))
         return yBase(YNever)
     case ast.SBreak | ast.SContinue:
         return yBase(YNever)
@@ -789,6 +791,7 @@ func yExpr0(st mut S, e NodeRef) int {
     case ast.ESlicelit:
         yExprs(mut st, lB(nodeOf(mut st, e)))
         el := yTe(mut st, st.ypk, st.ytps, nA(nodeOf(mut st, e)))
+        yNoteElems(mut st, lB(nodeOf(mut st, e)), el)
         return if el < 0 { -1 } else { yMk(mut st, YSlice, el, if nodeOf(mut st, e).c != 0 { 1 } else { 0 }, 0) }
     case ast.EMaplit:
         ents := lC(nodeOf(mut st, e))
@@ -799,6 +802,12 @@ func yExpr0(st mut S, e NodeRef) int {
         }
         kt := yTe(mut st, st.ypk, st.ytps, nA(nodeOf(mut st, e)))
         vt := yTe(mut st, st.ypk, st.ytps, nB(nodeOf(mut st, e)))
+        for i <- iter.Range(0, lenL(mut st, ents)) {
+            ev := nB(nodeOf(mut st, latN(mut st, ents, i)))
+            if yCand(mut st, ev) {
+                yNoteImplicit(mut st, ev, vt)
+            }
+        }
         return if kt < 0 || vt < 0 { -1 } else { yMk(mut st, YMap, kt, vt, if nodeOf(mut st, e).d != 0 { 1 } else { 0 }) }
     case ast.EBlock:
         return yBlock(mut st, lA(nodeOf(mut st, e)))
@@ -942,7 +951,22 @@ func yPipe(st mut S, callee NodeRef, args ListRef, lt int, lhs NodeRef) int {
         }
         q += 1
     }
-    return yCallee(mut st, callee, an, at)
+    r := yCallee(mut st, callee, an, at)
+    // 左辺（1 値）は穴か先頭の仮引数へ — an に節が無い（for 式でなければ -1）ので別に
+    if nc == 1 && ln == -1 && yCand(mut st, lhs) {
+        mut k := 0
+        if holes > 0 {
+            mut found := false
+            for i <- iter.Range(0, na) {
+                if !found && latN(mut st, args, i) == -1 {
+                    k = i
+                    found = true
+                }
+            }
+        }
+        yNoteImplicit(mut st, lhs, WantParam(mut st, st.ypk, callee, k))
+    }
+    return r
 }
 
 // yCall は呼び出し callee(args) の結果の型（at = 実引数の型の列）
@@ -1009,6 +1033,7 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
             }
             // 関数値へのラムダの実引数は仮引数の型で
             fps := yLa(YAt(mut st, l))
+            yNoteArgTys(mut st, an, at, fps)
             for i <- iter.Range(0, lenL(mut st, an)) {
                 a := latN(mut st, an, i)
                 if a != -1 && kindN(mut st, a) == ast.ELambda && i < lenL(mut st, fps) {
@@ -1027,6 +1052,9 @@ func yCallee(st mut S, callee0 NodeRef, an ListRef, at ListRef) int {
             return if fi >= 0 { yNamedCall(mut st, fi, an, at, ex, callee0) } else { -1 }
         }
         f := yExpr(mut st, callee)
+        if yk(mut st, f) == YFn && ex == -1 {
+            yNoteArgTys(mut st, an, at, yLa(YAt(mut st, f)))
+        }
         return if yk(mut st, f) == YFn && ex == -1 { yResults(mut st, yLb(YAt(mut st, f))) } else { -1 }
     }
     return -1
@@ -1049,6 +1077,7 @@ func yNamedCall(st mut S, fi int, an ListRef, at ListRef, ex ListRef, cn NodeRef
     tps := fnTParams(mut st, fi)
     nt := lenL(mut st, tps)
     if nt == 0 && ex == -1 && !hasLambda(mut st, an) {
+        yNoteArgs(mut st, fi, an, at, ListRef(-1))
         return yFnResults(mut st, fi)
     }
     if ex != -1 && lenL(mut st, ex) != nt {
@@ -1124,6 +1153,7 @@ func yNamedCall(st mut S, fi int, an ListRef, at ListRef, ex ListRef, cn NodeRef
         yPut(mut st, 0 - PREDIR - int(bare), rd)
         return yNamedCall(mut st, rd, an, at, ex, cn)
     }
+    yNoteArgs(mut st, fi, an, at, if nt > 0 { env } else { ListRef(-1) })
     // par.Try の error を返す task（Task[(T, error?)] — P3b-4 1b'）: 結果は Outcome[T]（失敗は Failed の腕）
     if nt == 1 && ParKey(mut st, fi) == PAR_TRY && parFallibleY(mut st, latI(mut st, env, 0)) {
         lput(mut st, env, 0, latI(mut st, yLa(YAt(mut st, latI(mut st, env, 0))), 0))
@@ -1235,7 +1265,9 @@ func yLambda(st mut S, lam NodeRef, pt int) int {
         }
         yBindName(mut st, sA(p), t)
     }
+    st.ylam += 1
     r := yExpr(mut st, nB(nodeOf(mut st, lam)))
+    st.ylam -= 1
     st.yenv = saved
     return r
 }
@@ -1271,6 +1303,13 @@ func yBuiltin(st mut S, name StrRef, args ListRef) int {
     }
     a0 := YTypeOf(mut st, latN(mut st, args, 0))
     if strIs(mut st, name, "append") {
+        if yk(mut st, a0) == YSlice {
+            for i <- iter.Range(1, lenL(mut st, args)) {
+                if yCand(mut st, latN(mut st, args, i)) {
+                    yNoteImplicit(mut st, latN(mut st, args, i), YAt(mut st, a0).a)
+                }
+            }
+        }
         return a0
     }
     if strIs(mut st, name, "freeze") {
@@ -1301,6 +1340,9 @@ func yComposite(st mut S, e NodeRef) int {
             yLambda(mut st, v, ft)
         } else {
             yExpr(mut st, v)
+            if yCand(mut st, v) {
+                yNoteImplicit(mut st, v, if el.a >= 0 { yField(mut st, t, sA(el)) } else { yFieldAt(mut st, t, i) })
+            }
         }
     }
     return t

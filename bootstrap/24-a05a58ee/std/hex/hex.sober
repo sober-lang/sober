@@ -1,0 +1,18 @@
+package hex
+
+import "std/iter"
+
+// Encode は b の小文字の 16 進表記（1 バイト 2 桁 — Go の hex.EncodeToString・sha256sum の出力と同じ綴り）。
+// 逆向き（Decode）は顧客が出てから
+//
+//     hex.Encode(hash.Sha256(bytes("abc")))   // "ba7816bf…"
+func Encode(b []byte) string {
+    digits := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        v := int(b[i])
+        out = append(out, digits[v >> 4])
+        out = append(out, digits[v & 15])
+    }
+    return bytesToString(freeze(out))
+}

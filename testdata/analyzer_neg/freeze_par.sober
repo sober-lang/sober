@@ -1,0 +1,20 @@
+package main
+
+// 子が imm を読み、親が古い別名で書く — データ競合（決定性の約束が破れていた — F-al の再現 p2。W=1 と W=4 で結果が違った）
+
+import "std/par"
+
+func main() {
+    r, e := par.Scope((s par.S) => {
+        mut m := mut []int{0}
+        im := freeze(m)
+        h := par.Spawn(s, () => im[0])
+        m[0] = 7
+        par.Join(h)
+    })
+    if e != nil {
+        println("err")
+    } else {
+        println("${r}")
+    }
+}

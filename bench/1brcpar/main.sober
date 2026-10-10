@@ -43,7 +43,7 @@ func main() int {
     for k <- iter.Range(0, NCHUNK) {
         ks = append(ks, k)
     }
-    parts, e := par.Map(freeze(ks), (k) => part(b, v, bs[k], bs[k + 1]))
+    parts, e := par.Map(ks, (k) => part(b, v, bs[k], bs[k + 1]))
     if e != nil {
         return 1
     }
@@ -77,7 +77,7 @@ func main() int {
             }
         }
     }
-    order := sorted(freeze(names))
+    order := sorted(names)
     stats := freeze(st)
     ix2 := freeze(ix)
     mut out := mut []byte{'{'}
@@ -101,7 +101,7 @@ func main() int {
     }
     out = append(out, '}')
     out = append(out, '\n')
-    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }
 
 // part は b[lo:hi]（行の頭から行の頭まで）の集計（逐次の bench/1brc の本体と同じ）
@@ -152,7 +152,7 @@ func part(b []byte, v utf8.View, lo int, hi int) Part {
             st = append(st, 1)
         }
     }
-    return Part{names: freeze(names), st: freeze(st)}
+    return Part{names: names, st: st}
 }
 
 func indexOf(ix map[string]int, name string) int {
@@ -200,7 +200,7 @@ func sorted(names []string) []string {
             j -= 1
         }
     }
-    return freeze(xs)
+    return xs
 }
 
 func less(a string, b string) bool {

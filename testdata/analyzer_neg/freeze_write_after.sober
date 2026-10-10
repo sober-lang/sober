@@ -1,0 +1,11 @@
+package main
+
+// freeze の後の古い mut 別名への書き（U2 — language.md 17 節。F-al: 2026-10-10 まで凍結した値が書き換わった）
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    im := freeze(m)
+    m[0] = 200
+    println("${int(im[0])}")
+    return 0
+}

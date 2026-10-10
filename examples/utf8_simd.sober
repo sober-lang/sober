@@ -62,7 +62,7 @@ func run(unit []byte) {
                 b = append(b, base[k])
             }
             b[p] = byte(vals[q])
-            got := utf8.IndexInvalid(freeze(b))
+            got := utf8.IndexInvalid(b)
             mut b2 := mut []byte{}
             for k <- iter.Range(0, len(base)) {
                 b2 = append(b2, b[k])
@@ -75,7 +75,7 @@ func run(unit []byte) {
             sum += got + 1
         }
     }
-    println(len(base), utf8.IndexInvalid(freeze(base)), bad, sum)
+    println(len(base), utf8.IndexInvalid(base), bad, sum)
 }
 
 func main() {

@@ -39,7 +39,7 @@ func firstLine(s string) string {
         out = append(out, b[i])
         i += 1
     }
-    t, err := string(freeze(out))
+    t, err := string(out)
     return if err != nil { "?" } else { t }
 }
 
@@ -73,7 +73,7 @@ func main() {
         i += 1
     }
     p := "out/io_basic.tmp"
-    check(p, io.WriteFile(p, freeze(big)))
+    check(p, io.WriteFile(p, big))
     b, err := io.ReadFile(p)
     if err != nil {
         println(why(p, err))

@@ -35,7 +35,7 @@ func main() int {
         ns = append(ns, i)
     }
     // a parallel Map — the output is the same for any number of workers
-    ks, err := par.Map(freeze(ns), (n) => steps(n) catch -1)
+    ks, err := par.Map(ns, (n) => steps(n) catch -1)
     if err != nil {
         return 1
     }
@@ -114,7 +114,7 @@ For more: [Install](docs/guide/install.md) → [Your first program](docs/guide/f
 
 ## The verification net
 
-A change to the compiler goes in only after passing all 53 checks of `scripts/gates.sh --full`: the self-compilation fixed point (stage3 ≡ stage4), golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go's UTF-8, GNU as), and comparison against a formal model proved in Lean (`lean/` — type safety and confluence of parallelism).
+A change to the compiler goes in only after passing all 54 checks of `scripts/gates.sh --full`: the self-compilation fixed point (stage3 ≡ stage4), golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go's UTF-8, GNU as), and comparison against a formal model proved in Lean (`lean/` — type safety and confluence of parallelism).
 
 ## Documents
 

@@ -38,7 +38,7 @@ func lex(text string) []Token {
             i += 1
         }
     }
-    return freeze(toks)
+    return toks
 }
 
 func numValue(text string, t Token) int {

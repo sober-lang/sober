@@ -11,6 +11,7 @@ package desugar
 //       16 = handle を imm の slice に（mut slice だけ — P3b-5 Gather）・17 = error を返す task の handle を `par.Task[T]` の slice に
 //       （要素の型は `par.Task[(T, error?)]` — P3b 残穴1）
 //       20 = budget: が呼び出し・割り算を含む（段 6 P5-3）
+//       21 = mut の中身を持つ値（imm の束縛の mut の別名 `v := m` を含む）の捕獲（F-ao — 2026-10-11）
 //       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）
 //       11 = 関数型の仮引数（展開される閉包 — 子へは値しか渡せない）の捕獲・12 = 札・handle を関数の実引数 / 戻り値に（コアの paramOk / retOk が拒否する形）
 
@@ -24,22 +25,20 @@ import "std/table"
 // ParCheck は p の std/par の呼び出し点の形を検査する
 @errors(diag.Par)
 func ParCheck(p loader.Program) error? {
-    mut uses := false
-    for f <- iter.Range(0, len(p.trees)) {
-        t := p.trees[f]
-        for i <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[i]
-            if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/par")) {
-                uses = true
-            }
-        }
-    }
-    if !uses {
+    if !pcImports(p) {
         return nil
     }
     mut st := S{}
-    Init(mut st, p)
-    TypeAll(mut st)
+    Typed(mut st, p)
+    return ParCheckTyped(mut st, p)
+}
+
+// ParCheckTyped は ParCheck を Typed 済みの st の上で（build の経路 — lower が自分の表の上で掛ける）
+@errors(diag.Par)
+func ParCheckTyped(st mut S, p loader.Program) error? {
+    if !pcImports(p) {
+        return nil
+    }
     pcMemoInit(mut st)
     for fi <- iter.Range(0, st.nfn) {
         body := fnBody(mut st, fi)
@@ -52,6 +51,20 @@ func ParCheck(p loader.Program) error? {
         }
     }
     return nil
+}
+
+// pcImports は p が std/par を import するか（しなければ ParCheck は走らない）
+func pcImports(p loader.Program) bool {
+    for f <- iter.Range(0, len(p.trees)) {
+        t := p.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/par")) {
+                return true
+            }
+        }
+    }
+    return false
 }
 
 // PcHit は最初の拒否（kind 0 = 無し）
@@ -415,6 +428,11 @@ func pcUses(st mut S, fi int, n NodeRef, base int, end int) PcHit {
                 if pk != 0 {
                     return PcHit{at: n, kind: if pk == 1 { 5 } else if pk == 2 { 6 } else { 15 }}
                 }
+                // imm の束縛でも mut の中身を持つ値（`v := m` — v は m の mut の別名）は子へ渡せない（F-ao: check はコアの givable が拒否・
+                // build の lower は捕獲の型を照合せず通していた）
+                if pcHasMut(mut st, y, 8) {
+                    return PcHit{at: n, kind: 21}
+                }
             }
         }
         return pcNone()
@@ -559,6 +577,32 @@ func pcParDeep(st mut S, y int, fuel int) int {
         }
     }
     return 0
+}
+
+// pcHasMut は表層型 y（欄・要素を fuel 段まで）が mut の slice / map を含むか
+func pcHasMut(st mut S, y int, fuel int) bool {
+    if y < 0 || fuel == 0 {
+        return false
+    }
+    x := YAt(mut st, y)
+    if x.k == YSlice {
+        return x.b == 1 || pcHasMut(mut st, x.a, fuel - 1)
+    }
+    if x.k == YMap {
+        return x.c == 1 || pcHasMut(mut st, x.b, fuel - 1)
+    }
+    if x.k == YOpt {
+        return pcHasMut(mut st, x.a, fuel - 1)
+    }
+    if x.k == YDecl && kindN(mut st, nC(nodeOf(mut st, yNa(x)))) == ast.BStruct {
+        fs := lA(nodeOf(mut st, nC(nodeOf(mut st, yNa(x)))))
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            if pcHasMut(mut st, yFieldAt(mut st, y, i), fuel - 1) {
+                return true
+            }
+        }
+    }
+    return false
 }
 
 // pcHasPar は表層型 y（欄を fuel 段まで）が札・handle を含むか

@@ -22,7 +22,7 @@ func frequencies(seq []byte, k int) map[string]int {
         m[key] = if c != nil { c + 1 } else { 1 }
         i += 1
     }
-    return freeze(m)
+    return m
 }
 
 func main() int {
@@ -46,7 +46,7 @@ func main() int {
         putCount(mut out, m, targets[t])
         t += 1
     }
-    return if io.WriteStdout(freeze(out)) != nil { 1 } else { 0 }
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
 }
 
 // three は ">THREE" の見出しの次の行から次の見出し（か終わり）までの配列を、改行を除いて大文字で
@@ -70,7 +70,7 @@ func three(b []byte) []byte {
         }
         i += 1
     }
-    return freeze(seq)
+    return seq
 }
 
 func startsWith(b []byte, at int, p []byte) bool {

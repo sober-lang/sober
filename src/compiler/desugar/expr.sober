@@ -8,6 +8,14 @@ import "lexer"
 import "std/iter"
 
 func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    // 暗黙の freeze の点（typer の表 — desugar/implicit.sober）: 明示の `freeze(e)` と同じコア（CFreeze）。位置は見ない — 点の節はその位置でしか脱糖されない
+    if st.nimpl > 0 && e != st.implAt && IsImplicit(mut st, e) {
+        saved := st.implAt
+        st.implAt = e
+        v := expr(mut st, e, eb, ef, depth)?
+        st.implAt = saved
+        return c1(mut st, CFreeze, v), nil
+    }
     // 末尾期待型は直下の式（if / ブロック）だけが使う。部分式へ漏らさない
     want := st.tailWant
     st.tailWant = TyRef(-1)
@@ -734,7 +742,8 @@ func retValue(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at Nod
     if wk == TOpt {
         return core, nil
     }
-    if kindN(mut st, e) == ast.EIdent {
+    // 暗黙の freeze の点は明示の `freeze(e)`（呼び出し）と同じ道へ（ann の付け方を揃える — 暗黙 ≡ 明示のオラクル）
+    if kindN(mut st, e) == ast.EIdent && !IsImplicit(mut st, e) {
         b := lookup(mut st, eb, sA(nodeOf(mut st, e)))
         if b < 0 {
             return core, nil

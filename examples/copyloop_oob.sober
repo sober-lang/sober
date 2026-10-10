@@ -9,7 +9,7 @@ func appendCopy(src []int, n int) []int {
         dst = append(dst, src[j])
         j += 1
     }
-    return freeze(dst)
+    return dst
 }
 
 func main() {

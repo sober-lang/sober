@@ -1,0 +1,88 @@
+package main
+
+import "std/iter"
+import "std/utf8"
+
+// 短い等値の速い道の網（report-450 / 451）: 長さ 0〜20 の文字列を、同じ長さで 1 バイトだけ違う相手（位置 0〜n−1 × 違いのビット 0x01 / 0x40）・
+// 長さだけ違う相手・同じ中身の別のセル列と == / != で比べて、外れた数を出す。リテラルとの比較（呼び出し点で閉じる道 — 長さ 0〜9 のリテラル）も同じ表で。
+// 期待は全部 0（下位 n バイトだけ比べるシフトの量・長さの先比べ・リテラルの語の詰め方のどれかがずれると数が出る）
+
+func mk(n int, at int, bit int) string {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        c := 97 + i % 26
+        b = append(b, byte(if i == at { c ^ bit } else { c }))
+    }
+    return utf8.Parse(b) catch ""
+}
+
+// lit は長さ n のリテラル（mk(n, -1, 0) と同じ中身）
+func lit(n int) string {
+    return if n == 0 { "" } else if n == 1 { "a" } else if n == 2 { "ab" } else if n == 3 { "abc" } else if n == 4 { "abcd" } else if n == 5 { "abcde" } else if n == 6 { "abcdef" } else if n == 7 { "abcdefg" } else if n == 8 { "abcdefgh" } else { "abcdefghi" }
+}
+
+// litEq は x を長さ n のリテラルと == で比べる（リテラルが右辺 — 呼び出し点で閉じる形）
+func litEq(x string, n int) bool {
+    return if n == 0 { x == "" } else if n == 1 { x == "a" } else if n == 2 { x == "ab" } else if n == 3 { x == "abc" } else if n == 4 { x == "abcd" } else if n == 5 { x == "abcde" } else if n == 6 { x == "abcdef" } else if n == 7 { x == "abcdefg" } else if n == 8 { x == "abcdefgh" } else { x == "abcdefghi" }
+}
+
+// litNe は x を長さ n のリテラルと != で比べる（リテラルが左辺）
+func litNe(x string, n int) bool {
+    return if n == 0 { "" != x } else if n == 1 { "a" != x } else if n == 2 { "ab" != x } else if n == 3 { "abc" != x } else if n == 4 { "abcd" != x } else if n == 5 { "abcde" != x } else if n == 6 { "abcdef" != x } else if n == 7 { "abcdefg" != x } else if n == 8 { "abcdefgh" != x } else { "abcdefghi" != x }
+}
+
+func main() {
+    mut bad := 0
+    mut pairs := 0
+    for n <- iter.Range(0, 21) {
+        s := mk(n, 0 - 1, 0)
+        t := mk(n, 0 - 1, 0)
+        pairs += 1
+        if !(s == t) || s != t {
+            bad += 1
+            println("same ${n}")
+        }
+        for at <- iter.Range(0, n) {
+            for bi <- iter.Range(0, 2) {
+                bit := if bi == 0 { 1 } else { 64 }
+                u := mk(n, at, bit)
+                pairs += 1
+                if s == u || !(s != u) {
+                    bad += 1
+                    println("diff ${n} ${at} ${bit}")
+                }
+            }
+        }
+        if n > 0 {
+            v := mk(n - 1, 0 - 1, 0)
+            pairs += 1
+            if s == v || v == s {
+                bad += 1
+                println("len ${n}")
+            }
+        }
+    }
+    // リテラルとの比較: 長さ 0〜10 の実行時の文字列 × リテラル 0〜9（同じ長さなら 1 バイト違いも）
+    for m <- iter.Range(0, 10) {
+        for n <- iter.Range(0, 11) {
+            x := mk(n, 0 - 1, 0)
+            want := n == m
+            pairs += 1
+            if litEq(x, m) != want || litNe(x, m) == want || (x == lit(m)) != want {
+                bad += 1
+                println("lit ${m} ${n}")
+            }
+            if n == m {
+                for at <- iter.Range(0, n) {
+                    y := mk(n, at, 64)
+                    pairs += 1
+                    if litEq(y, m) || !litNe(y, m) {
+                        bad += 1
+                        println("litdiff ${m} ${at}")
+                    }
+                }
+            }
+        }
+    }
+    println("pairs ${pairs} bad ${bad}")
+}

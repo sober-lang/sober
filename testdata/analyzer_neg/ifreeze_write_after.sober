@@ -1,0 +1,12 @@
+package main
+
+// imm の束縛への代入の後の古い mut 別名への書き（暗黙の freeze・U2）
+
+func main() int {
+    mut m := mut []byte{65, 66, 67}
+    mut im := []byte{}
+    im = m
+    m[0] = 200
+    println("${int(im[0])}")
+    return 0
+}

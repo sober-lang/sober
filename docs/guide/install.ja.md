@@ -16,7 +16,7 @@ Sober のコンパイラは、凍結した Zig 製の最初の版（stage1）か
 git clone <this repository> sober
 cd sober
 (cd src/stage1 && zig build)   # stage1 — src/stage1/zig-out/bin/sober
-scripts/stage2.sh              # bootstrap/ の 22 段を順に建て、最後の段が今のコンパイラ（stage2）を建てる
+scripts/stage2.sh              # bootstrap/ の 25 段を順に建て、最後の段が今のコンパイラ（stage2）を建てる
 ```
 
 `scripts/stage2.sh` の初回は数分かかります（段ごとの結果は `out/stage2/` にキャッシュされ、2 回目以降はソースが変わったときだけ作り直します）。
@@ -45,7 +45,7 @@ Hello, Sober!
 
 ## 開発者向け: 検査の網を回す
 
-コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査（53 本）を回します。網には追加で次が要ります:
+コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査（54 本）を回します。網には追加で次が要ります:
 [Lean 4](https://lean-lang.org/)（`lean/lean-toolchain` の版 — `cd lean && lake build`）、Go（独立のオラクルと bench の双子）、Rust（bench の双子）、Node.js（一部の道具）、`perf`（bench）、GNU as（命令のエンコーダの照合）。
 
 次へ: [最初のプログラム](first-program.ja.md)

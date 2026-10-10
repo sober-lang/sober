@@ -592,7 +592,7 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
                 // `y = x`・`y.f = x`・`y[i] = x`（根の名前が y）
                 ts := lA(nd)
                 vs := lC(nd)
-                if nd.b == lexer.Equal && lenL(mut st, ts) == 1 && lenL(mut st, vs) == 1 && kindN(mut st, latN(mut st, vs, 0)) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, latN(mut st, vs, 0))), x) {
+                if nd.b == lexer.Equal && lenL(mut st, ts) == 1 && lenL(mut st, vs) == 1 && kindN(mut st, latN(mut st, vs, 0)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, vs, 0)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, vs, 0))), x) {
                     mut r := latN(mut st, ts, 0)
                     while kindN(mut st, r) == ast.ESelector || kindN(mut st, r) == ast.EIndex {
                         r = nA(nodeOf(mut st, r))
@@ -605,7 +605,7 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
                 args := ListRef(nd.b)
                 ci := e2sCallee(mut st, pk, NodeRef(nd.a))
                 // `append(y, x)`（外の y へ x を積む — 根の名前が y）
-                if kindN(mut st, NodeRef(nd.a)) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, NodeRef(nd.a))), "append") && lenL(mut st, args) == 2 && kindN(mut st, latN(mut st, args, 1)) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, latN(mut st, args, 1))), x) {
+                if kindN(mut st, NodeRef(nd.a)) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, NodeRef(nd.a))), "append") && lenL(mut st, args) == 2 && kindN(mut st, latN(mut st, args, 1)) == ast.EIdent && !IsImplicit(mut st, latN(mut st, args, 1)) && strEq(mut st, sA(nodeOf(mut st, latN(mut st, args, 1))), x) {
                     mut r := latN(mut st, args, 0)
                     while kindN(mut st, r) == ast.ESelector || kindN(mut st, r) == ast.EIndex {
                         r = nA(nodeOf(mut st, r))

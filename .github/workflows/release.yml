@@ -23,6 +23,12 @@ jobs:
       - name: Build stage1 (frozen Zig compiler)
         run: cd src/stage1 && zig build
 
+      - name: Stamp the version
+        # the only place the version is baked in: the `return "dev" // sober-version` line of src/compiler/app/main.sober
+        run: |
+          sed -i 's|return "dev" // sober-version$|return "${{ github.ref_name }}" // sober-version|' src/compiler/app/main.sober
+          grep -q 'return "${{ github.ref_name }}" // sober-version$' src/compiler/app/main.sober
+
       - name: Build stage2 (bootstrap chain)
         run: scripts/stage2.sh
 
@@ -31,6 +37,7 @@ jobs:
           out/stage2/sober2 build examples/hello.sober -o out/hello   # the default (= --emit=elf --passes) — what a user of the released binary types
           ./out/hello > out/hello.got
           diff examples/hello.out out/hello.got
+          [ "$(out/stage2/sober2 --version)" = "sober ${{ github.ref_name }}" ]
 
       - name: Package
         run: |

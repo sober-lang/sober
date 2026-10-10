@@ -1,0 +1,21 @@
+package main
+
+// 呼び先が mut の仮引数の中身を別の mut の仮引数の欄へ持ち出す（U3 — language.md 26 節）
+
+type S struct {
+    xs mut []int
+}
+
+func keep(s mut S, x mut []int) {
+    s.xs = x
+}
+
+func main() int {
+    mut s := S{xs: mut []int{}}
+    mut m := mut []int{1, 2}
+    keep(mut s, mut m)
+    im := freeze(m)
+    s.xs[0] = 9
+    println("${im[0]}")
+    return 0
+}

@@ -10,6 +10,7 @@ import "desugar"
 import "diag"
 import "std/iter"
 import "std/table"
+import "std/strings"
 
 const MErrMissing = 21   // 公開関数に @errors が無い（付帯 = 関数の添字）
 const MErrLeak = 22      // 導出 ⊄ 宣言
@@ -109,13 +110,8 @@ func labelNames(az mut Az, m int, pk int) string {
 
 // lastSeg はパスの最後の段（`std/io` → `io` — import の既定の参照名）
 func lastSeg(p string) string {
-    b := bytes(p)
-    mut i := len(b)
-    while i > 0 && b[i - 1] != '/' {
-        i -= 1
-    }
-    r := string(b[i:len(b)]) catch return p
-    return r
+    _, after, slashed := strings.CutLast(p, "/")
+    return if slashed { after } else { p }
 }
 
 // checkSwitches は error の switch（単一の subject — 最後の 1 周の記録）の網羅と到達: 網羅の対象はリンク集合の全ラベルでなく subject の導出集合 S

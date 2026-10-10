@@ -1,0 +1,1 @@
+testdata/analyzer_neg/freeze_field.sober:14:9: error: this writes to `b.ys[…]` after it was frozen by `freeze(b.xs)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)

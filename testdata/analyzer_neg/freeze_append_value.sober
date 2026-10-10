@@ -1,0 +1,11 @@
+package main
+
+// append の結果の freeze の後の元の束縛への書き（U2 — 結果のヘッダは第 1 実引数のヘッダ。F-ap の同じ形）
+
+func main() int {
+    mut m := mut []int{1, 2}
+    im := freeze(append(m, 3))
+    m[0] = 9
+    println("${im[0]}")
+    return 0
+}

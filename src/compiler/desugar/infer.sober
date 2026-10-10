@@ -62,6 +62,26 @@ func dictLeave(st mut S, c FnCtx) {
 
 // computeTy は式のコア型（T? の暗黙 some の判定・string の演算の分岐・型引数の推論用）
 func computeTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    t := computeTy0(mut st, e, eb, ef)
+    // 暗黙の freeze の点（typer の表）: 明示の `freeze(e)` と同じ型（外側の mut を落とす）
+    if st.nimpl > 0 && e != st.implAt && t != -1 && IsImplicit(mut st, e) {
+        return freezeTy(mut st, t)
+    }
+    return t
+}
+
+// freezeTy は組み込みの freeze の結果の型（slice / map の外側の mut を落とす。他は -1）
+func freezeTy(st mut S, aty TyRef) TyRef {
+    if tg(mut st, aty) == TSl {
+        return tSliceOf(mut st, 0, tRegion(mut st, aty), tElem(mut st, aty), tStrBit(mut st, aty))
+    }
+    if tg(mut st, aty) == TMp {
+        return tMapOf(mut st, 0, tRegion(mut st, aty), tKey(mut st, aty), tVal(mut st, aty))
+    }
+    return -1
+}
+
+func computeTy0(st mut S, e NodeRef, eb int, ef int) TyRef {
     k := kindN(mut st, e)
     switch k {
     case ast.EFor:
@@ -322,16 +342,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
                 return -1
             }
             aty := computeTy(mut st, latN(mut st, args, 0), eb, ef)
-            if aty == -1 {
-                return -1
-            }
-            if tg(mut st, aty) == TSl {
-                return tSliceOf(mut st, 0, tRegion(mut st, aty), tElem(mut st, aty), tStrBit(mut st, aty))
-            }
-            if tg(mut st, aty) == TMp {
-                return tMapOf(mut st, 0, tRegion(mut st, aty), tKey(mut st, aty), tVal(mut st, aty))
-            }
-            return -1
+            return if aty == -1 { TyRef(-1) } else { freezeTy(mut st, aty) }
         }
         // std の `@intrinsic("鍵")` の宣言（息継ぎ ③）: 結果の型は鍵の署名の結果から
         sk := SysKey(mut st, st.curPkg, name)

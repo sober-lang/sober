@@ -18,7 +18,7 @@
 #   sober check <entry> --core-json            stage2 の脱糖したコア AST の JSON
 #   sober check <package> --test               テストのビルド（_test.sober と合成の main）を analyzer → 検査器で
 #   sober check <entry> --lean                 stage2 の脱糖 → Lean の sober-check（Lean が正の照合 — $SOBER_CHECK）
-#   sober check <entry> --def-index | --nominal-all | --typer-diff | --errors-dump | --expansion-report   開発用（stage2 のまま）: def error の Def の番号と出所の位置 /
+#   sober check <entry> --def-index | --nominal-all | --typer-diff | --errors-dump | --expansion-report | --freeze-sites | --implicit-points   開発用（stage2 のまま）: def error の Def の番号と出所の位置 /
 #                                              表層型の照合の拒否を全部 / 表層型検査器の突き合わせ
 #   sober lex | fmt <file>、parse --ast-json <file> | --loader-json <entry>   stage2
 #   sober test <package>… [-v]                 package の _test.sober の TestXxx() を 1 テスト 1 サブプロセスで（下の cmd_test）
@@ -101,7 +101,7 @@ cmd_check() {
         case "$1" in
             --core-json) mode=core ;;
             --lean) mode=lean ;;
-            --def-index|--nominal-all|--typer-diff|--errors-dump|--expansion-report|--sigs) mode=dev; dev=$1 ;;
+            --def-index|--nominal-all|--typer-diff|--errors-dump|--expansion-report|--sigs|--freeze-sites|--implicit-points) mode=dev; dev=$1 ;;
             --test) mode=test ;;
             --split) mode=split ;;   # 小分けの check（3'' M3 — package ごとの region で依存の順に）
             --cache-trace) trace=--cache-trace ;;   # 小分けの check のキャッシュの鍵と当否（3'' 第 2 段 C1 — --split と一緒に）
@@ -204,6 +204,7 @@ case "$sub" in
             *) echo "sober: parse takes --ast-json <file> or --loader-json <entry>" >&2; exit 1 ;;
         esac ;;
     iface) cmd_iface "$@" ;;
-    help|--help|-h) "$S2"; exit 0 ;;
+    help|--help|-h) exec "$S2" help ;;
+    version|--version) exec "$S2" version ;;
     *) echo "sober: unknown subcommand '$sub'" >&2; exit 1 ;;
 esac

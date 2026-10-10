@@ -270,15 +270,9 @@ func resolveT(t ast.Tree, pkg string, ds []LDecl, e int) int {
 
 // resolveName はファイル t（package pkg）の型の名前の綴り（`H` か `p.H` — composite リテラルの type_name）の @layout の struct（無ければ -1）
 func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
-    i := strings.Index(nm, ".")
-    if i < 0 {
+    ref, name, dotted := strings.Cut(nm, ".")
+    if !dotted {
         return findDecl(ds, pkg, nm)
-    }
-    b := bytes(nm)
-    ref, rerr := string(b[0:i])
-    name, nerr := string(b[i + 1:len(b)])
-    if rerr != nil || nerr != nil {
-        return -1
     }
     path := importPath(t, ref)
     return if path == "" { -1 } else { findDecl(ds, path, name) }

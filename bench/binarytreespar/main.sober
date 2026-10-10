@@ -34,7 +34,7 @@ func check(a []int, n int) int {
 func one(d int) int {
     mut a := mut []int{}
     r := bottomUp(mut a, d)
-    return check(freeze(a), r)
+    return check(a, r)
 }
 
 // depth は深さ d の木を iters 本作って数えた合計
@@ -70,7 +70,7 @@ func main() int {
         ds = append(ds, d)
         d += 2
     }
-    cs, e := par.Map(freeze(ds), (x) => depth(x, 1 << (maxDepth - x + minDepth)))
+    cs, e := par.Map(ds, (x) => depth(x, 1 << (maxDepth - x + minDepth)))
     if e != nil {
         return 1
     }
@@ -78,6 +78,6 @@ func main() int {
         dk := minDepth + k * 2
         println("${1 << (maxDepth - dk + minDepth)}\t trees of depth ${dk}\t check: ${cs[k]}")
     }
-    println("long lived tree of depth ${maxDepth}\t check: ${check(freeze(long), lr)}")
+    println("long lived tree of depth ${maxDepth}\t check: ${check(long, lr)}")
     return 0
 }

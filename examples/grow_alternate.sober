@@ -24,8 +24,8 @@ func main() {
         cs = append(cs, byte(65 + i % 26))
     }
     println(len(xs))
-    println(sum(freeze(xs)))
-    println(sum(freeze(ys)))
+    println(sum(xs))
+    println(sum(ys))
     println(int(bs[0]) + int(bs[999]))
     println(int(cs[995]) + int(cs[1]))
     // 共有: 同じ値の 2 つの写しをそれぞれ伸ばしても互いに見えない

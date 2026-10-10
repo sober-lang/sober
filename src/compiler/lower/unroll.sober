@@ -467,7 +467,7 @@ func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
         hk := BlkRef(hs[k])
         mut i := irBlkIHead(mut st, hb)
         while i != -1 {
-            ilCopyInst(mut st, hk, i, vm)
+            _ = ilCopyInst(mut st, hk, i, vm)
             i = irInsNext(mut st, i)
         }
         if k < t {
@@ -486,7 +486,7 @@ func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
                 nbk := BlkRef(bm[bi])
                 mut j := irBlkIHead(mut st, b)
                 while j != -1 {
-                    ilCopyInst(mut st, nbk, j, vm)
+                    _ = ilCopyInst(mut st, nbk, j, vm)
                     j = irInsNext(mut st, j)
                 }
                 tm := irBlkTerm(mut st, b)

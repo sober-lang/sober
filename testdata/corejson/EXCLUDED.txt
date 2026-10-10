@@ -105,6 +105,7 @@ examples/par_neg_handles.sober: sober: load error at examples/par_neg_handles.so
 examples/par_neg_handles_err.sober: sober: load error at examples/par_neg_handles_err.sober:15:34: an error-returning task's handle cannot go in a handle slice (par.Task[(T, error?)] cannot be written) — Join or Try it directly
 examples/par_neg_lambda.sober: sober: load error at examples/par_neg_lambda.sober:9:58: par.Scope / par.Spawn take a lambda literal written at the call ((s) => … for Scope, () => … for Spawn)
 examples/par_neg_mut.sober: sober: load error at examples/par_neg_mut.sober:9:64: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
+examples/par_neg_mutalias.sober: sober: load error at examples/par_neg_mutalias.sober:12:33: a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))
 examples/par_neg_result.sober: sober: load error at examples/par_neg_result.sober:8:71: the result of a spawned task must be loc-free (int, bool, byte, float, or structs / options of them — not string, slice, map, function, error, par.S or par.Task)
 examples/par_neg_scope_result.sober: sober: load error at examples/par_neg_scope_result.sober:8:33: the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)
 examples/par_neg_spawnin.sober: sober: load error at examples/par_neg_spawnin.sober:11:52: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body

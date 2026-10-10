@@ -55,7 +55,7 @@ func buf(n int, at int, c byte) []byte {
     for k <- iter.Range(0, n) {
         b = append(b, if k == at { c } else { byte('a' + k % 26) })
     }
-    return freeze(b)
+    return b
 }
 
 func main() {

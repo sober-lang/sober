@@ -37,9 +37,9 @@ while [ $# -gt 0 ]; do
     shift
 done
 case $mode in
-    quick) ROWS=1000000; BT=16; FK=10; FA=250000; NB=500000; SN=500; MB=1000 ;;
-    heavy) ROWS=100000000; BT=21; FK=12; FA=25000000; NB=50000000; SN=5500; MB=16000 ;;
-    *) ROWS=10000000; BT=18; FK=11; FA=2500000; NB=5000000; SN=2000; MB=4000 ;;
+    quick) ROWS=1000000; BT=16; FK=10; FA=250000; NB=500000; SN=500; MB=1000; JA=10000; RT=50000; LA=50000 ;;
+    heavy) ROWS=100000000; BT=21; FK=12; FA=25000000; NB=50000000; SN=5500; MB=16000; JA=1000000; RT=5000000; LA=5000000 ;;
+    *) ROWS=10000000; BT=18; FK=11; FA=2500000; NB=5000000; SN=2000; MB=4000; JA=100000; RT=500000; LA=500000 ;;
 esac
 B=$ROOT/out/bench
 mkdir -p "$B"
@@ -62,11 +62,27 @@ meas() {
 }
 
 # ── 準備: 入力・Go の双子・Sober の build（build の時間と RSS も測る — Go は冷〔空の GOCACHE — runtime / std から〕と温の 2 列）──
-echo "bench: mode=$mode N=$N (1BRC ${ROWS} rows, binary-trees ${BT}, fannkuch ${FK}, fasta ${FA}, n-body ${NB}, spectral-norm ${SN}, mandelbrot ${MB}) → $res" >&2
+echo "bench: mode=$mode N=$N (1BRC ${ROWS} rows, binary-trees ${BT}, fannkuch ${FK}, fasta ${FA}, n-body ${NB}, spectral-norm ${SN}, mandelbrot ${MB}, jsonapi ${JA}, routing ${RT}, logagg ${LA}) → $res" >&2
 IN=$B/measurements-$ROWS.txt
 if [ ! -s "$IN" ]; then
     echo "bench: generating $IN …" >&2
     (cd bench && go run ./1brc/gen "$ROWS" "$IN.tmp") && mv "$IN.tmp" "$IN" || exit 1
+fi
+# Web コア（jsonapi — NDJSON の注文のリクエスト・bench/jsonapi/gen）
+JAIN=$B/jsonapi-$JA.ndjson
+if [ ! -s "$JAIN" ]; then
+    echo "bench: generating $JAIN …" >&2
+    (cd bench && go run ./jsonapi/gen "$JA" "$JAIN.tmp") && mv "$JAIN.tmp" "$JAIN" || exit 1
+fi
+RTIN=$B/routing-$RT.txt
+if [ ! -s "$RTIN" ]; then
+    echo "bench: generating $RTIN …" >&2
+    (cd bench && go run ./routing/gen "$RT" "$RTIN.tmp") && mv "$RTIN.tmp" "$RTIN" || exit 1
+fi
+LAIN=$B/logagg-$LA.txt
+if [ ! -s "$LAIN" ]; then
+    echo "bench: generating $LAIN …" >&2
+    (cd bench && go run ./logagg/gen "$LA" "$LAIN.tmp") && mv "$LAIN.tmp" "$LAIN" || exit 1
 fi
 FIN=$B/fasta-$FA.txt
 if [ ! -s "$FIN" ]; then
@@ -75,7 +91,7 @@ if [ ! -s "$FIN" ]; then
 fi
 ./bin/sober build bench/1brc/main.sober -o "$W/warm" > /dev/null || exit 1   # stage2 を温める（作り直しを測らない）
 for i in $(seq 1 "$N"); do
-    for p in 1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot; do
+    for p in 1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot jsonapi routing logagg; do
         meas "build/sober/$p" ./bin/sober build "bench/$p/main.sober" -o "$B/$p-sober"
         rm -rf "$W/gocache"
         meas "build/go-cold/$p" env GOCACHE="$W/gocache" sh -c "cd bench && go build -o '$B/$p-go' ./$p/go"
@@ -127,6 +143,9 @@ for i in $(seq 1 "$N"); do
     run nbody "$NB"
     run spectralnorm "$SN"
     run mandelbrot "$MB"
+    run jsonapi "$JAIN"
+    run routing "$RTIN"
+    run logagg "$LAIN"
 done
 
 # ── コンパイラ自身: stage2 で compiler/app を build（--passes の ELF）/ check（一括）/ check --split（冷 = 空の置き場・温）──
@@ -172,8 +191,8 @@ awk '
 function med(a, k, c,   i, j, t, v) { for (i = 1; i <= c; i++) v[i] = a[k, i]; for (i = 2; i <= c; i++) { t = v[i]; for (j = i - 1; j >= 1 && v[j] > t; j--) v[j + 1] = v[j]; v[j + 1] = t } return v[int((c + 1) / 2)] }
 END {
     printf "\n| 題材 | wall Sober / Go | peak RSS MB Sober / Go | RSS 比 |\n|---|---|---|---|\n"
-    split("1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot", ps, " ")
-    for (i = 1; i <= 9; i++) {
+    np = split("1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot jsonapi routing logagg", ps, " ")
+    for (i = 1; i <= np; i++) {
         s = "run/sober/" ps[i]; g = "run/go/" ps[i]
         if (!(s in n) || !(g in n)) continue
         ws = med(w, s, n[s]); wg = med(w, g, n[g]); ms = med(m, s, n[s]) / 1024; mg = med(m, g, n[g]) / 1024
@@ -187,6 +206,8 @@ echo "bench: raw results in $res" >&2
 rfail=0
 while read -r item col lim ref; do
     case "$item" in ''|'#'*) continue ;; esac
+    # size（stage3 の ELF の大きさ）は scripts/stages.sh が照合する
+    [ "$col" = size ] && continue
     if [ "$col" = inst ]; then
         v=$INST
         if [ -z "$v" ]; then

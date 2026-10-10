@@ -300,25 +300,14 @@
                   },
                   "args": [
                     {
-                      "k": "call",
-                      "callee": {
-                        "k": "ident",
-                        "name": "freeze",
-                        "tok": 93
-                      },
-                      "args": [
-                        {
-                          "k": "ident",
-                          "name": "b",
-                          "tok": 95
-                        }
-                      ],
-                      "tok": 94
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 93
                     },
                     {
                       "k": "int",
                       "value": 0,
-                      "tok": 98
+                      "tok": 95
                     }
                   ],
                   "tok": 92
@@ -333,10 +322,10 @@
               {
                 "k": "int",
                 "value": 0,
-                "tok": 103
+                "tok": 100
               }
             ],
-            "tok": 102
+            "tok": 99
           }
         ]
       },
@@ -344,7 +333,7 @@
       "bodiless": false,
       "span": {
         "start": 43,
-        "end": 107
+        "end": 104
       },
       "sig_end": 48
     }

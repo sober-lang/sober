@@ -300,6 +300,26 @@ func run(st mut S) (ListRef, CoreRef, error?) {
     return defs, root, nil
 }
 
+// trustDefs は Def の添字ごとの「std の信頼の口」の印（1 = std/table.Freeze・std/strings.Clone の Def — language.md 17 節。コア JSON の Def の
+// `"trust":true` — Lean の述語 uniqFreeze〔UniqFreeze.lean〕がその Def の本体の U1 / U3 を見ない。analyzer の freeze.sober と同じ 2 関数を名前で焼き込む）
+func trustDefs(st mut S) []int {
+    mut out := mut []int{}
+    for d <- iter.Range(0, st.ndef) {
+        out = append(out, 0)
+    }
+    for i <- iter.Range(0, st.nfn) {
+        x := FnAt(mut st, i)
+        if x.def >= 0 && x.def < st.ndef {
+            name := StrRef(nodeOf(mut st, x.node).a)
+            pp := PkgPath(mut st, x.pkg)
+            if (strIs(mut st, pp, "std/table") && strIs(mut st, name, "Freeze")) || (strIs(mut st, pp, "std/strings") && strIs(mut st, name, "Clone")) {
+                out[x.def] = 1
+            }
+        }
+    }
+    return freeze(out)
+}
+
 // Json は Program p のコア AST の JSON（失敗なら拒否 — diag のラベル）
 @errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
 func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
@@ -318,12 +338,13 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
         exprJson(mut st, mut out, root)
     } else {
         obuf.Lit(mut out, "{\"defs\":[")
+        tr := trustDefs(mut st)
         mut i := 0
         while i < st.ndef {
             if i > 0 {
                 out = append(out, 44)
             }
-            defJson(mut st, mut out, latI(mut st, defs, i))
+            defJson(mut st, mut out, latI(mut st, defs, i), tr[i] == 1)
             i += 1
         }
         mut d := st.liftedHead
@@ -331,7 +352,7 @@ func Json(p loader.Program, e2s bool, excl []int) ([]byte, error?) {
             if i > 0 {
                 out = append(out, 44)
             }
-            defJson(mut st, mut out, d)
+            defJson(mut st, mut out, d, false)
             i += 1
             d = hget(mut st, d + 4)
         }
@@ -415,4 +436,10 @@ func DefAt(p loader.Program, excl []int, j int) (diag.Pos, error?) {
 // 表現は state.sober の冒頭（表層 AST は loader の木を参照で指す・表と記録は S の欄とヒープの添字）
 func Init(st mut S, p loader.Program) {
     initState(mut st, p)
+}
+
+// Typed は Init と表層型検査器（TypeAll）を済ませた表（lower の build は ParCheck と同じ表を使う — TypeAll は 1 回が重い）
+func Typed(st mut S, p loader.Program) {
+    Init(mut st, p)
+    TypeAll(mut st)
 }

@@ -62,7 +62,7 @@ if [ "$force" = 0 ] && [ -x "$OUT/sober2" ] && [ -f "$STATF" ] && [ "$(stat_key)
 fi
 
 # 鎖 = bootstrap/chain.txt（畳んだ鎖 — 段のソースのスナップショット bootstrap/<段>/{compiler,std} と建て方。git の履歴に依らない — 公開準備便 ①）。
-# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 48 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
+# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 51 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
 mapfile -t CHAIN < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $1 }')
 mapfile -t FORM < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $2 }')
 [ "${#CHAIN[@]}" -gt 0 ] || { echo "stage2.sh: bootstrap/chain.txt has no step" >&2; exit 1; }
@@ -116,7 +116,7 @@ for i in "${!CHAIN[@]}"; do
             elif [ -n "$be" ]; then
                 (cd "$WB/root" && elf_build "$prev" "$WB/sober-boot" $bp) >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
             else
-                (cd "$WB/root" && "$prev" build app/main.sober $bp -o "$WB/boot.ll") >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
+                (cd "$WB/root" && "$prev" build app/main.sober --emit=ll $bp -o "$WB/boot.ll") >&2 || { echo "stage2.sh: FAIL boot$((i - 1)) build of src/compiler/app at $c" >&2; rm -rf "$WB"; exit 1; }
                 ll_cc "$WB/boot.ll" "$WB/sober-boot" >&2 || { echo "stage2.sh: FAIL zig cc boot.ll" >&2; rm -rf "$WB"; exit 1; }
             fi
             mv "$WB/sober-boot" "$BOOT.new" && mv "$BOOT.new" "$BOOT"
@@ -170,10 +170,10 @@ if [ "$force" = 1 ] || ! fresh "$k"; then
             rm -f "$OUT/stage2.ll"
             mv "$W/sober2" "$OUT/sober2.new" && mv "$OUT/sober2.new" "$OUT/sober2"
         else
-            (cd "$W/root" && "$BOOT" build app/main.sober --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
+            (cd "$W/root" && "$BOOT" build app/main.sober --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app" >&2; exit 1; }
             ll_cc "$W/stage2.ll" "$W/sober2" "$S2OPT" >&2 || { echo "stage2.sh: FAIL zig cc stage2.ll" >&2; exit 1; }
             l0_bake "$W/sober2"
-            (cd "$W/root" && "$BOOT" build app/main.sober --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
+            (cd "$W/root" && "$BOOT" build app/main.sober --emit=ll --passes -o "$W/stage2.ll") >&2 || { echo "stage2.sh: FAIL boot build of src/compiler/app (with L0)" >&2; exit 1; }
             ll_cc "$W/stage2.ll" "$W/sober2" "$S2OPT" >&2 || { echo "stage2.sh: FAIL zig cc stage2.ll (with L0)" >&2; exit 1; }
             mv "$W/stage2.ll" "$OUT/stage2.ll.new" && mv "$W/sober2" "$OUT/sober2.new"
             mv "$OUT/stage2.ll.new" "$OUT/stage2.ll" && mv "$OUT/sober2.new" "$OUT/sober2"

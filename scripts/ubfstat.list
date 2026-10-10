@@ -1,0 +1,5 @@
+# ubfstat（scripts/ubfstat.sh）: UTF-8 の境界の畳み（compiler/lower/ubf.sober）が畳めた判定の数の照合の表 — `<ソース> <関数ごとの数の和>`（ちょうど）。
+# 数が変わったら（catch の脱糖の形・展開の形・事実の取り方が変わった）ここを直す前に理由を確かめる — 減ったら黙った退行、増えたら新しい畳みの網（optdiff・utf8_bound）
+# bench/logagg（区切りの位置が mut の変数の合流から — 支配の事実では取れない）・bench/knucleotide（添字が帰納変数 — 段 2 (W) の席）は 0 で載せない
+bench/1brc/main.sober 2
+examples/utf8_bound.sober 4

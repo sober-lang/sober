@@ -65,7 +65,7 @@ func lex(text string) ([]Token, error?) {
         }
     }
     toks = append(toks, Token{6, len(src), 0})
-    return freeze(toks), nil
+    return toks, nil
 }
 
 // factor := 数 | '-' factor | '(' expr ')'。結果は（値, 次の位置, err）の 3 成分

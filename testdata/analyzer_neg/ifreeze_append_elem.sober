@@ -1,0 +1,12 @@
+package main
+
+// imm の要素の slice へ append してから書く（暗黙の freeze・U2）
+
+func main() int {
+    mut keep := mut [][]int{}
+    mut m := mut []int{1, 2}
+    keep = append(keep, m)
+    m[0] = 5
+    println("${keep[0][0]}")
+    return 0
+}

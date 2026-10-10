@@ -1,0 +1,11 @@
+package main
+
+// mut の束縛に imm の部分列を入れられない（型エラー — 同上）
+
+func main() int {
+    mut m := mut []int{65, 66, 67}
+    mut s := m
+    s = s[0:1]
+    println(len(s))
+    return 0
+}

@@ -1,0 +1,13 @@
+package main
+
+// if 式の値の freeze の後の腕の束縛への書き（U2 — F-ap: 値の末尾の道ごとに凍る。2026-10-11 まで analyzer が根を取らずに通していた）
+
+func main() int {
+    mut m := mut []int{1, 2}
+    mut n := mut []int{3, 4}
+    c := len(m) > 1
+    im := freeze(if c { m } else { n })
+    m[0] = 9
+    println("${im[0]}")
+    return 0
+}

@@ -9,7 +9,7 @@ func build(n int) []int {
         xs = append(xs, i * 7)
         i += 1
     }
-    return freeze(xs)
+    return xs
 }
 
 func total(xs []int) int {

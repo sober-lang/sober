@@ -1,0 +1,14 @@
+package main
+
+// if 式・append の結果の freeze（値の末尾の道ごとに凍る — F-ap）の正例: 凍らせた後は腕の束縛へ書かない（uniqfreeze の代表 — analyzer と Lean の述語がともに受理）
+
+func main() int {
+    mut m := mut []int{1, 2}
+    mut n := mut []int{3, 4}
+    c := len(m) > 1
+    im := freeze(if c { m } else { n })
+    mut k := mut []int{5}
+    ik := freeze(append(k, 6))
+    println("${im[0]} ${ik[1]}")
+    return 0
+}

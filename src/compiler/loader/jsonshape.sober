@@ -252,16 +252,10 @@ func jsonBase(ts []ast.Tree, fpkg []string, f int, e int) (JReq, int) {
     // 名前の型: 同じ package か `q.Name`（mut 局所を仮引数の slice の要素で初期化して後から代入すると check が拒否 — F-af。空で初期化して両方の枝で代入）
     mut pkg := ""
     mut name := nm
-    dot := strings.Index(nm, ".")
-    if dot < 0 {
+    ref, n2, dotted := strings.Cut(nm, ".")
+    if !dotted {
         pkg = fpkg[f]
     } else {
-        b := bytes(nm)
-        ref, rerr := string(b[0:dot])
-        n2, nerr := string(b[dot + 1:len(b)])
-        if rerr != nil || nerr != nil {
-            return JReq{}, x.tok
-        }
         pkg = importPath(t, ref)
         name = n2
     }

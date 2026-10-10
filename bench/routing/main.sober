@@ -1,0 +1,219 @@
+package main
+
+// routing（Web コア bench ②）: HTTP のパス照合を HTTP 抜きで回す。登録ルート 40 本（静的・:パラメータ・末尾の *ワイルドカード・メソッド違い）に
+// 1 行 1 リクエスト（`METHOD /path?query` — bench/routing/gen）を照合する。照合の規則 = 登録順の最初の一致（メソッド・区間の数・静的な区間の等値）。
+// どれにも当たらなければ、メソッドを無視して当たるものがあれば 405・無ければ 404。パラメータとクエリは map[string]string に詰め、
+// 「ハンドラ」が名前で引く。出力 = ルートごとの件数・404 / 405・数のパラメータの合計・文字列のパラメータのバイト数・page の合計・FNV-1a 64
+// （Go / Rust の双子とバイト一致）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/strings"
+import "std/utf8"
+
+type Route struct {
+    method string
+    segs []string
+}
+
+func table() []string {
+    return []string{
+        "GET /", "GET /healthz", "GET /api/v1/users", "POST /api/v1/users", "GET /api/v1/users/me", "GET /api/v1/users/:id",
+        "PUT /api/v1/users/:id", "DELETE /api/v1/users/:id", "GET /api/v1/users/:id/orders", "POST /api/v1/users/:id/orders",
+        "GET /api/v1/users/:id/orders/:oid", "DELETE /api/v1/users/:id/orders/:oid", "GET /api/v1/users/:id/followers",
+        "GET /api/v1/products", "POST /api/v1/products", "GET /api/v1/products/featured", "GET /api/v1/products/:sku",
+        "PUT /api/v1/products/:sku", "GET /api/v1/products/:sku/reviews", "POST /api/v1/products/:sku/reviews",
+        "GET /api/v1/products/:sku/reviews/:rid", "GET /api/v1/categories", "GET /api/v1/categories/:slug",
+        "GET /api/v1/categories/:slug/products", "GET /api/v1/search", "GET /api/v1/orders/:oid", "POST /api/v1/orders/:oid/cancel",
+        "GET /api/v1/orders/:oid/items/:iid", "GET /api/v2/users/:id", "GET /api/v2/products/:sku", "POST /api/v2/checkout",
+        "GET /blog", "GET /blog/:slug", "GET /blog/:slug/comments", "GET /admin", "GET /admin/stats", "GET /admin/users/:id",
+        "POST /admin/users/:id/ban", "GET /static/*path", "GET /favicon.ico",
+    }
+}
+
+// split は b の [s, e) を区切り c で割る（s == e は 0 個 — 道 `/` の区間の列は空）
+func split(v utf8.View, b []byte, s int, e int, c byte) []string {
+    mut out := mut []string{}
+    if s >= e {
+        return out
+    }
+    mut i := s
+    mut j := s
+    while j <= e {
+        if j == e || b[j] == c {
+            seg := utf8.Str(v, i, j) catch ""
+            out = append(out, seg)
+            i = j + 1
+        }
+        j += 1
+    }
+    return out
+}
+
+// match は区間の列 segs がルート r のパターンに当たるか（当たればパラメータを ps に詰める）
+func match(r Route, segs []string, ps mut map[string]string) bool {
+    n := len(r.segs)
+    wild := n > 0 && strings.HasPrefix(r.segs[n - 1], "*")
+    if wild {
+        if len(segs) < n {
+            return false
+        }
+    } else if len(segs) != n {
+        return false
+    }
+    for k <- iter.Range(0, n) {
+        p := r.segs[k]
+        if wild && k == n - 1 {
+            ps[stripHead(p)] = strings.Join(rest(segs, k), "/")
+        } else if strings.HasPrefix(p, ":") {
+            ps[stripHead(p)] = segs[k]
+        } else if p != segs[k] {
+            return false
+        }
+    }
+    return true
+}
+
+func rest(segs []string, k int) []string {
+    mut out := mut []string{}
+    for i <- iter.Range(k, len(segs)) {
+        out = append(out, segs[i])
+    }
+    return out
+}
+
+// stripHead は先頭の印（: か *）を外した名前
+func stripHead(p string) string {
+    return strings.TrimPrefix(strings.TrimPrefix(p, ":"), "*")
+}
+
+func atoi(s string) int {
+    mut n := 0
+    for c <- bytes(s) {
+        n = n * 10 + int(c) - '0'
+    }
+    return n
+}
+
+func fnv(h int, s string) int {
+    mut x := h
+    for c <- bytes(s) {
+        x = (x ^ int(c)) * 1099511628211
+    }
+    return x
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 2 {
+        return 2
+    }
+    mut rs := mut []Route{}
+    for spec <- table() {
+        sb := bytes(spec)
+        sv := utf8.Check(sb) catch return 1
+        sp := strings.IndexByte(spec, ' ')
+        m := utf8.Str(sv, 0, sp) catch return 1
+        rs = append(rs, Route{method: m, segs: split(sv, sb, sp + 2, len(sb), '/')})
+    }
+    routes := freeze(rs)
+    b := io.ReadFile(args[1]) catch return 1
+    v := utf8.Check(b) catch return 1
+    mut hits := mut []int{}
+    for _ <- routes {
+        hits = append(hits, 0)
+    }
+    mut n := 0
+    mut nf := 0
+    mut na := 0
+    mut numSum := 0
+    mut strBytes := 0
+    mut pageSum := 0
+    mut h := 0 - 3750763034362895579
+    mut i := 0
+    while i < len(b) {
+        s := i
+        while b[i] != '\n' {
+            i += 1
+        }
+        e := i
+        i += 1
+        n += 1
+        line := utf8.Str(v, s, e) catch return 1
+        sp := strings.IndexByte(line, ' ')
+        method := utf8.Str(v, s, s + sp) catch return 1
+        q := strings.IndexByte(line, '?')
+        pe := if q >= 0 { s + q } else { e }
+        segs := split(v, b, s + sp + 2, pe, '/')
+        // クエリ（同じ鍵は後が勝つ）
+        mut qs := mut map[string]string{}
+        if q >= 0 {
+            for kv <- split(v, b, s + q + 1, e, '&') {
+                k, x, _ := strings.Cut(kv, "=")
+                qs[k] = x
+            }
+        }
+        mut found := 0 - 1
+        mut ps := mut map[string]string{}
+        mut ri := 0
+        while ri < len(routes) && found < 0 {
+            r := routes[ri]
+            if r.method == method && match(r, segs, mut ps) {
+                found = ri
+            }
+            ri += 1
+        }
+        if found < 0 {
+            mut any := false
+            for r <- routes {
+                mut ps2 := mut map[string]string{}
+                if !any && match(r, segs, mut ps2) {
+                    any = true
+                }
+            }
+            if any {
+                na += 1
+                h = fnv(h, "405\n")
+            } else {
+                nf += 1
+                h = fnv(h, "404\n")
+            }
+        } else {
+            hits[found] = hits[found] + 1
+            h = fnv(h, strings.FormatInt(found))
+            // ハンドラ: パラメータを名前で引く（パターンの順）
+            for p <- routes[found].segs {
+                if strings.HasPrefix(p, ":") || strings.HasPrefix(p, "*") {
+                    name := stripHead(p)
+                    x := ps[name]
+                    if x != nil {
+                        h = fnv(h, "|")
+                        h = fnv(h, x)
+                        if name == "sku" || name == "slug" || name == "path" {
+                            strBytes += len(bytes(x))
+                        } else {
+                            numSum += atoi(x)
+                        }
+                    }
+                }
+            }
+            pg := qs["page"]
+            if pg != nil {
+                pageSum += atoi(pg)
+            }
+            h = fnv(h, "\n")
+        }
+    }
+    println("requests ${n}")
+    for k <- iter.Range(0, len(routes)) {
+        println("route ${k} ${hits[k]}")
+    }
+    println("404 ${nf}")
+    println("405 ${na}")
+    println("num_sum ${numSum}")
+    println("str_bytes ${strBytes}")
+    println("page_sum ${pageSum}")
+    println("hash ${h}")
+    return 0
+}

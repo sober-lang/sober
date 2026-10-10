@@ -38,7 +38,7 @@ What it gives the user: rejection of unhandled errors, deterministic parallelism
 
 ## 4. The verification net — the density of oracles sets the pace of development
 
-Chosen: a change to the compiler goes in only after passing all of the following: the self-compilation fixed point, golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go, GNU as), and comparison against the formal model in Lean (`scripts/gates.sh --full` — 53 checks). The bootstrap has no seed binary and is built from Zig and source alone.
+Chosen: a change to the compiler goes in only after passing all of the following: the self-compilation fixed point, golden tests, agreement of observations with and without optimization, comparison against the frozen Zig version, independent oracles (Go, GNU as), and comparison against the formal model in Lean (`scripts/gates.sh --full` — 54 checks). The bootstrap has no seed binary and is built from Zig and source alone.
 
 Rejected: an ad hoc net of "write as many tests as you can". Each kind of check in the net has its own independent oracle, and any one of them going off stops the change.
 

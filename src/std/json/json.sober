@@ -108,7 +108,7 @@ func keysOf(d Doc, a int, n int) []string {
     for i <- iter.Range(0, n) {
         ks = append(ks, text(d, d.kids[a + i]))
     }
-    return freeze(ks)
+    return ks
 }
 
 // text は文字列の節 k の中身

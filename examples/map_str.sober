@@ -28,7 +28,7 @@ func main() {
     }
     // 長さ違い・接頭辞一致は別キー
     m["abc"] = 9
-    println(count(freeze(m), "ab"), count(freeze(m), "abc"), count(freeze(m), "a"))
+    println(count(m, "ab"), count(m, "abc"), count(m, "a"))
     words := map[string]int{"go": 1, "rust": 2, "sober": 3}
     println(count(words, "sober"), len(words))
 }

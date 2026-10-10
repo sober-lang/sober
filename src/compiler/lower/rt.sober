@@ -464,7 +464,25 @@ func buildStrEq(st mut St) {
     setCur(mut st, small)
     bl := newBlock(mut st)
     bi := param(mut st, bl, TyI64)
-    condbr(mut st, cmp(mut st, CGe, n, iconst(mut st, 8)), lastw, -1, bl, list1(mut st, i))
+    short := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, n, iconst(mut st, 8)), lastw, -1, short, -1)
+    // 1 ≤ n ≤ 7（ここでは i = 0・n = 0 は上で eq へ抜けている）: 両方の番地から 8 バイトを 1 回ずつ読み、下位 n バイトだけ比べる
+    // （little-endian — 差の語を 64 − 8n ビット左へずらして余分を捨てる）。8 バイトの load は同じページの中ならフォルトしない — ページの末尾 7 バイトに
+    // 掛かる番地（(p & 4095) > 4088）のときだけバイトの環へ。開発用 --rt-mutant=12 は常にバイトの環（短い等値の速い道の差分オラクル — scripts/streq.sh）
+    setCur(mut st, short)
+    if st.rtMut == 12 {
+        br(mut st, bl, list1(mut st, i))
+    } else {
+        // 両方のページ内の位置から 4089 を引いた値の AND が負 ⇔ 両方とも 4088 以下（符号ビットの積 — 比較の真偽を値にしない）
+        word := newBlock(mut st)
+        xa := bin(mut st, BSub, bin(mut st, BAnd, ptoi(mut st, pa), iconst(mut st, 4095)), iconst(mut st, 4089))
+        xb := bin(mut st, BSub, bin(mut st, BAnd, ptoi(mut st, pb), iconst(mut st, 4095)), iconst(mut st, 4089))
+        condbr(mut st, cmp(mut st, CLt, bin(mut st, BAnd, xa, xb), iconst(mut st, 0)), word, -1, bl, list1(mut st, i))
+        setCur(mut st, word)
+        d := bin(mut st, BXor, load(mut st, pa, 0), load(mut st, pb, 0))
+        sh := bin(mut st, BShl, bin(mut st, BSub, iconst(mut st, 8), n), iconst(mut st, 3))
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BShl, d, sh), iconst(mut st, 0)), eq, -1, ne, -1)
+    }
     setCur(mut st, lastw)
     last := bin(mut st, BSub, n, iconst(mut st, 8))
     condbr(mut st, cmp(mut st, CNe, load(mut st, gepByte(mut st, pa, last), 0), load(mut st, gepByte(mut st, pb, last), 0)), ne, -1, eq, -1)

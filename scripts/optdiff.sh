@@ -42,8 +42,9 @@ mkdir -p "$W/src" "$W/r"
 # 列: 「種類 名前 ソース 引数…」（種類 = exp〔期待値と照合〕/ pair〔両方を建てて突き合わせ〕）
 list=()
 if [ "$MUT" = 1 ]; then
-    # 代表: 集約（slice / map / struct）・ループ・panic・error を突く例（hdr_mut2 = hdr の自分のヘッダの書き込み — 他の例は素通りした）
-    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc; do
+    # 代表: 集約（slice / map / struct）・ループ・panic・error を突く例（hdr_mut2 = hdr の自分のヘッダの書き込み — 他の例は素通りした・
+    # callconv_cold = 冷たい呼び出しの退避 — report-463）
+    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold; do
         [ -f "examples/$n.out" ] && list+=("exp ex_$n examples/$n.sober")
     done
 else

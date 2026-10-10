@@ -1,0 +1,179 @@
+package main
+
+// jsonapi（Web コア bench ①）: 注文の API の中身を HTTP 抜きで回す。1 行 1 リクエストの JSON（NDJSON — bench/jsonapi/gen）を読み、
+// 行ごとに parse → 検証（必須欄・型・値域・通貨）→ 小計・割引・税 → レスポンスの JSON の直列化。
+// 出力 = 件数の内訳・通貨ごとの total の合計・note のバイト数の合計・全レスポンスの FNV-1a 64（Go / Rust の双子とバイト一致）
+
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/os"
+
+type Item struct {
+    sku string
+    qty int
+    price int
+}
+
+type Req struct {
+    id int
+    user string
+    currency string
+    items []Item
+    coupon string?
+    note string?
+}
+
+type OkResp struct {
+    id int
+    status string
+    items int
+    total int
+    currency string
+}
+
+type ErrResp struct {
+    id int?
+    status string
+    code string
+}
+
+// codes は誤りの code の表示の順（出力の順）
+func codes() []string {
+    return []string{"json", "missing:id", "missing:user", "missing:currency", "missing:items", "type", "range:items", "range:qty", "currency"}
+}
+
+func taxRate(cur string) int {
+    return switch {
+    case cur == "JPY": 10
+    case cur == "USD": 8
+    case cur == "EUR": 20
+    default: 0 - 1
+    }
+}
+
+// check は検証の誤りの code（誤りが無ければ ""）
+func check(r Req) string {
+    if len(r.items) == 0 {
+        return "range:items"
+    }
+    for it <- r.items {
+        if it.qty < 1 || it.qty > 100 {
+            return "range:qty"
+        }
+    }
+    if taxRate(r.currency) < 0 {
+        return "currency"
+    }
+    return ""
+}
+
+func total(r Req) int {
+    mut sub := 0
+    for it <- r.items {
+        sub += it.qty * it.price
+    }
+    cp := r.coupon
+    disc := if cp == nil { 0 } else if cp == "SAVE10" { sub / 10 } else if cp == "FLAT500" { if sub < 500 { sub } else { 500 } } else { 0 }
+    after := sub - disc
+    return after + after * taxRate(r.currency) / 100
+}
+
+func fnv(h int, s string) int {
+    mut x := h
+    for c <- bytes(s) {
+        x = (x ^ int(c)) * 1099511628211
+    }
+    return (x ^ 10) * 1099511628211
+}
+
+func codeIndex(cs []string, code string) int {
+    mut i := 0
+    while i < len(cs) {
+        if cs[i] == code {
+            return i
+        }
+        i += 1
+    }
+    return 0
+}
+
+func main() int {
+    args, aerr := os.Args()
+    if aerr != nil || len(args) < 2 {
+        return 2
+    }
+    b := io.ReadFile(args[1]) catch return 1
+    cs := codes()
+    mut n := 0
+    mut ok := 0
+    mut errs := mut []int{0, 0, 0, 0, 0, 0, 0, 0, 0}
+    mut jpy := 0
+    mut usd := 0
+    mut eur := 0
+    mut noteBytes := 0
+    mut h := 0 - 3750763034362895579
+    mut s := 0
+    while s < len(b) {
+        mut e := s
+        while e < len(b) && b[e] != '\n' {
+            e += 1
+        }
+        line := b[s:e]
+        s = e + 1
+        n += 1
+        resp := {
+            d, perr := json.Parse(line)
+            if perr != nil {
+                errs[0] = errs[0] + 1
+                json.Encode[ErrResp](ErrResp{id: nil, status: "error", code: "json"})
+            } else {
+                // id は検証の誤りのレスポンスにも返す（読めるときだけ）
+                idn := json.Get(d, json.Root(d), "id")
+                id := if idn != nil { json.DecInt(d, idn) catch -1 } else { -1 }
+                r, derr := json.Decode[Req](d, json.Root(d))
+                code := if derr != nil {
+                    switch derr {
+                    case json.Missing{field}: "missing:" + field
+                    case json.WrongType{}: "type"
+                    case json.IntRange{}: "type"
+                    }
+                } else {
+                    check(r)
+                }
+                if code != "" {
+                    ci := codeIndex(cs, code)
+                    errs[ci] = errs[ci] + 1
+                    json.Encode[ErrResp](ErrResp{id: if id >= 0 { id } else { nil }, status: "error", code: code})
+                } else {
+                    t := total(r)
+                    ok += 1
+                    if r.currency == "JPY" {
+                        jpy += t
+                    } else if r.currency == "USD" {
+                        usd += t
+                    } else {
+                        eur += t
+                    }
+                    nt := r.note
+                    if nt != nil {
+                        noteBytes += len(bytes(nt))
+                    }
+                    json.Encode[OkResp](OkResp{id: r.id, status: "ok", items: len(r.items), total: t, currency: r.currency})
+                }
+            }
+        }
+        h = fnv(h, resp)
+    }
+    println("requests ${n}")
+    println("ok ${ok}")
+    for i <- iter.Range(0, len(cs)) {
+        println("error ${cs[i]} ${errs[i]}")
+    }
+    println("total JPY ${jpy}")
+    println("total USD ${usd}")
+    println("total EUR ${eur}")
+    println("note_bytes ${noteBytes}")
+    println("hash ${h}")
+    return 0
+}

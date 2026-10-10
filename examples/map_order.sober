@@ -16,6 +16,16 @@ func show(tag string, m map[string]int) {
     println(line)
 }
 
+// showm は mut の map を凍結せずに印字する（凍結の後に書き続けない — language.md 17 節 U2。凍結は書き終えてから）
+func showm(tag string, m mut map[string]int) {
+    mut line := "${tag} ${len(m)}:"
+    for k <- keys(m) {
+        v := m[k]
+        line = line + " " + k + "=" + (if v != nil { "${v}" } else { "?" })
+    }
+    println(line)
+}
+
 func main() {
     // ① 短い鍵と長い鍵・索引の道（8 以上）
     mut a := mut map[string]int{}
@@ -29,11 +39,11 @@ func main() {
             delete(a, "long-key-for-the-prefix-test-${i}")
         }
     }
-    show("del", freeze(a))
+    showm("del", mut a)
     a["k5"] = 55
     a["long-key-for-the-prefix-test-9"] = 99
     a["fresh"] = 7
-    show("re", freeze(a))
+    show("re", a)
 
     // ② 墓石を持つ map を反復の region から外の map の値へ（値の格納点の写し — 墓石の鍵ごと再配置）
     mut outer := mut map[string]map[string]int{}
@@ -49,7 +59,7 @@ func main() {
                 delete(t, "s${i}")
             }
         }
-        outer["m${j}"] = freeze(t)
+        outer["m${j}"] = t
     }
     // 反復の region の跡を別の確保で汚す
     mut g := mut []string{}
@@ -67,16 +77,16 @@ func main() {
     }
     println(len(g))
 
-    // ③ 旧ヘッダ（成長の前のヘッダの値）は旧テーブルを見る
+    // ③ 旧ヘッダ（成長の前のヘッダの値）は旧テーブルを見る（mut の別名 — 2026-10-10 まで freeze した旧ヘッダで試していた形は F-al の穴の上だった）
     mut c := mut map[string]int{}
     c["x"] = 1
     c["y"] = 2
-    old := freeze(c)
+    mut old := c
     for i <- iter.Range(0, 20) {
         c["grow-${i}"] = i
     }
     c["x"] = 10
-    show("old", old)
+    showm("old", mut old)
     println(len(freeze(c)))
 
     // ④ 空の鍵の墓石と再挿入
@@ -85,5 +95,5 @@ func main() {
     d["a"] = 2
     delete(d, "")
     d[""] = 3
-    show("edge", freeze(d))
+    show("edge", d)
 }

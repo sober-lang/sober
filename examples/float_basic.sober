@@ -49,7 +49,7 @@ func main() int {
     for i <- iter.Range(0, 10) {
         xs = append(xs, float(i) * 0.1)
     }
-    println(math.Bits(sum(freeze(xs))))
+    println(math.Bits(sum(xs)))
     mut acc := 1.0
     for i <- iter.Range(0, 60) {
         acc *= 2.0

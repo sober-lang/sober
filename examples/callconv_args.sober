@@ -1,0 +1,86 @@
+package main
+
+import "std/iter"
+
+// 呼び出し規約の網（段 3 — 先頭 4 引数をレジスタで渡す）: 引数 0〜8 本 × {フレームのない葉・呼び出しを跨ぐ引数・跨ぐ引数が
+// callee-saved に入りきらず spill する形・スロットを持つ関数（入口のゼロ初期化）}・実引数の並べ替え（並行コピーの循環）・
+// 番地を取られる関数（旧規約）の直の呼び出しと間接の呼び出し。各引数に別の重みを掛けて、並びの取り違えが値に出るようにする
+
+func w0() int { return 7 }
+func w1(a int) int { return a * 3 + 1 }
+func w2(a int, b int) int { return a * 3 + b * 5 }
+func w3(a int, b int, c int) int { return a * 3 + b * 5 + c * 7 }
+func w4(a int, b int, c int, d int) int { return a * 3 + b * 5 + c * 7 + d * 11 }
+func w5(a int, b int, c int, d int, e int) int { return a * 3 + b * 5 + c * 7 + d * 11 + e * 13 }
+func w6(a int, b int, c int, d int, e int, f int) int { return a * 3 + b * 5 + c * 7 + d * 11 + e * 13 + f * 17 }
+func w8(a int, b int, c int, d int, e int, f int, g int, h int) int {
+    return a * 3 + b * 5 + c * 7 + d * 11 + e * 13 + f * 17 + g * 19 + h * 23
+}
+
+// 引数が呼び出しを跨ぐ（callee-saved へ）
+func cross3(a int, b int, c int) int {
+    x := w2(c, a)
+    return x + a * 1000 + b * 100 + c * 10
+}
+
+// 跨ぐ引数が 8 本（callee-saved 5 本に入りきらず spill する）・5 本目以降はスタックで来る
+func cross8(a int, b int, c int, d int, e int, f int, g int, h int) int {
+    x := w8(h, g, f, e, d, c, b, a)
+    y := w4(d, c, b, a)
+    return x * 7 + y + a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7 + h * 8
+}
+
+// 自分の引数を並べ替えて渡す（rsi ↔ r8 等の循環）
+func perm4(a int, b int, c int, d int) int { return w4(b, a, d, c) + w4(d, c, b, a) }
+func perm6(a int, b int, c int, d int, e int, f int) int { return w6(f, e, d, c, b, a) - w6(b, a, c, d, f, e) }
+
+// スロットを持つ関数（入口でゼロ初期化）
+type Acc struct {
+    s int
+    n int
+}
+
+func push(a mut Acc, v int) {
+    a.s = a.s * 31 + v
+    a.n += 1
+}
+
+func slots(a int, b int, c int, d int, e int) int {
+    mut acc := Acc{s: 0, n: 0}
+    push(mut acc, a)
+    push(mut acc, b)
+    push(mut acc, c)
+    push(mut acc, d)
+    push(mut acc, e)
+    return acc.s * 10 + acc.n
+}
+
+// 再帰（呼び手と呼ばれ側が同じ関数）
+func rec(n int, a int, b int, c int, d int, e int) int {
+    return if n == 0 { w5(a, b, c, d, e) } else { rec(n - 1, b, c, d, e, a) + n }
+}
+
+// 番地を取られる関数（旧規約）— 直と間接の両方で呼ぶ
+func taken5(a int, b int, c int, d int, e int) int { return w5(e, d, c, b, a) }
+
+type Fn5 struct {
+    f func(int, int, int, int, int) int
+}
+
+func viaValue(t Fn5, x int) int { return t.f(x, x + 1, x + 2, x + 3, x + 4) }
+
+func main() {
+    println(w0(), w1(2), w2(2, 3), w3(2, 3, 4), w4(2, 3, 4, 5))
+    println(w5(2, 3, 4, 5, 6), w6(2, 3, 4, 5, 6, 7), w8(2, 3, 4, 5, 6, 7, 8, 9))
+    println(cross3(1, 2, 3), cross8(1, 2, 3, 4, 5, 6, 7, 8))
+    println(perm4(1, 2, 3, 4), perm6(1, 2, 3, 4, 5, 6))
+    println(slots(1, 2, 3, 4, 5), slots(9, 8, 7, 6, 5))
+    println(rec(4, 1, 2, 3, 4, 5), rec(7, 10, 20, 30, 40, 50))
+    t := Fn5{f: taken5}
+    println(taken5(1, 2, 3, 4, 5), viaValue(t, 1), viaValue(t, 10))
+    mut s := 0
+    for i <- iter.Range(0, 50) {
+        s += cross8(i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7) % 1000 + perm4(i, 2 * i, 3 * i, 4 * i)
+    }
+    println(s)
+}

@@ -1,0 +1,23 @@
+package main
+
+// mut の仮引数を imm の実引数に渡す（暗黙の freeze・U1 の仮引数 — 呼び手が同じ中身を書ける）
+
+type H struct {
+    xs []int
+}
+
+func wrap(xs []int) H {
+    return H{xs: xs}
+}
+
+func keep(x mut []int) H {
+    return wrap(x)
+}
+
+func main() int {
+    mut m := mut []int{1, 2}
+    h := keep(mut m)
+    m[0] = 9
+    println("${h.xs[0]}")
+    return 0
+}

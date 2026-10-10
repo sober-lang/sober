@@ -1,0 +1,1 @@
+testdata/analyzer_neg/freeze_mutpass_after.sober:12:14: error: this writes to `m` after it was frozen by `freeze(m)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)

@@ -1,0 +1,2 @@
+testdata/analyzer_neg/ifreeze_loop_same.sober:16:10: error: this writes to `w[…]` after `w` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy (Analyzer)
+testdata/analyzer_neg/ifreeze_loop_same.sober:15:22: error: (note) `w` is frozen here — an immutable value is expected at this point (implicit freeze) (Analyzer)
