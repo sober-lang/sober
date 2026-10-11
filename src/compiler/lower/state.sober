@@ -8,6 +8,7 @@ package lower
 // 型・スコープの記録はすべて同じヒープ st.d.h に積む（記録は添字で指し、無しは -1）。
 // 再帰する関数は `st mut St` を持ち回る Def（R2 の callM）になる。渡す imm の値は int と string リテラルだけにする（F-6）
 
+import "analyzer"
 import "ast"
 import "desugar"
 import "diag"
@@ -44,6 +45,9 @@ type Arg struct {
 // St は lower の状態: 脱糖器の状態 d（表層 AST・表・ヒープ）を包み、lower 自身の状態のスカラーを欄に持つ
 type St struct {
     d desugar.S
+    // freeze の規則（analyzer の U1〜U3）の作業域 — build が d と同じ anchor（st の 2 欄）で FreezeCount へ渡す（report-489。Fz を局所に置くと
+    // 呼び手の d と別の region の 2 つの mut 実引数になり、check で Def に上がらず E2-S の逃げに回る）
+    fz analyzer.Fz
     infos table.Table[FnInfo]  // 下ろす関数（FnInfo）の表
     closures table.Table[Closure]  // ラムダ引数の閉包の表
     scopes table.Table[Scope]
@@ -159,6 +163,8 @@ type St struct {
     csBlob int
     // 配置の計器（開発用 `sober build --layout=S` = S〔v2〕/ `--layout-v1=S` = 1000 + S〔v1〕— x86.sober xLayPad / xLayInner）。0 = ずらしなし
     xLay int
+    // 毒の口（環境変数 SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しない語を 0x5a… で埋める — zeroinit.sober）
+    slotPoison bool
     rtKidKeep FnRef
     plabs int  // 罠を使うモジュールの `panic(L{…})` の点 → ラベルの名前（[次, 点の番号, 名前]・-1 = 無し — panic.sober の taskDiedText）
     rtFlush FnRef
@@ -380,112 +386,97 @@ func initScalars(st mut St) {
 
 const VOPEN = 1099511627776
 
-// ── ヒープの読み書き（st.h = std/table の Table）──
-// 包みは展開される（呼び出し点ごとの一時領域は lower の文の出口で返して使い回す — S-1。以前は @noinline で暫定回避していた: 展開すると
-// LLVM 経路（-O0）で呼び出し点ごとに一時領域が積もり、再帰する関数のフレームが 3〜4 倍に膨らんで 8MB のスタックを溢れた）
-
-func hget(st mut St, i int) int {
-    return table.Get(mut st.d.h, i)
-}
-
-func hset(st mut St, i int, v int) {
-    table.Set(mut st.d.h, i, v)
-}
-
-func hpush(st mut St, v int) {
-    table.Push(mut st.d.h, v)
-}
-
-func hlen(st mut St) int {
-    return table.Len(mut st.d.h)
-}
+// ── ヒープの読み書き（desugar の欄 h = std/table の Table）──
+// 呼び出し点で desugar.HeapGet / HeapSet / HeapPush / HeapLen(mut st.d, …) を直に呼ぶ（他の package の欄は書けず、mut の中身を持つ欄は読めない —
+// language.md 20 節）。lower に包み（hget 系）を残して desugar の口を呼ぶ形は、IR インライナが 1 段しか畳まないので呼び出しが 1 段残り
+// 自己 build +1.67 G だった（report-493）
 
 // ── ヒープの小道具（展開される — 呼び出し点ごとに小さい）──
 
 func put(st mut St, x int) {
-    hpush(mut st, x)
+    desugar.HeapPush(mut st.d, x)
 }
 
 func top(st mut St) int {
-    return hlen(mut st)
+    return desugar.HeapLen(mut st.d)
 }
 
 // recN は n 語の記録を確保する（中身は -1 — 呼び手が埋める）
 func recN(st mut St, n int) int {
-    at := hlen(mut st)
+    at := desugar.HeapLen(mut st.d)
     for i <- iter.Range(0, n) {
-        hpush(mut st, -1)
+        desugar.HeapPush(mut st.d, -1)
     }
     return at
 }
 
 func rec4(st mut St, a int, b int, c int, d int) int {
-    at := hlen(mut st)
-    hpush(mut st, a)
-    hpush(mut st, b)
-    hpush(mut st, c)
-    hpush(mut st, d)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, a)
+    desugar.HeapPush(mut st.d, b)
+    desugar.HeapPush(mut st.d, c)
+    desugar.HeapPush(mut st.d, d)
     return at
 }
 
 // listN は長さ n の列（中身は 0）
 func listN(st mut St, n int) int {
-    at := hlen(mut st)
-    hpush(mut st, n)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, n)
     for i <- iter.Range(0, n) {
-        hpush(mut st, 0)
+        desugar.HeapPush(mut st.d, 0)
     }
     return at
 }
 
 func list0(st mut St) int {
-    at := hlen(mut st)
-    hpush(mut st, 0)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 0)
     return at
 }
 
 func list1(st mut St, x int) int {
-    at := hlen(mut st)
-    hpush(mut st, 1)
-    hpush(mut st, x)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 1)
+    desugar.HeapPush(mut st.d, x)
     return at
 }
 
 func list2(st mut St, x int, y int) int {
-    at := hlen(mut st)
-    hpush(mut st, 2)
-    hpush(mut st, x)
-    hpush(mut st, y)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 2)
+    desugar.HeapPush(mut st.d, x)
+    desugar.HeapPush(mut st.d, y)
     return at
 }
 
 func list3(st mut St, x int, y int, z int) int {
-    at := hlen(mut st)
-    hpush(mut st, 3)
-    hpush(mut st, x)
-    hpush(mut st, y)
-    hpush(mut st, z)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 3)
+    desugar.HeapPush(mut st.d, x)
+    desugar.HeapPush(mut st.d, y)
+    desugar.HeapPush(mut st.d, z)
     return at
 }
 
 func list4(st mut St, x int, y int, z int, w int) int {
-    at := hlen(mut st)
-    hpush(mut st, 4)
-    hpush(mut st, x)
-    hpush(mut st, y)
-    hpush(mut st, z)
-    hpush(mut st, w)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 4)
+    desugar.HeapPush(mut st.d, x)
+    desugar.HeapPush(mut st.d, y)
+    desugar.HeapPush(mut st.d, z)
+    desugar.HeapPush(mut st.d, w)
     return at
 }
 
 func list5(st mut St, x int, y int, z int, w int, v int) int {
-    at := hlen(mut st)
-    hpush(mut st, 5)
-    hpush(mut st, x)
-    hpush(mut st, y)
-    hpush(mut st, z)
-    hpush(mut st, w)
-    hpush(mut st, v)
+    at := desugar.HeapLen(mut st.d)
+    desugar.HeapPush(mut st.d, 5)
+    desugar.HeapPush(mut st.d, x)
+    desugar.HeapPush(mut st.d, y)
+    desugar.HeapPush(mut st.d, z)
+    desugar.HeapPush(mut st.d, w)
+    desugar.HeapPush(mut st.d, v)
     return at
 }
 
@@ -498,10 +489,10 @@ func dat(st mut St, x int) int {
 
 func strLit(st mut St, w string) desugar.StrRef {
     b := bytes(w)
-    at := desugar.StrRef(hlen(mut st))
-    hpush(mut st, len(b))
+    at := desugar.StrRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, len(b))
     for i <- iter.Range(0, len(b)) {
-        hpush(mut st, int(b[i]))
+        desugar.HeapPush(mut st.d, int(b[i]))
     }
     return at
 }
@@ -510,24 +501,24 @@ func strLit(st mut St, w string) desugar.StrRef {
 func strDot(st mut St, a desugar.StrRef, b desugar.StrRef) desugar.StrRef {
     na := slen(mut st, a)
     nb := slen(mut st, b)
-    at := desugar.StrRef(hlen(mut st))
-    hpush(mut st, na + 1 + nb)
+    at := desugar.StrRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, na + 1 + nb)
     for i <- iter.Range(0, na) {
-        hpush(mut st, sat(mut st, a, i))
+        desugar.HeapPush(mut st.d, sat(mut st, a, i))
     }
-    hpush(mut st, 46)
+    desugar.HeapPush(mut st.d, 46)
     for i <- iter.Range(0, nb) {
-        hpush(mut st, sat(mut st, b, i))
+        desugar.HeapPush(mut st.d, sat(mut st, b, i))
     }
     return at
 }
 
 // strPart は文字列 s のバイト [lo, hi) を新しい文字列にする
 func strPart(st mut St, s desugar.StrRef, lo int, hi int) desugar.StrRef {
-    at := desugar.StrRef(hlen(mut st))
-    hpush(mut st, hi - lo)
+    at := desugar.StrRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, hi - lo)
     for i <- iter.Range(lo, hi) {
-        hpush(mut st, sat(mut st, s, i))
+        desugar.HeapPush(mut st.d, sat(mut st, s, i))
     }
     return at
 }
@@ -603,7 +594,7 @@ func latL(st mut St, l desugar.ListRef, i int) desugar.ListRef {
 }
 
 func lput(st mut St, l desugar.ListRef, i int, v int) {
-    hset(mut st, int(l) + 1 + i, v)
+    desugar.HeapSet(mut st.d, int(l) + 1 + i, v)
 }
 
 func slen(st mut St, s desugar.StrRef) int {
@@ -615,7 +606,7 @@ func sat(st mut St, s desugar.StrRef, i int) int {
 }
 
 func sput(st mut St, s desugar.StrRef, i int, v int) {
-    hset(mut st, int(s) + 1 + i, v)
+    desugar.HeapSet(mut st.d, int(s) + 1 + i, v)
 }
 
 func latS(st mut St, l desugar.ListRef, i int) desugar.StrRef {
@@ -623,7 +614,7 @@ func latS(st mut St, l desugar.ListRef, i int) desugar.StrRef {
 }
 
 func hgetS(st mut St, i int) desugar.StrRef {
-    return desugar.StrRef(hget(mut st, i))
+    return desugar.StrRef(desugar.HeapGet(mut st.d, i))
 }
 
 func sA(x ast.Node) desugar.StrRef {
@@ -647,11 +638,11 @@ func sE(x ast.Node) desugar.StrRef {
 }
 
 func hgetN(st mut St, i int) desugar.NodeRef {
-    return desugar.NodeRef(hget(mut st, i))
+    return desugar.NodeRef(desugar.HeapGet(mut st.d, i))
 }
 
 func hgetL(st mut St, i int) desugar.ListRef {
-    return desugar.ListRef(hget(mut st, i))
+    return desugar.ListRef(desugar.HeapGet(mut st.d, i))
 }
 
 func nA(x ast.Node) desugar.NodeRef {

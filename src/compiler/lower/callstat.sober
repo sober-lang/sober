@@ -89,10 +89,10 @@ func callStatInsert(st mut St) {
     n := table.Len(mut ents) / 2
     // 名前のバイト列を 8 バイトの語に詰める（strlit と同じリトルエンディアン）・表 = [n, 位置 0, 長さ 0, …]
     tw := listN(mut st, 1 + 2 * n)
-    hset(mut st, tw + 1, n)
+    desugar.HeapSet(mut st.d, tw + 1, n)
     for k <- iter.Range(0, n) {
-        hset(mut st, tw + 2 + 2 * k, table.Get(mut ents, 2 * k))
-        hset(mut st, tw + 3 + 2 * k, table.Get(mut ents, 2 * k + 1))
+        desugar.HeapSet(mut st.d, tw + 2 + 2 * k, table.Get(mut ents, 2 * k))
+        desugar.HeapSet(mut st.d, tw + 3 + 2 * k, table.Get(mut ents, 2 * k + 1))
     }
     nb := table.Len(mut bytesAll)
     nw := (nb + 7) / 8 + 1
@@ -105,13 +105,13 @@ func callStatInsert(st mut St) {
             v = (v << 8) | (if q < nb { table.Get(mut bytesAll, q) } else { 0 })
             j -= 1
         }
-        hset(mut st, bw + 1 + w, v)
+        desugar.HeapSet(mut st.d, bw + 1 + w, v)
     }
-    hset(mut st, st.csTbl + G_WORDS, 1 + 2 * n)
-    hset(mut st, st.csTbl + G_INIT, tw)
-    hset(mut st, st.csBlob + G_WORDS, nw)
-    hset(mut st, st.csBlob + G_INIT, bw)
-    hset(mut st, st.csCnt + G_WORDS, n + 1)
+    desugar.HeapSet(mut st.d, st.csTbl + G_WORDS, 1 + 2 * n)
+    desugar.HeapSet(mut st.d, st.csTbl + G_INIT, tw)
+    desugar.HeapSet(mut st.d, st.csBlob + G_WORDS, nw)
+    desugar.HeapSet(mut st.d, st.csBlob + G_INIT, bw)
+    desugar.HeapSet(mut st.d, st.csCnt + G_WORDS, n + 1)
 }
 
 // csSites は f の呼び出し（直 / 間接）ごとに手前へ数え口を足し、項目の名前「<呼び手> <通し番号> <callee> <深さ>」を積む

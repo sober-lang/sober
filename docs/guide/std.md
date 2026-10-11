@@ -32,7 +32,7 @@ A map of the packages you use with `import "std/<name>"`. For the exact form of 
 | `std/pool` | A lending pool looked up by handle | `Acquire`, `Release`, `Get`, `Set` |
 | `std/json` | Reading and writing JSON | `Parse` gives a document `Doc`, read with `Get` / `Items` / `Dec*` and write with `Put*`; mapping to and from types is `json.Decode[T]` / `json.Encode[T]` |
 
-Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`, `freeze`, and a lookup `m[k]` is `T?`).
+Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`, `freeze`, `clone` [a shallow copy, returned as mut], and a lookup `m[k]` is `T?`).
 
 ## Parallelism
 

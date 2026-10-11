@@ -8,6 +8,7 @@ package lower
 // 後ろの辺 = X + 1・`lt X, U`〔U は定数〕の真の側）・Y は非負の定数から +1 で増える帰納変数 → c·(X − Y) + ΔD が 0 を跨がず巡回しない
 // 諦める形: 呼び出し・syscall・region の op・バイトの読み書き・基底の違う番地・番地の形が分からない読み書き
 
+import "desugar"
 import "std/iter"
 
 // promoteFunc は関数 f のループに昇格を掛ける（先に安い走査で対象を絞る — 支配木を組むのは利用者のループがあって同じ番地の load と store がある関数だけ）
@@ -120,8 +121,8 @@ func prRound(st mut St, f FnRef) bool {
         if int(b) >= 0 {
             mut p := irBlkPHead(mut st, b)
             while p >= 0 {
-                pw.dblk[hget(mut st, p + 1)] = bi
-                p = hget(mut st, p)
+                pw.dblk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                p = desugar.HeapGet(mut st.d, p)
             }
             mut ins := irBlkIHead(mut st, b)
             while ins != -1 {
@@ -441,9 +442,9 @@ func prGap(st mut St, w mut m2rW, pw mut PrW, h int, mb int, x int, y int) (int,
     // h の仮引数での x の位置
     mut ix := 0
     mut p := irBlkPHead(mut st, hb)
-    while p >= 0 && hget(mut st, p + 1) != x {
+    while p >= 0 && desugar.HeapGet(mut st.d, p + 1) != x {
         ix += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     // 入る辺: 外からは y + k（k ≥ 1）・中からは x + 1（足し算は真の側の中 — x < U ≤ 最大値なので溢れない）
     mut kmin := -1
@@ -491,9 +492,9 @@ func prLow(st mut St, w mut m2rW, pw mut PrW, y int) (int, bool) {
     hb := BlkRef(w.blk[hy])
     mut ix := 0
     mut p := irBlkPHead(mut st, hb)
-    while p >= 0 && hget(mut st, p + 1) != y {
+    while p >= 0 && desugar.HeapGet(mut st.d, p + 1) != y {
         ix += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     if p < 0 {
         return 0, false

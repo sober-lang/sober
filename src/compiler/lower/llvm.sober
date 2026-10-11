@@ -47,7 +47,7 @@ func metaAddr(st mut St, f FnRef, b BlkRef) int {
     v := newValueIn(mut st, f)
     // std/par を使うプログラムではワーカーの表（段 6 P4-3 の fsaddr — P4-4 で見つけた穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
     // ワーカー 0 の表を読み書きしていた。ワーカー 1 では表 = 大域なので観測に出なかった）
-    linkInst(mut st, b, mkInst(mut st, v, if st.taskUse && hget(mut st, st.meta + G_WSLOT) >= 0 { OpFsAddr } else { OpGlobal }, st.meta, 0, 0))
+    linkInst(mut st, b, mkInst(mut st, v, if st.taskUse && desugar.HeapGet(mut st.d, st.meta + G_WSLOT) >= 0 { OpFsAddr } else { OpGlobal }, st.meta, 0, 0))
     return v
 }
 
@@ -102,16 +102,16 @@ func valueTypes(st mut St, f FnRef) int {
     vt := listN(mut st, n)
     ptys := irFnPtys(mut st, f)
     mut i := 0
-    while i < hget(mut st, ptys) {
-        hset(mut st, vt + 1 + i, hget(mut st, ptys + 1 + i))
+    while i < desugar.HeapGet(mut st.d, ptys) {
+        desugar.HeapSet(mut st.d, vt + 1 + i, desugar.HeapGet(mut st.d, ptys + 1 + i))
         i += 1
     }
     mut b := irFnBHead(mut st, f)
     while b != -1 {
         mut p := irBlkPHead(mut st, b)
         while p >= 0 {
-            hset(mut st, vt + 1 + hget(mut st, p + 1), hget(mut st, p + 2))
-            p = hget(mut st, p)
+            desugar.HeapSet(mut st.d, vt + 1 + desugar.HeapGet(mut st.d, p + 1), desugar.HeapGet(mut st.d, p + 2))
+            p = desugar.HeapGet(mut st.d, p)
         }
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {
@@ -129,7 +129,7 @@ func valueTypes(st mut St, f FnRef) int {
                 } else {
                     TyI64
                 }
-                hset(mut st, vt + 1 + r, t)
+                desugar.HeapSet(mut st.d, vt + 1 + r, t)
             }
             ins = irInsNext(mut st, ins)
         }
@@ -176,24 +176,24 @@ func llLabel(out mut []byte, bi int, tag int, k int) {
 
 // divGuarded は div / rem の除数 y にガードが要るか（y が 0 でも -1 でもない定数 — それまでに印字した iconst — ならガードを省く）
 func divGuarded(st mut St, cs int, y int) bool {
-    return !(hget(mut st, cs + 1 + y * 2) != 0 && hget(mut st, cs + 2 + y * 2) != 0 && hget(mut st, cs + 2 + y * 2) != -1)
+    return !(desugar.HeapGet(mut st.d, cs + 1 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != -1)
 }
 
 // incoming はブロックの入り辺の鎖の末尾へ 1 辺足す（[next, from の bi, tag, k, 引数]）
 func incomingAdd(st mut St, inc int, to BlkRef, bi int, tag int, k int, args int) {
     id := irBlkId(mut st, to)
     e := recN(mut st, 5)
-    hset(mut st, e + 1, bi)
-    hset(mut st, e + 2, tag)
-    hset(mut st, e + 3, k)
-    hset(mut st, e + 4, args)
-    tail := hget(mut st, inc + 1 + id * 2 + 1)
+    desugar.HeapSet(mut st.d, e + 1, bi)
+    desugar.HeapSet(mut st.d, e + 2, tag)
+    desugar.HeapSet(mut st.d, e + 3, k)
+    desugar.HeapSet(mut st.d, e + 4, args)
+    tail := desugar.HeapGet(mut st.d, inc + 1 + id * 2 + 1)
     if tail < 0 {
-        hset(mut st, inc + 1 + id * 2, e)
+        desugar.HeapSet(mut st.d, inc + 1 + id * 2, e)
     } else {
-        hset(mut st, tail, e)
+        desugar.HeapSet(mut st.d, tail, e)
     }
-    hset(mut st, inc + 1 + id * 2 + 1, e)
+    desugar.HeapSet(mut st.d, inc + 1 + id * 2 + 1, e)
 }
 
 // collectIncoming は印字と同じ順にラベルの採番をなぞって、ブロックごとの入り辺（[head, tail] の対の列）を集める
@@ -202,7 +202,7 @@ func collectIncoming(st mut St, f FnRef) int {
     inc := listN(mut st, nb * 2)
     mut i := 0
     while i < nb * 2 {
-        hset(mut st, inc + 1 + i, -1)
+        desugar.HeapSet(mut st.d, inc + 1 + i, -1)
         i += 1
     }
     cs := listN(mut st, irFnNVal(mut st, f) * 2)
@@ -217,8 +217,8 @@ func collectIncoming(st mut St, f FnRef) int {
             op := irInsOp(mut st, ins)
             if op == OpConst {
                 r := irInsRes(mut st, ins)
-                hset(mut st, cs + 1 + r * 2, 1)
-                hset(mut st, cs + 2 + r * 2, irInsA(mut st, ins))
+                desugar.HeapSet(mut st.d, cs + 1 + r * 2, 1)
+                desugar.HeapSet(mut st.d, cs + 2 + r * 2, irInsA(mut st, ins))
             } else if op == OpStore || op == OpStore8 || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart {
                 fresh += 1
             } else if op == OpBin && (irInsA(mut st, ins) == BDiv || irInsA(mut st, ins) == BRem) && divGuarded(mut st, cs, irInsC(mut st, ins)) {
@@ -275,12 +275,12 @@ func llName(st mut St, out mut []byte, s int) {
 func llArgs(st mut St, out mut []byte, vt int, args int) {
     if args >= 0 {
         mut i := 0
-        while i < hget(mut st, args) {
+        while i < desugar.HeapGet(mut st.d, args) {
             if i > 0 {
                 obuf.Lit(mut out, ", ")
             }
-            v := hget(mut st, args + 1 + i)
-            llTy(mut out, hget(mut st, vt + 1 + v))
+            v := desugar.HeapGet(mut st.d, args + 1 + i)
+            llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + v))
             obuf.Lit(mut out, " %v")
             num(mut out, v)
             i += 1
@@ -401,11 +401,11 @@ func llSig(st mut St, out mut []byte, f FnRef) {
     out = append(out, '(')
     ptys := irFnPtys(mut st, f)
     mut i := 0
-    while i < hget(mut st, ptys) {
+    while i < desugar.HeapGet(mut st.d, ptys) {
         if i > 0 {
             obuf.Lit(mut out, ", ")
         }
-        llTy(mut out, hget(mut st, ptys + 1 + i))
+        llTy(mut out, desugar.HeapGet(mut st.d, ptys + 1 + i))
         out = append(out, ' ')
         vreg(mut out, i)
         i += 1
@@ -419,11 +419,11 @@ func llPhis(st mut St, out mut []byte, b BlkRef, bi int, inc int) {
     mut pi := 0
     while p >= 0 {
         obuf.Lit(mut out, "  ")
-        vreg(mut out, hget(mut st, p + 1))
+        vreg(mut out, desugar.HeapGet(mut st.d, p + 1))
         obuf.Lit(mut out, " = phi ")
-        llTy(mut out, hget(mut st, p + 2))
+        llTy(mut out, desugar.HeapGet(mut st.d, p + 2))
         out = append(out, ' ')
-        mut e := hget(mut st, inc + 1 + bi * 2)
+        mut e := desugar.HeapGet(mut st.d, inc + 1 + bi * 2)
         mut first := true
         while e >= 0 {
             if !first {
@@ -431,14 +431,14 @@ func llPhis(st mut St, out mut []byte, b BlkRef, bi int, inc int) {
             }
             first = false
             obuf.Lit(mut out, "[ ")
-            vreg(mut out, hget(mut st, hget(mut st, e + 4) + 1 + pi))
+            vreg(mut out, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, e + 4) + 1 + pi))
             obuf.Lit(mut out, ", %")
-            llLabel(mut out, hget(mut st, e + 1), hget(mut st, e + 2), hget(mut st, e + 3))
+            llLabel(mut out, desugar.HeapGet(mut st.d, e + 1), desugar.HeapGet(mut st.d, e + 2), desugar.HeapGet(mut st.d, e + 3))
             obuf.Lit(mut out, " ]")
-            e = hget(mut st, e)
+            e = desugar.HeapGet(mut st.d, e)
         }
         out = append(out, '\n')
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
         pi += 1
     }
 }
@@ -452,10 +452,10 @@ func llSlots(st mut St, out mut []byte, f FnRef) {
         obuf.Lit(mut out, "  %s")
         num(mut out, si)
         obuf.Lit(mut out, " = alloca [")
-        num(mut out, hget(mut st, s + 1))
+        num(mut out, desugar.HeapGet(mut st.d, s + 1))
         obuf.Lit(mut out, " x i64], align 8\n")
         mut w := 0
-        while w < hget(mut st, s + 1) {
+        while w < desugar.HeapGet(mut st.d, s + 1) {
             obuf.Lit(mut out, "  %s")
             num(mut out, si)
             obuf.Lit(mut out, ".z")
@@ -471,7 +471,7 @@ func llSlots(st mut St, out mut []byte, f FnRef) {
             out = append(out, '\n')
             w += 1
         }
-        s = hget(mut st, s)
+        s = desugar.HeapGet(mut st.d, s)
         si += 1
     }
 }
@@ -485,8 +485,8 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
     ic := irInsC(mut st, ins)
     switch op {
     case OpConst:
-        hset(mut st, cs + 1 + r * 2, 1)
-        hset(mut st, cs + 2 + r * 2, ia)
+        desugar.HeapSet(mut st.d, cs + 1 + r * 2, 1)
+        desugar.HeapSet(mut st.d, cs + 2 + r * 2, ia)
         obuf.Lit(mut out, "  ")
         vreg(mut out, r)
         obuf.Lit(mut out, " = add i64 0, ")
@@ -601,7 +601,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         obuf.Lit(mut out, ", i64 ")
         num(mut out, ib)
         obuf.Lit(mut out, "\n  store ")
-        llTy(mut out, hget(mut st, vt + 1 + ic))
+        llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + ic))
         out = append(out, ' ')
         vreg(mut out, ic)
         obuf.Lit(mut out, ", ptr %st")
@@ -665,7 +665,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         obuf.Lit(mut out, "  ")
         vreg(mut out, r)
         obuf.Lit(mut out, " = getelementptr i64, ptr ")
-        llName(mut st, mut out, hget(mut st, ia + G_NAME))
+        llName(mut st, mut out, desugar.HeapGet(mut st.d, ia + G_NAME))
         obuf.Lit(mut out, ", i64 0\n")
     case OpCall:
         obuf.Lit(mut out, "  ")
@@ -739,7 +739,7 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         vreg(mut out, r)
         obuf.Lit(mut out, " = call i64 asm sideeffect \"syscall\", \"={rax}")
         mut k := 0
-        while k < hget(mut st, ia) {
+        while k < desugar.HeapGet(mut st.d, ia) {
             obuf.Lit(mut out, ",{")
             regName(mut out, k)
             out = append(out, '}')
@@ -747,12 +747,12 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         }
         obuf.Lit(mut out, ",~{rcx},~{r11},~{memory}\"(")
         k = 0
-        while k < hget(mut st, ia) {
+        while k < desugar.HeapGet(mut st.d, ia) {
             if k > 0 {
                 obuf.Lit(mut out, ", ")
             }
             obuf.Lit(mut out, "i64 ")
-            vreg(mut out, hget(mut st, ia + 1 + k))
+            vreg(mut out, desugar.HeapGet(mut st.d, ia + 1 + k))
             k += 1
         }
         obuf.Lit(mut out, ")\n")
@@ -864,7 +864,7 @@ func llTerm(st mut St, out mut []byte, lc mut LlCur, b BlkRef, bi int, vt int) {
     } else if t == TmRet {
         if x1 >= 0 {
             obuf.Lit(mut out, "  ret ")
-            llTy(mut out, hget(mut st, vt + 1 + x1))
+            llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + x1))
             out = append(out, ' ')
             vreg(mut out, x1)
             out = append(out, '\n')
@@ -893,23 +893,23 @@ func llModule(st mut St, out mut []byte) {
     llHead(mut out)
     mut g := st.ghead
     while g >= 0 {
-        llName(mut st, mut out, hget(mut st, g + G_NAME))
-        init := hget(mut st, g + G_INIT)
+        llName(mut st, mut out, desugar.HeapGet(mut st.d, g + G_NAME))
+        init := desugar.HeapGet(mut st.d, g + G_INIT)
         if init >= 0 {
             obuf.Lit(mut out, " = internal constant [")
-            num(mut out, hget(mut st, g + G_WORDS))
+            num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
             obuf.Lit(mut out, " x i64] ")
-            if hget(mut st, init) == 0 {
+            if desugar.HeapGet(mut st.d, init) == 0 {
                 obuf.Lit(mut out, "zeroinitializer")
             } else {
                 out = append(out, '[')
                 mut i := 0
-                while i < hget(mut st, init) {
+                while i < desugar.HeapGet(mut st.d, init) {
                     if i > 0 {
                         obuf.Lit(mut out, ", ")
                     }
                     obuf.Lit(mut out, "i64 ")
-                    num(mut out, hget(mut st, init + 1 + i))
+                    num(mut out, desugar.HeapGet(mut st.d, init + 1 + i))
                     i += 1
                 }
                 out = append(out, ']')
@@ -917,10 +917,10 @@ func llModule(st mut St, out mut []byte) {
             out = append(out, '\n')
         } else {
             obuf.Lit(mut out, " = internal global [")
-            num(mut out, hget(mut st, g + G_WORDS))
+            num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
             obuf.Lit(mut out, " x i64] zeroinitializer\n")
         }
-        g = hget(mut st, g + G_NEXT)
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
     }
     mut f := st.fhead
     while f != -1 {

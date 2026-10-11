@@ -6,6 +6,7 @@ package lower
 // 値の型は記録から導く（valueTypes — Sober の IR は値の型の表を持たない）ので、結果の型の検査は Zig 版より弱い（オペランドの型・数・範囲・支配は同じ）。
 // 正規バックエンドの経路（lower.Elf*）で lower の出力・設計整合パス・mem2reg・rtlower の後に掛ける。違反は内部エラー（panic(InvalidIR{…}) — 死亡時に欄が標準エラーへ）
 
+import "desugar"
 import "std/iter"
 
 // InvalidIR は IR の検証器の違反（after = どの段の後か・fn = 関数の名前・msg = 違反の文面）
@@ -85,7 +86,7 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
     mut v := vfyS{vt: valueTypes(mut st, f), nv: nv, defB: mut []int{}, defI: mut []int{}, curB: 0, curI: 0}
     xFill(mut v.defB, nv, -1)
     xFill(mut v.defI, nv, 0)
-    np := hget(mut st, irFnPtys(mut st, f))
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
     for p <- iter.Range(0, np) {
         if !vfyDef(mut v, p, 0, -1) {
             return "%${p} is defined twice or out of range"
@@ -98,10 +99,10 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
         }
         mut p := irBlkPHead(mut st, b)
         while p >= 0 {
-            if !vfyDef(mut v, hget(mut st, p + 1), bi, -1) {
-                return "b${bi}: %${hget(mut st, p + 1)} is defined twice or out of range"
+            if !vfyDef(mut v, desugar.HeapGet(mut st.d, p + 1), bi, -1) {
+                return "b${bi}: %${desugar.HeapGet(mut st.d, p + 1)} is defined twice or out of range"
             }
-            p = hget(mut st, p)
+            p = desugar.HeapGet(mut st.d, p)
         }
         mut ins := irBlkIHead(mut st, b)
         mut k := 0
@@ -184,7 +185,7 @@ func vfyUse(st mut St, v mut vfyS, w mut m2rW, x int, wantTy int, what string) s
     if x < 0 || x >= v.nv {
         return "${what} uses undefined %${x}"
     }
-    t := hget(mut st, v.vt + 1 + x)
+    t := desugar.HeapGet(mut st.d, v.vt + 1 + x)
     if wantTy >= 0 && t != wantTy {
         return "${what} wants ${if wantTy == TyPtr { "ptr" } else { "i64" }} but %${x} is ${if t == TyPtr { "ptr" } else { "i64" }}"
     }
@@ -214,7 +215,7 @@ func vfyOperands(st mut St, v mut vfyS, f FnRef, ins InsRef) string {
     mut at := int(ins) + I_A
     while r != 0 {
         kind := r & 15
-        x := hget(mut st, at)
+        x := desugar.HeapGet(mut st.d, at)
         m := if kind == K_VAL { vfyIn(mut v, x) } else if kind == K_VLIST { vfyListIn(mut st, mut v, x) } else if kind == K_SLOT && (x < 0 || x >= irFnNSlot(mut st, f)) { "undefined slot s${x}" } else { "" }
         if m != "" {
             return m
@@ -231,7 +232,7 @@ func vfyTermOperands(st mut St, v mut vfyS, b BlkRef) string {
     mut at := int(b) + B_X1
     while r != 0 {
         kind := r & 15
-        x := hget(mut st, at)
+        x := desugar.HeapGet(mut st.d, at)
         m := if kind == K_VAL || (kind == K_VOPT && x >= 0) { vfyIn(mut v, x) } else if kind == K_VLIST { vfyListIn(mut st, mut v, x) } else { "" }
         if m != "" {
             return m
@@ -296,11 +297,11 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
     case OpCall:
         n := xLen(mut st, b)
         ptys := irFnPtys(mut st, FnRef(a))
-        if n != hget(mut st, ptys) {
-            return "call with ${n} arguments for ${hget(mut st, ptys)}"
+        if n != desugar.HeapGet(mut st.d, ptys) {
+            return "call with ${n} arguments for ${desugar.HeapGet(mut st.d, ptys)}"
         }
         for k <- iter.Range(0, n) {
-            m := vfyUse(mut st, mut v, mut w, xAt(mut st, b, k), hget(mut st, ptys + 1 + k), "call argument")
+            m := vfyUse(mut st, mut v, mut w, xAt(mut st, b, k), desugar.HeapGet(mut st.d, ptys + 1 + k), "call argument")
             if m != "" {
                 return m
             }
@@ -395,13 +396,13 @@ func vfyEdge(st mut St, v mut vfyS, w mut m2rW, to BlkRef, args int) string {
     mut p := irBlkPHead(mut st, to)
     while p >= 0 {
         if n < xLen(mut st, args) {
-            m := vfyUse(mut st, mut v, mut w, xAt(mut st, args, n), hget(mut st, p + 2), "edge argument")
+            m := vfyUse(mut st, mut v, mut w, xAt(mut st, args, n), desugar.HeapGet(mut st.d, p + 2), "edge argument")
             if m != "" {
                 return m
             }
         }
         n += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     return if n != xLen(mut st, args) { "edge to b${tid} passes ${xLen(mut st, args)} arguments for ${n}" } else { "" }
 }

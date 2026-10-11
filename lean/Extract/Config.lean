@@ -77,7 +77,7 @@ def nodeTable : List (Name × String × Option String × List String) :=
     one ``FS.Expr.subslice "W_SUBSLICE" [a, b, c], one ``FS.Expr.eqs "W_EQS" [a, b], one ``FS.Expr.concat "W_CONCAT" [a, b],
     (``FS.Expr.mkmap, s!"{k} == W_MKMAP &&& {c} == 0", some "W_MKMAP", [a, b]),
     one ``FS.Expr.getm "W_GETM" [a, b, c], one ``FS.Expr.setm "W_SETM" [a, b, c], one ``FS.Expr.delm "W_DELM" [a, b, c],
-    one ``FS.Expr.lenm "W_LENM" [a], one ``FS.Expr.keysm "W_KEYSM" [a], one ``FS.Expr.par "W_PAR" [a, b],
+    one ``FS.Expr.lenm "W_LENM" [a], one ``FS.Expr.keysm "W_KEYSM" [a], one ``FS.Expr.clone "W_CLONE" [b, a], one ``FS.Expr.par "W_PAR" [a, b],
     one ``FS.Expr.parch "W_PARCH" [a, b, c], one ``FS.Expr.newchan "W_NEWCHAN" [a, b], one ``FS.Expr.send "W_SEND" [a, b],
     one ``FS.Expr.recv "W_RECV" [a], rt ``FS.Expr.loc 2, rt ``FS.Expr.slicev 4, rt ``FS.Expr.mapv 4, rt ``FS.Expr.chanV 1,
     one ``FS.Expr.scope "W_SCOPE" [a, c, b], one ``FS.Expr.spawn "W_SPAWN" [a, b, c], one ``FS.Expr.join "W_JOIN" [a, b],
@@ -107,7 +107,7 @@ def tcTargets : List Name :=
     ``FS.kAnn, ``FS.sCallv1, ``FS.kCallv, ``FS.kLabel, ``FS.kJump, ``FS.kBlock, ``FS.kBlockR, ``FS.kScope, ``FS.kCopyTo, ``FS.kAlloc,
     ``FS.kDeref, ``FS.kAssign, ``FS.kWhile, ``FS.kFreeze, ``FS.kMkslice, ``FS.kStrlit, ``FS.kMksliceAt, ``FS.kMkmapAt,
     ``FS.kIndex, ``FS.kLen, ``FS.kTobyte, ``FS.kToint, ``FS.kFconv, ``FS.kAppend, ``FS.kSetidx, ``FS.kSubslice,
-    ``FS.kEqs, ``FS.kConcat, ``FS.kMkmap, ``FS.kGetm, ``FS.kSetm, ``FS.kDelm, ``FS.kLenm, ``FS.kKeysm, ``FS.kPar,
+    ``FS.kEqs, ``FS.kConcat, ``FS.kMkmap, ``FS.kGetm, ``FS.kSetm, ``FS.kDelm, ``FS.kLenm, ``FS.kKeysm, ``FS.kCloneR, ``FS.kClone, ``FS.kPar,
     ``FS.kParch, ``FS.kNewchan, ``FS.kSend, ``FS.kRecv, ``FS.kClose, ``FS.sSpawn2, ``FS.kSpawn, ``FS.kNewch, ``FS.kJoin, ``FS.kTry,
     ``FS.tcStep ]
 

@@ -297,6 +297,17 @@ def kKeysm : Option Ty → Nat → Nat → Option Ty
       if kt.keyOk && kt.regionsBelow (d' + 1) && decide (b ≤ d') then some (.slice false d' kt) else none
   | _, _, _ => none
 
+/-- clone の結果の型（読み出しの型 r・map か・床 b・最内 d'） -/
+def kCloneR : Option Ty → Bool → Nat → Nat → Option Ty
+  | some t, false, b, d' => if t.regionsBelow (d' + 1) && decide (b ≤ d') then some (.slice true d' t) else none
+  | some c, true, b, d' => if c.regionsBelow (d' + 1) && decide (b ≤ d') then some (.map true d' c) else none
+  | none, _, _, _ => none
+
+def kClone : Option Ty → Option Ty → Nat → Nat → Option Ty
+  | some (.slice m _ t'), ot, b, d' + 1 => kCloneR (Ty.readAs m ot t') false b d'
+  | some (.map m _ c'), ot, b, d' + 1 => kCloneR (Ty.readAs m ot c') true b d'
+  | _, _, _, _ => none
+
 def kPar : Option Ty → Option Ty → Bool → Option Ty
   | some _, some _, ok => if ok then some .unit else none
   | _, _, _ => none
@@ -484,6 +495,8 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .lenm _, _ + 1 => .ret (kLenm r1)
   | .keysm e, 0 => .sub e b d Γ Λ
   | .keysm _, _ + 1 => .ret (kKeysm r1 b d)
+  | .clone _ e, 0 => .sub e b d Γ Λ
+  | .clone ot _, _ + 1 => .ret (kClone r1 ot b d)
   | .mapv _ _ _ _, _ => .ret none
   | .par e1 _, 0 => .sub e1 d d Γ []
   | .par _ e2, 1 => .sub e2 d d Γ []

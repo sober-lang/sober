@@ -222,10 +222,10 @@ func buildMnStart(st mut St) {
     mut total := 0
     mut g := st.ghead
     while g >= 0 {
-        if hget(mut st, g + G_WSLOT) >= 0 {
-            total += hget(mut st, g + G_WORDS) * 8
+        if desugar.HeapGet(mut st.d, g + G_WSLOT) >= 0 {
+            total += desugar.HeapGet(mut st.d, g + G_WORDS) * 8
         }
-        g = hget(mut st, g + G_NEXT)
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
     }
     recw := if st.nwslot > 0 { st.nwslot } else { 1 }
     loop := newBlock(mut st)
@@ -241,9 +241,9 @@ func buildMnStart(st mut St) {
     mut off := 0
     g = st.ghead
     while g >= 0 {
-        ws := hget(mut st, g + G_WSLOT)
+        ws := desugar.HeapGet(mut st.d, g + G_WSLOT)
         if ws >= 0 {
-            words := hget(mut st, g + G_WORDS)
+            words := desugar.HeapGet(mut st.d, g + G_WORDS)
             a := itop(mut st, bin(mut st, BAdd, base, iconst(mut st, off)))
             store(mut st, rec, ws, ptoi(mut st, a))
             if g == st.meta || g == st.schedG {
@@ -270,7 +270,7 @@ func buildMnStart(st mut St) {
             }
             off += words * 8
         }
-        g = hget(mut st, g + G_NEXT)
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
     }
     // 起動の塊（ワーカー k の最初の文脈 — 戻ってこない task）
     tcb := call(mut st, st.rtTaskNew, list2(mut st, iconst(mut st, 0), iconst(mut st, 0)))
@@ -691,11 +691,11 @@ func buildMnNext(st mut St) {
     condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_SLEEP), iconst(mut st, 1)), fw, -1, loop, -1)
     setCur(mut st, fw)
     args := listN(mut st, 5)
-    hset(mut st, args + 1, iconst(mut st, 202))
-    hset(mut st, args + 2, ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SLEEP))))
-    hset(mut st, args + 3, iconst(mut st, 128))
-    hset(mut st, args + 4, iconst(mut st, 1))
-    hset(mut st, args + 5, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 202))
+    desugar.HeapSet(mut st.d, args + 2, ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SLEEP))))
+    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, 128))
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 1))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 0))
     syscall(mut st, args)
     br(mut st, fl, -1)
     // 眠りをやめる（眠りの語を 1 → 0 に取れたら自分で暇の数を減らす — 取れなければ起こし手が減らした）

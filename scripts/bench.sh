@@ -168,7 +168,7 @@ for i in $(seq 1 "$N"); do
     (cd "$T" && meas "self/check-split-warm" env SOBER_CACHE="$W/cache" "$S2" check app/main.sober --split) || exit 1
 done
 # 自己 build の命令数（instructions:u — 決定的なので 1 回。副ラチェット: wall は時間帯で揺れるので照合は命令数で）
-PERF=${PERF:-perf}
+PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2>/dev/null | head -n 1)}
 INST=""
 if command -v "$PERF" > /dev/null 2>&1; then
     (cd "$T" && SOBER_WORKERS=1 "$PERF" stat -x, -e instructions:u -o "$W/inst" "$S2" build app/main.sober --emit=elf --passes -o "$W/self.elf" > /dev/null) || exit 1

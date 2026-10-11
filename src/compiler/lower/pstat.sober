@@ -41,7 +41,7 @@ func needPstatRt(st mut St) {
 
 func buildPstatRt(st mut St) {
     // spawn の点の数はここで決まる（lower の最後 — buildTaskRt）
-    hset(mut st, st.pstatG + G_WORDS, PS_SITE + 2 * (st.nsite + 1))
+    desugar.HeapSet(mut st.d, st.pstatG + G_WORDS, PS_SITE + 2 * (st.nsite + 1))
     buildPstatSpawn(mut st)
     buildPstatEnd(mut st)
     buildPstatDump(mut st)

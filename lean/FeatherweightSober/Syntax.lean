@@ -1402,6 +1402,9 @@ inductive Expr : Type where
   | lenm (e : Expr)
   /-- `keys(m)`（keysm の段）: 生きたキーの挿入順の列を最内 region に imm slice として作る（スナップショット） -/
   | keysm (e : Expr)
+  /-- `clone(x)`（clone の段 — freeze の双対）: slice / map のセル列を最内 region へ mut のセルとして写した浅い写し。
+  ot は読み出しの注釈（index と同じ — imm のセルの部分型を写す先の型へ揃える） -/
+  | clone (ot : Option Ty) (e : Expr)
   /-- `parallel scope { spawn e1; spawn e2 }` の最小形。両方走らせて join、unit を返す -/
   | par (e1 e2 : Expr)
   /-- チャネルつき並列スコープ: 共有上界 rc = spawn 深度のチャネルを作り、
@@ -1528,6 +1531,7 @@ def shift (c : Nat) : Expr → Expr
   | delm t e k => delm t (shift c e) (shift c k)
   | lenm e => lenm (shift c e)
   | keysm e => keysm (shift c e)
+  | clone ot e => clone ot (shift c e)
   | par e1 e2 => par (shift c e1) (shift c e2)
   | parch t e1 e2 => parch t (shift (c + 1) e1) (shift (c + 1) e2)
   | newchan rc t => newchan rc t
@@ -1609,6 +1613,7 @@ def subst (k : Nat) (v : Expr) : Expr → Expr
   | delm t e kk => delm t (subst k v e) (subst k v kk)
   | lenm e => lenm (subst k v e)
   | keysm e => keysm (subst k v e)
+  | clone ot e => clone ot (subst k v e)
   | par e1 e2 => par (subst k v e1) (subst k v e2)
   | parch t e1 e2 =>
       parch t (subst (k + 1) (shift 0 v) e1) (subst (k + 1) (shift 0 v) e2)
@@ -1694,6 +1699,7 @@ def shiftTy (ρ : Nat) : Expr → Expr
   | delm t e k => delm (t.shiftR ρ) (shiftTy ρ e) (shiftTy ρ k)
   | lenm e => lenm (shiftTy ρ e)
   | keysm e => keysm (shiftTy ρ e)
+  | clone ot e => clone (ot.map (Ty.shiftR ρ)) (shiftTy ρ e)
   | par e1 e2 => par (shiftTy ρ e1) (shiftTy ρ e2)
   | parch t e1 e2 => parch (t.shiftR ρ) (shiftTy ρ e1) (shiftTy ρ e2)
   | newchan rc t => newchan (rc + ρ) (t.shiftR ρ)
@@ -1776,6 +1782,7 @@ def tsubstTy (ts : List Ty) : Expr → Expr
   | delm t e k => delm (t.tsubst ts) (tsubstTy ts e) (tsubstTy ts k)
   | lenm e => lenm (tsubstTy ts e)
   | keysm e => keysm (tsubstTy ts e)
+  | clone ot e => clone (ot.map (Ty.tsubst ts)) (tsubstTy ts e)
   | par e1 e2 => par (tsubstTy ts e1) (tsubstTy ts e2)
   | parch t e1 e2 => parch (t.tsubst ts) (tsubstTy ts e1) (tsubstTy ts e2)
   | newchan rc t => newchan rc (t.tsubst ts)
@@ -1860,6 +1867,7 @@ def noNewchan : Expr → Bool
   | delm _ e k => noNewchan e && noNewchan k
   | lenm e => noNewchan e
   | keysm e => noNewchan e
+  | clone _ e => noNewchan e
   | par e1 e2 => noNewchan e1 && noNewchan e2
   | parch _ e1 e2 => noNewchan e1 && noNewchan e2
   | newchan _ _ => false
@@ -1945,6 +1953,7 @@ def renTy (ρ0 δ : Nat) : Expr → Expr
   | delm t e k => delm (t.renR ρ0 δ) (renTy ρ0 δ e) (renTy ρ0 δ k)
   | lenm e => lenm (renTy ρ0 δ e)
   | keysm e => keysm (renTy ρ0 δ e)
+  | clone ot e => clone (ot.map (Ty.renR ρ0 δ)) (renTy ρ0 δ e)
   | par e1 e2 => par (renTy ρ0 δ e1) (renTy ρ0 δ e2)
   | parch t e1 e2 => parch (t.renR ρ0 δ) (renTy ρ0 δ e1) (renTy ρ0 δ e2)
   | newchan rc t => newchan (rmap ρ0 δ rc) (t.renR ρ0 δ)
@@ -2014,6 +2023,7 @@ def src : Expr → Bool
   | .delm _ e k => e.src && k.src
   | .lenm e => e.src
   | .keysm e => e.src
+  | .clone _ e => e.src
   | .mapv _ _ _ _ => false
   | .ite c t e | .ifnil c t e => c.src && t.src && e.src
   | .some e | .inl _ e | .inr _ e | .block e | .blockR _ e | .copyTo _ _ e | .alloc _ e | .deref e

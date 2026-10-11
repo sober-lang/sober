@@ -34,7 +34,7 @@ func yCompare(st mut St, e desugar.NodeRef, t int) {
             table.Push(mut st.ylog, desugar.FileOf(mut st.d, e))
             table.Push(mut st.ylog, tokN(mut st, e))
             table.Push(mut st.ylog, 0 - k)
-            table.Push(mut st.ylog, hget(mut st, t))
+            table.Push(mut st.ylog, desugar.HeapGet(mut st.d, t))
         }
         return
     }
@@ -51,7 +51,7 @@ func yCompare(st mut St, e desugar.NodeRef, t int) {
             table.Push(mut st.ylog, desugar.FileOf(mut st.d, e))
             table.Push(mut st.ylog, tokN(mut st, e))
             table.Push(mut st.ylog, desugar.YAt(mut st.d, y).k)
-            table.Push(mut st.ylog, hget(mut st, t))
+            table.Push(mut st.ylog, desugar.HeapGet(mut st.d, t))
         }
     } else {
         st.yskip += 1
@@ -80,24 +80,24 @@ func yMatch(st mut St, y int, t int) int {
     case desugar.YNil:
         return b2i(isTag(mut st, t, TNil))
     case desugar.YErr:
-        return b2i(isTag(mut st, t, TStruct) && hget(mut st, t + 1) == st.errstruct)
+        return b2i(isTag(mut st, t, TStruct) && desugar.HeapGet(mut st.d, t + 1) == st.errstruct)
     case desugar.YLabel:
-        return b2i(isTag(mut st, t, TUnion) && hget(mut st, t + 1) == st.errs)
+        return b2i(isTag(mut st, t, TUnion) && desugar.HeapGet(mut st.d, t + 1) == st.errs)
     case desugar.YSlice:
-        if !isTag(mut st, t, TSlice) || isString(mut st, t) || hget(mut st, t + 2) != x.b {
+        if !isTag(mut st, t, TSlice) || isString(mut st, t) || desugar.HeapGet(mut st.d, t + 2) != x.b {
             return 0
         }
-        return yMatch(mut st, x.a, hget(mut st, t + 1))
+        return yMatch(mut st, x.a, desugar.HeapGet(mut st.d, t + 1))
     case desugar.YMap:
-        if !isTag(mut st, t, TMap) || hget(mut st, t + 3) != x.c {
+        if !isTag(mut st, t, TMap) || desugar.HeapGet(mut st.d, t + 3) != x.c {
             return 0
         }
-        return yAnd(yMatch(mut st, x.a, hget(mut st, t + 1)), yMatch(mut st, x.b, hget(mut st, t + 2)))
+        return yAnd(yMatch(mut st, x.a, desugar.HeapGet(mut st.d, t + 1)), yMatch(mut st, x.b, desugar.HeapGet(mut st.d, t + 2)))
     case desugar.YOpt:
-        return if isTag(mut st, t, TOpt) { yMatch(mut st, x.a, hget(mut st, t + 1)) } else { 0 }
+        return if isTag(mut st, t, TOpt) { yMatch(mut st, x.a, desugar.HeapGet(mut st.d, t + 1)) } else { 0 }
     case desugar.YDecl:
         if isTag(mut st, t, TNamed) {
-            return b2i(hget(mut st, t + 2) == x.a)
+            return b2i(desugar.HeapGet(mut st.d, t + 2) == x.a)
         }
         if isTag(mut st, t, TFnv) {
             return -1
@@ -105,8 +105,8 @@ func yMatch(st mut St, y int, t int) int {
         if !isTag(mut st, t, TStruct) && !isTag(mut st, t, TUnion) {
             return 0
         }
-        info := hget(mut st, t + 1)
-        if hget(mut st, info + SI_DECL) != x.a {
+        info := desugar.HeapGet(mut st.d, t + 1)
+        if desugar.HeapGet(mut st.d, info + SI_DECL) != x.a {
             return 0
         }
         ta := hgetL(mut st, info + SI_TARGS)
@@ -122,7 +122,7 @@ func yMatch(st mut St, y int, t int) int {
         if !isTag(mut st, t, TFnv) {
             return 0
         }
-        ft := hget(mut st, t + 1)
+        ft := desugar.HeapGet(mut st.d, t + 1)
         return yAnd(yMatchList(mut st, desugar.ListRef(x.a), hgetL(mut st, ft)), yMatchList(mut st, desugar.ListRef(x.b), hgetL(mut st, ft + 1)))
     }
     return -1
@@ -198,7 +198,7 @@ func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
     case desugar.YLabel:
         u := errsInfo(mut st)
         layoutInfo(mut st, u)?
-        return hget(mut st, u + SI_TY), nil
+        return desugar.HeapGet(mut st.d, u + SI_TY), nil
     case desugar.YVar:
         return envLookup(mut st, st.tenv, desugar.StrRef(x.b)), nil
     case desugar.YSlice:
@@ -245,7 +245,7 @@ func yLower(st mut St, y int, at desugar.NodeRef) (int, error?) {
             return -1, nil
         }
         layoutInfo(mut st, info)?
-        return hget(mut st, info + SI_TY), nil
+        return desugar.HeapGet(mut st.d, info + SI_TY), nil
     }
     return -1, nil
 }

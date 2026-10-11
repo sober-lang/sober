@@ -20,7 +20,7 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-PERF=${PERF:-perf}
+PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2>/dev/null | head -n 1)}
 B=$ROOT/out/bench
 mkdir -p "$B"
 W=$(mktemp -d)

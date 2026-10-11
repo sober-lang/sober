@@ -15,9 +15,9 @@ func envLookup(st mut St, env int, name desugar.StrRef) int {
         return -1
     }
     mut i := 0
-    while i < hget(mut st, env) {
+    while i < desugar.HeapGet(mut st.d, env) {
         if strEq(mut st, hgetS(mut st, env + 1 + i * 2), name) {
-            return hget(mut st, env + 2 + i * 2)
+            return desugar.HeapGet(mut st.d, env + 2 + i * 2)
         }
         i += 1
     }
@@ -28,20 +28,20 @@ func envLookup(st mut St, env int, name desugar.StrRef) int {
 func bindsOf(st mut St, names desugar.ListRef, targs desugar.ListRef) int {
     n := lenL(mut st, names)
     env := recN(mut st, 1 + n * 2)
-    hset(mut st, env, n)
+    desugar.HeapSet(mut st.d, env, n)
     for i <- iter.Range(0, n) {
-        hset(mut st, env + 1 + i * 2, latI(mut st, names, i))
-        hset(mut st, env + 2 + i * 2, latI(mut st, targs, i))
+        desugar.HeapSet(mut st.d, env + 1 + i * 2, latI(mut st, names, i))
+        desugar.HeapSet(mut st.d, env + 2 + i * 2, latI(mut st, targs, i))
     }
     return env
 }
 
 // tyArgOk は Def として呼ぶジェネリックの型引数として許される型（region を持たない）
 func tyArgOk(st mut St, t int) bool {
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     return switch k {
     case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
-    case TOpt: tyArgOk(mut st, hget(mut st, t + 1))
+    case TOpt: tyArgOk(mut st, desugar.HeapGet(mut st.d, t + 1))
     case TStruct | TUnion: tyArgFields(mut st, t, false)
     default: false
     }
@@ -49,11 +49,11 @@ func tyArgOk(st mut St, t int) bool {
 
 // tyArgValueOk は展開されるジェネリック・ジェネリック struct の型引数（値を持つ型なら string / slice / map を含んでよい）
 func tyArgValueOk(st mut St, t int) bool {
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     return switch k {
     case TInt | TBool | TFnv | TNamed | TByte | TFloat: true
-    case TSlice | TOpt: tyArgValueOk(mut st, hget(mut st, t + 1))
-    case TMap: tyArgValueOk(mut st, hget(mut st, t + 1)) && tyArgValueOk(mut st, hget(mut st, t + 2))
+    case TSlice | TOpt: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1))
+    case TMap: tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 1)) && tyArgValueOk(mut st, desugar.HeapGet(mut st.d, t + 2))
     case TStruct | TUnion: tyArgFields(mut st, t, true)
     default: false
     }
@@ -61,11 +61,11 @@ func tyArgValueOk(st mut St, t int) bool {
 
 // tyArgFields は struct / union のフィールドがすべて型引数として許されるか
 func tyArgFields(st mut St, t int, value bool) bool {
-    info := hget(mut st, t + 1)
+    info := desugar.HeapGet(mut st.d, t + 1)
     fs := hgetL(mut st, info + SI_FIELDS)
-    if hget(mut st, t) == TStruct {
+    if desugar.HeapGet(mut st.d, t) == TStruct {
         for i <- iter.Range(0, lenL(mut st, fs)) {
-            ft := hget(mut st, latI(mut st, fs, i) + 1)
+            ft := desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)
             ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
             if !ok {
                 return false
@@ -76,7 +76,7 @@ func tyArgFields(st mut St, t int, value bool) bool {
     for v <- iter.Range(0, lenL(mut st, fs)) {
         vfs := hgetL(mut st, latI(mut st, fs, v) + 2)
         for i <- iter.Range(0, lenL(mut st, vfs)) {
-            ft := hget(mut st, latI(mut st, vfs, i) + 1)
+            ft := desugar.HeapGet(mut st.d, latI(mut st, vfs, i) + 1)
             ok := if value { tyArgValueOk(mut st, ft) } else { tyArgOk(mut st, ft) }
             if !ok {
                 return false
@@ -93,19 +93,19 @@ func tyArgFields(st mut St, t int, value bool) bool {
 func putLit(st mut St, w string) {
     b := bytes(w)
     for i <- iter.Range(0, len(b)) {
-        hpush(mut st, int(b[i]))
+        desugar.HeapPush(mut st.d, int(b[i]))
     }
 }
 
 func putStr(st mut St, s int) {
     n := dat(mut st, s)
     for i <- iter.Range(0, n) {
-        hpush(mut st, dat(mut st, s + 1 + i))
+        desugar.HeapPush(mut st.d, dat(mut st, s + 1 + i))
     }
 }
 
 func typeKey(st mut St, t int) {
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     switch k {
     case TInt:
         putLit(mut st, "int")
@@ -124,30 +124,30 @@ func typeKey(st mut St, t int) {
         putStr(mut st, nodeOf(mut st, hgetN(mut st, t + 2)).a)
         return
     case TStruct:
-        putStr(mut st, hget(mut st, hget(mut st, t + 1) + SI_KEY))
+        putStr(mut st, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_KEY))
         return
     case TUnion:
-        info := hget(mut st, t + 1)
-        if hget(mut st, info + SI_DECL) == -1 {
+        info := desugar.HeapGet(mut st.d, t + 1)
+        if desugar.HeapGet(mut st.d, info + SI_DECL) == -1 {
             putLit(mut st, "error")
         } else {
-            putStr(mut st, hget(mut st, info + SI_KEY))
+            putStr(mut st, desugar.HeapGet(mut st.d, info + SI_KEY))
         }
         return
     case TOpt:
-        hpush(mut st, 63)
-        typeKey(mut st, hget(mut st, t + 1))
+        desugar.HeapPush(mut st.d, 63)
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
         return
     case TFnv | TFunc:
-        ft := hget(mut st, t + 1)
+        ft := desugar.HeapGet(mut st.d, t + 1)
         putLit(mut st, "fn(")
         mut i := 0
         while i < lenL(mut st, hgetL(mut st, ft)) {
             typeKey(mut st, latI(mut st, hgetL(mut st, ft), i))
-            hpush(mut st, 44)
+            desugar.HeapPush(mut st.d, 44)
             i += 1
         }
-        hpush(mut st, 41)
+        desugar.HeapPush(mut st.d, 41)
         i = 0
         while i < lenL(mut st, hgetL(mut st, ft + 1)) {
             typeKey(mut st, latI(mut st, hgetL(mut st, ft + 1), i))
@@ -155,33 +155,33 @@ func typeKey(st mut St, t int) {
         }
         return
     case TSlice:
-        putLit(mut st, if hget(mut st, t + 2) != 0 { "mut[]" } else { "[]" })
-        typeKey(mut st, hget(mut st, t + 1))
+        putLit(mut st, if desugar.HeapGet(mut st.d, t + 2) != 0 { "mut[]" } else { "[]" })
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
         return
     case TMap:
         putLit(mut st, "map[")
-        typeKey(mut st, hget(mut st, t + 1))
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 1))
         putLit(mut st, "]")
-        typeKey(mut st, hget(mut st, t + 2))
+        typeKey(mut st, desugar.HeapGet(mut st.d, t + 2))
         return
     }
-    hpush(mut st, 63)
+    desugar.HeapPush(mut st.d, 63)
 }
 
 // instKey は `base[T1,T2]`（base は文字列）の文字列
 func instKey(st mut St, base int, targs desugar.ListRef) desugar.StrRef {
-    at := desugar.StrRef(hlen(mut st))
-    hpush(mut st, 0)
+    at := desugar.StrRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, 0)
     putStr(mut st, base)
-    hpush(mut st, 91)
+    desugar.HeapPush(mut st.d, 91)
     for i <- iter.Range(0, lenL(mut st, targs)) {
         if i > 0 {
-            hpush(mut st, 44)
+            desugar.HeapPush(mut st.d, 44)
         }
         typeKey(mut st, latI(mut st, targs, i))
     }
-    hpush(mut st, 93)
-    hset(mut st, int(at), hlen(mut st) - int(at) - 1)
+    desugar.HeapPush(mut st.d, 93)
+    desugar.HeapSet(mut st.d, int(at), desugar.HeapLen(mut st.d) - int(at) - 1)
     return at
 }
 
@@ -191,10 +191,10 @@ func instKey(st mut St, base int, targs desugar.ListRef) desugar.StrRef {
 func structByKey(st mut St, key desugar.StrRef) int {
     mut x := st.types
     while x >= 0 {
-        if (hget(mut st, x) == TStruct || hget(mut st, x) == TUnion) && hget(mut st, x + SI_KEY) >= 0 && strEq(mut st, hgetS(mut st, x + SI_KEY), key) {
+        if (desugar.HeapGet(mut st.d, x) == TStruct || desugar.HeapGet(mut st.d, x) == TUnion) && desugar.HeapGet(mut st.d, x + SI_KEY) >= 0 && strEq(mut st, hgetS(mut st, x + SI_KEY), key) {
             return x
         }
-        x = hget(mut st, x + SI_NEXT)
+        x = desugar.HeapGet(mut st.d, x + SI_NEXT)
     }
     return -1
 }
@@ -239,16 +239,16 @@ func instStructTys(st mut St, td desugar.NodeRef, dpk int, targs desugar.ListRef
         return 0, diag.Unsupported{at: posOf(mut st, at)}
     }
     info := recN(mut st, SISZ)
-    hset(mut st, info, if bk == ast.BStruct { TStruct } else { TUnion })
-    hset(mut st, info + SI_DECL, int(td))
-    hset(mut st, info + SI_PKG, dpk)
-    hset(mut st, info + SI_WORDS, 0)
-    hset(mut st, info + SI_STATE, LPending)
-    hset(mut st, info + SI_NEXT, st.types)
-    hset(mut st, info + SI_TY, rec4(mut st, hget(mut st, info), info, 0, 0))
-    hset(mut st, info + SI_KEY, int(ik))
-    hset(mut st, info + SI_ENV, bindsOf(mut st, lB(nodeOf(mut st, td)), targs))
-    hset(mut st, info + SI_TARGS, int(targs))
+    desugar.HeapSet(mut st.d, info, if bk == ast.BStruct { TStruct } else { TUnion })
+    desugar.HeapSet(mut st.d, info + SI_DECL, int(td))
+    desugar.HeapSet(mut st.d, info + SI_PKG, dpk)
+    desugar.HeapSet(mut st.d, info + SI_WORDS, 0)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LPending)
+    desugar.HeapSet(mut st.d, info + SI_NEXT, st.types)
+    desugar.HeapSet(mut st.d, info + SI_TY, rec4(mut st, desugar.HeapGet(mut st.d, info), info, 0, 0))
+    desugar.HeapSet(mut st.d, info + SI_KEY, int(ik))
+    desugar.HeapSet(mut st.d, info + SI_ENV, bindsOf(mut st, lB(nodeOf(mut st, td)), targs))
+    desugar.HeapSet(mut st.d, info + SI_TARGS, int(targs))
     st.types = info
     return info, nil
 }
@@ -304,7 +304,7 @@ func constArgs(st mut St, n int) desugar.ListRef {
 // byte の範囲外の定数は -2 - t で覚える（named への付け替えはする・byte へはしない — 範囲外は下の照合で型エラー）
 func noteConstArg(st mut St, cts int, i int, a desugar.NodeRef, t int) {
     if untypedConst(mut st, a) {
-        hset(mut st, cts + 1 + i, if desugar.UntypedByte(mut st.d, a, st.curPkg) { t } else { -2 - t })
+        desugar.HeapSet(mut st.d, cts + 1 + i, if desugar.UntypedByte(mut st.d, a, st.curPkg) { t } else { -2 - t })
     }
 }
 
@@ -332,9 +332,9 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     mut x := st.insts
     while x >= 0 {
         if strEq(mut st, hgetS(mut st, x + 1), k) {
-            return hget(mut st, x + 2), nil
+            return desugar.HeapGet(mut st.d, x + 2), nil
         }
-        x = hget(mut st, x)
+        x = desugar.HeapGet(mut st.d, x)
     }
     env := bindsOf(mut st, lB(nodeOf(mut st, decl)), targs)
     sig := sigIn(mut st, decl, pk, env)?

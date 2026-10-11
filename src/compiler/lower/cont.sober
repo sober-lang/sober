@@ -45,7 +45,7 @@ func cellAt(st mut St, p int, i int, cellw int) int {
 
 // isBytes は []byte / mut []byte か
 func isBytes(st mut St, t int) bool {
-    return isTag(mut st, t, TSlice) && isTag(mut st, hget(mut st, t + 1), TByte)
+    return isTag(mut st, t, TSlice) && isTag(mut st, desugar.HeapGet(mut st.d, t + 1), TByte)
 }
 
 // elemAt は slice 型 t のセル列 p の i 番のセルの番地（[]byte はバイト、他は語）
@@ -53,7 +53,7 @@ func elemAt(st mut St, t int, p int, i int) int {
     if isBytes(mut st, t) {
         return gepByte(mut st, p, i)
     }
-    return cellAt(mut st, p, i, tWords(mut st, hget(mut st, t + 1)))
+    return cellAt(mut st, p, i, tWords(mut st, desugar.HeapGet(mut st.d, t + 1)))
 }
 
 // grow8 は []byte の成長（grow のバイト版）: mut なら先端一致の判定（rt.tip8 — その場で 1 バイト伸ばせたか）、他は深度 d へ全コピー。結果は（新しい base, 書くセル）
@@ -99,9 +99,9 @@ func strlit(st mut St, s desugar.StrRef) int {
     mut g := -1
     while x >= 0 && g < 0 {
         if strEq(mut st, hgetS(mut st, x + 1), s) {
-            g = hget(mut st, x + 2)
+            g = desugar.HeapGet(mut st.d, x + 2)
         }
-        x = hget(mut st, x)
+        x = desugar.HeapGet(mut st.d, x)
     }
     if g < 0 {
         n := st.nstr
@@ -120,7 +120,7 @@ func strlit(st mut St, s desugar.StrRef) int {
                 v = (v << 8) | (if j < nb { sat(mut st, s, j) } else { 0 })
                 k -= 1
             }
-            hset(mut st, ws + 1 + w, v)
+            desugar.HeapSet(mut st.d, ws + 1 + w, v)
         }
         g = addGlobalInit(mut st, int(full), nw, ws)
         en := rec4(mut st, st.strs, int(s), g, 0)
@@ -184,7 +184,7 @@ func slicelit(st mut St, e desugar.NodeRef) (Val, error?) {
             return ev, nil
         }
         v := copyVal(mut st, ev.t, ev.v)
-        hset(mut st, vs + 1 + i, v)
+        desugar.HeapSet(mut st.d, vs + 1 + i, v)
     }
     cellw := tWords(mut st, elem)
     // 宛先構築（loader/dest.sober の印 — 宛先構築レーン M1）: return に流れ着くリテラルで要素が参照を持たないものは入口の深度（呼び手の region）に作る
@@ -194,13 +194,13 @@ func slicelit(st mut St, e desugar.NodeRef) (Val, error?) {
         needByteRt(mut st)
         p := call(mut st, st.rtAlloc8, list2(mut st, d, iconst(mut st, n)))
         for i <- iter.Range(0, n) {
-            store8(mut st, gepByte(mut st, p, iconst(mut st, i)), 0, hget(mut st, vs + 1 + i))
+            store8(mut st, gepByte(mut st, p, iconst(mut st, i)), 0, desugar.HeapGet(mut st.d, vs + 1 + i))
         }
         return Val{t: t, v: newHeader(mut st, t, p, iconst(mut st, n), d)}, nil
     }
     p := regionAlloc(mut st, d, iconst(mut st, cellw * n))
     for i <- iter.Range(0, n) {
-        storeVal(mut st, p, cellw * i, elem, hget(mut st, vs + 1 + i))
+        storeVal(mut st, p, cellw * i, elem, desugar.HeapGet(mut st.d, vs + 1 + i))
     }
     return Val{t: t, v: newHeader(mut st, t, p, iconst(mut st, n), d)}, nil
 }
@@ -229,7 +229,7 @@ func emptyAtDepth(st mut St, p int, isMap bool, d int) {
 
 // zeroFill は `T{}` の slice / map フィールド（入れ子の struct も）を空ヘッダにする
 func zeroFill(st mut St, p int, off int, t int) {
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     if k == TSlice || k == TMap {
         emptyAt(mut st, fieldPtr(mut st, p, off), k == TMap)
         return
@@ -237,10 +237,10 @@ func zeroFill(st mut St, p int, off int, t int) {
     if k != TStruct {
         return
     }
-    fs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+    fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
     for i <- iter.Range(0, lenL(mut st, fs)) {
         f := latI(mut st, fs, i)
-        zeroFill(mut st, p, off + hget(mut st, f + 2), hget(mut st, f + 1))
+        zeroFill(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1))
     }
 }
 
@@ -267,7 +267,7 @@ func maplit(st mut St, e desugar.NodeRef) (Val, error?) {
     ens := lC(nodeOf(mut st, e))
     for i <- iter.Range(0, lenL(mut st, ens)) {
         en := latN(mut st, ens, i)
-        x := exprExpecting(mut st, nA(nodeOf(mut st, en)), hget(mut st, t + 1), at)?
+        x := exprExpecting(mut st, nA(nodeOf(mut st, en)), desugar.HeapGet(mut st.d, t + 1), at)?
         kp := keyPtr(mut st, x.t, x.v, t, at)?
         if kp < 0 {
             return Val{t: tNever(mut st), v: 0}, nil
@@ -287,7 +287,7 @@ func keyPtr(st mut St, kt int, kv int, mt int, at desugar.NodeRef) (int, error?)
     if isTag(mut st, kt, TNever) {
         return -1, nil
     }
-    if !tEql(mut st, kt, hget(mut st, mt + 1)) {
+    if !tEql(mut st, kt, desugar.HeapGet(mut st.d, mt + 1)) {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
     if isIntLike(mut st, kt) {
@@ -414,13 +414,13 @@ func index(st mut St, e desugar.NodeRef) (Val, error?) {
         return bx, nil
     }
     if isTag(mut st, bx.t, TMap) {
-        x := exprExpecting(mut st, nB(nodeOf(mut st, e)), hget(mut st, bx.t + 1), at)?
+        x := exprExpecting(mut st, nB(nodeOf(mut st, e)), desugar.HeapGet(mut st.d, bx.t + 1), at)?
         kp := keyPtr(mut st, x.t, x.v, bx.t, at)?
         if kp < 0 {
             return Val{t: tNever(mut st), v: 0}, nil
         }
         c := mapFind(mut st, bx.v, kp, bx.t)
-        ot := optOf(mut st, hget(mut st, bx.t + 2))
+        ot := optOf(mut st, desugar.HeapGet(mut st.d, bx.t + 2))
         r := newAgg(mut st, ot)
         hit := newBlock(mut st)
         miss := newBlock(mut st)
@@ -450,7 +450,7 @@ func index(st mut St, e desugar.NodeRef) (Val, error?) {
     }
     want(mut st, i.t, tInt(mut st), at)?
     panicIf(mut st, cmp(mut st, CUge, i.v, load(mut st, bx.v, 1)), PK_INDEX, at)
-    elem := hget(mut st, bx.t + 1)
+    elem := desugar.HeapGet(mut st.d, bx.t + 1)
     if isBytes(mut st, bx.t) {
         return Val{t: elem, v: load8(mut st, gepByte(mut st, hdrPtr(mut st, bx.v), i.v), 0)}, nil
     }
@@ -465,7 +465,7 @@ func slice3(st mut St, e desugar.NodeRef) (Val, error?) {
         return bx, nil
     }
     sliceOf(mut st, bx.t, at)?
-    if hget(mut st, bx.t + 2) != 0 {
+    if desugar.HeapGet(mut st.d, bx.t + 2) != 0 {
         return Val{}, diag.Mismatch{at: posOf(mut st, at)}
     }
     l := expr(mut st, nB(nodeOf(mut st, e)))?
@@ -584,7 +584,7 @@ func one1(st mut St, t int, v int) int {
         return list0(mut st)
     }
     r := list2(mut st, t, v)
-    hset(mut st, r, 1)
+    desugar.HeapSet(mut st.d, r, 1)
     return r
 }
 
@@ -633,6 +633,8 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
         6
     } else if strIs(mut st, name, "keys") {
         7
+    } else if strIs(mut st, name, "clone") {
+        8
     } else {
         0
     }
@@ -656,11 +658,17 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         return one1(mut st, tInt(mut st), load(mut st, x.v, 1)), nil
+    case 8:
+        if (isTag(mut st, x.t, TSlice) && !isString(mut st, x.t)) || isTag(mut st, x.t, TMap) {
+            c := cloneVal(mut st, x.t, x.v)
+            return one1(mut st, c.t, c.v), nil
+        }
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
     case 7:
         if !isTag(mut st, x.t, TMap) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
-        kt := hget(mut st, x.t + 1)
+        kt := desugar.HeapGet(mut st.d, x.t + 1)
         return one1(mut st, mkSlice(mut st, kt, false), mapKeys(mut st, x.v, x.t)), nil
     case 2:
         if !isString(mut st, x.t) {
@@ -668,7 +676,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
         }
         return one1(mut st, mkSlice(mut st, tByte(mut st), false), x.v), nil
     case 6:
-        if !isTag(mut st, x.t, TSlice) || isString(mut st, x.t) || !isTag(mut st, hget(mut st, x.t + 1), TByte) {
+        if !isTag(mut st, x.t, TSlice) || isString(mut st, x.t) || !isTag(mut st, desugar.HeapGet(mut st.d, x.t + 1), TByte) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         return one1(mut st, mkString(mut st), x.v), nil
@@ -679,10 +687,10 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     case 4:
         // 墓石（tag = 0）をその場で書く。不在は何もしない
-        if !isTag(mut st, x.t, TMap) || hget(mut st, x.t + 3) == 0 {
+        if !isTag(mut st, x.t, TMap) || desugar.HeapGet(mut st.d, x.t + 3) == 0 {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
-        y := exprExpecting(mut st, latN(mut st, args, 1), hget(mut st, x.t + 1), at)?
+        y := exprExpecting(mut st, latN(mut st, args, 1), desugar.HeapGet(mut st.d, x.t + 1), at)?
         kp := keyPtr(mut st, y.t, y.v, x.t, at)?
         if kp < 0 {
             return -1, nil
@@ -789,7 +797,7 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         if isTag(mut st, a.t, TNever) {
             return -1, nil
         }
-        if !isTag(mut st, a.t, TSlice) || isString(mut st, a.t) || !isTag(mut st, hget(mut st, a.t + 1), TByte) {
+        if !isTag(mut st, a.t, TSlice) || isString(mut st, a.t) || !isTag(mut st, desugar.HeapGet(mut st.d, a.t + 1), TByte) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         needRun(mut st)
@@ -806,7 +814,7 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         if isTag(mut st, d.t, TNever) {
             return -1, nil
         }
-        if !isTag(mut st, d.t, TSlice) || isString(mut st, d.t) || !isTag(mut st, hget(mut st, d.t + 1), TByte) {
+        if !isTag(mut st, d.t, TSlice) || isString(mut st, d.t) || !isTag(mut st, desugar.HeapGet(mut st.d, d.t + 1), TByte) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         return one1(mut st, tInt(mut st), call(mut st, st.rtWfd, list2(mut st, f.v, d.v))), nil
@@ -867,7 +875,7 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     if isTag(mut st, dx.t, TNever) {
         return -1, nil
     }
-    if !isTag(mut st, dx.t, TSlice) || isString(mut st, dx.t) || !isTag(mut st, hget(mut st, dx.t + 1), TByte) {
+    if !isTag(mut st, dx.t, TSlice) || isString(mut st, dx.t) || !isTag(mut st, desugar.HeapGet(mut st.d, dx.t + 1), TByte) {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
     return one1(mut st, tInt(mut st), call(mut st, st.rtWrite, list2(mut st, p.v, dx.v))), nil
@@ -925,7 +933,36 @@ func mapKeys(st mut St, h int, mt int) int {
     mrKeyCopy(mut st, r, cellAt(mut st, out, j, kw), cell)
     br(mut st, loop, list2(mut st, inext, bin(mut st, BAdd, j, iconst(mut st, 1))))
     setCur(mut st, done)
-    return newHeader(mut st, mkSlice(mut st, hget(mut st, mt + 1), false), out, live, d)
+    return newHeader(mut st, mkSlice(mut st, desugar.HeapGet(mut st.d, mt + 1), false), out, live, d)
+}
+
+// cloneVal は clone(x)（clone の段 — freeze の双対・Lean の clone）: slice / map のセル列を今の region（最内）の先端へ一括で写した mut のヘッダ
+// （浅い写し — 要素の中身は共有）。map は墓石ごと並びのまま写す（列挙の順・削除 → 再挿入の位置が元と同じ）。索引は持たない（初回の引きで rt.map_find が作る）
+func cloneVal(st mut St, xt int, xv int) Val {
+    d := regionDepth(mut st)
+    n := load(mut st, xv, 1)
+    if isTag(mut st, xt, TMap) {
+        w := bin(mut st, BMul, n, iconst(mut st, mapRepr(mut st, xt).cellw))
+        p := regionAlloc(mut st, d, w)
+        call(mut st, st.rtCopy, list3(mut st, p, hdrPtr(mut st, xv), w))
+        mt := mkMap(mut st, desugar.HeapGet(mut st.d, xt + 1), desugar.HeapGet(mut st.d, xt + 2), true)
+        h := newHeader(mut st, mt, p, n, d)
+        store(mut st, h, 3, iconst(mut st, 0))
+        return Val{t: mt, v: h}
+    }
+    elem := desugar.HeapGet(mut st.d, xt + 1)
+    t := mkSlice(mut st, elem, true)
+    if isBytes(mut st, xt) {
+        // []byte はバイト数で写す（確保は語の切り上げ）
+        needByteRt(mut st)
+        p := regionAlloc(mut st, d, bin(mut st, BSar, bin(mut st, BAdd, n, iconst(mut st, 7)), iconst(mut st, 3)))
+        call(mut st, st.rtCopy8, list3(mut st, p, hdrPtr(mut st, xv), n))
+        return Val{t: t, v: newHeader(mut st, t, p, n, d)}
+    }
+    w := bin(mut st, BMul, n, iconst(mut st, tWords(mut st, elem)))
+    p := regionAlloc(mut st, d, w)
+    call(mut st, st.rtCopy, list3(mut st, p, hdrPtr(mut st, xv), w))
+    return Val{t: t, v: newHeader(mut st, t, p, n, d)}
 }
 
 // appendCall は append(xs, v): mut はヘッダの深度で先端伸長か全コピー、imm は現在の深度へ全コピー
@@ -933,8 +970,8 @@ func appendCall(st mut St, xt int, xv0 int, src desugar.NodeRef, at desugar.Node
     if isString(mut st, xt) || !isTag(mut st, xt, TSlice) {
         return Val{}, diag.Mismatch{at: posOf(mut st, at)}
     }
-    elem := hget(mut st, xt + 1)
-    m := hget(mut st, xt + 2) != 0
+    elem := desugar.HeapGet(mut st.d, xt + 1)
+    m := desugar.HeapGet(mut st.d, xt + 2) != 0
     xv := copyVal(mut st, xt, xv0)
     vx := exprExpecting(mut st, src, elem, at)?
     if isTag(mut st, vx.t, TNever) {
@@ -966,28 +1003,28 @@ func setIndex(st mut St, ix desugar.NodeRef, value desugar.NodeRef) error? {
     base := nA(nodeOf(mut st, ix))
     if kindN(mut st, base) == ast.EIdent {
         l := lookup(mut st, sA(nodeOf(mut st, base)))
-        if l >= 0 && isTag(mut st, hget(mut st, l + 3), TMap) {
-            mt := hget(mut st, l + 3)
+        if l >= 0 && isTag(mut st, desugar.HeapGet(mut st.d, l + 3), TMap) {
+            mt := desugar.HeapGet(mut st.d, l + 3)
             // imm の map への書き込みは名指す（`mut m := map[K]V{}` — 右辺の mut の書き忘れ。check と同じ diag.ImmWrite）
-            if hget(mut st, mt + 3) == 0 {
+            if desugar.HeapGet(mut st.d, mt + 3) == 0 {
                 return diag.ImmWrite{at: posOf(mut st, at)}
             }
-            if hget(mut st, l + 2) != LCell {
+            if desugar.HeapGet(mut st.d, l + 2) != LCell {
                 return diag.Mismatch{at: posOf(mut st, at)}
             }
-            h := hget(mut st, l + 4)
-            x := exprExpecting(mut st, nB(nodeOf(mut st, ix)), hget(mut st, mt + 1), at)?
+            h := desugar.HeapGet(mut st.d, l + 4)
+            x := exprExpecting(mut st, nB(nodeOf(mut st, ix)), desugar.HeapGet(mut st.d, mt + 1), at)?
             kp := keyPtr(mut st, x.t, x.v, mt, at)?
             if kp < 0 {
                 return nil
             }
-            vx := exprExpecting(mut st, value, hget(mut st, mt + 2), at)?
+            vx := exprExpecting(mut st, value, desugar.HeapGet(mut st.d, mt + 2), at)?
             if isTag(mut st, vx.t, TNever) {
                 return nil
             }
             v := copyVal(mut st, vx.t, vx.v)
             // 格納点の写し（M5）: キー・値を map のヘッダの深度へ（mapSet の中 — 引きの後に）
-            mapSet(mut st, h, kp, vx.t, v, mt, containsSlice(mut st, hget(mut st, mt + 1)), containsSlice(mut st, vx.t))
+            mapSet(mut st, h, kp, vx.t, v, mt, containsSlice(mut st, desugar.HeapGet(mut st.d, mt + 1)), containsSlice(mut st, vx.t))
             return nil
         }
     }
@@ -999,7 +1036,7 @@ func setIndex(st mut St, ix desugar.NodeRef, value desugar.NodeRef) error? {
         return diag.Unsupported{at: posOf(mut st, at)}
     }
     sliceOf(mut st, bx.t, at)?
-    if hget(mut st, bx.t + 2) == 0 {
+    if desugar.HeapGet(mut st.d, bx.t + 2) == 0 {
         return diag.ImmWrite{at: posOf(mut st, at)}
     }
     i := expr(mut st, nB(nodeOf(mut st, ix)))?
@@ -1007,7 +1044,7 @@ func setIndex(st mut St, ix desugar.NodeRef, value desugar.NodeRef) error? {
         return nil
     }
     want(mut st, i.t, tInt(mut st), at)?
-    elem := hget(mut st, bx.t + 1)
+    elem := desugar.HeapGet(mut st.d, bx.t + 1)
     ev := exprExpecting(mut st, value, elem, at)?
     if isTag(mut st, ev.t, TNever) {
         return nil
@@ -1037,10 +1074,10 @@ func writeBack(st mut St, src desugar.NodeRef, t int, c int) {
         return
     }
     l := lookup(mut st, sA(nodeOf(mut st, src)))
-    if l < 0 || !isAggregate(mut st, hget(mut st, l + 3)) || !tEql(mut st, hget(mut st, l + 3), t) {
+    if l < 0 || !isAggregate(mut st, desugar.HeapGet(mut st.d, l + 3)) || !tEql(mut st, desugar.HeapGet(mut st.d, l + 3), t) {
         return
     }
-    storeVal(mut st, hget(mut st, l + 4), 0, t, c)
+    storeVal(mut st, desugar.HeapGet(mut st.d, l + 4), 0, t, c)
 }
 
 // ── 境界コピー（relocateTo — docs/ir.md 6 節）──
@@ -1058,12 +1095,12 @@ func relocateArm(st mut St, c int) BlkRef {
 // （Lean の relocT）。struct は静的オフセット、opt / union はタグで生きている腕だけ。slice / map は 2 相（中身を先に、外側のセル列を後に）
 func relocateTo(st mut St, p int, off int, t int, floor int) {
     slotPin(mut st, p)
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     if k == TSlice {
-        elem := hget(mut st, t + 1)
+        elem := desugar.HeapGet(mut st.d, t + 1)
         relocateCells(mut st, fieldPtr(mut st, p, off), tWords(mut st, elem), floor, t, if containsSlice(mut st, elem) { 1 } else { 0 })
     } else if k == TMap {
-        inner := containsSlice(mut st, hget(mut st, t + 1)) || containsSlice(mut st, hget(mut st, t + 2))
+        inner := containsSlice(mut st, desugar.HeapGet(mut st.d, t + 1)) || containsSlice(mut st, desugar.HeapGet(mut st.d, t + 2))
         h := fieldPtr(mut st, p, off)
         old := load(mut st, h, 0)
         relocateCells(mut st, h, mapRepr(mut st, t).cellw, floor, t, if inner { 2 } else { 0 })
@@ -1073,37 +1110,37 @@ func relocateTo(st mut St, p int, off int, t int, floor int) {
         br(mut st, moved, -1)
         setCur(mut st, moved)
     } else if k == TStruct {
-        fs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
         for i <- iter.Range(0, lenL(mut st, fs)) {
             f := latI(mut st, fs, i)
-            relocateTo(mut st, p, off + hget(mut st, f + 2), hget(mut st, f + 1), floor)
+            relocateTo(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor)
         }
     } else if k == TOpt {
-        if containsSlice(mut st, hget(mut st, t + 1)) {
+        if containsSlice(mut st, desugar.HeapGet(mut st.d, t + 1)) {
             tag := load(mut st, p, off)
             live := relocateArm(mut st, cmp(mut st, CNe, tag, iconst(mut st, 0)))
-            relocateTo(mut st, p, off + 1, hget(mut st, t + 1), floor)
+            relocateTo(mut st, p, off + 1, desugar.HeapGet(mut st.d, t + 1), floor)
             br(mut st, live, -1)
             setCur(mut st, live)
         }
     } else if k == TUnion {
         if containsSlice(mut st, t) {
             tag := load(mut st, p, off)
-            vs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+            vs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
             for vi <- iter.Range(0, lenL(mut st, vs)) {
                 vr := latI(mut st, vs, vi)
                 fs := hgetL(mut st, vr + 2)
                 mut has := false
                 for i <- iter.Range(0, lenL(mut st, fs)) {
-                    if containsSlice(mut st, hget(mut st, latI(mut st, fs, i) + 1)) {
+                    if containsSlice(mut st, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)) {
                         has = true
                     }
                 }
                 if has {
-                    join := relocateArm(mut st, cmp(mut st, CEq, tag, iconst(mut st, hget(mut st, vr + 1))))
+                    join := relocateArm(mut st, cmp(mut st, CEq, tag, iconst(mut st, desugar.HeapGet(mut st.d, vr + 1))))
                     for i <- iter.Range(0, lenL(mut st, fs)) {
                         f := latI(mut st, fs, i)
-                        relocateTo(mut st, p, off + 1 + hget(mut st, f + 2), hget(mut st, f + 1), floor)
+                        relocateTo(mut st, p, off + 1 + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor)
                     }
                     br(mut st, join, -1)
                     setCur(mut st, join)
@@ -1139,7 +1176,7 @@ func relocateCells(st mut St, h int, cellw int, floor int, t int, inner int) {
     setCur(mut st, body)
     cp := cellAt(mut st, bs, i, cellw)
     if inner == 1 {
-        relocateTo(mut st, cp, 0, hget(mut st, t + 1), floor)
+        relocateTo(mut st, cp, 0, desugar.HeapGet(mut st.d, t + 1), floor)
     } else {
         r := mapRepr(mut st, t)
         mrRelocKey(mut st, r, cp, floor)

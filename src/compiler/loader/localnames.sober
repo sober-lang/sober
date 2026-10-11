@@ -45,7 +45,7 @@ func noHit() NameHit {
 // reserved は決定 16 の組み込みの名前か
 func reserved(n string) bool {
     return n == "len" || n == "shape" || n == "println" || n == "await" || n == "freeze" ||
-        n == "keys" || n == "bytes" || n == "true" || n == "false" || n == "append" || n == "delete"
+        n == "keys" || n == "bytes" || n == "true" || n == "false" || n == "append" || n == "delete" || n == "clone"
 }
 
 // pkgNames は package pk の名前の索引

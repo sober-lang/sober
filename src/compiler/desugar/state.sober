@@ -165,6 +165,10 @@ type S struct {
     nimpl int    // 暗黙の freeze の点の数（0 なら IsImplicit は表を引かない）
     yexplOn bool   // 開発の口 FreezeSites: 外すと同じ点で暗黙の freeze になる明示の freeze の呼び出しを集める
     yexpl table.Table[int]
+    // 他の package の struct の欄の書き / mut の中身を持つ欄の読みの記録の鎖（ヒープの記録 [種類〔0 書き・1 読み・-1 消した〕, 節, 欄の名前, 型, 次] — 頭と尾は
+    // 番地 + 1・0 = 無し。fieldwrite.sober。Table の欄にしない — S が 7 語ずつ太り、S / St を持つフレームの零初期化と写しで自己 build +0.25 G だった）
+    yfaHead int
+    yfaTail int
     ypts table.Table[int]   // 暗黙の freeze の点の節の列（開発の口 ImplicitPoints — 積んだ順）
     implAt NodeRef  // 脱糖中の暗黙の freeze の点（expr が CFreeze で包んだ節 — 中身の脱糖では包まない）
     instEnvs int
@@ -209,6 +213,32 @@ func hpush(st mut S, v int) {
 
 func hlen(st mut S) int {
     return table.Len(mut st.h)
+}
+
+// HeapGet / HeapSet / HeapPush / HeapLen / HeapPushAll / HeapFreeze は lower がヒープ（欄 h）を読み書きする口
+// （他の package は欄を書けず、mut の中身を持つ欄は読めない — language.md 20 節。lower の hget 系はこれを経由する）
+func HeapGet(st mut S, i int) int {
+    return table.Get(mut st.h, i)
+}
+
+func HeapSet(st mut S, i int, v int) {
+    table.Set(mut st.h, i, v)
+}
+
+func HeapPush(st mut S, v int) {
+    table.Push(mut st.h, v)
+}
+
+func HeapLen(st mut S) int {
+    return table.Len(mut st.h)
+}
+
+func HeapPushAll(st mut S, xs []int) {
+    table.PushAll(mut st.h, xs)
+}
+
+func HeapFreeze(st mut S) table.Frozen[int] {
+    return table.Freeze(mut st.h)
 }
 
 // dat は生の 1 語（文字列のバイト・値の列の要素・列の個数）— 木の列・文字列（LBASE）なら木の data、他はヒープ

@@ -667,6 +667,20 @@ theorem tcEq_keysm (x0 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalR
       all_goals (rename_i c; cases c <;> (try (simp [kKeysm, typecheck, hA]; done)))
       all_goals (rename_i v; cases v <;> simp [kKeysm, typecheck, hA])
 
+theorem tcEq_clone (x0 : Option Ty) (x1 : Expr) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.clone x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.clone x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.clone x0 x1) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.clone.sizeOf_spec] at h
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx1]
+    cases hA : typecheck Δ Ξ Ψ f b d Γ Λ x1 with
+    | none => simp [kClone, typecheck, hA]
+    | some tA =>
+      cases d <;> cases tA <;> simp [kClone, typecheck, hA]
+      all_goals (split <;> simp_all [kCloneR])
+
 theorem tcEq_par (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
     ∀ n b d Γ Λ, sizeOf (Expr.par x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.par x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.par x0 x1) := by
   intro n b d Γ Λ h; cases n with
@@ -913,6 +927,7 @@ theorem evalRule_eq_typecheck :
   | delm x0 x1 x2 ih_x1 ih_x2 => exact tcEq_delm x0 x1 x2 ih_x1 ih_x2
   | lenm x0 ih_x0 => exact tcEq_lenm x0 ih_x0
   | keysm x0 ih_x0 => exact tcEq_keysm x0 ih_x0
+  | clone x0 x1 ih_x1 => exact tcEq_clone x0 x1 ih_x1
   | par x0 x1 ih_x0 ih_x1 => exact tcEq_par x0 x1 ih_x0 ih_x1
   | parch x0 x1 x2 ih_x1 ih_x2 => exact tcEq_parch x0 x1 x2 ih_x1 ih_x2
   | newchan x0 x1 => exact tcEq_newchan x0 x1

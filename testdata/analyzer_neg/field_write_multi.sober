@@ -1,0 +1,11 @@
+package main
+
+// 多値代入の左辺
+import "testdata/fieldpkg/box"
+
+func main() {
+    mut b := box.Box{n: 0, name: "x", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    mut a := 0
+    a, b.n = 1, 2
+    println(a)
+}

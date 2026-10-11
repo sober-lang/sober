@@ -1,0 +1,423 @@
+package lower
+
+// 自動ベクトル化のスパイク（性能投資 第三便 — DESIGN の収穫仮説 5 本・rtlower / inline / cfgclean の後・最適化のバックエンドの経路だけ）:
+// バイトの走査のループ（`while b[i] != ';' { i += 1 }` の形 — 帰納変数 1 本の +1・境界の検査・load8 と定数の比較だけ・副作用なし）の前置きに
+// `j = scanb(p, i0, 上限…)` を挿し、前置きの辺の i0 を j に差し替える。scanb は「継続の条件が 16 レーン全部で成り立つ塊」を上限の手前まで読み飛ばし、
+// 出口のレーンがあればそこへ進める（SSE2 — x86.sober の xScanB）。その後は元のスカラーのループがそのまま走るので、出口・境界検査の panic・端数は
+// 全部スカラーが持つ — ループは書き換えない。正しさの論証は「読み飛ばした反復はどれも、境界の内側で継続の条件が成り立ち、副作用が無い（i の +1 だけ）」の 1 点。
+// 判定（エイリアス・依存の解析は要らない — ループの中に store も呼び出しも無いことを形で見る）:
+//   ① 頭 H の前任 = 外の 1 つ（br — 前置き P）+ ループの中の latch（br H）
+//   ② H から継続の側を辿った鎖（4 ブロックまで）の命令が const・gep.byte(p, i)・load8(その gep, 0)・比較・i + 1 だけ
+//   ③ 各 condbr は「i <u / < 上限（不変）」の境界（偽の側 or 真の側が exit — panic の点）か「load8 の値と定数の比較」（片側が出口）
+//   ④ 上限の検査は load より前（読み飛ばしの 16 バイトの読みの安全 = スカラーが同じ上限の内側だけを読む）・上限が 1 つ以上
+//   ⑤ latch の実引数: i の位置は i + 1・他の仮引数はそのまま（不変）
+
+import "desugar"
+import "std/iter"
+
+const VK_EQ = 0  // 出口 = x == K
+const VK_NE = 1  // 出口 = x != K
+const VK_LT = 2  // 出口 = x <u K
+const VK_GE = 3  // 出口 = x >=u K
+
+// vecModule はモジュールの全関数に掛ける（掛けた数を返す）
+func vecModule(st mut St) int {
+    mut n := 0
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            n = n + {
+                vecFunc(mut st, f)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    return n
+}
+
+func vecFunc(st mut St, f FnRef) int {
+    st.fn = f
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkPHead(mut st, b) >= 0 && irBlkPreds(mut st, b) == 2 {
+            if vecLoop(mut st, f, b) {
+                n += 1
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+// vecDef は値 v を定義する命令（ブロックの列 blks の中で — 無ければ -1）
+func vecDef(st mut St, blks mut []int, nb int, v int) InsRef {
+    for k <- iter.Range(0, nb) {
+        mut i := irBlkIHead(mut st, BlkRef(blks[k]))
+        while i != -1 {
+            if irInsRes(mut st, i) == v {
+                return i
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
+    return -1
+}
+
+// vecParamIdx は v が H の何番目の仮引数か（-1 = 違う）
+func vecParamIdx(st mut St, h BlkRef, v int) int {
+    mut k := 0
+    mut p := irBlkPHead(mut st, h)
+    while p >= 0 {
+        if desugar.HeapGet(mut st.d, p + 1) == v {
+            return k
+        }
+        k += 1
+        p = desugar.HeapGet(mut st.d, p)
+    }
+    return -1
+}
+
+// vecIsExit は b が panic の点（exit で終わる）か
+func vecIsExit(st mut St, b BlkRef) bool {
+    return irBlkTerm(mut st, b) == TmExit
+}
+
+// vecLoop は頭 h のループを判定し、合えば前置きに scanb を挿す
+func vecLoop(st mut St, f FnRef, h BlkRef) bool {
+    // 鎖: h から継続の側を辿り latch（br h）まで
+    mut blks := mut []int{}
+    xFill(mut blks, 9, -1)
+    mut nb := 0
+    mut at := h
+    mut latch := BlkRef(-1)
+    // 鎖の各 condbr の継続の側（0 = then・1 = else）
+    mut contSide := mut []int{}
+    xFill(mut contSide, 9, -1)
+    while int(latch) == -1 {
+        if nb >= 8 {
+            return false
+        }
+        blks[nb] = int(at)
+        nb += 1
+        t := irBlkTerm(mut st, at)
+        if t == TmBr {
+            to := irBrTo(mut st, at)
+            if to == h {
+                latch = at
+            } else if irBlkPreds(mut st, to) == 1 && irBlkPHead(mut st, to) < 0 && emptyArgs(mut st, irBlkX2(mut st, at)) {
+                at = to
+            } else {
+                return false
+            }
+        } else if t == TmCondbr {
+            tt := irCondThen(mut st, at)
+            te := irCondElse(mut st, at)
+            if !emptyArgs(mut st, irBlkX3(mut st, at)) || !emptyArgs(mut st, irBlkX5(mut st, at)) {
+                return false
+            }
+            // 継続の側 = 鎖の中へ戻る側（片側が panic の点ならもう片側・そうでなければ h へ戻れる側）
+            side := if vecIsExit(mut st, tt) { 1 } else if vecIsExit(mut st, te) { 0 } else if vecReaches(mut st, tt, h) { 0 } else if vecReaches(mut st, te, h) { 1 } else { -1 }
+            if side < 0 {
+                return false
+            }
+            contSide[nb - 1] = side
+            nxt := if side == 0 { tt } else { te }
+            if nxt != h && (irBlkPreds(mut st, nxt) != 1 || irBlkPHead(mut st, nxt) >= 0) {
+                return false
+            }
+            if nxt == h {
+                return false
+            }
+            at = nxt
+        } else {
+            return false
+        }
+    }
+    // 前置き: h の前任のうち鎖の外の 1 つ（br h）
+    preh, pslot := vecPreheader(mut st, f, h, latch)
+    if int(preh) == -1 {
+        return false
+    }
+    // latch の実引数: 帰納変数の位置を探す
+    largs := irBlkX2(mut st, latch)
+    np := xLen(mut st, largs)
+    mut ik := -1
+    mut iv := -1
+    mut incr := -1
+    for k <- iter.Range(0, np) {
+        a := xAt(mut st, largs, k)
+        pv := vecParamAt(mut st, h, k)
+        if a != pv {
+            if ik >= 0 {
+                return false
+            }
+            d := vecDef(mut st, mut blks, nb, a)
+            if int(d) == -1 || irInsOp(mut st, d) != OpBin || irInsA(mut st, d) != BAdd || irInsB(mut st, d) != pv || !vecConstIs(mut st, mut blks, nb, irInsC(mut st, d), 1) {
+                return false
+            }
+            ik = k
+            iv = pv
+            incr = a
+        }
+    }
+    if ik < 0 {
+        return false
+    }
+    // 命令と分岐の分類（鎖の順に — 上限の検査が load より前か）
+    mut lims := mut []int{}
+    xFill(mut lims, 2, -1)
+    mut nl := 0
+    mut kinds := mut []int{}
+    xFill(mut kinds, 2, 0)
+    mut ks := mut []int{}
+    xFill(mut ks, 2, 0)
+    mut npred := 0
+    mut base := -1
+    mut gv := -1
+    mut xv := -1
+    // 同じ gep からの 2 度目の load8（GVN がブロックを跨いで畳まない読み直し）も同じバイトの値（ループの中に store は無い）
+    mut xv2 := -1
+    for bk <- iter.Range(0, nb) {
+        bb := BlkRef(blks[bk])
+        mut i := irBlkIHead(mut st, bb)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            r := irInsRes(mut st, i)
+            if op == OpConst || op == OpCmp {
+                // 比較は分岐の分類で見る
+            } else if op == OpBin && r == incr {
+                // i + 1
+            } else if op == OpGepB && irInsB(mut st, i) == iv && gv == -1 && vecInvariant(mut st, mut blks, nb, h, irInsA(mut st, i)) {
+                if nl == 0 {
+                    return false
+                }
+                base = irInsA(mut st, i)
+                gv = r
+            } else if op == OpLoad8 && irInsA(mut st, i) == gv && gv != -1 && irInsB(mut st, i) == 0 && (xv == -1 || xv2 == -1) {
+                if xv == -1 {
+                    xv = r
+                } else {
+                    xv2 = r
+                }
+            } else {
+                return false
+            }
+            i = irInsNext(mut st, i)
+        }
+        if irBlkTerm(mut st, bb) == TmCondbr {
+            cv := irBlkX1(mut st, bb)
+            d := vecDef(mut st, mut blks, nb, cv)
+            if int(d) == -1 || irInsOp(mut st, d) != OpCmp {
+                return false
+            }
+            co := irInsA(mut st, d)
+            l := irInsB(mut st, d)
+            rr := irInsC(mut st, d)
+            // 継続する条件の真偽（継続の側が then なら比較が真で継続）
+            contTrue := contSide[bk] == 0
+            if l == iv && vecInvariant(mut st, mut blks, nb, h, rr) && ((contTrue && (co == CLt || co == CUlt)) || (!contTrue && co == CUge)) {
+                // 同じ上限の検査の繰り返し（&& の各項の境界検査）は 1 つに
+                if nl == 0 || (lims[0] != rr && (nl == 1 || lims[1] != rr)) {
+                    if nl >= 2 {
+                        return false
+                    }
+                    lims[nl] = rr
+                    nl += 1
+                }
+            } else if (l == xv || l == xv2) && xv != -1 && vecConstOf(mut st, mut blks, nb, rr) {
+                kv := vecConstVal(mut st, mut blks, nb, rr)
+                kd, kk := vecKind(co, kv, contTrue)
+                if kd < 0 || npred >= 2 {
+                    return false
+                }
+                if kd < 4 {
+                    kinds[npred] = kd
+                    ks[npred] = kk
+                    npred += 1
+                }
+            } else {
+                return false
+            }
+        }
+    }
+    if nl == 0 || npred == 0 || xv == -1 {
+        return false
+    }
+    // 前置きに scanb を挿す（不変の値が h の仮引数なら前置きの実引数に読み替える）
+    pargs := if pslot == 2 { irBlkX2(mut st, preh) } else if pslot == 3 { irBlkX3(mut st, preh) } else { irBlkX5(mut st, preh) }
+    ops := listN(mut st, 2 + nl)
+    desugar.HeapSet(mut st.d, ops + 1, vecOuter(mut st, h, pargs, base))
+    desugar.HeapSet(mut st.d, ops + 2, xAt(mut st, pargs, ik))
+    for k <- iter.Range(0, nl) {
+        desugar.HeapSet(mut st.d, ops + 3 + k, vecOuter(mut st, h, pargs, lims[k]))
+    }
+    desc := listN(mut st, 2 + 2 * npred)
+    desugar.HeapSet(mut st.d, desc + 1, nl)
+    desugar.HeapSet(mut st.d, desc + 2, npred)
+    for k <- iter.Range(0, npred) {
+        desugar.HeapSet(mut st.d, desc + 3 + 2 * k, kinds[k])
+        desugar.HeapSet(mut st.d, desc + 4 + 2 * k, ks[k])
+    }
+    j := newValueIn(mut st, f)
+    linkInst(mut st, preh, mkInst(mut st, j, OpScanB, ops, desc, 0))
+    // 前置きの実引数の列を写して i0 を j に（列は他の辺と共有しうるので書き換えない）
+    nargs := listN(mut st, xLen(mut st, pargs))
+    for k <- iter.Range(0, xLen(mut st, pargs)) {
+        desugar.HeapSet(mut st.d, nargs + 1 + k, if k == ik { j } else { xAt(mut st, pargs, k) })
+    }
+    if pslot == 2 {
+        irSetBlkX2(mut st, preh, nargs)
+    } else if pslot == 3 {
+        irSetBlkX3(mut st, preh, nargs)
+    } else {
+        irSetBlkX5(mut st, preh, nargs)
+    }
+    return true
+}
+
+// vecNorm は x co K（x = 0〜255 のバイト）を「x < T」かその否定に揃える: (T, less〔true = x < T の形〕, ok)。符号なしの比較で K が負は扱わない
+func vecNorm(co int, kv int) (int, bool, bool) {
+    if (co == CUlt || co == CUge) && kv < 0 {
+        return 0, false, false
+    }
+    if co == CLt || co == CUlt {
+        return kv, true, true
+    }
+    if co == CLe {
+        return kv + 1, true, true
+    }
+    if co == CGt {
+        return kv + 1, false, true
+    }
+    if co == CGe || co == CUge {
+        return kv, false, true
+    }
+    return 0, false, false
+}
+
+// vecKind は「比較 co x, K の結果が contTrue なら継続」を出口の種類と K に: (種類, K)。種類 -1 = 扱えない・4 = 常に継続（述語を落とす）
+func vecKind(co int, kv int, contTrue bool) (int, int) {
+    if co == CEq || co == CNe {
+        if kv < 0 || kv > 255 {
+            return -1, 0
+        }
+        // 継続 = (x == K) なら出口 = x != K
+        eqCont := (co == CEq) == contTrue
+        return if eqCont { VK_NE } else { VK_EQ }, kv
+    }
+    t, less, ok := vecNorm(co, kv)
+    if !ok {
+        return -1, 0
+    }
+    // 継続 ⇔ (x < T) == contLess
+    contLess := less == contTrue
+    if t <= 0 || t >= 256 {
+        // x < T が全レーンで同じ真偽: 常に継続なら述語を落とす・常に出口なら得が無い
+        always := t >= 256
+        return if always == contLess { 4 } else { -1 }, 0
+    }
+    // 継続 = x < T なら出口 = x >=u T・継続 = x >= T なら出口 = x <u T
+    return if contLess { VK_GE } else { VK_LT }, t
+}
+
+func vecParamAt(st mut St, h BlkRef, k int) int {
+    mut n := 0
+    mut p := irBlkPHead(mut st, h)
+    while p >= 0 {
+        if n == k {
+            return desugar.HeapGet(mut st.d, p + 1)
+        }
+        n += 1
+        p = desugar.HeapGet(mut st.d, p)
+    }
+    return -1
+}
+
+// vecInvariant は v がループの中で変わらないか（鎖の命令の結果でない・h の仮引数ならその位置が latch でそのまま渡る — vecLoop が帰納変数以外は確かめ済み）
+func vecInvariant(st mut St, blks mut []int, nb int, h BlkRef, v int) bool {
+    return int(vecDef(mut st, mut blks, nb, v)) == -1
+}
+
+// vecOuter は不変の値 v の前置きでの値（h の仮引数なら前置きの実引数）
+func vecOuter(st mut St, h BlkRef, pargs int, v int) int {
+    k := vecParamIdx(mut st, h, v)
+    return if k >= 0 { xAt(mut st, pargs, k) } else { v }
+}
+
+func vecConstOf(st mut St, blks mut []int, nb int, v int) bool {
+    d := vecDef(mut st, mut blks, nb, v)
+    if int(d) != -1 {
+        return irInsOp(mut st, d) == OpConst
+    }
+    // 鎖の外の定数（関数の中を探す）
+    return int(vecDefFn(mut st, v)) != -1 && irInsOp(mut st, vecDefFn(mut st, v)) == OpConst
+}
+
+func vecConstVal(st mut St, blks mut []int, nb int, v int) int {
+    d := vecDef(mut st, mut blks, nb, v)
+    return irInsA(mut st, if int(d) != -1 { d } else { vecDefFn(mut st, v) })
+}
+
+func vecConstIs(st mut St, blks mut []int, nb int, v int, n int) bool {
+    return vecConstOf(mut st, mut blks, nb, v) && vecConstVal(mut st, mut blks, nb, v) == n
+}
+
+// vecDefFn は今の関数（st.fn）の中で v を定義する命令
+func vecDefFn(st mut St, v int) InsRef {
+    mut b := irFnBHead(mut st, st.fn)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsRes(mut st, i) == v {
+                return i
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return -1
+}
+
+// vecReaches は b から前任 1 つのブロックだけを通って（深さ 7 まで — panic の点の側は辿らない）h へ戻れるか（継続の側の判定）
+func vecReaches(st mut St, b BlkRef, h BlkRef) bool {
+    return vecReachesD(mut st, b, h, 7)
+}
+
+func vecReachesD(st mut St, b BlkRef, h BlkRef, d int) bool {
+    if d == 0 || irBlkPreds(mut st, b) != 1 || vecIsExit(mut st, b) {
+        return false
+    }
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        to := irBrTo(mut st, b)
+        return to == h || vecReachesD(mut st, to, h, d - 1)
+    }
+    if t == TmCondbr {
+        return vecReachesD(mut st, irCondThen(mut st, b), h, d - 1) || vecReachesD(mut st, irCondElse(mut st, b), h, d - 1)
+    }
+    return false
+}
+
+// vecPreheader は h の前任のうち latch 以外の 1 つ（無ければ -1）と、h へ入る辺の実引数の欄（2 = br の X2・3 = condbr の then・5 = condbr の else）。
+// condbr の片側でもよい — scanb は純粋（上限の内側だけを読む）なので、もう片側の経路では結果が捨てられるだけ
+func vecPreheader(st mut St, f FnRef, h BlkRef, latch BlkRef) (BlkRef, int) {
+    mut found := BlkRef(-1)
+    mut slot := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        if b != latch {
+            n := if t == TmBr && irBrTo(mut st, b) == h { 1 } else if t == TmCondbr { (if irCondThen(mut st, b) == h { 1 } else { 0 }) + (if irCondElse(mut st, b) == h { 1 } else { 0 }) } else { 0 }
+            if n > 1 || (n == 1 && int(found) != -1) {
+                return BlkRef(-1), 0
+            }
+            if n == 1 {
+                found = b
+                slot = if t == TmBr { 2 } else if irCondThen(mut st, b) == h { 3 } else { 5 }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return found, slot
+}

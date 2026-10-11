@@ -1,2 +1,2 @@
-testdata/analyzer_neg/ifreeze_check_then_write.sober:10:6: error: this writes to `m[…]` after `m` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy (Analyzer)
+testdata/analyzer_neg/ifreeze_check_then_write.sober:10:6: error: this writes to `m[…]` after `m` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy: clone(x) (Analyzer)
 testdata/analyzer_neg/ifreeze_check_then_write.sober:9:21: error: (note) `m` is frozen here — an immutable value is expected at this point (implicit freeze) (Analyzer)

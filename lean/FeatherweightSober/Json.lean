@@ -42,7 +42,7 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"newch","r":Nat,"cap":Nat,"t":T}`（段 6 P1 — 端点の組を作る） /
   `{"k":"mkmap","m":Bool,"key":K,"t":V}` / `{"k":"getm","t":T,"e":E,"key":E}` /
   `{"k":"setm","e":E,"key":E,"v":E}` / `{"k":"delm","t":T,"e":E,"key":E}` /
-  `{"k":"lenm","e":E}` / `{"k":"keysm","e":E}`
+  `{"k":"lenm","e":E}` / `{"k":"keysm","e":E}` / `{"k":"clone","t":T?,"e":E}`
 
 fromJson は燃料つき再帰（Json の入れ子への構造的再帰が書けないため）。
 燃料は JSON のノード数で必ず足りる値を呼び手が渡す（parseExpr は入力長を使う）。
@@ -199,6 +199,8 @@ def exprToJson : Expr → Json
       Json.mkObj [("k", "delm"), ("t", tyToJson t), ("e", exprToJson e), ("key", exprToJson k)]
   | .lenm e => Json.mkObj [("k", "lenm"), ("e", exprToJson e)]
   | .keysm e => Json.mkObj [("k", "keysm"), ("e", exprToJson e)]
+  | .clone Option.none e => Json.mkObj [("k", "clone"), ("e", exprToJson e)]
+  | .clone (Option.some t) e => Json.mkObj [("k", "clone"), ("e", exprToJson e), ("t", tyToJson t)]
   | .mapv _ _ _ _ => Json.mkObj [("k", "mapv")]
   | .par e1 e2 => Json.mkObj [("k", "par"), ("e1", exprToJson e1), ("e2", exprToJson e2)]
   | .parch t e1 e2 =>
@@ -579,6 +581,13 @@ def exprFromJson : Nat → Json → Except String Expr
     | "keysm" => do
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         pure (.keysm e)
+    | "clone" => do
+        let e ← j.getObjVal? "e" >>= exprFromJson fuel
+        match j.getObjVal? "t" with
+        | Except.ok tj => do
+            let t ← tyFromJson fuel tj
+            pure (.clone (Option.some t) e)
+        | Except.error _ => pure (.clone Option.none e)
     | "par" => do
         let e1 ← j.getObjVal? "e1" >>= exprFromJson fuel
         let e2 ← j.getObjVal? "e2" >>= exprFromJson fuel

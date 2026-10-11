@@ -301,6 +301,12 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (b, s) := s.fresh
     let ks := (H s v).foldl (fun acc x => union acc (s.cont x)) []
     (.bufs [b], s.addCont [b] ks)
+  -- clone: 新しい buffer（元の buffer の別名にならない — freeze の呼び出しの結果と同じく根を張らない）。中身（要素の buffer）は共有する（浅い写し）
+  | .clone _ a =>
+    let (v, s) := ev env a s
+    let (b, s) := s.fresh
+    let ks := (H s v).foldl (fun acc x => union acc (s.cont x)) []
+    (.bufs [b], s.addCont [b] ks)
   | .concat x y =>
     let (_, s) := ev env x s
     let (_, s) := ev env y s

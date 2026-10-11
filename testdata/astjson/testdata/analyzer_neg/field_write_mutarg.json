@@ -1,0 +1,222 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/fieldpkg/box",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "push",
+      "type_params": [],
+      "params": [
+        {
+          "name": "xs",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "int"
+            },
+            "mut": true
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "xs",
+                "tok": 16
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "append",
+                  "tok": 18
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 20
+                  },
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 22
+                  }
+                ],
+                "tok": 19
+              }
+            ],
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 27
+      },
+      "sig_end": 15
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "box.Box",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 41
+                    }
+                  },
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 45
+                    }
+                  },
+                  {
+                    "key": "inner",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "box.Inner",
+                      "elems": [
+                        {
+                          "key": "k",
+                          "value": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 55
+                          }
+                        }
+                      ],
+                      "tok": 49,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "xs",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [],
+                      "mut": true,
+                      "tok": 61
+                    }
+                  },
+                  {
+                    "key": "tags",
+                    "value": {
+                      "k": "maplit",
+                      "key": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "value": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "entries": [],
+                      "mut": true,
+                      "tok": 70
+                    }
+                  }
+                ],
+                "tok": 35,
+                "type_args": []
+              }
+            ],
+            "tok": 32
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "push",
+                "tok": 79
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "b.xs",
+                  "tok": 82
+                }
+              ],
+              "tok": 80
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 87
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 89
+                  },
+                  "field": "n",
+                  "tok": 91
+                }
+              ],
+              "tok": 88
+            }
+          }
+        ]
+      },
+      "tok": 28,
+      "bodiless": false,
+      "span": {
+        "start": 27,
+        "end": 96
+      },
+      "sig_end": 31
+    }
+  ],
+  "consts": []
+}

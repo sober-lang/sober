@@ -1,0 +1,16 @@
+package main
+
+// clone の結果は新しい値で、自分の束縛の根になる（元の別名にならない）: ys を imm の位置へ渡すと ys が凍り、その後の ys への書きは U2。
+// 元の xs は clone では凍らない（読むだけ）ので書き続けられる
+func show(xs []int) {
+    println(len(xs))
+}
+
+func main() {
+    mut xs := mut []int{1, 2}
+    mut ys := clone(xs)
+    show(ys)
+    xs[0] = 5
+    ys[0] = 9
+    println(xs[0])
+}

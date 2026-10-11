@@ -5,6 +5,7 @@ package lower
 // 巻き上げるのは純粋で落ちない命令（算術〔div / rem を除く — ループが回らない経路でゼロ除算を起こさない〕・比較・gep・ptoi / itop・
 // slotaddr・globaladdr・funcaddr）で、被演算子が全部ループの外（か巻き上げ済み）のもの。load は巻き上げない（ループの中の store / call が書きうる）
 
+import "desugar"
 import "std/iter"
 
 // licmModule はモジュールの全関数に LICM を掛ける
@@ -31,8 +32,8 @@ func licmFunc(st mut St, f FnRef) {
         if int(b) >= 0 {
             mut p := irBlkPHead(mut st, b)
             while p >= 0 {
-                dblk[hget(mut st, p + 1)] = bi
-                p = hget(mut st, p)
+                dblk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                p = desugar.HeapGet(mut st.d, p)
             }
             mut ins := irBlkIHead(mut st, b)
             while ins != -1 {

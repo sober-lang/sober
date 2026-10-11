@@ -1,0 +1,168 @@
+package lower
+
+// 呼び出しの計数（開発用 `sober build --call-stat` — report-453 段 0: 呼び出しの固定費の値札の重み）。パスの後（検査点の後 — 最適化が展開した
+// 関数は数えない・実際に call される関数だけ）に、本体を持つ関数ごとに入口のブロックへ `cnt[k] += 1` を足し、main の後の rt.depth_report の頭で
+// `callstat <関数名> <回数>` を回数が 0 でない関数ごとに stderr へ出す。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
+// 入口のブロックがループの頭を兼ねる関数は反復ごとに数える（今の IR では入口へ戻る辺を作らない — 作るなら数え口の置き場を変える）
+
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// CallStat は呼び出しの計数つきの実行ファイル（site = 呼び出し点ごと — `--call-stat=site`・展開便の段 0〔report-466〕: 数え口を直の / 間接の
+// call の手前に置き、`callsite <呼び手> <点の通し番号> <callee〔間接は *〕> <ループの深さ> <回数>` を出す。深さは ilLoopDepth — パスの後の IR で）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.Frozen)
+func CallStat(p loader.Program, site bool, vmode int) ([]byte, error?) {
+    mut k := knob(KElf, true, true, false, false, 0, vmode)
+    k.callStat = true
+    k.csSite = site
+    return lowerWith(p, k)
+}
+
+// callStatDump は表を stderr へ（rt.depth_report の頭 — 今の cur から続けて組み、印字の fd を 1 に戻して cur を返す）
+func callStatDump(st mut St, meta int) {
+    // 大域は program を組む途中で作る（elfOutSt が St の大域の鎖を作り直すので CallStat の入口では作れない）
+    st.csCnt = addGlobalInit(mut st, int(strLit(mut st, "callstat.cnt")), 1, -1)
+    st.csTbl = addGlobalInit(mut st, int(strLit(mut st, "callstat.tbl")), 1, -1)
+    st.csBlob = addGlobalInit(mut st, int(strLit(mut st, "callstat.names")), 1, -1)
+    toStderr(mut st, meta)
+    tbl := globaladdr(mut st, st.csTbl)
+    cnt := globaladdr(mut st, st.csCnt)
+    blob := globaladdr(mut st, st.csBlob)
+    n := load(mut st, tbl, 0)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    hit := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    c := load(mut st, gepWord(mut st, cnt, i), 0)
+    // site は 0 回の点も出す（展開の静的な増分は走らない点も含む）
+    condbr(mut st, if st.csSite { iconst(mut st, 1) } else { cmp(mut st, CNe, c, iconst(mut st, 0)) }, hit, -1, next, -1)
+    setCur(mut st, hit)
+    ent := gepWord(mut st, tbl, bin(mut st, BAdd, bin(mut st, BMul, i, iconst(mut st, 2)), iconst(mut st, 1)))
+    name := newHeader(mut st, mkString(mut st), gepByte(mut st, blob, load(mut st, ent, 0)), load(mut st, ent, 1), iconst(mut st, 0))
+    printLit(mut st, if st.csSite { "callsite " } else { "callstat " })
+    call(mut st, st.rtPstr, list1(mut st, name))
+    printLit(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, c))
+    printLit(mut st, "\n")
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    call(mut st, st.rtFlush, list0(mut st))
+    store(mut st, meta, W_FD, iconst(mut st, 1))
+}
+
+// callStatInsert は数え口を足し（関数ごとの入口・site なら呼び出しの手前）、表と名前の大域の初期値を埋める
+func callStatInsert(st mut St) {
+    // 名前のバイト列（bytesAll）と項目ごとの [位置, 長さ]（ents）を数え口を足しながら積む
+    // 名前は table に積む（mut []int を mut 引数で渡して append すると境界の写しが項目ごとに走る — site の自己 build で 4 GB）
+    mut bytesAll := table.Table[int]{}
+    mut ents := table.Table[int]{}
+    mut f := st.fhead
+    while f != -1 {
+        b0 := irFnBHead(mut st, f)
+        if b0 != -1 {
+            st.fn = f
+            if st.csSite {
+                csSites(mut st, f, mut bytesAll, mut ents)
+            } else {
+                k := table.Len(mut ents) / 2
+                table.Push(mut ents, table.Len(mut bytesAll))
+                csPutStr(mut st, mut bytesAll, desugar.StrRef(irFnName(mut st, f)))
+                table.Push(mut ents, table.Len(mut bytesAll) - table.Get(mut ents, 2 * k))
+                setCur(mut st, b0)
+                g := globaladdr(mut st, st.csCnt)
+                store(mut st, g, k, bin(mut st, BAdd, load(mut st, g, k), iconst(mut st, 1)))
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    n := table.Len(mut ents) / 2
+    // 名前のバイト列を 8 バイトの語に詰める（strlit と同じリトルエンディアン）・表 = [n, 位置 0, 長さ 0, …]
+    tw := listN(mut st, 1 + 2 * n)
+    desugar.HeapSet(mut st.d, tw + 1, n)
+    for k <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, tw + 2 + 2 * k, table.Get(mut ents, 2 * k))
+        desugar.HeapSet(mut st.d, tw + 3 + 2 * k, table.Get(mut ents, 2 * k + 1))
+    }
+    nb := table.Len(mut bytesAll)
+    nw := (nb + 7) / 8 + 1
+    bw := listN(mut st, nw)
+    for w <- iter.Range(0, nw) {
+        mut v := 0
+        mut j := 7
+        while j >= 0 {
+            q := w * 8 + j
+            v = (v << 8) | (if q < nb { table.Get(mut bytesAll, q) } else { 0 })
+            j -= 1
+        }
+        desugar.HeapSet(mut st.d, bw + 1 + w, v)
+    }
+    desugar.HeapSet(mut st.d, st.csTbl + G_WORDS, 1 + 2 * n)
+    desugar.HeapSet(mut st.d, st.csTbl + G_INIT, tw)
+    desugar.HeapSet(mut st.d, st.csBlob + G_WORDS, nw)
+    desugar.HeapSet(mut st.d, st.csBlob + G_INIT, bw)
+    desugar.HeapSet(mut st.d, st.csCnt + G_WORDS, n + 1)
+}
+
+// csSites は f の呼び出し（直 / 間接）ごとに手前へ数え口を足し、項目の名前「<呼び手> <通し番号> <callee> <深さ>」を積む
+func csSites(st mut St, f FnRef, bytesAll mut table.Table[int], ents mut table.Table[int]) {
+    depth := ilLoopDepth(mut st, f)
+    mut no := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        d := depth[irBlkId(mut st, b)]
+        mut ins := irBlkIHead(mut st, b)
+        irSetBlkIHead(mut st, b, -1)
+        irSetBlkITail(mut st, b, -1)
+        setCur(mut st, b)
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            op := irInsOp(mut st, ins)
+            if op == OpCall || op == OpCallI {
+                k := table.Len(mut ents) / 2
+                table.Push(mut ents, table.Len(mut bytesAll))
+                csPutStr(mut st, mut bytesAll, desugar.StrRef(irFnName(mut st, f)))
+                table.Push(mut bytesAll, ' ')
+                csPutInt(mut bytesAll, no)
+                table.Push(mut bytesAll, ' ')
+                if op == OpCall {
+                    csPutStr(mut st, mut bytesAll, desugar.StrRef(irFnName(mut st, irInsFn(mut st, ins))))
+                } else {
+                    table.Push(mut bytesAll, '*')
+                }
+                table.Push(mut bytesAll, ' ')
+                csPutInt(mut bytesAll, d)
+                table.Push(mut ents, table.Len(mut bytesAll) - table.Get(mut ents, 2 * k))
+                no += 1
+                g := globaladdr(mut st, st.csCnt)
+                store(mut st, g, k, bin(mut st, BAdd, load(mut st, g, k), iconst(mut st, 1)))
+            }
+            linkInst(mut st, b, ins)
+            ins = nx
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+func csPutStr(st mut St, out mut table.Table[int], s desugar.StrRef) {
+    for j <- iter.Range(0, slen(mut st, s)) {
+        table.Push(mut out, sat(mut st, s, j))
+    }
+}
+
+func csPutInt(out mut table.Table[int], n int) {
+    if n >= 10 {
+        csPutInt(mut out, n / 10)
+    }
+    table.Push(mut out, '0' + n % 10)
+}

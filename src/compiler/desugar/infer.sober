@@ -334,6 +334,14 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
             mt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
             return if isTag(mut st, mt, TMp) { tSlice(mut st, false, st.rdepth - 1, tKey(mut st, mt), false) } else { TyRef(-1) }
         }
+        // clone(x): 最内 region の mut（要素 / キー・値の型は元のまま — 読み出しの注釈は同じ型へ揃える）
+        if strIs(mut st, name, "clone") && na == 1 {
+            ct := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if isTag(mut st, ct, TSl) && tStrBit(mut st, ct) == 0 {
+                return tSlice(mut st, true, st.rdepth - 1, tElem(mut st, ct), false)
+            }
+            return if isTag(mut st, ct, TMp) { tMap(mut st, true, st.rdepth - 1, tKey(mut st, ct), tVal(mut st, ct)) } else { TyRef(-1) }
+        }
         if strIs(mut st, name, "append") {
             return if na != 2 { TyRef(-1) } else { computeTy(mut st, latN(mut st, args, 0), eb, ef) }
         }
@@ -653,7 +661,7 @@ func elemDeclOfExpr(st mut S, e NodeRef, eb int, ef int) int {
         st.trySkip = 0
         c0 := nA(nodeOf(mut st, e))
         args := lB(nodeOf(mut st, e))
-        if skip == 0 && kindN(mut st, c0) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c0)), "freeze") && lenL(mut st, args) == 1 {
+        if skip == 0 && kindN(mut st, c0) == ast.EIdent && (strIs(mut st, sA(nodeOf(mut st, c0)), "freeze") || strIs(mut st, sA(nodeOf(mut st, c0)), "clone")) && lenL(mut st, args) == 1 {
             return elemDeclOfExpr(mut st, latN(mut st, args, 0), eb, ef)
         }
         mut callee := c0

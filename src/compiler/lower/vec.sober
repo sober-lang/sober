@@ -12,6 +12,7 @@ package lower
 //   ④ 上限の検査は load より前（読み飛ばしの 16 バイトの読みの安全 = スカラーが同じ上限の内側だけを読む）・上限が 1 つ以上
 //   ⑤ latch の実引数: i の位置は i + 1・他の仮引数はそのまま（不変）
 
+import "desugar"
 import "std/iter"
 
 const VK_EQ = 0  // 出口 = x == K
@@ -68,11 +69,11 @@ func vecParamIdx(st mut St, h BlkRef, v int) int {
     mut k := 0
     mut p := irBlkPHead(mut st, h)
     while p >= 0 {
-        if hget(mut st, p + 1) == v {
+        if desugar.HeapGet(mut st.d, p + 1) == v {
             return k
         }
         k += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     return -1
 }
@@ -246,24 +247,24 @@ func vecLoop(st mut St, f FnRef, h BlkRef) bool {
     // 前置きに scanb を挿す（不変の値が h の仮引数なら前置きの実引数に読み替える）
     pargs := if pslot == 2 { irBlkX2(mut st, preh) } else if pslot == 3 { irBlkX3(mut st, preh) } else { irBlkX5(mut st, preh) }
     ops := listN(mut st, 2 + nl)
-    hset(mut st, ops + 1, vecOuter(mut st, h, pargs, base))
-    hset(mut st, ops + 2, xAt(mut st, pargs, ik))
+    desugar.HeapSet(mut st.d, ops + 1, vecOuter(mut st, h, pargs, base))
+    desugar.HeapSet(mut st.d, ops + 2, xAt(mut st, pargs, ik))
     for k <- iter.Range(0, nl) {
-        hset(mut st, ops + 3 + k, vecOuter(mut st, h, pargs, lims[k]))
+        desugar.HeapSet(mut st.d, ops + 3 + k, vecOuter(mut st, h, pargs, lims[k]))
     }
     desc := listN(mut st, 2 + 2 * npred)
-    hset(mut st, desc + 1, nl)
-    hset(mut st, desc + 2, npred)
+    desugar.HeapSet(mut st.d, desc + 1, nl)
+    desugar.HeapSet(mut st.d, desc + 2, npred)
     for k <- iter.Range(0, npred) {
-        hset(mut st, desc + 3 + 2 * k, kinds[k])
-        hset(mut st, desc + 4 + 2 * k, ks[k])
+        desugar.HeapSet(mut st.d, desc + 3 + 2 * k, kinds[k])
+        desugar.HeapSet(mut st.d, desc + 4 + 2 * k, ks[k])
     }
     j := newValueIn(mut st, f)
     linkInst(mut st, preh, mkInst(mut st, j, OpScanB, ops, desc, 0))
     // 前置きの実引数の列を写して i0 を j に（列は他の辺と共有しうるので書き換えない）
     nargs := listN(mut st, xLen(mut st, pargs))
     for k <- iter.Range(0, xLen(mut st, pargs)) {
-        hset(mut st, nargs + 1 + k, if k == ik { j } else { xAt(mut st, pargs, k) })
+        desugar.HeapSet(mut st.d, nargs + 1 + k, if k == ik { j } else { xAt(mut st, pargs, k) })
     }
     if pslot == 2 {
         irSetBlkX2(mut st, preh, nargs)
@@ -325,10 +326,10 @@ func vecParamAt(st mut St, h BlkRef, k int) int {
     mut p := irBlkPHead(mut st, h)
     while p >= 0 {
         if n == k {
-            return hget(mut st, p + 1)
+            return desugar.HeapGet(mut st.d, p + 1)
         }
         n += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     return -1
 }

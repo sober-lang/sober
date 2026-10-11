@@ -1,0 +1,26 @@
+package box
+
+// 欄の書き / 読みの規則（language.md 20 節）の相手の package: 他の package（testdata/fieldpkg/app・testdata/analyzer_neg/field_*）から見た struct。
+// 欄の書きはこの package の中だけ。mut の中身を持つ欄（xs・tags）は外から読めない — 読み書きは関数を通す
+type Inner struct {
+    k int
+}
+
+type Box struct {
+    n int
+    name string
+    inner Inner
+    xs mut []int
+    tags mut map[string]int
+}
+
+// Add は xs に積んで n を数える（同じ package の中の書き）
+func Add(b mut Box, x int) {
+    b.xs = append(b.xs, x)
+    b.n += 1
+    b.inner.k = b.inner.k + x
+}
+
+func Len(b mut Box) int {
+    return len(b.xs)
+}

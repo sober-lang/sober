@@ -16,6 +16,32 @@ type Node struct {
     kind, tok, a, b, c, d, e, f int
 }
 
+// WithA〜WithD は欄 a〜d を v に差し替えた節の写し（欄の書きは型を宣言した package の中だけ — language.md 20 節。
+// 他の package は写しを組み直す口としてこれを使う）
+func WithA(n Node, v int) Node {
+    mut m := n
+    m.a = v
+    return m
+}
+
+func WithB(n Node, v int) Node {
+    mut m := n
+    m.b = v
+    return m
+}
+
+func WithC(n Node, v int) Node {
+    mut m := n
+    m.c = v
+    return m
+}
+
+func WithD(n Node, v int) Node {
+    mut m := n
+    m.d = v
+    return m
+}
+
 // Tree は組み上がった表（Build 済み）。file は根（File 節）の添字
 type Tree struct {
     nodes []Node

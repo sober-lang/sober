@@ -1,0 +1,22 @@
+package main
+
+// 欄の規則の正例（language.md 20 節）: 他の package の struct の imm の欄は読める・struct ごと mut で渡せば相手の package の関数が書く・
+// 外からの構築（composite — 欄を全部書く）は今までどおり。同じ package の struct の欄は書ける
+import "testdata/fieldpkg/box"
+
+type Local struct {
+    count int
+    xs mut []int
+}
+
+func main() {
+    mut b := box.Box{n: 0, name: "first", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    box.Add(mut b, 3)
+    box.Add(mut b, 4)
+    println(b.n, b.name, b.inner.k, box.Len(mut b))
+    mut l := Local{count: 0, xs: mut []int{}}
+    l.count += 1
+    l.xs = append(l.xs, 5)
+    l.xs[0] = 6
+    println(l.count, l.xs[0])
+}

@@ -1,0 +1,10 @@
+package main
+
+// 複合代入
+import "testdata/fieldpkg/box"
+
+func main() {
+    mut b := box.Box{n: 0, name: "x", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    b.n += 1
+    println(b.name)
+}

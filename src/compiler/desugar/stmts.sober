@@ -335,8 +335,7 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
                 bi := pushLabel(mut st, brk)
                 ga := lB(nodeOf(mut st, gen))
                 lam := latN(mut st, ga, lenL(mut st, ga) - 1)
-                mut ln := nodeOf(mut st, lam)
-                ln.c = bi + 1
+                ln := ast.WithC(nodeOf(mut st, lam), bi + 1)
                 synSet(mut st, int(lam), ln)
                 v := expr(mut st, gen, eb, ef, depth)?
                 st.nlab = st.nlab - 1

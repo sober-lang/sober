@@ -1,0 +1,444 @@
+package lower
+
+// 型表（src/stage1/lower_types.zig の写し）: 型の記録とレイアウト（struct / union / T? の語オフセット）、型式の解決。
+// 型 = 4 語 [tag, a, b, c]。none / int / bool / never / nil は定数（st.tNone 等）。struct / union は情報の記録（番地）で同一性を持つ
+
+import "diag"
+import "desugar"
+import "ast"
+import "std/iter"
+
+const TNone = 0
+const TInt = 1
+const TBool = 2
+const TNever = 3
+const TNil = 4
+const TStruct = 5  // a = StructInfo
+const TUnion = 6   // a = UnionInfo
+const TOpt = 7     // a = 中身, b = 語数
+const TSlice = 8   // a = 要素, b = mut, c = string の印
+const TMap = 9     // a = キー, b = 値, c = mut
+const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
+const TFnv = 11    // a = FnType（関数値）
+const TNamed = 12  // named scalar（language.md 32 節）: a = 下地の型（int / bool）, b = 型宣言の節。表現は下地と同じ 1 語
+const TFloat = 14  // float（language.md 37 節）: 1 語に IEEE 754 binary64 のビット列（演算の瞬間だけ xmm へ — x86.sober の xFloat*）
+const TByte = 13   // byte（language.md 33 節）: 語の中の 0〜255（[]byte のセルは段 B まで語のまま）。型なしの整数定数を受ける・比較 6 種・算術なし
+
+// StructInfo / UnionInfo（st.types の鎖）: [tag(TStruct / TUnion), decl, pkg, fields / variants（列）, words, state, next, 型]
+const SI_DECL = 1
+const SI_PKG = 2
+const SI_FIELDS = 3
+const SI_WORDS = 4
+const SI_STATE = 5
+const SI_NEXT = 6
+const SI_TY = 7
+const SI_KEY = 8    // 型表のキー（"pkg_path.Name"、インスタンスは "pkg_path.Name[型…]" — typeKey の綴り）
+const SI_ENV = 9    // ジェネリック struct のインスタンスの型環境（他は -1）
+const SI_TARGS = 10 // 具体型引数の列（単一化用 — 他は -1）
+const SISZ = 11
+// レイアウトの状態
+const LPending = 0
+const LLaying = 1
+const LDone = 2
+// フィールド [name, 型, offset]・variant [name, tag, fields（フィールドの列）]
+
+func tTag(st mut St, t int) int {
+    return desugar.HeapGet(mut st.d, t)
+}
+
+func tNone(st mut St) int {
+    return st.tNone
+}
+
+func tInt(st mut St) int {
+    return st.tInt
+}
+
+func tBool(st mut St) int {
+    return st.tBool
+}
+
+// tByte は byte の型（使う例でだけ記録を作る — byte を使わない出力は不変）
+func tByte(st mut St) int {
+    if st.tByte == 0 {
+        st.tByte = rec4(mut st, TByte, 0, 0, 0)
+    }
+    return st.tByte
+}
+
+// tFloat は float の型（使う例でだけ記録を作る — float を使わない出力は不変）
+func tFloat(st mut St) int {
+    if st.tFloat == 0 {
+        st.tFloat = rec4(mut st, TFloat, 0, 0, 0)
+    }
+    return st.tFloat
+}
+
+// takesConst は型なしの定数を割り当てられる型か（named scalar・byte — 32 / 33 節）
+func takesConst(st mut St, t int) bool {
+    return isTag(mut st, t, TNamed) || isTag(mut st, t, TByte)
+}
+
+// constFits は型なしの定数 e を型 t（takesConst）に割り当てられるか: named は下地が定数の型 ct と同じ、byte は int の定数で値が 0〜255
+func constFits(st mut St, t int, ct int, e desugar.NodeRef) bool {
+    if isTag(mut st, t, TByte) {
+        return isTag(mut st, ct, TInt) && desugar.UntypedByte(mut st.d, e, st.curPkg)
+    }
+    return tEql(mut st, baseTy(mut st, t), ct)
+}
+
+func tNever(st mut St) int {
+    return st.tNever
+}
+
+func tNil(st mut St) int {
+    return st.tNil
+}
+
+func isTag(st mut St, t int, tag int) bool {
+    return desugar.HeapGet(mut st.d, t) == tag
+}
+
+// tWords は型の語数
+func tWords(st mut St, t int) int {
+    k := desugar.HeapGet(mut st.d, t)
+    return switch k {
+    case TInt | TBool | TFnv | TNamed | TByte | TFloat: 1
+    case TStruct | TUnion: desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_WORDS)
+    case TOpt: desugar.HeapGet(mut st.d, t + 2)
+    case TSlice: 3
+    // map のヘッダは 4 語目に索引の番地（M0 — rt.sober の buildMapFind。0 = 無し）
+    case TMap: 4
+    default: 0
+    }
+}
+
+// isScalar は 1 語の値（SSA の i64 で持つ）: int / bool / 関数値
+func isScalar(st mut St, t int) bool {
+    k := desugar.HeapGet(mut st.d, t)
+    return k == TInt || k == TBool || k == TFnv || k == TNamed || k == TByte || k == TFloat
+}
+
+// baseTy は named scalar の下地（他はそのまま）— 表現・印字・map のキーを下地で読む所だけが使う（演算の型付けは named のまま）
+func baseTy(st mut St, t int) int {
+    return if isTag(mut st, t, TNamed) { desugar.HeapGet(mut st.d, t + 1) } else { t }
+}
+
+// isIntLike は int か下地 int の named scalar
+func isIntLike(st mut St, t int) bool {
+    return isTag(mut st, baseTy(mut st, t), TInt)
+}
+
+// namedTy は named scalar の型宣言 td の型（下地の制限違反は -1）
+func namedTy(st mut St, td desugar.NodeRef) int {
+    u := desugar.NamedUnder(mut st.d, td)
+    if u < 0 {
+        return -1
+    }
+    return rec4(mut st, TNamed, if u == 0 { tInt(mut st) } else { tBool(mut st) }, int(td), 0)
+}
+
+func isAggregate(st mut St, t int) bool {
+    k := desugar.HeapGet(mut st.d, t)
+    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap
+}
+
+func isString(st mut St, t int) bool {
+    return desugar.HeapGet(mut st.d, t) == TSlice && desugar.HeapGet(mut st.d, t + 3) != 0
+}
+
+// irTy は値として IR に乗るときの型（値なしは -1）
+func irTy(st mut St, t int) int {
+    if isScalar(mut st, t) {
+        return TyI64
+    }
+    if isAggregate(mut st, t) {
+        return TyPtr
+    }
+    return -1
+}
+
+// tEql は型の等しさ（struct / union は情報の同一性、他は構造）
+func tEql(st mut St, a int, b int) bool {
+    if a == b {
+        return true
+    }
+    k := desugar.HeapGet(mut st.d, a)
+    if desugar.HeapGet(mut st.d, b) != k {
+        return false
+    }
+    switch k {
+    case TStruct | TUnion:
+        return desugar.HeapGet(mut st.d, a + 1) == desugar.HeapGet(mut st.d, b + 1)
+    case TNamed:
+        return desugar.HeapGet(mut st.d, a + 2) == desugar.HeapGet(mut st.d, b + 2)
+    case TOpt:
+        return tEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+    case TSlice:
+        return desugar.HeapGet(mut st.d, a + 2) == desugar.HeapGet(mut st.d, b + 2) && desugar.HeapGet(mut st.d, a + 3) == desugar.HeapGet(mut st.d, b + 3) && tEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+    case TMap:
+        return desugar.HeapGet(mut st.d, a + 3) == desugar.HeapGet(mut st.d, b + 3) && tEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1)) && tEql(mut st, desugar.HeapGet(mut st.d, a + 2), desugar.HeapGet(mut st.d, b + 2))
+    case TFunc | TFnv:
+        // 名前付き関数型は nominal（language.md 32 節 — 別の名前付きどうしは不可、片方が名前なしなら形で比べる）。名前 = c 欄（型宣言 + 1、0 = 名前なし）
+        na := desugar.HeapGet(mut st.d, a + 3)
+        nb := desugar.HeapGet(mut st.d, b + 3)
+        if na != 0 && nb != 0 && na != nb {
+            return false
+        }
+        return fnTypeEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+    }
+    return true
+}
+
+// FnType = [params（型の列）, results（型の列）]
+func fnTypeEql(st mut St, a int, b int) bool {
+    return tListEql(mut st, desugar.HeapGet(mut st.d, a), desugar.HeapGet(mut st.d, b)) && tListEql(mut st, desugar.HeapGet(mut st.d, a + 1), desugar.HeapGet(mut st.d, b + 1))
+}
+
+func tListEql(st mut St, a int, b int) bool {
+    n := desugar.HeapGet(mut st.d, a)
+    if desugar.HeapGet(mut st.d, b) != n {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if !tEql(mut st, desugar.HeapGet(mut st.d, a + 1 + i), desugar.HeapGet(mut st.d, b + 1 + i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// sretOf は結果の型の列が sret か（int / bool / 関数値 1 個以外）
+func sretOf(st mut St, rs int) bool {
+    n := desugar.HeapGet(mut st.d, rs)
+    return n > 1 || (n == 1 && !isScalar(mut st, desugar.HeapGet(mut st.d, rs + 1)))
+}
+
+// ── 型宣言の表 ──
+
+// registerTypes は全 package の非ジェネリックの struct / union を型表の鎖に積む（error ラベル・ジェネリックは未対応 — 使えば拒否）
+func registerTypes(st mut St) {
+    mut f := 0
+    while f < desugar.Nfile(mut st.d) {
+        pk := desugar.FilePkg(mut st.d, f)
+        tys := lC(nodeOf(mut st, fileRoot(mut st, f)))
+        for i <- iter.Range(0, lenL(mut st, tys)) {
+            td := latN(mut st, tys, i)
+            bk := kindN(mut st, nC(nodeOf(mut st, td)))
+            if lenL(mut st, lB(nodeOf(mut st, td))) == 0 && (bk == ast.BStruct || bk == ast.BUnion) {
+                info := recN(mut st, SISZ)
+                desugar.HeapSet(mut st.d, info, if bk == ast.BStruct { TStruct } else { TUnion })
+                desugar.HeapSet(mut st.d, info + SI_DECL, int(td))
+                desugar.HeapSet(mut st.d, info + SI_PKG, pk)
+                desugar.HeapSet(mut st.d, info + SI_WORDS, 0)
+                desugar.HeapSet(mut st.d, info + SI_STATE, LPending)
+                desugar.HeapSet(mut st.d, info + SI_NEXT, st.types)
+                desugar.HeapSet(mut st.d, info + SI_TY, rec4(mut st, desugar.HeapGet(mut st.d, info), info, 0, 0))
+                desugar.HeapSet(mut st.d, info + SI_KEY, int(strDot(mut st, pkgPath(mut st, pk), sA(nodeOf(mut st, td)))))
+                st.types = info
+            }
+        }
+        f += 1
+    }
+}
+
+// infoOf は型宣言 td の StructInfo / UnionInfo（無ければ -1）
+func infoOf(st mut St, td int) int {
+    mut x := st.types
+    while x >= 0 {
+        if desugar.HeapGet(mut st.d, x + SI_DECL) == td {
+            return x
+        }
+        x = desugar.HeapGet(mut st.d, x + SI_NEXT)
+    }
+    return -1
+}
+
+// lookupTypeDecl は型の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1。修飾参照は公開の検査つき — desugar.ResolveType）。pk は参照側の package
+func lookupTypeDecl(st mut St, pk int, name desugar.StrRef) desugar.NodeRef {
+    return desugar.LookupTypeDecl(mut st.d, pk, name)
+}
+
+// resolveType は型式 te を package pk の文脈で解決する（in_container: slice / map の要素位置 — レイアウト中の型も受ける）
+func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) {
+    k := kindN(mut st, te)
+    at := te
+    switch k {
+    case ast.TName:
+        n := sA(nodeOf(mut st, te))
+        bt := envLookup(mut st, st.tenv, n)
+        if bt >= 0 {
+            return bt, nil
+        }
+        if strIs(mut st, n, "int") {
+            return tInt(mut st), nil
+        }
+        if strIs(mut st, n, "bool") {
+            return tBool(mut st), nil
+        }
+        if strIs(mut st, n, "byte") {
+            return tByte(mut st), nil
+        }
+        if strIs(mut st, n, "float") {
+            return tFloat(mut st), nil
+        }
+        if strIs(mut st, n, "string") {
+            return mkString(mut st), nil
+        }
+        if strIs(mut st, n, "error") {
+            return errType(mut st)
+        }
+        td := lookupTypeDecl(mut st, pk, n)
+        if td == -1 {
+            return 0, diag.UndefinedType{at: posOf(mut st, at)}
+        }
+        if kindN(mut st, nC(nodeOf(mut st, td))) == ast.BDefined {
+            nt := namedTy(mut st, td)
+            if nt < 0 {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            return nt, nil
+        }
+        info := infoOf(mut st, int(td))
+        if info < 0 {
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        if !(inc && desugar.HeapGet(mut st.d, info + SI_STATE) == LLaying) {
+            layoutInfo(mut st, info)?
+        }
+        return desugar.HeapGet(mut st.d, info + SI_TY), nil
+    case ast.TTuple:
+        // 多値の型は std/par の Task の型引数にだけ（loader の検査 — P3b 残穴1）: lower の handle の型は Task[T]（T = 1 つ目 — Spawn の結果と同じ。
+        // error を返すかは表層型で読む — parSpawnTy / ParTaskTupleY）
+        return resolveType(mut st, pk, latN(mut st, lA(nodeOf(mut st, te)), 0), inc)
+    case ast.TGeneric:
+        info := instStruct(mut st, pk, sA(nodeOf(mut st, te)), lB(nodeOf(mut st, te)), at)?
+        if !(inc && desugar.HeapGet(mut st.d, info + SI_STATE) == LLaying) {
+            layoutInfo(mut st, info)?
+        }
+        return desugar.HeapGet(mut st.d, info + SI_TY), nil
+    case ast.TOpt:
+        payload := resolveType(mut st, pk, nA(nodeOf(mut st, te)), false)?
+        if isTag(mut st, payload, TOpt) {
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        return rec4(mut st, TOpt, payload, 1 + tWords(mut st, payload), 0), nil
+    case ast.TSlice:
+        elem := resolveType(mut st, pk, nA(nodeOf(mut st, te)), true)?
+        return rec4(mut st, TSlice, elem, nodeOf(mut st, te).b, 0), nil
+    case ast.TMap:
+        kt := resolveType(mut st, pk, nA(nodeOf(mut st, te)), false)?
+        if !isIntLike(mut st, kt) && !isString(mut st, kt) {
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
+        vt := resolveType(mut st, pk, nB(nodeOf(mut st, te)), true)?
+        return rec4(mut st, TMap, kt, vt, nodeOf(mut st, te).c), nil
+    case ast.TFunc:
+        ps := lA(nodeOf(mut st, te))
+        rs := lB(nodeOf(mut st, te))
+        pl := listN(mut st, lenL(mut st, ps))
+        for i <- iter.Range(0, lenL(mut st, ps)) {
+            t := resolveType(mut st, pk, latN(mut st, ps, i), false)?
+            desugar.HeapSet(mut st.d, pl + 1 + i, t)
+        }
+        rl := listN(mut st, lenL(mut st, rs))
+        for i <- iter.Range(0, lenL(mut st, rs)) {
+            t := resolveType(mut st, pk, latN(mut st, rs, i), false)?
+            desugar.HeapSet(mut st.d, rl + 1 + i, t)
+        }
+        ft := rec4(mut st, pl, rl, 0, 0)
+        return rec4(mut st, TFunc, ft, 0, int(desugar.NamedFnOf(mut st.d, int(te))) + 1), nil
+    }
+    return 0, diag.Unsupported{at: posOf(mut st, at)}
+}
+
+// layoutFields はフィールドの列（KField の列）を語オフセットつきで並べる（型は pk の文脈）。(フィールドの列, 語数)
+func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
+    n := lenL(mut st, dfs)
+    out := listN(mut st, n)
+    mut off := 0
+    for i <- iter.Range(0, n) {
+        df := latN(mut st, dfs, i)
+        mut j := 0
+        while j < i {
+            if strEq(mut st, sA(nodeOf(mut st, latN(mut st, dfs, j))), sA(nodeOf(mut st, df))) {
+                return Layout{}, diag.Mismatch{at: posOf(mut st, df)}
+            }
+            j += 1
+        }
+        rt := resolveType(mut st, pk, nB(nodeOf(mut st, df)), false)?
+        t := if isTag(mut st, rt, TFunc) { rec4(mut st, TFnv, desugar.HeapGet(mut st.d, rt + 1), 0, 0) } else { rt }
+        fr := rec4(mut st, nodeOf(mut st, df).a, t, off, 0)
+        desugar.HeapSet(mut st.d, out + 1 + i, fr)
+        off += tWords(mut st, t)
+    }
+    return Layout{fields: out, words: off}, nil
+}
+
+// layoutInfo は struct / union のレイアウト（済んでいれば何もしない。再帰は拒否）
+func layoutInfo(st mut St, info int) error? {
+    s := desugar.HeapGet(mut st.d, info + SI_STATE)
+    if s == LDone {
+        return nil
+    }
+    td := hgetN(mut st, info + SI_DECL)
+    if td == -1 {
+        return layoutErrs(mut st, info)
+    }
+    if s == LLaying {
+        return diag.Unsupported{at: posOf(mut st, td)}
+    }
+    desugar.HeapSet(mut st.d, info + SI_STATE, LLaying)
+    pk := desugar.HeapGet(mut st.d, info + SI_PKG)
+    body := nC(nodeOf(mut st, td))
+    // 型式は自分の型環境（ジェネリック struct の束縛。他は空）で読む — 下ろし中の関数の型環境を持ち込まない
+    saved_env := st.tenv
+    st.tenv = desugar.HeapGet(mut st.d, info + SI_ENV)
+    defer {
+        st.tenv = saved_env
+    }
+    layoutBody(mut st, info, pk, body)?
+    desugar.HeapSet(mut st.d, info + SI_STATE, LDone)
+    return nil
+}
+
+func layoutBody(st mut St, info int, pk int, body desugar.NodeRef) error? {
+    if desugar.HeapGet(mut st.d, info) == TStruct {
+        lay := layoutFields(mut st, pk, lA(nodeOf(mut st, body)))?
+        desugar.HeapSet(mut st.d, info + SI_FIELDS, lay.fields)
+        desugar.HeapSet(mut st.d, info + SI_WORDS, lay.words)
+    } else {
+        dvs := lA(nodeOf(mut st, body))
+        n := lenL(mut st, dvs)
+        vs := listN(mut st, n)
+        mut mx := 0
+        for i <- iter.Range(0, n) {
+            dv := latN(mut st, dvs, i)
+            lay := layoutFields(mut st, pk, lB(nodeOf(mut st, dv)))?
+            vr := rec4(mut st, nodeOf(mut st, dv).a, i, lay.fields, 0)
+            desugar.HeapSet(mut st.d, vs + 1 + i, vr)
+            if lay.words > mx {
+                mx = lay.words
+            }
+        }
+        desugar.HeapSet(mut st.d, info + SI_FIELDS, vs)
+        desugar.HeapSet(mut st.d, info + SI_WORDS, 1 + mx)
+    }
+    return nil
+}
+
+// findField はフィールドの列 fs の名前 name（文字列）の記録（無ければ -1）
+func findField(st mut St, fs desugar.ListRef, name desugar.StrRef) int {
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        f := latI(mut st, fs, i)
+        if strEq(mut st, hgetS(mut st, f), name) {
+            return f
+        }
+    }
+    return -1
+}
+
+// optOf は T? の型
+func optOf(st mut St, payload int) int {
+    return rec4(mut st, TOpt, payload, 1 + tWords(mut st, payload), 0)
+}

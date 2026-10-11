@@ -1,0 +1,167 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/utf8",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "utf8",
+                      "tok": 13
+                    },
+                    "field": "Check",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "bytes",
+                        "tok": 17
+                      },
+                      "args": [
+                        {
+                          "k": "strlit",
+                          "value": "ab",
+                          "tok": 19
+                        }
+                      ],
+                      "tok": 18
+                    }
+                  ],
+                  "tok": 16
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 23
+                },
+                "tok": 22
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "w"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "ident",
+                "name": "v",
+                "tok": 28
+              }
+            ],
+            "tok": 25
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 30
+                },
+                "field": "b",
+                "tok": 32
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "byte"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 255,
+                    "tok": 38
+                  }
+                ],
+                "mut": false,
+                "tok": 34
+              }
+            ],
+            "tok": 30
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 41
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 43
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "w",
+                        "tok": 45
+                      },
+                      "field": "b",
+                      "tok": 47
+                    }
+                  ],
+                  "tok": 44
+                }
+              ],
+              "tok": 42
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 53
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

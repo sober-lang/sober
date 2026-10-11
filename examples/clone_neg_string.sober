@@ -1,0 +1,7 @@
+package main
+
+// clone は slice / map だけを受ける（string は受けない — 書ける写しは bytes(s) を写す）
+func main() {
+    x := clone("abc")
+    println(len(bytes(x)))
+}

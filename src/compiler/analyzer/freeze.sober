@@ -1,6 +1,8 @@
 package analyzer
 
-// freeze の健全性の規則（F-al の修理便① — language.md 17 節 U1・U2・26 節 U3）。健全性の規則なので `sober build` でも走る（Freeze）。
+// freeze の健全性の規則（F-al の修理便① — language.md 17 節 U1・U2・26 節 U3）。健全性の規則なので `sober build` でも走る（FreezeCount）。
+// 規則の関数は作業域 z と表層の表 d の 2 引数（report-489 — build は lower の表を共有し、表層型の表を組み直さない。mut 仮引数が 2 つなので
+// check では Def に上げず展開する — formal.md「check の callM の段」の条件 1）。
 // 関数ごとに表層の本体を 1 回歩き、事象（freeze・buffer への書き・return）を出現順の通し番号つきで集め、束縛の名前の間に「持つ」の有向の辺
 // （a → b = a は b の buffer を持ちうる）を張ってから照合する。流れには鈍感（分岐の別の腕も「後」に数える — 保守の側）で、ループ（while・for・
 // ラムダの本体）の中の freeze は同じループの全部の事象を「後」に数える（次の周回）。return の中の freeze に後は無い。
@@ -83,10 +85,34 @@ type Fz struct {
     nLoops int
     nRoots int
     nSeen int
+    // 今の package（綴りと型の引き）・指摘 [種類, 節, 付帯の節]…（Az の外に持つ — 規則は d を引数で受け、Az に写さない〔report-484 / 489〕）
+    pk int
+    out table.Table[int]
 }
 
 const FZ_BUCKETS = 4096
 const FZ_DCACHE = 65536
+
+// fzNat・fzStr・fzReport は analyzer.sober の nat・str・report の d / Fz 版
+func fzNat(d mut desugar.S, l desugar.ListRef, i int) desugar.NodeRef {
+    return desugar.NodeRef(desugar.LatI(mut d, l, i))
+}
+
+func fzStr(d mut desugar.S, s desugar.StrRef) string {
+    n := desugar.Dat(mut d, int(s))
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(desugar.Dat(mut d, int(s) + 1 + i)))
+    }
+    r := string(freeze(b)) catch return "?"
+    return r
+}
+
+func fzReport(z mut Fz, k int, at desugar.NodeRef, x desugar.NodeRef) {
+    table.Push(mut z.out, k)
+    table.Push(mut z.out, int(at))
+    table.Push(mut z.out, int(x))
+}
 
 // fzAt は表 t の i 番目に v を置く（今の長さなら積む）
 func fzAt(t mut table.Table[int], i int, v int) {
@@ -97,114 +123,114 @@ func fzAt(t mut table.Table[int], i int, v int) {
     }
 }
 
-// freezeRules は全関数に U1〜U3 を掛ける（指摘は az.out へ）。skipStd = std の package を飛ばす（build — std は stage2 を建てるときの L0 の
+// freezeRules は全関数に U1〜U3 を掛ける（指摘は z.out へ）。skipStd = std の package を飛ばす（build — std は stage2 を建てるときの L0 の
 // check〔Run — 飛ばさない〕で同じ規則に掛かっていて、stage2 に焼き込んだ std は変わらない）
-func freezeRules(az mut Az, skipStd bool) {
-    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
-        az.pk = desugar.FilePkg(mut az.d, f)
-        if skipStd && desugar.IsStdPkg(mut az.d, az.pk) {
+func freezeRules(z mut Fz, d mut desugar.S, skipStd bool) {
+    for f <- iter.Range(0, desugar.Nfile(mut d)) {
+        z.pk = desugar.FilePkg(mut d, f)
+        if skipStd && desugar.IsStdPkg(mut d, z.pk) {
             continue
         }
-        root := desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f))
+        root := desugar.NodeOf(mut d, desugar.FileRoot(mut d, f))
         fs := desugar.ListRef(root.d)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
-            fd := desugar.NodeOf(mut az.d, nat(mut az, fs, i))
+        for i <- iter.Range(0, desugar.LenL(mut d, fs)) {
+            fd := desugar.NodeOf(mut d, fzNat(mut d, fs, i))
             if fd.e != -1 {
-                fzFunc(mut az, fd)
+                fzFunc(mut z, mut d, fd)
             }
         }
     }
 }
 
-func fzFunc(az mut Az, fd ast.Node) {
-    az.fz.nNames = 0
-    az.fz.nHold = 0
-    az.fz.nEsc = 0
-    az.fz.nEv = 0
-    az.fz.nLoops = 0
-    az.fz.nRoots = 0
-    az.fz.nSeen = 0
-    az.fz.seq = 0
-    az.fz.inRet = false
-    az.fz.nImp = 0
-    if table.Len(mut az.fz.bhead) == 0 {
+func fzFunc(z mut Fz, d mut desugar.S, fd ast.Node) {
+    z.nNames = 0
+    z.nHold = 0
+    z.nEsc = 0
+    z.nEv = 0
+    z.nLoops = 0
+    z.nRoots = 0
+    z.nSeen = 0
+    z.seq = 0
+    z.inRet = false
+    z.nImp = 0
+    if table.Len(mut z.bhead) == 0 {
         for i <- iter.Range(0, FZ_BUCKETS) {
-            table.Push(mut az.fz.bhead, -1)
-            table.Push(mut az.fz.bstamp, -1)
+            table.Push(mut z.bhead, -1)
+            table.Push(mut z.bstamp, -1)
         }
     }
-    az.fz.stamp += 1
-    az.fz.exempt = (desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, az.pk), "std/table") && desugar.StrIs(mut az.d, desugar.StrRef(fd.a), "Freeze")) ||
-        (desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, az.pk), "std/strings") && desugar.StrIs(mut az.d, desugar.StrRef(fd.a), "Clone"))
+    z.stamp += 1
+    z.exempt = (desugar.StrIs(mut d, desugar.PkgPath(mut d, z.pk), "std/table") && desugar.StrIs(mut d, desugar.StrRef(fd.a), "Freeze")) ||
+        (desugar.StrIs(mut d, desugar.PkgPath(mut d, z.pk), "std/strings") && desugar.StrIs(mut d, desugar.StrRef(fd.a), "Clone"))
     ps := desugar.ListRef(fd.c)
-    for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
-        pn := nat(mut az, ps, i)
-        p := node(mut az, pn)
-        k := fzName(mut az, p.a, 0, desugar.Dat(mut az.d, p.a))
-        table.Set(mut az.fz.ptype, k, p.b)
-        if ast.ParamIsMut(p) && fzTyContainer(mut az, az.pk, desugar.NodeRef(p.b), 8) {
-            table.Set(mut az.fz.param, k, int(pn))
+    for i <- iter.Range(0, desugar.LenL(mut d, ps)) {
+        pn := fzNat(mut d, ps, i)
+        p := desugar.NodeOf(mut d, pn)
+        k := fzName(mut z, mut d, p.a, 0, desugar.Dat(mut d, p.a))
+        table.Set(mut z.ptype, k, p.b)
+        if ast.ParamIsMut(p) && fzTyContainer(mut z, mut d, z.pk, desugar.NodeRef(p.b), 8) {
+            table.Set(mut z.param, k, int(pn))
         }
     }
-    fzStmts(mut az, desugar.ListRef(desugar.NodeOf(mut az.d, desugar.NodeRef(fd.e)).a))
-    fzJudge(mut az)
+    fzStmts(mut z, mut d, desugar.ListRef(desugar.NodeOf(mut d, desugar.NodeRef(fd.e)).a))
+    fzJudge(mut z, mut d)
 }
 
 // ── 名前 ──
 
 // fzName は名前（ref の [lo, hi)）の番号（無ければ足す）
-func fzName(az mut Az, ref int, lo int, hi int) int {
-    n := az.fz.nNames
+func fzName(z mut Fz, d mut desugar.S, ref int, lo int, hi int) int {
+    n := z.nNames
     // 新しい順に引く（兄弟のスコープで同じ名前を宣言し直すと新しい項 — fzDeclName — になり、以後はそれを指す）。鎖はハッシュの同じ名前だけ
-    h := fzHash(mut az, ref, lo, hi)
-    mut k := if table.Get(mut az.fz.bstamp, h) == az.fz.stamp { table.Get(mut az.fz.bhead, h) } else { -1 }
+    h := fzHash(mut z, mut d, ref, lo, hi)
+    mut k := if table.Get(mut z.bstamp, h) == z.stamp { table.Get(mut z.bhead, h) } else { -1 }
     while k >= 0 {
-        r2 := table.Get(mut az.fz.names, 3 * k)
-        l2 := table.Get(mut az.fz.names, 3 * k + 1)
-        h2 := table.Get(mut az.fz.names, 3 * k + 2)
-        if h2 - l2 == hi - lo && fzSame(mut az, ref, lo, r2, l2, hi - lo) {
+        r2 := table.Get(mut z.names, 3 * k)
+        l2 := table.Get(mut z.names, 3 * k + 1)
+        h2 := table.Get(mut z.names, 3 * k + 2)
+        if h2 - l2 == hi - lo && fzSame(mut z, mut d, ref, lo, r2, l2, hi - lo) {
             return k
         }
-        k = table.Get(mut az.fz.bnext, k)
+        k = table.Get(mut z.bnext, k)
     }
-    fzNewName(mut az, n, ref, lo, hi)
+    fzNewName(mut z, mut d, n, ref, lo, hi)
     return n
 }
 
 // fzDeclName は宣言（束縛・for の変数・パターンの束縛）の名前の番号: 同じ名前の項があっても新しい項を足す（兄弟のスコープの別の束縛）
-func fzDeclName(az mut Az, ref int) int {
-    n := az.fz.nNames
-    fzNewName(mut az, n, ref, 0, desugar.Dat(mut az.d, ref))
+func fzDeclName(z mut Fz, d mut desugar.S, ref int) int {
+    n := z.nNames
+    fzNewName(mut z, mut d, n, ref, 0, desugar.Dat(mut d, ref))
     return n
 }
 
 // fzNewName は名前の項 n を置く（param / ptype / decl は初期値）
-func fzNewName(az mut Az, n int, ref int, lo int, hi int) {
-    fzAt(mut az.fz.names, 3 * n, ref)
-    fzAt(mut az.fz.names, 3 * n + 1, lo)
-    fzAt(mut az.fz.names, 3 * n + 2, hi)
-    fzAt(mut az.fz.param, n, -1)
-    fzAt(mut az.fz.ptype, n, -1)
-    fzAt(mut az.fz.decl, n, 0)
-    h := fzHash(mut az, ref, lo, hi)
-    fzAt(mut az.fz.bnext, n, if table.Get(mut az.fz.bstamp, h) == az.fz.stamp { table.Get(mut az.fz.bhead, h) } else { -1 })
-    table.Set(mut az.fz.bhead, h, n)
-    table.Set(mut az.fz.bstamp, h, az.fz.stamp)
-    az.fz.nNames = n + 1
+func fzNewName(z mut Fz, d mut desugar.S, n int, ref int, lo int, hi int) {
+    fzAt(mut z.names, 3 * n, ref)
+    fzAt(mut z.names, 3 * n + 1, lo)
+    fzAt(mut z.names, 3 * n + 2, hi)
+    fzAt(mut z.param, n, -1)
+    fzAt(mut z.ptype, n, -1)
+    fzAt(mut z.decl, n, 0)
+    h := fzHash(mut z, mut d, ref, lo, hi)
+    fzAt(mut z.bnext, n, if table.Get(mut z.bstamp, h) == z.stamp { table.Get(mut z.bhead, h) } else { -1 })
+    table.Set(mut z.bhead, h, n)
+    table.Set(mut z.bstamp, h, z.stamp)
+    z.nNames = n + 1
 }
 
 // fzHash は名前の綴りのハッシュ（FZ_BUCKETS 未満）
-func fzHash(az mut Az, ref int, lo int, hi int) int {
+func fzHash(z mut Fz, d mut desugar.S, ref int, lo int, hi int) int {
     mut h := hi - lo
     for i <- iter.Range(lo, hi) {
-        h = (h * 31 + desugar.Dat(mut az.d, ref + 1 + i)) & 1048575
+        h = (h * 31 + desugar.Dat(mut d, ref + 1 + i)) & 1048575
     }
     return h & (FZ_BUCKETS - 1)
 }
 
-func fzSame(az mut Az, a int, alo int, b int, blo int, n int) bool {
+func fzSame(z mut Fz, d mut desugar.S, a int, alo int, b int, blo int, n int) bool {
     for i <- iter.Range(0, n) {
-        if desugar.Dat(mut az.d, a + 1 + alo + i) != desugar.Dat(mut az.d, b + 1 + blo + i) {
+        if desugar.Dat(mut d, a + 1 + alo + i) != desugar.Dat(mut d, b + 1 + blo + i) {
             return false
         }
     }
@@ -212,298 +238,298 @@ func fzSame(az mut Az, a int, alo int, b int, blo int, n int) bool {
 }
 
 // fzMutRoot は `mut p.q` の道の根（先頭の区間）の名前の番号
-func fzMutRoot(az mut Az, ref int) int {
-    n := desugar.Dat(mut az.d, ref)
+func fzMutRoot(z mut Fz, d mut desugar.S, ref int) int {
+    n := desugar.Dat(mut d, ref)
     mut hi := 0
-    while hi < n && desugar.Dat(mut az.d, ref + 1 + hi) != '.' {
+    while hi < n && desugar.Dat(mut d, ref + 1 + hi) != '.' {
         hi += 1
     }
-    return fzName(mut az, ref, 0, hi)
+    return fzName(mut z, mut d, ref, 0, hi)
 }
 
 // fzRootOf は道（名前・欄・添字・部分列・括弧の鎖）の根の名前の番号（道でなければ -1）
-func fzRootOf(az mut Az, e desugar.NodeRef) int {
+func fzRootOf(z mut Fz, d mut desugar.S, e desugar.NodeRef) int {
     if e == -1 {
         return -1
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.EIdent && gk != ast.ESelector && gk != ast.EIndex && gk != ast.ESlice3 && gk != ast.EParen {
         return -1
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if x.kind == ast.EIdent {
-        return fzName(mut az, x.a, 0, desugar.Dat(mut az.d, x.a))
+        return fzName(mut z, mut d, x.a, 0, desugar.Dat(mut d, x.a))
     }
     if x.kind == ast.ESelector || x.kind == ast.EIndex || x.kind == ast.ESlice3 || x.kind == ast.EParen {
-        return fzRootOf(mut az, desugar.NodeRef(x.a))
+        return fzRootOf(mut z, mut d, desugar.NodeRef(x.a))
     }
     return -1
 }
 
 // fzHasIndex は道 e が添字を通るか（`x[i]`・`x.f[i]` — buffer への書きの的）
-func fzHasIndex(az mut Az, e desugar.NodeRef) bool {
+func fzHasIndex(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
     if e == -1 {
         return false
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.EIndex && gk != ast.ESelector && gk != ast.EParen {
         return false
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if x.kind == ast.EIndex {
         return true
     }
     if x.kind == ast.ESelector || x.kind == ast.EParen {
-        return fzHasIndex(mut az, desugar.NodeRef(x.a))
+        return fzHasIndex(mut z, mut d, desugar.NodeRef(x.a))
     }
     return false
 }
 
 // ── 値の位置の根 ──
 
-func fzClear(az mut Az) {
-    az.fz.nRoots = 0
+func fzClear(z mut Fz, d mut desugar.S) {
+    z.nRoots = 0
 }
 
-func fzPushRoot(az mut Az, r int, rk int, path desugar.NodeRef) {
-    n := az.fz.nRoots
-    fzAt(mut az.fz.roots, 3 * n, r)
-    fzAt(mut az.fz.roots, 3 * n + 1, rk)
-    fzAt(mut az.fz.roots, 3 * n + 2, int(path))
-    az.fz.nRoots = n + 1
+func fzPushRoot(z mut Fz, d mut desugar.S, r int, rk int, path desugar.NodeRef) {
+    n := z.nRoots
+    fzAt(mut z.roots, 3 * n, r)
+    fzAt(mut z.roots, 3 * n + 1, rk)
+    fzAt(mut z.roots, 3 * n + 2, int(path))
+    z.nRoots = n + 1
 }
 
-// fzVal は式 e の値（ヘッダ）の位置の根を az.fz.roots へ積む
-func fzVal(az mut Az, e desugar.NodeRef) {
-    fzValP(mut az, e, RkHead, desugar.NodeRef(-1))
+// fzVal は式 e の値（ヘッダ）の位置の根を z.roots へ積む
+func fzVal(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
+    fzValP(mut z, mut d, e, RkHead, desugar.NodeRef(-1))
 }
 
 // fzValP は fzVal の本体（rk = 今の種類・top = 欄 / 添字の鎖の外側の式 — 根の名前に届いたとき道の節として積む）
-func fzValP(az mut Az, e desugar.NodeRef, rk int, top desugar.NodeRef) {
+func fzValP(z mut Fz, d mut desugar.S, e desugar.NodeRef, rk int, top desugar.NodeRef) {
     if e == -1 {
         return
     }
-    if az.fz.nImp > 0 && fzIsImplicit(mut az, e) {
+    if z.nImp > 0 && fzIsImplicit(mut z, mut d, e) {
         // 暗黙の freeze の点: freeze の呼び出しの結果と同じく imm の見え方 — 辺を張らない
         return
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.EIdent && gk != ast.ESelector && gk != ast.EParen && gk != ast.ESlice3 && gk != ast.EIndex && gk != ast.ECall && gk != ast.EComposite && gk != ast.EIf && gk != ast.ESwitch && gk != ast.EBlock && gk != ast.ETry {
         return
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     k := x.kind
     t := if top == -1 { e } else { top }
     if k == ast.EIdent {
-        fzPushRoot(mut az, fzName(mut az, x.a, 0, desugar.Dat(mut az.d, x.a)), rk, t)
+        fzPushRoot(mut z, mut d, fzName(mut z, mut d, x.a, 0, desugar.Dat(mut d, x.a)), rk, t)
     } else if k == ast.ESelector || k == ast.EParen || k == ast.ESlice3 {
-        fzValP(mut az, desugar.NodeRef(x.a), rk, t)
+        fzValP(mut z, mut d, desugar.NodeRef(x.a), rk, t)
     } else if k == ast.EIndex {
-        fzValP(mut az, desugar.NodeRef(x.a), RkElem, t)
+        fzValP(mut z, mut d, desugar.NodeRef(x.a), RkElem, t)
     } else if k == ast.ECall {
         callee := desugar.NodeRef(x.a)
         as := desugar.ListRef(x.b)
-        if kind(mut az, callee) == ast.EIdent && desugar.LenL(mut az.d, as) > 0 {
-            cn := desugar.StrRef(node(mut az, callee).a)
-            if desugar.StrIs(mut az.d, cn, "append") {
+        if desugar.KindN(mut d, callee) == ast.EIdent && desugar.LenL(mut d, as) > 0 {
+            cn := desugar.StrRef(desugar.NodeOf(mut d, callee).a)
+            if desugar.StrIs(mut d, cn, "append") {
                 // 結果のヘッダは第 1 実引数のヘッダ（その場で伸びる）。append の残りは要素の格納（fzElems）。freeze の結果は imm の見え方で、
                 // それを持つ束縛・欄からは書けない — 辺を張らない（凍結した値への書きは元の束縛の側で U2 が見る）
-                fzValP(mut az, nat(mut az, as, 0), RkHead, desugar.NodeRef(-1))
+                fzValP(mut z, mut d, fzNat(mut d, as, 0), RkHead, desugar.NodeRef(-1))
             }
         }
         // 他の呼び出しの結果: ヘッダは新しい値（U3）。mut で渡した実引数の要素を返しうる分は、値がその呼び出しそのものの束縛でだけ見る（fzCallRoots）
     } else if k == ast.EComposite {
         es := desugar.ListRef(x.b)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-            fzValP(mut az, desugar.NodeRef(node(mut az, nat(mut az, es, i)).b), RkHead, desugar.NodeRef(-1))
+        for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+            fzValP(mut z, mut d, desugar.NodeRef(desugar.NodeOf(mut d, fzNat(mut d, es, i)).b), RkHead, desugar.NodeRef(-1))
         }
     } else if k == ast.EIf {
-        fzTail(mut az, desugar.NodeRef(x.b))
+        fzTail(mut z, mut d, desugar.NodeRef(x.b))
         els := desugar.NodeRef(x.c)
         if els != -1 {
-            ek := kind(mut az, els)
+            ek := desugar.KindN(mut d, els)
             if ek == ast.EBlock || ek == ast.KBlock {
-                fzTail(mut az, els)
+                fzTail(mut z, mut d, els)
             } else {
-                fzValP(mut az, els, RkHead, desugar.NodeRef(-1))
+                fzValP(mut z, mut d, els, RkHead, desugar.NodeRef(-1))
             }
         }
     } else if k == ast.ESwitch {
         cs := desugar.ListRef(x.b)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
-            fzTail(mut az, desugar.NodeRef(node(mut az, nat(mut az, cs, i)).b))
+        for i <- iter.Range(0, desugar.LenL(mut d, cs)) {
+            fzTail(mut z, mut d, desugar.NodeRef(desugar.NodeOf(mut d, fzNat(mut d, cs, i)).b))
         }
         if x.c != -1 {
-            fzTail(mut az, desugar.NodeRef(x.c))
+            fzTail(mut z, mut d, desugar.NodeRef(x.c))
         }
     } else if k == ast.EBlock {
-        fzTail(mut az, e)
+        fzTail(mut z, mut d, e)
     } else if k == ast.ETry {
-        fzValP(mut az, desugar.NodeRef(x.a), RkHead, desugar.NodeRef(-1))
+        fzValP(mut z, mut d, desugar.NodeRef(x.a), RkHead, desugar.NodeRef(-1))
     }
 }
 
 // fzTail はブロックの末尾の式文の値の根を積む
-func fzTail(az mut Az, b desugar.NodeRef) {
+func fzTail(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     if b == -1 {
         return
     }
-    l := desugar.ListRef(node(mut az, b).a)
-    n := desugar.LenL(mut az.d, l)
+    l := desugar.ListRef(desugar.NodeOf(mut d, b).a)
+    n := desugar.LenL(mut d, l)
     if n == 0 {
         return
     }
-    s := node(mut az, nat(mut az, l, n - 1))
+    s := desugar.NodeOf(mut d, fzNat(mut d, l, n - 1))
     if s.kind == ast.SExpr {
-        fzValP(mut az, desugar.NodeRef(s.a), RkHead, desugar.NodeRef(-1))
+        fzValP(mut z, mut d, desugar.NodeRef(s.a), RkHead, desugar.NodeRef(-1))
     }
 }
 
 // fzCallRoots は値 e が呼び出しそのもの（`x := f(mut a)`・`?` つき）なら、mut で渡した実引数を RkCall の根として積む（呼び先は要素を返してよい —
 // 結果は実引数の要素を持ちうる: 実引数 → 結果）。composite の欄の中の呼び出しは見ない（欄の区別が無い辺は無関係な欄まで持つ扱いにする）
-func fzCallRoots(az mut Az, e desugar.NodeRef) {
+func fzCallRoots(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     if e == -1 {
         return
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.ECall && gk != ast.ETry && gk != ast.EParen {
         return
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if x.kind == ast.ETry || x.kind == ast.EParen {
-        fzCallRoots(mut az, desugar.NodeRef(x.a))
+        fzCallRoots(mut z, mut d, desugar.NodeRef(x.a))
         return
     }
     if x.kind != ast.ECall {
         return
     }
     as := desugar.ListRef(x.b)
-    for i <- iter.Range(0, desugar.LenL(mut az.d, as)) {
-        an := nat(mut az, as, i)
-        a := node(mut az, an)
+    for i <- iter.Range(0, desugar.LenL(mut d, as)) {
+        an := fzNat(mut d, as, i)
+        a := desugar.NodeOf(mut d, an)
         if a.kind == ast.EMutArg {
-            fzPushRoot(mut az, fzMutRoot(mut az, a.a), RkCall, an)
+            fzPushRoot(mut z, mut d, fzMutRoot(mut z, mut d, a.a), RkCall, an)
         }
     }
 }
 
 // fzElems は値 e の中に要素として格納される式（append の 2 番目以降・slice / map のリテラルの要素）の根を積む
-func fzElems(az mut Az, e desugar.NodeRef) {
+func fzElems(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     if e == -1 {
         return
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.ECall && gk != ast.ESlicelit && gk != ast.EMaplit {
         return
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if x.kind == ast.ECall {
         callee := desugar.NodeRef(x.a)
         as := desugar.ListRef(x.b)
-        if kind(mut az, callee) == ast.EIdent && desugar.StrIs(mut az.d, desugar.StrRef(node(mut az, callee).a), "append") {
-            for i <- iter.Range(1, desugar.LenL(mut az.d, as)) {
-                fzValP(mut az, nat(mut az, as, i), RkHead, desugar.NodeRef(-1))
+        if desugar.KindN(mut d, callee) == ast.EIdent && desugar.StrIs(mut d, desugar.StrRef(desugar.NodeOf(mut d, callee).a), "append") {
+            for i <- iter.Range(1, desugar.LenL(mut d, as)) {
+                fzValP(mut z, mut d, fzNat(mut d, as, i), RkHead, desugar.NodeRef(-1))
             }
         }
     } else if x.kind == ast.ESlicelit {
         es := desugar.ListRef(x.b)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-            fzValP(mut az, nat(mut az, es, i), RkHead, desugar.NodeRef(-1))
+        for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+            fzValP(mut z, mut d, fzNat(mut d, es, i), RkHead, desugar.NodeRef(-1))
         }
     } else if x.kind == ast.EMaplit {
         es := desugar.ListRef(x.c)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-            en := node(mut az, nat(mut az, es, i))
-            fzValP(mut az, desugar.NodeRef(en.a), RkHead, desugar.NodeRef(-1))
-            fzValP(mut az, desugar.NodeRef(en.b), RkHead, desugar.NodeRef(-1))
+        for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+            en := desugar.NodeOf(mut d, fzNat(mut d, es, i))
+            fzValP(mut z, mut d, desugar.NodeRef(en.a), RkHead, desugar.NodeRef(-1))
+            fzValP(mut z, mut d, desugar.NodeRef(en.b), RkHead, desugar.NodeRef(-1))
         }
     }
 }
 
 // fzHoldEdge は a → b（a は b の buffer を持ちうる）を張る
-func fzHoldEdge(az mut Az, a int, b int, at desugar.NodeRef) {
+func fzHoldEdge(z mut Fz, d mut desugar.S, a int, b int, at desugar.NodeRef) {
     if a >= 0 && b >= 0 && a != b {
-        n := az.fz.nHold
-        fzAt(mut az.fz.hold, 3 * n, a)
-        fzAt(mut az.fz.hold, 3 * n + 1, b)
-        fzAt(mut az.fz.hold, 3 * n + 2, int(at))
-        az.fz.nHold = n + 1
+        n := z.nHold
+        fzAt(mut z.hold, 3 * n, a)
+        fzAt(mut z.hold, 3 * n + 1, b)
+        fzAt(mut z.hold, 3 * n + 2, int(at))
+        z.nHold = n + 1
     }
 }
 
 // fzLinkHead は受け手 dst の値（ヘッダ）として積んだ根から辺を張る: ヘッダは両向き・要素の読みは 根 → dst
-func fzLinkHead(az mut Az, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
+func fzLinkHead(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
     // 受け手の道がスカラー・imm のコンテナ（型が分かる欄）なら、書ける別名は生まれない
-    if tgt != -1 && (!fzPathContainer(mut az, tgt) || fzPathImm(mut az, tgt)) {
+    if tgt != -1 && (!fzPathContainer(mut z, mut d, tgt) || fzPathImm(mut z, mut d, tgt)) {
         return
     }
-    n := az.fz.nRoots
+    n := z.nRoots
     for i <- iter.Range(0, n) {
-        r := table.Get(mut az.fz.roots, 3 * i)
-        rk := table.Get(mut az.fz.roots, 3 * i + 1)
-        path := desugar.NodeRef(table.Get(mut az.fz.roots, 3 * i + 2))
+        r := table.Get(mut z.roots, 3 * i)
+        rk := table.Get(mut z.roots, 3 * i + 1)
+        path := desugar.NodeRef(table.Get(mut z.roots, 3 * i + 2))
         if rk == RkHead {
             // スカラーの道（型が分かる仮引数の欄など）の写しは別名でない
-            if fzPathContainer(mut az, path) {
-                fzHoldEdge(mut az, dst, r, at)
-                fzHoldEdge(mut az, r, dst, at)
-                fzEscEdge(mut az, dst, tgt, r, path, at)
+            if fzPathContainer(mut z, mut d, path) {
+                fzHoldEdge(mut z, mut d, dst, r, at)
+                fzHoldEdge(mut z, mut d, r, dst, at)
+                fzEscEdge(mut z, mut d, dst, tgt, r, path, at)
             }
         } else {
-            fzHoldEdge(mut az, r, dst, at)
+            fzHoldEdge(mut z, mut d, r, dst, at)
             if rk == RkElem {
-                fzEscEdge(mut az, dst, tgt, r, path, at)
+                fzEscEdge(mut z, mut d, dst, tgt, r, path, at)
             }
         }
     }
 }
 
 // fzLinkElem は受け手 dst の要素として格納される根から辺を張る（dst → 根）
-func fzLinkElem(az mut Az, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
-    n := az.fz.nRoots
+func fzLinkElem(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, at desugar.NodeRef) {
+    n := z.nRoots
     for i <- iter.Range(0, n) {
-        r := table.Get(mut az.fz.roots, 3 * i)
+        r := table.Get(mut z.roots, 3 * i)
         // スカラーの要素の写し（`b2 = append(b2, b[k])` の byte）は別名でない
-        if table.Get(mut az.fz.roots, 3 * i + 1) == RkElem && !fzPathContainer(mut az, desugar.NodeRef(table.Get(mut az.fz.roots, 3 * i + 2))) {
+        if table.Get(mut z.roots, 3 * i + 1) == RkElem && !fzPathContainer(mut z, mut d, desugar.NodeRef(table.Get(mut z.roots, 3 * i + 2))) {
             continue
         }
-        fzHoldEdge(mut az, dst, r, at)
-        fzEscEdge(mut az, dst, tgt, r, desugar.NodeRef(table.Get(mut az.fz.roots, 3 * i + 2)), at)
+        fzHoldEdge(mut z, mut d, dst, r, at)
+        fzEscEdge(mut z, mut d, dst, tgt, r, desugar.NodeRef(table.Get(mut z.roots, 3 * i + 2)), at)
     }
 }
 
 // fzEscEdge は U3 の逃げの辺（受け手と値の両方の道がコンテナのとき）
-func fzEscEdge(az mut Az, dst int, tgt desugar.NodeRef, r int, path desugar.NodeRef, at desugar.NodeRef) {
-    if dst < 0 || dst == r || r < 0 || table.Get(mut az.fz.param, dst) < 0 || table.Get(mut az.fz.param, r) < 0 {
+func fzEscEdge(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, r int, path desugar.NodeRef, at desugar.NodeRef) {
+    if dst < 0 || dst == r || r < 0 || table.Get(mut z.param, dst) < 0 || table.Get(mut z.param, r) < 0 {
         return
     }
-    if (tgt == -1 || fzPathContainer(mut az, tgt)) && fzPathContainer(mut az, path) {
-        n := az.fz.nEsc
-        fzAt(mut az.fz.esc, 3 * n, dst)
-        fzAt(mut az.fz.esc, 3 * n + 1, r)
-        fzAt(mut az.fz.esc, 3 * n + 2, int(if path == -1 { at } else { path }))
-        az.fz.nEsc = n + 1
+    if (tgt == -1 || fzPathContainer(mut z, mut d, tgt)) && fzPathContainer(mut z, mut d, path) {
+        n := z.nEsc
+        fzAt(mut z.esc, 3 * n, dst)
+        fzAt(mut z.esc, 3 * n + 1, r)
+        fzAt(mut z.esc, 3 * n + 2, int(if path == -1 { at } else { path }))
+        z.nEsc = n + 1
     }
 }
 
 // ── 道の型（U3 でスカラーの欄・要素を除く — 仮引数の型から欄・要素の宣言を引く。引けなければコンテナとみなす = 保守の側）──
 
 // fzPathContainer は道 e の値がコンテナ（書かれうる buffer を持ちうる）か。根が仮引数でなければ true
-func fzPathContainer(az mut Az, e desugar.NodeRef) bool {
-    t, pk := fzPathTy(mut az, e)
+func fzPathContainer(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
+    t, pk := fzPathTy(mut z, mut d, e)
     if t == -2 {
         return true
     }
-    return fzTyContainer(mut az, pk, desugar.NodeRef(t), 8)
+    return fzTyContainer(mut z, mut d, pk, desugar.NodeRef(t), 8)
 }
 
 // fzPathImm は道 e の型が分かって imm のコンテナ（`[]T`・`map[K]V`・string）か
-func fzPathImm(az mut Az, e desugar.NodeRef) bool {
-    t, _ := fzPathTy(mut az, e)
+func fzPathImm(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
+    t, _ := fzPathTy(mut z, mut d, e)
     if t < 0 {
         return false
     }
-    x := node(mut az, desugar.NodeRef(t))
+    x := desugar.NodeOf(mut d, desugar.NodeRef(t))
     if x.kind == ast.TSlice {
         return x.b == 0
     }
@@ -513,40 +539,40 @@ func fzPathImm(az mut Az, e desugar.NodeRef) bool {
     if x.kind == ast.EMaplit {
         return x.d == 0
     }
-    return x.kind == ast.TName && desugar.StrIs(mut az.d, desugar.StrRef(x.a), "string")
+    return x.kind == ast.TName && desugar.StrIs(mut d, desugar.StrRef(x.a), "string")
 }
 
 // fzPathTy は道 e の型の節と、その型を解決する package（分からなければ -2）
-func fzPathTy(az mut Az, e desugar.NodeRef) (int, int) {
+func fzPathTy(z mut Fz, d mut desugar.S, e desugar.NodeRef) (int, int) {
     if e == -1 {
         return -2, 0
     }
-    gk := kind(mut az, e)
+    gk := desugar.KindN(mut d, e)
     if gk != ast.EIdent && gk != ast.EParen && gk != ast.ESelector && gk != ast.EIndex {
         return -2, 0
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if x.kind == ast.EIdent {
-        k := fzName(mut az, x.a, 0, desugar.Dat(mut az.d, x.a))
-        t := table.Get(mut az.fz.ptype, k)
-        return if t == -1 { -2 } else { t }, az.pk
+        k := fzName(mut z, mut d, x.a, 0, desugar.Dat(mut d, x.a))
+        t := table.Get(mut z.ptype, k)
+        return if t == -1 { -2 } else { t }, z.pk
     }
     if x.kind == ast.EParen {
-        return fzPathTy(mut az, desugar.NodeRef(x.a))
+        return fzPathTy(mut z, mut d, desugar.NodeRef(x.a))
     }
     if x.kind == ast.ESelector {
-        bt, bpk := fzPathTy(mut az, desugar.NodeRef(x.a))
+        bt, bpk := fzPathTy(mut z, mut d, desugar.NodeRef(x.a))
         if bt == -2 {
             return -2, 0
         }
-        return fzFieldTy(mut az, bpk, desugar.NodeRef(bt), desugar.StrRef(x.b))
+        return fzFieldTy(mut z, mut d, bpk, desugar.NodeRef(bt), desugar.StrRef(x.b))
     }
     if x.kind == ast.EIndex {
-        bt, bpk := fzPathTy(mut az, desugar.NodeRef(x.a))
+        bt, bpk := fzPathTy(mut z, mut d, desugar.NodeRef(x.a))
         if bt == -2 {
             return -2, 0
         }
-        b := node(mut az, desugar.NodeRef(bt))
+        b := desugar.NodeOf(mut d, desugar.NodeRef(bt))
         if b.kind == ast.TSlice || b.kind == ast.ESlicelit {
             return b.a, bpk
         }
@@ -563,59 +589,59 @@ func fzPathTy(az mut Az, e desugar.NodeRef) (int, int) {
 
 // fzDecl は型の節 t（名前 / 総称）の宣言の本体の節と package（無ければ -2）。節ごとに引いた結果を表に覚える（解決は package と名前だけで決まる —
 // 同じ節は同じ package から引く）。表は開番地法（FZ_DCACHE 本 — 鍵 = 節 + 1・値 = 本体 * 4096 + package〔無しは -1〕）
-func fzDecl(az mut Az, pk int, t desugar.NodeRef) (int, int) {
-    if table.Len(mut az.fz.dkey) == 0 {
+func fzDecl(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef) (int, int) {
+    if table.Len(mut z.dkey) == 0 {
         for i <- iter.Range(0, FZ_DCACHE) {
-            table.Push(mut az.fz.dkey, 0)
-            table.Push(mut az.fz.dval, 0)
+            table.Push(mut z.dkey, 0)
+            table.Push(mut z.dval, 0)
         }
     }
     mut h := (int(t) * 40503) & (FZ_DCACHE - 1)
     mut probe := 0
     while probe < 64 {
-        k := table.Get(mut az.fz.dkey, h)
+        k := table.Get(mut z.dkey, h)
         if k == int(t) + 1 {
-            v := table.Get(mut az.fz.dval, h)
+            v := table.Get(mut z.dval, h)
             return if v < 0 { -2 } else { v / 4096 }, if v < 0 { 0 } else { v & 4095 }
         }
         if k == 0 {
-            body, dpk := fzDeclRaw(mut az, pk, t)
-            table.Set(mut az.fz.dkey, h, int(t) + 1)
-            table.Set(mut az.fz.dval, h, if body < 0 { -1 } else { body * 4096 + dpk })
+            body, dpk := fzDeclRaw(mut z, mut d, pk, t)
+            table.Set(mut z.dkey, h, int(t) + 1)
+            table.Set(mut z.dval, h, if body < 0 { -1 } else { body * 4096 + dpk })
             return body, dpk
         }
         h = (h + 1) & (FZ_DCACHE - 1)
         probe += 1
     }
-    return fzDeclRaw(mut az, pk, t)
+    return fzDeclRaw(mut z, mut d, pk, t)
 }
 
-func fzDeclRaw(az mut Az, pk int, t desugar.NodeRef) (int, int) {
-    x := node(mut az, t)
+func fzDeclRaw(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef) (int, int) {
+    x := desugar.NodeOf(mut d, t)
     // composite の節も型の名前を持つ（a = 型の名前 — 局所を composite で初期化したときの型の起点）
     if x.kind != ast.TName && x.kind != ast.TGeneric && x.kind != ast.EComposite {
         return -2, 0
     }
-    r := desugar.ResolveType(mut az.d, pk, desugar.StrRef(x.a))
+    r := desugar.ResolveType(mut d, pk, desugar.StrRef(x.a))
     if r.idx < 0 {
         return -2, 0
     }
-    return node(mut az, desugar.NodeRef(r.idx)).c, r.pkg
+    return desugar.NodeOf(mut d, desugar.NodeRef(r.idx)).c, r.pkg
 }
 
 // fzFieldTy は型 t の struct の欄 f の型の節と package（分からなければ -2）
-func fzFieldTy(az mut Az, pk int, t desugar.NodeRef, f desugar.StrRef) (int, int) {
-    if kind(mut az, t) == ast.TOpt {
-        return fzFieldTy(mut az, pk, desugar.NodeRef(node(mut az, t).a), f)
+func fzFieldTy(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef, f desugar.StrRef) (int, int) {
+    if desugar.KindN(mut d, t) == ast.TOpt {
+        return fzFieldTy(mut z, mut d, pk, desugar.NodeRef(desugar.NodeOf(mut d, t).a), f)
     }
-    body, dpk := fzDecl(mut az, pk, t)
-    if body < 0 || kind(mut az, desugar.NodeRef(body)) != ast.BStruct {
+    body, dpk := fzDecl(mut z, mut d, pk, t)
+    if body < 0 || desugar.KindN(mut d, desugar.NodeRef(body)) != ast.BStruct {
         return -2, 0
     }
-    fs := desugar.ListRef(node(mut az, desugar.NodeRef(body)).a)
-    for i <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
-        fd := node(mut az, nat(mut az, fs, i))
-        if desugar.StrEq(mut az.d, desugar.StrRef(fd.a), f) {
+    fs := desugar.ListRef(desugar.NodeOf(mut d, desugar.NodeRef(body)).a)
+    for i <- iter.Range(0, desugar.LenL(mut d, fs)) {
+        fd := desugar.NodeOf(mut d, fzNat(mut d, fs, i))
+        if desugar.StrEq(mut d, desugar.StrRef(fd.a), f) {
             return fd.b, dpk
         }
     }
@@ -623,11 +649,11 @@ func fzFieldTy(az mut Az, pk int, t desugar.NodeRef, f desugar.StrRef) (int, int
 }
 
 // fzTyContainer は型の節 t がコンテナか（スカラー・関数型・スカラーだけの struct は false。分からない名前〔型引数〕は true）
-func fzTyContainer(az mut Az, pk int, t desugar.NodeRef, fuel int) bool {
+func fzTyContainer(z mut Fz, d mut desugar.S, pk int, t desugar.NodeRef, fuel int) bool {
     if t == -1 || fuel == 0 {
         return true
     }
-    x := node(mut az, t)
+    x := desugar.NodeOf(mut d, t)
     if x.kind == ast.TSlice || x.kind == ast.TMap || x.kind == ast.TArray || x.kind == ast.TTuple || x.kind == ast.ESlicelit || x.kind == ast.EMaplit {
         return true
     }
@@ -635,30 +661,30 @@ func fzTyContainer(az mut Az, pk int, t desugar.NodeRef, fuel int) bool {
         return false
     }
     if x.kind == ast.TOpt {
-        return fzTyContainer(mut az, pk, desugar.NodeRef(x.a), fuel - 1)
+        return fzTyContainer(mut z, mut d, pk, desugar.NodeRef(x.a), fuel - 1)
     }
     if x.kind == ast.TName {
         n := desugar.StrRef(x.a)
-        if desugar.StrIs(mut az.d, n, "int") || desugar.StrIs(mut az.d, n, "bool") || desugar.StrIs(mut az.d, n, "byte") ||
-            desugar.StrIs(mut az.d, n, "float") || desugar.StrIs(mut az.d, n, "string") || desugar.StrIs(mut az.d, n, "error") {
+        if desugar.StrIs(mut d, n, "int") || desugar.StrIs(mut d, n, "bool") || desugar.StrIs(mut d, n, "byte") ||
+            desugar.StrIs(mut d, n, "float") || desugar.StrIs(mut d, n, "string") || desugar.StrIs(mut d, n, "error") {
             return false
         }
     }
-    body, dpk := fzDecl(mut az, pk, t)
+    body, dpk := fzDecl(mut z, mut d, pk, t)
     if body < 0 {
         return true
     }
-    b := node(mut az, desugar.NodeRef(body))
+    b := desugar.NodeOf(mut d, desugar.NodeRef(body))
     if b.kind == ast.BDefined {
-        return fzTyContainer(mut az, dpk, desugar.NodeRef(b.a), fuel - 1)
+        return fzTyContainer(mut z, mut d, dpk, desugar.NodeRef(b.a), fuel - 1)
     }
     if b.kind == ast.BFunc {
         return false
     }
     if b.kind == ast.BStruct || b.kind == ast.BError {
         fs := desugar.ListRef(b.a)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
-            if fzTyContainer(mut az, dpk, desugar.NodeRef(node(mut az, nat(mut az, fs, i)).b), fuel - 1) {
+        for i <- iter.Range(0, desugar.LenL(mut d, fs)) {
+            if fzTyContainer(mut z, mut d, dpk, desugar.NodeRef(desugar.NodeOf(mut d, fzNat(mut d, fs, i)).b), fuel - 1) {
                 return true
             }
         }
@@ -669,375 +695,375 @@ func fzTyContainer(az mut Az, pk int, t desugar.NodeRef, fuel int) bool {
 
 // ── 事象 ──
 
-func fzEvent(az mut Az, k int, name int, at desugar.NodeRef) {
+func fzEvent(z mut Fz, d mut desugar.S, k int, name int, at desugar.NodeRef) {
     if name < 0 {
         return
     }
-    az.fz.seq += 1
-    n := az.fz.nEv
-    fzAt(mut az.fz.ev, 5 * n, k)
-    fzAt(mut az.fz.ev, 5 * n + 1, az.fz.seq)
-    fzAt(mut az.fz.ev, 5 * n + 2, name)
-    fzAt(mut az.fz.ev, 5 * n + 3, int(at))
-    fzAt(mut az.fz.ev, 5 * n + 4, if az.fz.inRet { 1 } else { 0 })
-    az.fz.nEv = n + 1
+    z.seq += 1
+    n := z.nEv
+    fzAt(mut z.ev, 5 * n, k)
+    fzAt(mut z.ev, 5 * n + 1, z.seq)
+    fzAt(mut z.ev, 5 * n + 2, name)
+    fzAt(mut z.ev, 5 * n + 3, int(at))
+    fzAt(mut z.ev, 5 * n + 4, if z.inRet { 1 } else { 0 })
+    z.nEv = n + 1
 }
 
-func fzLoopBegin(az mut Az) int {
-    az.fz.seq += 1
-    n := az.fz.nLoops
-    fzAt(mut az.fz.loops, 2 * n, az.fz.seq)
-    fzAt(mut az.fz.loops, 2 * n + 1, -1)
-    az.fz.nLoops = n + 1
+func fzLoopBegin(z mut Fz, d mut desugar.S) int {
+    z.seq += 1
+    n := z.nLoops
+    fzAt(mut z.loops, 2 * n, z.seq)
+    fzAt(mut z.loops, 2 * n + 1, -1)
+    z.nLoops = n + 1
     return 2 * n + 1
 }
 
-func fzLoopEnd(az mut Az, slot int) {
-    az.fz.seq += 1
-    table.Set(mut az.fz.loops, slot, az.fz.seq)
+func fzLoopEnd(z mut Fz, d mut desugar.S, slot int) {
+    z.seq += 1
+    table.Set(mut z.loops, slot, z.seq)
 }
 
 // ── 走査 ──
 
-func fzStmts(az mut Az, l desugar.ListRef) {
+func fzStmts(z mut Fz, d mut desugar.S, l desugar.ListRef) {
     if l == -1 {
         return
     }
-    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
-        fzStmt(mut az, nat(mut az, l, i))
+    for i <- iter.Range(0, desugar.LenL(mut d, l)) {
+        fzStmt(mut z, mut d, fzNat(mut d, l, i))
     }
 }
 
-func fzBlock(az mut Az, b desugar.NodeRef) {
+func fzBlock(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
     if b != -1 {
-        fzStmts(mut az, desugar.ListRef(node(mut az, b).a))
+        fzStmts(mut z, mut d, desugar.ListRef(desugar.NodeOf(mut d, b).a))
     }
 }
 
 // fzBindValue は受け手 dst（道 tgt — 束縛なら -1）に値 v が入るときの辺を張る
-func fzBindValue(az mut Az, dst int, tgt desugar.NodeRef, v desugar.NodeRef, at desugar.NodeRef) {
-    fzClear(mut az)
-    fzCallRoots(mut az, v)
-    fzLinkHead(mut az, dst, tgt, at)
+func fzBindValue(z mut Fz, d mut desugar.S, dst int, tgt desugar.NodeRef, v desugar.NodeRef, at desugar.NodeRef) {
+    fzClear(mut z, mut d)
+    fzCallRoots(mut z, mut d, v)
+    fzLinkHead(mut z, mut d, dst, tgt, at)
     // 局所の型: 道から初期化した束縛は道の型を引き継ぐ（欄・要素の型を引く起点）
-    if dst >= 0 && tgt == -1 && table.Get(mut az.fz.ptype, dst) == -1 {
-        vk := kind(mut az, v)
+    if dst >= 0 && tgt == -1 && table.Get(mut z.ptype, dst) == -1 {
+        vk := desugar.KindN(mut d, v)
         if vk == ast.EComposite || vk == ast.ESlicelit || vk == ast.EMaplit {
-            table.Set(mut az.fz.ptype, dst, int(v))
+            table.Set(mut z.ptype, dst, int(v))
         } else {
-            t, _ := fzPathTy(mut az, v)
+            t, _ := fzPathTy(mut z, mut d, v)
             if t >= 0 {
-                table.Set(mut az.fz.ptype, dst, t)
+                table.Set(mut z.ptype, dst, t)
             }
         }
     }
-    fzClear(mut az)
-    fzVal(mut az, v)
-    fzLinkHead(mut az, dst, tgt, at)
-    fzClear(mut az)
-    fzElems(mut az, v)
-    fzLinkElem(mut az, dst, tgt, at)
+    fzClear(mut z, mut d)
+    fzVal(mut z, mut d, v)
+    fzLinkHead(mut z, mut d, dst, tgt, at)
+    fzClear(mut z, mut d)
+    fzElems(mut z, mut d, v)
+    fzLinkElem(mut z, mut d, dst, tgt, at)
 }
 
-func fzStmt(az mut Az, s desugar.NodeRef) {
-    x := node(mut az, s)
+func fzStmt(z mut Fz, d mut desugar.S, s desugar.NodeRef) {
+    x := desugar.NodeOf(mut d, s)
     k := x.kind
     if k == ast.SBind {
         names := desugar.ListRef(x.a)
         vs := desugar.ListRef(x.c)
-        nn := desugar.LenL(mut az.d, names)
-        nv := desugar.LenL(mut az.d, vs)
+        nn := desugar.LenL(mut d, names)
+        nv := desugar.LenL(mut d, vs)
         for i <- iter.Range(0, nv) {
-            fzExpr(mut az, nat(mut az, vs, i))
+            fzExpr(mut z, mut d, fzNat(mut d, vs, i))
         }
         for i <- iter.Range(0, nn) {
-            ref := desugar.LatI(mut az.d, names, i)
-            dst := fzDeclName(mut az, ref)
-            az.fz.seq += 1
-            table.Set(mut az.fz.decl, dst, az.fz.seq)
-            fzBindValue(mut az, dst, desugar.NodeRef(-1), nat(mut az, vs, if nv == nn { i } else { 0 }), s)
+            ref := desugar.LatI(mut d, names, i)
+            dst := fzDeclName(mut z, mut d, ref)
+            z.seq += 1
+            table.Set(mut z.decl, dst, z.seq)
+            fzBindValue(mut z, mut d, dst, desugar.NodeRef(-1), fzNat(mut d, vs, if nv == nn { i } else { 0 }), s)
         }
     } else if k == ast.SAssign {
         ts := desugar.ListRef(x.a)
         vs := desugar.ListRef(x.c)
-        nt := desugar.LenL(mut az.d, ts)
-        nv := desugar.LenL(mut az.d, vs)
+        nt := desugar.LenL(mut d, ts)
+        nv := desugar.LenL(mut d, vs)
         for i <- iter.Range(0, nv) {
-            fzExpr(mut az, nat(mut az, vs, i))
+            fzExpr(mut z, mut d, fzNat(mut d, vs, i))
         }
         for i <- iter.Range(0, nt) {
-            t := nat(mut az, ts, i)
-            fzExpr(mut az, t)
-            dst := fzRootOf(mut az, t)
-            if fzHasIndex(mut az, t) {
-                fzEvent(mut az, FvWrite, dst, t)
+            t := fzNat(mut d, ts, i)
+            fzExpr(mut z, mut d, t)
+            dst := fzRootOf(mut z, mut d, t)
+            if fzHasIndex(mut z, mut d, t) {
+                fzEvent(mut z, mut d, FvWrite, dst, t)
             }
             if nv > 0 {
-                v := nat(mut az, vs, if nv == nt { i } else { 0 })
-                if fzHasIndex(mut az, t) {
+                v := fzNat(mut d, vs, if nv == nt { i } else { 0 })
+                if fzHasIndex(mut z, mut d, t) {
                     // 添字への格納: 値は dst の要素
-                    fzClear(mut az)
-                    fzVal(mut az, v)
-                    fzLinkElem(mut az, dst, t, s)
+                    fzClear(mut z, mut d)
+                    fzVal(mut z, mut d, v)
+                    fzLinkElem(mut z, mut d, dst, t, s)
                 } else {
-                    fzBindValue(mut az, dst, t, v, s)
+                    fzBindValue(mut z, mut d, dst, t, v, s)
                 }
             }
         }
     } else if k == ast.SRet {
-        save := az.fz.inRet
-        az.fz.inRet = true
+        save := z.inRet
+        z.inRet = true
         vs := desugar.ListRef(x.a)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, vs)) {
-            v := nat(mut az, vs, i)
-            fzExpr(mut az, v)
-            fzClear(mut az)
-            fzVal(mut az, v)
-            fzElems(mut az, v)
-            for j <- iter.Range(0, az.fz.nRoots) {
-                pth := desugar.NodeRef(table.Get(mut az.fz.roots, 3 * j + 2))
+        for i <- iter.Range(0, desugar.LenL(mut d, vs)) {
+            v := fzNat(mut d, vs, i)
+            fzExpr(mut z, mut d, v)
+            fzClear(mut z, mut d)
+            fzVal(mut z, mut d, v)
+            fzElems(mut z, mut d, v)
+            for j <- iter.Range(0, z.nRoots) {
+                pth := desugar.NodeRef(table.Get(mut z.roots, 3 * j + 2))
                 // 要素を返すのは可（呼び手が「実引数 → 結果」の辺で受ける）— ヘッダの道だけ
-                if table.Get(mut az.fz.roots, 3 * j + 1) == RkHead && fzPathContainer(mut az, pth) {
-                    fzEvent(mut az, FvRet, table.Get(mut az.fz.roots, 3 * j), pth)
+                if table.Get(mut z.roots, 3 * j + 1) == RkHead && fzPathContainer(mut z, mut d, pth) {
+                    fzEvent(mut z, mut d, FvRet, table.Get(mut z.roots, 3 * j), pth)
                 }
             }
         }
-        az.fz.inRet = save
+        z.inRet = save
     } else if k == ast.SExpr || k == ast.SYield {
-        fzExpr(mut az, desugar.NodeRef(x.a))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
     } else if k == ast.SDefer {
         // defer は出口で走る — 関数の全体をループの区間とみなす（どの事象とも前後が決まらない）
-        slot := fzLoopBegin(mut az)
-        table.Set(mut az.fz.loops, slot - 1, 0)
-        fzExpr(mut az, desugar.NodeRef(x.a))
-        table.Set(mut az.fz.loops, slot, 1000000000)
+        slot := fzLoopBegin(mut z, mut d)
+        table.Set(mut z.loops, slot - 1, 0)
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
+        table.Set(mut z.loops, slot, 1000000000)
     } else if k == ast.SWhile {
-        slot := fzLoopBegin(mut az)
-        fzExpr(mut az, desugar.NodeRef(x.a))
-        fzBlock(mut az, desugar.NodeRef(x.b))
-        fzLoopEnd(mut az, slot)
+        slot := fzLoopBegin(mut z, mut d)
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
+        fzBlock(mut z, mut d, desugar.NodeRef(x.b))
+        fzLoopEnd(mut z, mut d, slot)
     }
 }
 
-func fzExprs(az mut Az, l desugar.ListRef) {
+func fzExprs(z mut Fz, d mut desugar.S, l desugar.ListRef) {
     if l == -1 {
         return
     }
-    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
-        fzExpr(mut az, nat(mut az, l, i))
+    for i <- iter.Range(0, desugar.LenL(mut d, l)) {
+        fzExpr(mut z, mut d, fzNat(mut d, l, i))
     }
 }
 
 // fzExpr は式 e を歩いて事象を積む。e が暗黙の freeze の点（desugar.IsImplicit — typer の表）なら、歩いた直後に明示の freeze(e) と同じ事象を
 // 積んで印を付ける（印の式は fzValP が freeze の呼び出しの結果と同じく根を張らない）
-func fzExpr(az mut Az, e desugar.NodeRef) {
-    fzExpr0(mut az, e)
-    if az.d.nimpl > 0 && desugar.IsImplicit(mut az.d, e) {
-        fzAt(mut az.fz.imp, az.fz.nImp, int(e))
-        az.fz.nImp += 1
-        fzEvent(mut az, FvFreeze, fzRootOf(mut az, e), e)
+func fzExpr(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
+    fzExpr0(mut z, mut d, e)
+    if d.nimpl > 0 && desugar.IsImplicit(mut d, e) {
+        fzAt(mut z.imp, z.nImp, int(e))
+        z.nImp += 1
+        fzEvent(mut z, mut d, FvFreeze, fzRootOf(mut z, mut d, e), e)
     }
 }
 
-func fzExpr0(az mut Az, e desugar.NodeRef) {
+func fzExpr0(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     if e == -1 {
         return
     }
     // 葉は種類だけ見て返す（節の全部の欄の読み〔desugar.NodeOf〕は重い — 自己 build の値札の大半だった）
-    k := kind(mut az, e)
+    k := desugar.KindN(mut d, e)
     if k == ast.EIdent || k == ast.EInt || k == ast.EStrlit || k == ast.ENil || k == ast.EFloat || k == ast.EMutArg {
         return
     }
-    x := node(mut az, e)
+    x := desugar.NodeOf(mut d, e)
     if k == ast.EBinary {
-        fzExpr(mut az, desugar.NodeRef(x.b))
-        fzExpr(mut az, desugar.NodeRef(x.c))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.b))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.c))
     } else if k == ast.EUnary {
-        fzExpr(mut az, desugar.NodeRef(x.b))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.b))
     } else if k == ast.ECall {
         callee := desugar.NodeRef(x.a)
         as := desugar.ListRef(x.b)
-        fzExpr(mut az, callee)
-        fzExprs(mut az, as)
-        n := desugar.LenL(mut az.d, as)
-        if kind(mut az, callee) == ast.EIdent {
-            cn := desugar.StrRef(node(mut az, callee).a)
-            if desugar.StrIs(mut az.d, cn, "freeze") && n == 1 {
-                fzFreezeEvents(mut az, nat(mut az, as, 0), e)
-            } else if desugar.StrIs(mut az.d, cn, "delete") && n >= 1 {
-                fzEvent(mut az, FvWrite, fzRootOf(mut az, nat(mut az, as, 0)), e)
+        fzExpr(mut z, mut d, callee)
+        fzExprs(mut z, mut d, as)
+        n := desugar.LenL(mut d, as)
+        if desugar.KindN(mut d, callee) == ast.EIdent {
+            cn := desugar.StrRef(desugar.NodeOf(mut d, callee).a)
+            if desugar.StrIs(mut d, cn, "freeze") && n == 1 {
+                fzFreezeEvents(mut z, mut d, fzNat(mut d, as, 0), e)
+            } else if desugar.StrIs(mut d, cn, "delete") && n >= 1 {
+                fzEvent(mut z, mut d, FvWrite, fzRootOf(mut z, mut d, fzNat(mut d, as, 0)), e)
             }
         }
         // mut で渡す = 呼び先が書きうる
         for i <- iter.Range(0, n) {
-            an := nat(mut az, as, i)
-            if kind(mut az, an) == ast.EMutArg {
-                fzEvent(mut az, FvWrite, fzMutRoot(mut az, node(mut az, an).a), an)
+            an := fzNat(mut d, as, i)
+            if desugar.KindN(mut d, an) == ast.EMutArg {
+                fzEvent(mut z, mut d, FvWrite, fzMutRoot(mut z, mut d, desugar.NodeOf(mut d, an).a), an)
             }
         }
     } else if k == ast.EPipe {
-        fzExpr(mut az, desugar.NodeRef(x.a))
-        fzExpr(mut az, desugar.NodeRef(x.b))
-        fzExprs(mut az, desugar.ListRef(x.c))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.b))
+        fzExprs(mut z, mut d, desugar.ListRef(x.c))
     } else if k == ast.EIndex || k == ast.EParen || k == ast.ESelector {
-        fzExpr(mut az, desugar.NodeRef(x.a))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
         if k == ast.EIndex {
-            fzExpr(mut az, desugar.NodeRef(x.b))
+            fzExpr(mut z, mut d, desugar.NodeRef(x.b))
         }
     } else if k == ast.ESlice3 {
-        fzExpr(mut az, desugar.NodeRef(x.a))
-        fzExpr(mut az, desugar.NodeRef(x.b))
-        fzExpr(mut az, desugar.NodeRef(x.c))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.b))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.c))
     } else if k == ast.EInterp || k == ast.ESlicelit {
-        fzExprs(mut az, desugar.ListRef(x.b))
+        fzExprs(mut z, mut d, desugar.ListRef(x.b))
     } else if k == ast.EMaplit {
         es := desugar.ListRef(x.c)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-            en := node(mut az, nat(mut az, es, i))
-            fzExpr(mut az, desugar.NodeRef(en.a))
-            fzExpr(mut az, desugar.NodeRef(en.b))
+        for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+            en := desugar.NodeOf(mut d, fzNat(mut d, es, i))
+            fzExpr(mut z, mut d, desugar.NodeRef(en.a))
+            fzExpr(mut z, mut d, desugar.NodeRef(en.b))
         }
     } else if k == ast.EComposite {
         es := desugar.ListRef(x.b)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-            fzExpr(mut az, desugar.NodeRef(node(mut az, nat(mut az, es, i)).b))
+        for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+            fzExpr(mut z, mut d, desugar.NodeRef(desugar.NodeOf(mut d, fzNat(mut d, es, i)).b))
         }
     } else if k == ast.ELambda {
         // ラムダの本体は何度でも走りうる — ループとみなす（中の return はラムダの戻り値）
-        slot := fzLoopBegin(mut az)
-        save := az.fz.inRet
-        az.fz.inRet = false
+        slot := fzLoopBegin(mut z, mut d)
+        save := z.inRet
+        z.inRet = false
         body := desugar.NodeRef(x.b)
-        bk := kind(mut az, body)
+        bk := desugar.KindN(mut d, body)
         if bk == ast.EBlock || bk == ast.KBlock {
-            fzLamBlock(mut az, body)
+            fzLamBlock(mut z, mut d, body)
         } else {
-            fzExpr(mut az, body)
+            fzExpr(mut z, mut d, body)
         }
-        az.fz.inRet = save
-        fzLoopEnd(mut az, slot)
+        z.inRet = save
+        fzLoopEnd(mut z, mut d, slot)
     } else if k == ast.EIf {
-        fzExpr(mut az, desugar.NodeRef(x.a))
-        fzBlock(mut az, desugar.NodeRef(x.b))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
+        fzBlock(mut z, mut d, desugar.NodeRef(x.b))
         els := desugar.NodeRef(x.c)
         if els != -1 {
-            ek := kind(mut az, els)
+            ek := desugar.KindN(mut d, els)
             if ek == ast.EBlock || ek == ast.KBlock {
-                fzBlock(mut az, els)
+                fzBlock(mut z, mut d, els)
             } else {
-                fzExpr(mut az, els)
+                fzExpr(mut z, mut d, els)
             }
         }
     } else if k == ast.ESwitch {
         subs := desugar.ListRef(x.a)
-        fzExprs(mut az, subs)
+        fzExprs(mut z, mut d, subs)
         cs := desugar.ListRef(x.b)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
-            c := node(mut az, nat(mut az, cs, i))
+        for i <- iter.Range(0, desugar.LenL(mut d, cs)) {
+            c := desugar.NodeOf(mut d, fzNat(mut d, cs, i))
             ps := desugar.ListRef(c.a)
-            for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
-                p := node(mut az, nat(mut az, ps, j))
+            for j <- iter.Range(0, desugar.LenL(mut d, ps)) {
+                p := desugar.NodeOf(mut d, fzNat(mut d, ps, j))
                 if p.kind == ast.KPConst {
-                    fzExprs(mut az, desugar.ListRef(p.a))
-                } else if p.kind == ast.KPType && p.a != -1 && desugar.LenL(mut az.d, subs) > 0 {
+                    fzExprs(mut z, mut d, desugar.ListRef(p.a))
+                } else if p.kind == ast.KPType && p.a != -1 && desugar.LenL(mut d, subs) > 0 {
                     // パターンの束縛は subject の中身（subject → 束縛）
-                    fzClear(mut az)
-                    fzVal(mut az, nat(mut az, subs, 0))
-                    bn := fzDeclName(mut az, p.a)
-                    table.Set(mut az.fz.decl, bn, az.fz.seq)
-                    for q <- iter.Range(0, az.fz.nRoots) {
-                        fzHoldEdge(mut az, table.Get(mut az.fz.roots, 3 * q), bn, nat(mut az, cs, i))
+                    fzClear(mut z, mut d)
+                    fzVal(mut z, mut d, fzNat(mut d, subs, 0))
+                    bn := fzDeclName(mut z, mut d, p.a)
+                    table.Set(mut z.decl, bn, z.seq)
+                    for q <- iter.Range(0, z.nRoots) {
+                        fzHoldEdge(mut z, mut d, table.Get(mut z.roots, 3 * q), bn, fzNat(mut d, cs, i))
                     }
                 }
             }
-            fzBlock(mut az, desugar.NodeRef(c.b))
+            fzBlock(mut z, mut d, desugar.NodeRef(c.b))
         }
-        fzBlock(mut az, desugar.NodeRef(x.c))
+        fzBlock(mut z, mut d, desugar.NodeRef(x.c))
     } else if k == ast.EBlock {
-        fzBlock(mut az, e)
+        fzBlock(mut z, mut d, e)
     } else if k == ast.EFor {
-        slot := fzLoopBegin(mut az)
+        slot := fzLoopBegin(mut z, mut d)
         gs := desugar.ListRef(x.a)
-        for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
-            gn := nat(mut az, gs, i)
-            g := node(mut az, gn)
-            fzExpr(mut az, desugar.NodeRef(g.b))
+        for i <- iter.Range(0, desugar.LenL(mut d, gs)) {
+            gn := fzNat(mut d, gs, i)
+            g := desugar.NodeOf(mut d, gn)
+            fzExpr(mut z, mut d, desugar.NodeRef(g.b))
             // `for v <- s`: v は s の要素（s → v）
-            fzClear(mut az)
-            fzVal(mut az, desugar.NodeRef(g.b))
+            fzClear(mut z, mut d)
+            fzVal(mut z, mut d, desugar.NodeRef(g.b))
             names := desugar.ListRef(g.a)
-            for j <- iter.Range(0, desugar.LenL(mut az.d, names)) {
-                ref := desugar.LatI(mut az.d, names, j)
-                vn := fzDeclName(mut az, ref)
-                table.Set(mut az.fz.decl, vn, az.fz.seq)
-                for q <- iter.Range(0, az.fz.nRoots) {
-                    fzHoldEdge(mut az, table.Get(mut az.fz.roots, 3 * q), vn, gn)
+            for j <- iter.Range(0, desugar.LenL(mut d, names)) {
+                ref := desugar.LatI(mut d, names, j)
+                vn := fzDeclName(mut z, mut d, ref)
+                table.Set(mut z.decl, vn, z.seq)
+                for q <- iter.Range(0, z.nRoots) {
+                    fzHoldEdge(mut z, mut d, table.Get(mut z.roots, 3 * q), vn, gn)
                 }
             }
-            fzExprs(mut az, desugar.ListRef(g.c))
+            fzExprs(mut z, mut d, desugar.ListRef(g.c))
         }
         if x.b == 0 {
-            fzExpr(mut az, desugar.NodeRef(x.c))
+            fzExpr(mut z, mut d, desugar.NodeRef(x.c))
         } else {
-            fzStmts(mut az, desugar.ListRef(x.c))
+            fzStmts(mut z, mut d, desugar.ListRef(x.c))
         }
-        fzLoopEnd(mut az, slot)
+        fzLoopEnd(mut z, mut d, slot)
     } else if k == ast.ETry {
-        fzExpr(mut az, desugar.NodeRef(x.a))
+        fzExpr(mut z, mut d, desugar.NodeRef(x.a))
         if x.b != -1 {
-            es := desugar.ListRef(node(mut az, desugar.NodeRef(x.b)).b)
-            for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
-                fzExpr(mut az, desugar.NodeRef(node(mut az, nat(mut az, es, i)).b))
+            es := desugar.ListRef(desugar.NodeOf(mut d, desugar.NodeRef(x.b)).b)
+            for i <- iter.Range(0, desugar.LenL(mut d, es)) {
+                fzExpr(mut z, mut d, desugar.NodeRef(desugar.NodeOf(mut d, fzNat(mut d, es, i)).b))
             }
         }
     }
 }
 
 // fzLamBlock はラムダの本体のブロック（中の return は関数の return ではない — 事象にしない）
-func fzLamBlock(az mut Az, b desugar.NodeRef) {
-    l := desugar.ListRef(node(mut az, b).a)
-    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
-        s := nat(mut az, l, i)
-        if kind(mut az, s) == ast.SRet {
-            fzExprs(mut az, desugar.ListRef(node(mut az, s).a))
+func fzLamBlock(z mut Fz, d mut desugar.S, b desugar.NodeRef) {
+    l := desugar.ListRef(desugar.NodeOf(mut d, b).a)
+    for i <- iter.Range(0, desugar.LenL(mut d, l)) {
+        s := fzNat(mut d, l, i)
+        if desugar.KindN(mut d, s) == ast.SRet {
+            fzExprs(mut z, mut d, desugar.ListRef(desugar.NodeOf(mut d, s).a))
         } else {
-            fzStmt(mut az, s)
+            fzStmt(mut z, mut d, s)
         }
     }
 }
 
 // fzFreezeEvents は freeze(v)（節 at）の事象: v が道なら根 1 つ。if / switch / ブロックの値・append の結果などは値の末尾の道の根ごと
 // （fzVal と同じ歩き — F-ap: 根を取らずに事象を落とすと、`freeze(if c { m } else { n })` の後の m への書きが通った）
-func fzFreezeEvents(az mut Az, v desugar.NodeRef, at desugar.NodeRef) {
-    r := fzRootOf(mut az, v)
+func fzFreezeEvents(z mut Fz, d mut desugar.S, v desugar.NodeRef, at desugar.NodeRef) {
+    r := fzRootOf(mut z, mut d, v)
     if r >= 0 {
-        fzEvent(mut az, FvFreeze, r, at)
+        fzEvent(mut z, mut d, FvFreeze, r, at)
         return
     }
-    base := az.fz.nRoots
-    fzVal(mut az, v)
-    top := az.fz.nRoots
+    base := z.nRoots
+    fzVal(mut z, mut d, v)
+    top := z.nRoots
     for j <- iter.Range(base, top) {
-        rj := table.Get(mut az.fz.roots, 3 * j)
+        rj := table.Get(mut z.roots, 3 * j)
         mut dup := false
         for q <- iter.Range(base, j) {
-            if table.Get(mut az.fz.roots, 3 * q) == rj {
+            if table.Get(mut z.roots, 3 * q) == rj {
                 dup = true
             }
         }
         if !dup {
-            fzEvent(mut az, FvFreeze, rj, at)
+            fzEvent(mut z, mut d, FvFreeze, rj, at)
         }
     }
-    az.fz.nRoots = base
+    z.nRoots = base
 }
 
 // ── 暗黙の freeze ──
 
 // fzIsImplicit は節 e が今の関数の暗黙の freeze の点か
-func fzIsImplicit(az mut Az, e desugar.NodeRef) bool {
-    for i <- iter.Range(0, az.fz.nImp) {
-        if table.Get(mut az.fz.imp, i) == int(e) {
+func fzIsImplicit(z mut Fz, d mut desugar.S, e desugar.NodeRef) bool {
+    for i <- iter.Range(0, z.nImp) {
+        if table.Get(mut z.imp, i) == int(e) {
             return true
         }
     }
@@ -1045,25 +1071,25 @@ func fzIsImplicit(az mut Az, e desugar.NodeRef) bool {
 }
 
 // fzExplicit は freeze の事象の節 x が明示の `freeze(…)` か（でなければ暗黙の freeze の点）
-func fzExplicit(az mut Az, x desugar.NodeRef) bool {
-    return x != -1 && kind(mut az, x) == ast.ECall
+func fzExplicit(z mut Fz, d mut desugar.S, x desugar.NodeRef) bool {
+    return x != -1 && desugar.KindN(mut d, x) == ast.ECall
 }
 
 // ── 照合 ──
 
 // fzAfter は事象 w（通し番号 ws）が freeze（通し番号 fs・return の中か ft）の後に起こりうるか
-func fzAfter(az mut Az, fs int, ft int, ws int, wr int) bool {
+func fzAfter(z mut Fz, d mut desugar.S, fs int, ft int, ws int, wr int) bool {
     if ft == 1 {
         return false
     }
     if ws > fs {
         return true
     }
-    for i <- iter.Range(0, az.fz.nLoops) {
-        a := table.Get(mut az.fz.loops, 2 * i)
-        b := table.Get(mut az.fz.loops, 2 * i + 1)
+    for i <- iter.Range(0, z.nLoops) {
+        a := table.Get(mut z.loops, 2 * i)
+        b := table.Get(mut z.loops, 2 * i + 1)
         // 次の周回: 書き手がループの外で宣言した束縛のときだけ（中で宣言した束縛は周回ごとに新しい値）
-        if a < fs && fs < b && a < ws && ws < b && table.Get(mut az.fz.decl, wr) < a {
+        if a < fs && fs < b && a < ws && ws < b && table.Get(mut z.decl, wr) < a {
             return true
         }
     }
@@ -1071,22 +1097,22 @@ func fzAfter(az mut Az, fs int, ft int, ws int, wr int) bool {
 }
 
 // fzHolders は r を（推移的に）持ちうる名前の印（r 自身を含む — 1 = 持ちうる）
-func fzHolders(az mut Az, r int) {
+func fzHolders(z mut Fz, d mut desugar.S, r int) {
     // 逆向きの隣接（rstart / rlist — fzJudge が関数ごとに 1 回組む）を r から辿る（印 hs と作業の列 work）
-    for i <- iter.Range(0, az.fz.nNames) {
-        fzAt(mut az.fz.hs, i, 0)
+    for i <- iter.Range(0, z.nNames) {
+        fzAt(mut z.hs, i, 0)
     }
-    table.Set(mut az.fz.hs, r, 1)
-    fzAt(mut az.fz.work, 0, r)
+    table.Set(mut z.hs, r, 1)
+    fzAt(mut z.work, 0, r)
     mut top := 1
     while top > 0 {
         top -= 1
-        b := table.Get(mut az.fz.work, top)
-        for j <- iter.Range(table.Get(mut az.fz.rstart, b), table.Get(mut az.fz.rstart, b + 1)) {
-            a := table.Get(mut az.fz.rlist, j)
-            if table.Get(mut az.fz.hs, a) == 0 {
-                table.Set(mut az.fz.hs, a, 1)
-                fzAt(mut az.fz.work, top, a)
+        b := table.Get(mut z.work, top)
+        for j <- iter.Range(table.Get(mut z.rstart, b), table.Get(mut z.rstart, b + 1)) {
+            a := table.Get(mut z.rlist, j)
+            if table.Get(mut z.hs, a) == 0 {
+                table.Set(mut z.hs, a, 1)
+                fzAt(mut z.work, top, a)
                 top += 1
             }
         }
@@ -1094,61 +1120,61 @@ func fzHolders(az mut Az, r int) {
 }
 
 // fzRevAdj は持つの辺 a → b を b ごとの a の列（rstart[b] .. rstart[b + 1] が rlist の区間）に並べる（数え上げの整列）
-func fzRevAdj(az mut Az) {
-    n := az.fz.nNames
+func fzRevAdj(z mut Fz, d mut desugar.S) {
+    n := z.nNames
     for i <- iter.Range(0, n + 1) {
-        fzAt(mut az.fz.rstart, i, 0)
+        fzAt(mut z.rstart, i, 0)
     }
-    for i <- iter.Range(0, az.fz.nHold) {
-        b := table.Get(mut az.fz.hold, 3 * i + 1)
-        table.Set(mut az.fz.rstart, b + 1, table.Get(mut az.fz.rstart, b + 1) + 1)
+    for i <- iter.Range(0, z.nHold) {
+        b := table.Get(mut z.hold, 3 * i + 1)
+        table.Set(mut z.rstart, b + 1, table.Get(mut z.rstart, b + 1) + 1)
     }
     for i <- iter.Range(0, n) {
-        table.Set(mut az.fz.rstart, i + 1, table.Get(mut az.fz.rstart, i + 1) + table.Get(mut az.fz.rstart, i))
+        table.Set(mut z.rstart, i + 1, table.Get(mut z.rstart, i + 1) + table.Get(mut z.rstart, i))
     }
     // rlist を辺の数まで伸ばしておく（下の置き方は順不同 — fzAt は今の長さの位置にしか積めない）
-    for i <- iter.Range(0, az.fz.nHold) {
-        fzAt(mut az.fz.rlist, i, 0)
+    for i <- iter.Range(0, z.nHold) {
+        fzAt(mut z.rlist, i, 0)
     }
     // 置き場の先頭を作業の列に写して詰める
     for i <- iter.Range(0, n) {
-        fzAt(mut az.fz.work, i, table.Get(mut az.fz.rstart, i))
+        fzAt(mut z.work, i, table.Get(mut z.rstart, i))
     }
-    for i <- iter.Range(0, az.fz.nHold) {
-        b := table.Get(mut az.fz.hold, 3 * i + 1)
-        at := table.Get(mut az.fz.work, b)
-        fzAt(mut az.fz.rlist, at, table.Get(mut az.fz.hold, 3 * i))
-        table.Set(mut az.fz.work, b, at + 1)
+    for i <- iter.Range(0, z.nHold) {
+        b := table.Get(mut z.hold, 3 * i + 1)
+        at := table.Get(mut z.work, b)
+        fzAt(mut z.rlist, at, table.Get(mut z.hold, 3 * i))
+        table.Set(mut z.work, b, at + 1)
     }
 }
 
-func fzJudge(az mut Az) {
-    ne := az.fz.nEv
+func fzJudge(z mut Fz, d mut desugar.S) {
+    ne := z.nEv
     // 照合が要るのは freeze か return のある関数だけ（どちらも無ければ持つの辺を見ない — 逃げの辺は張った時点で仮引数どうしに限っている）
     mut need := false
     for i <- iter.Range(0, ne) {
-        k := table.Get(mut az.fz.ev, 5 * i)
+        k := table.Get(mut z.ev, 5 * i)
         if k == FvFreeze || k == FvRet {
             need = true
         }
     }
     if need {
-        fzRevAdj(mut az)
+        fzRevAdj(mut z, mut d)
     }
     // 同じ書きは 1 回だけ名指す（同じ値を何度も freeze する形）
     for i <- iter.Range(0, ne) {
-        if table.Get(mut az.fz.ev, 5 * i) == FvFreeze {
-            fs := table.Get(mut az.fz.ev, 5 * i + 1)
-            fr := table.Get(mut az.fz.ev, 5 * i + 2)
-            fat := desugar.NodeRef(table.Get(mut az.fz.ev, 5 * i + 3))
-            ft := table.Get(mut az.fz.ev, 5 * i + 4)
-            fzHolders(mut az, fr)
-            if !az.fz.exempt {
+        if table.Get(mut z.ev, 5 * i) == FvFreeze {
+            fs := table.Get(mut z.ev, 5 * i + 1)
+            fr := table.Get(mut z.ev, 5 * i + 2)
+            fat := desugar.NodeRef(table.Get(mut z.ev, 5 * i + 3))
+            ft := table.Get(mut z.ev, 5 * i + 4)
+            fzHolders(mut z, mut d, fr)
+            if !z.exempt {
                 // U1 の仮引数: r を持ちうる名前に mut のコンテナの仮引数がある
                 mut pdone := false
-                for k <- iter.Range(0, az.fz.nNames) {
-                    if !pdone && table.Get(mut az.fz.param, k) >= 0 && table.Get(mut az.fz.hs, k) == 1 {
-                        report(mut az, MFzParam, fat, desugar.NodeRef(table.Get(mut az.fz.param, k)))
+                for k <- iter.Range(0, z.nNames) {
+                    if !pdone && table.Get(mut z.param, k) >= 0 && table.Get(mut z.hs, k) == 1 {
+                        fzReport(mut z, MFzParam, fat, desugar.NodeRef(table.Get(mut z.param, k)))
                         pdone = true
                     }
                 }
@@ -1156,28 +1182,28 @@ func fzJudge(az mut Az) {
             // U2 / U1 の別名: r を持ちうる束縛が後に書く（最初の 1 件だけ）
             mut done := false
             for j <- iter.Range(0, ne) {
-                if !done && table.Get(mut az.fz.ev, 5 * j) == FvWrite {
-                    wr := table.Get(mut az.fz.ev, 5 * j + 2)
-                    if table.Get(mut az.fz.hs, wr) == 1 && fzAfter(mut az, fs, ft, table.Get(mut az.fz.ev, 5 * j + 1), wr) {
-                        wat := desugar.NodeRef(table.Get(mut az.fz.ev, 5 * j + 3))
+                if !done && table.Get(mut z.ev, 5 * j) == FvWrite {
+                    wr := table.Get(mut z.ev, 5 * j + 2)
+                    if table.Get(mut z.hs, wr) == 1 && fzAfter(mut z, mut d, fs, ft, table.Get(mut z.ev, 5 * j + 1), wr) {
+                        wat := desugar.NodeRef(table.Get(mut z.ev, 5 * j + 3))
                         mut dup := false
-                        for q <- iter.Range(0, az.fz.nSeen) {
-                            if table.Get(mut az.fz.seen, q) == int(wat) {
+                        for q <- iter.Range(0, z.nSeen) {
+                            if table.Get(mut z.seen, q) == int(wat) {
                                 dup = true
                             }
                         }
-                        fzAt(mut az.fz.seen, az.fz.nSeen, int(wat))
-                        az.fz.nSeen += 1
+                        fzAt(mut z.seen, z.nSeen, int(wat))
+                        z.nSeen += 1
                         if dup {
                             done = true
                         } else if wr == fr {
-                            report(mut az, MFzWrite, wat, fat)
-                            fzNoteImplicit(mut az, fat)
+                            fzReport(mut z, MFzWrite, wat, fat)
+                            fzNoteImplicit(mut z, mut d, fat)
                             done = true
-                        } else if !az.fz.exempt {
-                            report(mut az, MFzAlias, wat, fat)
-                            report(mut az, MFzAliasAt, fzEdgeOf(mut az, wr), fat)
-                            fzNoteImplicit(mut az, fat)
+                        } else if !z.exempt {
+                            fzReport(mut z, MFzAlias, wat, fat)
+                            fzReport(mut z, MFzAliasAt, fzEdgeOf(mut z, mut d, wr), fat)
+                            fzNoteImplicit(mut z, mut d, fat)
                             done = true
                         }
                     }
@@ -1185,33 +1211,33 @@ func fzJudge(az mut Az) {
             }
         }
     }
-    if az.fz.exempt {
+    if z.exempt {
         return
     }
     // U3: mut のコンテナの仮引数の中身が別の mut の仮引数へ（逃げの辺）・戻り値へ
-    for i <- iter.Range(0, az.fz.nEsc) {
-        a := table.Get(mut az.fz.esc, 3 * i)
-        b := table.Get(mut az.fz.esc, 3 * i + 1)
-        if table.Get(mut az.fz.param, a) >= 0 && table.Get(mut az.fz.param, b) >= 0 {
-            report(mut az, MFzEscape, desugar.NodeRef(table.Get(mut az.fz.esc, 3 * i + 2)), desugar.NodeRef(table.Get(mut az.fz.param, b)))
+    for i <- iter.Range(0, z.nEsc) {
+        a := table.Get(mut z.esc, 3 * i)
+        b := table.Get(mut z.esc, 3 * i + 1)
+        if table.Get(mut z.param, a) >= 0 && table.Get(mut z.param, b) >= 0 {
+            fzReport(mut z, MFzEscape, desugar.NodeRef(table.Get(mut z.esc, 3 * i + 2)), desugar.NodeRef(table.Get(mut z.param, b)))
         }
     }
     // 戻り値の根 r が仮引数 p の中身を持ちうる（r = p か、r が p を〔推移的に〕持ちうる）: 仮引数ごとに持ちうる名前を 1 回求めて全部の return を見る
     mut hasRet := false
     for i <- iter.Range(0, ne) {
-        if table.Get(mut az.fz.ev, 5 * i) == FvRet {
+        if table.Get(mut z.ev, 5 * i) == FvRet {
             hasRet = true
         }
     }
     if hasRet {
-        for k <- iter.Range(0, az.fz.nNames) {
-            if table.Get(mut az.fz.param, k) >= 0 {
-                fzHolders(mut az, k)
+        for k <- iter.Range(0, z.nNames) {
+            if table.Get(mut z.param, k) >= 0 {
+                fzHolders(mut z, mut d, k)
                 for i <- iter.Range(0, ne) {
-                    if table.Get(mut az.fz.ev, 5 * i) == FvRet && table.Get(mut az.fz.hs, table.Get(mut az.fz.ev, 5 * i + 2)) == 1 {
-                        report(mut az, MFzEscape, desugar.NodeRef(table.Get(mut az.fz.ev, 5 * i + 3)), desugar.NodeRef(table.Get(mut az.fz.param, k)))
+                    if table.Get(mut z.ev, 5 * i) == FvRet && table.Get(mut z.hs, table.Get(mut z.ev, 5 * i + 2)) == 1 {
+                        fzReport(mut z, MFzEscape, desugar.NodeRef(table.Get(mut z.ev, 5 * i + 3)), desugar.NodeRef(table.Get(mut z.param, k)))
                         // 同じ return を別の仮引数でもう一度名指さない（種類を消す）
-                        table.Set(mut az.fz.ev, 5 * i, 0)
+                        table.Set(mut z.ev, 5 * i, 0)
                     }
                 }
             }
@@ -1220,17 +1246,17 @@ func fzJudge(az mut Az) {
 }
 
 // fzNoteImplicit は freeze の点 x が暗黙なら、その点を注で名指す
-func fzNoteImplicit(az mut Az, x desugar.NodeRef) {
-    if !fzExplicit(mut az, x) {
-        report(mut az, MFzImplicitAt, x, x)
+func fzNoteImplicit(z mut Fz, d mut desugar.S, x desugar.NodeRef) {
+    if !fzExplicit(mut z, mut d, x) {
+        fzReport(mut z, MFzImplicitAt, x, x)
     }
 }
 
 // fzEdgeOf は名前 w が持つの辺に入った節（無ければ -1）
-func fzEdgeOf(az mut Az, w int) desugar.NodeRef {
-    for i <- iter.Range(0, az.fz.nHold) {
-        if table.Get(mut az.fz.hold, 3 * i) == w || table.Get(mut az.fz.hold, 3 * i + 1) == w {
-            return desugar.NodeRef(table.Get(mut az.fz.hold, 3 * i + 2))
+func fzEdgeOf(z mut Fz, d mut desugar.S, w int) desugar.NodeRef {
+    for i <- iter.Range(0, z.nHold) {
+        if table.Get(mut z.hold, 3 * i) == w || table.Get(mut z.hold, 3 * i + 1) == w {
+            return desugar.NodeRef(table.Get(mut z.hold, 3 * i + 2))
         }
     }
     return desugar.NodeRef(-1)
@@ -1238,65 +1264,73 @@ func fzEdgeOf(az mut Az, w int) desugar.NodeRef {
 
 // ── 診断の文面 ──
 
-func fzMessage(az mut Az, k int, at desugar.NodeRef, x desugar.NodeRef) string {
+func fzMessage(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.NodeRef) string {
     // freeze の点の節（MFzParam は at・書きの指摘は付帯）
     fp := if k == MFzParam { at } else { x }
-    if k != MFzEscape && k != MFzAliasAt && k != MFzImplicitAt && !fzExplicit(mut az, fp) {
-        return fzMessageImplicit(mut az, k, at, x)
+    if k != MFzEscape && k != MFzAliasAt && k != MFzImplicitAt && !fzExplicit(mut z, mut d, fp) {
+        return fzMessageImplicit(mut z, mut d, k, at, x)
     }
     return switch k {
-    case MFzWrite: "this writes to `${fzSpell(mut az, at)}` after it was frozen by `${fzSpell(mut az, x)}` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`)"
-    case MFzAlias: "this writes through `${fzSpell(mut az, at)}`, which may hold the contents frozen by `${fzSpell(mut az, x)}` — the frozen value would change. Build the value through one binding only, or copy it before freezing"
+    case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after it was frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`)"
+    case MFzAlias: "this writes through `${fzSpell(mut z, mut d, at)}`, which may hold the contents frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value would change. Build the value through one binding only, or copy it before freezing"
     case MFzAliasAt: "(note) the contents are shared from here — the binding written above and the frozen one may hold the same buffer"
-    case MFzImplicitAt: "(note) `${fzSpell(mut az, at)}` is frozen here — an immutable value is expected at this point (implicit freeze)"
-    case MFzParam: "`${fzSpell(mut az, at)}` freezes the contents of the mut parameter `${fzParamName(mut az, x)}` — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut az, x)}`), or build a new value here and freeze that"
-    default: "the contents of the mut parameter `${fzParamName(mut az, x)}` must not escape the call (here: `${fzSpell(mut az, at)}`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`${fzParamName(mut az, x)} = …`)"
+    case MFzImplicitAt: "(note) `${fzSpell(mut z, mut d, at)}` is frozen here — an immutable value is expected at this point (implicit freeze)"
+    case MFzParam: "`${fzSpell(mut z, mut d, at)}` freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or build a new value here and freeze that"
+    default: "the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` must not escape the call (here: `${fzSpell(mut z, mut d, at)}`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`${fzParamName(mut z, mut d, x)} = …`)"
     }
 }
 
 // fzMessageImplicit は freeze の点 x が暗黙（期待型が imm の位置に置いた mut の値）のときの文面
-func fzMessageImplicit(az mut Az, k int, at desugar.NodeRef, x desugar.NodeRef) string {
+func fzMessageImplicit(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.NodeRef) string {
     return switch k {
-    case MFzWrite: "this writes to `${fzSpell(mut az, at)}` after `${fzSpell(mut az, x)}` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy"
-    case MFzAlias: "this writes through `${fzSpell(mut az, at)}`, which may hold the contents of `${fzSpell(mut az, x)}`, frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Build the value through one binding only, or pass a copy"
-    default: "passing `${fzSpell(mut az, at)}` where an immutable value is expected freezes the contents of the mut parameter `${fzParamName(mut az, x)}` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut az, x)}`), or pass a copy"
+    case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after `${fzSpell(mut z, mut d, x)}` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy: clone(x)"
+    case MFzAlias: "this writes through `${fzSpell(mut z, mut d, at)}`, which may hold the contents of `${fzSpell(mut z, mut d, x)}`, frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Build the value through one binding only, or pass a copy: clone(x)"
+    default: "passing `${fzSpell(mut z, mut d, at)}` where an immutable value is expected freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or pass a copy: clone(x)"
     }
 }
 
 // fzSpell は節の短い綴り（名前・欄・呼び出しの callee。複雑な式は "…"）
-func fzSpell(az mut Az, n desugar.NodeRef) string {
+func fzSpell(z mut Fz, d mut desugar.S, n desugar.NodeRef) string {
     if n == -1 {
         return "…"
     }
-    x := node(mut az, n)
+    x := desugar.NodeOf(mut d, n)
     if x.kind == ast.EIdent || x.kind == ast.EMutArg {
-        return str(mut az, desugar.StrRef(x.a))
+        return fzStr(mut d, desugar.StrRef(x.a))
     }
     if x.kind == ast.ESelector {
-        return "${fzSpell(mut az, desugar.NodeRef(x.a))}.${str(mut az, desugar.StrRef(x.b))}"
+        return "${fzSpell(mut z, mut d, desugar.NodeRef(x.a))}.${fzStr(mut d, desugar.StrRef(x.b))}"
     }
     if x.kind == ast.EIndex {
-        return "${fzSpell(mut az, desugar.NodeRef(x.a))}[…]"
+        return "${fzSpell(mut z, mut d, desugar.NodeRef(x.a))}[…]"
     }
     if x.kind == ast.ECall {
         as := desugar.ListRef(x.b)
-        a := if desugar.LenL(mut az.d, as) > 0 { fzSpell(mut az, nat(mut az, as, 0)) } else { "" }
-        return "${fzSpell(mut az, desugar.NodeRef(x.a))}(${a})"
+        a := if desugar.LenL(mut d, as) > 0 { fzSpell(mut z, mut d, fzNat(mut d, as, 0)) } else { "" }
+        return "${fzSpell(mut z, mut d, desugar.NodeRef(x.a))}(${a})"
     }
     if x.kind == ast.EParen {
-        return fzSpell(mut az, desugar.NodeRef(x.a))
+        return fzSpell(mut z, mut d, desugar.NodeRef(x.a))
     }
     return "…"
 }
 
-func fzParamName(az mut Az, p desugar.NodeRef) string {
+func fzParamName(z mut Fz, d mut desugar.S, p desugar.NodeRef) string {
     if p == -1 {
         return "?"
     }
-    return str(mut az, desugar.StrRef(node(mut az, p).a))
+    return fzStr(mut d, desugar.StrRef(desugar.NodeOf(mut d, p).a))
 }
 
-// Freeze は U1〜U3 だけを掛ける（`sober build` の入口 — 健全性の規則。check は Run の中で同じ規則を掛ける）
+// Freeze は U1〜U3 だけを掛ける（拒否の行の引き直し — app の lowerFail。自分で表層型の表を組む）。check は Run の中で同じ規則を掛ける
 func Freeze(p loader.Program) []Finding {
     return runAz(p, true)
+}
+
+// FreezeCount は lower の build の表（desugar.Typed の済んだ d）の上で U1〜U3 を掛けて指摘の数を返す（`sober build` の入口 — 表を共有する）。
+// z と d は呼び手の同じ構造体の 2 欄で受ける（lower の St の fz・d — 同じ anchor）。d を構造体の欄へ写す形や、局所の Fz と呼び手の d を
+// 1 つの呼び出しに渡す形は、check で Def に上がらず E2-S の逃げに回る（report-484 / 489）
+func FreezeCount(z mut Fz, d mut desugar.S) int {
+    freezeRules(mut z, mut d, true)
+    return table.Len(mut z.out) / 3
 }

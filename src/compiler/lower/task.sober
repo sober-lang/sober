@@ -117,16 +117,16 @@ func needTaskRt(st mut St) {
 // （入口の最初 — 以降の fsaddr の表 k は fs:[8k]。program の最後に組む: 表は lower の途中でも足される〔needStat 等〕）。P4-4 のワーカーは自分の表を
 // 確保して同じ形の記録を作る
 func buildWorkerInit(st mut St) {
-    hset(mut st, st.workerG + G_WORDS, if st.nwslot > 0 { st.nwslot } else { 1 })
+    desugar.HeapSet(mut st.d, st.workerG + G_WORDS, if st.nwslot > 0 { st.nwslot } else { 1 })
     begin(mut st, st.rtWorkerInit)
     w := globaladdrRaw(mut st, st.workerG)
     mut g := st.ghead
     while g >= 0 {
-        k := hget(mut st, g + G_WSLOT)
+        k := desugar.HeapGet(mut st.d, g + G_WSLOT)
         if k >= 0 {
             store(mut st, w, k, ptoi(mut st, globaladdrRaw(mut st, g)))
         }
-        g = hget(mut st, g + G_NEXT)
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
     }
     // arch_prctl(ARCH_SET_FS = 0x1002, 記録)
     syscall(mut st, list3(mut st, iconst(mut st, 158), iconst(mut st, 4098), ptoi(mut st, w)))
@@ -147,13 +147,13 @@ func taskInitMain(st mut St, sp int) {
     // sigaltstack(&stack_t, NULL)・rt_sigaction(SIGSEGV, &act, NULL, 8)。flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER（巻き戻りでハンドラから抜けても次の SIGSEGV を受ける）| SA_RESTORER
     sg := globaladdr(mut st, st.sigG)
     args := listN(mut st, 7)
-    hset(mut st, args + 1, iconst(mut st, 9))
-    hset(mut st, args + 2, iconst(mut st, 0))
-    hset(mut st, args + 3, iconst(mut st, SIG_ALT))
-    hset(mut st, args + 4, iconst(mut st, 3))
-    hset(mut st, args + 5, iconst(mut st, 16418))
-    hset(mut st, args + 6, iconst(mut st, -1))
-    hset(mut st, args + 7, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
+    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, SIG_ALT))
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
+    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
     alt := syscall(mut st, args)
     store(mut st, sg, 0, alt)
     store(mut st, sg, 1, iconst(mut st, 0))
@@ -688,13 +688,13 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     setCur(mut st, bMap)
     size := TASK_HEAD + TASK_GUARD + TASK_STACK
     args := listN(mut st, 7)
-    hset(mut st, args + 1, iconst(mut st, 9))
-    hset(mut st, args + 2, iconst(mut st, 0))
-    hset(mut st, args + 3, iconst(mut st, size))
-    hset(mut st, args + 4, iconst(mut st, 3))
-    hset(mut st, args + 5, iconst(mut st, 16418))
-    hset(mut st, args + 6, iconst(mut st, -1))
-    hset(mut st, args + 7, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
+    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 3, iconst(mut st, size))
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
+    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
     b := syscall(mut st, args)
     bad := newBlock(mut st)
     ok := newBlock(mut st)

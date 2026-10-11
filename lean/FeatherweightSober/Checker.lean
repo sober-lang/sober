@@ -312,6 +312,24 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
               if kt.keyOk && kt.regionsBelow (d' + 1) && decide (b ≤ d') then some (.slice false d' kt)
               else none
       | _ => none
+  | b, d, Γ, Λ, .clone ot e =>
+      -- 最内 region へ mut のセルとして写す（keysm と同じ床）。読み出しは index と同じ readAs。深さ 0 では書き先がない
+      match typecheck Δ Ξ Ψ f b d Γ Λ e with
+      | some (.slice m _ t') =>
+          match d with
+          | 0 => none
+          | d' + 1 =>
+              match Ty.readAs m ot t' with
+              | some t => if t.regionsBelow (d' + 1) && decide (b ≤ d') then some (.slice true d' t) else none
+              | none => none
+      | some (.map m _ c') =>
+          match d with
+          | 0 => none
+          | d' + 1 =>
+              match Ty.readAs m ot c' with
+              | some c => if c.regionsBelow (d' + 1) && decide (b ≤ d') then some (.map true d' c) else none
+              | none => none
+      | _ => none
   | _, _, _, _, .mapv _ _ _ _ => none
   | _, d, Γ, _, .par e1 e2 =>
       match typecheck Δ Ξ Ψ f d d Γ [] e1, typecheck Δ Ξ Ψ f d d Γ [] e2 with
@@ -808,6 +826,31 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     rename_i hcond
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
     exact .keysm (ih ‹_›) hcond.1.1 hcond.1.2 hcond.2
+  | clone ot e ih =>
+    intro b d Γ Λ t h
+    simp only [typecheck] at h
+    split at h
+    · split at h
+      · cases h
+      · split at h
+        · split at h
+          · cases h
+            rename_i hrd hcond
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+            exact .clones (ih ‹_›) hrd hcond.1 hcond.2
+          · cases h
+        · cases h
+    · split at h
+      · cases h
+      · split at h
+        · split at h
+          · cases h
+            rename_i hrd hcond
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+            exact .clonem (ih ‹_›) hrd hcond.1 hcond.2
+          · cases h
+        · cases h
+    · cases h
   | mapv mt r base len =>
     intro b d Γ Λ t h
     simp [typecheck] at h
@@ -1152,6 +1195,14 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     intro hs
     simp only [Expr.src] at hs
     simp [typecheck, ih hs, hko, hrb, hbd]
+  | clones h hrd hrb hbd ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, hrd, hrb, hbd]
+  | clonem h hrd hrb hbd ih =>
+    intro hs
+    simp only [Expr.src] at hs
+    simp [typecheck, ih hs, hrd, hrb, hbd]
   | mapv hk h2 h3 h4a h4b h5 =>
     intro hs
     simp [Expr.src] at hs

@@ -1,0 +1,2 @@
+testdata/analyzer_neg/clone_frozen_write.sober:14:7: error: this writes to `ys[…]` after `ys` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy: clone(x) (Analyzer)
+testdata/analyzer_neg/clone_frozen_write.sober:12:10: error: (note) `ys` is frozen here — an immutable value is expected at this point (implicit freeze) (Analyzer)

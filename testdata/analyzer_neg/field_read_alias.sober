@@ -1,0 +1,14 @@
+package main
+
+// F-ar: 外から mut の中身を持つ欄を読んで別名を作ると、信頼の口（std/table.Freeze）で凍らせた中身を後から書き換えられた（1 → 77）
+import "std/table"
+
+func main() {
+    mut t := table.Table[int]{}
+    table.Push(mut t, 1)
+    table.Push(mut t, 2)
+    c := t.chunks[0]
+    f := table.Freeze(mut t)
+    c[0] = 77
+    println(table.At(f, 0))
+}

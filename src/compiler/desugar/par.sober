@@ -568,7 +568,7 @@ func coreKids(tag int) int {
     if tag == CIte || tag == CIfnil || tag == CCase || tag == CSetidx || tag == CSubslice || tag == CSetm {
         return 7
     }
-    if tag == CSome || tag == CFst || tag == CSnd || tag == CAnn || tag == CBlock || tag == CDeref || tag == CFreeze || tag == CLen || tag == CLenm || tag == CKeysm || tag == CToByte || tag == CToInt || tag == CRecv || tag == CClose {
+    if tag == CSome || tag == CFst || tag == CSnd || tag == CAnn || tag == CBlock || tag == CDeref || tag == CFreeze || tag == CLen || tag == CLenm || tag == CKeysm || tag == CClone || tag == CToByte || tag == CToInt || tag == CRecv || tag == CClose {
         return 1
     }
     if tag == CInl || tag == CInr || tag == CCall || tag == CBlockR || tag == CAlloc || tag == CFConv || tag == CCopyTo || tag == CScope || tag == CTry || tag == CJoin {

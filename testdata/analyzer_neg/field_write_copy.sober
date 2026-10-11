@@ -1,0 +1,11 @@
+package main
+
+// 写しの mut 束縛越し: 型が他の package の struct なら束縛が局所でも書けない
+import "std/utf8"
+
+func main() {
+    v := utf8.Check(bytes("ab")) catch return
+    mut w := v
+    w.b = []byte{255}
+    println(len(w.b))
+}

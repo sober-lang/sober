@@ -1,0 +1,1 @@
+testdata/analyzer_neg/field_read_mut.sober:8:12: error: cannot read field `xs` of `Box` outside package testdata/fieldpkg/box — it holds mutable contents, and an alias of them outside the package would bypass the type's invariants (Analyzer)

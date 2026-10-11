@@ -1,0 +1,41 @@
+empty.view 0:
+empty.orig 0:
+empty.clone 0:
+one.view 1: 7
+one.orig 2: 70 8
+one.clone 1: 7
+one.rewrite 2: 4242 1
+one.clone2 1: 7
+many.view 5: 1 2 3 4 5
+many.orig 7: 100 2 3 4 5 6 7
+many.clone 5: 1 2 3 4 5
+many.rewrite 6: 4242 2 3 4 5 1
+many.clone2 5: 1 2 3 4 5
+neg.view 3: -1 0 -9007199254740991
+neg.orig 3: -5 0 -9007199254740991
+neg.clone 3: -1 0 -9007199254740991
+neg.rewrite 4: 4242 0 -9007199254740991 1
+neg.clone2 3: -1 0 -9007199254740991
+grow.view 40: 0 1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400 441 484 529 576 625 676 729 784 841 900 961 1024 1089 1156 1225 1296 1369 1444 1521
+grow.orig 43: 999 1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400 441 484 529 576 625 676 729 784 841 900 961 1024 1089 1156 1225 1296 1369 1444 1521 41 42 43
+grow.clone 40: 0 1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400 441 484 529 576 625 676 729 784 841 900 961 1024 1089 1156 1225 1296 1369 1444 1521
+grow.rewrite 41: 4242 1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400 441 484 529 576 625 676 729 784 841 900 961 1024 1089 1156 1225 1296 1369 1444 1521 1
+grow.clone2 40: 0 1 4 9 16 25 36 49 64 81 100 121 144 169 196 225 256 289 324 361 400 441 484 529 576 625 676 729 784 841 900 961 1024 1089 1156 1225 1296 1369 1444 1521
+words.orig 4: [changed] [bb] [ccc] [dddd]
+words.clone 3: [a] [bb] [ccc]
+utf8.orig 4: [changed] [いう] [] [え]
+utf8.clone 3: [あ] [いう] []
+empty.order true
+empty.orig 1: x=1
+empty.clone 0:
+small.order true
+small.orig 3: a=10 c=3 d=4
+small.clone 3: a=1 b=2 c=3
+tomb.order true
+tomb.orig 3: k1=1 k2=22 k3=3
+tomb.clone 3: k1=1 k3=3 k4=4
+long.order true
+long.orig 10: long-key-for-the-clone-test-0=100 long-key-for-the-clone-test-1=1 long-key-for-the-clone-test-2=2 long-key-for-the-clone-test-4=4 long-key-for-the-clone-test-6=6 long-key-for-the-clone-test-7=7 long-key-for-the-clone-test-8=8 long-key-for-the-clone-test-9=9 long-key-for-the-clone-test-10=10 long-key-for-the-clone-test-11=11
+long.clone 11: long-key-for-the-clone-test-0=0 long-key-for-the-clone-test-1=1 long-key-for-the-clone-test-2=2 long-key-for-the-clone-test-4=4 long-key-for-the-clone-test-5=5 long-key-for-the-clone-test-6=6 long-key-for-the-clone-test-7=7 long-key-for-the-clone-test-8=8 long-key-for-the-clone-test-9=9 long-key-for-the-clone-test-10=10 long-key-for-the-clone-test-11=11
+int.orig 4: 3=33 2=20 100=1000 7=70
+int.clone 3: 3=30 2=20 100=1000

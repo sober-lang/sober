@@ -336,9 +336,9 @@ func apList(st mut St, tv mut []bool, l int) bool {
     if l < 0 {
         return false
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     for k <- iter.Range(0, n) {
-        if apT(mut tv, hget(mut st, l + 1 + k)) {
+        if apT(mut tv, desugar.HeapGet(mut st.d, l + 1 + k)) {
             return true
         }
     }
@@ -350,17 +350,17 @@ func apArgs(st mut St, tv mut []bool, l int, t BlkRef) bool {
     if l < 0 {
         return false
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     mut grew := false
     mut p := irBlkPHead(mut st, t)
     mut k := 0
     while p >= 0 && k < n {
-        v := hget(mut st, p + 1)
-        if apT(mut tv, hget(mut st, l + 1 + k)) && !apT(mut tv, v) {
+        v := desugar.HeapGet(mut st.d, p + 1)
+        if apT(mut tv, desugar.HeapGet(mut st.d, l + 1 + k)) && !apT(mut tv, v) {
             apMark(mut tv, v)
             grew = true
         }
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
         k += 1
     }
     return grew
@@ -513,7 +513,8 @@ func llInsAllocs(st mut St, i InsRef, ma mut map[int]int, ds map[int]int) bool {
             return lenL(mut st, desugar.ListRef(args)) < 4 || llIn(ds, latI(mut st, desugar.ListRef(args), 3))
         }
         if g == st.rtReloc || g == st.rtReloc8 {
-            return lenL(mut st, desugar.ListRef(args)) < 3 || llIn(ds, latI(mut st, desugar.ListRef(args), 2))
+            k := if g == st.rtReloc8 { 1 } else { 2 }
+            return lenL(mut st, desugar.ListRef(args)) <= k || llIn(ds, latI(mut st, desugar.ListRef(args), k))
         }
         // rt.map_grow（rtgrow.sober）の確保は map 自身の深度（ヘッダの深度 — 今の深度の map なら、その map を作った確保が既に数えられている）
         if g == st.rtMapGrow {
@@ -809,7 +810,7 @@ func rlEligible(st mut St, f FnRef) bool {
                 }
                 r := irFnRFree(mut st, g)
                 // rt.panic / rt.panic_mem は戻らない（P0 の rfCallees と同じ — std/par のプログラムでは P0 を満たさない）
-                free := (r >= 0 && hget(mut st, r) == 1) || g == st.rtPanic || g == st.rtPanicMem
+                free := (r >= 0 && desugar.HeapGet(mut st.d, r) == 1) || g == st.rtPanic || g == st.rtPanicMem
                 if !free && !rlEnters(mut st, g) {
                     return false
                 }
@@ -949,7 +950,7 @@ func reEligible(st mut St, f FnRef) bool {
             } else if op == OpCall {
                 g := irInsFn(mut st, i)
                 r := irFnRFree(mut st, g)
-                free := r >= 0 && hget(mut st, r) == 1
+                free := r >= 0 && desugar.HeapGet(mut st.d, r) == 1
                 if !free && !reRtOk(mut st, g) {
                     return false
                 }

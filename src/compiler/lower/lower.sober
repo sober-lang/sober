@@ -305,14 +305,6 @@ func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode 
         mvRound: false, noVec: false, ubStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
 }
 
-// frozenCheck は analyzer の freeze の規則を掛ける（指摘があれば diag.Frozen — 行は app が引き直す）。analyzer は自分の表層型の表を組む
-// （st.d を mut で渡して Az の欄へ写す形は検査器の Def で落ちる — report-484）
-@errors(diag.Frozen)
-func frozenCheck(p loader.Program) error? {
-    n := len(analyzer.Freeze(p))
-    return if n > 0 { diag.Frozen{n: n} } else { nil }
-}
-
 // lowerWith は p を k の形で下ろす
 func lowerWith(p loader.Program, k Knob) ([]byte, error?) {
     mut st := St{}
@@ -326,6 +318,7 @@ func lowerWith(p loader.Program, k Knob) ([]byte, error?) {
     st.trapProbe = k.trapProbe
     st.rtMut = k.rtMut
     st.xLay = k.xLay
+    st.slotPoison = slotPoisonEnv()
     st.callStat = k.callStat
     st.csSite = k.csSite
     st.cutStat = k.cutStat
@@ -398,6 +391,9 @@ func elfOutSt(st mut St, p loader.Program, passes bool, m2r bool, syms bool, cop
             return []byte{}, nil
         }
         rlCleanModule(mut st, mut dirty)
+        // 葉の region の省略をもう一度（段 2b — report-499 H2）: 周回の enter と enter の後の region.depth を loopLight / rlClean が消した後の形で
+        // 初めて条件 ① に掛かる葉（fnv・atoi 等）がある。入口の enter が軽い enter（呼び出し）に置き換わった関数は enter を数えないので外れる
+        regionElideModule(mut st)
         vfyModule(mut st, "region light")
     }
     rtlower(mut st)
@@ -422,8 +418,8 @@ func elfOutSt(st mut St, p loader.Program, passes bool, m2r bool, syms bool, cop
             vfyModule(mut st, "cfg clean")
             // 展開の後の SROA + mem2reg: 展開で見えるようになった多語スロット（展開した小さい関数の中の struct・ヘッダ）を割って持ち上げる。
             // 番地が呼び出しの引数に逃げるスロットの境界つきの昇格（呼び出しの前後で書き戻し / 読み直し）は 1brc +4.6% で棄却
-            sroaModule(mut st)
-            m2rModule(mut st)
+            sroaModule(mut st, true)
+            ccPostM2rModule(mut st)
             vfyModule(mut st, "post-inline sroa")
             // UTF-8 の境界の畳み（ubf.sober — Str の写しの境界の判定を呼び手の事実から畳む）
             ubfModule(mut st)
@@ -471,7 +467,7 @@ func optimizeSsa(st mut St) {
         return
     }
     // 計測の口の止め（stopHere）は段ごとの条件で
-    sroaModule(mut st)
+    sroaModule(mut st, false)
     vfyModule(mut st, "sroa")
     if !stopHere(mut st, 3) {
         m2rModule(mut st)
@@ -550,7 +546,12 @@ func build(st mut St, p loader.Program) error? {
     // std/par の呼び出し点の形（load の拒否の層 — check は surface で同じ検査を掛ける）。表を共有するのでここ（TypeAll は 1 回が重い）
     desugar.ParCheckTyped(mut st.d, p)?
     // 健全性の規則（analyzer の freeze の U1〜U3 — language.md 17 節。暗黙の freeze の点は表層型で決まる）— ParCheck の後・lower の前
-    frozenCheck(p)?
+    // 表は build の表（d）を共有する。行は app が analyzer.Freeze で引き直す（拒否の経路だけ）
+    // 他の package の struct の欄の書き / mut の中身を持つ欄の読み（同じ表 — analyzer.Freeze が行を引き直す）
+    nfz := analyzer.FreezeCount(mut st.fz, mut st.d) + desugar.FieldViolations(mut st.d)
+    if nfz > 0 {
+        return diag.Frozen{n: nfz}
+    }
     initScalars(mut st)
     st.nstr = 0
     st.ninterp = 0
@@ -590,7 +591,7 @@ func build(st mut St, p loader.Program) error? {
     st.tNever = rec4(mut st, TNever, 0, 0, 0)
     st.tNil = rec4(mut st, TNil, 0, 0, 0)
     fis := recN(mut st, nfn(mut st) + 1)
-    hset(mut st, fis, nfn(mut st))
+    desugar.HeapSet(mut st.d, fis, nfn(mut st))
     st.fninfo = fis
     installRt(mut st)
     program(mut st)?
@@ -649,7 +650,7 @@ func program(st mut St) error? {
 // funcByKey は関数表の i 番の FnInfo（初出なら署名を作って本体を作業列に積む）。展開される関数・ジェネリック関数は呼び手が別経路へ回す
 func funcByKey(st mut St, i int) (int, error?) {
     fis := st.fninfo
-    x := hget(mut st, fis + 1 + i)
+    x := desugar.HeapGet(mut st.d, fis + 1 + i)
     if x >= 0 {
         return x, nil
     }
@@ -699,7 +700,7 @@ func newFunc(st mut St, i int) (int, error?) {
     if fnTransparent(mut st, i) {
         markTransp(mut st, fi)
     }
-    hset(mut st, st.fninfo + 1 + i, fi)
+    desugar.HeapSet(mut st.d, st.fninfo + 1 + i, fi)
     return fi, nil
 }
 
@@ -717,7 +718,7 @@ func newFuncSig(st mut St, name int, decl desugar.NodeRef, pk int, params desuga
     mut k := 0
     mut mutp := 0
     if sret {
-        hset(mut st, int(ptys) + 1, TyPtr)
+        desugar.HeapSet(mut st.d, int(ptys) + 1, TyPtr)
         k = 1
     }
     for j <- iter.Range(0, np) {
@@ -822,13 +823,13 @@ func declare(st mut St, name desugar.StrRef, kind int, t int, v int) {
     s := st.scopeTop
     sc := scopeAt(mut st, s)
     en := recN(mut st, 6)
-    hset(mut st, en, sc.names)
-    hset(mut st, en + 1, int(name))
-    hset(mut st, en + 2, kind)
-    hset(mut st, en + 3, t)
-    hset(mut st, en + 4, v)
+    desugar.HeapSet(mut st.d, en, sc.names)
+    desugar.HeapSet(mut st.d, en + 1, int(name))
+    desugar.HeapSet(mut st.d, en + 2, kind)
+    desugar.HeapSet(mut st.d, en + 3, t)
+    desugar.HeapSet(mut st.d, en + 4, v)
     // 宣言の字面の region の入れ子（M5 — 格納点の写しの floor の段。mut 仮引数は -1 = anchor）
-    hset(mut st, en + 5, st.rnest)
+    desugar.HeapSet(mut st.d, en + 5, st.rnest)
     setScope(mut st, s, en, sc.defers)
 }
 
@@ -847,19 +848,19 @@ func rPush(st mut St, saved int) {
 func markAnchor(st mut St, name desugar.StrRef) {
     l := lookup(mut st, name)
     if l >= 0 {
-        hset(mut st, l + 5, -1)
+        desugar.HeapSet(mut st.d, l + 5, -1)
     }
 }
 
 // relocNeeded は束縛 l へ格納する値を写す要があるか（M5 — mut 仮引数は常に・局所は宣言より深い入れ子からの格納だけ）
 func relocNeeded(st mut St, l int) bool {
-    r := hget(mut st, l + 5)
+    r := desugar.HeapGet(mut st.d, l + 5)
     return r < 0 || st.rnest > r
 }
 
 // relocFloor は束縛 l の行き先の深度（IR の値 — 支配する位置の値から組む）
 func relocFloor(st mut St, l int) int {
-    r := hget(mut st, l + 5)
+    r := desugar.HeapGet(mut st.d, l + 5)
     if r < 0 {
         return if st.anchorDepth >= 0 { st.anchorDepth } else { st.entryDepth }
     }
@@ -880,7 +881,7 @@ func relocFree(st mut St, tgt desugar.NodeRef, v desugar.NodeRef, t int) bool {
     if isString(mut st, t) && (k == ast.EInterp || (k == ast.EBinary && nodeOf(mut st, v).a == lexer.Plus)) {
         return true
     }
-    if k == ast.ECall && isTag(mut st, t, TSlice) && hget(mut st, t + 2) != 0 {
+    if k == ast.ECall && isTag(mut st, t, TSlice) && desugar.HeapGet(mut st.d, t + 2) != 0 {
         callee := nA(nodeOf(mut st, v))
         args := lB(nodeOf(mut st, v))
         if kindN(mut st, callee) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, callee)), "append") && lenL(mut st, args) == 2 {
@@ -933,11 +934,11 @@ func declareNew(st mut St, name desugar.StrRef, kind int, t int, v int, at desug
 func lookup(st mut St, name desugar.StrRef) int {
     ch := st.chain
     ns := st.nscope
-    mut v := hget(mut st, ch) / 2
+    mut v := desugar.HeapGet(mut st.d, ch) / 2
     while v > 0 {
         v -= 1
-        lo := hget(mut st, ch + 1 + v * 2)
-        hi0 := hget(mut st, ch + 2 + v * 2)
+        lo := desugar.HeapGet(mut st.d, ch + 1 + v * 2)
+        hi0 := desugar.HeapGet(mut st.d, ch + 2 + v * 2)
         hi := if hi0 < ns { hi0 } else { ns }
         mut s := st.scopeTop
         while s >= 0 {
@@ -948,7 +949,7 @@ func lookup(st mut St, name desugar.StrRef) int {
                     if strEq(mut st, hgetS(mut st, en + 1), name) {
                         return en
                     }
-                    en = hget(mut st, en)
+                    en = desugar.HeapGet(mut st.d, en)
                 }
             }
             s = sc.prev
@@ -989,7 +990,7 @@ func runDefers(st mut St, from int) error? {
             if cur(mut st) == -1 {
                 return nil
             }
-            d = hget(mut st, d)
+            d = desugar.HeapGet(mut st.d, d)
         }
         s = scopeAt(mut st, s).prev
     }
@@ -1144,7 +1145,7 @@ func releaseSlots(st mut St, m int, names0 int) {
     st.slen = m
     for i <- iter.Range(m, hi) {
         r := table.Get(mut st.slive, i)
-        if slotBound(mut st, hget(mut st, r + 4), names0) {
+        if slotBound(mut st, desugar.HeapGet(mut st.d, r + 4), names0) {
             liveAdd(mut st, r)
         } else {
             slotFree(mut st, r)
@@ -1156,10 +1157,10 @@ func releaseSlots(st mut St, m int, names0 int) {
 func slotBound(st mut St, v int, names0 int) bool {
     mut en := scopeAt(mut st, st.scopeTop).names
     while en >= 0 && en != names0 {
-        if hget(mut st, en + 4) == v {
+        if desugar.HeapGet(mut st.d, en + 4) == v {
             return true
         }
-        en = hget(mut st, en)
+        en = desugar.HeapGet(mut st.d, en)
     }
     return false
 }
@@ -1185,7 +1186,7 @@ func stmtBody(st mut St, s desugar.NodeRef) error? {
     case ast.SWhile:
         return whileStmt(mut st, s)
     case ast.SBreak | ast.SContinue:
-        if st.nloop <= hget(mut st, st.floors + 1) {
+        if st.nloop <= desugar.HeapGet(mut st.d, st.floors + 1) {
             return diag.Unsupported{at: posOf(mut st, at)}
         }
         lp := loopAt(mut st, st.loop)
@@ -1225,7 +1226,7 @@ func bindStmt(st mut St, s desugar.NodeRef) error? {
             return nil
         }
         for i <- iter.Range(0, nn) {
-            bindName(mut st, latS(mut st, names, i), hget(mut st, r + 1 + i * 2), hget(mut st, r + 2 + i * 2), mutable, at)?
+            bindName(mut st, latS(mut st, names, i), desugar.HeapGet(mut st.d, r + 1 + i * 2), desugar.HeapGet(mut st.d, r + 2 + i * 2), mutable, at)?
         }
         if cb >= 0 {
             st.ubPendSeq = st.ubSeq
@@ -1246,11 +1247,11 @@ func bindStmt(st mut St, s desugar.NodeRef) error? {
             return nil
         }
         v := if nv > 1 { copyVal(mut st, x.t, x.v) } else { x.v }
-        hset(mut st, vs + 1 + i * 2, x.t)
-        hset(mut st, vs + 2 + i * 2, v)
+        desugar.HeapSet(mut st.d, vs + 1 + i * 2, x.t)
+        desugar.HeapSet(mut st.d, vs + 2 + i * 2, v)
     }
     for i <- iter.Range(0, nn) {
-        bindName(mut st, latS(mut st, names, i), hget(mut st, vs + 1 + i * 2), hget(mut st, vs + 2 + i * 2), mutable, at)?
+        bindName(mut st, latS(mut st, names, i), desugar.HeapGet(mut st.d, vs + 1 + i * 2), desugar.HeapGet(mut st.d, vs + 2 + i * 2), mutable, at)?
     }
     return nil
 }
@@ -1292,10 +1293,10 @@ func ubCheckArg(st mut St, e desugar.NodeRef) (int, error?) {
         return -1, nil
     }
     l := lookup(mut st, sA(nodeOf(mut st, a)))
-    if l < 0 || hget(mut st, l + 2) != LVal || !isAggregate(mut st, hget(mut st, l + 3)) || tWords(mut st, hget(mut st, l + 3)) != 3 {
+    if l < 0 || desugar.HeapGet(mut st.d, l + 2) != LVal || !isAggregate(mut st, desugar.HeapGet(mut st.d, l + 3)) || tWords(mut st, desugar.HeapGet(mut st.d, l + 3)) != 3 {
         return -1, nil
     }
-    return hget(mut st, l + 4), nil
+    return desugar.HeapGet(mut st.d, l + 4), nil
 }
 
 // ubViewBind は e が `if $e != nil { …; 脱出 } else { $k }`（$k / $e は待ちの束縛の名前）か
@@ -1461,8 +1462,8 @@ func assignStmt(st mut St, s desugar.NodeRef) error? {
                 return nil
             }
             v := if nv > 1 { copyVal(mut st, x.t, x.v) } else { x.v }
-            hset(mut st, vs + 1 + i * 2, x.t)
-            hset(mut st, vs + 2 + i * 2, v)
+            desugar.HeapSet(mut st.d, vs + 1 + i * 2, x.t)
+            desugar.HeapSet(mut st.d, vs + 2 + i * 2, v)
             i += 1
         }
     }
@@ -1472,10 +1473,10 @@ func assignStmt(st mut St, s desugar.NodeRef) error? {
         i -= 1
         dst := target(mut st, latN(mut st, targets, i), at)?
         if dst.t >= 0 {
-            s0 := hget(mut st, vs + 1 + i * 2)
+            s0 := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
             // 型なしの定数は行き先の named scalar に割り当てる（language.md 32 節 — exprExpecting と同じ規則。値は下地のまま）
             st0 := if nt == nv && takesConst(mut st, dst.t) && untypedConst(mut st, latN(mut st, values, i)) && constFits(mut st, dst.t, s0, latN(mut st, values, i)) { dst.t } else { s0 }
-            cv := coerce(mut st, st0, hget(mut st, vs + 2 + i * 2), dst.t, at)?
+            cv := coerce(mut st, st0, desugar.HeapGet(mut st.d, vs + 2 + i * 2), dst.t, at)?
             // 格納点の写し（M5 — check の copyTo / mksliceAt の lower 版）: 宣言より深い region から外の束縛へ格納するコンテナは行き先の深度へ写す
             rb := rootBind(mut st, latN(mut st, targets, i))
             if rb >= 0 && containsSlice(mut st, cv.t) && relocNeeded(mut st, rb) && !relocFree(mut st, latN(mut st, targets, i), if nt == nv { latN(mut st, values, i) } else { desugar.NodeRef(-1) }, cv.t) {
@@ -1502,10 +1503,10 @@ func target(st mut St, t desugar.NodeRef, at desugar.NodeRef) (Val, error?) {
         if l < 0 {
             return Val{}, diag.UndefinedName{at: posOf(mut st, t)}
         }
-        if hget(mut st, l + 2) != LCell {
+        if desugar.HeapGet(mut st.d, l + 2) != LCell {
             return Val{}, diag.Mismatch{at: posOf(mut st, t)}
         }
-        return Val{t: hget(mut st, l + 3), v: hget(mut st, l + 4)}, nil
+        return Val{t: desugar.HeapGet(mut st.d, l + 3), v: desugar.HeapGet(mut st.d, l + 4)}, nil
     }
     if k == ast.ESelector {
         bx := target(mut st, nA(nodeOf(mut st, t)), at)?
@@ -1513,7 +1514,7 @@ func target(st mut St, t desugar.NodeRef, at desugar.NodeRef) (Val, error?) {
             return Val{}, diag.Mismatch{at: posOf(mut st, t)}
         }
         f := fieldOf(mut st, bx.t, sB(nodeOf(mut st, t)), t)?
-        return Val{t: hget(mut st, f + 1), v: fieldPtr(mut st, bx.v, hget(mut st, f + 2))}, nil
+        return Val{t: desugar.HeapGet(mut st.d, f + 1), v: fieldPtr(mut st, bx.v, desugar.HeapGet(mut st.d, f + 2))}, nil
     }
     return Val{}, diag.Mismatch{at: posOf(mut st, at)}
 }
@@ -1523,7 +1524,7 @@ func fieldOf(st mut St, t int, name desugar.StrRef, at desugar.NodeRef) (int, er
     if !isTag(mut st, t, TStruct) {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
-    f := findField(mut st, hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS), name)
+    f := findField(mut st, hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS), name)
     if f < 0 {
         return 0, diag.UndefinedField{at: posOf(mut st, at)}
     }
@@ -1597,8 +1598,7 @@ func forStmt(st mut St, e desugar.NodeRef) error? {
     ex := newBlock(mut st)
     ga := lB(nodeOf(mut st, gen))
     lam := latN(mut st, ga, lenL(mut st, ga) - 1)
-    mut ln := nodeOf(mut st, lam)
-    ln.c = rec4(mut st, int(ex), saved, st.nscope, 0) + 1
+    ln := ast.WithC(nodeOf(mut st, lam), rec4(mut st, int(ex), saved, st.nscope, 0) + 1)
     desugar.SynSet(mut st.d, int(lam), ln)
     evalMulti(mut st, gen)?
     if cur(mut st) != -1 {
@@ -1616,7 +1616,7 @@ func forStmt(st mut St, e desugar.NodeRef) error? {
 func retStmt(st mut St, s desugar.NodeRef) error? {
     at := s
     values := lA(nodeOf(mut st, s))
-    ctx := hget(mut st, st.rets + 1)
+    ctx := desugar.HeapGet(mut st.d, st.rets + 1)
     want_ts := if ctx >= 0 { hgetL(mut st, ctx + IC_RESULTS) } else { desugar.ListRef(infoAt(mut st, st.info).results) }
     nw := lenL(mut st, want_ts)
     nv := lenL(mut st, values)
@@ -1629,7 +1629,7 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
             return diag.Mismatch{at: posOf(mut st, at)}
         }
         vs = listN(mut st, nv * 2)
-        hset(mut st, vs, nv)
+        desugar.HeapSet(mut st.d, vs, nv)
         for i <- iter.Range(0, nv) {
             wi := latI(mut st, want_ts, i)
             ei := latN(mut st, values, i)
@@ -1648,23 +1648,23 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
             if isTag(mut st, x.t, TNever) {
                 return nil
             }
-            hset(mut st, vs + 1 + i * 2, x.t)
-            hset(mut st, vs + 2 + i * 2, x.v)
+            desugar.HeapSet(mut st.d, vs + 1 + i * 2, x.t)
+            desugar.HeapSet(mut st.d, vs + 2 + i * 2, x.v)
         }
     }
     if vs < 0 {
         return nil
     }
     for i <- iter.Range(0, nw) {
-        if !tEql(mut st, hget(mut st, vs + 1 + i * 2), latI(mut st, want_ts, i)) {
+        if !tEql(mut st, desugar.HeapGet(mut st.d, vs + 1 + i * 2), latI(mut st, want_ts, i)) {
             return diag.Mismatch{at: posOf(mut st, at)}
         }
     }
     if ctx >= 0 {
         mut ioff := 0
         for i <- iter.Range(0, nw) {
-            t := hget(mut st, vs + 1 + i * 2)
-            storeVal(mut st, hget(mut st, ctx + IC_SLOT), ioff, t, hget(mut st, vs + 2 + i * 2))
+            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
+            storeVal(mut st, desugar.HeapGet(mut st.d, ctx + IC_SLOT), ioff, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
             ioff += tWords(mut st, t)
         }
         return inlineExit(mut st, ctx, at)
@@ -1673,12 +1673,12 @@ func retStmt(st mut St, s desugar.NodeRef) error? {
     if infoSret(mut st) {
         mut off := 0
         for i <- iter.Range(0, nw) {
-            t := hget(mut st, vs + 1 + i * 2)
-            storeVal(mut st, st.sret, off, t, hget(mut st, vs + 2 + i * 2))
+            t := desugar.HeapGet(mut st.d, vs + 1 + i * 2)
+            storeVal(mut st, st.sret, off, t, desugar.HeapGet(mut st.d, vs + 2 + i * 2))
             off += tWords(mut st, t)
         }
     }
-    return funcExit(mut st, if !infoSret(mut st) && nw == 1 { hget(mut st, vs + 2) } else { -1 }, at)
+    return funcExit(mut st, if !infoSret(mut st) && nw == 1 { desugar.HeapGet(mut st.d, vs + 2) } else { -1 }, at)
 }
 
 // funcExit は関数の出口の後半（結果は書き済み — sret でなければ v）: defer → 結果の relocate → 深度復元 → ret
@@ -1746,27 +1746,27 @@ func resultsHoldSlice(st mut St, rs desugar.ListRef) bool {
 
 // containsSlice は slice / map を（入れ子含め）どこかに含むか
 func containsSlice(st mut St, t int) bool {
-    k := hget(mut st, t)
+    k := desugar.HeapGet(mut st.d, t)
     switch k {
     case TSlice | TMap:
         return true
     case TOpt:
-        return containsSlice(mut st, hget(mut st, t + 1))
+        return containsSlice(mut st, desugar.HeapGet(mut st.d, t + 1))
     case TStruct:
-        fs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
         for i <- iter.Range(0, lenL(mut st, fs)) {
-            if containsSlice(mut st, hget(mut st, latI(mut st, fs, i) + 1)) {
+            if containsSlice(mut st, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)) {
                 return true
             }
         }
         return false
     }
     if k == TUnion {
-        vs := hgetL(mut st, hget(mut st, t + 1) + SI_FIELDS)
+        vs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
         for i <- iter.Range(0, lenL(mut st, vs)) {
             fs := hgetL(mut st, latI(mut st, vs, i) + 2)
             for j <- iter.Range(0, lenL(mut st, fs)) {
-                if containsSlice(mut st, hget(mut st, latI(mut st, fs, j) + 1)) {
+                if containsSlice(mut st, desugar.HeapGet(mut st.d, latI(mut st, fs, j) + 1)) {
                     return true
                 }
             }
@@ -1795,8 +1795,8 @@ func blockTail(st mut St, l desugar.ListRef) (Val, error?) {
         if cur(mut st) == -1 || r < 0 {
             return Val{t: tNever(mut st), v: 0}, nil
         }
-        if hget(mut st, r) == 1 {
-            return Val{t: hget(mut st, r + 1), v: hget(mut st, r + 2)}, nil
+        if desugar.HeapGet(mut st.d, r) == 1 {
+            return Val{t: desugar.HeapGet(mut st.d, r + 1), v: desugar.HeapGet(mut st.d, r + 2)}, nil
         }
     }
     return Val{t: tNone(mut st), v: 0}, nil

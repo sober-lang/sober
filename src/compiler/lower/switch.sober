@@ -46,7 +46,7 @@ func patVariant(st mut St, pn desugar.StrRef, ut int) int {
     if r.kind != desugar.TopVariant {
         return -1
     }
-    d := hget(mut st, hget(mut st, ut + 1) + SI_DECL)
+    d := desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, ut + 1) + SI_DECL)
     ud := if d == -1 { desugar.ERRS } else { d }
     return if r.idx == ud { r.sub } else { -1 }
 }
@@ -54,12 +54,12 @@ func patVariant(st mut St, pn desugar.StrRef, ut int) int {
 // 束縛の鎖 = [head, tail]、項 = [next, name, 型, 値]
 func bindAdd(st mut St, bs int, name int, t int, v int) {
     en := rec4(mut st, -1, name, t, v)
-    if hget(mut st, bs + 1) < 0 {
-        hset(mut st, bs, en)
+    if desugar.HeapGet(mut st.d, bs + 1) < 0 {
+        desugar.HeapSet(mut st.d, bs, en)
     } else {
-        hset(mut st, hget(mut st, bs + 1), en)
+        desugar.HeapSet(mut st.d, desugar.HeapGet(mut st.d, bs + 1), en)
     }
-    hset(mut st, bs + 1, en)
+    desugar.HeapSet(mut st.d, bs + 1, en)
 }
 
 // switchExpr は subject を 1 回だけ評価し、case を上から順に照合する（不一致は次の case へ）。default 無しで全部外れたら値はゼロ
@@ -74,27 +74,27 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
         subj = evalMulti(mut st, latN(mut st, subjects, 0))?
     } else {
         subj = listN(mut st, ns * 2)
-        hset(mut st, subj, ns)
+        desugar.HeapSet(mut st.d, subj, ns)
         mut i := 0
         while i < ns {
             x := expr(mut st, latN(mut st, subjects, i))?
             if isTag(mut st, x.t, TNever) {
                 return Val{t: x.t, v: 0}, nil
             }
-            hset(mut st, subj + 1 + i * 2, x.t)
-            hset(mut st, subj + 2 + i * 2, x.v)
+            desugar.HeapSet(mut st.d, subj + 1 + i * 2, x.t)
+            desugar.HeapSet(mut st.d, subj + 2 + i * 2, x.v)
             i += 1
         }
     }
     if subj < 0 {
         return Val{t: tNever(mut st), v: 0}, nil
     }
-    nsub := hget(mut st, subj)
+    nsub := desugar.HeapGet(mut st.d, subj)
     if ns > 0 && nsub == 0 {
         return Val{}, diag.Mismatch{at: posOf(mut st, at)}
     }
-    if st.traceErrs && nsub == 1 && isErr(mut st, hget(mut st, subj + 1)) {
-        traceSwitch(mut st, sw, hget(mut st, subj + 2))
+    if st.traceErrs && nsub == 1 && isErr(mut st, desugar.HeapGet(mut st.d, subj + 1)) {
+        traceSwitch(mut st, sw, desugar.HeapGet(mut st.d, subj + 2))
     }
     nc := lenL(mut st, cases)
     ends := endsNew(mut st, nc + 1)
@@ -114,15 +114,15 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
             if nsub == 0 {
                 matchPattern(mut st, latN(mut st, pats, i), -1, 0, nx, bs)?
             } else {
-                matchPattern(mut st, latN(mut st, pats, i), hget(mut st, subj + 1 + i * 2), hget(mut st, subj + 2 + i * 2), nx, bs)?
+                matchPattern(mut st, latN(mut st, pats, i), desugar.HeapGet(mut st.d, subj + 1 + i * 2), desugar.HeapGet(mut st.d, subj + 2 + i * 2), nx, bs)?
             }
             i += 1
         }
         pushScope(mut st)
-        mut b := hget(mut st, bs)
+        mut b := desugar.HeapGet(mut st.d, bs)
         while b >= 0 {
-            declareNew(mut st, hgetS(mut st, b + 1), LVal, hget(mut st, b + 2), hget(mut st, b + 3), c)?
-            b = hget(mut st, b)
+            declareNew(mut st, hgetS(mut st, b + 1), LVal, desugar.HeapGet(mut st.d, b + 2), desugar.HeapGet(mut st.d, b + 3), c)?
+            b = desugar.HeapGet(mut st.d, b)
         }
         av := armTail(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, c)))))?
         popScope(mut st)
@@ -136,9 +136,9 @@ func switchExpr(st mut St, sw desugar.NodeRef) (Val, error?) {
     // build は analyzer を走らせないので、覆っていないラベルが来たら exit 101（決定 E4-B — 下の外れの腕）
     // （リンク集合の全ラベルを覆う error の switch は今までどおり — 外れの腕はゼロ値のまま、IR は変わらない）
     mut errGap := false
-    isErrSw := nsub == 1 && isErr(mut st, hget(mut st, subj + 1))
+    isErrSw := nsub == 1 && isErr(mut st, desugar.HeapGet(mut st.d, subj + 1))
     // 網羅を見る subject の型（error の switch はリンク集合の全ラベルの union）
-    cty := if isErrSw { hget(mut st, errsInfo(mut st) + SI_TY) } else if nsub == 1 && ns <= 1 { hget(mut st, subj + 1) } else { tNone(mut st) }
+    cty := if isErrSw { desugar.HeapGet(mut st.d, errsInfo(mut st) + SI_TY) } else if nsub == 1 && ns <= 1 { desugar.HeapGet(mut st.d, subj + 1) } else { tNone(mut st) }
     if isErrSw && dflt == -1 {
         errGap = checkCover(mut st, sw, cty, t) != nil
     } else if ns <= 1 && dflt == -1 {
@@ -180,7 +180,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
     }
     if isTag(mut st, sty, TUnion) && typePatRows(mut st, sw) > 0 {
         // 網羅漏れは名指す（落ちている variant — check と同じ desugar.MissingVariant）
-        ud := hget(mut st, hget(mut st, sty + 1) + SI_DECL)
+        ud := desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, sty + 1) + SI_DECL)
         if ud == -1 {
             return diag.Mismatch{at: posOf(mut st, sw)}
         }
@@ -193,7 +193,7 @@ func checkCover(st mut St, sw desugar.NodeRef, sty int, t int) error? {
             }
         }
         // 名指すのは同じ package の union だけ（check と同じ — 別 package の宣言はソースが引けない場合がある）
-        mv := if hget(mut st, hget(mut st, sty + 1) + SI_PKG) == st.curPkg { desugar.MissingVariant(mut st.d, st.curPkg, desugar.NodeRef(ud), freeze(ps)) } else { desugar.NodeRef(-1) }
+        mv := if desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, sty + 1) + SI_PKG) == st.curPkg { desugar.MissingVariant(mut st.d, st.curPkg, desugar.NodeRef(ud), freeze(ps)) } else { desugar.NodeRef(-1) }
         return diag.NonExhaustive{at: posOf(mut st, sw), missing: if mv == desugar.NodeRef(-1) { diag.None() } else { posOf(mut st, mv) }}
     }
     if t < 0 {
@@ -250,10 +250,10 @@ func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
                     r += 1
                 }
             }
-            info := hget(mut st, sty + 1)
+            info := desugar.HeapGet(mut st.d, sty + 1)
             // error の全ラベルの union は宣言を持たない（SI_DECL = -1）— ラベル集合の領域（リンク集合の全ラベル）
-            ud := hget(mut st, info + SI_DECL)
-            dom := if ud == -1 { desugar.PmCol{kind: desugar.PmErr, a: desugar.PmAllLabels(mut st.d), b: 0} } else { desugar.PmCol{kind: desugar.PmSum, a: ud, b: hget(mut st, info + SI_PKG)} }
+            ud := desugar.HeapGet(mut st.d, info + SI_DECL)
+            dom := if ud == -1 { desugar.PmCol{kind: desugar.PmErr, a: desugar.PmAllLabels(mut st.d), b: 0} } else { desugar.PmCol{kind: desugar.PmSum, a: ud, b: desugar.HeapGet(mut st.d, info + SI_PKG)} }
             return !desugar.PmUseful1(mut st.d, st.curPkg, rows, n, desugar.NodeRef(-1), dom, desugar.ListRef(-1))
         }
     }
@@ -312,11 +312,11 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
     // error: 先頭ラベル（語 0 から — 同じアドレス）で照合し、`cause` は鎖から作る 1 つ内側の error?
     is_err := isErr(mut st, sty)
     sty0 := sty
-    ut := if is_err { hget(mut st, errsInfo(mut st) + SI_TY) } else { sty0 }
+    ut := if is_err { desugar.HeapGet(mut st.d, errsInfo(mut st) + SI_TY) } else { sty0 }
     if !isTag(mut st, ut, TUnion) {
         return diag.Mismatch{at: posOf(mut st, at)}
     }
-    vs := hgetL(mut st, hget(mut st, ut + 1) + SI_FIELDS)
+    vs := hgetL(mut st, desugar.HeapGet(mut st.d, ut + 1) + SI_FIELDS)
     vi := patVariant(mut st, sB(nodeOf(mut st, p)), ut)
     if vi < 0 {
         return diag.Mismatch{at: posOf(mut st, at)}
@@ -324,7 +324,7 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
     vr := latI(mut st, vs, vi)
     ok := newBlock(mut st)
     tagv := load(mut st, sv, 0)
-    condbr(mut st, cmp(mut st, CEq, tagv, iconst(mut st, hget(mut st, vr + 1))), ok, -1, nx, -1)
+    condbr(mut st, cmp(mut st, CEq, tagv, iconst(mut st, desugar.HeapGet(mut st.d, vr + 1))), ok, -1, nx, -1)
     setCur(mut st, ok)
     if nodeOf(mut st, p).a >= 0 {
         bindAdd(mut st, bs, nodeOf(mut st, p).a, sty0, sv)
@@ -336,8 +336,8 @@ func matchPattern(st mut St, p desugar.NodeRef, sty int, sv int, nx BlkRef, bs i
         mut ft := 0
         mut fv := 0
         if f >= 0 {
-            ft = hget(mut st, f + 1)
-            fv = loadVal(mut st, sv, 1 + hget(mut st, f + 2), ft)
+            ft = desugar.HeapGet(mut st.d, f + 1)
+            fv = loadVal(mut st, sv, 1 + desugar.HeapGet(mut st.d, f + 2), ft)
         } else if is_err && strIs(mut st, sA(nodeOf(mut st, fp)), "cause") {
             ft = optOf(mut st, sty0)
             fv = causeOf(mut st, sv, sty0, ut)

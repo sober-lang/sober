@@ -16,6 +16,7 @@ package lower
 // View{b: b のヘッダ} に組み直す — Check の契約〔成功なら View.b = b〕を std の語彙として lower に置く。report-478 の裁定 (A)）。
 // 事実の読みの条件: 同じ番地を検査する Check の呼び出し（写さない — irinl.sober）がこの関数にあれば、その点が事実の読みを支配すること
 
+import "desugar"
 import "std/iter"
 
 // UB_MARK は boundary の写しの byte の読みの印（load8 の C 欄 — 他の段は load8 の C を読まない。ubfFunc が消す）
@@ -86,10 +87,10 @@ func ubfFunc(st mut St, f FnRef) int {
             mut p := irBlkPHead(mut st, b)
             mut k := 0
             while p >= 0 {
-                uw.parBlk[hget(mut st, p + 1)] = bi
-                uw.parIx[hget(mut st, p + 1)] = k
+                uw.parBlk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                uw.parIx[desugar.HeapGet(mut st.d, p + 1)] = k
                 k += 1
-                p = hget(mut st, p)
+                p = desugar.HeapGet(mut st.d, p)
             }
             mut ins := irBlkIHead(mut st, b)
             while ins != -1 {
@@ -203,10 +204,10 @@ func ubEdgeArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, hb int, ix int, p in
 }
 
 func ubArgOk(st mut St, w mut m2rW, uw mut UbW, pb int, l int, ix int, p int) bool {
-    if l < 0 || ix >= hget(mut st, l) {
+    if l < 0 || ix >= desugar.HeapGet(mut st.d, l) {
         return false
     }
-    a := hget(mut st, l + 1 + ix)
+    a := desugar.HeapGet(mut st.d, l + 1 + ix)
     if ubIsConst(mut st, mut uw, a, 0) {
         return true
     }
@@ -327,8 +328,8 @@ func ubFrozenAt(st mut St, w mut m2rW, uw mut UbW, p int, fb int, l InsRef) bool
 // ubCallTakes は呼び出し c の実引数に番地 p と同じ番地の値があるか
 func ubCallTakes(st mut St, uw mut UbW, c InsRef, p int) bool {
     args := irInsB(mut st, c)
-    for j <- iter.Range(0, if args < 0 { 0 } else { hget(mut st, args) }) {
-        a := hget(mut st, args + 1 + j)
+    for j <- iter.Range(0, if args < 0 { 0 } else { desugar.HeapGet(mut st.d, args) }) {
+        a := desugar.HeapGet(mut st.d, args + 1 + j)
         if a >= 0 && a < len(uw.defIns) && ubSameBase(mut st, mut uw, a, p, 4) {
             return true
         }

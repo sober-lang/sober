@@ -1,0 +1,14 @@
+package main
+
+// mut の仮引数越し: 型で決まる
+import "std/utf8"
+
+func forge(v mut utf8.View) {
+    v.b = []byte{255}
+}
+
+func main() {
+    mut v := utf8.Check(bytes("ab")) catch return
+    forge(mut v)
+    println(len(v.b))
+}

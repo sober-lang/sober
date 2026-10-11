@@ -12,10 +12,10 @@ import "std/iter"
 func hdrT(mask int) int {
     mut st := St{}
     initScalars(mut st)
-    hpush(mut st, 0)
+    desugar.HeapPush(mut st.d, 0)
     pt := listN(mut st, 2)
-    hset(mut st, pt + 1, TyPtr)
-    hset(mut st, pt + 2, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pt + 2, TyPtr)
     f := addFunc(mut st, 0, desugar.ListRef(pt), -1)
     irSetFnMutP(mut st, f, mask)
     st.fn = f

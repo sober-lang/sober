@@ -110,7 +110,8 @@ for (const [k, users] of [...fields].sort()) {
     const b = fns.get(n)!.body;
     const hits = [...b.matchAll(/\b(hget|hset|hpush|hlen|recN|listN|rec4|list[0-9]|dat|hgetS|hgetN|hgetL)\(|st\.d\.h\b|st\.d\b/g)].map(m => m[0]);
     if (hits.length && n !== "xg") { console.log(`FAIL heap-touch after the freeze ${fns.get(n)!.file}:${n}: ${[...new Set(hits)].join(" ")}`); heapFail += 1; }
-    const ext = [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]);
+    // 読み口 xg は凍結の前の分岐で desugar.HeapGet(mut st.d, …) を呼ぶ（欄の私有 — language.md 20 節。分岐は st.hfOn で凍結の後には通らない）
+    const ext = n === "xg" ? [] : [...b.matchAll(/\b(desugar|loader|ast)\.[A-Za-z_]+\(/g)].map(m => m[0]);
     if (ext.length) { console.log(`FAIL ext-call after the freeze ${fns.get(n)!.file}:${n}: ${[...new Set(ext)].join(" ")}`); heapFail += 1; }
   }
   if (verbose) console.log(`xModuleFrozen closure: ${xs.size} functions`);
@@ -128,6 +129,8 @@ let x86Fields = 0;
     const xs = closure(["xFunc"], new Set(["xg"]));
     const xf = new Map<string, Set<string>>();
     for (const n of xs) for (const m of fns.get(n)!.body.matchAll(/\bst\.([A-Za-z_][A-Za-z0-9_]*)/g)) {
+      // 読み口 xg の st.d は凍結の前の分岐だけ（群の子は凍結の後 — st.hf を読む）
+      if (n === "xg" && m[1] === "d") continue;
       if (!xf.has(m[1])) xf.set(m[1], new Set());
       xf.get(m[1])!.add(n);
     }

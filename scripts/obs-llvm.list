@@ -95,3 +95,5 @@ partial_lit
 # std/table（固定長 chunk の Table — Get / Set O(1)）
 table_std
 table_get_oob
+# builtin clone（浅い写し — Lean の clone・rt.copy / copy8 で一括）
+clone_std

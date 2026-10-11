@@ -68,6 +68,7 @@ const CNewch = 59    // a = 家の region r, b = 容量, c = ペイロードの�
 const CSend = 60     // a = 送り端, b = 値
 const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
 const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
+const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndex と同じ）（clone の段 — slice / map の浅い写しを最内 region の mut へ）
 
 // float の二項の種類（FAdd..FDiv は farith、FEq..FGe は fcmp）
 const FAdd = 1
@@ -305,6 +306,11 @@ func cMkslice(st mut S, m int, t TyRef) CoreRef {
 // cMksliceAt は空 slice を region r に作る（M3b — mut の宛先構築。d = r + 1 — 0 は最内の mkslice）
 func cMksliceAt(st mut S, m int, t TyRef, r int) CoreRef {
     return ce(mut st, CMkslice, m, int(t), 0, r + 1)
+}
+
+// cClone は clone(x) の写し（t は読み出しの注釈 — -1 = 注釈なし）
+func cClone(st mut S, e CoreRef, t TyRef) CoreRef {
+    return ce(mut st, CClone, int(e), int(t), 0, 0)
 }
 
 // cIndex の t は -1 = 注釈なし

@@ -318,6 +318,57 @@ theorem heapOk_append_list {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {t : Ty}
     simp only [List.set_set, List.append_assoc, List.singleton_append, List.map_cons] at h2 ⊢
     exact h2
 
+/-- heapOk_append_list の mut のセル版（clone の段）: 全セルは mut・型 t・take (k+1) で型付く（書き先 k は b ≤ k） -/
+theorem heapOk_append_list_mut {Δ : Defs} {Ξ : ChanTy} {b k : Nat} {t : Ty}
+    (hbk : b ≤ k) (hbt : t.regionsBelow (k + 1) = true) :
+    ∀ (cs : List (Bool × Expr)) {Ψ : StoreTy} {H : Heap} {ρ : List (Bool × Expr)} {σ : List (Bool × Ty)},
+      HeapOk Δ Ξ b Ψ H → H[k]? = some ρ → Ψ[k]? = some σ →
+      (∀ c ∈ cs, c.1 = true ∧ Value c.2 ∧ HasType Δ Ξ (Ψ.take (k + 1)) b b (k + 1) [] [] c.2 t) →
+      HeapOk Δ Ξ b (Ψ.set k (σ ++ cs.map (fun _ => (true, t)))) (H.set k (ρ ++ cs)) := by
+  intro cs
+  induction cs with
+  | nil =>
+    intro Ψ H ρ σ hH hρ hσ _
+    simp only [List.map_nil, List.append_nil]
+    have hΨ : Ψ.set k σ = Ψ := by
+      apply List.ext_getElem?
+      intro n
+      by_cases hn : n = k
+      · subst hn
+        rw [List.getElem?_set_self (List.getElem?_eq_some_iff.mp hσ).1]
+        exact hσ.symm
+      · rw [List.getElem?_set_ne (by omega)]
+    have hHe : H.set k ρ = H := by
+      apply List.ext_getElem?
+      intro n
+      by_cases hn : n = k
+      · subst hn
+        rw [List.getElem?_set_self (List.getElem?_eq_some_iff.mp hρ).1]
+        exact hρ.symm
+      · rw [List.getElem?_set_ne (by omega)]
+    rw [hΨ, hHe]
+    exact hH
+  | cons c cs ih =>
+    intro Ψ H ρ σ hH hρ hσ hcs
+    obtain ⟨hc1, hcv, hct⟩ := hcs c (List.mem_cons_self ..)
+    obtain ⟨m, w⟩ := c
+    simp only at hc1 hcv hct
+    subst hc1
+    have hH1 := heapOk_append1 (m := true) hH hρ hσ hbk hcv hct hbt (fun h => nomatch h)
+    have hkΨ : k < Ψ.length := (List.getElem?_eq_some_iff.mp hσ).1
+    have hkH : k < H.length := by rw [hH.len]; omega
+    have hle : StoreLE Ψ (Ψ.set k (σ ++ [(true, t)])) := storeLE_set_concat hσ (true, t)
+    have h2 := ih (Ψ := Ψ.set k (σ ++ [(true, t)])) (H := H.set k (ρ ++ [(true, w)]))
+      (ρ := ρ ++ [(true, w)]) (σ := σ ++ [(true, t)]) hH1
+      (List.getElem?_set_self hkH) (List.getElem?_set_self hkΨ) (fun c' hc' => by
+        obtain ⟨h1, h2, h3⟩ := hcs c' (List.mem_cons_of_mem _ hc')
+        refine ⟨h1, h2, h3.store_mono (hle.take_take (k + 1)) ?_⟩
+        intro n hn _
+        rw [List.take_take, List.take_take, Nat.min_eq_left (by omega : n ≤ k + 1),
+          take_set_of_le (by omega : n ≤ k)])
+    simp only [List.set_set, List.append_assoc, List.singleton_append, List.map_cons] at h2 ⊢
+    exact h2
+
 /-- 深い relocate の結果の束（ストア・ヒープの伸びは region d だけ） -/
 def RelocOut (Δ : Defs) (Ξ : ChanTy) (b d : Nat) (Ψ : StoreTy) (H : Heap) (Ψ' : StoreTy) (H' : Heap) : Prop :=
   HeapOk Δ Ξ b Ψ' H' ∧ Ψ'.length = d + 2 ∧ StoreLE Ψ Ψ' ∧ Ψ'.take d = Ψ.take d ∧ H'.take d = H.take d
@@ -411,6 +462,48 @@ theorem liveKeys_typed {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : H
   refine ⟨rfl, hva, ?_⟩
   exact HasType.value_depth_weaken hva
     (htk.store_mono (storeLE_take_le Ψ (by omega)) (storePre_take_le Ψ (by omega))) (by omega)
+
+/-! ## clone の段の部品 -/
+
+/-- cloneCells の要素は、覆う範囲のセルの値を読み出しの注釈で揃えたもの（mut のセル） -/
+theorem mem_cloneCells {ot : Option Ty} {ρ : List (Bool × Expr)} {base : Nat} {c : Bool × Expr} :
+    ∀ {n : Nat}, c ∈ cloneCells ot ρ base n →
+      ∃ j, j < n ∧ ∃ mj w, ρ[base + j]? = some (mj, w) ∧ c = (true, Expr.coerceOpt ot w)
+  | 0, h => by simp [cloneCells] at h
+  | n + 1, h => by
+    simp only [cloneCells, List.mem_append] at h
+    rcases h with h | h
+    · obtain ⟨j, hj, rest⟩ := mem_cloneCells h
+      exact ⟨j, by omega, rest⟩
+    · split at h
+      · rename_i mj w hc
+        simp only [List.mem_singleton] at h
+        exact ⟨n, by omega, mj, w, hc, h⟩
+      · simp at h
+
+/-- clone が積むセル: region r の覆う範囲のセルの値を readAs で t へ揃えたもの。mut・型 t で take (k+1) に型付く -/
+theorem cloneCells_typed {Δ : Defs} {Ξ : ChanTy} {b : Nat} {Ψ : StoreTy} {H : Heap}
+    {r base len k : Nat} {m : Bool} {ot : Option Ty} {ρ : List (Bool × Expr)} {σ : List (Bool × Ty)} {t' t : Ty}
+    (hH : HeapOk Δ Ξ b Ψ H) (hρ : H[r]? = some ρ) (hσ : Ψ[r]? = some σ)
+    (hk : ∀ j, j < len → ∃ σ' mk tc, Ψ[r]? = some σ' ∧ σ'[base + j]? = some (mk, tc) ∧
+        (m = false → mk = false) ∧ Ty.sub tc t' = true ∧ (m = true → tc = t'))
+    (hmb : m = true → b ≤ r) (hrk : r ≤ k) (hrd : Ty.readAs m ot t' = some t) :
+    ∀ c ∈ cloneCells ot ρ base len,
+      c.1 = true ∧ Value c.2 ∧ HasType Δ Ξ (Ψ.take (k + 1)) b b (k + 1) [] [] c.2 t := by
+  intro c hc
+  obtain ⟨j, hj, mj, w, hcell, rfl⟩ := mem_cloneCells hc
+  obtain ⟨σ', mk, tc, hσ', hσc, hmm, hsub, hex⟩ := hk j hj
+  have hss : σ' = σ := Option.some.inj (hσ'.symm.trans hσ)
+  subst hss
+  have hbr : mk = false ∨ b ≤ r := by
+    cases m with
+    | false => exact .inl (hmm rfl)
+    | true => exact .inr (hmb rfl)
+  obtain ⟨hv, ht⟩ := hH.typed r ρ σ' (base + j) mj _ mk tc hρ hσ' hcell hσc hbr
+  obtain ⟨hv', ht'⟩ := read_ok hv ht hsub hex hrd
+  refine ⟨rfl, hv', ?_⟩
+  exact HasType.value_depth_weaken hv'
+    (ht'.store_mono (storeLE_take_le Ψ (by omega)) (storePre_take_le Ψ (by omega))) (by omega)
 
 theorem Ty.sub_mut_invR {ta p : Ty} (hp : p.isMut0 = true) {a d : Nat}
     (hs : Ty.sub ta (p.renR a d) = true) : ta = p.renR a d := by
@@ -2762,6 +2855,11 @@ theorem preservation_eval {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : 
       simp only [step] at hs; cases hs
       cases he with
       | keysm h1 hko hrb hbd => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.keysmK rfl hbd hko hrb hS) hH, hC⟩
+    | clone ot e =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | clones h1 hrd hrb hbd => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.cloneKs rfl hbd hrd hrb hS) hH, hC⟩
+      | clonem h1 hrd hrb hbd => exact ⟨Ξ, .refl Ξ, .eval' hD h1 (.cloneKm rfl hbd hrd hrb hS) hH, hC⟩
     | mapv mt r base len =>
       simp only [step] at hs; cases hs
       cases he with
@@ -3855,6 +3953,62 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
         simp [List.getElem?_map, List.getElem?_eq_getElem hj]
       · have hle2 : StoreLE Ψ (Ψ.set rr (σi ++ ((liveKeys ρ base len).map
             (fun ke => (false, ke))).map (fun _ => (false, kt)))) := storeLE_set_concat_many hσi _
+        exact hS'.mono (fun d' _ => hle2.take_take d') (take_set_of_le hb _)
+    | @cloneKs _ S' _ ot m r rr t' t _ hd hb hrd hrb hS' =>
+      obtain ⟨mt, r0, base, len, rfl, -, hk, hrd0, -, hmb, -, -⟩ := canonical_slice hv he
+      have hin : H.length - 1 = rr := by rw [hH.len, hD]; omega
+      have hrrΨ : rr < Ψ.length := by omega
+      have hrrH : rr < H.length := by rw [hH.len]; omega
+      have hr0Ψ : r0 < Ψ.length := by omega
+      have hr0H : r0 < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r0]? = some ρ := ⟨_, List.getElem?_eq_getElem hr0H⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[rr]? = some ρ := ⟨_, List.getElem?_eq_getElem hrrH⟩
+      obtain ⟨σ, hσ⟩ : ∃ σ, Ψ[r0]? = some σ := ⟨_, List.getElem?_eq_getElem hr0Ψ⟩
+      obtain ⟨σi, hσi⟩ : ∃ σ, Ψ[rr]? = some σ := ⟨_, List.getElem?_eq_getElem hrrΨ⟩
+      have hleni : ρi.length = σi.length := hH.storeLen rr ρi σi hρi hσi
+      simp only [step, hρ, hin, hρi] at hs
+      cases hs
+      have hcs := cloneCells_typed (k := rr) hH hρ hσ hk (fun h => (hmb h).2) (by omega) hrd
+      have hH' := heapOk_append_list_mut hb (by rw [← hd]; exact hrb) _ hH hρi hσi hcs
+      refine ⟨Ξ, .refl Ξ, .ret' (Λ := Λ) (D := D) (t := .slice true rr t) (by simp [hD])
+        (.slicev true rr ρi.length (cloneCells ot ρ base len).length)
+        (.slicev ?_ (by omega) (Nat.le_refl _) rfl (fun _ => ⟨rfl, hb⟩) (fun h => nomatch h)
+          (fun _ => by rw [← hd]; exact hrb)) ?_ hH', hC⟩
+      · intro j hj
+        refine ⟨_, true, t, List.getElem?_set_self hrrΨ, ?_, (by intro h; cases h), Ty.sub_refl t,
+          fun _ => rfl⟩
+        rw [hleni, List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+        simp [List.getElem?_map, List.getElem?_eq_getElem hj]
+      · have hle2 : StoreLE Ψ (Ψ.set rr (σi ++ (cloneCells ot ρ base len).map
+            (fun _ => (true, t)))) := storeLE_set_concat_many hσi _
+        exact hS'.mono (fun d' _ => hle2.take_take d') (take_set_of_le hb _)
+    | @cloneKm _ S' _ ot m r rr t' t _ hd hb hrd hrb hS' =>
+      obtain ⟨mt, r0, base, len, rfl, -, hk, hrd0, -, hmb, -, -⟩ := canonical_map hv he
+      have hin : H.length - 1 = rr := by rw [hH.len, hD]; omega
+      have hrrΨ : rr < Ψ.length := by omega
+      have hrrH : rr < H.length := by rw [hH.len]; omega
+      have hr0Ψ : r0 < Ψ.length := by omega
+      have hr0H : r0 < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r0]? = some ρ := ⟨_, List.getElem?_eq_getElem hr0H⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[rr]? = some ρ := ⟨_, List.getElem?_eq_getElem hrrH⟩
+      obtain ⟨σ, hσ⟩ : ∃ σ, Ψ[r0]? = some σ := ⟨_, List.getElem?_eq_getElem hr0Ψ⟩
+      obtain ⟨σi, hσi⟩ : ∃ σ, Ψ[rr]? = some σ := ⟨_, List.getElem?_eq_getElem hrrΨ⟩
+      have hleni : ρi.length = σi.length := hH.storeLen rr ρi σi hρi hσi
+      simp only [step, hρ, hin, hρi] at hs
+      cases hs
+      have hcs := cloneCells_typed (k := rr) hH hρ hσ hk (fun h => (hmb h).2) (by omega) hrd
+      have hH' := heapOk_append_list_mut hb (by rw [← hd]; exact hrb) _ hH hρi hσi hcs
+      refine ⟨Ξ, .refl Ξ, .ret' (Λ := Λ) (D := D) (t := .map true rr t) (by simp [hD])
+        (.mapv true rr ρi.length (cloneCells ot ρ base len).length)
+        (.mapv ?_ (by omega) (Nat.le_refl _) rfl (fun _ => ⟨rfl, hb⟩) (fun h => nomatch h)
+          (fun _ => by rw [← hd]; exact hrb)) ?_ hH', hC⟩
+      · intro j hj
+        refine ⟨_, true, t, List.getElem?_set_self hrrΨ, ?_, (by intro h; cases h), Ty.sub_refl t,
+          fun _ => rfl⟩
+        rw [hleni, List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+        simp [List.getElem?_map, List.getElem?_eq_getElem hj]
+      · have hle2 : StoreLE Ψ (Ψ.set rr (σi ++ (cloneCells ot ρ base len).map
+            (fun _ => (true, t)))) := storeLE_set_concat_many hσi _
         exact hS'.mono (fun d' _ => hle2.take_take d') (take_set_of_le hb _)
     | callvL hb hsub hbd hS' =>
       simp only [step] at hs; cases hs
@@ -5238,6 +5392,26 @@ theorem progress {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K : 
           (ρi ++ (liveKeys ρ base len).map (fun k => (false, k)))) S'
           (.slicev false (H.length - 1) ρi.length (liveKeys ρ base len).length), K,
         by simp only [step, hρ, hρi]⟩
+    | @cloneKs _ S' _ ot _ _ _ _ _ _ hd hb hrd hrb hS' =>
+      obtain ⟨mt, r, base, len, rfl, -, -, hrd0, -, -, -, -⟩ := canonical_slice hv he
+      right; right; right
+      have hrH : r < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r]? = some ρ := ⟨_, List.getElem?_eq_getElem hrH⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[H.length - 1]? = some ρ :=
+        ⟨_, List.getElem?_eq_getElem (by rw [hH.len]; omega)⟩
+      exact ⟨[], .ret (H.set (H.length - 1) (ρi ++ cloneCells ot ρ base len)) S'
+          (.slicev true (H.length - 1) ρi.length (cloneCells ot ρ base len).length), K,
+        by simp only [step, hρ, hρi]⟩
+    | @cloneKm _ S' _ ot _ _ _ _ _ _ hd hb hrd hrb hS' =>
+      obtain ⟨mt, r, base, len, rfl, -, -, hrd0, -, -, -, -⟩ := canonical_map hv he
+      right; right; right
+      have hrH : r < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r]? = some ρ := ⟨_, List.getElem?_eq_getElem hrH⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[H.length - 1]? = some ρ :=
+        ⟨_, List.getElem?_eq_getElem (by rw [hH.len]; omega)⟩
+      exact ⟨[], .ret (H.set (H.length - 1) (ρi ++ cloneCells ot ρ base len)) S'
+          (.mapv true (H.length - 1) ρi.length (cloneCells ot ρ base len).length), K,
+        by simp only [step, hρ, hρi]⟩
     | callvL hb hsub hbd hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
     | callvR hva hb hsub hbd hS' =>
       obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
@@ -5932,6 +6106,7 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | delm t₀ e k => simp only [step] at hs; cases hs; rfl
     | lenm e => simp only [step] at hs; cases hs; rfl
     | keysm e => simp only [step] at hs; cases hs; rfl
+    | clone ot e => simp only [step] at hs; cases hs; rfl
     | mapv mt r base len => simp only [step] at hs; cases hs; rfl
   | ret hv he hS hH =>
     rename_i Ψ H S v t
@@ -6404,6 +6579,28 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
       cases hs
       rfl
     | keysmK hd hb hko hrb hS' =>
+      obtain ⟨mt, r, base, len, rfl, -, -, hrd, -, -, -, -⟩ := canonical_map hv he
+      have hbH : b ≤ H.length - 1 := by rw [hH.len, hD]; omega
+      have hrH : r < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r]? = some ρ := ⟨_, List.getElem?_eq_getElem hrH⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[H.length - 1]? = some ρ :=
+        ⟨_, List.getElem?_eq_getElem (by omega)⟩
+      simp only [step, hρ, hρi] at hs
+      cases hs
+      simp only [State.heap]
+      exact take_set_of_le hbH _
+    | cloneKs hd hb hrdc hrb hS' =>
+      obtain ⟨mt, r, base, len, rfl, -, -, hrd, -, -, -, -⟩ := canonical_slice hv he
+      have hbH : b ≤ H.length - 1 := by rw [hH.len, hD]; omega
+      have hrH : r < H.length := by rw [hH.len]; omega
+      obtain ⟨ρ, hρ⟩ : ∃ ρ, H[r]? = some ρ := ⟨_, List.getElem?_eq_getElem hrH⟩
+      obtain ⟨ρi, hρi⟩ : ∃ ρ, H[H.length - 1]? = some ρ :=
+        ⟨_, List.getElem?_eq_getElem (by omega)⟩
+      simp only [step, hρ, hρi] at hs
+      cases hs
+      simp only [State.heap]
+      exact take_set_of_le hbH _
+    | cloneKm hd hb hrdc hrb hS' =>
       obtain ⟨mt, r, base, len, rfl, -, -, hrd, -, -, -, -⟩ := canonical_map hv he
       have hbH : b ≤ H.length - 1 := by rw [hH.len, hD]; omega
       have hrH : r < H.length := by rw [hH.len]; omega

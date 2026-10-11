@@ -1,8 +1,8 @@
 # 畳んだブートストラップの鎖（公開準備便 ① — report-431）。1 行 1 段: <段のディレクトリ> <この段を前の段の boot で建てる形>
 #   形 = stage1（段 0 — 凍結した Zig の stage1 が .ll を出し zig cc で）・ll（前の段の boot が .ll を出し zig cc で）・elf（前の段の boot が ELF を直に）
 #   +passes = 前の段の boot に設計整合パス（--passes）を掛けさせる（建つ速さだけに効く — 出力の意味は変えない）
-# 最後の段の boot が今の src/compiler を建てる（= stage2）。各段は前の段の boot が建て、建った boot の振る舞いは private 側の 51 行の鎖の同じ行の boot と
-# バイト一致で照合済み（次の行のソースを建てた出力）。最後の段の boot が建てた stage2 は 51 行の鎖の stage2 とバイト一致
+# 最後の段の boot が今の src/compiler を建てる（= stage2）。各段は前の段の boot が建て、建った boot の振る舞いは private 側の 53 行の鎖の同じ行の boot と
+# バイト一致で照合済み（次の行のソースを建てた出力）。最後の段の boot が建てた stage2 は 53 行の鎖の stage2 とバイト一致
 00-2efcf97 stage1
 01-6f9cf42 ll
 02-9b523f4 ll
@@ -28,3 +28,5 @@
 22-674907ae elf+passes
 23-987d2a39 elf+passes
 24-a05a58ee elf+passes
+25-8ecffe7f elf+passes
+26-c791b171 elf+passes

@@ -460,6 +460,14 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
                 obuf.Int(mut out, cx.d - 1)
             }
             out = append(out, '}')
+        } else if k == CClone {
+            obuf.Lit(mut out, "{\"k\":\"clone\",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            if b != -1 {
+                sp = spush(mut st, sp, OT, int(b))
+                sp = spush(mut st, sp, OS, J_T)
+            }
+            sp = spush(mut st, sp, OE, a)
         } else if k == CIndex {
             obuf.Lit(mut out, "{\"k\":\"index\",\"e\":")
             sp = spush(mut st, sp, OS, J_CLOSE)

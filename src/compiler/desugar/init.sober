@@ -230,8 +230,7 @@ func expandFunc(st mut S, k int) {
         t := expandTE(mut st, pk, nB(nodeOf(mut st, prm)), EXPANDFUEL)
         mut q := prm
         if t != nB(nodeOf(mut st, prm)) {
-            mut x := nodeOf(mut st, prm)
-            x.b = int(t)
+            x := ast.WithB(nodeOf(mut st, prm), int(t))
             q = NodeRef(synNode(mut st, x, prm))
             changed = true
         }
@@ -244,9 +243,9 @@ func expandFunc(st mut S, k int) {
     }
     mut d := nodeOf(mut st, decl)
     if changed {
-        d.c = nps
+        d = ast.WithC(d, nps)
     }
-    d.d = int(nrs)
+    d = ast.WithD(d, int(nrs))
     mut fi := FnAt(mut st, k)
     fi.node = NodeRef(synNode(mut st, d, decl))
     table.Set(mut st.fns, k, fi)
@@ -262,8 +261,7 @@ func expandFieldList(st mut S, pk int, fs ListRef) ListRef {
         t := expandTE(mut st, pk, nB(nodeOf(mut st, fd)), EXPANDFUEL)
         mut q := fd
         if t != nB(nodeOf(mut st, fd)) {
-            mut x := nodeOf(mut st, fd)
-            x.b = int(t)
+            x := ast.WithB(nodeOf(mut st, fd), int(t))
             q = NodeRef(synNode(mut st, x, fd))
             changed = true
         }
@@ -281,8 +279,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
         if nfs == fs {
             return body
         }
-        mut x := nodeOf(mut st, body)
-        x.a = int(nfs)
+        x := ast.WithA(nodeOf(mut st, body), int(nfs))
         return NodeRef(synNode(mut st, x, body))
     }
     if bk == ast.BUnion {
@@ -296,8 +293,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
             nfs := expandFieldList(mut st, pk, fs)
             mut q := vr
             if nfs != fs {
-                mut x := nodeOf(mut st, vr)
-                x.b = int(nfs)
+                x := ast.WithB(nodeOf(mut st, vr), int(nfs))
                 q = NodeRef(synNode(mut st, x, vr))
                 changed = true
             }
@@ -306,8 +302,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
         if !changed {
             return body
         }
-        mut y := nodeOf(mut st, body)
-        y.a = nvs
+        y := ast.WithA(nodeOf(mut st, body), nvs)
         return NodeRef(synNode(mut st, y, body))
     }
     return body
@@ -327,8 +322,7 @@ func expandFileTypes(st mut S, f int) {
         nb := expandBody(mut st, pk, body)
         mut q := td
         if nb != body {
-            mut x := nodeOf(mut st, td)
-            x.c = int(nb)
+            x := ast.WithC(nodeOf(mut st, td), int(nb))
             q = NodeRef(synNode(mut st, x, td))
             changed = true
         }
@@ -337,8 +331,7 @@ func expandFileTypes(st mut S, f int) {
     if !changed {
         return
     }
-    mut r := nodeOf(mut st, root)
-    r.c = ntys
+    r := ast.WithC(nodeOf(mut st, root), ntys)
     hv_root := synNode(mut st, r, root)
     hset(mut st, st.files + f * 2, hv_root)
 }

@@ -650,6 +650,12 @@ theorem tsubst_typing {e : Expr} {Δ : Defs} {f b d : Nat} {Γ : Ctx} {t : Ty} {
     cases he with
     | keysm h hko hrb hbd =>
       exact .keysm (ihe h) (Ty.keyOk_tsubst ts hko) (by rw [Ty.tsubst_regionsBelow hts]; exact hrb) hbd
+  | clone ot e ihe =>
+    cases he with
+    | clones h hrd hrb hbd =>
+      exact .clones (ihe h) (Ty.readAs_tsubst hrd) (by rw [Ty.tsubst_regionsBelow hts]; exact hrb) hbd
+    | clonem h hrd hrb hbd =>
+      exact .clonem (ihe h) (Ty.readAs_tsubst hrd) (by rw [Ty.tsubst_regionsBelow hts]; exact hrb) hbd
   | par e1 e2 ih1 ih2 =>
     cases he with
     | par h1 h2 hΓ =>

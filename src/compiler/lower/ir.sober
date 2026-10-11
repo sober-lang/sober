@@ -82,74 +82,74 @@ type InsRef int
 
 // ── 記録の欄の読み書き（C7a — 掃除枠 B。記録の番地 + 欄の番号の算術を呼び手に書かせない。記憶の形を変えるときはここだけ）──
 
-func irFnNext(st mut St, f FnRef) FnRef { return FnRef(hget(mut st, int(f) + F_NEXT)) }
-func irSetFnNext(st mut St, f FnRef, v FnRef) { hset(mut st, int(f) + F_NEXT, int(v)) }
-func irFnName(st mut St, f FnRef) int { return hget(mut st, int(f) + F_NAME) }
-func irSetFnName(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_NAME, v) }
-func irFnPtys(st mut St, f FnRef) int { return hget(mut st, int(f) + F_PTYS) }
-func irSetFnPtys(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_PTYS, v) }
-func irFnRet(st mut St, f FnRef) int { return hget(mut st, int(f) + F_RET) }
-func irSetFnRet(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_RET, v) }
-func irFnNVal(st mut St, f FnRef) int { return hget(mut st, int(f) + F_NVAL) }
-func irSetFnNVal(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_NVAL, v) }
-func irFnBHead(st mut St, f FnRef) BlkRef { return BlkRef(hget(mut st, int(f) + F_BHEAD)) }
-func irSetFnBHead(st mut St, f FnRef, v BlkRef) { hset(mut st, int(f) + F_BHEAD, int(v)) }
-func irFnBTail(st mut St, f FnRef) BlkRef { return BlkRef(hget(mut st, int(f) + F_BTAIL)) }
-func irSetFnBTail(st mut St, f FnRef, v BlkRef) { hset(mut st, int(f) + F_BTAIL, int(v)) }
-func irFnNBlk(st mut St, f FnRef) int { return hget(mut st, int(f) + F_NBLK) }
-func irSetFnNBlk(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_NBLK, v) }
-func irFnSHead(st mut St, f FnRef) int { return hget(mut st, int(f) + F_SHEAD) }
-func irSetFnSHead(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_SHEAD, v) }
-func irFnSTail(st mut St, f FnRef) int { return hget(mut st, int(f) + F_STAIL) }
-func irSetFnSTail(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_STAIL, v) }
-func irFnNSlot(st mut St, f FnRef) int { return hget(mut st, int(f) + F_NSLOT) }
-func irSetFnNSlot(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_NSLOT, v) }
-func irFnExport(st mut St, f FnRef) int { return hget(mut st, int(f) + F_EXPORT) }
-func irSetFnExport(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_EXPORT, v) }
-func irFnRFree(st mut St, f FnRef) int { return hget(mut st, int(f) + F_RFREE) }
-func irSetFnRFree(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_RFREE, v) }
+func irFnNext(st mut St, f FnRef) FnRef { return FnRef(desugar.HeapGet(mut st.d, int(f) + F_NEXT)) }
+func irSetFnNext(st mut St, f FnRef, v FnRef) { desugar.HeapSet(mut st.d, int(f) + F_NEXT, int(v)) }
+func irFnName(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NAME) }
+func irSetFnName(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NAME, v) }
+func irFnPtys(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_PTYS) }
+func irSetFnPtys(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_PTYS, v) }
+func irFnRet(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_RET) }
+func irSetFnRet(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_RET, v) }
+func irFnNVal(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NVAL) }
+func irSetFnNVal(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NVAL, v) }
+func irFnBHead(st mut St, f FnRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(f) + F_BHEAD)) }
+func irSetFnBHead(st mut St, f FnRef, v BlkRef) { desugar.HeapSet(mut st.d, int(f) + F_BHEAD, int(v)) }
+func irFnBTail(st mut St, f FnRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(f) + F_BTAIL)) }
+func irSetFnBTail(st mut St, f FnRef, v BlkRef) { desugar.HeapSet(mut st.d, int(f) + F_BTAIL, int(v)) }
+func irFnNBlk(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NBLK) }
+func irSetFnNBlk(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NBLK, v) }
+func irFnSHead(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_SHEAD) }
+func irSetFnSHead(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_SHEAD, v) }
+func irFnSTail(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_STAIL) }
+func irSetFnSTail(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_STAIL, v) }
+func irFnNSlot(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_NSLOT) }
+func irSetFnNSlot(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_NSLOT, v) }
+func irFnExport(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_EXPORT) }
+func irSetFnExport(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_EXPORT, v) }
+func irFnRFree(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_RFREE) }
+func irSetFnRFree(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_RFREE, v) }
 func irFnMutP(st mut St, f FnRef) int {
-    v := hget(mut st, int(f) + F_MUTP)
+    v := desugar.HeapGet(mut st.d, int(f) + F_MUTP)
     return if v < 0 { 0 } else { v }
 }
-func irSetFnMutP(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_MUTP, v) }
-func irFnLLVt(st mut St, f FnRef) int { return hget(mut st, int(f) + F_LLVT) }
-func irSetFnLLVt(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_LLVT, v) }
-func irFnLLInc(st mut St, f FnRef) int { return hget(mut st, int(f) + F_LLINC) }
-func irSetFnLLInc(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_LLINC, v) }
-func irFnLLCs(st mut St, f FnRef) int { return hget(mut st, int(f) + F_LLCS) }
-func irSetFnLLCs(st mut St, f FnRef, v int) { hset(mut st, int(f) + F_LLCS, v) }
+func irSetFnMutP(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_MUTP, v) }
+func irFnLLVt(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLVT) }
+func irSetFnLLVt(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLVT, v) }
+func irFnLLInc(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLINC) }
+func irSetFnLLInc(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLINC, v) }
+func irFnLLCs(st mut St, f FnRef) int { return desugar.HeapGet(mut st.d, int(f) + F_LLCS) }
+func irSetFnLLCs(st mut St, f FnRef, v int) { desugar.HeapSet(mut st.d, int(f) + F_LLCS, v) }
 
-func irBlkNext(st mut St, b BlkRef) BlkRef { return BlkRef(hget(mut st, int(b) + B_NEXT)) }
-func irSetBlkNext(st mut St, b BlkRef, v BlkRef) { hset(mut st, int(b) + B_NEXT, int(v)) }
-func irBlkId(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_ID) }
-func irSetBlkId(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_ID, v) }
-func irBlkPHead(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_PHEAD) }
-func irSetBlkPHead(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_PHEAD, v) }
-func irBlkPTail(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_PTAIL) }
-func irSetBlkPTail(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_PTAIL, v) }
-func irBlkIHead(st mut St, b BlkRef) InsRef { return InsRef(hget(mut st, int(b) + B_IHEAD)) }
-func irSetBlkIHead(st mut St, b BlkRef, v InsRef) { hset(mut st, int(b) + B_IHEAD, int(v)) }
-func irBlkITail(st mut St, b BlkRef) InsRef { return InsRef(hget(mut st, int(b) + B_ITAIL)) }
-func irSetBlkITail(st mut St, b BlkRef, v InsRef) { hset(mut st, int(b) + B_ITAIL, int(v)) }
-func irBlkTerm(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_TERM) }
-func irSetBlkTerm(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_TERM, v) }
-func irBlkX1(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_X1) }
-func irSetBlkX1(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_X1, v) }
-func irBlkX2(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_X2) }
-func irSetBlkX2(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_X2, v) }
-func irBlkX3(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_X3) }
-func irSetBlkX3(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_X3, v) }
-func irBlkX4(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_X4) }
-func irSetBlkX4(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_X4, v) }
-func irBlkX5(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_X5) }
-func irSetBlkX5(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_X5, v) }
-func irBlkPreds(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_PREDS) }
-func irSetBlkPreds(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_PREDS, v) }
+func irBlkNext(st mut St, b BlkRef) BlkRef { return BlkRef(desugar.HeapGet(mut st.d, int(b) + B_NEXT)) }
+func irSetBlkNext(st mut St, b BlkRef, v BlkRef) { desugar.HeapSet(mut st.d, int(b) + B_NEXT, int(v)) }
+func irBlkId(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_ID) }
+func irSetBlkId(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_ID, v) }
+func irBlkPHead(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PHEAD) }
+func irSetBlkPHead(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PHEAD, v) }
+func irBlkPTail(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PTAIL) }
+func irSetBlkPTail(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PTAIL, v) }
+func irBlkIHead(st mut St, b BlkRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(b) + B_IHEAD)) }
+func irSetBlkIHead(st mut St, b BlkRef, v InsRef) { desugar.HeapSet(mut st.d, int(b) + B_IHEAD, int(v)) }
+func irBlkITail(st mut St, b BlkRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(b) + B_ITAIL)) }
+func irSetBlkITail(st mut St, b BlkRef, v InsRef) { desugar.HeapSet(mut st.d, int(b) + B_ITAIL, int(v)) }
+func irBlkTerm(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_TERM) }
+func irSetBlkTerm(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_TERM, v) }
+func irBlkX1(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X1) }
+func irSetBlkX1(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X1, v) }
+func irBlkX2(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X2) }
+func irSetBlkX2(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X2, v) }
+func irBlkX3(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X3) }
+func irSetBlkX3(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X3, v) }
+func irBlkX4(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X4) }
+func irSetBlkX4(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X4, v) }
+func irBlkX5(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_X5) }
+func irSetBlkX5(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_X5, v) }
+func irBlkPreds(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_PREDS) }
+func irSetBlkPreds(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_PREDS, v) }
 
-func irBlkLoop(st mut St, b BlkRef) int { return hget(mut st, int(b) + B_LOOP) }
+func irBlkLoop(st mut St, b BlkRef) int { return desugar.HeapGet(mut st.d, int(b) + B_LOOP) }
 
-func irSetBlkLoop(st mut St, b BlkRef, v int) { hset(mut st, int(b) + B_LOOP, v) }
+func irSetBlkLoop(st mut St, b BlkRef, v int) { desugar.HeapSet(mut st.d, int(b) + B_LOOP, v) }
 
 // 種類ごとの読み口（欄の意味が終端 / 命令の種類で決まるもの）: br の行き先 = x1、condbr の then / else = x2 / x4、call / funcaddr の関数 = a
 func irBrTo(st mut St, b BlkRef) BlkRef { return BlkRef(irBlkX1(mut st, b)) }
@@ -160,18 +160,18 @@ func irCondElse(st mut St, b BlkRef) BlkRef { return BlkRef(irBlkX4(mut st, b)) 
 func irSetCondElse(st mut St, b BlkRef, v BlkRef) { irSetBlkX4(mut st, b, int(v)) }
 func irInsFn(st mut St, i InsRef) FnRef { return FnRef(irInsA(mut st, i)) }
 
-func irInsNext(st mut St, i InsRef) InsRef { return InsRef(hget(mut st, int(i) + I_NEXT)) }
-func irSetInsNext(st mut St, i InsRef, v InsRef) { hset(mut st, int(i) + I_NEXT, int(v)) }
-func irInsRes(st mut St, i InsRef) int { return hget(mut st, int(i) + I_RES) }
-func irSetInsRes(st mut St, i InsRef, v int) { hset(mut st, int(i) + I_RES, v) }
-func irInsOp(st mut St, i InsRef) int { return hget(mut st, int(i) + I_OP) }
-func irSetInsOp(st mut St, i InsRef, v int) { hset(mut st, int(i) + I_OP, v) }
-func irInsA(st mut St, i InsRef) int { return hget(mut st, int(i) + I_A) }
-func irSetInsA(st mut St, i InsRef, v int) { hset(mut st, int(i) + I_A, v) }
-func irInsB(st mut St, i InsRef) int { return hget(mut st, int(i) + I_B) }
-func irSetInsB(st mut St, i InsRef, v int) { hset(mut st, int(i) + I_B, v) }
-func irInsC(st mut St, i InsRef) int { return hget(mut st, int(i) + I_C) }
-func irSetInsC(st mut St, i InsRef, v int) { hset(mut st, int(i) + I_C, v) }
+func irInsNext(st mut St, i InsRef) InsRef { return InsRef(desugar.HeapGet(mut st.d, int(i) + I_NEXT)) }
+func irSetInsNext(st mut St, i InsRef, v InsRef) { desugar.HeapSet(mut st.d, int(i) + I_NEXT, int(v)) }
+func irInsRes(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_RES) }
+func irSetInsRes(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_RES, v) }
+func irInsOp(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_OP) }
+func irSetInsOp(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_OP, v) }
+func irInsA(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_A) }
+func irSetInsA(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_A, v) }
+func irInsB(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_B) }
+func irSetInsB(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_B, v) }
+func irInsC(st mut St, i InsRef) int { return desugar.HeapGet(mut st.d, int(i) + I_C) }
+func irSetInsC(st mut St, i InsRef, v int) { desugar.HeapSet(mut st.d, int(i) + I_C, v) }
 
 const OpConst = 1     // a = n
 const OpBin = 2       // a = BinOp, b, c
@@ -360,15 +360,15 @@ func addFunc(st mut St, name int, ptys desugar.ListRef, rty int) FnRef {
 
 func addGlobalInit(st mut St, name int, words int, init int) int {
     g := recN(mut st, GSZ)
-    hset(mut st, g + G_NAME, name)
-    hset(mut st, g + G_WORDS, words)
-    hset(mut st, g + G_INIT, init)
-    hset(mut st, g + G_WSLOT, -1)
+    desugar.HeapSet(mut st.d, g + G_NAME, name)
+    desugar.HeapSet(mut st.d, g + G_WORDS, words)
+    desugar.HeapSet(mut st.d, g + G_INIT, init)
+    desugar.HeapSet(mut st.d, g + G_WSLOT, -1)
     tail := st.gtail
     if tail < 0 {
         st.ghead = g
     } else {
-        hset(mut st, tail + G_NEXT, g)
+        desugar.HeapSet(mut st.d, tail + G_NEXT, g)
     }
     st.gtail = g
     return g
@@ -431,7 +431,7 @@ func param(st mut St, blk BlkRef, t int) int {
     if tail < 0 {
         irSetBlkPHead(mut st, blk, p)
     } else {
-        hset(mut st, tail, p)
+        desugar.HeapSet(mut st.d, tail, p)
     }
     irSetBlkPTail(mut st, blk, p)
     return v
@@ -444,22 +444,22 @@ func newSlot(st mut St, words int) int {
     if words < table.Len(mut st.sfree) {
         r := table.Get(mut st.sfree, words)
         if r >= 0 {
-            table.Set(mut st.sfree, words, hget(mut st, r + 3))
-            hset(mut st, r + 4, -1)
+            table.Set(mut st.sfree, words, desugar.HeapGet(mut st.d, r + 3))
+            desugar.HeapSet(mut st.d, r + 4, -1)
             liveAdd(mut st, r)
             st.slast = r
-            return hget(mut st, r + 2)
+            return desugar.HeapGet(mut st.d, r + 2)
         }
     }
     f := st.fn
     n := irFnNSlot(mut st, f)
     s := rec4(mut st, -1, words, n, -1)
-    hpush(mut st, -1)
+    desugar.HeapPush(mut st.d, -1)
     tail := irFnSTail(mut st, f)
     if tail < 0 {
         irSetFnSHead(mut st, f, s)
     } else {
-        hset(mut st, tail, s)
+        desugar.HeapSet(mut st.d, tail, s)
     }
     irSetFnSTail(mut st, f, s)
     irSetFnNSlot(mut st, f, n + 1)
@@ -471,7 +471,7 @@ func newSlot(st mut St, words int) int {
 // newSlotAddr は words 語のスロットを取ってそのアドレスを返す（値を記録に残す — 文の出口が束縛の置き場を見分ける）
 func newSlotAddr(st mut St, words int) int {
     v := slotaddr(mut st, newSlot(mut st, words))
-    hset(mut st, st.slast + 4, v)
+    desugar.HeapSet(mut st.d, st.slast + 4, v)
     return v
 }
 
@@ -493,35 +493,35 @@ const SLOT_PINNED = -7
 func slotPin(st mut St, p int) {
     for i <- iter.Range(0, st.slen) {
         r := table.Get(mut st.slive, i)
-        if hget(mut st, r + 4) == p {
-            hset(mut st, r + 3, SLOT_PINNED)
+        if desugar.HeapGet(mut st.d, r + 4) == p {
+            desugar.HeapSet(mut st.d, r + 3, SLOT_PINNED)
         }
     }
 }
 
 // slotFree は記録 r のスロットを語数ごとの空き鎖に返す（番地が rt へ逃げたスロットは返さない — slotPin）
 func slotFree(st mut St, r int) {
-    if hget(mut st, r + 3) == SLOT_PINNED {
+    if desugar.HeapGet(mut st.d, r + 3) == SLOT_PINNED {
         return
     }
-    w := hget(mut st, r + 1)
+    w := desugar.HeapGet(mut st.d, r + 1)
     while table.Len(mut st.sfree) <= w {
         table.Push(mut st.sfree, -1)
     }
-    hset(mut st, r + 3, table.Get(mut st.sfree, w))
+    desugar.HeapSet(mut st.d, r + 3, table.Get(mut st.sfree, w))
     table.Set(mut st.sfree, w, r)
 }
 
 // push は cur に命令を足す（res: 結果の値を持つか）。結果の値（無しは -1）
 func push(st mut St, res bool, op int, a int, b int, c int) int {
     r := if res { newValue(mut st) } else { -1 }
-    at := InsRef(hlen(mut st))
-    hpush(mut st, -1)
-    hpush(mut st, r)
-    hpush(mut st, op)
-    hpush(mut st, a)
-    hpush(mut st, b)
-    hpush(mut st, c)
+    at := InsRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, -1)
+    desugar.HeapPush(mut st.d, r)
+    desugar.HeapPush(mut st.d, op)
+    desugar.HeapPush(mut st.d, a)
+    desugar.HeapPush(mut st.d, b)
+    desugar.HeapPush(mut st.d, c)
     blk := st.cur
     tail := irBlkITail(mut st, blk)
     if tail == -1 {
@@ -586,7 +586,7 @@ func slotaddr(st mut St, s int) int {
 }
 
 func globaladdr(st mut St, g int) int {
-    if st.taskUse && hget(mut st, g + G_WSLOT) >= 0 {
+    if st.taskUse && desugar.HeapGet(mut st.d, g + G_WSLOT) >= 0 {
         return push(mut st, true, OpFsAddr, g, 0, 0)
     }
     return push(mut st, true, OpGlobal, g, 0, 0)
@@ -601,7 +601,7 @@ func globaladdrRaw(st mut St, g int) int {
 func addWorkerGlobal(st mut St, name int, words int) int {
     g := addGlobalInit(mut st, name, words, -1)
     if st.taskUse {
-        hset(mut st, g + G_WSLOT, st.nwslot)
+        desugar.HeapSet(mut st.d, g + G_WSLOT, st.nwslot)
         st.nwslot += 1
     }
     return g
@@ -789,11 +789,11 @@ func vals(st mut St, out mut []byte, l int) {
         return
     }
     mut i := 0
-    while i < hget(mut st, l) {
+    while i < desugar.HeapGet(mut st.d, l) {
         if i > 0 {
             obuf.Lit(mut out, ", ")
         }
-        val(mut out, hget(mut st, l + 1 + i))
+        val(mut out, desugar.HeapGet(mut st.d, l + 1 + i))
         i += 1
     }
 }
@@ -930,11 +930,11 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         return
     case OpGlobal:
         obuf.Lit(mut out, "globaladdr ")
-        printName(mut st, mut out, hget(mut st, a + G_NAME))
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, a + G_NAME))
         return
     case OpFsAddr:
         obuf.Lit(mut out, "fsaddr ")
-        printName(mut st, mut out, hget(mut st, a + G_NAME))
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, a + G_NAME))
         return
     case OpCall:
         obuf.Lit(mut out, "call ")
@@ -1035,7 +1035,7 @@ func printOp(st mut St, out mut []byte, i InsRef) {
 func printEdge(st mut St, out mut []byte, to BlkRef, args int) {
     out = append(out, 'b')
     num(mut out, irBlkId(mut st, to))
-    if args >= 0 && hget(mut st, args) > 0 {
+    if args >= 0 && desugar.HeapGet(mut st.d, args) > 0 {
         out = append(out, '(')
         vals(mut st, mut out, args)
         out = append(out, ')')
@@ -1076,13 +1076,13 @@ func printFunc(st mut St, out mut []byte, f FnRef) {
     out = append(out, '(')
     ptys := irFnPtys(mut st, f)
     mut i := 0
-    while i < hget(mut st, ptys) {
+    while i < desugar.HeapGet(mut st.d, ptys) {
         if i > 0 {
             obuf.Lit(mut out, ", ")
         }
         val(mut out, i)
         out = append(out, ' ')
-        tyName(mut out, hget(mut st, ptys + 1 + i))
+        tyName(mut out, desugar.HeapGet(mut st.d, ptys + 1 + i))
         i += 1
     }
     out = append(out, ')')
@@ -1097,10 +1097,10 @@ func printFunc(st mut St, out mut []byte, f FnRef) {
         obuf.Lit(mut out, "  slot s")
         num(mut out, si)
         obuf.Lit(mut out, " [")
-        num(mut out, hget(mut st, s + 1))
+        num(mut out, desugar.HeapGet(mut st.d, s + 1))
         obuf.Lit(mut out, "]\n")
         si += 1
-        s = hget(mut st, s)
+        s = desugar.HeapGet(mut st.d, s)
     }
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -1115,10 +1115,10 @@ func printFunc(st mut St, out mut []byte, f FnRef) {
                     obuf.Lit(mut out, ", ")
                 }
                 first = false
-                val(mut out, hget(mut st, p + 1))
+                val(mut out, desugar.HeapGet(mut st.d, p + 1))
                 out = append(out, ' ')
-                tyName(mut out, hget(mut st, p + 2))
-                p = hget(mut st, p)
+                tyName(mut out, desugar.HeapGet(mut st.d, p + 2))
+                p = desugar.HeapGet(mut st.d, p)
             }
             out = append(out, ')')
         }
@@ -1147,25 +1147,25 @@ func printModule(st mut St, out mut []byte) {
     mut g := st.ghead
     while g >= 0 {
         obuf.Lit(mut out, "global ")
-        printName(mut st, mut out, hget(mut st, g + G_NAME))
+        printName(mut st, mut out, desugar.HeapGet(mut st.d, g + G_NAME))
         obuf.Lit(mut out, " [")
-        num(mut out, hget(mut st, g + G_WORDS))
+        num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
         out = append(out, ']')
-        init := hget(mut st, g + G_INIT)
+        init := desugar.HeapGet(mut st.d, g + G_INIT)
         if init >= 0 {
             obuf.Lit(mut out, " = {")
             mut i := 0
-            while i < hget(mut st, init) {
+            while i < desugar.HeapGet(mut st.d, init) {
                 if i > 0 {
                     obuf.Lit(mut out, ", ")
                 }
-                num(mut out, hget(mut st, init + 1 + i))
+                num(mut out, desugar.HeapGet(mut st.d, init + 1 + i))
                 i += 1
             }
             out = append(out, '}')
         }
         out = append(out, '\n')
-        g = hget(mut st, g + G_NEXT)
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
     }
     mut f := st.fhead
     while f != -1 {

@@ -1,0 +1,182 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/fieldpkg/box",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "box.Box",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 20
+                    }
+                  },
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 24
+                    }
+                  },
+                  {
+                    "key": "inner",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "box.Inner",
+                      "elems": [
+                        {
+                          "key": "k",
+                          "value": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 34
+                          }
+                        }
+                      ],
+                      "tok": 28,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "xs",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "elems": [],
+                      "mut": true,
+                      "tok": 40
+                    }
+                  },
+                  {
+                    "key": "tags",
+                    "value": {
+                      "k": "maplit",
+                      "key": {
+                        "k": "name",
+                        "name": "string"
+                      },
+                      "value": {
+                        "k": "name",
+                        "name": "int"
+                      },
+                      "entries": [],
+                      "mut": true,
+                      "tok": 49
+                    }
+                  }
+                ],
+                "tok": 14,
+                "type_args": []
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 61
+              }
+            ],
+            "tok": 58
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "a",
+                "tok": 63
+              },
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 65
+                },
+                "field": "n",
+                "tok": 67
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 69
+              },
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 71
+              }
+            ],
+            "tok": 63
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 73
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 75
+                }
+              ],
+              "tok": 74
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 80
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

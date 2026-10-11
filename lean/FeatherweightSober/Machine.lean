@@ -190,6 +190,8 @@ inductive Frame : Type where
   | lenmK
   /-- keysm の subject 評価中 -/
   | keysmK
+  /-- clone の subject 評価中（読み出しの注釈を保持 — idxR と同じ） -/
+  | cloneK (ot : Option Ty)
   /-- ラベル（V4）。値が戻れば正常完了でそのまま下へ返す。jump の巻き戻しの停止点 -/
   | labelK (t : Ty)
   /-- jump のペイロード評価中。値が戻ったら n 番目の labelK まで巻き戻す -/
@@ -354,6 +356,16 @@ def countLive (ρ : List (Bool × Expr)) (base : Nat) : Nat → Nat
         (match ρ[base + n]? with
          | Option.some (_, .pair _ (.some _)) => 1
          | _ => 0)
+
+/-- clone の写すセル列: 覆う範囲 [base, base + n) のセルを mut のセルとして（値は読み出しの注釈 ot で揃える — index と同じ）。
+map は墓石も含めて並びのまま写す（列挙の順・墓石の再挿入の位置が元と同じ） -/
+def cloneCells (ot : Option Ty) (ρ : List (Bool × Expr)) (base : Nat) : Nat → List (Bool × Expr)
+  | 0 => []
+  | n + 1 =>
+      cloneCells ot ρ base n ++
+        (match ρ[base + n]? with
+         | Option.some (_, w) => [(true, Expr.coerceOpt ot w)]
+         | Option.none => [])
 
 /-- 生きたエントリ（w = some）のキー列（挿入順 — セル列の並び）。keysm の意味。
 墓石（w = nil）はスキップ。setm は墓石のキーを findKey で見つけて in-place で生き返らせるので、
@@ -871,6 +883,7 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .eval H S (delm t e k), K => some (.eval H (.dlmL t k :: S) e, K)
   | .eval H S (lenm e), K => some (.eval H (.lenmK :: S) e, K)
   | .eval H S (keysm e), K => some (.eval H (.keysmK :: S) e, K)
+  | .eval H S (clone ot e), K => some (.eval H (.cloneK ot :: S) e, K)
   | .eval H S (mapv mt r base len), K => some (.ret H S (mapv mt r base len), K)
   -- newchan: K の末尾に空キューを足し、その id を返す
   | .eval H S (newchan _ _), K => some (.ret H S (chanV K.leg.length), K.addLeg)
@@ -1127,6 +1140,25 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
               some (.ret (H.set (H.length - 1)
                 (ρi ++ (liveKeys ρ base len).map (fun k => (false, k)))) S
                 (slicev false (H.length - 1) ρi.length (liveKeys ρ base len).length), K)
+          | Option.none => none
+      | Option.none => none
+  -- clone: セル列を最内 region へ mut のセルとして写す（keysm と同じ床。浅い写し）
+  | .ret H (.cloneK ot :: S) (slicev _ r base len), K =>
+      match H[r]? with
+      | Option.some ρ =>
+          match H[H.length - 1]? with
+          | Option.some ρi =>
+              some (.ret (H.set (H.length - 1) (ρi ++ cloneCells ot ρ base len)) S
+                (slicev true (H.length - 1) ρi.length (cloneCells ot ρ base len).length), K)
+          | Option.none => none
+      | Option.none => none
+  | .ret H (.cloneK ot :: S) (mapv _ r base len), K =>
+      match H[r]? with
+      | Option.some ρ =>
+          match H[H.length - 1]? with
+          | Option.some ρi =>
+              some (.ret (H.set (H.length - 1) (ρi ++ cloneCells ot ρ base len)) S
+                (mapv true (H.length - 1) ρi.length (cloneCells ot ρ base len).length), K)
           | Option.none => none
       | Option.none => none
   | .ret H (.whileK c b :: S) tt, K => some (.eval H (.whileB c b :: S) b, K)

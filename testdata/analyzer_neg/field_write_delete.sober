@@ -1,0 +1,10 @@
+package main
+
+// delete の第 1 実引数
+import "testdata/fieldpkg/box"
+
+func main() {
+    mut b := box.Box{n: 0, name: "x", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    delete(b.tags, "a")
+    println(b.n)
+}

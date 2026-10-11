@@ -338,7 +338,7 @@ Output:
 - A function that rewrites the caller's variable says `mut` on the parameter, and the call site says `f(mut x)` too. Where and what gets rewritten is visible in the source.
 - There are no pointers. There are no lifetime annotations or borrowing rules either — rewriting happens only where `mut` is marked, and to share, you pass a frozen immutable value.
 - You can `freeze` only a value that has no other alias (holding the same contents under another name, as in `mut a := xs`, is rejected). After `freeze`, you can neither write through the original variable nor pass it as `mut`. The compiler checks this, so a frozen value never changes.
-- Writing a mut variable where an immutable value is expected (an immutable parameter, a `return`, an immutable field, and so on) freezes it right there (`ns` in `par.Map(ns, …)` in section 7). The rules after that are the same as `freeze` — finish writing before you pass it, or pass a copy. A binding `ys := xs` does not freeze (`ys` is a mut view of the same contents); to bind an immutable snapshot, write `ys := freeze(xs)`.
+- Writing a mut variable where an immutable value is expected (an immutable parameter, a `return`, an immutable field, and so on) freezes it right there (`ns` in `par.Map(ns, …)` in section 7). The rules after that are the same as `freeze` — finish writing before you pass it, or pass a copy (`clone(xs)` — a shallow copy, returned as mut). A binding `ys := xs` does not freeze (`ys` is a mut view of the same contents); to bind an immutable snapshot, write `ys := freeze(xs)`.
 
 Differences from Go: use `mut` arguments instead of `*T` and `&x`. Values mean what they mean in Go: "just values".
 

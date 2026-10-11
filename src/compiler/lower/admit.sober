@@ -35,7 +35,7 @@ func needAdmitRt(st mut St) {
 
 func buildAdmitRt(st mut St) {
     // spawn の点の数はここで決まる（lower の最後 — buildTaskRt）
-    hset(mut st, st.pestG + G_WORDS, st.nsite + 1)
+    desugar.HeapSet(mut st.d, st.pestG + G_WORDS, st.nsite + 1)
     buildTaskInline(mut st)
     buildEstUp(mut st)
     if st.poolOn {

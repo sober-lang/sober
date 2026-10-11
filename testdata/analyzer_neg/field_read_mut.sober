@@ -1,0 +1,10 @@
+package main
+
+// mut の中身を持つ欄の読み（中身の別名が package の外にできる）
+import "testdata/fieldpkg/box"
+
+func main() {
+    mut b := box.Box{n: 0, name: "x", inner: box.Inner{k: 0}, xs: mut []int{}, tags: mut map[string]int{}}
+    c := b.xs
+    println(len(c))
+}

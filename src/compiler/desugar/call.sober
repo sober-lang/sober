@@ -178,6 +178,28 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             v := expr(mut st, a0, eb, ef, depth)?
             return c1(mut st, CKeysm, v), nil
         }
+        // clone(x)（clone の段 — freeze の双対）: slice / map の浅い写しを最内 region の mut へ。読み出しの注釈は index と同じ
+        // （imm の slice は要素型が注釈を持つとき・imm の map はセル型 prod k (opt v) が常に注釈を持つ — Lean の readAs）
+        if strIs(mut st, name, "clone") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            a0 := latN(mut st, args, 0)
+            bt := computeTy(mut st, a0, eb, ef)
+            if bt == -1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            if isTag(mut st, bt, TSl) && tStrBit(mut st, bt) == 0 {
+                v := expr(mut st, a0, eb, ef, depth)?
+                return cClone(mut st, v, readAnn(mut st, bt)), nil
+            }
+            if isTag(mut st, bt, TMp) {
+                v := expr(mut st, a0, eb, ef, depth)?
+                ann := if tMutBit(mut st, bt) != 0 { TyRef(-1) } else { tProd(mut st, tKey(mut st, bt), tOpt(mut st, tVal(mut st, bt))) }
+                return cClone(mut st, v, ann), nil
+            }
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
         // std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — intrinsic.sober の SysKey）: コアの近似は鍵の番号で（float の 3 つは fconv・
         // []byte を返すものは新しい imm slice・他は 0 — 実引数は左から評価して捨てる）
         sk := SysKey(mut st, st.curPkg, name)

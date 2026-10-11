@@ -21,6 +21,7 @@ package lower
 // 深度の「版」: 値 %d = region.depth は定義点の深度の版を持つ。enter と合流（前任の版が揃わない・後ろから入る辺がある）は新しい版。
 // setdepth %v の後の版は %v の版（知らない値なら新しい版）。setdepth %v は「今の版 = %v の版」のとき冗長
 
+import "desugar"
 import "std/iter"
 import "std/table"
 
@@ -130,8 +131,8 @@ func optRegionFree(st mut St) {
         f = st.fhead
         while f != -1 {
             r := irFnRFree(mut st, f)
-            if r >= 0 && hget(mut st, r) == 0 && rfCallees(mut st, hget(mut st, r + 1)) {
-                hset(mut st, r, 1)
+            if r >= 0 && desugar.HeapGet(mut st.d, r) == 0 && rfCallees(mut st, desugar.HeapGet(mut st.d, r + 1)) {
+                desugar.HeapSet(mut st.d, r, 1)
                 changed = true
             }
             f = irFnNext(mut st, f)
@@ -140,7 +141,7 @@ func optRegionFree(st mut St) {
     f = st.fhead
     while f != -1 {
         r := irFnRFree(mut st, f)
-        if r >= 0 && hget(mut st, r) == 1 {
+        if r >= 0 && desugar.HeapGet(mut st.d, r) == 1 {
             mut b := irFnBHead(mut st, f)
             while b != -1 {
                 mut ins := irBlkIHead(mut st, b)
@@ -163,10 +164,10 @@ func optRegionFree(st mut St) {
 // 巻き戻しは罠までの関数の epilogue を飛ばすので、罠を張る側は深度を任意の値から戻す。enter を消すと巻き戻りの時の深度が浅くなるだけ）
 func rfCallees(st mut St, l int) bool {
     mut i := 0
-    while i < hget(mut st, l) {
-        g := FnRef(hget(mut st, l + 1 + i))
+    while i < desugar.HeapGet(mut st.d, l) {
+        g := FnRef(desugar.HeapGet(mut st.d, l + 1 + i))
         r := irFnRFree(mut st, g)
-        if g != st.rtPanic && g != st.rtPanicMem && (r < 0 || hget(mut st, r) == 0) {
+        if g != st.rtPanic && g != st.rtPanicMem && (r < 0 || desugar.HeapGet(mut st.d, r) == 0) {
             return false
         }
         i += 1
@@ -215,7 +216,7 @@ func rfLocal(st mut St, f FnRef) {
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {
             if irInsOp(mut st, ins) == OpCall {
-                hset(mut st, calls + 1 + k, irInsA(mut st, ins))
+                desugar.HeapSet(mut st.d, calls + 1 + k, irInsA(mut st, ins))
                 k += 1
             }
             ins = irInsNext(mut st, ins)
@@ -230,13 +231,13 @@ func rfLocal(st mut St, f FnRef) {
 // inlineOk は関数 f が P0' の対象か（F_RFREE の記録の 3 語目に覚える: -1 = 未判定、0 / 1）
 func inlineOk(st mut St, f FnRef) bool {
     r := irFnRFree(mut st, f)
-    if r < 0 || hget(mut st, r) != 1 {
+    if r < 0 || desugar.HeapGet(mut st.d, r) != 1 {
         return false
     }
-    if hget(mut st, r + 2) < 0 {
-        hset(mut st, r + 2, if inlineShape(mut st, f) { 1 } else { 0 })
+    if desugar.HeapGet(mut st.d, r + 2) < 0 {
+        desugar.HeapSet(mut st.d, r + 2, if inlineShape(mut st, f) { 1 } else { 0 })
     }
-    return hget(mut st, r + 2) == 1
+    return desugar.HeapGet(mut st.d, r + 2) == 1
 }
 
 // inlineShape はブロック 1 つ・引数のないブロック・スロットなし・終端が ret・命令が写せるものだけか
@@ -309,7 +310,7 @@ func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
     rv := irBlkX1(mut st, gb)
     vmap := listN(mut st, irFnNVal(mut st, g))
     for i <- iter.Range(0, np) {
-        hset(mut st, vmap + 1 + i, hget(mut st, args + 1 + i))
+        desugar.HeapSet(mut st.d, vmap + 1 + i, desugar.HeapGet(mut st.d, args + 1 + i))
     }
     mut x := irBlkIHead(mut st, gb)
     while x != -1 {
@@ -324,22 +325,22 @@ func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
                     r = irFnNVal(mut st, f)
                     irSetFnNVal(mut st, f, r + 1)
                 }
-                hset(mut st, vmap + 1 + r0, r)
+                desugar.HeapSet(mut st.d, vmap + 1 + r0, r)
             }
             mut a := irInsA(mut st, x)
             mut bb := irInsB(mut st, x)
             mut c := irInsC(mut st, x)
             if op == OpBin || op == OpCmp {
-                bb = hget(mut st, vmap + 1 + bb)
-                c = hget(mut st, vmap + 1 + c)
+                bb = desugar.HeapGet(mut st.d, vmap + 1 + bb)
+                c = desugar.HeapGet(mut st.d, vmap + 1 + c)
             } else if op == OpLoad || op == OpLoad8 || op == OpPtoi || op == OpItop {
-                a = hget(mut st, vmap + 1 + a)
+                a = desugar.HeapGet(mut st.d, vmap + 1 + a)
             } else if op == OpStore || op == OpStore8 {
-                a = hget(mut st, vmap + 1 + a)
-                c = hget(mut st, vmap + 1 + c)
+                a = desugar.HeapGet(mut st.d, vmap + 1 + a)
+                c = desugar.HeapGet(mut st.d, vmap + 1 + c)
             } else if op == OpGepW || op == OpGepB {
-                a = hget(mut st, vmap + 1 + a)
-                bb = hget(mut st, vmap + 1 + bb)
+                a = desugar.HeapGet(mut st.d, vmap + 1 + a)
+                bb = desugar.HeapGet(mut st.d, vmap + 1 + bb)
             }
             linkInst(mut st, b, mkInst(mut st, r, op, a, bb, c))
         }
@@ -350,7 +351,7 @@ func inlineCallAt(st mut St, f FnRef, b BlkRef, ins InsRef) {
         z := irFnNVal(mut st, f)
         irSetFnNVal(mut st, f, z + 1)
         linkInst(mut st, b, mkInst(mut st, z, OpConst, 0, -1, -1))
-        linkInst(mut st, b, mkInst(mut st, res, OpBin, BAdd, hget(mut st, vmap + 1 + rv), z))
+        linkInst(mut st, b, mkInst(mut st, res, OpBin, BAdd, desugar.HeapGet(mut st.d, vmap + 1 + rv), z))
     }
 }
 
@@ -379,23 +380,23 @@ func rpo(st mut St, f FnRef) int {
     mut sp := 0
     entry := irFnBHead(mut st, f)
     obSet(mut st, entry, OB_VIS, 1)
-    hset(mut st, stack + 1, int(entry))
-    hset(mut st, stack + 2, 0)
+    desugar.HeapSet(mut st.d, stack + 1, int(entry))
+    desugar.HeapSet(mut st.d, stack + 2, 0)
     sp = 1
     while sp > 0 {
-        b := BlkRef(hget(mut st, stack + 1 + (sp - 1) * 2))
-        k := hget(mut st, stack + 2 + (sp - 1) * 2)
+        b := BlkRef(desugar.HeapGet(mut st.d, stack + 1 + (sp - 1) * 2))
+        k := desugar.HeapGet(mut st.d, stack + 2 + (sp - 1) * 2)
         if k < succN(mut st, b) {
-            hset(mut st, stack + 2 + (sp - 1) * 2, k + 1)
+            desugar.HeapSet(mut st.d, stack + 2 + (sp - 1) * 2, k + 1)
             s := succAt(mut st, b, k)
             if obGet(mut st, s, OB_VIS) == 0 {
                 obSet(mut st, s, OB_VIS, 1)
-                hset(mut st, stack + 1 + sp * 2, int(s))
-                hset(mut st, stack + 2 + sp * 2, 0)
+                desugar.HeapSet(mut st.d, stack + 1 + sp * 2, int(s))
+                desugar.HeapSet(mut st.d, stack + 2 + sp * 2, 0)
                 sp += 1
             }
         } else {
-            hset(mut st, post + 1 + np, int(b))
+            desugar.HeapSet(mut st.d, post + 1 + np, int(b))
             np += 1
             sp -= 1
         }
@@ -403,8 +404,8 @@ func rpo(st mut St, f FnRef) int {
     order := listN(mut st, np)
     mut i := 0
     while i < np {
-        b := BlkRef(hget(mut st, post + np - i))
-        hset(mut st, order + 1 + i, int(b))
+        b := BlkRef(desugar.HeapGet(mut st.d, post + np - i))
+        desugar.HeapSet(mut st.d, order + 1 + i, int(b))
         obSet(mut st, b, OB_RPO, i)
         i += 1
     }
@@ -426,10 +427,10 @@ func edgeIn(st mut St, b BlkRef, to BlkRef, ver int) {
 
 func optDepth(st mut St, f FnRef) {
     order := rpo(mut st, f)
-    n := hget(mut st, order)
+    n := desugar.HeapGet(mut st.d, order)
     // 後ろの辺（ループの戻り）を先に数える: 入る先の入口の版は引き継がない
     for i <- iter.Range(0, n) {
-        b := BlkRef(hget(mut st, order + 1 + i))
+        b := BlkRef(desugar.HeapGet(mut st.d, order + 1 + i))
         mut k := 0
         while k < succN(mut st, b) {
             to := succAt(mut st, b, k)
@@ -441,7 +442,7 @@ func optDepth(st mut St, f FnRef) {
     }
     mut fresh := 0
     for i <- iter.Range(0, n) {
-        b := BlkRef(hget(mut st, order + 1 + i))
+        b := BlkRef(desugar.HeapGet(mut st.d, order + 1 + i))
         mut ver := obGet(mut st, b, OB_IN)
         if ver < 0 || obGet(mut st, b, OB_LATE) != 0 {
             fresh += 1
@@ -591,7 +592,7 @@ func opnd(st mut St, v int, mode int) int {
 
 // opField は記録 r の欄 k の値を走査する
 func opField(st mut St, r int, k int, mode int) {
-    hset(mut st, r + k, opnd(mut st, hget(mut st, r + k), mode))
+    desugar.HeapSet(mut st.d, r + k, opnd(mut st, desugar.HeapGet(mut st.d, r + k), mode))
 }
 
 // vlist は値の列 l を走査する。書き換え（mode 2）は同じ列を 2 度書かないよう長さを負にして印を付ける（listUnmark が戻す）
@@ -599,7 +600,7 @@ func vlist(st mut St, l int, mode int) {
     if l < 0 {
         return
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     if n <= 0 {
         return
     }
@@ -607,13 +608,13 @@ func vlist(st mut St, l int, mode int) {
         opField(mut st, l, 1 + i, mode)
     }
     if mode == 2 {
-        hset(mut st, l, -n)
+        desugar.HeapSet(mut st.d, l, -n)
     }
 }
 
 func listUnmark(st mut St, l int) {
-    if l >= 0 && hget(mut st, l) < 0 {
-        hset(mut st, l, -hget(mut st, l))
+    if l >= 0 && desugar.HeapGet(mut st.d, l) < 0 {
+        desugar.HeapSet(mut st.d, l, -desugar.HeapGet(mut st.d, l))
     }
 }
 
@@ -626,7 +627,7 @@ func insOperands(st mut St, ins InsRef, mode int) {
         if k == K_VAL {
             opField(mut st, at, 0, mode)
         } else if k == K_VLIST {
-            vlist(mut st, hget(mut st, at), mode)
+            vlist(mut st, desugar.HeapGet(mut st.d, at), mode)
         }
         r = r >> 4
         at += 1
@@ -638,10 +639,10 @@ func termOperands(st mut St, b BlkRef, mode int) {
     mut at := int(b) + B_X1
     while r != 0 {
         k := r & 15
-        if k == K_VAL || (k == K_VOPT && hget(mut st, at) >= 0) {
+        if k == K_VAL || (k == K_VOPT && desugar.HeapGet(mut st.d, at) >= 0) {
             opField(mut st, at, 0, mode)
         } else if k == K_VLIST {
-            vlist(mut st, hget(mut st, at), mode)
+            vlist(mut st, desugar.HeapGet(mut st.d, at), mode)
         }
         r = r >> 4
         at += 1
@@ -748,7 +749,7 @@ func fwdEnd(st mut St, b BlkRef) BlkRef {
 }
 
 func emptyArgs(st mut St, l int) bool {
-    return l < 0 || hget(mut st, l) == 0
+    return l < 0 || desugar.HeapGet(mut st.d, l) == 0
 }
 
 func optBlocks(st mut St, f FnRef) {
@@ -859,7 +860,7 @@ func reach(st mut St, b BlkRef) bool {
 // ── 振り直し ──
 
 func optRenumber(st mut St, f FnRef) {
-    np := hget(mut st, irFnPtys(mut st, f))
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
     mut v := 0
     while v < irFnNVal(mut st, f) {
         owSet(mut st, v, OW_VER, if v < np { v } else { -1 })
@@ -870,10 +871,10 @@ func optRenumber(st mut St, f FnRef) {
     while b != -1 {
         mut p := irBlkPHead(mut st, b)
         while p >= 0 {
-            owSet(mut st, hget(mut st, p + 1), OW_VER, n)
-            hset(mut st, p + 1, n)
+            owSet(mut st, desugar.HeapGet(mut st.d, p + 1), OW_VER, n)
+            desugar.HeapSet(mut st.d, p + 1, n)
             n += 1
-            p = hget(mut st, p)
+            p = desugar.HeapGet(mut st.d, p)
         }
         mut ins := irBlkIHead(mut st, b)
         while ins != -1 {

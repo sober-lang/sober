@@ -297,6 +297,16 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
       d = rr + 1 → b ≤ rr → kt.keyOk → kt.regionsBelow d →
       StackTy Δ Ξ Ψ b S Λ d (.slice false rr kt) tf →
       StackTy Δ Ξ Ψ b (.keysmK :: S) Λ d (.map m r (.prod kt (.opt t))) tf
+  /-- clone の継続（slice — keysm と同じ床: 結果は最内 region d - 1 の mut） -/
+  | cloneKs {S d ot m r rr t' t tf} :
+      d = rr + 1 → b ≤ rr → Ty.readAs m ot t' = some t → t.regionsBelow d →
+      StackTy Δ Ξ Ψ b S Λ d (.slice true rr t) tf →
+      StackTy Δ Ξ Ψ b (.cloneK ot :: S) Λ d (.slice m r t') tf
+  /-- clone の継続（map — セル型に対して cloneKs と同型） -/
+  | cloneKm {S d ot m r rr c' c tf} :
+      d = rr + 1 → b ≤ rr → Ty.readAs m ot c' = some c → c.regionsBelow d →
+      StackTy Δ Ξ Ψ b S Λ d (.map true rr c) tf →
+      StackTy Δ Ξ Ψ b (.cloneK ot :: S) Λ d (.map m r c') tf
   /-- ラベル（V4）: 穴にはラベルを 1 つ伸ばした Λ を見せる（R4b: ラベルの最内 region d - 1 つき）。
   `t.regionsBelow d` は脱出の境界コピーで写した値を d へ降ろす床（label 規則の写し） -/
   | labelK {S d t tf} :
@@ -630,6 +640,8 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
       (ih hle)
   | lenmK _ ih => exact .lenmK (ih hle)
   | keysmK hd hb hko hrb _ ih => exact .keysmK hd hb hko hrb (ih hle)
+  | cloneKs hd hb hrd hrb _ ih => exact .cloneKs hd hb hrd hrb (ih hle)
+  | cloneKm hd hb hrd hrb _ ih => exact .cloneKm hd hb hrd hrb (ih hle)
   | scopeK hr hb hem hec hbd _ ih =>
     exact .scopeK hr hb hem hec hbd (ih fun d' hd' => hle d' (Nat.le_succ_of_le hd'))
   | spawnK ha hm h1 hrb hcf hε hS ih =>
@@ -729,6 +741,8 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | dlmR hv h1 _ ih => exact .dlmR hv (h1.chan_mono hle) ih
   | lenmK _ ih => exact .lenmK ih
   | keysmK hd hb hko hrb _ ih => exact .keysmK hd hb hko hrb ih
+  | cloneKs hd hb hrd hrb _ ih => exact .cloneKs hd hb hrd hrb ih
+  | cloneKm hd hb hrd hrb _ ih => exact .cloneKm hd hb hrd hrb ih
   | scopeK hr hb hem hec hbd _ ih => exact .scopeK hr hb hem hec hbd ih
   | spawnK ha hm h1 hrb hcf hε _ ih => exact .spawnK (ha.chan_mono hle) hm (h1.chan_mono hle) hrb hcf hε ih
   | spawnA hv hsv hm h1 hrb hcf hε _ ih => exact .spawnA hv (hsv.chan_mono hle) hm (h1.chan_mono hle) hrb hcf hε ih

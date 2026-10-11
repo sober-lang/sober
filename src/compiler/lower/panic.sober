@@ -78,7 +78,7 @@ func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?
     call(mut st, st.rtPstr, list1(mut st, strlit(mut st, sA(nodeOf(mut st, latN(mut st, args, 0))))))
     printLit(mut st, "{")
     if n == 2 {
-        fs := hgetL(mut st, hget(mut st, sv.t + 1) + SI_FIELDS)
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, sv.t + 1) + SI_FIELDS)
         for i <- iter.Range(0, lenL(mut st, fs)) {
             f := latI(mut st, fs, i)
             if i > 0 {
@@ -86,8 +86,8 @@ func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?
             }
             call(mut st, st.rtPstr, list1(mut st, strlit(mut st, hgetS(mut st, f))))
             printLit(mut st, ": ")
-            t := hget(mut st, f + 1)
-            v := loadVal(mut st, sv.v, hget(mut st, f + 2), t)
+            t := desugar.HeapGet(mut st.d, f + 1)
+            v := loadVal(mut st, sv.v, desugar.HeapGet(mut st.d, f + 2), t)
             if isString(mut st, t) {
                 needQstr(mut st)
                 call(mut st, st.rtPqstr, list1(mut st, v))
@@ -283,8 +283,8 @@ func buildPanic(st mut St, p loader.Program) {
     mut files := mut []int{}
     for i <- iter.Range(0, n) {
         f := table.Get(mut st.psites, i * 3 + 1)
-        if f >= 0 && f < len(p.file_path) && hget(mut st, seen + 1 + f) == 0 {
-            hset(mut st, seen + 1 + f, 1)
+        if f >= 0 && f < len(p.file_path) && desugar.HeapGet(mut st.d, seen + 1 + f) == 0 {
+            desugar.HeapSet(mut st.d, seen + 1 + f, 1)
             files = append(files, f)
         }
     }
@@ -298,7 +298,7 @@ func buildPanic(st mut St, p loader.Program) {
                 // 字句が引けなければ 行 0・列 = 字句の番号
                 lc := if tok >= 0 && tok * 2 + 1 < len(lcs) { lcs[tok * 2] | (minI(lcs[tok * 2 + 1], 32767) << 24) } else { minI(if tok < 0 { 0 } else { tok }, 32767) << 24 }
                 kind := table.Get(mut st.psites, i * 3)
-                hset(mut st, ws + 1 + i, kind | (k << 8) | (lc << 24))
+                desugar.HeapSet(mut st.d, ws + 1 + i, kind | (k << 8) | (lc << 24))
             }
         }
     }
@@ -405,13 +405,13 @@ func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths 
     while x >= 0 {
         hit := newBlock(mut st)
         next := newBlock(mut st)
-        condbr(mut st, cmp(mut st, CEq, site, iconst(mut st, hget(mut st, x + 1))), hit, -1, next, -1)
+        condbr(mut st, cmp(mut st, CEq, site, iconst(mut st, desugar.HeapGet(mut st.d, x + 1))), hit, -1, next, -1)
         setCur(mut st, hit)
-        call(mut st, st.rtPstr, list1(mut st, strlit(mut st, desugar.StrRef(hget(mut st, x + 2)))))
+        call(mut st, st.rtPstr, list1(mut st, strlit(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, x + 2)))))
         printLit(mut st, "{…}")
         br(mut st, bHead, -1)
         setCur(mut st, next)
-        x = hget(mut st, x)
+        x = desugar.HeapGet(mut st.d, x)
     }
     w2 := load(mut st, gepWord(mut st, globaladdr(mut st, g), site), 0)
     choose(mut st, bin(mut st, BAnd, w2, iconst(mut st, 255)), panicTextsFor(true, true), 1)

@@ -10,6 +10,7 @@ package lower
 //   ③ 定数の畳み込み（既存の P2 — インラインした本体の定数の実引数）
 // 後始末は既存の P4（到達しないブロックを消して番号を振り直す）・P3（死んだ純粋命令）・値の振り直し
 
+import "desugar"
 import "std/iter"
 
 // cfgCleanModule はモジュールの全関数に掛ける
@@ -74,11 +75,11 @@ func ccDeadParams(st mut St, f FnRef, nv int, nb int, blk mut []int) bool {
             mut k := 0
             mut p := irBlkPHead(mut st, BlkRef(blk[bi]))
             while p >= 0 {
-                pb[hget(mut st, p + 1)] = bi
-                pk[hget(mut st, p + 1)] = k
+                pb[desugar.HeapGet(mut st.d, p + 1)] = bi
+                pk[desugar.HeapGet(mut st.d, p + 1)] = k
                 k += 1
                 np += 1
-                p = hget(mut st, p)
+                p = desugar.HeapGet(mut st.d, p)
             }
         }
     }
@@ -164,7 +165,7 @@ func ccDeadParamsFrom(st mut St, f FnRef, nv int, nb int, blk mut []int, pb mut 
         if bi >= 0 {
             for j <- iter.Range(icnt[bi], icnt[bi + 1]) {
                 l := ins[j]
-                a := hget(mut st, l + 1 + pk[v])
+                a := desugar.HeapGet(mut st.d, l + 1 + pk[v])
                 if live[a] == 0 {
                     live[a] = 1
                     work[nw] = a
@@ -210,13 +211,13 @@ func ccDeadParamsFrom(st mut St, f FnRef, nv int, nb int, blk mut []int, pb mut 
             irSetBlkPHead(mut st, bb, -1)
             irSetBlkPTail(mut st, bb, -1)
             while p >= 0 {
-                nx := hget(mut st, p)
-                if live[hget(mut st, p + 1)] == 1 {
-                    hset(mut st, p, -1)
+                nx := desugar.HeapGet(mut st.d, p)
+                if live[desugar.HeapGet(mut st.d, p + 1)] == 1 {
+                    desugar.HeapSet(mut st.d, p, -1)
                     if irBlkPHead(mut st, bb) < 0 {
                         irSetBlkPHead(mut st, bb, p)
                     } else {
-                        hset(mut st, irBlkPTail(mut st, bb), p)
+                        desugar.HeapSet(mut st.d, irBlkPTail(mut st, bb), p)
                     }
                     irSetBlkPTail(mut st, bb, p)
                 }
@@ -247,7 +248,7 @@ func ccThread(st mut St, f FnRef) bool {
     while cb != -1 {
         cp := irBlkPHead(mut st, cb)
         ct := irBlkTerm(mut st, cb)
-        if cp >= 0 && hget(mut st, cp) < 0 && irBlkLoop(mut st, cb) & 1 == 0 && (ct == TmBr || ct == TmCondbr) {
+        if cp >= 0 && desugar.HeapGet(mut st.d, cp) < 0 && irBlkLoop(mut st, cb) & 1 == 0 && (ct == TmBr || ct == TmCondbr) {
             mut last := irBlkIHead(mut st, cb)
             mut allc := true
             while last != -1 && irInsNext(mut st, last) != -1 {
@@ -288,9 +289,9 @@ func ccThread(st mut St, f FnRef) bool {
         mut p := irBlkPHead(mut st, ub)
         while p >= 0 {
             if ub != entry {
-                vk[hget(mut st, p + 1)] = 1
+                vk[desugar.HeapGet(mut st.d, p + 1)] = 1
             }
-            p = hget(mut st, p)
+            p = desugar.HeapGet(mut st.d, p)
         }
         mut i := irBlkIHead(mut st, ub)
         while i != -1 {
@@ -329,13 +330,13 @@ func ccThread(st mut St, f FnRef) bool {
                 args := if t == TmBr { irBlkX2(mut st, ub) } else if side == 0 { irBlkX3(mut st, ub) } else { irBlkX5(mut st, ub) }
                 mut p := irBlkPHead(mut st, to)
                 mut k := 0
-                while p >= 0 && args >= 0 && k < hget(mut st, args) {
-                    pv := hget(mut st, p + 1)
-                    if vk[pv] & 1 == 1 && vk[hget(mut st, args + 1 + k)] & 1 == 0 {
+                while p >= 0 && args >= 0 && k < desugar.HeapGet(mut st.d, args) {
+                    pv := desugar.HeapGet(mut st.d, p + 1)
+                    if vk[pv] & 1 == 1 && vk[desugar.HeapGet(mut st.d, args + 1 + k)] & 1 == 0 {
                         vk[pv] = vk[pv] - 1
                         chg = true
                     }
-                    p = hget(mut st, p)
+                    p = desugar.HeapGet(mut st.d, p)
                     k += 1
                 }
             }
@@ -373,9 +374,9 @@ func ccThread(st mut St, f FnRef) bool {
         p := irBlkPHead(mut st, j)
         jt := irBlkTerm(mut st, j)
         ih := irBlkIHead(mut st, j)
-        q := if p >= 0 { hget(mut st, p + 1) } else { -1 }
+        q := if p >= 0 { desugar.HeapGet(mut st.d, p + 1) } else { -1 }
         mut form := 0
-        if p >= 0 && hget(mut st, p) < 0 && irBlkLoop(mut st, j) & 1 == 0 && dirty[jid] == 0 {
+        if p >= 0 && desugar.HeapGet(mut st.d, p) < 0 && irBlkLoop(mut st, j) & 1 == 0 && dirty[jid] == 0 {
             if jt == TmCondbr && ih == -1 && irBlkX1(mut st, j) == q {
                 form = 1
             } else if jt == TmCondbr && ih != -1 && irInsNext(mut st, ih) == -1 && irInsOp(mut st, ih) == OpBin && irInsA(mut st, ih) == BXor && irBlkX1(mut st, j) == irInsRes(mut st, ih) && uses[irInsRes(mut st, ih)] == 1 {
@@ -402,8 +403,8 @@ func ccThread(st mut St, f FnRef) bool {
             for side <- iter.Range(0, 2) {
                 l := if side == 0 { ta } else { ea }
                 if l >= 0 {
-                    for k <- iter.Range(0, hget(mut st, l)) {
-                        v := hget(mut st, l + 1 + k)
+                    for k <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                        v := desugar.HeapGet(mut st.d, l + 1 + k)
                         if v == q {
                             inJ += 1
                         } else if v == n {
@@ -504,11 +505,11 @@ func ccSubst(st mut St, l int, q int, a int) int {
     if l < 0 {
         return -1
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     out := listN(mut st, n)
     for k <- iter.Range(0, n) {
-        v := hget(mut st, l + 1 + k)
-        hset(mut st, out + 1 + k, if v == q { a } else { v })
+        v := desugar.HeapGet(mut st.d, l + 1 + k)
+        desugar.HeapSet(mut st.d, out + 1 + k, if v == q { a } else { v })
     }
     return out
 }
@@ -525,22 +526,22 @@ func ccKeepArgs(st mut St, to BlkRef, args int, live mut []int) int {
     mut n := 0
     mut p := irBlkPHead(mut st, to)
     while p >= 0 {
-        if live[hget(mut st, p + 1)] == 1 {
+        if live[desugar.HeapGet(mut st.d, p + 1)] == 1 {
             n += 1
         }
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     out := listN(mut st, n)
     mut k := 0
     mut j := 0
     p = irBlkPHead(mut st, to)
     while p >= 0 {
-        if live[hget(mut st, p + 1)] == 1 {
-            hset(mut st, out + 1 + j, hget(mut st, args + 1 + k))
+        if live[desugar.HeapGet(mut st.d, p + 1)] == 1 {
+            desugar.HeapSet(mut st.d, out + 1 + j, desugar.HeapGet(mut st.d, args + 1 + k))
             j += 1
         }
         k += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     return out
 }
@@ -586,4 +587,58 @@ func ccMerge(st mut St, f FnRef) bool {
         b = irBlkNext(mut st, b)
     }
     return any
+}
+
+// ccPostM2rModule は直列の経路の展開後の mem2reg と死んだ仮引数の除去（並列の群の経路は move.sober lB2Func — 同じ形）
+func ccPostM2rModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            p0 := ccNParams(mut st, f)
+            m2rFunc(mut st, f)
+            if ccNParams(mut st, f) > p0 {
+                ccDeadAfterM2r(mut st, f)
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// ccNParams は関数 f のブロックの仮引数の総数（展開後の mem2reg が仮引数を足したかの門 — 足さなければ新しい死んだ仮引数は無い）
+func ccNParams(st mut St, f FnRef) int {
+    mut n := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut p := irBlkPHead(mut st, b)
+        while p >= 0 {
+            n += 1
+            p = desugar.HeapGet(mut st.d, p)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return n
+}
+
+// ccDeadAfterM2r は展開後の SROA + mem2reg の後の死んだ仮引数の除去（置き場の往復レーン 段 1 — report-497 M1・report-498）。
+// ① の除去は cfgClean の頭で掛かるが、展開後の mem2reg（cfgClean の後）がスロットの語ごとに刈り込まない仮引数を置き直し、仮引数どうしの輪を回るだけの
+// 運搬値が x86 に届いていた（routing の split のループの頭で 16 本中 11 本 — spill されて毎周 記憶どうしの写しと load / store。routing の仮引数の 31.7%）。
+// 後始末は cfgClean と同じ（値の詰め直しを省く形は検証器が「定義の無い値」で落とす）。
+// 棄てた案: 展開後の mem2reg を刈り込み型（生きている語にだけ仮引数を置く）にする — 門つきの除去で判定の仕事は +0.11 G まで下がり、mem2reg に
+// 生存解析を足す複雑さに見合わない（最初の mem2reg は elfeq の照合する形なので、どちらにしても触らない）
+func ccDeadAfterM2r(st mut St, f FnRef) {
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut blk := mut []int{}
+    xFill(mut blk, nb, -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        blk[irBlkId(mut st, b)] = int(b)
+        b = irBlkNext(mut st, b)
+    }
+    if ccDeadParams(mut st, f, nv, nb, mut blk) {
+        optReset(mut st, nv, nb)
+        optBlocks(mut st, f)
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
 }

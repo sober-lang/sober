@@ -206,9 +206,9 @@ fi
 cp "$W/move.orig" "$W/tree/lower/move.sober"
 # 変異 7（凍結の口 — 仮裁定 2026-10-07 夜間）: xModule の入口のヒープの凍結（table.Freeze と hfOn）を抜くと、x86 の群の子が空の凍結の表を
 # 読んで W8 の自己 build が建たない / 割れること
-grep -q '^    st.hf = table.Freeze(mut st.d.h)$' "$W/tree/lower/x86.sober" || { echo "FAIL: mutant 7: the heap freeze was not found in lower/x86.sober"; fail=$((fail + 1)); }
+grep -q '^    st.hf = desugar.HeapFreeze(mut st.d)$' "$W/tree/lower/x86.sober" || { echo "FAIL: mutant 7: the heap freeze was not found in lower/x86.sober"; fail=$((fail + 1)); }
 cp "$W/tree/lower/x86.sober" "$W/x86.orig7"
-sed -i '/^    st.hf = table.Freeze(mut st.d.h)$/d; /^    st.hfOn = true$/d' "$W/tree/lower/x86.sober"
+sed -i '/^    st.hf = desugar.HeapFreeze(mut st.d)$/d; /^    st.hfOn = true$/d' "$W/tree/lower/x86.sober"
 if (cd "$W/tree" && "$S2" build app/main.sober --emit=elf --passes -o "$W/mut7" > "$W/mutlog" 2>&1); then
     chmod +x "$W/mut7"
     if (cd "$W/tree" && cp "$W/x86.orig7" lower/x86.sober && SOBER_WORKERS=8 "$W/mut7" build app/main.sober --emit=elf --passes -o "$W/bmut" > "$W/blog" 2>&1) && cmp -s "$W/bseq" "$W/bmut"; then

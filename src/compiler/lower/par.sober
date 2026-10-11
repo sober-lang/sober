@@ -135,16 +135,16 @@ func parCall(st mut St, key int, fi int, args desugar.ListRef, at desugar.NodeRe
         }
         // error を返す task: (T, error?) の 2 値
         r := listN(mut st, 4)
-        hset(mut st, r, 2)
-        hset(mut st, r + 1, t)
-        hset(mut st, r + 2, joinCopy(mut st, frame, FR_RES, t))
-        hset(mut st, r + 3, eT)
-        hset(mut st, r + 4, joinCopy(mut st, frame, FR_RES + tWords(mut st, t), eT))
+        desugar.HeapSet(mut st.d, r, 2)
+        desugar.HeapSet(mut st.d, r + 1, t)
+        desugar.HeapSet(mut st.d, r + 2, joinCopy(mut st, frame, FR_RES, t))
+        desugar.HeapSet(mut st.d, r + 3, eT)
+        desugar.HeapSet(mut st.d, r + 4, joinCopy(mut st, frame, FR_RES + tWords(mut st, t), eT))
         return r, nil
     }
     // Try: Outcome[T]（variant 0 = Ok{v}・1 = Failed{e}・2 = Died{cause} — std/par の宣言順）
     oi := parInfo(mut st, pk, "Outcome", t, at)?
-    ot := hget(mut st, oi + SI_TY)
+    ot := desugar.HeapGet(mut st.d, oi + SI_TY)
     vs := hgetL(mut st, oi + SI_FIELDS)
     vOk := latI(mut st, vs, 0)
     vFailed := latI(mut st, vs, 1)
@@ -167,19 +167,19 @@ func parCall(st mut St, key int, fi int, args desugar.ListRef, at desugar.NodeRe
         eoff := FR_RES + tWords(mut st, t)
         condbr(mut st, cmp(mut st, CNe, load(mut st, frame, eoff), iconst(mut st, 0)), bFail, -1, bOk2, -1)
         setCur(mut st, bFail)
-        store(mut st, p, 0, iconst(mut st, hget(mut st, vFailed + 1)))
+        store(mut st, p, 0, iconst(mut st, desugar.HeapGet(mut st.d, vFailed + 1)))
         // err の `error?` の中身（tag の後ろ）を Failed の欄 e（error）へ
         ef := latI(mut st, hgetL(mut st, vFailed + 2), 0)
-        storeVal(mut st, p, 1 + hget(mut st, ef + 2), hget(mut st, ef + 1), loadVal(mut st, frame, eoff + 1, hget(mut st, ef + 1)))
+        storeVal(mut st, p, 1 + desugar.HeapGet(mut st.d, ef + 2), desugar.HeapGet(mut st.d, ef + 1), loadVal(mut st, frame, eoff + 1, desugar.HeapGet(mut st.d, ef + 1)))
         br(mut st, bEnd, -1)
         setCur(mut st, bOk2)
     }
-    store(mut st, p, 0, iconst(mut st, hget(mut st, vOk + 1)))
-    storeVal(mut st, p, 1 + hget(mut st, latI(mut st, hgetL(mut st, vOk + 2), 0) + 2), t, loadVal(mut st, frame, FR_RES, t))
+    store(mut st, p, 0, iconst(mut st, desugar.HeapGet(mut st.d, vOk + 1)))
+    storeVal(mut st, p, 1 + desugar.HeapGet(mut st.d, latI(mut st, hgetL(mut st, vOk + 2), 0) + 2), t, loadVal(mut st, frame, FR_RES, t))
     br(mut st, bEnd, -1)
     setCur(mut st, bDied)
-    store(mut st, p, 0, iconst(mut st, hget(mut st, vDied + 1)))
-    store(mut st, p, 1 + hget(mut st, latI(mut st, hgetL(mut st, vDied + 2), 0) + 2), load(mut st, frame, FR_CAUSE))
+    store(mut st, p, 0, iconst(mut st, desugar.HeapGet(mut st.d, vDied + 1)))
+    store(mut st, p, 1 + desugar.HeapGet(mut st.d, latI(mut st, hgetL(mut st, vDied + 2), 0) + 2), load(mut st, frame, FR_CAUSE))
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     if containsSlice(mut st, ot) {
@@ -229,10 +229,10 @@ func parSpawnTyY(st mut St, y int, at desugar.NodeRef) (SpawnTy, error?) {
 
 // taskArg は handle の型 Task[T]（ジェネリック struct のインスタンス）の T
 func taskArg(st mut St, ht int, at desugar.NodeRef) (int, error?) {
-    if !isTag(mut st, ht, TStruct) || hget(mut st, hget(mut st, ht + 1) + SI_TARGS) < 0 {
+    if !isTag(mut st, ht, TStruct) || desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, ht + 1) + SI_TARGS) < 0 {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
-    return latI(mut st, hgetL(mut st, hget(mut st, ht + 1) + SI_TARGS), 0), nil
+    return latI(mut st, hgetL(mut st, desugar.HeapGet(mut st.d, ht + 1) + SI_TARGS), 0), nil
 }
 
 // waitWhileZero は p[off] が 0 の間待つ（段 6 P4-4 — M:N の待ちの型: 待ち手の語 p[slot] へ今の task を xchg で置き、条件を見直してから眠る。
@@ -304,7 +304,7 @@ func waitLive(st mut St, rec int) {
 // parOne は結果 1 つの列
 func parOne(st mut St, t int, v int) int {
     r := list2(mut st, t, v)
-    hset(mut st, r, 1)
+    desugar.HeapSet(mut st.d, r, 1)
     return r
 }
 
@@ -337,8 +337,8 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     if kindN(mut st, lam) != ast.ELambda || lenL(mut st, lA(nodeOf(mut st, lam))) != 1 {
         return 0, diag.Par{at: posOf(mut st, lam), kind: 3}
     }
-    sT := hget(mut st, parInfo(mut st, pk, "S", -1, at)? + SI_TY)
-    cT := hget(mut st, parInfo(mut st, pk, "Cause", -1, at)? + SI_TY)
+    sT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "S", -1, at)? + SI_TY)
+    cT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Cause", -1, at)? + SI_TY)
     saved := regionDepth(mut st)
     keep0 := st.scopeKeep
     st.scopeKeep = false
@@ -525,11 +525,11 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     r := listN(mut st, 4)
-    hset(mut st, r, 2)
-    hset(mut st, r + 1, t)
-    hset(mut st, r + 2, loadVal(mut st, ts, 0, t))
-    hset(mut st, r + 3, eT)
-    hset(mut st, r + 4, es)
+    desugar.HeapSet(mut st.d, r, 2)
+    desugar.HeapSet(mut st.d, r + 1, t)
+    desugar.HeapSet(mut st.d, r + 2, loadVal(mut st, ts, 0, t))
+    desugar.HeapSet(mut st.d, r + 3, eT)
+    desugar.HeapSet(mut st.d, r + 4, es)
     return r, nil
 }
 
@@ -616,8 +616,8 @@ func parSpawnIn(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef) (in
         return -1, nil
     }
     // 入場できた道（parSpawn の最後 — 今のブロックは入場の道の終わり）: (some handle, nil)
-    hT := hget(mut st, hv + 1)
-    hx := coerce(mut st, hT, hget(mut st, hv + 2), hoT, at)?
+    hT := desugar.HeapGet(mut st.d, hv + 1)
+    hx := coerce(mut st, hT, desugar.HeapGet(mut st.d, hv + 2), hoT, at)?
     storeVal(mut st, hs, 0, hoT, hx.v)
     store(mut st, es, 0, iconst(mut st, 0))
     bEnd := newBlock(mut st)
@@ -638,11 +638,11 @@ func parSpawnIn(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef) (in
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
     r := listN(mut st, 4)
-    hset(mut st, r, 2)
-    hset(mut st, r + 1, hoT)
-    hset(mut st, r + 2, loadVal(mut st, hs, 0, hoT))
-    hset(mut st, r + 3, eT)
-    hset(mut st, r + 4, es)
+    desugar.HeapSet(mut st.d, r, 2)
+    desugar.HeapSet(mut st.d, r + 1, hoT)
+    desugar.HeapSet(mut st.d, r + 2, loadVal(mut st, hs, 0, hoT))
+    desugar.HeapSet(mut st.d, r + 3, eT)
+    desugar.HeapSet(mut st.d, r + 4, es)
     return r, nil
 }
 
@@ -708,7 +708,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     if give {
         lput(mut st, cn, 0, int(sA(nodeOf(mut st, latN(mut st, lA(nodeOf(mut st, lam)), 0)))))
         lput(mut st, ct, 0, ex.t)
-        hset(mut st, cv + 1, ex.v)
+        desugar.HeapSet(mut st.d, cv + 1, ex.v)
         words += tWords(mut st, ex.t)
         m = 1
     }
@@ -720,35 +720,35 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
         name := desugar.StrRef(latI(mut st, names, i))
         l := lookup(mut st, name)
         if l >= 0 {
-            if hget(mut st, l + 2) == LClosure {
-                c := hget(mut st, l + 4)
+            if desugar.HeapGet(mut st.d, l + 2) == LClosure {
+                c := desugar.HeapGet(mut st.d, l + 4)
                 fr := closureFree(mut st, c, lam)?
-                hset(mut st, cs + 1 + ncl * 6, int(name))
-                hset(mut st, cs + 2 + ncl * 6, c)
-                hset(mut st, cs + 3 + ncl * 6, hget(mut st, fr))
-                hset(mut st, cs + 4 + ncl * 6, hget(mut st, fr + 1))
-                hset(mut st, cs + 5 + ncl * 6, hget(mut st, fr + 2))
-                hset(mut st, cs + 6 + ncl * 6, hget(mut st, l + 3))
-                fns := desugar.ListRef(hget(mut st, fr + 1))
+                desugar.HeapSet(mut st.d, cs + 1 + ncl * 6, int(name))
+                desugar.HeapSet(mut st.d, cs + 2 + ncl * 6, c)
+                desugar.HeapSet(mut st.d, cs + 3 + ncl * 6, desugar.HeapGet(mut st.d, fr))
+                desugar.HeapSet(mut st.d, cs + 4 + ncl * 6, desugar.HeapGet(mut st.d, fr + 1))
+                desugar.HeapSet(mut st.d, cs + 5 + ncl * 6, desugar.HeapGet(mut st.d, fr + 2))
+                desugar.HeapSet(mut st.d, cs + 6 + ncl * 6, desugar.HeapGet(mut st.d, l + 3))
+                fns := desugar.ListRef(desugar.HeapGet(mut st.d, fr + 1))
                 for q <- iter.Range(0, lenL(mut st, fns)) {
                     words += tWords(mut st, latI(mut st, fns, q))
                 }
                 ncl += 1
                 continue
             }
-            if hget(mut st, l + 2) != LVal {
+            if desugar.HeapGet(mut st.d, l + 2) != LVal {
                 // mut の束縛（セル）は子へ渡せない — ParCheck が名指し済み（kind 4 — ここへは来ない）
                 return 0, diag.Par{at: posOf(mut st, lam), kind: 4}
             }
             lput(mut st, cn, m, int(name))
-            lput(mut st, ct, m, hget(mut st, l + 3))
-            hset(mut st, cv + 1 + m, hget(mut st, l + 4))
-            words += tWords(mut st, hget(mut st, l + 3))
+            lput(mut st, ct, m, desugar.HeapGet(mut st.d, l + 3))
+            desugar.HeapSet(mut st.d, cv + 1 + m, desugar.HeapGet(mut st.d, l + 4))
+            words += tWords(mut st, desugar.HeapGet(mut st.d, l + 3))
             m += 1
         }
     }
-    hset(mut st, int(cn), m)
-    hset(mut st, int(ct), m)
+    desugar.HeapSet(mut st.d, int(cn), m)
+    desugar.HeapSet(mut st.d, int(ct), m)
     // 結果が region を持つ子は枠の後ろに預かりの欄（rt.kid_keep が書く — TC_KOFF が位置）
     koff := words
     if containsSlice(mut st, t) || (tt.e >= 0 && containsSlice(mut st, tt.e)) {
@@ -758,19 +758,19 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     mut off := FR_RES + rw
     for i <- iter.Range(0, m) {
         ty := latI(mut st, ct, i)
-        storeVal(mut st, frame, off, ty, hget(mut st, cv + 1 + i))
+        storeVal(mut st, frame, off, ty, desugar.HeapGet(mut st.d, cv + 1 + i))
         off += tWords(mut st, ty)
     }
     for k <- iter.Range(0, ncl) {
-        fts := desugar.ListRef(hget(mut st, cs + 4 + k * 6))
-        fvs := hget(mut st, cs + 5 + k * 6)
+        fts := desugar.ListRef(desugar.HeapGet(mut st.d, cs + 4 + k * 6))
+        fvs := desugar.HeapGet(mut st.d, cs + 5 + k * 6)
         for w <- iter.Range(0, lenL(mut st, fts)) {
             ty := latI(mut st, fts, w)
-            storeVal(mut st, frame, off, ty, hget(mut st, fvs + 1 + w))
+            storeVal(mut st, frame, off, ty, desugar.HeapGet(mut st.d, fvs + 1 + w))
             off += tWords(mut st, ty)
         }
     }
-    hset(mut st, cs, ncl * 6)
+    desugar.HeapSet(mut st.d, cs, ncl * 6)
     kid := kidFunc(mut st, lam, tt, cn, ct, at, cs)
     store(mut st, frame, FR_STATE, iconst(mut st, 0))
     store(mut st, frame, FR_SREC, ptoi(mut st, rec))
@@ -863,7 +863,7 @@ func parSpawn(st mut St, pk int, tt SpawnTy, args desugar.ListRef, at desugar.No
     call(mut st, st.rtTaskGo, list2(mut st, me, tcb))
     br(mut st, bJoin, -1)
     setCur(mut st, bJoin)
-    hT := hget(mut st, parInfo(mut st, pk, "Task", t, at)? + SI_TY)
+    hT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Task", t, at)? + SI_TY)
     hv := newAgg(mut st, hT)
     store(mut st, hv, 0, ptoi(mut st, frame))
     return parOne(mut st, hT, hv), nil
@@ -879,11 +879,11 @@ func parRootOnly(st mut St, x desugar.NodeRef) bool {
     mut inner := false
     mut p := st.parToks
     while p >= 0 {
-        if strEq(mut st, desugar.StrRef(hget(mut st, p + 1)), nm) {
+        if strEq(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, p + 1)), nm) {
             return inner
         }
-        inner = inner || hget(mut st, p + 2) == 1
-        p = hget(mut st, p)
+        inner = inner || desugar.HeapGet(mut st.d, p + 2) == 1
+        p = desugar.HeapGet(mut st.d, p)
     }
     return false
 }
@@ -905,7 +905,7 @@ func kidFunc(st mut St, lam desugar.NodeRef, tt SpawnTy, cn desugar.ListRef, ct 
     np := lenL(mut st, cn)
     params := listN(mut st, np)
     for i <- iter.Range(0, np) {
-        hset(mut st, params + 1 + i, node(mut st, ast.KParam, at, latI(mut st, cn, i), -1, 0, 0))
+        desugar.HeapSet(mut st.d, params + 1 + i, node(mut st, ast.KParam, at, latI(mut st, cn, i), -1, 0, 0))
     }
     // 本体 = `return 本体の値`。本体がブロック `{ 文…; 値 }` なら文を関数の本体に並べて末尾の値を return（ブロックの region を開かない —
     // 子の region は関数の入口の 1 つ。コアの spawn の本体と同じ境界 — scripts/regionbound.sh）
@@ -918,9 +918,9 @@ func kidFunc(st mut St, lam desugar.NodeRef, tt SpawnTy, cn desugar.ListRef, ct 
         if n > 0 && kindN(mut st, last) == ast.SExpr {
             stmtsL = listN(mut st, n)
             for i <- iter.Range(0, n - 1) {
-                hset(mut st, stmtsL + 1 + i, int(latN(mut st, l, i)))
+                desugar.HeapSet(mut st.d, stmtsL + 1 + i, int(latN(mut st, l, i)))
             }
-            hset(mut st, stmtsL + n, node(mut st, ast.SRet, last, list1(mut st, int(nA(nodeOf(mut st, last)))), 0, 0, 0))
+            desugar.HeapSet(mut st.d, stmtsL + n, node(mut st, ast.SRet, last, list1(mut st, int(nA(nodeOf(mut st, last)))), 0, 0, 0))
         }
     }
     blk := node(mut st, ast.KBlock, at, stmtsL, 0, 0, 0)
@@ -940,10 +940,10 @@ func kidFunc(st mut St, lam desugar.NodeRef, tt SpawnTy, cn desugar.ListRef, ct 
 func isKid(st mut St, fi int) bool {
     mut k := st.kids
     while k >= 0 {
-        if hget(mut st, k + 1) == fi {
+        if desugar.HeapGet(mut st.d, k + 1) == fi {
             return true
         }
-        k = hget(mut st, k)
+        k = desugar.HeapGet(mut st.d, k)
     }
     return false
 }
@@ -962,25 +962,25 @@ func kidParams(st mut St, ps desugar.ListRef, params desugar.ListRef) {
         coff += tWords(mut st, latI(mut st, params, j))
     }
     cs := kidClosures(mut st, st.info)
-    ncl := if cs >= 0 { hget(mut st, cs) / 6 } else { 0 }
+    ncl := if cs >= 0 { desugar.HeapGet(mut st.d, cs) / 6 } else { 0 }
     cl := listN(mut st, ncl)
     for k <- iter.Range(0, ncl) {
-        fnm := desugar.ListRef(hget(mut st, cs + 3 + k * 6))
-        fts := desugar.ListRef(hget(mut st, cs + 4 + k * 6))
+        fnm := desugar.ListRef(desugar.HeapGet(mut st.d, cs + 3 + k * 6))
+        fts := desugar.ListRef(desugar.HeapGet(mut st.d, cs + 4 + k * 6))
         pushScope(mut st)
         for w <- iter.Range(0, lenL(mut st, fnm)) {
             t := latI(mut st, fts, w)
             kidBind(mut st, desugar.StrRef(latI(mut st, fnm, w)), t, coff)
             coff += tWords(mut st, t)
         }
-        cr := cloAt(mut st, hget(mut st, cs + 2 + k * 6))
+        cr := cloAt(mut st, desugar.HeapGet(mut st.d, cs + 2 + k * 6))
         c := table.Len(mut st.closures)
-        table.Push(mut st.closures, Closure{lambda: cr.lambda, ft: cr.ft, pkg: cr.pkg, chain: freezeChain(mut st), ret: hget(mut st, st.rets + 1), inl: st.inlining, env: cr.env})
-        hset(mut st, cl + 1 + k, c)
+        table.Push(mut st.closures, Closure{lambda: cr.lambda, ft: cr.ft, pkg: cr.pkg, chain: freezeChain(mut st), ret: desugar.HeapGet(mut st.d, st.rets + 1), inl: st.inlining, env: cr.env})
+        desugar.HeapSet(mut st.d, cl + 1 + k, c)
     }
     pushScope(mut st)
     for k <- iter.Range(0, ncl) {
-        declare(mut st, desugar.StrRef(hget(mut st, cs + 1 + k * 6)), LClosure, hget(mut st, cs + 6 + k * 6), hget(mut st, cl + 1 + k))
+        declare(mut st, desugar.StrRef(desugar.HeapGet(mut st.d, cs + 1 + k * 6)), LClosure, desugar.HeapGet(mut st.d, cs + 6 + k * 6), desugar.HeapGet(mut st.d, cl + 1 + k))
     }
     for j <- iter.Range(0, lenL(mut st, ps)) {
         t := latI(mut st, params, j)
@@ -1006,10 +1006,10 @@ func kidBind(st mut St, name desugar.StrRef, t int, off int) {
 func kidClosures(st mut St, fi int) int {
     mut k := st.kids
     while k >= 0 {
-        if hget(mut st, k + 1) == fi {
-            return hget(mut st, k + 2)
+        if desugar.HeapGet(mut st.d, k + 1) == fi {
+            return desugar.HeapGet(mut st.d, k + 2)
         }
-        k = hget(mut st, k)
+        k = desugar.HeapGet(mut st.d, k)
     }
     return -1
 }
@@ -1029,20 +1029,20 @@ func closureFree(st mut St, c int, lam desugar.NodeRef) (int, error?) {
         name := desugar.StrRef(latI(mut st, names, i))
         l := lookup(mut st, name)
         if l >= 0 {
-            if hget(mut st, l + 2) != LVal {
+            if desugar.HeapGet(mut st.d, l + 2) != LVal {
                 st.chain = saved
-                return 0, diag.Par{at: posOf(mut st, lam), kind: if hget(mut st, l + 2) == LClosure { 11 } else { 4 }}
+                return 0, diag.Par{at: posOf(mut st, lam), kind: if desugar.HeapGet(mut st.d, l + 2) == LClosure { 11 } else { 4 }}
             }
             lput(mut st, fn, m, int(name))
-            lput(mut st, ft, m, hget(mut st, l + 3))
-            hset(mut st, fv + 1 + m, hget(mut st, l + 4))
+            lput(mut st, ft, m, desugar.HeapGet(mut st.d, l + 3))
+            desugar.HeapSet(mut st.d, fv + 1 + m, desugar.HeapGet(mut st.d, l + 4))
             m += 1
         }
     }
     st.chain = saved
-    hset(mut st, int(fn), m)
-    hset(mut st, int(ft), m)
-    hset(mut st, fv, m)
+    desugar.HeapSet(mut st.d, int(fn), m)
+    desugar.HeapSet(mut st.d, int(ft), m)
+    desugar.HeapSet(mut st.d, fv, m)
     return rec4(mut st, int(fn), int(ft), fv, 0), nil
 }
 
@@ -1064,7 +1064,7 @@ func parIsTx(st mut St, pk int, t int, at desugar.NodeRef) (bool, error?) {
     if !isTag(mut st, t, TStruct) {
         return false, diag.Mismatch{at: posOf(mut st, at)}
     }
-    decl := desugar.NodeRef(hget(mut st, hget(mut st, t + 1) + SI_DECL))
+    decl := desugar.NodeRef(desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_DECL))
     return strIs(mut st, sA(nodeOf(mut st, decl)), "Tx"), nil
 }
 
@@ -1088,8 +1088,8 @@ func parNewChan(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef, cal
     ix := nB(nodeOf(mut st, callee0))
     tn := node(mut st, ast.TName, ix, nodeOf(mut st, ix).a, 0, 0, 0)
     t := resolveType(mut st, st.curPkg, desugar.NodeRef(tn), false)?
-    txT := hget(mut st, parInfo(mut st, pk, "Tx", t, at)? + SI_TY)
-    rxT := hget(mut st, parInfo(mut st, pk, "Rx", t, at)? + SI_TY)
+    txT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Tx", t, at)? + SI_TY)
+    rxT := desugar.HeapGet(mut st.d, parInfo(mut st, pk, "Rx", t, at)? + SI_TY)
     tw := if tWords(mut st, t) < 1 { 1 } else { tWords(mut st, t) }
     // region を持つペイロードは枠ごとの小アリーナ [スロットの基底, 使った量] を記録の後ろに（段 6 P4-4 (B4) — 0 = まだ無い）
     aw := if containsSlice(mut st, t) { 2 * capN } else { 0 }
@@ -1115,11 +1115,11 @@ func parNewChan(st mut St, pk int, args desugar.ListRef, at desugar.NodeRef, cal
     rx := newAgg(mut st, rxT)
     store(mut st, rx, 0, ptoi(mut st, chp))
     r := listN(mut st, 4)
-    hset(mut st, r, 2)
-    hset(mut st, r + 1, txT)
-    hset(mut st, r + 2, tx)
-    hset(mut st, r + 3, rxT)
-    hset(mut st, r + 4, rx)
+    desugar.HeapSet(mut st.d, r, 2)
+    desugar.HeapSet(mut st.d, r + 1, txT)
+    desugar.HeapSet(mut st.d, r + 2, tx)
+    desugar.HeapSet(mut st.d, r + 3, rxT)
+    desugar.HeapSet(mut st.d, r + 4, rx)
     return r, nil
 }
 

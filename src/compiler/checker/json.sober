@@ -170,9 +170,11 @@ const W_RX = 141
 const W_CLOSE = 142
 // P3b-4 1b' で足した語（scope の err の型の欄 "eps"）
 const W_EPS = 143
-const NW = 144
+// clone の段で足した語（Lean の clone — 読み出しの注釈 "t" は省略可）
+const W_CLONE = 144
+const NW = 145
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
-const K_BLOCKR = 144
+const K_BLOCKR = 145
 
 // 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
 func wordStr(c int) string {
@@ -319,12 +321,13 @@ func wordStr(c int) string {
     case W_RX: "rx"
     case W_CLOSE: "close"
     case W_EPS: "eps"
+    case W_CLONE: "clone"
     default: "byte" // W_BYTE
     }
 }
 
 func isExprKind(c int) bool {
-    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE
 }
 
 func isTyKind(c int) bool {
@@ -684,6 +687,19 @@ func buildExpr(st mut S, fb int, c int) int {
             return if r < 0 { -1 } else { node(mut st, c, 0, m, t, r + 1) }
         }
         return node(mut st, c, 0, m, t, 0)
+    case W_CLONE:
+        e := fE(mut st, fb, W_E)
+        if e < 0 {
+            return -1
+        }
+        mut t := -1
+        if has(mut st, fb, W_T) {
+            t = fT(mut st, fb, W_T)
+            if t < 0 {
+                return -1
+            }
+        }
+        return node(mut st, c, nc(mut st, e), e, t, 0)
     case W_INDEX:
         e := fE(mut st, fb, W_E)
         i := fE(mut st, fb, W_I)

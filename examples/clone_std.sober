@@ -1,0 +1,242 @@
+package main
+
+// 生成物 — scripts/clone_oracle.ts（期待値 clone_std.out は Go の slices.Clone / maps.Clone の双子の出力）。手で直さない。
+// 写した後に元を書き換えても写しは変わらないこと・元は凍らずに書き続けられること（clone は写すだけ — 元を凍らせない）・
+// 写しは書ける（mut — imm の列からも書ける写しが取れる）・imm の位置に置いた clone(x) はその場で凍ること（showInts(…, clone(xs)) の形）を見る
+
+func showInts(tag string, xs []int) {
+    mut line := "${tag} ${len(xs)}:"
+    for x <- xs {
+        line = line + " ${x}"
+    }
+    println(line)
+}
+
+func showStrs(tag string, xs []string) {
+    mut line := "${tag} ${len(xs)}:"
+    for x <- xs {
+        line = line + " [" + x + "]"
+    }
+    println(line)
+}
+
+func showMap(tag string, m map[string]int, ks []string) {
+    mut line := "${tag} ${len(m)}:"
+    for k <- ks {
+        v := m[k]
+        if v != nil {
+            line = line + " " + k + "=${v}"
+        }
+    }
+    println(line)
+}
+
+func showIntMap(tag string, m map[int]int, ks []int) {
+    mut line := "${tag} ${len(m)}:"
+    for k <- ks {
+        v := m[k]
+        if v != nil {
+            line = line + " ${k}=${v}"
+        }
+    }
+    println(line)
+}
+
+func sameOrder(a []string, b []string) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) {
+        if a[i] != b[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func main() {
+    mut s_empty := mut []int{}
+    showInts("empty.view", clone(s_empty))
+    c_empty := clone(s_empty)
+    showInts("empty.orig", freeze(s_empty))
+    showInts("empty.clone", c_empty)
+    mut s_one := mut []int{}
+    s_one = append(s_one, 7)
+    showInts("one.view", clone(s_one))
+    c_one := clone(s_one)
+    s_one = append(s_one, 8)
+    s_one[0] = 70
+    showInts("one.orig", freeze(s_one))
+    showInts("one.clone", c_one)
+    mut w_one := clone(c_one)
+    w_one[0] = 4242
+    w_one = append(w_one, 1)
+    showInts("one.rewrite", freeze(w_one))
+    showInts("one.clone2", c_one)
+    mut s_many := mut []int{}
+    s_many = append(s_many, 1)
+    s_many = append(s_many, 2)
+    s_many = append(s_many, 3)
+    s_many = append(s_many, 4)
+    s_many = append(s_many, 5)
+    showInts("many.view", clone(s_many))
+    c_many := clone(s_many)
+    s_many = append(s_many, 6)
+    s_many = append(s_many, 7)
+    s_many[0] = 100
+    showInts("many.orig", freeze(s_many))
+    showInts("many.clone", c_many)
+    mut w_many := clone(c_many)
+    w_many[0] = 4242
+    w_many = append(w_many, 1)
+    showInts("many.rewrite", freeze(w_many))
+    showInts("many.clone2", c_many)
+    mut s_neg := mut []int{}
+    s_neg = append(s_neg, -1)
+    s_neg = append(s_neg, 0)
+    s_neg = append(s_neg, -9007199254740991)
+    showInts("neg.view", clone(s_neg))
+    c_neg := clone(s_neg)
+    s_neg[0] = -5
+    showInts("neg.orig", freeze(s_neg))
+    showInts("neg.clone", c_neg)
+    mut w_neg := clone(c_neg)
+    w_neg[0] = 4242
+    w_neg = append(w_neg, 1)
+    showInts("neg.rewrite", freeze(w_neg))
+    showInts("neg.clone2", c_neg)
+    mut s_grow := mut []int{}
+    s_grow = append(s_grow, 0)
+    s_grow = append(s_grow, 1)
+    s_grow = append(s_grow, 4)
+    s_grow = append(s_grow, 9)
+    s_grow = append(s_grow, 16)
+    s_grow = append(s_grow, 25)
+    s_grow = append(s_grow, 36)
+    s_grow = append(s_grow, 49)
+    s_grow = append(s_grow, 64)
+    s_grow = append(s_grow, 81)
+    s_grow = append(s_grow, 100)
+    s_grow = append(s_grow, 121)
+    s_grow = append(s_grow, 144)
+    s_grow = append(s_grow, 169)
+    s_grow = append(s_grow, 196)
+    s_grow = append(s_grow, 225)
+    s_grow = append(s_grow, 256)
+    s_grow = append(s_grow, 289)
+    s_grow = append(s_grow, 324)
+    s_grow = append(s_grow, 361)
+    s_grow = append(s_grow, 400)
+    s_grow = append(s_grow, 441)
+    s_grow = append(s_grow, 484)
+    s_grow = append(s_grow, 529)
+    s_grow = append(s_grow, 576)
+    s_grow = append(s_grow, 625)
+    s_grow = append(s_grow, 676)
+    s_grow = append(s_grow, 729)
+    s_grow = append(s_grow, 784)
+    s_grow = append(s_grow, 841)
+    s_grow = append(s_grow, 900)
+    s_grow = append(s_grow, 961)
+    s_grow = append(s_grow, 1024)
+    s_grow = append(s_grow, 1089)
+    s_grow = append(s_grow, 1156)
+    s_grow = append(s_grow, 1225)
+    s_grow = append(s_grow, 1296)
+    s_grow = append(s_grow, 1369)
+    s_grow = append(s_grow, 1444)
+    s_grow = append(s_grow, 1521)
+    showInts("grow.view", clone(s_grow))
+    c_grow := clone(s_grow)
+    s_grow = append(s_grow, 41)
+    s_grow = append(s_grow, 42)
+    s_grow = append(s_grow, 43)
+    s_grow[0] = 999
+    showInts("grow.orig", freeze(s_grow))
+    showInts("grow.clone", c_grow)
+    mut w_grow := clone(c_grow)
+    w_grow[0] = 4242
+    w_grow = append(w_grow, 1)
+    showInts("grow.rewrite", freeze(w_grow))
+    showInts("grow.clone2", c_grow)
+    mut t_words := mut []string{}
+    t_words = append(t_words, "a")
+    t_words = append(t_words, "bb")
+    t_words = append(t_words, "ccc")
+    d_words := clone(t_words)
+    t_words = append(t_words, "dddd")
+    t_words[0] = "changed"
+    showStrs("words.orig", freeze(t_words))
+    showStrs("words.clone", d_words)
+    mut t_utf8 := mut []string{}
+    t_utf8 = append(t_utf8, "あ")
+    t_utf8 = append(t_utf8, "いう")
+    t_utf8 = append(t_utf8, "")
+    d_utf8 := clone(t_utf8)
+    t_utf8 = append(t_utf8, "え")
+    t_utf8[0] = "changed"
+    showStrs("utf8.orig", freeze(t_utf8))
+    showStrs("utf8.clone", d_utf8)
+    mut m_empty := mut map[string]int{}
+    n_empty := clone(m_empty)
+    println("empty.order", sameOrder(keys(m_empty), keys(n_empty)))
+    m_empty["x"] = 1
+    showMap("empty.orig", freeze(m_empty), []string{"x"})
+    showMap("empty.clone", n_empty, []string{"x"})
+    mut m_small := mut map[string]int{}
+    m_small["a"] = 1
+    m_small["b"] = 2
+    m_small["c"] = 3
+    n_small := clone(m_small)
+    println("small.order", sameOrder(keys(m_small), keys(n_small)))
+    m_small["a"] = 10
+    m_small["d"] = 4
+    delete(m_small, "b")
+    showMap("small.orig", freeze(m_small), []string{"a", "b", "c", "d"})
+    showMap("small.clone", n_small, []string{"a", "b", "c", "d"})
+    mut m_tomb := mut map[string]int{}
+    m_tomb["k1"] = 1
+    m_tomb["k2"] = 2
+    m_tomb["k3"] = 3
+    m_tomb["k4"] = 4
+    delete(m_tomb, "k2")
+    n_tomb := clone(m_tomb)
+    println("tomb.order", sameOrder(keys(m_tomb), keys(n_tomb)))
+    m_tomb["k2"] = 22
+    delete(m_tomb, "k4")
+    showMap("tomb.orig", freeze(m_tomb), []string{"k1", "k2", "k3", "k4"})
+    showMap("tomb.clone", n_tomb, []string{"k1", "k2", "k3", "k4"})
+    mut m_long := mut map[string]int{}
+    m_long["long-key-for-the-clone-test-0"] = 0
+    m_long["long-key-for-the-clone-test-1"] = 1
+    m_long["long-key-for-the-clone-test-2"] = 2
+    m_long["long-key-for-the-clone-test-3"] = 3
+    m_long["long-key-for-the-clone-test-4"] = 4
+    m_long["long-key-for-the-clone-test-5"] = 5
+    m_long["long-key-for-the-clone-test-6"] = 6
+    m_long["long-key-for-the-clone-test-7"] = 7
+    m_long["long-key-for-the-clone-test-8"] = 8
+    m_long["long-key-for-the-clone-test-9"] = 9
+    m_long["long-key-for-the-clone-test-10"] = 10
+    m_long["long-key-for-the-clone-test-11"] = 11
+    delete(m_long, "long-key-for-the-clone-test-3")
+    n_long := clone(m_long)
+    println("long.order", sameOrder(keys(m_long), keys(n_long)))
+    m_long["long-key-for-the-clone-test-0"] = 100
+    delete(m_long, "long-key-for-the-clone-test-5")
+    showMap("long.orig", freeze(m_long), []string{"long-key-for-the-clone-test-0", "long-key-for-the-clone-test-1", "long-key-for-the-clone-test-2", "long-key-for-the-clone-test-3", "long-key-for-the-clone-test-4", "long-key-for-the-clone-test-5", "long-key-for-the-clone-test-6", "long-key-for-the-clone-test-7", "long-key-for-the-clone-test-8", "long-key-for-the-clone-test-9", "long-key-for-the-clone-test-10", "long-key-for-the-clone-test-11"})
+    showMap("long.clone", n_long, []string{"long-key-for-the-clone-test-0", "long-key-for-the-clone-test-1", "long-key-for-the-clone-test-2", "long-key-for-the-clone-test-3", "long-key-for-the-clone-test-4", "long-key-for-the-clone-test-5", "long-key-for-the-clone-test-6", "long-key-for-the-clone-test-7", "long-key-for-the-clone-test-8", "long-key-for-the-clone-test-9", "long-key-for-the-clone-test-10", "long-key-for-the-clone-test-11"})
+    mut im := mut map[int]int{}
+    im[3] = 30
+    im[1] = 10
+    im[2] = 20
+    im[100] = 1000
+    delete(im, 1)
+    ic := clone(im)
+    im[7] = 70
+    im[3] = 33
+    showIntMap("int.orig", freeze(im), []int{3, 1, 2, 100, 7})
+    showIntMap("int.clone", ic, []int{3, 1, 2, 100, 7})
+}

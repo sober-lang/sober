@@ -247,7 +247,7 @@ def genSmall (t : Ty) (Γ : Ctx) : Rand Expr := do
 /-- コンテナの腕の op -/
 inductive COp where
   | len | index | setidx | append | subslice | concat | eqs | freeze | callG | callM13 | callStr
-  | lenm | getm | setm | delm | keysm | freezem | callM14
+  | lenm | getm | setm | delm | keysm | freezem | callM14 | cloneS | cloneM
   deriving Inhabited, BEq
 
 /-- Γ の i 番の slice（mut m・region r・要素 s）を 1 回使う項と、その結果型 -/
@@ -267,7 +267,8 @@ def useSlice (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (s : Ty) : Rand (Expr
     , (if m then 2 else 0, .freeze)
     , (if !m && canW && lf then 2 else 0, .callG)
     , (if m && s == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .callM13)
-    , (if isStr && canW then 2 else 0, .callStr) ]
+    , (if isStr && canW then 2 else 0, .callStr)
+    , (if canW && s.regionsBelow d then 2 else 0, .cloneS) ]
   let xs := Expr.var i
   match op with
   | .len => return (.lenE xs, .int)
@@ -290,6 +291,10 @@ def useSlice (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (s : Ty) : Rand (Expr
   | .freeze => return (.freeze xs, .slice false r s)
   | .callG => return (.call 12 [s] xs, .int)
   | .callM13 => return (.callM 13 [] (.pair xs (← genSmall .int Γ)), .unit)
+  | .cloneS =>
+    -- 注釈なしは mut か annFree の要素に限る（readAs — index と同じ）
+    let ot : Option Ty := if (m || s.annFree) && (← rnd 1) = 0 then none else some s
+    return (.clone ot xs, .slice true (d - 1) s)
   | _ => -- callStr
     if (← rnd 1) = 0 then return (.call 8 [] xs, .int) else return (.lenE (.call 11 [] xs), .int)
 
@@ -316,7 +321,8 @@ def useMap (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (k v : Ty) : Rand (Expr
     , (if m && key.isSome then 3 else 0, .delm)
     , (if canW then 2 else 0, .keysm)
     , (if m then 2 else 0, .freezem)
-    , (if m && k == .int && v == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .callM14) ]
+    , (if m && k == .int && v == .int && decide (b ≤ r) && decide (r + 1 ≤ d) then 2 else 0, .callM14)
+    , (if canW && (Ty.prod k (.opt v)).regionsBelow d then 2 else 0, .cloneM) ]
   let mx := Expr.var i
   match op with
   | .getm => return (.getm v mx (key.getD (.lit 0)), .opt v)
@@ -325,6 +331,10 @@ def useMap (Γ : Ctx) (b d i : Nat) (m : Bool) (r : Nat) (k v : Ty) : Rand (Expr
   | .keysm => return (.keysm mx, .slice false (d - 1) k)
   | .freezem => return (.freeze mx, .map false r (.prod k (.opt v)))
   | .callM14 => return (.callM 14 [] (.pair mx (← genSmall .int Γ)), .unit)
+  | .cloneM =>
+    -- map のセル型は opt を含む（annFree でない）ので imm の写しは注釈つき
+    let ot : Option Ty := if m && (← rnd 1) = 0 then none else some (.prod k (.opt v))
+    return (.clone ot mx, .map true (d - 1) (.prod k (.opt v)))
   | _ => return (.lenm mx, .int)
 
 /-- Γ の i 番の mut ref（region r・ペイロード s）を 1 回使う項と、その結果型 -/
@@ -687,7 +697,7 @@ def genChaos : Nat → Rand Expr
     | 6 => return .strlit (← genBytes) (← rnd 2)
     | _ => return .nil (← genChaosTy 1)
   | fuel + 1 => do
-    match ← rnd 63 with
+    match ← rnd 64 with
     | 0 => genChaos 0
     | 1 => return .letE (← genChaos fuel) (← genChaos fuel)
     | 2 => return .add (← genChaos fuel) (← genChaos fuel)
@@ -765,6 +775,9 @@ def genChaos : Nat → Rand Expr
     | 60 => return .tryJ (← genChaosTy fuel) (← genChaos fuel)
     | 61 => return .newch (← rnd 2) (← rnd 2) (← genChaosTy fuel)
     | 62 => return .close (← genChaos fuel)
+    | 63 => do
+      let ot : Option Ty ← (do if (← rnd 1) = 0 then return none else return some (← genChaosTy fuel))
+      return .clone ot (← genChaos fuel)
     | _ => do
       let op ← pickD [CmpOp.eq, .ne, .le, .gt, .ge]
       return .cmp op (← genChaos fuel) (← genChaos fuel)
@@ -793,7 +806,7 @@ def kids : Expr → List Expr
   | .assign l e => [l, e]
   | .whileE c b => [c, b]
   | .index e i _ => [e, i]
-  | .lenE e | .tobyte e | .toint e | .fconv _ e | .lenm e | .keysm e | .recv e | .close e => [e]
+  | .lenE e | .tobyte e | .toint e | .fconv _ e | .lenm e | .keysm e | .clone _ e | .recv e | .close e => [e]
   | .append e v => [e, v]
   | .setidx e i v | .subslice e i v | .setm e i v => [e, i, v]
   | .eqs a b | .concat a b => [a, b]
@@ -843,6 +856,7 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .fconv op _, [e] => .fconv op e
   | .lenm _, [e] => .lenm e
   | .keysm _, [e] => .keysm e
+  | .clone ot _, [e] => .clone ot e
   | .recv _, [e] => .recv e
   | .close _, [e] => .close e
   | .append _ _, [e, v] => .append e v

@@ -9,6 +9,7 @@ package lower
 // 入れ子は外側から: 内側の入りが外側の X + k・上限が定数なら、外側の各回での内側の回数から入れ子全体の大きさを見積もり、予算内なら外側を展開して
 // 定数を畳む（内側の入りが定数になり、次の回で内側が展開される）。2 段まで
 
+import "desugar"
 import "std/iter"
 
 const UR_TMAX = 16
@@ -122,8 +123,8 @@ func urRound(st mut St, f FnRef) bool {
         if int(b) >= 0 {
             mut p := irBlkPHead(mut st, b)
             while p >= 0 {
-                uw.dblk[hget(mut st, p + 1)] = bi
-                p = hget(mut st, p)
+                uw.dblk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                p = desugar.HeapGet(mut st.d, p)
             }
             mut ins := irBlkIHead(mut st, b)
             while ins != -1 {
@@ -175,9 +176,9 @@ func urShape(st mut St, w mut m2rW, uw mut UrW, h int, xo int, ofs int) UrL {
     // 本体の側（then）がループの中・出口（else）が外（then の先は h が支配し、else の先は支配の下でも後ろの辺へ戻らない — 印は呼び手が付ける前なので後ろの辺の前任で見る）
     mut ix := 0
     mut p := irBlkPHead(mut st, hb)
-    while p >= 0 && hget(mut st, p + 1) != x {
+    while p >= 0 && desugar.HeapGet(mut st.d, p + 1) != x {
         ix += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
     mut latch := -1
     for j <- iter.Range(w.pcnt[h], w.pcnt[h + 1]) {
@@ -267,9 +268,9 @@ func urFits(st mut St, w mut m2rW, uw mut UrW, l UrL) bool {
     mut p := irBlkPHead(mut st, hb)
     while ix < l.ix {
         ix += 1
-        p = hget(mut st, p)
+        p = desugar.HeapGet(mut st.d, p)
     }
-    xo := hget(mut st, p + 1)
+    xo := desugar.HeapGet(mut st.d, p + 1)
     // 内側のループ（本体の中の頭）
     mut inner := 0
     mut innerSz := 0
@@ -418,15 +419,15 @@ func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
     for k <- iter.Range(0, t + 1) {
         vm := listN(mut st, nv0)
         for v <- iter.Range(0, nv0) {
-            hset(mut st, vm + 1 + v, v)
+            desugar.HeapSet(mut st.d, vm + 1 + v, v)
         }
         // 頭の仮引数 = 入り（k = 0）か前の写しの後ろの辺の実引数
         mut p := irBlkPHead(mut st, hb)
         mut q := 0
         while p >= 0 {
-            hset(mut st, vm + 1 + hget(mut st, p + 1), if k == 0 { xAt(mut st, pargs, q) } else { ilMap(mut st, xAt(mut st, largs, q), prev) })
+            desugar.HeapSet(mut st.d, vm + 1 + desugar.HeapGet(mut st.d, p + 1), if k == 0 { xAt(mut st, pargs, q) } else { ilMap(mut st, xAt(mut st, largs, q), prev) })
             q += 1
-            p = hget(mut st, p)
+            p = desugar.HeapGet(mut st.d, p)
         }
         // ループの中の命令の結果・本体のブロックの仮引数に新しい値
         mut bm := mut []int{}
@@ -444,21 +445,21 @@ func urUnroll(st mut St, f FnRef, w mut m2rW, uw mut UrW, l UrL) {
                 mut pp := irBlkPHead(mut st, b)
                 while pp >= 0 {
                     nvv := newValueIn(mut st, f)
-                    hset(mut st, vm + 1 + hget(mut st, pp + 1), nvv)
-                    np := rec4(mut st, -1, nvv, hget(mut st, pp + 2), 0)
+                    desugar.HeapSet(mut st.d, vm + 1 + desugar.HeapGet(mut st.d, pp + 1), nvv)
+                    np := rec4(mut st, -1, nvv, desugar.HeapGet(mut st.d, pp + 2), 0)
                     if irBlkPHead(mut st, nbk) < 0 {
                         irSetBlkPHead(mut st, nbk, np)
                     } else {
-                        hset(mut st, irBlkPTail(mut st, nbk), np)
+                        desugar.HeapSet(mut st.d, irBlkPTail(mut st, nbk), np)
                     }
                     irSetBlkPTail(mut st, nbk, np)
-                    pp = hget(mut st, pp)
+                    pp = desugar.HeapGet(mut st.d, pp)
                 }
             }
             mut i := irBlkIHead(mut st, b)
             while i != -1 {
                 if irInsRes(mut st, i) >= 0 {
-                    hset(mut st, vm + 1 + irInsRes(mut st, i), newValueIn(mut st, f))
+                    desugar.HeapSet(mut st.d, vm + 1 + irInsRes(mut st, i), newValueIn(mut st, f))
                 }
                 i = irInsNext(mut st, i)
             }
@@ -540,17 +541,17 @@ func urRename(st mut St, w mut m2rW, uw mut UrW, h int, vm int) {
 // urFix は欄 at（種別 k）の頭の値を付け替える（値の列はその場で — 外の辺どうしで共有していても付け替えは同じ）
 func urFix(st mut St, uw mut UrW, h int, at int, k int, vm int) {
     if k == K_VAL || k == K_VOPT {
-        v := hget(mut st, at)
+        v := desugar.HeapGet(mut st.d, at)
         if v >= 0 && v < len(uw.dblk) && uw.dblk[v] == h && uw.inl[h] == uw.mark {
-            hset(mut st, at, ilMap(mut st, v, vm))
+            desugar.HeapSet(mut st.d, at, ilMap(mut st, v, vm))
         }
     } else if k == K_VLIST {
-        l := hget(mut st, at)
+        l := desugar.HeapGet(mut st.d, at)
         if l >= 0 {
-            for q <- iter.Range(0, hget(mut st, l)) {
-                v := hget(mut st, l + 1 + q)
+            for q <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                v := desugar.HeapGet(mut st.d, l + 1 + q)
                 if v >= 0 && v < len(uw.dblk) && uw.dblk[v] == h {
-                    hset(mut st, l + 1 + q, ilMap(mut st, v, vm))
+                    desugar.HeapSet(mut st.d, l + 1 + q, ilMap(mut st, v, vm))
                 }
             }
         }

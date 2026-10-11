@@ -32,7 +32,7 @@
 | `std/pool` | ハンドルで引く貸し借りの溜め | `Acquire`・`Release`・`Get`・`Set` |
 | `std/json` | JSON の読み書き | `Parse` で文書 `Doc` を得て `Get` / `Items` / `Dec*` で読む・`Put*` で書く・型への写しは `json.Decode[T]` / `json.Encode[T]` |
 
-slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`・`len`・`freeze`・`m[k]` の引きは `T?`）。
+slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`・`len`・`freeze`・`clone`〔浅い写しを mut で返す〕・`m[k]` の引きは `T?`）。
 
 ## 並列
 

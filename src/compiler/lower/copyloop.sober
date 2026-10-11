@@ -146,11 +146,11 @@ func sameName(st mut St, x desugar.NodeRef, y desugar.NodeRef) bool {
 func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     lj := lookup(mut st, sA(nodeOf(mut st, m.j)))
     ld := lookup(mut st, sA(nodeOf(mut st, m.dst)))
-    if lj < 0 || ld < 0 || hget(mut st, lj + 2) != LCell || hget(mut st, ld + 2) != LCell || !isTag(mut st, hget(mut st, lj + 3), TInt) {
+    if lj < 0 || ld < 0 || desugar.HeapGet(mut st.d, lj + 2) != LCell || desugar.HeapGet(mut st.d, ld + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lj + 3), TInt) {
         return false, nil
     }
-    dt := hget(mut st, ld + 3)
-    if !isTag(mut st, dt, TSlice) || hget(mut st, dt + 2) == 0 {
+    dt := desugar.HeapGet(mut st.d, ld + 3)
+    if !isTag(mut st, dt, TSlice) || desugar.HeapGet(mut st.d, dt + 2) == 0 {
         return false, nil
     }
     if m.kind == 3 {
@@ -158,13 +158,13 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     }
     // src / S の値（名前 — 本体で変わらない）
     sx := expr(mut st, m.src)?
-    if !isTag(mut st, sx.t, TSlice) || !tEql(mut st, hget(mut st, sx.t + 1), hget(mut st, dt + 1)) || isBytes(mut st, sx.t) != isBytes(mut st, dt) {
+    if !isTag(mut st, sx.t, TSlice) || !tEql(mut st, desugar.HeapGet(mut st.d, sx.t + 1), desugar.HeapGet(mut st.d, dt + 1)) || isBytes(mut st, sx.t) != isBytes(mut st, dt) {
         return false, nil
     }
-    elem := hget(mut st, dt + 1)
+    elem := desugar.HeapGet(mut st.d, dt + 1)
     bytesKind := isBytes(mut st, dt)
-    jaddr := hget(mut st, lj + 4)
-    haddr := hget(mut st, ld + 4)
+    jaddr := desugar.HeapGet(mut st.d, lj + 4)
+    haddr := desugar.HeapGet(mut st.d, ld + 4)
     ev := expr(mut st, m.e)?
     if !isTag(mut st, ev.t, TInt) {
         return false, nil
@@ -241,13 +241,13 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
 
 // fillLoopStmt は (C) 同じ値の詰め: n = E - j0 > 0 なら n セル伸ばして値で埋め、j = E（範囲の検査は要らない — 添字が無い）
 func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt int) (bool, error?) {
-    elem := hget(mut st, dt + 1)
+    elem := desugar.HeapGet(mut st.d, dt + 1)
     xv := exprExpecting(mut st, m.src, elem, m.src)?
     if isTag(mut st, xv.t, TNever) || !tEql(mut st, xv.t, elem) || containsSlice(mut st, elem) {
         return false, nil
     }
-    jaddr := hget(mut st, lj + 4)
-    haddr := hget(mut st, ld + 4)
+    jaddr := desugar.HeapGet(mut st.d, lj + 4)
+    haddr := desugar.HeapGet(mut st.d, ld + 4)
     ev := expr(mut st, m.e)?
     if !isTag(mut st, ev.t, TInt) {
         return false, nil

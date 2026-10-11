@@ -309,6 +309,18 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ e (.map m r (.prod kt (.opt t))) →
       kt.keyOk → kt.regionsBelow (d + 1) → b ≤ d →
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.keysm e) (.slice false d kt)
+  /-- `clone(x)` の slice 版（clone の段 — freeze の双対）: セル列を最内 region（レベル d）へ mut のセルとして写す。
+  読み出しは index と同じ readAs（imm のセルの部分型を t へ揃える）。床は concat / keysm と同じ `b ≤ d`、
+  新しいセルの型の床 `t.regionsBelow (d + 1)`。要素の中身は共有する（浅い写し） -/
+  | clones {Ξ Ψ f b d Γ Λ} {e : Expr} {ot : Option Ty} {m : Bool} {r : Nat} {t' t : Ty} :
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ e (.slice m r t') → Ty.readAs m ot t' = some t →
+      t.regionsBelow (d + 1) → b ≤ d →
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.clone ot e) (.slice true d t)
+  /-- `clone(m)` の map 版: セル（キーと値の組・墓石も）を挿入順のまま最内 region へ mut のセルとして写す。制約は clones と同型（セル型に対して） -/
+  | clonem {Ξ Ψ f b d Γ Λ} {e : Expr} {ot : Option Ty} {m : Bool} {r : Nat} {c' c : Ty} :
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ e (.map m r c') → Ty.readAs m ot c' = some c →
+      c.regionsBelow (d + 1) → b ≤ d →
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.clone ot e) (.map true d c)
   /-- freeze の map 版。制約は freezes と同型 -/
   | freezem {Ξ Ψ f b d Γ Λ} {e : Expr} {r : Nat} {t : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ e (.map true r t) → t.mutFree →

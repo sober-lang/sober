@@ -1095,6 +1095,27 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
       exact .keysm (by rw [← hdd]; exact ihe h hd hs) (Ty.keyOk_renR ρ0 δ hko)
         (by have := Ty.renR_regionsBelow h0 hrb; rwa [rmap_pos (k := d' + 1) (by omega), hdd] at this)
         (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
+  | clone ot e ihe =>
+    simp only [Expr.src] at hs
+    cases he with
+    | clones h hrd hrb hbd =>
+      rename_i d' _ _ _ _
+      have hd1 : 1 ≤ d' := by omega
+      have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
+      simp only [Ty.renR, rmap_pos hd1]
+      rw [hdd]
+      exact .clones (by rw [← hdd]; exact ihe h hd hs) (Ty.readAs_renR h0 hrd)
+        (by have := Ty.renR_regionsBelow h0 hrb; rwa [rmap_pos (k := d' + 1) (by omega), hdd] at this)
+        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
+    | clonem h hrd hrb hbd =>
+      rename_i d' _ _ _ _
+      have hd1 : 1 ≤ d' := by omega
+      have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
+      simp only [Ty.renR, rmap_pos hd1]
+      rw [hdd]
+      exact .clonem (by rw [← hdd]; exact ihe h hd hs) (Ty.readAs_renR h0 hrd)
+        (by have := Ty.renR_regionsBelow h0 hrb; rwa [rmap_pos (k := d' + 1) (by omega), hdd] at this)
+        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
   | par e1 e2 ih1 ih2 =>
     simp only [Expr.src, Bool.and_eq_true] at hs
     cases he with

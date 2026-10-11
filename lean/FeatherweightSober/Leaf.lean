@@ -366,6 +366,11 @@ theorem stepLeaf_keysmK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) 
   first | kR | (cases v <;> kR)
 
 set_option maxHeartbeats 0 in
+theorem stepLeaf_cloneK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (ot : Option Ty) :
+    step Δ π' (.ret H ((.cloneK ot) :: S) v) K2 = (step Δ π (.ret H ((.cloneK ot) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
 theorem stepLeaf_labelK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (t : Ty) :
     step Δ π' (.ret H ((.labelK t) :: S) v) K2 = (step Δ π (.ret H ((.labelK t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   first | kR | (cases v <;> kR)
@@ -497,6 +502,7 @@ theorem stepLeaf_ret (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v 
     | dlmR t sv => exact stepLeaf_dlmR Δ π π' H S v K K2 t sv
     | lenmK => exact stepLeaf_lenmK Δ π π' H S v K K2
     | keysmK => exact stepLeaf_keysmK Δ π π' H S v K K2
+    | cloneK ot => exact stepLeaf_cloneK Δ π π' H S v K K2 ot
     | labelK t => exact stepLeaf_labelK Δ π π' H S v K K2 t
     | jumpK n => exact stepLeaf_jumpK Δ π π' H S v K K2 n
     | scopeK t ε => exact stepLeaf_scopeK Δ π π' H S v K K2 t ε

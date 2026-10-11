@@ -18,7 +18,7 @@ import "std/table"
 // （呼び出しの結果・if 式などは点にしない — 分岐の合流は analyzer が根を取れない）。par の handle（Task / 札）を含む型は点にしない
 // （freeze できない — kind 16。`par.Gather(hs)` の mut の handle の slice は既存の特例の道のまま）
 func ImplicitFreeze(st mut S, e NodeRef, want int) bool {
-    if e == -1 || want < 0 || !yIsPath(mut st, e) {
+    if e == -1 || want < 0 || !(yIsPath(mut st, e) || yIsClone(mut st, e)) {
         return false
     }
     have := YTypeOf(mut st, e)
@@ -29,6 +29,20 @@ func ImplicitFreeze(st mut S, e NodeRef, want int) bool {
 func yElemHasPar(st mut S, y int) bool {
     x := YAt(mut st, y)
     return if x.k == YSlice { pcHasPar(mut st, x.a, 8) } else { pcHasPar(mut st, x.a, 8) || pcHasPar(mut st, x.b, 8) }
+}
+
+// yIsClone は e が `clone(x)` の呼び出しか（括弧は透過）。clone の結果は新しい値（別名が無い）なので、imm の位置に置けばその場で凍らせてよい —
+// 「写しを渡す」の素直な形 `f(clone(xs))`（clone の段 — 道でない式の中で clone だけを点にする。一般の呼び出しの結果には広げない）
+func yIsClone(st mut S, e NodeRef) bool {
+    k := kindN(mut st, e)
+    if k == ast.EParen {
+        return yIsClone(mut st, nA(nodeOf(mut st, e)))
+    }
+    if k != ast.ECall {
+        return false
+    }
+    c := nA(nodeOf(mut st, e))
+    return kindN(mut st, c) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c)), "clone") && lenL(mut st, lB(nodeOf(mut st, e))) == 1
 }
 
 // yIsPath は e が局所の束縛を根に持つ道か（名前・欄・添字・括弧の鎖）

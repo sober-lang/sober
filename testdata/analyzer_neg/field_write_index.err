@@ -1,0 +1,1 @@
+testdata/analyzer_neg/field_write_index.sober:8:7: error: cannot write field `xs` of `Box` outside package testdata/fieldpkg/box — a type's fields are written only in the package that declares it (build a new value with the package's functions) (Analyzer)

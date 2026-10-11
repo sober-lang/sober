@@ -17,7 +17,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 
 ## 2. 形
 
-- -O0 形: スカラー（int / bool / タグ / 深度 / 関数値）は SSA 値、アグリゲート（struct / union / T? / slice・map のヘッダ）はフレームスロット（語数つき）。φ はブロック引数
+- -O0 形: スカラー（int / bool / タグ / 深度 / 関数値）は SSA 値、アグリゲート（struct / union / T? / slice・map のヘッダ）はフレームスロット（語数つき）。φ はブロック引数。スロットは入口で 0（IR の約束 — x86 の最適化のバックエンドは 0 を観測できる語だけを 0 にする〔docs/regalloc.md のフレーム〕。開発用の毒の口 SOBER_SLOT_POISON は他の語を 0x5a… で埋める）
 - mem2reg（ir_mem2reg、B-7）は IR パスで、1 語のスカラースロットをブロック引数へ持ち上げる。ELF では既定で有効（`--no-opt` で外す）、`--emit=ir|ll` では `--opt` で有効
 - 型は i64 と ptr の 2 つだけ。ptr を分けるのは LLVM テキストが要求するからで、x86 ではどちらも語。bool は 0 / 1 の i64、関数値は i64（funcaddr）
 - 規則（ir_verify が検査する）:
@@ -164,6 +164,11 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 | opt / opt2 | `--emit=ll --opt` | IR パスのバグ |
 | [ReleaseSafe] default | ReleaseSafe でビルドしたコンパイラ | Debug では偶然読めてしまう死んだスタックの読み（B-9b で mem2reg の UseIter に実発） |
 
+- IR を目で見る口（3 つは別の形 — 取り違えると読み違える。report-497）: `build --emit=ir --passes` = 設計整合パス + optimizeSsa まで（展開・cfgclean・展開後の SROA + mem2reg〔B2〕の前）・
+  `build --emit=elf --passes --stop-after=inline --dump-ir` = x86 の直前（B2 の後 — 割り当て器が見る IR）・`--emit` なしの `--stop-after=… --dump-ir` は .ll の経路（最適化のバックエンドの経路を通らない）
+- SROA は 2 回走り、形が違う（2026-10-11 置き場の往復レーン 段 3）: 展開後の SROA（B2）だけが `gep.word スロット, 定数` 越しの load / store を語 定数 + k の読み書きとして透かす
+  （値渡しの struct の入口の丸写し〔std/json の Doc 21 語〕を仮引数へ持ち上げる）。最初の SROA（optimizeSsa）は透かさない — elfeq が stage1 とバイトで照合する passes 形だから。
+  `--emit=ir --passes` には透かした形は出ない（B2 の前の口）
 - 移行期間には direct（AST 直吐き）列があり、独立な 2 フロントエンドの差分でバグを拾っていた（inline の return 深度など）
 - 退役でこのオラクルは失った。代わりの守りは次のとおり:
   - 新しい例の `.out` は手で導出する（実行結果を貼らない）

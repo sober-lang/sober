@@ -212,8 +212,8 @@ func cutPatch(st mut St) {
     mut bad := mut map[int]int{}
     mut k := st.chanFns
     while k != -1 {
-        bad[hget(mut st, k + 1)] = 1
-        k = hget(mut st, k)
+        bad[desugar.HeapGet(mut st.d, k + 1)] = 1
+        k = desugar.HeapGet(mut st.d, k)
     }
     // [関数, 呼ぶ利用者の関数の数, 関数…]
     mut cs := mut []int{}
@@ -269,12 +269,12 @@ func cutPatch(st mut St) {
     }
     k = st.cutSites
     while k != -1 {
-        if bad[hget(mut st, k + 2)] == nil {
-            irSetInsA(mut st, InsRef(hget(mut st, k + 1)), 1)
-            hset(mut st, k + 3, 1)
+        if bad[desugar.HeapGet(mut st.d, k + 2)] == nil {
+            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 1)
+            desugar.HeapSet(mut st.d, k + 3, 1)
             st.cutKids = st.cutKids + 1
         }
-        k = hget(mut st, k)
+        k = desugar.HeapGet(mut st.d, k)
     }
 }
 
@@ -311,10 +311,10 @@ func cutInsert(st mut St) {
     mut work := mut []int{}
     mut k := st.cutSites
     while k != -1 {
-        if hget(mut st, k + 3) == 1 {
-            work = append(work, hget(mut st, k + 2))
+        if desugar.HeapGet(mut st.d, k + 3) == 1 {
+            work = append(work, desugar.HeapGet(mut st.d, k + 2))
         }
-        k = hget(mut st, k)
+        k = desugar.HeapGet(mut st.d, k)
     }
     mut wi := 0
     while wi < len(work) {
@@ -554,16 +554,16 @@ func cutStatText(st mut St) []byte {
     mut r := st.cutRecs
     while r >= 0 {
         lines = append(lines, r)
-        r = hget(mut st, r)
+        r = desugar.HeapGet(mut st.d, r)
     }
     mut out := mut []byte{}
     mut i := len(lines) - 1
     while i >= 0 {
         x := lines[i]
-        printName(mut st, mut out, irFnName(mut st, FnRef(hget(mut st, x + 1))))
+        printName(mut st, mut out, irFnName(mut st, FnRef(desugar.HeapGet(mut st.d, x + 1))))
         obuf.Lit(mut out, " b")
-        num(mut out, hget(mut st, x + 2))
-        v := hget(mut st, x + 3)
+        num(mut out, desugar.HeapGet(mut st.d, x + 2))
+        v := desugar.HeapGet(mut st.d, x + 3)
         obuf.Lit(mut out, " B=")
         num(mut out, (v & 1048575) - 8)
         obuf.Lit(mut out, " N=")
@@ -702,7 +702,7 @@ func cutTermCopy(st mut St, cont BlkRef, s BlkRef, rv int) {
 func cutArgsRv(st mut St, l int, toS bool, rv int) int {
     c := cutArgs(mut st, l)
     if toS && rv >= 0 {
-        hset(mut st, c + hget(mut st, c), rv)
+        desugar.HeapSet(mut st.d, c + desugar.HeapGet(mut st.d, c), rv)
     }
     return c
 }
@@ -718,12 +718,12 @@ func cutHas(xs mut []int, x int) bool {
 
 // cutArgsPlus は値の列 l（-1 = 空）の後ろに v を足した新しい列
 func cutArgsPlus(st mut St, l int, v int) int {
-    n := if l < 0 { 0 } else { hget(mut st, l) }
+    n := if l < 0 { 0 } else { desugar.HeapGet(mut st.d, l) }
     c := listN(mut st, n + 1)
     for i <- iter.Range(0, n) {
-        hset(mut st, c + 1 + i, hget(mut st, l + 1 + i))
+        desugar.HeapSet(mut st.d, c + 1 + i, desugar.HeapGet(mut st.d, l + 1 + i))
     }
-    hset(mut st, c + 1 + n, v)
+    desugar.HeapSet(mut st.d, c + 1 + n, v)
     return c
 }
 
@@ -813,10 +813,10 @@ func cutArgs(st mut St, l int) int {
     if l < 0 {
         return l
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     c := listN(mut st, n)
     for i <- iter.Range(0, n) {
-        hset(mut st, c + 1 + i, hget(mut st, l + 1 + i))
+        desugar.HeapSet(mut st.d, c + 1 + i, desugar.HeapGet(mut st.d, l + 1 + i))
     }
     return c
 }

@@ -1,5 +1,6 @@
 package lower
 
+import "desugar"
 import "std/iter"
 
 // map の引きの融合（M16 ② — イディオムギャップ「map 更新」・最適化のバックエンドの経路だけ・cfgclean の後）:
@@ -128,11 +129,11 @@ func mfFunc(st mut St, f FnRef) {
 func mfSameArgs(st mut St, a InsRef, b InsRef) bool {
     la := irInsB(mut st, a)
     lb := irInsB(mut st, b)
-    if hget(mut st, la) != hget(mut st, lb) {
+    if desugar.HeapGet(mut st.d, la) != desugar.HeapGet(mut st.d, lb) {
         return false
     }
-    for j <- iter.Range(0, hget(mut st, la)) {
-        if hget(mut st, la + 1 + j) != hget(mut st, lb + 1 + j) {
+    for j <- iter.Range(0, desugar.HeapGet(mut st.d, la)) {
+        if desugar.HeapGet(mut st.d, la + 1 + j) != desugar.HeapGet(mut st.d, lb + 1 + j) {
             return false
         }
     }
@@ -143,8 +144,8 @@ func mfSameArgs(st mut St, a InsRef, b InsRef) bool {
 func mfClear(st mut St, blk mut []int, def mut []int, pc mut []int, pl mut []int, mark mut []int, stack mut []int, epoch int, entry int,
     c1 InsRef, b1 int, c2 InsRef, b2 int) bool {
     args := irInsB(mut st, c1)
-    h := hget(mut st, args + 1)
-    kp := hget(mut st, args + 2)
+    h := desugar.HeapGet(mut st.d, args + 1)
+    kp := desugar.HeapGet(mut st.d, args + 2)
     if b1 == b2 {
         // 同じブロック: c1 が先にあって間が無害か
         mut i := irInsNext(mut st, c1)

@@ -9,6 +9,7 @@ package lower
 //   ④`uge x, y` / `ult x, y` は、支配する辺で `x + k <u y`（k は非負の定数）が成り立ち x ≥ 0 なら偽 / 真（`a[i] = a[i + 1]` の 2 本目の検査）
 // 消した検査は panic の点へ行かない経路だけ（値は変えない）— 観測は変わらない（optdiff が見る）
 
+import "desugar"
 import "std/iter"
 
 // bceModule はモジュールの全関数に分岐の畳み込みを掛ける
@@ -46,10 +47,10 @@ func bceFunc(st mut St, f FnRef) {
             mut p := irBlkPHead(mut st, b)
             mut k := 0
             while p >= 0 {
-                bw.parBlk[hget(mut st, p + 1)] = bi
-                bw.parIx[hget(mut st, p + 1)] = k
+                bw.parBlk[desugar.HeapGet(mut st.d, p + 1)] = bi
+                bw.parIx[desugar.HeapGet(mut st.d, p + 1)] = k
                 k += 1
-                p = hget(mut st, p)
+                p = desugar.HeapGet(mut st.d, p)
             }
             mut ins := irBlkIHead(mut st, b)
             while ins != -1 {
@@ -227,10 +228,10 @@ func bceNonneg(st mut St, w mut m2rW, bw mut BceW, x int, depth int) bool {
 
 // bceArgOk は辺の実引数の列 l の ix 番目が「非負の定数」か「x + 正の定数」か
 func bceArgOk(st mut St, w mut m2rW, bw mut BceW, l int, ix int, x int, depth int) bool {
-    if l < 0 || ix >= hget(mut st, l) {
+    if l < 0 || ix >= desugar.HeapGet(mut st.d, l) {
         return false
     }
-    a := hget(mut st, l + 1 + ix)
+    a := desugar.HeapGet(mut st.d, l + 1 + ix)
     if a == x {
         return true
     }

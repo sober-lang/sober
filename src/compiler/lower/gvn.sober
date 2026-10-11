@@ -9,6 +9,7 @@ package lower
 // region.depth / region.bump は対象外（深度と先端は region の op で変わる）。付け替えた命令は消し（OpDead — opt.sober の aliasTo）、
 // 使われなくなった純粋な命令は P3（optDce）が消し、最後に値の番号を詰める（optRenumber — mem2reg の後と同じ形の IR）
 
+import "desugar"
 import "std/iter"
 
 const GV_W = 6   // 表の項: [op, a, b, c, 値, 同じバケツの前の項]
@@ -214,7 +215,7 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int) {
             v := resolve(mut st, irInsC(mut st, ins))
             irSetInsA(mut st, ins, p)
             irSetInsC(mut st, ins, v)
-            ty := hget(mut st, vt + 1 + v)
+            ty := desugar.HeapGet(mut st.d, vt + 1 + v)
             gvnLoadAdd(mut lt, 0, p, irInsB(mut st, ins), ty, v)
             ln = 4
         } else if gvnPure(mut st, ins) {

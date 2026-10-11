@@ -645,6 +645,9 @@ func yStmt(st mut S, s NodeRef) int {
         yExprs(mut st, lA(nodeOf(mut st, s)))
         yExprs(mut st, lC(nodeOf(mut st, s)))
         yNoteAssign(mut st, lA(nodeOf(mut st, s)), lC(nodeOf(mut st, s)))
+        for i <- iter.Range(0, lenL(mut st, lA(nodeOf(mut st, s)))) {
+            yFieldWrite(mut st, latN(mut st, lA(nodeOf(mut st, s)), i))
+        }
         return yBase(YNone)
     case ast.SRet:
         yExprs(mut st, lA(nodeOf(mut st, s)))
@@ -741,6 +744,10 @@ func yExpr0(st mut S, e NodeRef) int {
         l := yLookup(mut st, latS(mut st, parts, 0))
         mut t := if l == -2 { -1 } else { l }
         for i <- iter.Range(1, lenL(mut st, parts)) {
+            // `mut x.f` は呼び先が書きうる = 欄への書き（他の package の struct の欄なら拒否 — fieldwrite.sober）
+            if yForeignTy(mut st, t) {
+                yFieldNote(mut st, 0, e, latS(mut st, parts, i), t)
+            }
             t = yField(mut st, t, latS(mut st, parts, i))
         }
         return t
@@ -770,7 +777,9 @@ func yExpr0(st mut S, e NodeRef) int {
         }
         return yStripLast(mut st, x)
     case ast.ESelector:
-        return ySelector(mut st, e)
+        r := ySelector(mut st, e)
+        yFieldRead(mut st, e, r)
+        return r
     case ast.EComposite:
         return yComposite(mut st, e)
     case ast.EIndex:
@@ -1274,6 +1283,10 @@ func yLambda(st mut S, lam NodeRef, pt int) int {
 
 // yBuiltin は組み込みの呼び出しの結果の型（組み込みでなければ -2）
 func yBuiltin(st mut S, name StrRef, args ListRef) int {
+    if strIs(mut st, name, "delete") && lenL(mut st, args) >= 1 {
+        // delete(m, k) は m の buffer への書き（他の package の struct の欄を通すなら拒否 — fieldwrite.sober）
+        yFieldWrite(mut st, latN(mut st, args, 0))
+    }
     if strIs(mut st, name, "println") || strIs(mut st, name, "delete") {
         return yBase(YNone)
     }
@@ -1323,6 +1336,13 @@ func yBuiltin(st mut S, name StrRef, args ListRef) int {
     }
     if strIs(mut st, name, "keys") {
         return if yk(mut st, a0) == YMap { yMk(mut st, YSlice, YAt(mut st, a0).a, 0, 0) } else { -1 }
+    }
+    // clone(x): 新しい mut の写し（freeze の双対 — mut / imm のどちらからも）
+    if strIs(mut st, name, "clone") {
+        if yk(mut st, a0) == YSlice {
+            return yMk(mut st, YSlice, YAt(mut st, a0).a, 1, 0)
+        }
+        return if yk(mut st, a0) == YMap { yMk(mut st, YMap, YAt(mut st, a0).a, YAt(mut st, a0).b, 1) } else { -1 }
     }
     return -2
 }

@@ -194,6 +194,10 @@ theorem store_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {f b 
   | delm t e k ihe ihk => cases he with | delm h1 h2 hkc => exact .delm (ihe h1) (ihk h2) hkc
   | lenm e ihe => cases he with | lenm h => exact .lenm (ihe h)
   | keysm e ihe => cases he with | keysm h h1 h2 h3 => exact .keysm (ihe h) h1 h2 h3
+  | clone ot e ihe =>
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe h) h1 h2 h3
+    | clonem h h1 h2 h3 => exact .clonem (ihe h) h1 h2 h3
   | mapv mt r base len =>
     cases he with
     | mapv hk h3 h4 h5 h6 h7 h8 =>
@@ -324,6 +328,10 @@ theorem chan_mono {e : Expr} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {f b d : Nat} {Γ 
   | delm t e k ihe ihk => cases he with | delm h1 h2 hkc => exact .delm (ihe h1) (ihk h2) hkc
   | lenm e ihe => cases he with | lenm h => exact .lenm (ihe h)
   | keysm e ihe => cases he with | keysm h h1 h2 h3 => exact .keysm (ihe h) h1 h2 h3
+  | clone ot e ihe =>
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe h) h1 h2 h3
+    | clonem h h1 h2 h3 => exact .clonem (ihe h) h1 h2 h3
   | mapv mt r base len =>
     cases he with | mapv hk h3 h4 h5a h5b h6 h7 => exact .mapv hk h3 h4 h5a h5b h6 h7
   | loc r a =>
@@ -441,6 +449,10 @@ theorem f_mono {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : N
   | delm t e k ihe ihk => cases he with | delm h1 h2 hkc => exact .delm (ihe h1) (ihk h2) hkc
   | lenm e ihe => cases he with | lenm h => exact .lenm (ihe h)
   | keysm e ihe => cases he with | keysm h h1 h2 h3 => exact .keysm (ihe h) h1 h2 h3
+  | clone ot e ihe =>
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe h) h1 h2 h3
+    | clonem h h1 h2 h3 => exact .clonem (ihe h) h1 h2 h3
   | mapv mt r base len =>
     cases he with | mapv hk h3 h4 h5a h5b h6 h7 => exact .mapv hk h3 h4 h5a h5b h6 h7
   | loc r a =>
@@ -971,6 +983,10 @@ theorem subst_preserve {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b 
     cases he with | lenm h => exact .lenm (ihe h hvv hv)
   | keysm e ihe =>
     cases he with | keysm h h1 h2 h3 => exact .keysm (ihe h hvv hv) h1 h2 h3
+  | clone ot e ihe =>
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe h hvv hv) h1 h2 h3
+    | clonem h h1 h2 h3 => exact .clonem (ihe h hvv hv) h1 h2 h3
   | mapv mt r base len =>
     cases he with | mapv hk h2 h3 h4a h4b h5 h6 => exact .mapv hk h2 h3 h4a h4b h5 h6
   | par e1 e2 ih1 ih2 =>
@@ -1163,6 +1179,10 @@ theorem b_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f b b' d : 
   | delm t e k ihe ihk => cases he with | delm h1 h2 hkc => exact .delm (ihe hb h1) (ihk hb h2) hkc
   | lenm e ihe => cases he with | lenm h => exact .lenm (ihe hb h)
   | keysm e ihe => cases he with | keysm h h1 h2 h3 => exact .keysm (ihe hb h) h1 h2 (by omega)
+  | clone ot e ihe =>
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe hb h) h1 h2 (by omega)
+    | clonem h h1 h2 h3 => exact .clonem (ihe hb h) h1 h2 (by omega)
   | par e1 e2 ih1 ih2 =>
     cases he with | par h1 h2 hΓ => exact .par h1 h2 hΓ
   | parch t e1 e2 ih1 ih2 =>
@@ -1376,6 +1396,11 @@ theorem f_lower {e : Expr} {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f f' b d : 
   | keysm e ihe =>
     simp only [Expr.noNewchan] at hnc
     cases he with | keysm h h1 h2 h3 => exact .keysm (ihe hnc h) h1 h2 h3
+  | clone ot e ihe =>
+    simp only [Expr.noNewchan] at hnc
+    cases he with
+    | clones h h1 h2 h3 => exact .clones (ihe hnc h) h1 h2 h3
+    | clonem h h1 h2 h3 => exact .clonem (ihe hnc h) h1 h2 h3
   | par e1 e2 ih1 ih2 =>
     simp only [Expr.noNewchan, Bool.and_eq_true] at hnc
     cases he with | par h1 h2 hΓ => exact .par (ih1 hnc.1 h1) (ih2 hnc.2 h2) hΓ

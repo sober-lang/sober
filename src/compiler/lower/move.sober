@@ -13,9 +13,9 @@ package lower
 //   （詰めた後の旧い本体は死ぬ — 親は子の結果を積み直す・roundtrip は積み直す。ハッシュの表を引く形は自己 build で 1.2 G 命令）
 // 詰めた形: [頭 MV_HDR 語][スロット MV_SLOT 語…][ブロック BSZ 語…][引数 MV_PAR 語…][命令 ISZ 語…][値の列…]（各々鎖の順）
 
+import "desugar"
 import "std/iter"
 import "std/par"
-import "std/table"
 
 const MV_SLOT = 5
 const MV_PAR = 4
@@ -51,7 +51,7 @@ func mvCode(f FnRef, off int) int { return -(2 + off + int(f) * MV_OWN) }
 
 // mvOwn は旧い番地 x の先頭の語が関数 f の転送先の符号か
 func mvOwn(st mut St, f FnRef, x int) bool {
-    c := hget(mut st, x)
+    c := desugar.HeapGet(mut st.d, x)
     return c <= -2 && (-c - 2) / MV_OWN == int(f)
 }
 
@@ -63,7 +63,7 @@ func mvFwd(st mut St, f FnRef, x int) int {
     if !mvOwn(mut st, f, x) {
         panic(Unreachable{})
     }
-    return -hget(mut st, x) - 2 - int(f) * MV_OWN
+    return -desugar.HeapGet(mut st.d, x) - 2 - int(f) * MV_OWN
 }
 
 // mvListMove は値の列 l を（初出なら）out の末尾へ写して詰めた番地を返す（旧い列の頭に転送先を書く・毒のために [番地, 長さ] を残す）
@@ -71,32 +71,27 @@ func mvListMove(st mut St, f FnRef, out mut []int, lists mut []int, l int) int {
     if l < 0 {
         return l
     }
-    n := hget(mut st, l)
+    n := desugar.HeapGet(mut st.d, l)
     if n <= -2 {
         return mvFwd(mut st, f, l)
     }
     off := len(out)
     mvCopy(mut st, mut out, l, 1 + n)
-    hset(mut st, l, mvCode(f, off))
+    desugar.HeapSet(mut st.d, l, mvCode(f, off))
     lists = append(lists, l)
     lists = append(lists, n)
     return off
 }
 
-// mvCopy は旧い記録 x の n 語を out の末尾へ（ヒープの chunk ごとに写しのループの形 — copyloop.sober が一括の写しにする。語ごとに hget を
-// 呼ぶ形・append の 1 語ずつの形は自己 build の roundtrip で 1 G 命令）
+// mvCopy は旧い記録 x の n 語を out の末尾へ。語ごとにヒープの口（desugar.HeapGet）で読む — Table の chunk を直に読む速い道
+// （copyloop.sober が一括の写しにしていた形）は、他の package の mut の中身を持つ欄の読みなので外した（language.md 20 節・report-493）。
+// 一括の読み口（std/table に chunk 単位の写し）は鎖の行が要る — 積み
 func mvCopy(st mut St, out mut []int, x int, n int) {
     mut a := x
     end := x + n
     while a < end {
-        mut c := st.d.h.chunks[a / table.CHUNK]
-        mut j := a & (table.CHUNK - 1)
-        e := if end - a < table.CHUNK - j { j + end - a } else { table.CHUNK }
-        a += e - j
-        while j < e {
-            out = append(out, c[j])
-            j += 1
-        }
+        out = append(out, desugar.HeapGet(mut st.d, a))
+        a += 1
     }
 }
 
@@ -109,7 +104,7 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
     mut s := irFnSHead(mut st, f)
     while s >= 0 {
         ss = append(ss, s)
-        s = hget(mut st, s)
+        s = desugar.HeapGet(mut st.d, s)
     }
     mut b := irFnBHead(mut st, f)
     while b != -1 {
@@ -120,7 +115,7 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
         mut p := irBlkPHead(mut st, BlkRef(bs[k]))
         while p >= 0 {
             ps = append(ps, p)
-            p = hget(mut st, p)
+            p = desugar.HeapGet(mut st.d, p)
         }
         mut i := irBlkIHead(mut st, BlkRef(bs[k]))
         while i != -1 {
@@ -139,7 +134,7 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
     out = append(out, len(ps))
     out = append(out, len(is))
     for k <- iter.Range(0, 7) {
-        out = append(out, hget(mut st, int(f) + mvFnField(k)))
+        out = append(out, desugar.HeapGet(mut st.d, int(f) + mvFnField(k)))
     }
     for k <- iter.Range(0, len(ss)) {
         mvCopy(mut st, mut out, ss[k], MV_SLOT)
@@ -155,16 +150,16 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
     }
     // 転送先（写し終えたので旧い記録の先頭の語を潰してよい）
     for k <- iter.Range(0, len(ss)) {
-        hset(mut st, ss[k], mvCode(f, sOff + k * MV_SLOT))
+        desugar.HeapSet(mut st.d, ss[k], mvCode(f, sOff + k * MV_SLOT))
     }
     for k <- iter.Range(0, len(bs)) {
-        hset(mut st, bs[k], mvCode(f, bOff + k * BSZ))
+        desugar.HeapSet(mut st.d, bs[k], mvCode(f, bOff + k * BSZ))
     }
     for k <- iter.Range(0, len(ps)) {
-        hset(mut st, ps[k], mvCode(f, pOff + k * MV_PAR))
+        desugar.HeapSet(mut st.d, ps[k], mvCode(f, pOff + k * MV_PAR))
     }
     for k <- iter.Range(0, len(is)) {
-        hset(mut st, is[k], mvCode(f, iOff + k * ISZ))
+        desugar.HeapSet(mut st.d, is[k], mvCode(f, iOff + k * ISZ))
     }
     // 値の列（命令の順 → 終端の順に初出で写す）と付け替え
     mut lists := mut []int{}
@@ -233,7 +228,7 @@ func mvPack(st mut St, f FnRef, poison bool) []int {
 // mvUnpack は詰めた形 p を内側の参照を + 基底で付け替えた写しにして今のヒープの末尾へ塊で積み、関数 f の記録の本体の欄を書き換える
 // （旧い本体の記録はヒープにゴミとして残る）
 func mvUnpack(st mut St, f FnRef, p []int) {
-    base := hlen(mut st)
+    base := desugar.HeapLen(mut st.d)
     mut q := mut []int{}
     pn := len(p)
     mut w := 0
@@ -283,10 +278,10 @@ func mvUnpack(st mut St, f FnRef, p []int) {
         }
         at += ISZ
     }
-    table.PushAll(mut st.d.h, freeze(q))
+    desugar.HeapPushAll(mut st.d, freeze(q))
     for k <- iter.Range(0, 7) {
         v := p[MV_FN + k]
-        hset(mut st, int(f) + mvFnField(k), if mvFnRef(k) && v >= 0 { v + base } else { v })
+        desugar.HeapSet(mut st.d, int(f) + mvFnField(k), if mvFnRef(k) && v >= 0 { v + base } else { v })
     }
 }
 
@@ -308,7 +303,7 @@ func mvFillAll(st mut St, xs mut []int, n int) {
 
 func mvFill(st mut St, at int, n int) {
     for k <- iter.Range(0, n) {
-        hset(mut st, at + k, MV_POISON)
+        desugar.HeapSet(mut st.d, at + k, MV_POISON)
     }
 }
 
@@ -430,8 +425,8 @@ func lParBatch(st mut St, b2 bool) bool {
             fns = append(fns, fr[j])
             pt := irFnPtys(mut st, g)
             mut pv := mut []int{}
-            for q <- iter.Range(0, hget(mut st, pt)) {
-                pv = append(pv, hget(mut st, pt + 1 + q))
+            for q <- iter.Range(0, desugar.HeapGet(mut st.d, pt)) {
+                pv = append(pv, desugar.HeapGet(mut st.d, pt + 1 + q))
             }
             ptys = append(ptys, freeze(pv))
             rets = append(rets, irFnRet(mut st, g))
@@ -471,7 +466,7 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
     st.noVec = cfg[5] == 1
     st.lkid = true
     st.lret = lret
-    hpush(mut st, 0)
+    desugar.HeapPush(mut st.d, 0)
     st.ubCheck = FnRef(cfg[7])
     st.ubBound = FnRef(cfg[8])
     mfCfgSet(mut st, cfg, 9)
@@ -480,11 +475,11 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
         cf := FnRef(recN(mut st, FSZ))
         pl := listN(mut st, len(g.ptys[j]))
         for q <- iter.Range(0, len(g.ptys[j])) {
-            hset(mut st, pl + 1 + q, g.ptys[j][q])
+            desugar.HeapSet(mut st.d, pl + 1 + q, g.ptys[j][q])
         }
-        hset(mut st, int(cf) + F_PTYS, pl)
-        hset(mut st, int(cf) + F_RET, g.rets[j])
-        hset(mut st, int(cf) + F_MUTP, g.mutp[j])
+        desugar.HeapSet(mut st.d, int(cf) + F_PTYS, pl)
+        desugar.HeapSet(mut st.d, int(cf) + F_RET, g.rets[j])
+        desugar.HeapSet(mut st.d, int(cf) + F_MUTP, g.mutp[j])
         mvUnpack(mut st, cf, g.bodies[j])
         if cfg[6] == 1 {
             lB2Func(mut st, cf)
@@ -498,7 +493,7 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
 
 // lB1Func は B1（optimizeSsa）の関数ごとのパスの列
 func lB1Func(st mut St, f FnRef) {
-    sroaFunc(mut st, f)
+    sroaFunc(mut st, f, false)
     m2rFunc(mut st, f)
     gvnFunc(mut st, f)
     hdrFunc(mut st, f)
@@ -514,8 +509,12 @@ func lB2Func(st mut St, f FnRef) {
     if st.rtMapfind != -1 {
         mfFunc(mut st, f)
     }
-    sroaFunc(mut st, f)
+    sroaFunc(mut st, f, true)
+    p0 := ccNParams(mut st, f)
     m2rFunc(mut st, f)
+    if ccNParams(mut st, f) > p0 {
+        ccDeadAfterM2r(mut st, f)
+    }
     _ = ubfFunc(mut st, f)
     if !st.noVec {
         _ = vecFunc(mut st, f)

@@ -29,6 +29,7 @@ sqlshape の形を全層に適用する: 静的な主張に対して、別経路
 | `@layout(c)` / `@export(c)` | clang。同じ struct を C で宣言して `offsetof` / `sizeof` を比較、export 関数を C ハーネスから呼ぶ | 外部 | 6 |
 | wasm → x86_64 AOT | WebAssembly 公式の仕様インタプリタ（OCaml）と公式テストスイート | 外部 | 6 |
 | std/strings（2026-09-26〜） | Go の strings パッケージ。scripts/strings_oracle.ts が 1 つのケース表から Sober の example と Go の双子を生成し、Go の出力を .out にする | 外部 | 随時回収 |
+| builtin clone（2026-10-11〜） | Go の slices.Clone / maps.Clone。scripts/clone_oracle.ts が 1 つのケース表から examples/clone_std と Go の双子を生成し、Go の出力を .out にする（写した後に元を書き換えても写しが変わらないこと・map の列挙の順は Sober 側が自分で照合） | 外部 | 随時回収 |
 | std/rand（2026-10-02〜） | 参照実装（xoshiro128 — Blackman / Vigna）を uint32 の wrap で写した Go の双子 scripts/oracles/rand_xoshiro.go が examples/rand_xoshiro.out を作る（写しは公開の既知の列 = 状態 {1,2,3,4} から 11520 0 5927040 … で確かめ — 標準エラーに出す）。std/rand は int の上で 32 bit の算術を桁に割って書くので、uint32 と一致すればよい | 外部 | 随時回収 |
 | std/hash・std/hex（2026-10-02〜） | Go の crypto/sha256（16 進は encoding/hex）を使う双子 scripts/oracles/hash_sha256.go が examples/hash_sha256.out を作る。NIST の公式ベクタ（FIPS 180-2 付録 B の "abc"・448 bit・100 万個の 'a' + 896 bit・空入力）の期待値を双子に固定し、crypto/sha256 と照合（標準エラー — 食い違いは exit 1）。例はブロック境界（55/56/57/63/64/65/119/120/127/128/129 バイト）と 100003 バイトの長入力も通す | 外部 | 随時回収 |
 | `Value` 変換の生成物 | round trip + 既存 JSON 実装（wasm 経由）との差分 | 自己整合 + 外部 | Web アプリ題材 |

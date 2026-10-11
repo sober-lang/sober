@@ -17,10 +17,10 @@ const THR_NARG = 4   // 入る値 = 比較の結果だが、J の xor の結果�
 func thrT(kind int) int {
     mut st := St{}
     initScalars(mut st)
-    hpush(mut st, 0)
+    desugar.HeapPush(mut st.d, 0)
     pt := listN(mut st, 2)
-    hset(mut st, pt + 1, TyI64)
-    hset(mut st, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
     f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
     st.fn = f
     b0 := newBlock(mut st)
@@ -70,10 +70,10 @@ func TestThreadNeg() {
 func thrChain() int {
     mut st := St{}
     initScalars(mut st)
-    hpush(mut st, 0)
+    desugar.HeapPush(mut st.d, 0)
     pt := listN(mut st, 2)
-    hset(mut st, pt + 1, TyI64)
-    hset(mut st, pt + 2, TyI64)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
     f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
     st.fn = f
     // 並びは J を X より前に（J の書き換えの後に同じ周で X を見る — xSplitMoves の b41 / b43 と同じ順）

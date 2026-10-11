@@ -132,6 +132,7 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | delm t e k => delm t (renameFn ρ e) (renameFn ρ k)
   | lenm e => lenm (renameFn ρ e)
   | keysm e => keysm (renameFn ρ e)
+  | clone ot e => clone ot (renameFn ρ e)
   | par e1 e2 => par (renameFn ρ e1) (renameFn ρ e2)
   | parch t e1 e2 => parch t (renameFn ρ e1) (renameFn ρ e2)
   | newchan rc t => newchan rc t

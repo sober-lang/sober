@@ -21,6 +21,8 @@ examples/byte_unary.sober: sober: lower error at examples/byte_unary.sober:6:13 
 examples/catch_infallible.sober: sober: load error at examples/catch_infallible.sober:9:17: the left of catch must be a call that returns (T, error?)
 examples/catch_infallible_pkg.sober: sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
 examples/char_lit_nonascii.sober: sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
+examples/clone_neg_scalar.sober: sober: lower error at examples/clone_neg_scalar.sober:5:15 (Mismatch)
+examples/clone_neg_string.sober: sober: lower error at examples/clone_neg_string.sober:5:15 (Mismatch)
 examples/composite_dup.sober: sober: lower error at examples/composite_dup.sober:11:10 (Mismatch)
 examples/composite_field_ty.sober: sober: lower error at examples/composite_field_ty.sober:12:15 (Mismatch)
 examples/composite_mixed.sober: sober: lower error at examples/composite_mixed.sober:11:10 (Unsupported)

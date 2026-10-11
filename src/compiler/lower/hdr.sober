@@ -8,6 +8,7 @@ package lower
 // 間接呼び出し・syscall・番地の根が分からない region.relocate。書かない番地の根: P 自身のデータ（`itop(load P[0])` から gep した番地 —
 // slice は自分自身を要素に含められないので、P のデータの中に P のヘッダは無い）・スロット・大域（rt.meta 等）・P[3] 以降
 
+import "desugar"
 import "std/iter"
 
 const HDR_SAFE = -2   // 番地の根: P のヘッダを書かない
@@ -26,7 +27,7 @@ func hdrModule(st mut St) {
 
 func hdrFunc(st mut St, f FnRef) {
     pt := irFnPtys(mut st, f)
-    np := hget(mut st, pt)
+    np := desugar.HeapGet(mut st.d, pt)
     nv := irFnNVal(mut st, f)
     // 先に安い走査: 仮引数のヘッダの load が 2 本以上無ければ何もしない
     mut nload := 0
@@ -62,7 +63,7 @@ func hdrFunc(st mut St, f FnRef) {
     optReset(mut st, nv, irFnNBlk(mut st, f))
     mut hit := false
     for p <- iter.Range(0, np) {
-        if hget(mut st, pt + 1 + p) == TyPtr && hdrClean(mut st, f, p, mut def) {
+        if desugar.HeapGet(mut st.d, pt + 1 + p) == TyPtr && hdrClean(mut st, f, p, mut def) {
             if hdrHoist(mut st, f, p) {
                 hit = true
             }
@@ -79,7 +80,7 @@ func hdrFunc(st mut St, f FnRef) {
 
 // hdrMut は値 v が関数 f の mut 仮引数（印 F_MUTP — 利用者の関数の、呼び手のセルを指す仮引数）か
 func hdrMut(st mut St, f FnRef, v int) bool {
-    np := hget(mut st, irFnPtys(mut st, f))
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
     return v >= 0 && v < np && v < 62 && (irFnMutP(mut st, f) >> v) & 1 == 1
 }
 

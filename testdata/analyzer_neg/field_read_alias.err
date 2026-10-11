@@ -1,0 +1,1 @@
+testdata/analyzer_neg/field_read_alias.sober:10:12: error: cannot read field `chunks` of `Table` outside package std/table — it holds mutable contents, and an alias of them outside the package would bypass the type's invariants (Analyzer)

@@ -1,0 +1,7 @@
+package main
+
+// clone はスカラーを受けない
+func main() {
+    x := clone(5)
+    println(x)
+}

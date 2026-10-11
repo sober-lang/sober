@@ -1,0 +1,11 @@
+package main
+
+// F-am の元の形: 封のある std の View の欄を外から書く（書けると Str が不正な UTF-8 の string を返した）
+import "std/utf8"
+
+func main() {
+    b := bytes("ab")
+    mut v := utf8.Check(b) catch return
+    v.b = []byte{255, 255}
+    println(utf8.Str(v, 0, 2) catch "x")
+}

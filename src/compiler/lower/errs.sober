@@ -16,19 +16,19 @@ func errsInfo(st mut St) int {
         return x
     }
     info := recN(mut st, SISZ)
-    hset(mut st, info, TUnion)
-    hset(mut st, info + SI_DECL, -1)
-    hset(mut st, info + SI_PKG, desugar.MainPkg(mut st.d))
-    hset(mut st, info + SI_WORDS, 0)
-    hset(mut st, info + SI_STATE, LPending)
-    hset(mut st, info + SI_TY, rec4(mut st, TUnion, info, 0, 0))
+    desugar.HeapSet(mut st.d, info, TUnion)
+    desugar.HeapSet(mut st.d, info + SI_DECL, -1)
+    desugar.HeapSet(mut st.d, info + SI_PKG, desugar.MainPkg(mut st.d))
+    desugar.HeapSet(mut st.d, info + SI_WORDS, 0)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LPending)
+    desugar.HeapSet(mut st.d, info + SI_TY, rec4(mut st, TUnion, info, 0, 0))
     st.errs = info
     return info
 }
 
 // layoutErrs はラベルの union のレイアウト（ラベルのフィールド型は宣言側 package で解決する）
 func layoutErrs(st mut St, info int) error? {
-    hset(mut st, info + SI_STATE, LLaying)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LLaying)
     saved_env := st.tenv
     st.tenv = -1
     err := layoutErrsBody(mut st, info)
@@ -45,14 +45,14 @@ func layoutErrsBody(st mut St, info int) error? {
         pk := desugar.ErrPkg(mut st.d, i)
         lay := layoutFields(mut st, pk, lA(nodeOf(mut st, nC(nodeOf(mut st, td)))))?
         vr := rec4(mut st, nodeOf(mut st, td).a, i, lay.fields, 0)
-        hset(mut st, vs + 1 + i, vr)
+        desugar.HeapSet(mut st.d, vs + 1 + i, vr)
         if lay.words > mx {
             mx = lay.words
         }
     }
-    hset(mut st, info + SI_FIELDS, vs)
-    hset(mut st, info + SI_WORDS, 1 + mx)
-    hset(mut st, info + SI_STATE, LDone)
+    desugar.HeapSet(mut st.d, info + SI_FIELDS, vs)
+    desugar.HeapSet(mut st.d, info + SI_WORDS, 1 + mx)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LDone)
     return nil
 }
 
@@ -66,22 +66,22 @@ func errLabelOf(st mut St, pk int, name desugar.StrRef) int {
 func errType(st mut St) (int, error?) {
     x := st.errstruct
     if x >= 0 {
-        return hget(mut st, x + SI_TY), nil
+        return desugar.HeapGet(mut st.d, x + SI_TY), nil
     }
     u := errsInfo(mut st)
     layoutInfo(mut st, u)?
-    lt := hget(mut st, u + SI_TY)
+    lt := desugar.HeapGet(mut st.d, u + SI_TY)
     lw := tWords(mut st, lt)
     fs := list2(mut st, rec4(mut st, int(strLit(mut st, "#top")), lt, 0, 0), rec4(mut st, int(strLit(mut st, "#chain")), mkSlice(mut st, lt, false), lw, 0))
     info := recN(mut st, SISZ)
-    hset(mut st, info, TStruct)
-    hset(mut st, info + SI_DECL, -2)
-    hset(mut st, info + SI_PKG, desugar.MainPkg(mut st.d))
-    hset(mut st, info + SI_FIELDS, fs)
-    hset(mut st, info + SI_WORDS, lw + 3)
-    hset(mut st, info + SI_STATE, LDone)
+    desugar.HeapSet(mut st.d, info, TStruct)
+    desugar.HeapSet(mut st.d, info + SI_DECL, -2)
+    desugar.HeapSet(mut st.d, info + SI_PKG, desugar.MainPkg(mut st.d))
+    desugar.HeapSet(mut st.d, info + SI_FIELDS, fs)
+    desugar.HeapSet(mut st.d, info + SI_WORDS, lw + 3)
+    desugar.HeapSet(mut st.d, info + SI_STATE, LDone)
     ty := rec4(mut st, TStruct, info, 0, 0)
-    hset(mut st, info + SI_TY, ty)
+    desugar.HeapSet(mut st.d, info + SI_TY, ty)
     st.errstruct = info
     return ty, nil
 }
@@ -89,17 +89,17 @@ func errType(st mut St) (int, error?) {
 // isErr は t が組み込み error か
 func isErr(st mut St, t int) bool {
     x := st.errstruct
-    return x >= 0 && isTag(mut st, t, TStruct) && hget(mut st, t + 1) == x
+    return x >= 0 && isTag(mut st, t, TStruct) && desugar.HeapGet(mut st.d, t + 1) == x
 }
 
 func isErrOpt(st mut St, t int) bool {
-    return isTag(mut st, t, TOpt) && isErr(mut st, hget(mut st, t + 1))
+    return isTag(mut st, t, TOpt) && isErr(mut st, desugar.HeapGet(mut st.d, t + 1))
 }
 
 // isLabel は error ラベルのリテラルの型（全ラベルの union）か
 func isLabel(st mut St, t int) bool {
     x := st.errs
-    return x >= 0 && isTag(mut st, t, TUnion) && hget(mut st, t + 1) == x
+    return x >= 0 && isTag(mut st, t, TUnion) && desugar.HeapGet(mut st.d, t + 1) == x
 }
 
 // labelToErr はラベルの値 → error: (L, 空の鎖)。空の鎖はゼロのヘッダ（深度 0 — relocate の対象にならない）
@@ -165,7 +165,7 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     if kindN(mut st, call0) != ast.ECall {
         return 0, diag.Unsupported{at: posOf(mut st, at)}
     }
-    ctx := hget(mut st, st.rets + 1)
+    ctx := desugar.HeapGet(mut st.d, st.rets + 1)
     rts := if ctx >= 0 { hgetL(mut st, ctx + IC_RESULTS) } else { desugar.ListRef(infoAt(mut st, st.info).results) }
     n := lenL(mut st, rts)
     if n == 0 || !isErrOpt(mut st, latI(mut st, rts, n - 1)) {
@@ -180,19 +180,19 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     if r < 0 {
         return r, nil
     }
-    k := hget(mut st, r)
-    if k == 0 || !isErrOpt(mut st, hget(mut st, r + 1 + (k - 1) * 2)) {
+    k := desugar.HeapGet(mut st.d, r)
+    if k == 0 || !isErrOpt(mut st, desugar.HeapGet(mut st.d, r + 1 + (k - 1) * 2)) {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
-    errt := hget(mut st, r + 1 + (k - 1) * 2)
-    errv := hget(mut st, r + 2 + (k - 1) * 2)
+    errt := desugar.HeapGet(mut st.d, r + 1 + (k - 1) * 2)
+    errv := desugar.HeapGet(mut st.d, r + 2 + (k - 1) * 2)
     err_b := newBlock(mut st)
     ok_b := newBlock(mut st)
     tagv := load(mut st, errv, 0)
     condbr(mut st, cmp(mut st, CNe, tagv, iconst(mut st, 0)), err_b, -1, ok_b, -1)
     // エラー側: ゼロ値（語を 0 埋め → slice / map は空ヘッダ）+ err を結果の置き場へ（結果は error? を含むので常に sret）
     setCur(mut st, err_b)
-    dst := if ctx >= 0 { hget(mut st, ctx + IC_SLOT) } else { st.sret }
+    dst := if ctx >= 0 { desugar.HeapGet(mut st.d, ctx + IC_SLOT) } else { st.sret }
     mut off := 0
     zero := iconst(mut st, 0)
     i = 0
@@ -231,10 +231,10 @@ func tryResults(st mut St, e desugar.NodeRef) (int, error?) {
     }
     setCur(mut st, ok_b)
     out := listN(mut st, (k - 1) * 2)
-    hset(mut st, out, k - 1)
+    desugar.HeapSet(mut st.d, out, k - 1)
     i = 0
     while i < (k - 1) * 2 {
-        hset(mut st, out + 1 + i, hget(mut st, r + 1 + i))
+        desugar.HeapSet(mut st.d, out + 1 + i, desugar.HeapGet(mut st.d, r + 1 + i))
         i += 1
     }
     return out, nil

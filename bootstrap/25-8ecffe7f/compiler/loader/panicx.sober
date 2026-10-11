@@ -1,0 +1,257 @@
+package loader
+
+// panic ラベル（language.md 27 節「panic ラベル」— 2026-10-03 決定・panic の観測性 第二便）: `panic(L{欄})` を検査して、後段が読む形に写す:
+//
+//     panic(Unreachable{})       →  panic("Unreachable")                     欄のないラベル（組み込み・宣言）
+//     panic(L{a: x, s: y})       →  panic("pkg.L", L{a: x, s: y})            欄のあるラベル — 宣言 `type L panic{…}` は BStruct に写す
+//
+// 先頭の文字列は死亡時に印字するラベルの名前（組み込みと main package のラベルは無修飾・他は宣言の package 名で修飾）。欄の値は普通の struct の
+// composite として後段（desugar・lower・typer）が型を検査する — check は値を捨てて unreach・lower は欄を宣言順に標準エラーへ印字して exit 101。
+// 名前付き実引数（namedargs.sober）の後に掛ける（Cx の木を読む）。拒否は diag.PanicLabel（種類は下の PL_*）
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+import "diag"
+
+const PL_BARE = 1        // 裸の `panic()`（廃止 — 理由のラベルが要る）
+const PL_ARG = 2         // 実引数がラベルのリテラル 1 つでない
+const PL_NOTLABEL = 3    // リテラルの型が panic ラベルでない
+const PL_RUNTIME = 4     // RegionExceeded を書いた（ランタイム専用）
+const PL_FIELDS = 5      // 欄の書き方（名前つき・全部・1 回ずつ）
+const PL_FIELDTY = 6     // 宣言の欄の型が int / byte / bool / string でない
+const PL_BUILTIN = 7     // 組み込みのラベルと同名の宣言
+const PL_USE = 8         // panic の実引数の外でラベルを使った
+
+// PanicOut は写した木の列と最初の拒否（無ければ nil）
+type PanicOut struct {
+    trees []ast.Tree
+    err error?
+}
+
+// builtinLabel は組み込みの panic ラベル（利用者が書けるもの）か
+func builtinLabel(n string) bool {
+    return n == "Unreachable" || n == "InvariantBroken"
+}
+
+// panicLabelsAll は全部の木の panic ラベルを検査して写す（allowBare: 裸の `panic()` を通すか — 鎖の移行の間だけ true だった。今は常に false）
+func panicLabelsAll(cx Cx, pnames []string, allowBare bool) PanicOut {
+    // ラベルの表: [package, ファイル, 型宣言の節] の 3 語ずつ
+    mut lab := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            tdi := ast.ListAt(t, tys, k)
+            td := t.nodes[tdi]
+            n := Name(t, td.a)
+            // 組み込みのラベルの名前はどの型宣言にも使えない（`panic(Unreachable{})` の読みを package の型で変えない）
+            if builtinLabel(n) || n == "RegionExceeded" {
+                return PanicOut{cx.trees, diag.PanicLabel{at: diag.Pos{file: f, tok: td.tok}, kind: PL_BUILTIN}}
+            }
+            if t.nodes[td.c].kind == ast.BPanic {
+                fs := t.nodes[td.c].a
+                for j <- iter.Range(0, ast.ListLen(t, fs)) {
+                    fd := t.nodes[ast.ListAt(t, fs, j)]
+                    if !printableTy(t, fd.b) {
+                        return PanicOut{cx.trees, diag.PanicLabel{at: diag.Pos{file: f, tok: fd.tok}, kind: PL_FIELDTY}}
+                    }
+                }
+                builder.Push(mut lab, cx.file_pkg[f])
+                builder.Push(mut lab, f)
+                builder.Push(mut lab, tdi)
+            }
+        }
+    }
+    lt := builder.Build(mut lab)
+    mut out := mut []ast.Tree{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        r := panicFile(cx, pnames, lt, f, allowBare)
+        if r.err != nil {
+            return PanicOut{cx.trees, r.err}
+        }
+        out = append(out, r.tree)
+    }
+    return PanicOut{freeze(out), nil}
+}
+
+// printableTy は欄の型の節 ty が int / byte / bool / string か（死亡時の印字 — println と同じ集合）
+func printableTy(t ast.Tree, ty int) bool {
+    x := t.nodes[ty]
+    if x.kind != ast.TName {
+        return false
+    }
+    n := Name(t, x.a)
+    return n == "int" || n == "byte" || n == "bool" || n == "string"
+}
+
+// labelAt はファイル f から綴り name（`L` / `ref.L`）で引ける panic ラベル（表 lt の項の番号 — 無ければ -1）
+func labelAt(cx Cx, lt []int, f int, name string) int {
+    ref, after, dotted := strings.CutLast(name, ".")
+    mut pk := cx.file_pkg[f]
+    mut base := name
+    if dotted {
+        base = after
+        pk = fileImportOf(cx, f, ref)
+        if pk < 0 {
+            return 0 - 1
+        }
+    }
+    for e <- iter.Range(0, len(lt) / 3) {
+        if lt[e * 3] == pk {
+            t := cx.trees[lt[e * 3 + 1]]
+            if Name(t, t.nodes[lt[e * 3 + 2]].a) == base {
+                return e
+            }
+        }
+    }
+    return 0 - 1
+}
+
+// FileOut は 1 ファイルの写し
+type FileOut struct {
+    tree ast.Tree
+    err error?
+}
+
+// panicFile はファイル f の panic の呼び出しを検査して写し、panic ラベルの宣言を BStruct に写す
+func panicFile(cx Cx, pnames []string, lt []int, f int, allowBare bool) FileOut {
+    t := cx.trees[f]
+    n0 := len(t.nodes)
+    // panic の実引数のリテラル（ラベルの使用の検査から外す）
+    mut argOf := mut []bool{}
+    for i <- iter.Range(0, n0) {
+        argOf = append(argOf, false)
+    }
+    mut any := false
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if isPanicCallee(t, x) {
+            any = true
+            if ast.ListLen(t, x.b) == 1 {
+                argOf[ast.ListAt(t, x.b, 0)] = true
+            }
+        }
+        if x.kind == ast.BPanic {
+            any = true
+        }
+    }
+    // ラベルの使用（型名・composite の型）— panic の実引数の外は拒否
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if (x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.EComposite) && !argOf[i] {
+            n := Name(t, x.a)
+            if labelAt(cx, lt, f, n) >= 0 || (x.kind == ast.EComposite && (builtinLabel(n) || n == "RegionExceeded")) {
+                return FileOut{t, diag.PanicLabel{at: diag.Pos{file: f, tok: x.tok}, kind: PL_USE}}
+            }
+        }
+    }
+    if !any {
+        return FileOut{t, nil}
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.BPanic {
+            // 型宣言はトップレベルだけ（文法 — ブロックの中の型宣言は無い）
+            ns[i] = ast.Node{ast.BStruct, x.tok, x.a, x.b, x.c, x.d, x.e, x.f}
+        }
+        if isPanicCallee(t, x) {
+            at := diag.Pos{file: f, tok: x.tok}
+            nargs := ast.ListLen(t, x.b)
+            if nargs == 0 {
+                if !allowBare {
+                    return FileOut{t, diag.PanicLabel{at: at, kind: PL_BARE}}
+                }
+            } else {
+                ci := ast.ListAt(t, x.b, 0)
+                c := t.nodes[ci]
+                if nargs != 1 || c.kind != ast.EComposite || ast.ListLen(t, c.c) != 0 {
+                    return FileOut{t, diag.PanicLabel{at: at, kind: PL_ARG}}
+                }
+                cat := diag.Pos{file: f, tok: c.tok}
+                ln := Name(t, c.a)
+                e := labelAt(cx, lt, f, ln)
+                mut shown := ln
+                mut nf := 0
+                if e < 0 {
+                    if ln == "RegionExceeded" {
+                        return FileOut{t, diag.PanicLabel{at: cat, kind: PL_RUNTIME}}
+                    }
+                    if !builtinLabel(ln) {
+                        return FileOut{t, diag.PanicLabel{at: cat, kind: PL_NOTLABEL}}
+                    }
+                } else {
+                    lf := lt[e * 3 + 1]
+                    dt := cx.trees[lf]
+                    td := dt.nodes[lt[e * 3 + 2]]
+                    fl := dt.nodes[td.c].a
+                    nf = ast.ListLen(dt, fl)
+                    if !fieldsOk(t, c.b, dt, fl) {
+                        return FileOut{t, diag.PanicLabel{at: cat, kind: PL_FIELDS}}
+                    }
+                    pn := pnames[lt[e * 3]]
+                    base := Name(dt, td.a)
+                    shown = if pn == "main" { base } else { pn + "." + base }
+                }
+                if nf == 0 && ast.ListLen(t, c.b) != 0 {
+                    return FileOut{t, diag.PanicLabel{at: cat, kind: PL_FIELDS}}
+                }
+                // 名前の文字列の節（base）・欄があれば composite を 2 つ目に
+                base := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ast.Node{ast.EStrlit, c.tok, ast.PutLit(mut db, shown), 0, 0, 0, 0, 0})
+                args := if nf == 0 { []int{base} } else { []int{base, ci} }
+                ns[i] = ast.Node{x.kind, x.tok, x.a, ast.PutList(mut db, args), x.c, x.d, x.e, x.f}
+            }
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return FileOut{ast.Tree{freeze(ns), builder.Build(mut db), t.file}, nil}
+}
+
+// isPanicCallee は節 x が組み込みの `panic(…)` の呼び出しか（`panic` はキーワード — 名前 panic の callee は常に組み込み）
+func isPanicCallee(t ast.Tree, x ast.Node) bool {
+    return x.kind == ast.ECall && t.nodes[x.a].kind == ast.EIdent && StrIs(t, t.nodes[x.a].a, "panic")
+}
+
+// fieldsOk は composite の欄の列 es（木 t）が宣言の欄の列 fl（木 dt）を名前つきで全部・1 回ずつ書いているか
+func fieldsOk(t ast.Tree, es int, dt ast.Tree, fl int) bool {
+    n := ast.ListLen(t, es)
+    if n != ast.ListLen(dt, fl) {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        el := t.nodes[ast.ListAt(t, es, i)]
+        if el.a < 0 {
+            return false
+        }
+        k := Name(t, el.a)
+        mut hit := 0
+        for j <- iter.Range(0, n) {
+            if Name(dt, dt.nodes[ast.ListAt(dt, fl, j)].a) == k {
+                hit += 1
+            }
+        }
+        for j <- iter.Range(0, i) {
+            if Name(t, t.nodes[ast.ListAt(t, es, j)].a) == k {
+                hit = 0
+            }
+        }
+        if hit != 1 {
+            return false
+        }
+    }
+    return true
+}
