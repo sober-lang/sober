@@ -1682,7 +1682,8 @@ func @main.main() i64 {
   slot s4 [3]
   slot s5 [1]
   slot s6 [2]
-  slot s7 [3]
+  slot s7 [2]
+  slot s8 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1763,14 +1764,14 @@ b5:
   call @main.num(%39, %40, %41, %42, %43)
   %44 = load.i64 %39[0]
   %45 = load.i64 %39[1]
-  %46 = slotaddr s6
+  %46 = slotaddr s7
   %47 = load.i64 %28[0]
   %48 = load.i64 %28[1]
   %49 = load.i64 %28[2]
   call @main.num(%46, %47, %48, %49, %45)
   %50 = load.i64 %46[0]
   %51 = load.i64 %46[1]
-  %52 = slotaddr s7
+  %52 = slotaddr s8
   call @std/floatfmt.FormatFixed(%52, %44, %50)
   call @rt.print_str(%52)
   %53 = const 10

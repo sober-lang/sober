@@ -1693,15 +1693,16 @@ func @main.main() i64 {
   slot s13 [3]
   slot s14 [4]
   slot s15 [4]
-  slot s16 [2]
+  slot s16 [4]
   slot s17 [2]
-  slot s18 [4]
-  slot s19 [2]
-  slot s20 [1]
-  slot s21 [4]
-  slot s22 [2]
-  slot s23 [1]
+  slot s18 [2]
+  slot s19 [4]
+  slot s20 [2]
+  slot s21 [1]
+  slot s22 [4]
+  slot s23 [2]
   slot s24 [1]
+  slot s25 [1]
 b0:
   %0 = region.depth
   region.enter
@@ -1936,7 +1937,7 @@ b3(%93 i64):
   call @rt.print_int(%145)
   %149 = const 10
   call @rt.print_char(%149)
-  %150 = slotaddr s0
+  %150 = slotaddr s15
   %151 = region.depth
   %152 = region.bump %151
   %153 = ptoi %152
@@ -1946,7 +1947,7 @@ b3(%93 i64):
   store %150[2], %151
   %155 = const 0
   store %150[3], %155
-  %156 = slotaddr s15
+  %156 = slotaddr s16
   %157 = load.i64 %150[0]
   store %156[0], %157
   %158 = load.i64 %150[1]
@@ -1993,7 +1994,7 @@ b3(%93 i64):
   %182 = load.i64 %166[2]
   store %179[2], %182
   %183 = call @rt.map_find.1.1.6.1(%156, %179)
-  %184 = slotaddr s16
+  %184 = slotaddr s17
   %185 = const 0
   %186 = ne %183, %185
   condbr %186, b4, b5
@@ -2013,7 +2014,7 @@ b5:
   store %184[0], %194
   br b6
 b6:
-  %195 = slotaddr s17
+  %195 = slotaddr s18
   %196 = load.i64 %184[0]
   store %195[0], %196
   %197 = load.i64 %184[1]
@@ -2212,7 +2213,7 @@ b24(%296 i64):
   call @rt.print_int(%322)
   %324 = const 10
   call @rt.print_char(%324)
-  %325 = slotaddr s0
+  %325 = slotaddr s15
   %326 = region.depth
   %327 = region.bump %326
   %328 = ptoi %327
@@ -2262,7 +2263,7 @@ b26:
   %358 = eq %357, %355
   condbr %358, b30, b29
 b27:
-  %374 = slotaddr s18
+  %374 = slotaddr s19
   %375 = load.i64 %325[0]
   store %374[0], %375
   %376 = load.i64 %325[1]
@@ -2287,7 +2288,7 @@ b27:
   %387 = load.i64 %382[2]
   store %384[2], %387
   %388 = call @rt.map_find.1.1.6.1(%374, %384)
-  %389 = slotaddr s16
+  %389 = slotaddr s17
   %390 = const 0
   %391 = ne %388, %390
   condbr %391, b31, b32
@@ -2335,7 +2336,7 @@ b32:
   store %389[0], %399
   br b33
 b33:
-  %400 = slotaddr s19
+  %400 = slotaddr s20
   %401 = load.i64 %389[0]
   store %400[0], %401
   %402 = load.i64 %389[1]
@@ -2502,7 +2503,7 @@ b47(%481 i64):
   call @rt.print_int(%507)
   %509 = const 10
   call @rt.print_char(%509)
-  %510 = slotaddr s0
+  %510 = slotaddr s15
   %511 = region.depth
   %512 = region.bump %511
   %513 = ptoi %512
@@ -2513,7 +2514,7 @@ b47(%481 i64):
   %515 = const 0
   store %510[3], %515
   %516 = const 0
-  %517 = slotaddr s20
+  %517 = slotaddr s21
   store %517[0], %516
   %518 = const 1
   %519 = call @rt.map_find.0.0.3.1(%510, %517)
@@ -2538,7 +2539,7 @@ b49:
   %534 = eq %533, %531
   condbr %534, b53, b52
 b50:
-  %549 = slotaddr s21
+  %549 = slotaddr s22
   %550 = load.i64 %510[0]
   store %549[0], %550
   %551 = load.i64 %510[1]
@@ -2548,10 +2549,10 @@ b50:
   %553 = load.i64 %510[3]
   store %549[3], %553
   %554 = const 0
-  %555 = slotaddr s20
+  %555 = slotaddr s21
   store %555[0], %554
   %556 = call @rt.map_find.0.0.3.1(%549, %555)
-  %557 = slotaddr s16
+  %557 = slotaddr s17
   %558 = const 0
   %559 = ne %556, %558
   condbr %559, b54, b55
@@ -2592,7 +2593,7 @@ b55:
   store %557[0], %563
   br b56
 b56:
-  %564 = slotaddr s22
+  %564 = slotaddr s23
   %565 = load.i64 %557[0]
   store %564[0], %565
   %566 = load.i64 %557[1]
@@ -2600,16 +2601,16 @@ b56:
   %567 = region.depth
   %568 = const 1
   %569 = const 40
-  %570 = slotaddr s20
+  %570 = slotaddr s21
   %571 = region.depth
-  %572 = slotaddr s23
+  %572 = slotaddr s24
   store %572[0], %568
   %573 = region.depth
   br b59
 b57:
   region.setdepth %567
   %613 = const 0
-  %614 = slotaddr s23
+  %614 = slotaddr s24
   store %614[0], %613
   %615 = load.i64 %564[0]
   %616 = const 0
@@ -2627,7 +2628,7 @@ b60:
   %576 = region.depth
   %577 = load.i64 %572[0]
   %578 = region.depth
-  %579 = slotaddr s24
+  %579 = slotaddr s25
   store %579[0], %577
   %580 = call @rt.map_find.0.0.3.1(%549, %579)
   %581 = const 0
@@ -2762,10 +2763,10 @@ b79:
   br b78(%666, %667)
 b80(%658 i64):
   %668 = const 0
-  %669 = slotaddr s23
+  %669 = slotaddr s24
   store %669[0], %668
   %670 = call @rt.map_find.0.0.3.1(%549, %669)
-  %671 = slotaddr s16
+  %671 = slotaddr s17
   %672 = const 0
   %673 = ne %670, %672
   condbr %673, b81, b82

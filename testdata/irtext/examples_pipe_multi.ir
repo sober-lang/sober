@@ -1672,6 +1672,7 @@ b0:
 
 func @main.main() {
   slot s0 [2]
+  slot s1 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1684,7 +1685,7 @@ b0:
   %6 = call @main.add(%4, %5)
   %7 = call @main.twice(%6)
   %8 = const 17
-  %9 = slotaddr s0
+  %9 = slotaddr s1
   %10 = const 5
   call @main.divmod(%9, %8, %10)
   %11 = load.i64 %9[0]

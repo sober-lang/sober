@@ -1682,12 +1682,16 @@ func @main.main() i64 {
   slot s0 [3]
   slot s1 [3]
   slot s2 [6]
-  slot s3 [6]
-  slot s4 [4]
+  slot s3 [3]
+  slot s4 [6]
   slot s5 [4]
-  slot s6 [3]
+  slot s6 [4]
   slot s7 [3]
   slot s8 [3]
+  slot s9 [3]
+  slot s10 [3]
+  slot s11 [3]
+  slot s12 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1706,7 +1710,7 @@ b0:
   %9 = globaladdr @str.0
   %10 = const 1
   %11 = const 0
-  %12 = slotaddr s0
+  %12 = slotaddr s3
   %13 = ptoi %9
   store %12[0], %13
   store %12[1], %10
@@ -1715,7 +1719,7 @@ b0:
   %15 = load.i64 %12[1]
   %16 = load.i64 %12[2]
   call @main.pair(%7, %8, %14, %15, %16)
-  %17 = slotaddr s3
+  %17 = slotaddr s4
   %18 = load.i64 %7[0]
   store %17[0], %18
   %19 = load.i64 %7[1]
@@ -1728,10 +1732,10 @@ b0:
   store %17[4], %22
   %23 = load.i64 %7[5]
   store %17[5], %23
-  %24 = slotaddr s4
+  %24 = slotaddr s5
   %25 = const 10
   call @main.counts(%24, %25)
-  %26 = slotaddr s5
+  %26 = slotaddr s6
   %27 = load.i64 %24[0]
   store %26[0], %27
   %28 = load.i64 %24[1]
@@ -1808,7 +1812,7 @@ b8:
   %83 = add %68, %82
   br b6(%75, %83)
 b9:
-  %84 = slotaddr s0
+  %84 = slotaddr s3
   %85 = ptoi %63
   store %84[0], %85
   store %84[1], %50
@@ -1829,10 +1833,10 @@ b9:
   call @rt.print_int(%86)
   %91 = const 10
   call @rt.print_char(%91)
-  %92 = slotaddr s0
+  %92 = slotaddr s7
   %93 = const 4
   call @main.outer(%92, %93)
-  %94 = slotaddr s6
+  %94 = slotaddr s3
   %95 = load.i64 %92[0]
   store %94[0], %95
   %96 = load.i64 %92[1]
@@ -1855,7 +1859,7 @@ b11:
   %106 = mul %99, %105
   %107 = gep.word %104, %106
   %108 = load.i64 %107[0]
-  %109 = slotaddr s0
+  %109 = slotaddr s8
   %110 = const 7
   call @main.outerLabel(%109, %110)
   call @rt.print_int(%98)
@@ -1879,19 +1883,19 @@ b11:
   %122 = gep.byte %118, %121
   store8 %122[0], %115
   %123 = const 2
-  %124 = slotaddr s0
+  %124 = slotaddr s9
   %125 = ptoi %118
   store %124[0], %125
   store %124[1], %123
   store %124[2], %116
-  %126 = slotaddr s7
+  %126 = slotaddr s10
   %127 = load.i64 %124[0]
   store %126[0], %127
   %128 = load.i64 %124[1]
   store %126[1], %128
   %129 = load.i64 %124[2]
   store %126[2], %129
-  %130 = slotaddr s0
+  %130 = slotaddr s9
   %131 = load.i64 %126[0]
   store %130[0], %131
   %132 = load.i64 %126[1]
@@ -1912,7 +1916,7 @@ b12(%138 ptr, %139 ptr):
   %149 = load.i64 %130[1]
   %150 = const 1
   %151 = add %149, %150
-  %152 = slotaddr s8
+  %152 = slotaddr s11
   %153 = ptoi %138
   store %152[0], %153
   store %152[1], %151
@@ -1923,7 +1927,7 @@ b12(%138 ptr, %139 ptr):
   store %126[1], %155
   %156 = load.i64 %152[2]
   store %126[2], %156
-  %157 = slotaddr s2
+  %157 = slotaddr s12
   %158 = load.i64 %126[0]
   %159 = load.i64 %126[1]
   %160 = load.i64 %126[2]

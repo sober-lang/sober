@@ -177,6 +177,10 @@ if command -v "$PERF" > /dev/null 2>&1; then
     echo "self/build-inst $INST" >> "$res.inst"
 fi
 
+# 自己 check の核の節の数（check --expansion-report の 1 行目 — 決定的。mut 引数の関数の呼び出し点展開の掛け算を等式で見る副ラチェット — report-510 / 511）
+NODES=$(cd "$T" && SOBER_WORKERS=1 "$S2" check app/main.sober --expansion-report | awk '$1 == "core" && $2 == "nodes" { print $3 }')
+echo "bench: self/check core nodes = ${NODES}" >&2
+
 # ── 中央値の表（wall / user は秒・RSS は MB）──
 awk '
 { k = $1; n[k]++; w[k, n[k]] = $2; u[k, n[k]] = $3; m[k, n[k]] = $4; l[k, n[k]] = $5; if (!(k in seen)) { seen[k] = 1; order[++K] = k } }
@@ -201,14 +205,16 @@ END {
 }' "$res"
 echo "bench: raw results in $res" >&2
 
-# ── ラチェット（bench/ratchet.txt — 「項目 欄 上限 [ref]」の行。欄 = inst〔G 命令 — 決定的な等式で鳴る主の照合〕/ rss〔MB〕/ wall〔秒〕。
+# ── ラチェット（bench/ratchet.txt — 「項目 欄 上限 [ref]」の行。欄 = inst〔G 命令 — 決定的な等式で鳴る主の照合〕/ nodes〔核の節の数 — 決定的〕/ rss〔MB〕/ wall〔秒〕。
 # 中央値が上限を超えたら鳴る。4 つ目に ref を書いた行は参考値（記録だけ — 照合しない）。上げるのは裁定つきで ──
 rfail=0
 while read -r item col lim ref; do
     case "$item" in ''|'#'*) continue ;; esac
     # size（stage3 の ELF の大きさ）は scripts/stages.sh が照合する
     [ "$col" = size ] && continue
-    if [ "$col" = inst ]; then
+    if [ "$col" = nodes ]; then
+        v=$NODES
+    elif [ "$col" = inst ]; then
         v=$INST
         if [ -z "$v" ]; then
             echo "bench: RATCHET FAIL $item inst — perf が無い（環境変数 PERF で perf の実行ファイルを指す）" >&2; rfail=1; continue

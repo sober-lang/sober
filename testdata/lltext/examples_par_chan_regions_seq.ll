@@ -2766,6 +2766,13 @@ b0:
   store i64 0, ptr %s4.z1
   %s4.z2 = getelementptr i64, ptr %s4, i64 2
   store i64 0, ptr %s4.z2
+  %s5 = alloca [3 x i64], align 8
+  %s5.z0 = getelementptr i64, ptr %s5, i64 0
+  store i64 0, ptr %s5.z0
+  %s5.z1 = getelementptr i64, ptr %s5, i64 1
+  store i64 0, ptr %s5.z1
+  %s5.z2 = getelementptr i64, ptr %s5, i64 2
+  store i64 0, ptr %s5.z2
   %v50 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v50, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2837,7 +2844,7 @@ b2:
   %v25 = add i64 %v24, %v23
   %st9 = getelementptr i64, ptr %v4, i64 0
   store i64 %v25, ptr %st9
-  %v26 = getelementptr i64, ptr %s3, i64 0
+  %v26 = getelementptr i64, ptr %s5, i64 0
   %v27.p = getelementptr i64, ptr %v6, i64 0
   %v27 = load i64, ptr %v27.p
   %v28 = add i64 0, 10

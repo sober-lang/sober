@@ -1663,6 +1663,7 @@ func @main.main() {
   slot s0 [2]
   slot s1 [2]
   slot s2 [2]
+  slot s3 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1674,14 +1675,14 @@ b0:
   store %3[0], %4
   %5 = load.i64 %1[1]
   store %3[1], %5
-  %6 = slotaddr s0
+  %6 = slotaddr s2
   %7 = const 0
   store %6[0], %7
   %8 = load.i64 %6[0]
   store %3[0], %8
   %9 = load.i64 %6[1]
   store %3[1], %9
-  %10 = slotaddr s0
+  %10 = slotaddr s3
   %11 = const 3
   call @main.find(%10, %11)
   %12 = slotaddr s2

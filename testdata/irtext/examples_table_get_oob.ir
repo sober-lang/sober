@@ -1684,6 +1684,8 @@ func @main.main() {
   slot s7 [3]
   slot s8 [3]
   slot s9 [3]
+  slot s10 [3]
+  slot s11 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2367,7 +2369,7 @@ b68:
   br b61
 b69:
   %441 = load.i64 %405[0]
-  %442 = slotaddr s4
+  %442 = slotaddr s10
   call @std/strings.FormatInt(%442, %441)
   call @rt.print_str(%442)
   %443 = const 10
@@ -2429,7 +2431,7 @@ b76:
   br b69
 b77:
   %481 = load.i64 %445[0]
-  %482 = slotaddr s4
+  %482 = slotaddr s11
   call @std/strings.FormatInt(%482, %481)
   call @rt.print_str(%482)
   %483 = const 10

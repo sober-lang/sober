@@ -13,6 +13,9 @@ import "std/iter"
 // 2: 菱形の片方の腕だけで書いて合流で読む（要零）
 // 3: 語 0 を書いてから番地を call へ渡す（語 0 は要らない・語 1 は要零 — 逃げた先が読みうる）
 // 4: 定数の gep で語 1 を書いて番地 + 1 で読む（要らない）
+// 5: sret の受け皿として call へ渡してから読む（要らない — 呼ばれた関数が全語を書く・F_SRET_BIT の約束）
+// 6: 5 と同じ形で、呼ぶ関数に sret の印が無い（両方要零 — 逃げた先が読みうる）
+// 7: sret の印のある関数へ、受け皿でない引数（引数 1）として渡す（両方要零）
 func zT(kind int) []int {
     mut st := St{}
     initScalars(mut st)
@@ -21,6 +24,12 @@ func zT(kind int) []int {
     pt := listN(mut st, 1)
     desugar.HeapSet(mut st.d, pt + 1, TyI64)
     callee := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    pp := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pp + 1, TyPtr)
+    desugar.HeapSet(mut st.d, pp + 2, TyPtr)
+    sretF := addFunc(mut st, 0, desugar.ListRef(pp), -1)
+    irSetFnMutP(mut st, sretF, 1 << F_SRET_BIT)
+    plainF := addFunc(mut st, 0, desugar.ListRef(pp), -1)
     f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
     begin(mut st, f)
     sa := newSlotAddr(mut st, 2)
@@ -52,6 +61,12 @@ func zT(kind int) []int {
         store(mut st, sa, 0, c)
         r := call(mut st, callee, list1(mut st, sa))
         ret(mut st, r)
+    } else if kind == 5 || kind == 6 || kind == 7 {
+        other := newSlotAddr(mut st, 1)
+        store(mut st, other, 0, c)
+        fn := if kind == 6 { plainF } else { sretF }
+        _ = if kind == 7 { call(mut st, fn, list2(mut st, other, sa)) } else { call(mut st, fn, list2(mut st, sa, other)) }
+        ret(mut st, bin(mut st, BAdd, load(mut st, sa, 0), load(mut st, sa, 1)))
     } else {
         g := gepWord(mut st, sa, iconst(mut st, 1))
         store(mut st, g, 0, c)
@@ -72,6 +87,12 @@ func TestZeroNeed() {
     assert(d[0] == 1 && d[1] == 0)
     e := zT(4)
     assert(e[0] == 0 && e[1] == 0)
+    f := zT(5)
+    assert(f[0] == 0 && f[1] == 0)
+    g := zT(6)
+    assert(g[0] == 1 && g[1] == 1)
+    h := zT(7)
+    assert(h[0] == 1 && h[1] == 1)
 }
 
 // zPlanOk は store の列の計画が区間 [rbp - 8 × ztop, rbp - 8 × (ztop - cnt)) を 1 語ずつ隙間も重なりもなく覆うか

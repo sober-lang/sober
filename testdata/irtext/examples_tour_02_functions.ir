@@ -1684,7 +1684,8 @@ func @main.main() i64 {
   slot s5 [3]
   slot s6 [3]
   slot s7 [3]
-  slot s8 [1]
+  slot s8 [2]
+  slot s9 [1]
 b0:
   %0 = region.depth
   region.enter
@@ -1768,7 +1769,7 @@ b0:
   call @rt.print_str(%55)
   %57 = const 10
   call @rt.print_char(%57)
-  %58 = slotaddr s0
+  %58 = slotaddr s8
   %59 = const 17
   %60 = const 5
   call @main.divmod(%58, %59, %60)
@@ -1785,7 +1786,7 @@ b0:
   %68 = const 10
   call @rt.print_char(%68)
   %69 = const 2
-  %70 = slotaddr s8
+  %70 = slotaddr s9
   %71 = region.depth
   %72 = const 3
   %73 = mul %69, %72

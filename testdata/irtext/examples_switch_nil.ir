@@ -1686,8 +1686,12 @@ func @main.main() {
   slot s4 [2]
   slot s5 [2]
   slot s6 [6]
-  slot s7 [5]
-  slot s8 [3]
+  slot s7 [6]
+  slot s8 [5]
+  slot s9 [3]
+  slot s10 [3]
+  slot s11 [6]
+  slot s12 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1846,9 +1850,9 @@ b22:
   %74 = region.depth
   region.enter
   %75 = region.depth
-  %76 = slotaddr s3
+  %76 = slotaddr s6
   call @main.find(%76, %72)
-  %77 = slotaddr s6
+  %77 = slotaddr s7
   %78 = load.i64 %76[0]
   store %77[0], %78
   %79 = load.i64 %76[1]
@@ -1878,7 +1882,7 @@ b24:
 b25:
   %87 = const 1
   %88 = gep.word %77, %87
-  %89 = slotaddr s7
+  %89 = slotaddr s8
   %90 = load.i64 %88[0]
   store %89[0], %90
   %91 = load.i64 %88[1]
@@ -1897,7 +1901,7 @@ b26:
   %115 = globaladdr @str.2
   %116 = const 3
   %117 = const 0
-  %118 = slotaddr s8
+  %118 = slotaddr s10
   %119 = ptoi %115
   store %118[0], %119
   store %118[1], %116
@@ -1915,7 +1919,7 @@ b28:
   %98 = globaladdr @str.0
   %99 = const 2
   %100 = const 0
-  %101 = slotaddr s2
+  %101 = slotaddr s9
   %102 = ptoi %98
   store %101[0], %102
   store %101[1], %99
@@ -1931,7 +1935,7 @@ b30:
   %108 = globaladdr @str.1
   %109 = const 3
   %110 = const 0
-  %111 = slotaddr s8
+  %111 = slotaddr s10
   %112 = ptoi %108
   store %111[0], %112
   store %111[1], %109
@@ -1967,9 +1971,9 @@ b36:
   %136 = region.depth
   region.enter
   %137 = region.depth
-  %138 = slotaddr s6
+  %138 = slotaddr s11
   call @main.find(%138, %134)
-  %139 = slotaddr s3
+  %139 = slotaddr s7
   %140 = load.i64 %138[0]
   store %139[0], %140
   %141 = load.i64 %138[1]
@@ -1999,7 +2003,7 @@ b38:
 b39:
   %149 = const 1
   %150 = gep.word %139, %149
-  %151 = slotaddr s7
+  %151 = slotaddr s8
   %152 = load.i64 %150[0]
   store %151[0], %152
   %153 = load.i64 %150[1]
@@ -2016,11 +2020,11 @@ b40:
   %158 = region.depth
   region.enter
   %159 = region.depth
-  %160 = slotaddr s5
+  %160 = slotaddr s12
   %161 = const 1
   %162 = sub %134, %161
   call @main.age(%160, %162)
-  %163 = slotaddr s4
+  %163 = slotaddr s5
   %164 = load.i64 %160[0]
   store %163[0], %164
   %165 = load.i64 %160[1]

@@ -1694,8 +1694,14 @@ func @main.main() i64 {
   slot s14 [3]
   slot s15 [3]
   slot s16 [3]
-  slot s17 [1]
-  slot s18 [1]
+  slot s17 [3]
+  slot s18 [3]
+  slot s19 [3]
+  slot s20 [3]
+  slot s21 [3]
+  slot s22 [1]
+  slot s23 [1]
+  slot s24 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1771,19 +1777,19 @@ b1:
   %100 = const 10
   call @rt.print_char(%100)
   %101 = load.i64 %12[0]
-  %102 = slotaddr s16
+  %102 = slotaddr s17
   call @std/floatfmt.Format(%102, %101)
   %103 = load.i64 %14[0]
-  %104 = slotaddr s15
+  %104 = slotaddr s18
   call @std/floatfmt.Format(%104, %103)
   %105 = load.i64 %16[0]
-  %106 = slotaddr s14
+  %106 = slotaddr s19
   call @std/floatfmt.Format(%106, %105)
   %107 = load.i64 %18[0]
-  %108 = slotaddr s13
+  %108 = slotaddr s20
   call @std/floatfmt.Format(%108, %107)
   %109 = load.i64 %20[0]
-  %110 = slotaddr s12
+  %110 = slotaddr s21
   call @std/floatfmt.Format(%110, %109)
   call @rt.print_str(%102)
   %111 = const 32
@@ -1809,9 +1815,9 @@ b1:
   %120 = region.depth
   %121 = const 0
   %122 = const 200
-  %123 = slotaddr s17
+  %123 = slotaddr s22
   %124 = region.depth
-  %125 = slotaddr s18
+  %125 = slotaddr s23
   store %125[0], %121
   %126 = region.depth
   br b9
@@ -1901,7 +1907,7 @@ b6:
 b7:
   region.setdepth %120
   %155 = load.i64 %117[0]
-  %156 = slotaddr s12
+  %156 = slotaddr s24
   call @std/floatfmt.Format(%156, %155)
   %157 = load.i64 %119[0]
   %158 = load.i64 %117[0]

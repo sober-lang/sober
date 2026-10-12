@@ -341,7 +341,7 @@ type LGroup struct {
 
 // lParCfg は子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
 func lParCfg(st mut St, b2 bool) []int {
-    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), if st.noVec { 1 } else { 0 }, if b2 { 1 } else { 0 }, int(st.ubCheck), int(st.ubBound)})
+    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq)})
 }
 
 // lRets は呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く）
@@ -463,13 +463,24 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
     st.rtMapfind = FnRef(cfg[2])
     st.rtRenterL = FnRef(cfg[3])
     st.rtRenterLL = FnRef(cfg[4])
-    st.noVec = cfg[5] == 1
+    st.noVec = cfg[5] & 1 == 1
+    // task を使うプログラムには SLP を掛けない（slp.sober — キャンセルの検査点が v128 の区間を跨ぎうる）
+    st.taskUse = cfg[5] & 2 == 2
     st.lkid = true
     st.lret = lret
     desugar.HeapPush(mut st.d, 0)
     st.ubCheck = FnRef(cfg[7])
     st.ubBound = FnRef(cfg[8])
-    mfCfgSet(mut st, cfg, 9)
+    // ヘッダのループ昇格（hloop.sober）が許す rt の呼び出し・確保の根
+    st.rtGrow = FnRef(cfg[9])
+    st.rtGrow8 = FnRef(cfg[10])
+    st.rtRalloc = FnRef(cfg[11])
+    st.rtAlloc8 = FnRef(cfg[12])
+    // 展開後の上限の巻き上げ（rlim.sober）の種の番地 @rt.meta
+    st.meta = cfg[13]
+    // 写しの転送（cpfwd.sober）が読むだけとみなす rt.str_eq
+    st.rtStreq = FnRef(cfg[14])
+    mfCfgSet(mut st, cfg, 15)
     mut out := mut [][]int{}
     for j <- iter.Range(0, len(g.fns)) {
         cf := FnRef(recN(mut st, FSZ))
@@ -497,6 +508,8 @@ func lB1Func(st mut St, f FnRef) {
     m2rFunc(mut st, f)
     gvnFunc(mut st, f)
     hdrFunc(mut st, f)
+    hloopFunc(mut st, f)
+    cpfwdFunc(mut st, f)
     unrollFunc(mut st, f)
     bceFunc(mut st, f)
     licmFunc(mut st, f)
@@ -514,10 +527,13 @@ func lB2Func(st mut St, f FnRef) {
     m2rFunc(mut st, f)
     if ccNParams(mut st, f) > p0 {
         ccDeadAfterM2r(mut st, f)
+        ccPostFold(mut st, f)
     }
+    rlimFunc(mut st, f)
     _ = ubfFunc(mut st, f)
     if !st.noVec {
         _ = vecFunc(mut st, f)
+        slpFunc(mut st, f)
     }
     _ = cmpDupFunc(mut st, f)
 }

@@ -9235,12 +9235,14 @@ func @main.main() i64 {
   slot s1 [3]
   slot s2 [9]
   slot s3 [8]
-  slot s4 [9]
-  slot s5 [3]
+  slot s4 [10]
+  slot s5 [9]
   slot s6 [3]
   slot s7 [3]
   slot s8 [3]
-  slot s9 [9]
+  slot s9 [3]
+  slot s10 [10]
+  slot s11 [9]
 b0:
   %0 = region.depth
   region.enter
@@ -9310,13 +9312,13 @@ b1:
 b2:
   br b3(%11)
 b3(%39 i64):
-  %40 = slotaddr s0
+  %40 = slotaddr s4
   %41 = call @main.joined(%39)
   call @main.need(%40, %41)
   %42 = load.i64 %40[0]
   %43 = const 1
   %44 = gep.word %40, %43
-  %45 = slotaddr s4
+  %45 = slotaddr s5
   %46 = load.i64 %44[0]
   store %45[0], %46
   %47 = load.i64 %44[1]
@@ -9365,12 +9367,12 @@ b4:
 b5:
   br b6(%42)
 b6(%70 i64):
-  %71 = slotaddr s1
+  %71 = slotaddr s6
   call @std/strings.FormatInt(%71, %39)
   %72 = globaladdr @str.1
   %73 = const 1
   %74 = const 0
-  %75 = slotaddr s5
+  %75 = slotaddr s1
   %76 = ptoi %72
   store %75[0], %76
   store %75[1], %73
@@ -9387,12 +9389,12 @@ b6(%70 i64):
   %86 = load.i64 %75[0]
   %87 = itop %86
   call @rt.copy8(%85, %87, %78)
-  %88 = slotaddr s6
+  %88 = slotaddr s7
   %89 = ptoi %84
   store %88[0], %89
   store %88[1], %79
   store %88[2], %80
-  %90 = slotaddr s7
+  %90 = slotaddr s8
   call @std/strings.FormatInt(%90, %70)
   %91 = load.i64 %88[1]
   %92 = load.i64 %90[1]
@@ -9406,7 +9408,7 @@ b6(%70 i64):
   %100 = load.i64 %90[0]
   %101 = itop %100
   call @rt.copy8(%99, %101, %92)
-  %102 = slotaddr s8
+  %102 = slotaddr s9
   %103 = ptoi %98
   store %102[0], %103
   store %102[1], %93
@@ -9414,7 +9416,7 @@ b6(%70 i64):
   call @rt.print_str(%102)
   %104 = const 10
   call @rt.print_char(%104)
-  %105 = slotaddr s0
+  %105 = slotaddr s10
   %106 = const 1
   %107 = const 0
   %108 = sub %107, %106
@@ -9422,7 +9424,7 @@ b6(%70 i64):
   %109 = load.i64 %105[0]
   %110 = const 1
   %111 = gep.word %105, %110
-  %112 = slotaddr s9
+  %112 = slotaddr s11
   %113 = load.i64 %111[0]
   store %112[0], %113
   %114 = load.i64 %111[1]
@@ -9468,7 +9470,7 @@ b7:
   %136 = globaladdr @str.2
   %137 = const 7
   %138 = const 0
-  %139 = slotaddr s8
+  %139 = slotaddr s9
   %140 = ptoi %136
   store %139[0], %140
   store %139[1], %137

@@ -1686,7 +1686,12 @@ func @main.main() {
   slot s3 [4]
   slot s4 [3]
   slot s5 [3]
-  slot s6 [2]
+  slot s6 [3]
+  slot s7 [3]
+  slot s8 [3]
+  slot s9 [3]
+  slot s10 [2]
+  slot s11 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1720,11 +1725,11 @@ b0:
   call @rt.print_str(%1)
   %22 = const 10
   call @rt.print_char(%22)
-  %23 = slotaddr s1
+  %23 = slotaddr s4
   %24 = globaladdr @str.0
   %25 = const 1
   %26 = const 0
-  %27 = slotaddr s0
+  %27 = slotaddr s1
   %28 = ptoi %24
   store %27[0], %28
   store %27[1], %25
@@ -1735,7 +1740,7 @@ b0:
   %32 = globaladdr @str.1
   %33 = const 1
   %34 = const 0
-  %35 = slotaddr s4
+  %35 = slotaddr s5
   %36 = ptoi %32
   store %35[0], %36
   store %35[1], %33
@@ -1764,11 +1769,11 @@ b0:
   call @rt.print_str(%23)
   %52 = const 10
   call @rt.print_char(%52)
-  %53 = slotaddr s4
+  %53 = slotaddr s6
   %54 = globaladdr @str.0
   %55 = const 1
   %56 = const 0
-  %57 = slotaddr s0
+  %57 = slotaddr s5
   %58 = ptoi %54
   store %57[0], %58
   store %57[1], %55
@@ -1808,11 +1813,11 @@ b0:
   call @rt.print_str(%53)
   %82 = const 10
   call @rt.print_char(%82)
-  %83 = slotaddr s1
+  %83 = slotaddr s7
   %84 = globaladdr @str.0
   %85 = const 1
   %86 = const 0
-  %87 = slotaddr s0
+  %87 = slotaddr s1
   %88 = ptoi %84
   store %87[0], %88
   store %87[1], %85
@@ -1823,7 +1828,7 @@ b0:
   %92 = globaladdr @str.1
   %93 = const 1
   %94 = const 0
-  %95 = slotaddr s4
+  %95 = slotaddr s5
   %96 = ptoi %92
   store %95[0], %96
   store %95[1], %93
@@ -1844,7 +1849,7 @@ b0:
   %106 = globaladdr @str.2
   %107 = const 1
   %108 = const 0
-  %109 = slotaddr s5
+  %109 = slotaddr s8
   %110 = ptoi %106
   store %109[0], %110
   store %109[1], %107
@@ -1866,11 +1871,11 @@ b0:
   call @rt.print_str(%83)
   %120 = const 10
   call @rt.print_char(%120)
-  %121 = slotaddr s5
+  %121 = slotaddr s9
   %122 = globaladdr @str.0
   %123 = const 1
   %124 = const 0
-  %125 = slotaddr s4
+  %125 = slotaddr s8
   %126 = ptoi %122
   store %125[0], %126
   store %125[1], %123
@@ -1881,7 +1886,7 @@ b0:
   %130 = globaladdr @str.3
   %131 = const 1
   %132 = const 0
-  %133 = slotaddr s0
+  %133 = slotaddr s5
   %134 = ptoi %130
   store %133[0], %134
   store %133[1], %131
@@ -1937,7 +1942,7 @@ b0:
   %166 = const 10
   call @rt.print_char(%166)
   %167 = const 7
-  %168 = slotaddr s6
+  %168 = slotaddr s10
   %169 = const 0
   store %168[0], %169
   %170 = load.i64 %168[0]
@@ -1948,7 +1953,7 @@ b0:
   call @rt.print_char(%173)
   %174 = const 7
   %175 = const 3
-  %176 = slotaddr s6
+  %176 = slotaddr s10
   %177 = const 1
   store %176[0], %177
   store %176[1], %175
@@ -1966,7 +1971,7 @@ b0:
   store %185[0], %186
   store %185[1], %183
   store %185[2], %184
-  %187 = slotaddr s0
+  %187 = slotaddr s11
   %188 = load.i64 %185[0]
   %189 = load.i64 %185[1]
   %190 = load.i64 %185[2]
@@ -1980,7 +1985,7 @@ b0:
   %197 = globaladdr @str.6
   %198 = const 1
   %199 = const 0
-  %200 = slotaddr s4
+  %200 = slotaddr s5
   %201 = ptoi %197
   store %200[0], %201
   store %200[1], %198
@@ -2005,7 +2010,7 @@ b0:
   %212 = globaladdr @str.7
   %213 = const 5
   %214 = const 0
-  %215 = slotaddr s4
+  %215 = slotaddr s5
   %216 = ptoi %212
   store %215[0], %216
   store %215[1], %213
@@ -2016,7 +2021,7 @@ b0:
   %220 = globaladdr @str.8
   %221 = const 2
   %222 = const 0
-  %223 = slotaddr s0
+  %223 = slotaddr s1
   %224 = ptoi %220
   store %223[0], %224
   store %223[1], %221

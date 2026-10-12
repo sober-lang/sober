@@ -1674,8 +1674,10 @@ func @main.main() {
   slot s0 [8]
   slot s1 [3]
   slot s2 [7]
-  slot s3 [7]
+  slot s3 [8]
   slot s4 [7]
+  slot s5 [8]
+  slot s6 [7]
 b0:
   %0 = region.depth
   region.enter
@@ -1716,7 +1718,7 @@ b0:
   store %17[5], %23
   %24 = load.i64 %16[6]
   store %17[6], %24
-  %25 = slotaddr s0
+  %25 = slotaddr s3
   %26 = const 7
   %27 = const 49
   %28 = const 120
@@ -1740,7 +1742,7 @@ b0:
   %39 = load.i64 %25[0]
   %40 = const 1
   %41 = gep.word %25, %40
-  %42 = slotaddr s3
+  %42 = slotaddr s4
   %43 = load.i64 %41[0]
   store %42[0], %43
   %44 = load.i64 %41[1]
@@ -1755,14 +1757,14 @@ b0:
   store %42[5], %48
   %49 = load.i64 %41[6]
   store %42[6], %49
-  %50 = slotaddr s0
+  %50 = slotaddr s5
   %51 = const 65
   %52 = const 9
   call @main.digit(%50, %51, %52)
   %53 = load.i64 %50[0]
   %54 = const 1
   %55 = gep.word %50, %54
-  %56 = slotaddr s4
+  %56 = slotaddr s6
   %57 = load.i64 %55[0]
   store %56[0], %57
   %58 = load.i64 %55[1]

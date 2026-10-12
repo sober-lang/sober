@@ -9261,8 +9261,9 @@ func @main.main() {
   slot s26 [6]
   slot s27 [3]
   slot s28 [3]
-  slot s29 [6]
+  slot s29 [3]
   slot s30 [6]
+  slot s31 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -10659,7 +10660,7 @@ b141:
   br b138(%758)
 b142:
   region.setdepth %534
-  %759 = slotaddr s20
+  %759 = slotaddr s19
   %760 = slotaddr s18
   %761 = ne %693, %538
   condbr %761, b145, b146
@@ -10736,7 +10737,7 @@ b146:
   %762 = ne %746, %538
   condbr %762, b148, b149
 b147:
-  %804 = slotaddr s19
+  %804 = slotaddr s10
   %805 = load.i64 %759[0]
   store %804[0], %805
   %806 = load.i64 %759[1]
@@ -10788,7 +10789,7 @@ b147:
   %829 = const 0
   %830 = region.alloc %828, %829
   %831 = const 0
-  %832 = slotaddr s20
+  %832 = slotaddr s19
   %833 = ptoi %830
   store %832[0], %833
   store %832[1], %831
@@ -10847,7 +10848,7 @@ b150:
 b151:
   region.enter
   %844 = region.depth
-  %845 = slotaddr s20
+  %845 = slotaddr s19
   %846 = load.i64 %834[0]
   store %845[0], %846
   %847 = load.i64 %834[1]
@@ -10857,12 +10858,12 @@ b151:
   %849 = globaladdr @str.1
   %850 = const 10
   %851 = const 0
-  %852 = slotaddr s10
+  %852 = slotaddr s27
   %853 = ptoi %849
   store %852[0], %853
   store %852[1], %850
   store %852[2], %851
-  %854 = slotaddr s27
+  %854 = slotaddr s28
   %855 = load.i64 %852[0]
   store %854[0], %855
   %856 = load.i64 %852[1]
@@ -10894,7 +10895,7 @@ b153(%861 ptr, %862 ptr):
   %881 = load.i64 %845[1]
   %882 = const 1
   %883 = add %881, %882
-  %884 = slotaddr s28
+  %884 = slotaddr s29
   %885 = ptoi %861
   store %884[0], %885
   store %884[1], %883
@@ -11067,7 +11068,7 @@ b171:
   store %977[2], %980
   store %977[3], %980
   store %977[4], %980
-  %981 = slotaddr s29
+  %981 = slotaddr s30
   %982 = const 1
   store %981[0], %982
   %983 = load.i64 %977[0]
@@ -11098,7 +11099,7 @@ b172:
   condbr %963, b174, b175
 b173:
   %994 = load.i64 %960[0]
-  %995 = slotaddr s30
+  %995 = slotaddr s31
   %996 = load.i64 %961[0]
   store %995[0], %996
   %997 = load.i64 %961[1]

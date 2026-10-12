@@ -64,6 +64,14 @@ table() { # $1 = 見出し・$2… = 段の名前（最後は空 = 最後まで�
 echo "checkstats: $entry (W=${SOBER_WORKERS:-auto}) loadavg $(cut -d' ' -f1 /proc/loadavg)"
 if [ ${#pkgs[@]} -eq 0 ]; then
     table "一括" load analyzer typer defs desugar "" -- "$entry"
+    # 核の節の数（展開の掛け算 — 決定的。bench/ratchet.txt の self/check nodes と照合 — report-511）
+    nodes=$(cd "$T" && "$S2" check "$entry" --expansion-report | awk '$1 == "core" && $2 == "nodes" { print $3 }')
+    nlim=$(awk '$1 == "self/check" && $2 == "nodes" { print $3 }' bench/ratchet.txt)
+    if [ "$entry" = app/main.sober ] && [ -n "$nlim" ] && [ "$nodes" -gt "$nlim" ]; then
+        echo "核の節 $nodes > $nlim（bench/ratchet.txt の self/check nodes — RATCHET FAIL）"
+        exit 1
+    fi
+    echo "核の節 $nodes（上限 ${nlim:-なし}）— 展開の多い関数は check $entry --expansion-report"
 else
     (cd "$T" && "$ROOT/bin/sober" iface "$entry" -o "$W/ifc" > /dev/null) || { echo "checkstats: iface の書き出しに失敗" >&2; exit 1; }
     for pk in "${pkgs[@]}"; do

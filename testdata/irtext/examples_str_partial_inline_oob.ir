@@ -9220,10 +9220,11 @@ func @main.main() i64 {
   slot s5 [3]
   slot s6 [1]
   slot s7 [1]
-  slot s8 [3]
-  slot s9 [6]
-  slot s10 [3]
+  slot s8 [9]
+  slot s9 [3]
+  slot s10 [6]
   slot s11 [3]
+  slot s12 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -9319,7 +9320,7 @@ b4:
 b5:
   region.enter
   %54 = region.depth
-  %55 = slotaddr s2
+  %55 = slotaddr s8
   %56 = load.i64 %40[0]
   %57 = load.i64 %40[1]
   %58 = load.i64 %40[2]
@@ -9328,14 +9329,14 @@ b5:
   call @std/utf8.Str(%55, %56, %57, %58, %59, %60)
   %61 = const 3
   %62 = gep.word %55, %61
-  %63 = slotaddr s8
+  %63 = slotaddr s9
   %64 = load.i64 %55[0]
   store %63[0], %64
   %65 = load.i64 %55[1]
   store %63[1], %65
   %66 = load.i64 %55[2]
   store %63[2], %66
-  %67 = slotaddr s9
+  %67 = slotaddr s10
   %68 = load.i64 %62[0]
   store %67[0], %68
   %69 = load.i64 %62[1]
@@ -9378,7 +9379,7 @@ b7:
   %85 = globaladdr @str.1
   %86 = const 0
   %87 = const 0
-  %88 = slotaddr s10
+  %88 = slotaddr s11
   %89 = ptoi %85
   store %88[0], %89
   store %88[1], %86
@@ -9387,7 +9388,7 @@ b7:
 b8:
   br b9(%63)
 b9(%90 ptr):
-  %91 = slotaddr s11
+  %91 = slotaddr s12
   %92 = load.i64 %90[0]
   store %91[0], %92
   %93 = load.i64 %90[1]

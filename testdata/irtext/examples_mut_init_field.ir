@@ -1767,7 +1767,7 @@ b0:
   store %37[5], %43
   %44 = load.i64 %29[6]
   store %37[6], %44
-  %45 = slotaddr s5
+  %45 = slotaddr s8
   %46 = load.i64 %37[0]
   %47 = load.i64 %37[1]
   %48 = load.i64 %37[2]
@@ -1777,7 +1777,7 @@ b0:
   %52 = load.i64 %37[6]
   %53 = const 1
   call @main.rename(%45, %46, %47, %48, %49, %50, %51, %52, %53)
-  %54 = slotaddr s4
+  %54 = slotaddr s9
   %55 = load.i64 %37[0]
   %56 = load.i64 %37[1]
   %57 = load.i64 %37[2]
@@ -1787,7 +1787,7 @@ b0:
   %61 = load.i64 %37[6]
   %62 = const 0
   call @main.rename(%54, %55, %56, %57, %58, %59, %60, %61, %62)
-  %63 = slotaddr s3
+  %63 = slotaddr s10
   %64 = load.i64 %37[0]
   %65 = load.i64 %37[1]
   %66 = load.i64 %37[2]
@@ -1796,7 +1796,7 @@ b0:
   %69 = load.i64 %37[5]
   %70 = load.i64 %37[6]
   call @main.retag(%63, %64, %65, %66, %67, %68, %69, %70)
-  %71 = slotaddr s2
+  %71 = slotaddr s11
   %72 = load.i64 %37[0]
   %73 = load.i64 %37[1]
   %74 = load.i64 %37[2]
@@ -1807,12 +1807,12 @@ b0:
   %79 = globaladdr @str.2
   %80 = const 5
   %81 = const 0
-  %82 = slotaddr s1
+  %82 = slotaddr s5
   %83 = ptoi %79
   store %82[0], %83
   store %82[1], %80
   store %82[2], %81
-  %84 = slotaddr s0
+  %84 = slotaddr s4
   %85 = load.i64 %82[0]
   store %84[0], %85
   %86 = load.i64 %82[1]
@@ -1822,19 +1822,19 @@ b0:
   %88 = globaladdr @str.3
   %89 = const 0
   %90 = const 0
-  %91 = slotaddr s8
+  %91 = slotaddr s3
   %92 = ptoi %88
   store %91[0], %92
   store %91[1], %89
   store %91[2], %90
-  %93 = slotaddr s9
+  %93 = slotaddr s2
   %94 = load.i64 %91[0]
   store %93[0], %94
   %95 = load.i64 %91[1]
   store %93[1], %95
   %96 = load.i64 %91[2]
   store %93[2], %96
-  %97 = slotaddr s10
+  %97 = slotaddr s1
   %98 = const 0
   store %97[0], %98
   store %97[1], %98
@@ -1845,7 +1845,7 @@ b0:
   store %97[1], %100
   %101 = load.i64 %93[2]
   store %97[2], %101
-  %102 = slotaddr s11
+  %102 = slotaddr s0
   %103 = load.i64 %97[0]
   store %102[0], %103
   %104 = load.i64 %97[1]

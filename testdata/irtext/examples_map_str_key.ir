@@ -1676,8 +1676,9 @@ func @main.main() {
   slot s4 [4]
   slot s5 [4]
   slot s6 [4]
-  slot s7 [2]
+  slot s7 [4]
   slot s8 [2]
+  slot s9 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1755,7 +1756,7 @@ b3(%28 i64):
   %51 = load.i64 %46[2]
   store %48[2], %51
   %52 = call @rt.map_find.1.1.8.1(%18, %48)
-  %53 = slotaddr s0
+  %53 = slotaddr s4
   %54 = const 0
   %55 = ne %52, %54
   condbr %55, b4, b5
@@ -1779,7 +1780,7 @@ b5:
   store %53[0], %65
   br b6
 b6:
-  %66 = slotaddr s4
+  %66 = slotaddr s5
   %67 = load.i64 %53[0]
   store %66[0], %67
   %68 = load.i64 %53[1]
@@ -1825,7 +1826,7 @@ b9:
   %89 = load.i64 %84[2]
   store %86[2], %89
   %90 = call @rt.map_find.1.1.8.1(%18, %86)
-  %91 = slotaddr s0
+  %91 = slotaddr s4
   %92 = const 0
   %93 = ne %90, %92
   condbr %93, b10, b11
@@ -1849,7 +1850,7 @@ b11:
   store %91[0], %103
   br b12
 b12:
-  %104 = slotaddr s5
+  %104 = slotaddr s6
   %105 = load.i64 %91[0]
   store %104[0], %105
   %106 = load.i64 %91[1]
@@ -1879,7 +1880,7 @@ b13:
 b14:
   br b15
 b15:
-  %119 = slotaddr s0
+  %119 = slotaddr s7
   %120 = globaladdr @str.3
   %121 = const 3
   %122 = const 0
@@ -1892,7 +1893,7 @@ b15:
   %126 = load.i64 %123[1]
   %127 = load.i64 %123[2]
   call @main.counts(%119, %125, %126, %127)
-  %128 = slotaddr s6
+  %128 = slotaddr s4
   %129 = load.i64 %119[0]
   store %128[0], %129
   %130 = load.i64 %119[1]
@@ -1917,7 +1918,7 @@ b15:
   %141 = load.i64 %136[2]
   store %138[2], %141
   %142 = call @rt.map_find.1.1.6.1(%128, %138)
-  %143 = slotaddr s7
+  %143 = slotaddr s8
   %144 = const 0
   %145 = ne %142, %144
   condbr %145, b16, b17
@@ -1937,7 +1938,7 @@ b17:
   store %143[0], %153
   br b18
 b18:
-  %154 = slotaddr s8
+  %154 = slotaddr s9
   %155 = load.i64 %143[0]
   store %154[0], %155
   %156 = load.i64 %143[1]

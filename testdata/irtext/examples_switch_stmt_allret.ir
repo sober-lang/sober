@@ -1675,7 +1675,9 @@ b0:
 
 func @main.main() {
   slot s0 [3]
-  slot s1 [2]
+  slot s1 [3]
+  slot s2 [3]
+  slot s3 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1700,7 +1702,7 @@ b0:
   call @rt.print_str(%10)
   %12 = const 10
   call @rt.print_char(%12)
-  %13 = slotaddr s0
+  %13 = slotaddr s1
   %14 = const 5
   %15 = const 0
   %16 = sub %15, %14
@@ -1708,14 +1710,14 @@ b0:
   call @rt.print_str(%13)
   %17 = const 10
   call @rt.print_char(%17)
-  %18 = slotaddr s0
+  %18 = slotaddr s2
   %19 = const 5
   call @main.name(%18, %19)
   call @rt.print_str(%18)
   %20 = const 10
   call @rt.print_char(%20)
   %21 = const 2
-  %22 = slotaddr s1
+  %22 = slotaddr s3
   %23 = const 0
   store %22[0], %23
   store %22[1], %23
@@ -1729,7 +1731,7 @@ b0:
   %28 = const 10
   call @rt.print_char(%28)
   %29 = const 3
-  %30 = slotaddr s1
+  %30 = slotaddr s3
   %31 = const 0
   store %30[0], %31
   store %30[1], %31

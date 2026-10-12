@@ -1706,6 +1706,7 @@ func @main.main() {
   slot s15 [3]
   slot s16 [3]
   slot s17 [4]
+  slot s18 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2118,12 +2119,12 @@ b26:
   %258 = add %244, %255
   br b25(%257, %258)
 b27(%245 i64):
-  %259 = slotaddr s16
+  %259 = slotaddr s18
   call @std/strings.FormatInt(%259, %245)
   %260 = globaladdr @str.8
   %261 = const 6
   %262 = const 0
-  %263 = slotaddr s15
+  %263 = slotaddr s16
   %264 = ptoi %260
   store %263[0], %264
   store %263[1], %261
@@ -2140,7 +2141,7 @@ b27(%245 i64):
   %274 = load.i64 %263[0]
   %275 = itop %274
   call @rt.copy8(%273, %275, %266)
-  %276 = slotaddr s14
+  %276 = slotaddr s15
   %277 = ptoi %272
   store %276[0], %277
   store %276[1], %267
@@ -2155,7 +2156,7 @@ b27(%245 i64):
   %283 = globaladdr @str.0
   %284 = const 20
   %285 = const 0
-  %286 = slotaddr s14
+  %286 = slotaddr s15
   %287 = ptoi %283
   store %286[0], %287
   store %286[1], %284
@@ -2171,7 +2172,7 @@ b27(%245 i64):
   %295 = globaladdr @str.2
   %296 = const 20
   %297 = const 0
-  %298 = slotaddr s14
+  %298 = slotaddr s15
   %299 = ptoi %295
   store %298[0], %299
   store %298[1], %296
@@ -2187,7 +2188,7 @@ b27(%245 i64):
   %307 = globaladdr @str.4
   %308 = const 29
   %309 = const 0
-  %310 = slotaddr s14
+  %310 = slotaddr s15
   %311 = ptoi %307
   store %310[0], %311
   store %310[1], %308
@@ -2203,7 +2204,7 @@ b27(%245 i64):
   %319 = globaladdr @str.6
   %320 = const 24
   %321 = const 0
-  %322 = slotaddr s14
+  %322 = slotaddr s15
   %323 = ptoi %319
   store %322[0], %323
   store %322[1], %320
@@ -2219,7 +2220,7 @@ b27(%245 i64):
   %331 = globaladdr @str.9
   %332 = const 23
   %333 = const 0
-  %334 = slotaddr s14
+  %334 = slotaddr s15
   %335 = ptoi %331
   store %334[0], %335
   store %334[1], %332
@@ -2235,7 +2236,7 @@ b27(%245 i64):
   %343 = globaladdr @str.10
   %344 = const 24
   %345 = const 0
-  %346 = slotaddr s14
+  %346 = slotaddr s15
   %347 = ptoi %343
   store %346[0], %347
   store %346[1], %344

@@ -17,6 +17,7 @@ import "obuf"
 // 値の型
 const TyI64 = 0
 const TyPtr = 1
+const TyV128 = 2 // packed f64 の 16 B（OpPMem の load・OpPArith の lo / hi 以外 — 最適化のバックエンドの経路だけ。valueTypes が導く）
 
 // 関数
 const F_NEXT = 0
@@ -36,6 +37,10 @@ const F_LLVT = 13   // .ll の印字の表（llvm.sober の llPrepare が印字�
 const F_LLINC = 14  // 入り辺
 const F_LLCS = 15   // 定数の表（印字中に埋める — 伸ばさない）
 const F_MUTP = 16   // mut 仮引数の印（ビット k = 引数 k が利用者の関数の mut 仮引数 — 呼び手のセル。hdr の資格・language.md 26 節の排他。k < 62 だけ）
+// F_MUTP のビット F_SRET_BIT = 引数 0 が sret の受け皿（newFuncSig が作る結果 2 語以上の関数だけ）。約束: 呼ばれた関数は ret の前に受け皿の全語を
+// 書き（return・後置 ? — 結果の前の語は零・error? は全語）、受け皿を書く前に読まない（受け皿を別の呼び出しへ渡す道も無い — 読むのは書いた後の
+// relocate と計装だけ）。task の子（kidFunc — 受け皿の位置の引数から捕獲を読む）は印を持たない。zeroinit がこの call を受け皿の書き込みに数える
+const F_SRET_BIT = 62
 const FSZ = 17
 
 // ブロック
@@ -212,6 +217,16 @@ const OpFsAddr = 29    // a = グローバルの記録（G_WSLOT >= 0）: 今の
 const OpAtomic = 30    // a = 番地, b = 値の列（xadd / xchg = [v]・cas = [期待, 新]・fence = []）, c = 種類 | 語のオフセット << 3。結果 = 古い値（fence は無し）
 const OpClone = 31     // a = 新しいスタックの頂上, b = [関数値, 引数, %fs の基底]: clone（同じアドレス空間の新しいスレッド）— 子は新しいスタックで関数(引数) を
                        // 呼ぶ（戻らない — 戻ったらスレッドだけ終わる）。結果 = 子の tid（親の側）
+// packed f64（段 4②a — report-551）: 最適化のバックエンドの経路だけ（B2 の後 — IR テキスト・stage1・.ll には出ない）。値の組 v128（xmm だけに住む 16 B —
+// 型 TyV128）。約束（検証器が照合）: v128 の値は定義と同じブロックの中でだけ使われ（ブロックの仮引数・辺の実引数・ret・condbr に現れない）、
+// 生きる区間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）を跨がない — callee-saved の xmm の退避（8 B）と task の文脈の積み方はそのまま。
+// 畳み込み・交換則・代数の簡約は掛けない（float の段の規約 — レーンごとに addsd 等と同じ丸め）
+const OpPMem = 32      // a = 番地, b = 語の欄（off）, c = 値（store — 結果なし）/ a（load — 結果 v128。sqrt の c = b と同じ埋め）: movupd [a + 8 × off]
+const OpPArith = 33    // a = 種類（BFAdd〜BFDiv・BFSqrt〔c = b〕・PK_PACK・PK_SPLAT・PK_LO・PK_HI）, b, c
+const PK_PACK = 20     // b = 下・c = 上の f64 → v128（unpcklpd）
+const PK_SPLAT = 21    // b = f64 → 両レーン（c = b — unpcklpd x, x。movddup は SSE3）
+const PK_LO = 22       // b = v128 → 下のレーンの f64（c = b）
+const PK_HI = 23       // b = v128 → 上のレーンの f64（c = b — unpckhpd）
 const AT_XADD = 0
 const AT_XCHG = 1
 const AT_CAS = 2
@@ -239,9 +254,9 @@ const K_VOPT = 9   // 値の番号か -1（無し — ret の値）
 func opRow(op int) int {
     return switch op {
     case OpConst: K_OPAQ
-    case OpBin | OpCmp: K_OPAQ | K_VAL << 4 | K_VAL << 8
+    case OpBin | OpCmp | OpPArith: K_OPAQ | K_VAL << 4 | K_VAL << 8
     case OpLoad | OpLoad8: K_VAL | K_OPAQ << 4 | K_OPAQ << 8 // c = 1 なら ptr を読む（valueTypes）
-    case OpStore | OpStore8 | OpRReloc: K_VAL | K_OPAQ << 4 | K_VAL << 8
+    case OpStore | OpStore8 | OpRReloc | OpPMem: K_VAL | K_OPAQ << 4 | K_VAL << 8
     case OpGepW | OpGepB | OpRAlloc: K_VAL | K_VAL << 4
     case OpPtoi | OpItop | OpRSetDepth | OpRBump: K_VAL
     case OpSlotaddr: K_SLOT
@@ -267,7 +282,7 @@ func termRow(t int) int {
     }
 }
 
-const OP_N = 32 // op の番号の上限（OpDead = 0〜OpClone = 31）
+const OP_N = 34 // op の番号の上限（OpDead = 0〜OpPArith = 33）
 
 // kindsInit は St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
 // 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
@@ -451,6 +466,11 @@ func newSlot(st mut St, words int) int {
             return desugar.HeapGet(mut st.d, r + 2)
         }
     }
+    return newSlotFresh(mut st, words)
+}
+
+// newSlotFresh は空き鎖を通らない新しいスロット（番号）
+func newSlotFresh(st mut St, words int) int {
     f := st.fn
     n := irFnNSlot(mut st, f)
     s := rec4(mut st, -1, words, n, -1)
@@ -472,6 +492,16 @@ func newSlot(st mut St, words int) int {
 func newSlotAddr(st mut St, words int) int {
     v := slotaddr(mut st, newSlot(mut st, words))
     desugar.HeapSet(mut st.d, st.slast + 4, v)
+    return v
+}
+
+// newSlotAddrOwn は使い回さないスロットの番地（空き鎖から取らず、空き鎖へ返さない — SLOT_PINNED）。sret の結果の口（place の F 便 段 1 — report-517）:
+// 本物の呼び出しへ番地が逃げる結果スロットを、後で展開される呼び出しの結果スロットと共用すると、展開後もスロットが逃げたままで SROA / mem2reg が
+// 昇格しない（logagg の os.Args / io.ReadFile と utf8.Str 2 か所が 1 つの s0 を共用 — 展開された Str の結果 9 語が毎回メモリを往復した）
+func newSlotAddrOwn(st mut St, words int) int {
+    v := slotaddr(mut st, newSlotFresh(mut st, words))
+    desugar.HeapSet(mut st.d, st.slast + 4, v)
+    desugar.HeapSet(mut st.d, st.slast + 3, SLOT_PINNED)
     return v
 }
 
@@ -1004,6 +1034,26 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         obuf.Lit(mut out, "scanb(")
         vals(mut st, mut out, a)
         out = append(out, ')')
+        return
+    case OpPMem:
+        // 結果があれば load（c = a の埋め）・無ければ store
+        if irInsRes(mut st, i) >= 0 {
+            obuf.Lit(mut out, "load.v128 ")
+            mem(mut out, a, b)
+        } else {
+            obuf.Lit(mut out, "store.v128 ")
+            mem(mut out, a, b)
+            obuf.Lit(mut out, ", ")
+            val(mut out, c)
+        }
+        return
+    case OpPArith:
+        obuf.Lit(mut out, if a == BFAdd { "paddf " } else if a == BFSub { "psubf " } else if a == BFMul { "pmulf " } else if a == BFDiv { "pdivf " } else if a == BFSqrt { "psqrtf " } else if a == PK_PACK { "pack " } else if a == PK_SPLAT { "splat " } else if a == PK_LO { "lo " } else { "hi " })
+        if a == BFSqrt || a == PK_SPLAT || a == PK_LO || a == PK_HI {
+            val(mut out, b)
+        } else {
+            two(mut out, b, c)
+        }
         return
     case OpREnter:
         obuf.Lit(mut out, "region.enter")

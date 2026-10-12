@@ -1,9 +1,10 @@
 package lower
 
 // 入口の零初期化の語の判定（rep stosq 便 段 1 — report-488 (a-local)・report-494）。IR の約束「スロットは入口で 0」（docs/ir.md 2 節）は、
-// 0 を観測できる読みがある語にだけ要る: 入口からのどれかの道で書かれていない語の load（前向きの must 解析 — 書き済みに数えるのは自分の store だけ）と、
-// 番地が load / store の番地以外へ逃げる点（call の引数・辺の引数・ret・格納される値・定数でない gep・バイトの読み書き — sret の受け皿も
-// v1 では逃げに倒す）でまだ書かれていない語。x86 の段の中で呼ぶので、IR は凍結した表の読み口（xi* / xb* / xf*）で読む。それ以外の語は入口の値が観測されないので 0 にしない。
+// 0 を観測できる読みがある語にだけ要る: 入口からのどれかの道で書かれていない語の load（前向きの must 解析 — 書き済みに数えるのは自分の store と、
+// sret の受け皿を渡す call〔呼ぶ関数の F_SRET_BIT — 受け皿の全語を書き、書く前に読まない約束・F 便 段 1 — report-519〕）と、
+// 番地が load / store の番地以外へ逃げる点（call の引数・辺の引数・ret・格納される値・定数でない gep・バイトの読み書き — 印の無い call の
+// 受け皿は逃げのまま）でまだ書かれていない語。x86 の段の中で呼ぶので、IR は凍結した表の読み口（xi* / xb* / xf*）で読む。それ以外の語は入口の値が観測されないので 0 にしない。
 // 最適化のバックエンド（e.opt）だけが使う — 写しのバックエンド〔--backend=copy / --no-opt — elfeq が stage1 と照合する〕は全語を 0 にしたまま
 
 import "std/iter"
@@ -51,6 +52,7 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
     xFill(mut bref, nb, -1)
     mut pg := mut []int{}
     mut ps := mut []int{}
+    mut psr := mut []int{}
     mut b := xfBHead(mut st, f)
     entry := xbId(mut st, b)
     while b != -1 {
@@ -63,6 +65,12 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
                 if !zeroGen(mut gen, mut addr, ws, sa, sg, nw, id, xiA(mut st, ins), xiB(mut st, ins)) {
                     ps = append(ps, int(ins))
                     ps = append(ps, id)
+                }
+            } else if op == OpCall && zeroSretP(mut st, ins) >= 0 {
+                // sret の受け皿（引数 0）の全語を書く call（F_SRET_BIT の約束）— 番地が後で解ける形なら後で
+                if !zeroGenSret(mut gen, mut addr, ws, sa, sg, nw, id, zeroSretP(mut st, ins)) {
+                    psr = append(psr, int(ins))
+                    psr = append(psr, id)
                 }
             } else if op == OpGepW {
                 if !zeroGep(mut addr, mut isc, mut cval, ws, sa, sg, xiRes(mut st, ins), xiA(mut st, ins), xiB(mut st, ins)) {
@@ -99,6 +107,9 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
     for q <- iter.Range(0, len(ps) / 2) {
         i := InsRef(ps[2 * q])
         _ = zeroGen(mut gen, mut addr, ws, sa, sg, nw, ps[2 * q + 1], xiA(mut st, i), xiB(mut st, i))
+    }
+    for q <- iter.Range(0, len(psr) / 2) {
+        _ = zeroGenSret(mut gen, mut addr, ws, sa, sg, nw, psr[2 * q + 1], zeroSretP(mut st, InsRef(psr[2 * q])))
     }
     ad := freeze(addr)
     // 必ず書き済み（前向きの must 解析 — ブロックの入り = 前任の出の積集合・入口は全部未書き・到達しないブロックは全部書き済み）。
@@ -239,6 +250,32 @@ func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, en
     }
 }
 
+// zeroSretP は命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT）なら受け皿の値（引数 0）、それ以外は -1
+func zeroSretP(st mut St, ins InsRef) int {
+    if xiOp(mut st, ins) != OpCall || xLen(mut st, xiB(mut st, ins)) == 0 {
+        return -1
+    }
+    m := xg(mut st, xiA(mut st, ins) + F_MUTP)
+    return if m >= 0 && (m >> F_SRET_BIT) & 1 == 1 { xAt(mut st, xiB(mut st, ins), 0) } else { -1 }
+}
+
+// zeroGenSret は受け皿 p（スロットの頭の番地のときだけ）の全語をブロック id の gen へ。番地がまだ解けていなければ false
+func zeroGenSret(gen mut []int, addr mut []int, ws []int, start []int, slotOfG []int, nw int, id int, p int) bool {
+    if p >= len(addr) {
+        return true
+    }
+    if addr[p] < 0 {
+        return false
+    }
+    k := slotOfG[addr[p]]
+    if addr[p] == start[k] {
+        for g <- iter.Range(start[k], start[k] + ws[k]) {
+            gen[id * nw + (g >> 6)] = gen[id * nw + (g >> 6)] | (1 << (g & 63))
+        }
+    }
+    return true
+}
+
 // zwHas は語 g が書き済みか・zwSet は書き済みにする（ビット集合 wb）
 func zwHas(wb mut []int, g int) bool {
     return ((wb[g >> 6] >> (g & 63)) & 1) == 1
@@ -285,6 +322,25 @@ func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, star
             if gi >= 0 && gi < nv && addr[gi] >= 0 {
                 zeroEscape(mut wb, slotOfG[addr[gi]], start, ws, mut need)
             }
+        } else if op == OpCall && zeroSretP(mut st, ins) >= 0 {
+            // 受け皿以外の引数は逃げ（呼ばれた関数が読みうる）。受け皿（スロットの頭）は全語を書き済みに — 呼ばれた関数は書く前に読まない
+            for k <- iter.Range(1, xNOps(mut st, ins)) {
+                o := xOpnd(mut st, ins, k)
+                if o >= 0 && o < nv && addr[o] >= 0 {
+                    zeroEscape(mut wb, slotOfG[addr[o]], start, ws, mut need)
+                }
+            }
+            p := zeroSretP(mut st, ins)
+            if p < nv && addr[p] >= 0 {
+                k := slotOfG[addr[p]]
+                if addr[p] == start[k] {
+                    for g <- iter.Range(start[k], start[k] + ws[k]) {
+                        zwSet(mut wb, g)
+                    }
+                } else {
+                    zeroEscape(mut wb, k, start, ws, mut need)
+                }
+            }
         } else if op != OpSlotaddr {
             for k <- iter.Range(0, xNOps(mut st, ins)) {
                 o := xOpnd(mut st, ins, k)
@@ -303,8 +359,8 @@ func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, star
     }
 }
 
-// zeroEscape はスロット k の番地が逃げる点: 書き済みでない語を要零に（逃げた先が読みうる）。逃げた先の書き〔sret の受け皿など〕は書き済みに数えない
-// — 書き済みとして数えるのは自分の store だけ（保守の側 — v1）
+// zeroEscape はスロット k の番地が逃げる点: 書き済みでない語を要零に（逃げた先が読みうる）。逃げた先の書きは書き済みに数えない
+// （例外は印のある sret の受け皿だけ — zeroScan の call の腕・zeroGenSret）
 func zeroEscape(wb mut []int, k int, start []int, ws []int, need mut []int) {
     for g <- iter.Range(start[k], start[k] + ws[k]) {
         if !zwHas(mut wb, g) {

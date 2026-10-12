@@ -1684,8 +1684,10 @@ func @main.main() {
   slot s3 [3]
   slot s4 [3]
   slot s5 [3]
-  slot s6 [4]
-  slot s7 [4]
+  slot s6 [3]
+  slot s7 [3]
+  slot s8 [4]
+  slot s9 [4]
 b0:
   %0 = region.depth
   region.enter
@@ -1765,11 +1767,11 @@ b0:
   call @rt.print_int(%46)
   %48 = const 10
   call @rt.print_char(%48)
-  %49 = slotaddr s4
+  %49 = slotaddr s6
   %50 = globaladdr @str.2
   %51 = const 5
   %52 = const 0
-  %53 = slotaddr s3
+  %53 = slotaddr s4
   %54 = ptoi %50
   store %53[0], %54
   store %53[1], %51
@@ -1779,11 +1781,11 @@ b0:
   %57 = load.i64 %53[2]
   %58 = const 1
   call @main.label(%49, %55, %56, %57, %58)
-  %59 = slotaddr s2
+  %59 = slotaddr s7
   %60 = globaladdr @str.2
   %61 = const 5
   %62 = const 0
-  %63 = slotaddr s1
+  %63 = slotaddr s3
   %64 = ptoi %60
   store %63[0], %64
   store %63[1], %61
@@ -1802,12 +1804,12 @@ b0:
   %71 = globaladdr @str.3
   %72 = const 1
   %73 = const 0
-  %74 = slotaddr s1
+  %74 = slotaddr s3
   %75 = ptoi %71
   store %74[0], %75
   store %74[1], %72
   store %74[2], %73
-  %76 = slotaddr s2
+  %76 = slotaddr s4
   %77 = load.i64 %74[0]
   store %76[0], %77
   %78 = load.i64 %74[1]
@@ -1815,7 +1817,7 @@ b0:
   %79 = load.i64 %74[2]
   store %76[2], %79
   %80 = const 1
-  %81 = slotaddr s6
+  %81 = slotaddr s8
   %82 = const 0
   store %81[0], %82
   store %81[1], %82
@@ -1828,7 +1830,7 @@ b0:
   %85 = load.i64 %76[2]
   store %81[2], %85
   store %81[3], %80
-  %86 = slotaddr s7
+  %86 = slotaddr s9
   %87 = load.i64 %81[0]
   store %86[0], %87
   %88 = load.i64 %81[1]
@@ -1849,12 +1851,12 @@ b0:
   %97 = load.i64 %86[3]
   store %93[3], %97
   %98 = const 1
-  %99 = slotaddr s3
+  %99 = slotaddr s2
   %100 = ptoi %93
   store %99[0], %100
   store %99[1], %98
   store %99[2], %91
-  %101 = slotaddr s4
+  %101 = slotaddr s1
   %102 = load.i64 %99[0]
   store %101[0], %102
   %103 = load.i64 %99[1]

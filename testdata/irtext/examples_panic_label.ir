@@ -1697,7 +1697,7 @@ func @main.main() {
   slot s5 [3]
   slot s6 [3]
   slot s7 [3]
-  slot s8 [3]
+  slot s8 [6]
   slot s9 [3]
   slot s10 [3]
   slot s11 [3]
@@ -1711,6 +1711,8 @@ func @main.main() {
   slot s19 [3]
   slot s20 [3]
   slot s21 [3]
+  slot s22 [3]
+  slot s23 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1827,7 +1829,7 @@ b3(%50 i64):
   %64 = load.i64 %59[2]
   store %61[2], %64
   %65 = const 1
-  %66 = slotaddr s1
+  %66 = slotaddr s8
   %67 = const 0
   store %66[0], %67
   store %66[1], %67
@@ -1869,7 +1871,7 @@ b3(%50 i64):
   %83 = globaladdr @str.2
   %84 = const 1
   %85 = const 0
-  %86 = slotaddr s0
+  %86 = slotaddr s9
   %87 = ptoi %83
   store %86[0], %87
   store %86[1], %84
@@ -1878,7 +1880,7 @@ b3(%50 i64):
   %88 = globaladdr @str.6
   %89 = const 4
   %90 = const 0
-  %91 = slotaddr s8
+  %91 = slotaddr s10
   %92 = ptoi %88
   store %91[0], %92
   store %91[1], %89
@@ -1887,7 +1889,7 @@ b3(%50 i64):
   %93 = globaladdr @str.7
   %94 = const 2
   %95 = const 0
-  %96 = slotaddr s9
+  %96 = slotaddr s11
   %97 = ptoi %93
   store %96[0], %97
   store %96[1], %94
@@ -1898,7 +1900,7 @@ b3(%50 i64):
   %99 = globaladdr @str.8
   %100 = const 2
   %101 = const 0
-  %102 = slotaddr s10
+  %102 = slotaddr s12
   %103 = ptoi %99
   store %102[0], %103
   store %102[1], %100
@@ -1907,7 +1909,7 @@ b3(%50 i64):
   %104 = globaladdr @str.9
   %105 = const 4
   %106 = const 0
-  %107 = slotaddr s11
+  %107 = slotaddr s13
   %108 = ptoi %104
   store %107[0], %108
   store %107[1], %105
@@ -1916,7 +1918,7 @@ b3(%50 i64):
   %109 = globaladdr @str.7
   %110 = const 2
   %111 = const 0
-  %112 = slotaddr s12
+  %112 = slotaddr s14
   %113 = ptoi %109
   store %112[0], %113
   store %112[1], %110
@@ -1928,7 +1930,7 @@ b3(%50 i64):
   %116 = globaladdr @str.8
   %117 = const 2
   %118 = const 0
-  %119 = slotaddr s13
+  %119 = slotaddr s15
   %120 = ptoi %116
   store %119[0], %120
   store %119[1], %117
@@ -1937,7 +1939,7 @@ b3(%50 i64):
   %121 = globaladdr @str.10
   %122 = const 4
   %123 = const 0
-  %124 = slotaddr s14
+  %124 = slotaddr s16
   %125 = ptoi %121
   store %124[0], %125
   store %124[1], %122
@@ -1946,7 +1948,7 @@ b3(%50 i64):
   %126 = globaladdr @str.7
   %127 = const 2
   %128 = const 0
-  %129 = slotaddr s15
+  %129 = slotaddr s17
   %130 = ptoi %126
   store %129[0], %130
   store %129[1], %127
@@ -1960,7 +1962,7 @@ b4:
   %146 = globaladdr @str.8
   %147 = const 2
   %148 = const 0
-  %149 = slotaddr s18
+  %149 = slotaddr s20
   %150 = ptoi %146
   store %149[0], %150
   store %149[1], %147
@@ -1969,7 +1971,7 @@ b4:
   %151 = globaladdr @str.13
   %152 = const 3
   %153 = const 0
-  %154 = slotaddr s19
+  %154 = slotaddr s21
   %155 = ptoi %151
   store %154[0], %155
   store %154[1], %152
@@ -1978,7 +1980,7 @@ b4:
   %156 = globaladdr @str.7
   %157 = const 2
   %158 = const 0
-  %159 = slotaddr s20
+  %159 = slotaddr s22
   %160 = ptoi %156
   store %159[0], %160
   store %159[1], %157
@@ -1989,7 +1991,7 @@ b4:
   %162 = globaladdr @str.3
   %163 = const 1
   %164 = const 0
-  %165 = slotaddr s21
+  %165 = slotaddr s23
   %166 = ptoi %162
   store %165[0], %166
   store %165[1], %163
@@ -2002,7 +2004,7 @@ b5:
   %134 = globaladdr @str.11
   %135 = const 5
   %136 = const 0
-  %137 = slotaddr s16
+  %137 = slotaddr s18
   %138 = ptoi %134
   store %137[0], %138
   store %137[1], %135
@@ -2017,7 +2019,7 @@ b7:
   %141 = globaladdr @str.12
   %142 = const 4
   %143 = const 0
-  %144 = slotaddr s17
+  %144 = slotaddr s19
   %145 = ptoi %141
   store %144[0], %145
   store %144[1], %142

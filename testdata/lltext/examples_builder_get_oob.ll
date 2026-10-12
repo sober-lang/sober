@@ -2842,9 +2842,23 @@ b0:
   %s11 = alloca [1 x i64], align 8
   %s11.z0 = getelementptr i64, ptr %s11, i64 0
   store i64 0, ptr %s11.z0
-  %s12 = alloca [1 x i64], align 8
+  %s12 = alloca [3 x i64], align 8
   %s12.z0 = getelementptr i64, ptr %s12, i64 0
   store i64 0, ptr %s12.z0
+  %s12.z1 = getelementptr i64, ptr %s12, i64 1
+  store i64 0, ptr %s12.z1
+  %s12.z2 = getelementptr i64, ptr %s12, i64 2
+  store i64 0, ptr %s12.z2
+  %s13 = alloca [1 x i64], align 8
+  %s13.z0 = getelementptr i64, ptr %s13, i64 0
+  store i64 0, ptr %s13.z0
+  %s14 = alloca [3 x i64], align 8
+  %s14.z0 = getelementptr i64, ptr %s14, i64 0
+  store i64 0, ptr %s14.z0
+  %s14.z1 = getelementptr i64, ptr %s14, i64 1
+  store i64 0, ptr %s14.z1
+  %s14.z2 = getelementptr i64, ptr %s14, i64 2
+  store i64 0, ptr %s14.z2
   %v540 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v540, i64 0
   %v0 = load i64, ptr %v0.p
@@ -4023,7 +4037,7 @@ b60:
 b61:
   %v473.p = getelementptr i64, ptr %v413, i64 0
   %v473 = load i64, ptr %v473.p
-  %v474 = getelementptr i64, ptr %s8, i64 0
+  %v474 = getelementptr i64, ptr %s12, i64 0
   call void @"std/strings.FormatInt"(ptr %v474, i64 %v473)
   call void @"rt.print_str"(ptr %v474)
   %v475 = add i64 0, 10
@@ -4216,7 +4230,7 @@ b76:
 b77:
   %v537.p = getelementptr i64, ptr %v477, i64 0
   %v537 = load i64, ptr %v537.p
-  %v538 = getelementptr i64, ptr %s4, i64 0
+  %v538 = getelementptr i64, ptr %s14, i64 0
   call void @"std/strings.FormatInt"(ptr %v538, i64 %v537)
   call void @"rt.print_str"(ptr %v538)
   %v539 = add i64 0, 10
@@ -4255,7 +4269,7 @@ b82:
   %st211 = getelementptr i64, ptr %v489, i64 0
   store i64 %v488, ptr %st211
   %v490 = add i64 0, 8
-  %v491 = getelementptr i64, ptr %s12, i64 0
+  %v491 = getelementptr i64, ptr %s13, i64 0
   %st212 = getelementptr i64, ptr %v491, i64 0
   store i64 %v490, ptr %st212
   %v585 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -4350,7 +4364,7 @@ b90:
   %v519 = add i64 0, 3
   %v520 = mul i64 %v513, %v519
   %v521 = getelementptr i64, ptr %v518, i64 %v520
-  %v522 = getelementptr i64, ptr %s8, i64 0
+  %v522 = getelementptr i64, ptr %s4, i64 0
   %v523.p = getelementptr i64, ptr %v521, i64 0
   %v523 = load i64, ptr %v523.p
   %st224 = getelementptr i64, ptr %v522, i64 0

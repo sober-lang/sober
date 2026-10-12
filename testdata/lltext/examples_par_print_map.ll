@@ -16076,12 +16076,12 @@ b78:
   %v459 = getelementptr i64, ptr %v456, i64 %v458
   %v460.p = getelementptr i64, ptr %v459, i64 0
   %v460 = load i64, ptr %v460.p
-  %v461 = getelementptr i64, ptr %s2, i64 0
+  %v461 = getelementptr i64, ptr %s23, i64 0
   call void @"std/strings.FormatInt"(ptr %v461, i64 %v440)
   %v462 = getelementptr i64, ptr @"str.1", i64 0
   %v463 = add i64 0, 1
   %v464 = add i64 0, 0
-  %v465 = getelementptr i64, ptr %s1, i64 0
+  %v465 = getelementptr i64, ptr %s2, i64 0
   %v466 = ptrtoint ptr %v462 to i64
   %st261 = getelementptr i64, ptr %v465, i64 0
   store i64 %v466, ptr %st261
@@ -16109,7 +16109,7 @@ b78:
   %v476 = load i64, ptr %v476.p
   %v477 = inttoptr i64 %v476 to ptr
   call void @"rt.copy8"(ptr %v475, ptr %v477, i64 %v468)
-  %v478 = getelementptr i64, ptr %s0, i64 0
+  %v478 = getelementptr i64, ptr %s1, i64 0
   %v479 = ptrtoint ptr %v474 to i64
   %st264 = getelementptr i64, ptr %v478, i64 0
   store i64 %v479, ptr %st264
@@ -16117,7 +16117,7 @@ b78:
   store i64 %v469, ptr %st265
   %st266 = getelementptr i64, ptr %v478, i64 2
   store i64 %v470, ptr %st266
-  %v480 = getelementptr i64, ptr %s7, i64 0
+  %v480 = getelementptr i64, ptr %s24, i64 0
   call void @"std/strings.FormatInt"(ptr %v480, i64 %v450)
   %v481.p = getelementptr i64, ptr %v478, i64 1
   %v481 = load i64, ptr %v481.p
@@ -16139,7 +16139,7 @@ b78:
   %v490 = load i64, ptr %v490.p
   %v491 = inttoptr i64 %v490 to ptr
   call void @"rt.copy8"(ptr %v489, ptr %v491, i64 %v482)
-  %v492 = getelementptr i64, ptr %s8, i64 0
+  %v492 = getelementptr i64, ptr %s0, i64 0
   %v493 = ptrtoint ptr %v488 to i64
   %st267 = getelementptr i64, ptr %v492, i64 0
   store i64 %v493, ptr %st267
@@ -16150,7 +16150,7 @@ b78:
   %v494 = getelementptr i64, ptr @"str.1", i64 0
   %v495 = add i64 0, 1
   %v496 = add i64 0, 0
-  %v497 = getelementptr i64, ptr %s23, i64 0
+  %v497 = getelementptr i64, ptr %s7, i64 0
   %v498 = ptrtoint ptr %v494 to i64
   %st270 = getelementptr i64, ptr %v497, i64 0
   store i64 %v498, ptr %st270
@@ -16178,7 +16178,7 @@ b78:
   %v508 = load i64, ptr %v508.p
   %v509 = inttoptr i64 %v508 to ptr
   call void @"rt.copy8"(ptr %v507, ptr %v509, i64 %v500)
-  %v510 = getelementptr i64, ptr %s24, i64 0
+  %v510 = getelementptr i64, ptr %s8, i64 0
   %v511 = ptrtoint ptr %v506 to i64
   %st273 = getelementptr i64, ptr %v510, i64 0
   store i64 %v511, ptr %st273
@@ -20694,6 +20694,13 @@ b0:
   store i64 0, ptr %s4.z1
   %s4.z2 = getelementptr i64, ptr %s4, i64 2
   store i64 0, ptr %s4.z2
+  %s5 = alloca [3 x i64], align 8
+  %s5.z0 = getelementptr i64, ptr %s5, i64 0
+  store i64 0, ptr %s5.z0
+  %s5.z1 = getelementptr i64, ptr %s5, i64 1
+  store i64 0, ptr %s5.z1
+  %s5.z2 = getelementptr i64, ptr %s5, i64 2
+  store i64 0, ptr %s5.z2
   %v61 = getelementptr i64, ptr @"rt.meta", i64 0
   %v1.p = getelementptr i64, ptr %v61, i64 0
   %v1 = load i64, ptr %v1.p
@@ -20753,7 +20760,7 @@ b0:
   store i64 %v23, ptr %st7
   %st8 = getelementptr i64, ptr %v25, i64 2
   store i64 %v24, ptr %st8
-  %v27 = getelementptr i64, ptr %s1, i64 0
+  %v27 = getelementptr i64, ptr %s3, i64 0
   call void @"std/strings.FormatInt"(ptr %v27, i64 %v0)
   %v28.p = getelementptr i64, ptr %v25, i64 1
   %v28 = load i64, ptr %v28.p
@@ -20786,7 +20793,7 @@ b0:
   %v41 = getelementptr i64, ptr @"str.5", i64 0
   %v42 = add i64 0, 6
   %v43 = add i64 0, 0
-  %v44 = getelementptr i64, ptr %s3, i64 0
+  %v44 = getelementptr i64, ptr %s4, i64 0
   %v45 = ptrtoint ptr %v41 to i64
   %st12 = getelementptr i64, ptr %v44, i64 0
   store i64 %v45, ptr %st12
@@ -20814,7 +20821,7 @@ b0:
   %v55 = load i64, ptr %v55.p
   %v56 = inttoptr i64 %v55 to ptr
   call void @"rt.copy8"(ptr %v54, ptr %v56, i64 %v47)
-  %v57 = getelementptr i64, ptr %s4, i64 0
+  %v57 = getelementptr i64, ptr %s5, i64 0
   %v58 = ptrtoint ptr %v53 to i64
   %st15 = getelementptr i64, ptr %v57, i64 0
   store i64 %v58, ptr %st15

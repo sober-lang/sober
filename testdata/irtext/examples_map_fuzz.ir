@@ -9231,12 +9231,15 @@ func @main.main() {
   slot s12 [3]
   slot s13 [3]
   slot s14 [3]
-  slot s15 [2]
+  slot s15 [3]
   slot s16 [2]
-  slot s17 [1]
+  slot s17 [2]
   slot s18 [1]
   slot s19 [1]
-  slot s20 [4]
+  slot s20 [1]
+  slot s21 [4]
+  slot s22 [3]
+  slot s23 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -9384,7 +9387,7 @@ b9(%69 i64):
   %79 = and_ %69, %78
   %80 = const 20
   %81 = rem %79, %80
-  %82 = slotaddr s2
+  %82 = slotaddr s11
   %83 = const 20
   %84 = div %79, %83
   %85 = const 8
@@ -9408,7 +9411,7 @@ b12:
 b13:
   %92 = rem %84, %88
   call @main.mkKey(%82, %92)
-  %93 = slotaddr s11
+  %93 = slotaddr s2
   %94 = load.i64 %82[0]
   store %93[0], %94
   %95 = load.i64 %82[1]
@@ -9426,7 +9429,7 @@ b13:
   %105 = lt %81, %104
   condbr %105, b14, b15
 b14:
-  %106 = slotaddr s2
+  %106 = slotaddr s12
   %107 = load.i64 %93[0]
   store %106[0], %107
   %108 = load.i64 %93[1]
@@ -9450,7 +9453,7 @@ b16:
   store %113[5], %58
   br b18
 b17:
-  %117 = slotaddr s12
+  %117 = slotaddr s13
   %118 = load.i64 %106[0]
   store %117[0], %118
   %119 = load.i64 %106[1]
@@ -9508,14 +9511,14 @@ b22:
 b23:
   %167 = const 1
   %168 = add %0, %167
-  %169 = slotaddr s2
+  %169 = slotaddr s12
   %170 = load.i64 %18[0]
   store %169[0], %170
   %171 = load.i64 %18[1]
   store %169[1], %171
   %172 = load.i64 %18[2]
   store %169[2], %172
-  %173 = slotaddr s13
+  %173 = slotaddr s14
   %174 = load.i64 %93[0]
   store %173[0], %174
   %175 = load.i64 %93[1]
@@ -9576,7 +9579,7 @@ b28(%180 ptr, %181 ptr):
   %203 = load.i64 %169[1]
   %204 = const 1
   %205 = add %203, %204
-  %206 = slotaddr s14
+  %206 = slotaddr s15
   %207 = ptoi %180
   store %206[0], %207
   store %206[1], %205
@@ -9589,7 +9592,7 @@ b28(%180 ptr, %181 ptr):
   store %18[2], %210
   %211 = const 1
   %212 = add %0, %211
-  %213 = slotaddr s14
+  %213 = slotaddr s15
   %214 = load.i64 %28[0]
   store %213[0], %214
   %215 = load.i64 %28[1]
@@ -9624,7 +9627,7 @@ b31(%220 ptr, %221 ptr):
   %237 = load.i64 %213[1]
   %238 = const 1
   %239 = add %237, %238
-  %240 = slotaddr s2
+  %240 = slotaddr s12
   %241 = ptoi %220
   store %240[0], %241
   store %240[1], %239
@@ -9637,7 +9640,7 @@ b31(%220 ptr, %221 ptr):
   store %28[2], %244
   %245 = const 1
   %246 = add %0, %245
-  %247 = slotaddr s2
+  %247 = slotaddr s12
   %248 = load.i64 %38[0]
   store %247[0], %248
   %249 = load.i64 %38[1]
@@ -9673,7 +9676,7 @@ b34(%255 ptr, %256 ptr):
   %272 = load.i64 %247[1]
   %273 = const 1
   %274 = add %272, %273
-  %275 = slotaddr s14
+  %275 = slotaddr s15
   %276 = ptoi %255
   store %275[0], %276
   store %275[1], %274
@@ -9701,7 +9704,7 @@ b36:
 b37:
   br b112
 b38:
-  %282 = slotaddr s14
+  %282 = slotaddr s15
   %283 = load.i64 %93[0]
   store %282[0], %283
   %284 = load.i64 %93[1]
@@ -9751,7 +9754,7 @@ b45:
 b46:
   br b111
 b47:
-  %308 = slotaddr s14
+  %308 = slotaddr s15
   %309 = load.i64 %93[0]
   store %308[0], %309
   %310 = load.i64 %93[1]
@@ -9759,7 +9762,7 @@ b47:
   %311 = load.i64 %93[2]
   store %308[2], %311
   %312 = call @rt.map_find.1.1.6.1(%7, %308)
-  %313 = slotaddr s15
+  %313 = slotaddr s16
   %314 = const 0
   %315 = ne %312, %314
   condbr %315, b49, b50
@@ -9785,7 +9788,7 @@ b50:
   store %313[0], %323
   br b51
 b51:
-  %324 = slotaddr s16
+  %324 = slotaddr s17
   %325 = load.i64 %313[0]
   store %324[0], %325
   %326 = load.i64 %313[1]
@@ -9942,12 +9945,12 @@ b78:
   %425 = add %404, %424
   br b76(%411, %425)
 b79:
-  %426 = slotaddr s14
+  %426 = slotaddr s15
   %427 = ptoi %399
   store %426[0], %427
   store %426[1], %382
   store %426[2], %396
-  %428 = slotaddr s2
+  %428 = slotaddr s12
   %429 = load.i64 %426[0]
   store %428[0], %429
   %430 = load.i64 %426[1]
@@ -9959,14 +9962,14 @@ b79:
   %434 = add %433, %432
   store %47[0], %434
   %435 = const 0
-  %436 = slotaddr s17
+  %436 = slotaddr s18
   store %436[0], %435
   %437 = region.depth
   %438 = const 0
   %439 = load.i64 %18[1]
-  %440 = slotaddr s18
+  %440 = slotaddr s19
   %441 = region.depth
-  %442 = slotaddr s19
+  %442 = slotaddr s20
   store %442[0], %438
   %443 = region.depth
   br b82
@@ -10152,7 +10155,7 @@ b116:
   store %539[2], %540
   %544 = const 0
   store %539[3], %544
-  %545 = slotaddr s20
+  %545 = slotaddr s21
   %546 = load.i64 %539[0]
   store %545[0], %546
   %547 = load.i64 %539[1]
@@ -10164,9 +10167,9 @@ b116:
   %550 = region.depth
   %551 = const 0
   %552 = const 4
-  %553 = slotaddr s17
+  %553 = slotaddr s18
   %554 = region.depth
-  %555 = slotaddr s19
+  %555 = slotaddr s20
   store %555[0], %551
   %556 = region.depth
   br b121
@@ -10185,9 +10188,9 @@ b119:
   %615 = region.depth
   %616 = const 0
   %617 = const 4
-  %618 = slotaddr s19
+  %618 = slotaddr s20
   %619 = region.depth
-  %620 = slotaddr s17
+  %620 = slotaddr s18
   store %620[0], %616
   %621 = region.depth
   br b133
@@ -10203,7 +10206,7 @@ b122:
   %559 = region.depth
   %560 = load.i64 %555[0]
   %561 = region.depth
-  %562 = slotaddr s2
+  %562 = slotaddr s22
   %563 = const 52
   %564 = const 3
   %565 = mul %563, %564
@@ -10212,7 +10215,7 @@ b122:
   %568 = add %565, %567
   %569 = add %568, %537
   call @main.mkKey(%562, %569)
-  %570 = slotaddr s11
+  %570 = slotaddr s12
   %571 = load.i64 %562[0]
   store %570[0], %571
   %572 = load.i64 %562[1]
@@ -10242,7 +10245,7 @@ b125:
   store %577[5], %560
   br b127
 b126:
-  %581 = slotaddr s14
+  %581 = slotaddr s2
   %582 = load.i64 %570[0]
   store %581[0], %582
   %583 = load.i64 %570[1]
@@ -10306,7 +10309,7 @@ b134:
   %624 = region.depth
   %625 = load.i64 %620[0]
   %626 = region.depth
-  %627 = slotaddr s11
+  %627 = slotaddr s23
   %628 = const 52
   %629 = const 3
   %630 = mul %628, %629
@@ -10315,7 +10318,7 @@ b134:
   %633 = add %630, %632
   %634 = add %633, %537
   call @main.mkKey(%627, %634)
-  %635 = slotaddr s2
+  %635 = slotaddr s12
   %636 = load.i64 %627[0]
   store %635[0], %636
   %637 = load.i64 %627[1]
@@ -10323,7 +10326,7 @@ b134:
   %638 = load.i64 %627[2]
   store %635[2], %638
   %639 = call @rt.map_find.1.1.6.1(%545, %635)
-  %640 = slotaddr s16
+  %640 = slotaddr s17
   %641 = const 0
   %642 = ne %639, %641
   condbr %642, b137, b138
@@ -10353,7 +10356,7 @@ b138:
   store %640[0], %650
   br b139
 b139:
-  %651 = slotaddr s15
+  %651 = slotaddr s16
   %652 = load.i64 %640[0]
   store %651[0], %652
   %653 = load.i64 %640[1]
@@ -12415,8 +12418,9 @@ func @main.mkKey(%0 ptr, %1 i64) {
   slot s9 [3]
   slot s10 [3]
   slot s11 [3]
-  slot s12 [6]
-  slot s13 [3]
+  slot s12 [9]
+  slot s13 [6]
+  slot s14 [3]
 b0:
   %2 = region.depth
   region.enter
@@ -12933,7 +12937,7 @@ b47(%307 ptr):
   store %308[1], %310
   %311 = load.i64 %307[2]
   store %308[2], %311
-  %312 = slotaddr s5
+  %312 = slotaddr s12
   %313 = load.i64 %308[0]
   %314 = load.i64 %308[1]
   %315 = load.i64 %308[2]
@@ -12949,7 +12953,7 @@ b47(%307 ptr):
   store %320[1], %322
   %323 = load.i64 %312[2]
   store %320[2], %323
-  %324 = slotaddr s12
+  %324 = slotaddr s13
   %325 = load.i64 %319[0]
   store %324[0], %325
   %326 = load.i64 %319[1]
@@ -13027,7 +13031,7 @@ b51:
   %363 = globaladdr @str.3
   %364 = const 1
   %365 = const 0
-  %366 = slotaddr s13
+  %366 = slotaddr s14
   %367 = ptoi %363
   store %366[0], %367
   store %366[1], %364

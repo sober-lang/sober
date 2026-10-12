@@ -1666,6 +1666,7 @@ func @main.main() {
   slot s3 [2]
   slot s4 [2]
   slot s5 [2]
+  slot s6 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1789,27 +1790,27 @@ b6:
   store %62[0], %63
   %64 = load.i64 %5[1]
   store %62[1], %64
-  %65 = slotaddr s0
+  %65 = slotaddr s4
   %66 = load.i64 %62[0]
   %67 = load.i64 %62[1]
   call @"main.swap[int]"(%65, %66, %67)
-  %68 = slotaddr s4
+  %68 = slotaddr s0
   %69 = load.i64 %65[0]
   store %68[0], %69
   %70 = load.i64 %65[1]
   store %68[1], %70
   %71 = load.i64 %68[0]
   %72 = load.i64 %68[1]
-  %73 = slotaddr s0
+  %73 = slotaddr s3
   %74 = load.i64 %12[0]
   store %73[0], %74
   %75 = load.i64 %12[1]
   store %73[1], %75
-  %76 = slotaddr s3
+  %76 = slotaddr s5
   %77 = load.i64 %73[0]
   %78 = load.i64 %73[1]
   call @"main.swap[bool]"(%76, %77, %78)
-  %79 = slotaddr s5
+  %79 = slotaddr s6
   %80 = load.i64 %76[0]
   store %79[0], %80
   %81 = load.i64 %76[1]

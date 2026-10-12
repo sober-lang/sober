@@ -1676,11 +1676,17 @@ func @main.main() {
   slot s2 [3]
   slot s3 [3]
   slot s4 [3]
-  slot s5 [6]
-  slot s6 [6]
-  slot s7 [3]
-  slot s8 [3]
+  slot s5 [3]
+  slot s6 [3]
+  slot s7 [6]
+  slot s8 [6]
   slot s9 [3]
+  slot s10 [3]
+  slot s11 [3]
+  slot s12 [3]
+  slot s13 [3]
+  slot s14 [3]
+  slot s15 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1708,14 +1714,14 @@ b0:
   store %11[1], %13
   %14 = load.i64 %9[2]
   store %11[2], %14
-  %15 = slotaddr s0
+  %15 = slotaddr s2
   %16 = load.i64 %11[0]
   %17 = load.i64 %11[1]
   %18 = load.i64 %11[2]
   %19 = const 2
   call @main.prefix(%15, %16, %17, %18, %19)
   %20 = load.i64 %15[1]
-  %21 = slotaddr s2
+  %21 = slotaddr s3
   %22 = load.i64 %11[0]
   %23 = load.i64 %11[1]
   %24 = load.i64 %11[2]
@@ -1750,12 +1756,12 @@ b2:
   store %42[0], %38
   store %42[1], %39
   %43 = const 2
-  %44 = slotaddr s2
+  %44 = slotaddr s0
   %45 = ptoi %42
   store %44[0], %45
   store %44[1], %43
   store %44[2], %40
-  %46 = slotaddr s0
+  %46 = slotaddr s4
   %47 = load.i64 %44[0]
   store %46[0], %47
   %48 = load.i64 %44[1]
@@ -1768,19 +1774,19 @@ b2:
   %53 = region.alloc %51, %52
   store %53[0], %50
   %54 = const 1
-  %55 = slotaddr s3
+  %55 = slotaddr s5
   %56 = ptoi %53
   store %55[0], %56
   store %55[1], %54
   store %55[2], %51
-  %57 = slotaddr s4
+  %57 = slotaddr s6
   %58 = load.i64 %55[0]
   store %57[0], %58
   %59 = load.i64 %55[1]
   store %57[1], %59
   %60 = load.i64 %55[2]
   store %57[2], %60
-  %61 = slotaddr s5
+  %61 = slotaddr s7
   %62 = const 0
   store %61[0], %62
   store %61[1], %62
@@ -1800,7 +1806,7 @@ b2:
   store %61[4], %67
   %68 = load.i64 %57[2]
   store %61[5], %68
-  %69 = slotaddr s6
+  %69 = slotaddr s8
   %70 = load.i64 %61[0]
   store %69[0], %70
   %71 = load.i64 %61[1]
@@ -1813,7 +1819,7 @@ b2:
   store %69[4], %74
   %75 = load.i64 %61[5]
   store %69[5], %75
-  %76 = slotaddr s4
+  %76 = slotaddr s9
   %77 = load.i64 %69[0]
   %78 = load.i64 %69[1]
   %79 = load.i64 %69[2]
@@ -1822,7 +1828,7 @@ b2:
   %82 = load.i64 %69[5]
   call @main.first(%76, %77, %78, %79, %80, %81, %82)
   %83 = load.i64 %76[1]
-  %84 = slotaddr s3
+  %84 = slotaddr s10
   %85 = load.i64 %69[0]
   %86 = load.i64 %69[1]
   %87 = load.i64 %69[2]
@@ -1851,7 +1857,7 @@ b4:
   call @rt.print_int(%100)
   %102 = const 10
   call @rt.print_char(%102)
-  %103 = slotaddr s3
+  %103 = slotaddr s11
   %104 = load.i64 %11[0]
   %105 = load.i64 %11[1]
   %106 = load.i64 %11[2]
@@ -1860,7 +1866,7 @@ b4:
   %109 = sub %108, %107
   call @main.clip(%103, %104, %105, %106, %109)
   %110 = load.i64 %103[1]
-  %111 = slotaddr s4
+  %111 = slotaddr s12
   %112 = load.i64 %11[0]
   %113 = load.i64 %11[1]
   %114 = load.i64 %11[2]
@@ -1873,7 +1879,7 @@ b4:
   call @rt.print_int(%116)
   %118 = const 10
   call @rt.print_char(%118)
-  %119 = slotaddr s4
+  %119 = slotaddr s13
   %120 = load.i64 %11[0]
   %121 = load.i64 %11[1]
   %122 = load.i64 %11[2]
@@ -1883,12 +1889,12 @@ b4:
   %126 = region.alloc %124, %125
   store %126[0], %123
   %127 = const 1
-  %128 = slotaddr s3
+  %128 = slotaddr s6
   %129 = ptoi %126
   store %128[0], %129
   store %128[1], %127
   store %128[2], %124
-  %130 = slotaddr s0
+  %130 = slotaddr s5
   %131 = load.i64 %128[0]
   store %130[0], %131
   %132 = load.i64 %128[1]
@@ -1903,12 +1909,12 @@ b4:
   store %138[0], %134
   store %138[1], %135
   %139 = const 2
-  %140 = slotaddr s2
+  %140 = slotaddr s4
   %141 = ptoi %138
   store %140[0], %141
   store %140[1], %139
   store %140[2], %136
-  %142 = slotaddr s7
+  %142 = slotaddr s0
   %143 = load.i64 %140[0]
   store %142[0], %143
   %144 = load.i64 %140[1]
@@ -1931,7 +1937,7 @@ b4:
   %154 = load.i64 %142[2]
   store %148[5], %154
   %155 = const 2
-  %156 = slotaddr s8
+  %156 = slotaddr s14
   %157 = ptoi %148
   store %156[0], %157
   store %156[1], %155
@@ -1940,7 +1946,7 @@ b4:
   %159 = load.i64 %156[1]
   %160 = load.i64 %156[2]
   call @main.collect(%119, %120, %121, %122, %158, %159, %160)
-  %161 = slotaddr s9
+  %161 = slotaddr s15
   %162 = load.i64 %119[0]
   store %161[0], %162
   %163 = load.i64 %119[1]

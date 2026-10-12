@@ -40,6 +40,15 @@ func TestImm() {
     assert(hex(mut c) == "4805001000004883ec084981fb7fffffff49bffeffffffffffffff")
 }
 
+func TestImulImm() {
+    mut c := table.Table[byte]{}
+    ImulRegRegImm(mut c, Rax, Rcx, 8)            // imul rax, rcx, 8 = 48 6b c1 08（imm8）
+    ImulRegRegImm(mut c, R9, R12, -128)          // imul r9, r12, -128 = 4d 6b cc 80
+    ImulRegRegImm(mut c, Rsi, R13, 128)          // imul rsi, r13, 128 = 49 69 f5 80 00 00 00（imm8 に収まらない）
+    ImulRegRegImm(mut c, R15, Rbx, -2147483648)  // imul r15, rbx, -2147483648 = 4c 69 fb 00 00 00 80
+    assert(hex(mut c) == "486bc1084d6bcc804969f5800000004c69fb00000080")
+}
+
 func TestTestImm() {
     mut c := table.Table[byte]{}
     TestRegImm(mut c, Rax, 63)    // test rax, 63 = 48 a9 3f 00 00 00（rax の短縮形）

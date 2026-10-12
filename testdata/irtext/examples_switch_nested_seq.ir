@@ -1700,6 +1700,8 @@ func @main.main() {
   slot s19 [3]
   slot s20 [1]
   slot s21 [1]
+  slot s22 [3]
+  slot s23 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2021,12 +2023,12 @@ b7:
   %163 = load.i64 %147[3]
   %164 = load.i64 %147[4]
   %165 = call @main.g(%160, %161, %162, %163, %164)
-  %166 = slotaddr s12
+  %166 = slotaddr s22
   call @std/strings.FormatInt(%166, %159)
   %167 = globaladdr @str.0
   %168 = const 1
   %169 = const 0
-  %170 = slotaddr s9
+  %170 = slotaddr s12
   %171 = ptoi %167
   store %170[0], %171
   store %170[1], %168
@@ -2043,12 +2045,12 @@ b7:
   %181 = load.i64 %170[0]
   %182 = itop %181
   call @rt.copy8(%180, %182, %173)
-  %183 = slotaddr s8
+  %183 = slotaddr s9
   %184 = ptoi %179
   store %183[0], %184
   store %183[1], %174
   store %183[2], %175
-  %185 = slotaddr s3
+  %185 = slotaddr s23
   call @std/strings.FormatInt(%185, %165)
   %186 = load.i64 %183[1]
   %187 = load.i64 %185[1]
@@ -2062,7 +2064,7 @@ b7:
   %195 = load.i64 %185[0]
   %196 = itop %195
   call @rt.copy8(%194, %196, %187)
-  %197 = slotaddr s2
+  %197 = slotaddr s8
   %198 = ptoi %193
   store %197[0], %198
   store %197[1], %188

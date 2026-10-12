@@ -2771,6 +2771,13 @@ b0:
   store i64 0, ptr %s3.z1
   %s3.z2 = getelementptr i64, ptr %s3, i64 2
   store i64 0, ptr %s3.z2
+  %s4 = alloca [3 x i64], align 8
+  %s4.z0 = getelementptr i64, ptr %s4, i64 0
+  store i64 0, ptr %s4.z0
+  %s4.z1 = getelementptr i64, ptr %s4, i64 1
+  store i64 0, ptr %s4.z1
+  %s4.z2 = getelementptr i64, ptr %s4, i64 2
+  store i64 0, ptr %s4.z2
   %v41 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v41, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2825,7 +2832,7 @@ b0:
   call void @"rt.print_int"(i64 %v19)
   %v20 = add i64 0, 10
   call void @"rt.print_char"(i64 %v20)
-  %v21 = getelementptr i64, ptr %s1, i64 0
+  %v21 = getelementptr i64, ptr %s3, i64 0
   %v22 = add i64 0, 1
   %v23 = add i64 0, 2
   %v24 = add i64 0, 3
@@ -2841,7 +2848,7 @@ b0:
   %st11 = getelementptr i64, ptr %v27, i64 2
   store i64 %v24, ptr %st11
   %v28 = add i64 0, 3
-  %v29 = getelementptr i64, ptr %s0, i64 0
+  %v29 = getelementptr i64, ptr %s1, i64 0
   %v30 = ptrtoint ptr %v27 to i64
   %st12 = getelementptr i64, ptr %v29, i64 0
   store i64 %v30, ptr %st12
@@ -2857,7 +2864,7 @@ b0:
   %v33 = load i64, ptr %v33.p
   %v34 = add i64 0, 5
   call void @"main.appendCopy"(ptr %v21, i64 %v31, i64 %v32, i64 %v33, i64 %v34)
-  %v35 = getelementptr i64, ptr %s3, i64 0
+  %v35 = getelementptr i64, ptr %s4, i64 0
   %v36.p = getelementptr i64, ptr %v21, i64 0
   %v36 = load i64, ptr %v36.p
   %st15 = getelementptr i64, ptr %v35, i64 0

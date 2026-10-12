@@ -1674,6 +1674,8 @@ func @main.main() {
   slot s3 [5]
   slot s4 [6]
   slot s5 [6]
+  slot s6 [6]
+  slot s7 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1758,7 +1760,7 @@ b3:
   call @rt.print_str(%43)
   %45 = const 10
   call @rt.print_char(%45)
-  %46 = slotaddr s1
+  %46 = slotaddr s4
   %47 = globaladdr @str.4
   %48 = const 10
   %49 = const 0
@@ -1771,7 +1773,7 @@ b3:
   %53 = load.i64 %50[1]
   %54 = load.i64 %50[2]
   call @std/io.WriteStderr(%46, %52, %53, %54)
-  %55 = slotaddr s4
+  %55 = slotaddr s5
   %56 = load.i64 %46[0]
   store %55[0], %56
   %57 = load.i64 %46[1]
@@ -1817,7 +1819,7 @@ b4:
 b5:
   br b6
 b6:
-  %79 = slotaddr s1
+  %79 = slotaddr s6
   %80 = globaladdr @str.6
   %81 = const 18
   %82 = const 0
@@ -1830,7 +1832,7 @@ b6:
   %86 = load.i64 %83[1]
   %87 = load.i64 %83[2]
   call @std/io.WriteStdout(%79, %85, %86, %87)
-  %88 = slotaddr s5
+  %88 = slotaddr s7
   %89 = load.i64 %79[0]
   store %88[0], %89
   %90 = load.i64 %79[1]

@@ -1788,12 +1788,12 @@ b4:
   %86 = load.i64 %33[0]
   %87 = load.i64 %35[0]
   %88 = load.i64 %28[1]
-  %89 = slotaddr s9
+  %89 = slotaddr s12
   call @std/strings.FormatInt(%89, %86)
   %90 = globaladdr @str.0
   %91 = const 1
   %92 = const 0
-  %93 = slotaddr s8
+  %93 = slotaddr s9
   %94 = ptoi %90
   store %93[0], %94
   store %93[1], %91
@@ -1810,7 +1810,7 @@ b4:
   %104 = load.i64 %93[0]
   %105 = itop %104
   call @rt.copy8(%103, %105, %96)
-  %106 = slotaddr s12
+  %106 = slotaddr s8
   %107 = ptoi %102
   store %106[0], %107
   store %106[1], %97

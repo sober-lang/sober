@@ -2875,7 +2875,7 @@ b0:
   store i64 %v25, ptr %st19
   %st20 = getelementptr i64, ptr %v27, i64 2
   store i64 %v26, ptr %st20
-  %v29 = getelementptr i64, ptr %s0, i64 0
+  %v29 = getelementptr i64, ptr %s5, i64 0
   call void @"std/strings.FormatInt"(ptr %v29, i64 %v21)
   %v30.p = getelementptr i64, ptr %v27, i64 1
   %v30 = load i64, ptr %v30.p
@@ -2897,7 +2897,7 @@ b0:
   %v39 = load i64, ptr %v39.p
   %v40 = inttoptr i64 %v39 to ptr
   call void @"rt.copy8"(ptr %v38, ptr %v40, i64 %v31)
-  %v41 = getelementptr i64, ptr %s5, i64 0
+  %v41 = getelementptr i64, ptr %s0, i64 0
   %v42 = ptrtoint ptr %v37 to i64
   %st21 = getelementptr i64, ptr %v41, i64 0
   store i64 %v42, ptr %st21

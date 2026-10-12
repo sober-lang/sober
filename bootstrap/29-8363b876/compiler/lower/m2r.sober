@@ -1,0 +1,654 @@
+package lower
+
+// mem2reg（src/stage1/ir_mem2reg.zig の写し — 正規バックエンドの Sober 化 B-3）: スカラーのスロット（mut ローカル）をブロック引数の SSA 値へ持ち上げる IR パス。
+// 掛ける位置 = rtlower の前（stage1 の runPasses → lowerRt と同じ順）。照合 = stage1 の既定の `build x.ir`（mem2reg あり）の ELF とのバイト一致（elfeq）。
+//
+// 対象: 1 語のスロットで、アドレス（slotaddr の結果）の使い道がオフセット 0 の `load.i64` の番地と `store` の番地だけ
+// （他の命令の引数・辺の引数・ret・格納される値になったら逃げている — 対象外）。格納される値はすべて i64。
+// スロットは入口でゼロ初期化されるので、定義前の読みは 0。
+// 手順: 格納のある（到達する）ブロックから反復支配境界にブロック引数を置き、支配木を前順でたどって各スロットの現在値を持ち回す
+// （load は現在値に置き換えて消す、store は現在値を更新して消す、辺は置いた引数ぶんの実引数を足す）。到達しないブロックの中は現在値 0 で同じように消す。
+// 最後に値の番号を定義の順に詰め直し（optRenumber — 関数の仮引数は 0.. のまま）、使われなくなったスロットを落として番号を詰める。
+// Zig 版との違い（出力は同じ）: 支配境界・置いた引数の表は個数を数えてから詰めて持つ（CSR）。ブロックに置く引数の並びはスロットの通し番号の順で、
+// Zig 版の反復（スロットごとの外側のループ）と同じ並び。中間の値の番号は詰め直しで消えるので、置く順の違いは出力に出ない
+
+import "desugar"
+import "std/iter"
+import "std/table"
+
+// m2rModule はモジュールの全関数に mem2reg を掛ける
+func m2rModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            m2rFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// 関数ごとの作業域
+type m2rW struct {
+    nb int
+    blk mut []int      // 番号 → 記録
+    rpoIx mut []int    // 番号 → 逆後順の位置（到達しないブロックは -1）
+    rpo mut []int
+    nrpo int
+    pcnt mut []int     // 前任の CSR（全ブロックから — Zig の cfg.preds）
+    preds mut []int
+    idom mut []int
+}
+
+func m2rFunc(st mut St, f FnRef) {
+    nv := irFnNVal(mut st, f)
+    vt := valueTypes(mut st, f)
+    // スロットの語数（番号の順 = 鎖の順）
+    mut swords := mut []int{}
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        swords = append(swords, desugar.HeapGet(mut st.d, s + 1))
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    ns := len(swords)
+    if ns == 0 {
+        return
+    }
+    // slotOf[v]: v が slotaddr の結果ならそのスロット
+    mut slotOf := mut []int{}
+    xFill(mut slotOf, nv, -1)
+    mut ok := mut []int{}
+    xFill(mut ok, ns, 0)
+    for k <- iter.Range(0, ns) {
+        if swords[k] == 1 {
+            ok[k] = 1
+        }
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpSlotaddr {
+                slotOf[irInsRes(mut st, ins)] = irInsA(mut st, ins)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    so := freeze(slotOf)
+    // 逃げる使い道
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad {
+                if irInsB(mut st, ins) != 0 || irInsC(mut st, ins) == 1 {
+                    m2rEsc(so, mut ok, irInsA(mut st, ins))
+                }
+            } else if op == OpStore {
+                p := irInsA(mut st, ins)
+                v := irInsC(mut st, ins)
+                if irInsB(mut st, ins) != 0 {
+                    m2rEsc(so, mut ok, p)
+                }
+                m2rEsc(so, mut ok, v)
+                if so[p] >= 0 && desugar.HeapGet(mut st.d, vt + 1 + v) != TyI64 {
+                    ok[so[p]] = 0
+                }
+            } else if op != OpSlotaddr {
+                for k <- iter.Range(0, xNOps(mut st, ins)) {
+                    m2rEsc(so, mut ok, xOpnd(mut st, ins, k))
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            m2rEsc(so, mut ok, xTermOpnd(mut st, b, k))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 対象の通し番号
+    mut cand := mut []int{}
+    xFill(mut cand, ns, -1)
+    mut nc := 0
+    for k <- iter.Range(0, ns) {
+        if ok[k] == 1 {
+            cand[k] = nc
+            nc += 1
+        }
+    }
+    if nc == 0 {
+        return
+    }
+    cd := freeze(cand)
+    nb := irFnNBlk(mut st, f)
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    m2rCfg(mut st, mut w, f)
+    // 支配境界（CSR — 数えてから詰める。同じ (r, b) は 1 回）
+    mut dcnt := mut []int{}
+    xFill(mut dcnt, nb + 1, 0)
+    mut stamp := mut []int{}
+    xFill(mut stamp, nb, -1)
+    mut dfv := mut []int{}
+    for pass <- iter.Range(0, 2) {
+        mut dfill := mut []int{}
+        if pass == 1 {
+            for k <- iter.Range(0, nb) {
+                dcnt[k + 1] = dcnt[k + 1] + dcnt[k]
+            }
+            xFill(mut dfv, dcnt[nb], 0)
+            xFill(mut dfill, nb, 0)
+            for k <- iter.Range(0, nb) {
+                stamp[k] = -1
+            }
+        }
+        for k <- iter.Range(0, w.nrpo) {
+            bb := w.rpo[k]
+            mut nreach := 0
+            for j <- iter.Range(w.pcnt[bb], w.pcnt[bb + 1]) {
+                if w.rpoIx[w.preds[j]] >= 0 {
+                    nreach += 1
+                }
+            }
+            if nreach >= 2 {
+                for j <- iter.Range(w.pcnt[bb], w.pcnt[bb + 1]) {
+                    p := w.preds[j]
+                    if w.rpoIx[p] >= 0 {
+                        mut r := p
+                        while r != w.idom[bb] {
+                            if stamp[r] != bb {
+                                stamp[r] = bb
+                                if pass == 0 {
+                                    dcnt[r + 1] = dcnt[r + 1] + 1
+                                } else {
+                                    dfv[dcnt[r] + dfill[r]] = bb
+                                    dfill[r] = dfill[r] + 1
+                                }
+                            }
+                            r = w.idom[r]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // スロットの番号 → 対象の通し番号（値 → 通し番号は slotOf と cand を引く）
+    // 反復支配境界: (通し番号, ブロック) の組を数えてから詰める（通し番号の昇順）
+    mut has := mut []int{}
+    xFill(mut has, nb, -1)
+    mut inWork := mut []int{}
+    xFill(mut inWork, nb, -1)
+    mut work := mut []int{}
+    xFill(mut work, nb, 0)
+    mut acnt := mut []int{}
+    xFill(mut acnt, nb + 1, 0)
+    mut aci := mut []int{}
+    mut aval := mut []int{}
+    // 候補ごとの store のあるブロック（到達するものだけ・番号の昇順・重複なし — 下の候補ごとの作業列の初期値。段 6 P6-5 の入口: 以前は候補ごとに全ブロックの
+    // 命令を舐めていた〔候補 × 命令の 2 乗 × 2 周 — 自己 build の mem2reg の段 15 G の大半〕。作業列の初期の順は同じ〔番号の昇順〕なので結果は不変）
+    mut scnt := mut []int{}
+    xFill(mut scnt, nc + 1, 0)
+    mut slast := mut []int{}
+    xFill(mut slast, nc, -1)
+    mut sblk := mut []int{}
+    for sp <- iter.Range(0, 2) {
+        if sp == 1 {
+            for k <- iter.Range(0, nc) {
+                scnt[k + 1] = scnt[k + 1] + scnt[k]
+                slast[k] = -1
+            }
+            xFill(mut sblk, scnt[nc], 0)
+        }
+        mut sfill := mut []int{}
+        xFill(mut sfill, nc, 0)
+        for bi <- iter.Range(0, nb) {
+            if w.rpoIx[bi] >= 0 {
+                mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+                while ins != -1 {
+                    if irInsOp(mut st, ins) == OpStore {
+                        c := m2rCand(so, cd, irInsA(mut st, ins))
+                        if c >= 0 && slast[c] != bi {
+                            slast[c] = bi
+                            if sp == 0 {
+                                scnt[c + 1] = scnt[c + 1] + 1
+                            } else {
+                                sblk[scnt[c] + sfill[c]] = bi
+                                sfill[c] = sfill[c] + 1
+                            }
+                        }
+                    }
+                    ins = irInsNext(mut st, ins)
+                }
+            }
+        }
+    }
+    for pass <- iter.Range(0, 2) {
+        mut afill := mut []int{}
+        if pass == 1 {
+            for k <- iter.Range(0, nb) {
+                acnt[k + 1] = acnt[k + 1] + acnt[k]
+            }
+            xFill(mut aci, acnt[nb], 0)
+            xFill(mut aval, acnt[nb], 0)
+            xFill(mut afill, nb, 0)
+            for k <- iter.Range(0, nb) {
+                has[k] = -1
+                inWork[k] = -1
+            }
+        }
+        for ci <- iter.Range(0, nc) {
+            mut nw := 0
+            for j <- iter.Range(scnt[ci], scnt[ci + 1]) {
+                bi := sblk[j]
+                if inWork[bi] != ci {
+                    inWork[bi] = ci
+                    work[nw] = bi
+                    nw += 1
+                }
+            }
+            while nw > 0 {
+                nw -= 1
+                bb := work[nw]
+                for j <- iter.Range(dcnt[bb], dcnt[bb + 1]) {
+                    y := dfv[j]
+                    if has[y] != ci {
+                        has[y] = ci
+                        if pass == 0 {
+                            acnt[y + 1] = acnt[y + 1] + 1
+                        } else {
+                            aci[acnt[y] + afill[y]] = ci
+                            afill[y] = afill[y] + 1
+                        }
+                        if inWork[y] != ci {
+                            inWork[y] = ci
+                            work[nw] = y
+                            nw += 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 置いた引数（ブロックごとに通し番号の昇順 — 組は通し番号の外側のループで詰めたので並びはそのまま）
+    for bi <- iter.Range(0, nb) {
+        for k <- iter.Range(acnt[bi], acnt[bi + 1]) {
+            v := newValueIn(mut st, f)
+            aval[k] = v
+            p := rec4(mut st, -1, v, TyI64, 0)
+            blk := BlkRef(w.blk[bi])
+            tail := irBlkPTail(mut st, blk)
+            if tail < 0 {
+                irSetBlkPHead(mut st, blk, p)
+            } else {
+                desugar.HeapSet(mut st.d, tail, p)
+            }
+            irSetBlkPTail(mut st, blk, p)
+        }
+    }
+    ac := freeze(acnt)
+    ai := freeze(aci)
+    av := freeze(aval)
+    // ゼロの定数（入口の先頭）
+    zero := newValueIn(mut st, f)
+    entry := BlkRef(w.blk[0])
+    zr := mkInst(mut st, zero, OpConst, 0, 0, 0)
+    irSetInsNext(mut st, zr, irBlkIHead(mut st, entry))
+    if irBlkITail(mut st, entry) == -1 {
+        irSetBlkITail(mut st, entry, zr)
+    }
+    irSetBlkIHead(mut st, entry, zr)
+    nv2 := irFnNVal(mut st, f)
+    mut repl := mut []int{}
+    for v <- iter.Range(0, nv2) {
+        repl = append(repl, v)
+    }
+    // 名前の付け替え: 現在値の積み（全体で 1 本 — 節 = [値, 同じ通し番号の 1 つ前]・通し番号ごとの頂上）
+    mut npush := 0
+    for bi <- iter.Range(0, nb) {
+        npush = npush + ac[bi + 1] - ac[bi]
+        mut ins := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpStore {
+                npush += 1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+    }
+    mut sval := mut []int{}
+    xFill(mut sval, npush, 0)
+    mut sprev := mut []int{}
+    xFill(mut sprev, npush, 0)
+    mut sci := mut []int{}
+    xFill(mut sci, npush, 0)
+    mut topOf := mut []int{}
+    xFill(mut topOf, nc, -1)
+    // 支配木の子（逆後順 — Zig の domChildren）
+    mut kcnt := mut []int{}
+    xFill(mut kcnt, nb + 1, 0)
+    for k <- iter.Range(1, w.nrpo) {
+        bb := w.rpo[k]
+        kcnt[w.idom[bb] + 1] = kcnt[w.idom[bb] + 1] + 1
+    }
+    for k <- iter.Range(0, nb) {
+        kcnt[k + 1] = kcnt[k + 1] + kcnt[k]
+    }
+    mut kids := mut []int{}
+    xFill(mut kids, kcnt[nb], 0)
+    mut kfill := mut []int{}
+    xFill(mut kfill, nb, 0)
+    for k <- iter.Range(1, w.nrpo) {
+        bb := w.rpo[k]
+        d := w.idom[bb]
+        kids[kcnt[d] + kfill[d]] = bb
+        kfill[d] = kfill[d] + 1
+    }
+    mut frB := mut []int{}
+    xFill(mut frB, nb, 0)
+    mut frK := mut []int{}
+    xFill(mut frK, nb, 0)
+    mut frH := mut []int{}
+    xFill(mut frH, nb, 0)
+    frB[0] = 0
+    frK[0] = 0
+    frH[0] = 0
+    npush = m2rBlock(mut st, mut w, 0, true, zero, so, cd, ac, ai, av, mut repl, mut sval, mut sprev, mut sci, mut topOf, 0)
+    mut sp := 1
+    while sp > 0 {
+        bb := frB[sp - 1]
+        if frK[sp - 1] < kcnt[bb + 1] - kcnt[bb] {
+            kid := kids[kcnt[bb] + frK[sp - 1]]
+            frK[sp - 1] = frK[sp - 1] + 1
+            frB[sp] = kid
+            frK[sp] = 0
+            frH[sp] = npush
+            sp += 1
+            npush = m2rBlock(mut st, mut w, kid, true, zero, so, cd, ac, ai, av, mut repl, mut sval, mut sprev, mut sci, mut topOf, npush)
+        } else {
+            // 積みをこの枠の入口の高さへ戻す
+            while npush > frH[sp - 1] {
+                npush -= 1
+                topOf[sci[npush]] = sprev[npush]
+            }
+            sp -= 1
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        if w.rpoIx[bi] < 0 {
+            npush = m2rBlock(mut st, mut w, bi, false, zero, so, cd, ac, ai, av, mut repl, mut sval, mut sprev, mut sci, mut topOf, npush)
+        }
+    }
+    // 消した命令を鎖から外し、使用を置き換えて番号を詰める（optRenumber — 付け替えは OW_AL の鎖）
+    for bi <- iter.Range(0, nb) {
+        blk := BlkRef(w.blk[bi])
+        mut ins := irBlkIHead(mut st, blk)
+        irSetBlkIHead(mut st, blk, -1)
+        irSetBlkITail(mut st, blk, -1)
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) != OpDead {
+                linkInst(mut st, blk, ins)
+            }
+            ins = nx
+        }
+    }
+    optReset(mut st, nv2, nb)
+    for v <- iter.Range(0, nv2) {
+        if repl[v] != v {
+            owSet(mut st, v, OW_AL, repl[v])
+        }
+    }
+    optRenumber(mut st, f)
+    m2rDropSlots(mut st, f)
+}
+
+func m2rEsc(so []int, ok mut []int, v int) {
+    if so[v] >= 0 {
+        ok[so[v]] = 0
+    }
+}
+
+// m2rCand は v が対象スロットのアドレスならその通し番号（でなければ -1）
+func m2rCand(so []int, cd []int, v int) int {
+    return if so[v] < 0 { -1 } else { cd[so[v]] }
+}
+
+func m2rTop(topOf mut []int, sval mut []int, ci int, zero int) int {
+    return if topOf[ci] < 0 { zero } else { sval[topOf[ci]] }
+}
+
+func m2rChain(repl mut []int, v int) int {
+    mut x := v
+    while repl[x] != x {
+        x = repl[x]
+    }
+    return x
+}
+
+// m2rBlock はブロック bi の命令を処理し、出ていく辺に置いた引数ぶんの実引数を足す。積みの新しい高さを返す
+func m2rBlock(st mut St, w mut m2rW, bi int, live bool, zero int, so []int, cd []int, acnt []int, aci []int, aval []int,
+    repl mut []int, sval mut []int, sprev mut []int, sci mut []int, topOf mut []int, h int) int {
+    mut n := h
+    blk := BlkRef(w.blk[bi])
+    if live {
+        for k <- iter.Range(acnt[bi], acnt[bi + 1]) {
+            sval[n] = aval[k]
+            sci[n] = aci[k]
+            sprev[n] = topOf[aci[k]]
+            topOf[aci[k]] = n
+            n += 1
+        }
+    }
+    mut ins := irBlkIHead(mut st, blk)
+    while ins != -1 {
+        op := irInsOp(mut st, ins)
+        if op == OpLoad {
+            c := m2rCand(so, cd, irInsA(mut st, ins))
+            if c >= 0 {
+                repl[irInsRes(mut st, ins)] = if live { m2rTop(mut topOf, mut sval, c, zero) } else { zero }
+                irSetInsOp(mut st, ins, OpDead)
+            }
+        } else if op == OpStore {
+            c := m2rCand(so, cd, irInsA(mut st, ins))
+            if c >= 0 {
+                if live {
+                    sval[n] = m2rChain(mut repl, irInsC(mut st, ins))
+                    sci[n] = c
+                    sprev[n] = topOf[c]
+                    topOf[c] = n
+                    n += 1
+                }
+                irSetInsOp(mut st, ins, OpDead)
+            }
+        } else if op == OpSlotaddr {
+            if m2rCand(so, cd, irInsRes(mut st, ins)) >= 0 {
+                irSetInsOp(mut st, ins, OpDead)
+            }
+        }
+        ins = irInsNext(mut st, ins)
+    }
+    t := irBlkTerm(mut st, blk)
+    if t == TmBr {
+        m2rExtend(mut st, mut w, blk, B_X1, B_X2, live, zero, acnt, aci, mut sval, mut topOf)
+    } else if t == TmCondbr {
+        m2rExtend(mut st, mut w, blk, B_X2, B_X3, live, zero, acnt, aci, mut sval, mut topOf)
+        m2rExtend(mut st, mut w, blk, B_X4, B_X5, live, zero, acnt, aci, mut sval, mut topOf)
+    }
+    return n
+}
+
+// m2rExtend は辺（行き先の欄 kt・実引数の欄 ka）の実引数に、行き先に置いた引数ぶんの現在値を足した新しい列を付ける
+func m2rExtend(st mut St, w mut m2rW, blk BlkRef, kt int, ka int, live bool, zero int, acnt []int, aci []int, sval mut []int, topOf mut []int) {
+    to := irBlkId(mut st, BlkRef(desugar.HeapGet(mut st.d, int(blk) + kt)))
+    ne := acnt[to + 1] - acnt[to]
+    if ne == 0 {
+        return
+    }
+    old := desugar.HeapGet(mut st.d, int(blk) + ka)
+    n0 := if old < 0 { 0 } else { desugar.HeapGet(mut st.d, old) }
+    l := listN(mut st, n0 + ne)
+    for k <- iter.Range(0, n0) {
+        desugar.HeapSet(mut st.d, l + 1 + k, desugar.HeapGet(mut st.d, old + 1 + k))
+    }
+    for k <- iter.Range(0, ne) {
+        ci := aci[acnt[to] + k]
+        desugar.HeapSet(mut st.d, l + 1 + n0 + k, if live { m2rTop(mut topOf, mut sval, ci, zero) } else { zero })
+    }
+    desugar.HeapSet(mut st.d, int(blk) + ka, l)
+}
+
+// m2rCfg は前任・逆後順・直接支配ブロック（ir_cfg.analyze — 後続の順に辿る反復 DFS・Cooper–Harvey–Kennedy）
+func m2rCfg(st mut St, w mut m2rW, f FnRef) {
+    nb := w.nb
+    xFill(mut w.blk, nb, -1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        w.blk[irBlkId(mut st, b)] = int(b)
+        b = irBlkNext(mut st, b)
+    }
+    xFill(mut w.pcnt, nb + 1, 0)
+    for bi <- iter.Range(0, nb) {
+        for k <- iter.Range(0, xNSucc(mut st, BlkRef(w.blk[bi]))) {
+            s := xSucc(mut st, BlkRef(w.blk[bi]), k)
+            w.pcnt[s + 1] = w.pcnt[s + 1] + 1
+        }
+    }
+    for bi <- iter.Range(0, nb) {
+        w.pcnt[bi + 1] = w.pcnt[bi + 1] + w.pcnt[bi]
+    }
+    xFill(mut w.preds, w.pcnt[nb], 0)
+    mut pfill := mut []int{}
+    xFill(mut pfill, nb, 0)
+    for bi <- iter.Range(0, nb) {
+        for k <- iter.Range(0, xNSucc(mut st, BlkRef(w.blk[bi]))) {
+            s := xSucc(mut st, BlkRef(w.blk[bi]), k)
+            w.preds[w.pcnt[s] + pfill[s]] = bi
+            pfill[s] = pfill[s] + 1
+        }
+    }
+    // 後順（後続の順に辿る反復 DFS）
+    mut seen := mut []int{}
+    xFill(mut seen, nb, 0)
+    mut post := mut []int{}
+    xFill(mut post, nb, 0)
+    mut stB := mut []int{}
+    xFill(mut stB, nb, 0)
+    mut stN := mut []int{}
+    xFill(mut stN, nb, 0)
+    mut sp := 1
+    mut np := 0
+    seen[0] = 1
+    while sp > 0 {
+        topB := stB[sp - 1]
+        ns := xNSucc(mut st, BlkRef(w.blk[topB]))
+        if stN[sp - 1] < ns {
+            s := xSucc(mut st, BlkRef(w.blk[topB]), stN[sp - 1])
+            stN[sp - 1] = stN[sp - 1] + 1
+            if seen[s] == 0 {
+                seen[s] = 1
+                stB[sp] = s
+                stN[sp] = 0
+                sp += 1
+            }
+        } else {
+            post[np] = topB
+            np += 1
+            sp -= 1
+        }
+    }
+    xFill(mut w.rpoIx, nb, -1)
+    for k <- iter.Range(0, np) {
+        w.rpo = append(w.rpo, post[np - 1 - k])
+        w.rpoIx[post[np - 1 - k]] = k
+    }
+    w.nrpo = np
+    // 支配木
+    xFill(mut w.idom, nb, -1)
+    w.idom[0] = 0
+    mut changed := true
+    while changed {
+        changed = false
+        for k <- iter.Range(1, np) {
+            bb := w.rpo[k]
+            mut nw := -1
+            for j <- iter.Range(w.pcnt[bb], w.pcnt[bb + 1]) {
+                p := w.preds[j]
+                if w.idom[p] >= 0 {
+                    nw = if nw < 0 { p } else { m2rIntersect(mut w, p, nw) }
+                }
+            }
+            if nw != w.idom[bb] {
+                w.idom[bb] = nw
+                changed = true
+            }
+        }
+    }
+}
+
+func m2rIntersect(w mut m2rW, x0 int, y0 int) int {
+    mut x := x0
+    mut y := y0
+    while x != y {
+        while w.rpoIx[x] > w.rpoIx[y] {
+            x = w.idom[x]
+        }
+        while w.rpoIx[y] > w.rpoIx[x] {
+            y = w.idom[y]
+        }
+    }
+    return x
+}
+
+// m2rDropSlots は使われなくなったスロットを落として番号を詰める（持ち上げたスロット — 入口のゼロ初期化が要らなくなる）
+func m2rDropSlots(st mut St, f FnRef) {
+    ns := irFnNSlot(mut st, f)
+    mut used := mut []int{}
+    xFill(mut used, ns, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpSlotaddr {
+                used[irInsA(mut st, ins)] = 1
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut remap := mut []int{}
+    xFill(mut remap, ns, -1)
+    mut s := irFnSHead(mut st, f)
+    irSetFnSHead(mut st, f, -1)
+    irSetFnSTail(mut st, f, -1)
+    mut k := 0
+    mut n := 0
+    while s >= 0 {
+        nx := desugar.HeapGet(mut st.d, s)
+        if used[k] == 1 {
+            remap[k] = n
+            desugar.HeapSet(mut st.d, s + 2, n)
+            desugar.HeapSet(mut st.d, s, -1)
+            tail := irFnSTail(mut st, f)
+            if tail < 0 {
+                irSetFnSHead(mut st, f, s)
+            } else {
+                desugar.HeapSet(mut st.d, tail, s)
+            }
+            irSetFnSTail(mut st, f, s)
+            n += 1
+        }
+        k += 1
+        s = nx
+    }
+    irSetFnNSlot(mut st, f, n)
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            if irInsOp(mut st, ins) == OpSlotaddr {
+                irSetInsA(mut st, ins, remap[irInsA(mut st, ins)])
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}

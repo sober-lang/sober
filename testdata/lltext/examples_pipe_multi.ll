@@ -2748,6 +2748,11 @@ b0:
   store i64 0, ptr %s0.z0
   %s0.z1 = getelementptr i64, ptr %s0, i64 1
   store i64 0, ptr %s0.z1
+  %s1 = alloca [2 x i64], align 8
+  %s1.z0 = getelementptr i64, ptr %s1, i64 0
+  store i64 0, ptr %s1.z0
+  %s1.z1 = getelementptr i64, ptr %s1, i64 1
+  store i64 0, ptr %s1.z1
   %v19 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v19, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2763,7 +2768,7 @@ b0:
   %v6 = call i64 @"main.add"(i64 %v4, i64 %v5)
   %v7 = call i64 @"main.twice"(i64 %v6)
   %v8 = add i64 0, 17
-  %v9 = getelementptr i64, ptr %s0, i64 0
+  %v9 = getelementptr i64, ptr %s1, i64 0
   %v10 = add i64 0, 5
   call void @"main.divmod"(ptr %v9, i64 %v8, i64 %v10)
   %v11.p = getelementptr i64, ptr %v9, i64 0

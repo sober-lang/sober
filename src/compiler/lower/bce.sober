@@ -7,6 +7,8 @@ package lower
 //   ③`uge x, y`（添字の境界検査 — 範囲外で panic の点へ）は、支配する辺で `lt x, y` が真かつ x ≥ 0 なら偽（符号つき x < y と x ≥ 0 から符号なし x < y）。
 //     `ult x, y` は同じ条件で真。x ≥ 0 = 非負の定数か、ループの頭の引数で入りの値が全部「非負の定数 / 自分 + 正の定数」の帰納変数
 //   ④`uge x, y` / `ult x, y` は、支配する辺で `x + k <u y`（k は非負の定数）が成り立ち x ≥ 0 なら偽 / 真（`a[i] = a[i + 1]` の 2 本目の検査）
+//   ⑤`uge c1, y` / `ult c1, y`（c1 は定数か定数の式）は、支配する辺で `c2 <u y`（c2 は定数か定数の式・0 ≤ c1 ≤ c2）が成り立てば偽 / 真
+//     （全展開した定数添字の束 — nbody の advance の `b[o + k]`。大きい添字の検査が先なら小さい添字の検査は消える）
 // 消した検査は panic の点へ行かない経路だけ（値は変えない）— 観測は変わらない（optdiff が見る）
 
 import "desugar"
@@ -91,6 +93,8 @@ func bceFunc(st mut St, f FnRef) {
         optDce(mut st, f)
         optRenumber(mut st, f)
     }
+    // 残った定数添字の検査の版分け（段 2 — bver.sober）
+    bverFunc(mut st, f)
 }
 
 // bceKnown は番号 bb のブロックの点で値 c（条件）が分かっていれば 1 / 0（分からなければ -1）
@@ -98,6 +102,11 @@ func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
     d := bw.defIns[c]
     if d >= 0 && irInsOp(mut st, InsRef(d)) == OpConst {
         return if irInsA(mut st, InsRef(d)) != 0 { 1 } else { 0 }
+    }
+    // ⑤ の候補: c が `uge c1, y` / `ult c1, y`（c1 は非負の定数）なら c1 を控える（支配木の走査の中で辺ごとに引き直さない）
+    mut c1 := -1
+    if d >= 0 && irInsOp(mut st, InsRef(d)) == OpCmp && (irInsA(mut st, InsRef(d)) == CUge || irInsA(mut st, InsRef(d)) == CUlt) {
+        c1 = bceCv(mut st, mut bw, irInsB(mut st, InsRef(d)))
     }
     // 支配木を上へ: 支配する condbr の辺で決まっている値
     mut cb := bb
@@ -122,6 +131,13 @@ func bceKnown(st mut St, w mut m2rW, bw mut BceW, bb int, c int) int {
                 r4 := bceFromAdd(mut st, mut w, mut bw, fc, side, c)
                 if r4 >= 0 {
                     return r4
+                }
+                // ⑤ 支配する `c2 <u y` が真（`uge c2, y` の偽の辺・`ult c2, y` の真の辺）→ `uge c1, y` は偽・`ult c1, y` は真（0 ≤ c1 ≤ c2）
+                if c1 >= 0 {
+                    r5 := bceFromConst(mut st, mut bw, fc, side, c, c1)
+                    if r5 >= 0 {
+                        return r5
+                    }
                 }
             }
         }
@@ -184,6 +200,92 @@ func bceFromAdd(st mut St, w mut m2rW, bw mut BceW, fc int, side int, c int) int
     k := irInsA(mut st, InsRef(cd))
     return if k == CUge { 0 } else if k == CUlt { 1 } else { -1 }
 }
+
+// bceFromConst は fc が side（1 = 真・0 = 偽）と分かっているとき、c の値（分からなければ -1）: fc が `c2 <u y` を言っていて（`uge c2, y` が偽か
+// `ult c2, y` が真・c2 は定数）、c = `uge c1, y` → 0・`ult c1, y` → 1（c1 は c の第 1 被演算子の定数 — 0 ≤ c1 ≤ c2）。論拠: c1 ≤u c2 <u y
+func bceFromConst(st mut St, bw mut BceW, fc int, side int, c int, c1 int) int {
+    fd := bw.defIns[fc]
+    if fd < 0 || irInsOp(mut st, InsRef(fd)) != OpCmp {
+        return -1
+    }
+    fk := irInsA(mut st, InsRef(fd))
+    if !((side == 0 && fk == CUge) || (side == 1 && fk == CUlt)) {
+        return -1
+    }
+    cd := bw.defIns[c]
+    if irInsC(mut st, InsRef(fd)) != irInsC(mut st, InsRef(cd)) {
+        return -1
+    }
+    if bceCv(mut st, mut bw, irInsB(mut st, InsRef(fd))) < c1 {
+        return -1
+    }
+    k := irInsA(mut st, InsRef(cd))
+    return if k == CUge { 0 } else { 1 }
+}
+
+// bceCv は値 v が定数の式（定数と、定数どうしの add / mul — 全展開の写しの添字 `o + k` は gvn が畳まないのでこの形で残る）なら
+// その値（0 以上 BCE_CMAX 以下だけ — 途中も同じ範囲で桁あふれしない）、そうでなければ -1。式の木は幅優先で BCE_CNODES 個まで集めて後ろから畳む
+// （mut 引数の関数の再帰は並列の束の閉包で自己 check が def error になるので作業列で）
+func bceCv(st mut St, bw mut BceW, v int) int {
+    d := bw.defIns[v]
+    if d < 0 {
+        return -1
+    }
+    if irInsOp(mut st, InsRef(d)) == OpConst {
+        k := irInsA(mut st, InsRef(d))
+        return if k >= 0 && k <= BCE_CMAX { k } else { -1 }
+    }
+    if irInsOp(mut st, InsRef(d)) != OpBin {
+        return -1
+    }
+    // ns = 節の値・ch = 子の先頭の位置（-1 = 葉の定数）
+    mut ns := mut []int{v}
+    mut ch := mut []int{}
+    mut q := 0
+    while q < len(ns) {
+        dq := bw.defIns[ns[q]]
+        if dq < 0 {
+            return -1
+        }
+        op := irInsOp(mut st, InsRef(dq))
+        if op == OpConst {
+            ch = append(ch, -1)
+        } else if op == OpBin && (irInsA(mut st, InsRef(dq)) == BAdd || irInsA(mut st, InsRef(dq)) == BMul) && len(ns) + 2 <= BCE_CNODES {
+            ch = append(ch, len(ns))
+            ns = append(ns, irInsB(mut st, InsRef(dq)))
+            ns = append(ns, irInsC(mut st, InsRef(dq)))
+        } else {
+            return -1
+        }
+        q += 1
+    }
+    mut cvs := mut []int{}
+    xFill(mut cvs, len(ns), 0)
+    mut k := len(ns) - 1
+    while k >= 0 {
+        dk := InsRef(bw.defIns[ns[k]])
+        if ch[k] < 0 {
+            c := irInsA(mut st, dk)
+            if c < 0 || c > BCE_CMAX {
+                return -1
+            }
+            cvs[k] = c
+        } else {
+            a := cvs[ch[k]]
+            b := cvs[ch[k] + 1]
+            r := if irInsA(mut st, dk) == BAdd { a + b } else { a * b }
+            if r > BCE_CMAX {
+                return -1
+            }
+            cvs[k] = r
+        }
+        k -= 1
+    }
+    return cvs[0]
+}
+
+const BCE_CNODES = 15
+const BCE_CMAX = 1 << 30
 
 // bceNonneg は値 x が常に 0 以上か（非負の定数・ループの頭の帰納変数 — 入りの値が全部「非負の定数か自分 + 正の定数」）
 func bceNonneg(st mut St, w mut m2rW, bw mut BceW, x int, depth int) bool {

@@ -2334,6 +2334,7 @@ func @main.show(%0 i64, %1 i64, %2 i64) {
   slot s17 [3]
   slot s18 [1]
   slot s19 [3]
+  slot s20 [3]
 b0:
   %3 = slotaddr s0
   store %3[0], %0
@@ -2572,7 +2573,7 @@ b7:
   store %151[1], %153
   %154 = load.i64 %150[2]
   store %151[2], %154
-  %155 = slotaddr s16
+  %155 = slotaddr s19
   %156 = load.i64 %136[0]
   %157 = load.i64 %11[1]
   %158 = uge %156, %157
@@ -2591,7 +2592,7 @@ b9:
   %166 = gep.word %164, %165
   %167 = load.i64 %166[0]
   call @main.kind(%155, %167)
-  %168 = slotaddr s15
+  %168 = slotaddr s16
   %169 = load.i64 %155[0]
   store %168[0], %169
   %170 = load.i64 %155[1]
@@ -2601,7 +2602,7 @@ b9:
   %172 = globaladdr @str.6
   %173 = const 2
   %174 = const 0
-  %175 = slotaddr s14
+  %175 = slotaddr s15
   %176 = ptoi %172
   store %175[0], %176
   store %175[1], %173
@@ -2660,7 +2661,7 @@ b9:
   %217 = load.i64 %168[0]
   %218 = itop %217
   call @rt.copy8(%216, %218, %209)
-  %219 = slotaddr s19
+  %219 = slotaddr s20
   %220 = ptoi %215
   store %219[0], %220
   store %219[1], %210

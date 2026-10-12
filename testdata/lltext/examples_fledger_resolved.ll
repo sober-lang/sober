@@ -3081,11 +3081,11 @@ b2:
 b3:
   %v66 = add i64 0, 10
   call void @"rt.print_char"(i64 %v66)
-  %v67 = getelementptr i64, ptr %s2, i64 0
+  %v67 = getelementptr i64, ptr %s7, i64 0
   %v68 = getelementptr i64, ptr @"str.1", i64 0
   %v69 = add i64 0, 1
   %v70 = add i64 0, 0
-  %v71 = getelementptr i64, ptr %s1, i64 0
+  %v71 = getelementptr i64, ptr %s2, i64 0
   %v72 = ptrtoint ptr %v68 to i64
   %st40 = getelementptr i64, ptr %v71, i64 0
   store i64 %v72, ptr %st40
@@ -3093,7 +3093,7 @@ b3:
   store i64 %v69, ptr %st41
   %st42 = getelementptr i64, ptr %v71, i64 2
   store i64 %v70, ptr %st42
-  %v73 = getelementptr i64, ptr %s7, i64 0
+  %v73 = getelementptr i64, ptr %s1, i64 0
   %v74.p = getelementptr i64, ptr %v71, i64 0
   %v74 = load i64, ptr %v74.p
   %st43 = getelementptr i64, ptr %v73, i64 0
@@ -3243,7 +3243,7 @@ b4:
   %v120 = getelementptr i64, ptr @"str.2", i64 0
   %v121 = add i64 0, 2
   %v122 = add i64 0, 0
-  %v123 = getelementptr i64, ptr %s8, i64 0
+  %v123 = getelementptr i64, ptr %s1, i64 0
   %v124 = ptrtoint ptr %v120 to i64
   %st72 = getelementptr i64, ptr %v123, i64 0
   store i64 %v124, ptr %st72
@@ -3256,7 +3256,7 @@ b5:
   %v125 = getelementptr i64, ptr @"str.3", i64 0
   %v126 = add i64 0, 1
   %v127 = add i64 0, 0
-  %v128 = getelementptr i64, ptr %s7, i64 0
+  %v128 = getelementptr i64, ptr %s2, i64 0
   %v129 = ptrtoint ptr %v125 to i64
   %st75 = getelementptr i64, ptr %v128, i64 0
   store i64 %v129, ptr %st75
@@ -3275,7 +3275,7 @@ b6:
   %v133 = getelementptr i64, ptr @"str.2", i64 0
   %v134 = add i64 0, 2
   %v135 = add i64 0, 0
-  %v136 = getelementptr i64, ptr %s7, i64 0
+  %v136 = getelementptr i64, ptr %s2, i64 0
   %v137 = ptrtoint ptr %v133 to i64
   %st78 = getelementptr i64, ptr %v136, i64 0
   store i64 %v137, ptr %st78
@@ -3293,7 +3293,7 @@ b6:
   %v142 = getelementptr i64, ptr @"str.1", i64 0
   %v143 = add i64 0, 1
   %v144 = add i64 0, 0
-  %v145 = getelementptr i64, ptr %s8, i64 0
+  %v145 = getelementptr i64, ptr %s1, i64 0
   %v146 = ptrtoint ptr %v142 to i64
   %st81 = getelementptr i64, ptr %v145, i64 0
   store i64 %v146, ptr %st81

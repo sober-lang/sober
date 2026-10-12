@@ -123,6 +123,21 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - 境界コピー（region 多相の裁定 — language.md 31 節、Lean の relocT / relocTo / regionKR）は 1 つの規則 lower_cont.relocateTo(値, 型, floor) に集めてある
   - 対象は、ヘッダの深度が floor より深いコンテナだけ。中身を先に再帰で写してから、外側のセル列を floor の region の先端へ連続に積む
   - 同じ規則を使う出口: 関数の戻りと `?`（floor = 入口の深度）、inline 展開の return と `?`（floor = 呼び出し点の深度）、式ブロックの普通の出口（floor = ブロックの入口の深度）
+- 最適化が使う別名の事実（ヘッダのループ昇格 — src/compiler/lower/hloop.sober・2026-10-12 裁定）: mut の印のある ptr 仮引数 P（呼び手のヘッダのセル）は、
+  次の番地の書き込みと重ならない — ①確保した番地（region.alloc の結果・rt.region_alloc / region_alloc8 / slice_grow / slice_grow8 の結果とその gep —
+  確保したばかりのセルは入口で既にあった P の指す先に属さない）②rt の大域・ワーカーの表（globaladdr / fsaddr）とこの関数のスロット ③P 自身のデータ
+  （`itop(load P[0])` から gep した番地 — slice は自分自身を要素に含められない）。rt.slice_grow / slice_grow8 は P のセルを読み書きしない（ヘッダの値を
+  引数で受け、古い列のデータを読んで新しい列と rt の表を書く）。region の op（enter / depth / setdepth / bump / alloc）は rt の状態だけを触る。
+  ループの中の P のメモリの読み書きが全部 `P[k]`（k は定数）で、ほかの書き込み・呼び出しが ①〜③ と上の rt の呼び出しだけなら、P[k] をループの間
+  レジスタに置いてよい（前置きで読み、出口の辺で書き戻す）。mut 実引数の排他（language.md — 同じ呼び出しの mut 実引数は重ならない）には依らない
+  （ほかの仮引数を直に読み書きするループは昇格しない）
+  - 同じ型の論証で、展開後の上限の巻き上げ（src/compiler/lower/rlim.sober — std の work の席 段 2・2026-10-12 裁定）: rt.meta の W_SLOTS / W_SLOT_SIZE を書くのは
+    rt の起動だけで、上の rt の呼び出し（slice_grow / slice_grow8・region_alloc / region_alloc8 — 書くのは新しい列と W_BUMP の語・panic / panic_mem — 戻らない）も
+    この 2 語を書かない。番地が `globaladdr @rt.meta` 直の `load [W_SLOTS | W_SLOT_SIZE]` は、ループの中の呼び出しがこれらの rt だけ（間接呼び出し・syscall・
+    原子・罠・task の op・relocate・この 2 語の語への store が無い）ならループ不変（taskUse のスロットの先頭はワーカーの記録から来るので、gep を挟み種にならない）
+  - 同じ型の論証で、写しの転送（src/compiler/lower/cpfwd.sober — G 便・2026-10-12 裁定）: rt.str_eq は引数の指す先（文字列の語 0 / 1 とそのバイト）を読むだけで、
+    書かず・番地を残さない。番地 A からの語ごとの写しで書かれたスロット S の使い道が load と str_eq の引数だけで、写しから使い道までの道に A の指す先か S を
+    書きうるもの（根がほかのスロットでない store・str_eq / panic 以外の呼び出し・region の入り / 深度の書き換え ほか）が無いなら、使い道は S でなく A を読んでよい
 
 ## 7. ランタイムは IR で書く
 

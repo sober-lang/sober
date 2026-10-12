@@ -2777,6 +2777,13 @@ b0:
   %s6 = alloca [1 x i64], align 8
   %s6.z0 = getelementptr i64, ptr %s6, i64 0
   store i64 0, ptr %s6.z0
+  %s7 = alloca [3 x i64], align 8
+  %s7.z0 = getelementptr i64, ptr %s7, i64 0
+  store i64 0, ptr %s7.z0
+  %s7.z1 = getelementptr i64, ptr %s7, i64 1
+  store i64 0, ptr %s7.z1
+  %s7.z2 = getelementptr i64, ptr %s7, i64 2
+  store i64 0, ptr %s7.z2
   %v315 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v315, i64 0
   %v0 = load i64, ptr %v0.p
@@ -3672,7 +3679,7 @@ b68:
   call void @"rt.print_int"(i64 %v304)
   %v309 = add i64 0, 10
   call void @"rt.print_char"(i64 %v309)
-  %v310 = getelementptr i64, ptr %s0, i64 0
+  %v310 = getelementptr i64, ptr %s7, i64 0
   call void @"main.words"(ptr %v310)
   call void @"rt.print_str"(ptr %v310)
   %v311 = add i64 0, 10

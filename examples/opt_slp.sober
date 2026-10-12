@@ -1,0 +1,68 @@
+package main
+
+// SLP の束ね（SIMD 段 4②b — compiler/lower/slp.sober）の網: nbody の advance の形（全展開した組のループ・定数添字の検査の版分けの速い道 —
+// x, y を 16 B に束ねる）を 5 体 × 20 歩で走らせ、全欄のビット列を印字する（レーンの取り違え・結合の付け替えは 1 ulp でも出力が変わる —
+// dt を大きくして更新の項を速度と同じ桁に: 小さい dt では項の 1 ulp の差が足し算の丸めに吸収され、`dx * (b[p + 6] * mag)` への付け替えが出力に出なかった）。
+// 後半の chain は対の間で早い側の語を読み直す形（c[k] を書いてからその値で c[k + 1] を書く）。chain の先頭で最後の要素を読むのは、大きい定数添字の
+// 検査が小さい添字の検査を畳み（bce の ⑤）、本体が 1 本の直線になるように
+
+import "std/iter"
+import "std/math"
+
+const NB = 5
+const W = 7
+
+func advance(b mut []float, dt float) {
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        for j <- iter.Range(i + 1, NB) {
+            p := j * W
+            dx := b[o] - b[p]
+            dy := b[o + 1] - b[p + 1]
+            dz := b[o + 2] - b[p + 2]
+            dsq := dx * dx + dy * dy + dz * dz
+            mag := dt / (dsq * math.Sqrt(dsq))
+            b[o + 3] = b[o + 3] - dx * b[p + 6] * mag
+            b[o + 4] = b[o + 4] - dy * b[p + 6] * mag
+            b[o + 5] = b[o + 5] - dz * b[p + 6] * mag
+            b[p + 3] = b[p + 3] + dx * b[o + 6] * mag
+            b[p + 4] = b[p + 4] + dy * b[o + 6] * mag
+            b[p + 5] = b[p + 5] + dz * b[o + 6] * mag
+        }
+    }
+    for i <- iter.Range(0, NB) {
+        o := i * W
+        b[o] = b[o] + dt * b[o + 3]
+        b[o + 1] = b[o + 1] + dt * b[o + 4]
+        b[o + 2] = b[o + 2] + dt * b[o + 5]
+    }
+}
+
+func chain(c mut []float, u float, v float) {
+    _ = c[9]
+    c[0] = c[0] - u * v
+    c[1] = c[1] - c[0] * v
+    c[2] = c[2] + c[1] * u
+    c[3] = c[3] + c[2] * u
+}
+
+func main() {
+    mut b := mut []float{
+        0.1, 0.2, 0.3, 0.7, -0.3, 0.11, 39.4784176043574,
+        4.84, -1.16, -0.103, 0.606, 2.81, -0.025, 0.0376936748703894,
+        8.34, 4.12, -0.403, -1.01, 1.82, 0.0084, 0.0112863261319688,
+        12.89, -15.11, -0.223, 1.08, 0.868, -0.0108, 0.00172372405705971,
+        15.37, -25.91, 0.179, 0.979, 0.594, -0.0347, 0.00203368686992463,
+    }
+    for s <- iter.Range(0, 20) {
+        advance(mut b, 1.3)
+    }
+    for k <- iter.Range(0, len(b)) {
+        println(math.Bits(b[k]))
+    }
+    mut c := mut []float{1.5, 2.25, 3.125, 4.0625, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+    chain(mut c, 0.3, 0.7)
+    for k <- iter.Range(0, 4) {
+        println(math.Bits(c[k]))
+    }
+}

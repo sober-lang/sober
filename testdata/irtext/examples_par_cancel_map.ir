@@ -10080,7 +10080,7 @@ b74:
   %486 = globaladdr @str.2
   %487 = const 3
   %488 = const 0
-  %489 = slotaddr s23
+  %489 = slotaddr s8
   %490 = ptoi %486
   store %489[0], %490
   store %489[1], %487
@@ -10112,7 +10112,7 @@ b75:
   %479 = globaladdr @str.1
   %480 = const 5
   %481 = const 0
-  %482 = slotaddr s8
+  %482 = slotaddr s7
   %483 = ptoi %479
   store %482[0], %483
   store %482[1], %480
@@ -10133,7 +10133,7 @@ b76:
   store %462[0], %463
   store %462[1], %460
   store %462[2], %461
-  %464 = slotaddr s0
+  %464 = slotaddr s23
   call @std/strings.FormatInt(%464, %458)
   %465 = load.i64 %462[1]
   %466 = load.i64 %464[1]
@@ -10147,7 +10147,7 @@ b76:
   %474 = load.i64 %464[0]
   %475 = itop %474
   call @rt.copy8(%473, %475, %466)
-  %476 = slotaddr s7
+  %476 = slotaddr s0
   %477 = ptoi %472
   store %476[0], %477
   store %476[1], %467

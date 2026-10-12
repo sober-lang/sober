@@ -9276,8 +9276,10 @@ func @main.main() {
   slot s26 [8]
   slot s27 [3]
   slot s28 [8]
-  slot s29 [8]
+  slot s29 [3]
   slot s30 [8]
+  slot s31 [8]
+  slot s32 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -11234,7 +11236,7 @@ b208:
   store %1036[6], %1043
   %1044 = load.i64 %994[7]
   store %1036[7], %1044
-  %1045 = slotaddr s21
+  %1045 = slotaddr s29
   call @std/strings.FormatInt(%1045, %1035)
   %1046 = load.i64 %1045[0]
   %1047 = load.i64 %1045[1]
@@ -11707,7 +11709,7 @@ b254:
   store %1292[4], %1297
   store %1292[5], %1297
   store %1292[6], %1297
-  %1298 = slotaddr s29
+  %1298 = slotaddr s30
   %1299 = const 1
   store %1298[0], %1299
   %1300 = load.i64 %1292[0]
@@ -11746,7 +11748,7 @@ b255:
   condbr %1276, b257, b258
 b256:
   %1315 = load.i64 %1273[0]
-  %1316 = slotaddr s30
+  %1316 = slotaddr s31
   %1317 = load.i64 %1274[0]
   store %1316[0], %1317
   %1318 = load.i64 %1274[1]
@@ -11763,7 +11765,7 @@ b256:
   store %1316[6], %1323
   %1324 = load.i64 %1274[7]
   store %1316[7], %1324
-  %1325 = slotaddr s21
+  %1325 = slotaddr s32
   call @std/strings.FormatInt(%1325, %1315)
   %1326 = load.i64 %1325[0]
   %1327 = load.i64 %1325[1]

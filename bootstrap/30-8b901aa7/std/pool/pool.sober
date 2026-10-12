@@ -1,0 +1,84 @@
+package pool
+
+// Pool[T] はスロットを使い回す資源の置き場（region-domain-pool.md 2・4 節の最小形 — V5-2）。
+// 取り出しは Acquire、返却は同じブロックの直後の文で defer する — analyzer が局所照合で強制する:
+//
+//     mut p := pool.Pool[Buf]{}
+//     h := pool.Acquire(mut p, Buf{})
+//     defer pool.Release(mut p, h)
+//
+// 最小形の割り切り:
+// - ピン済み参照 `*T` は持たない（言語に無い）。中身は Get でコピーを読み、Set で書く
+// - Handle は index + 世代。スロットの世代は偶数 = 空き・奇数 = 使用中で、Acquire と Release で 1 ずつ進む。
+//   返却・再利用された後の Handle は世代が合わず、Get は nil・Set は false・Release は何もしない
+// - 単一スレッド（Sharable は Phase 3 のアトミック設計と同時）。T は loc-free（型引数の制約 — language.md 25 節）
+// - Len は未返却の個数（Phase 3 のオラクル「Pool 未返却カウンタ」— analyzer 1 本目の動的な底）
+type Handle struct {
+    idx int
+    gen int
+}
+
+type Pool[T] struct {
+    slots mut []T
+    gens mut []int
+    free mut []int
+    nfree int
+    out int
+}
+
+// Acquire は v を空きスロット（無ければ末尾に足す）に置き、そのスロットの Handle を返す
+func Acquire[T](p mut Pool[T], v T) Handle {
+    mut i := 0
+    if p.nfree > 0 {
+        p.nfree = p.nfree - 1
+        i = p.free[p.nfree]
+        p.slots[i] = v
+        p.gens[i] = p.gens[i] + 1
+    } else {
+        i = len(p.slots)
+        p.slots = append(p.slots, v)
+        p.gens = append(p.gens, 1)
+    }
+    p.out = p.out + 1
+    return Handle{idx: i, gen: p.gens[i]}
+}
+
+// Release は h のスロットを空きに戻す。h が古ければ（返却済み・再利用済み）何もしない
+func Release[T](p mut Pool[T], h Handle) {
+    if live(mut p, h) {
+        p.gens[h.idx] = p.gens[h.idx] + 1
+        if p.nfree == len(p.free) {
+            p.free = append(p.free, h.idx)
+        } else {
+            p.free[p.nfree] = h.idx
+        }
+        p.nfree = p.nfree + 1
+        p.out = p.out - 1
+    }
+}
+
+// Get は h のスロットの中身。h が古ければ nil（本当に消えたかもしれない場所にだけ現れる不在）
+func Get[T](p mut Pool[T], h Handle) T? {
+    if !live(mut p, h) {
+        return nil
+    }
+    return p.slots[h.idx]
+}
+
+// Set は h のスロットを v で置き換える。h が古ければ何もせず false
+func Set[T](p mut Pool[T], h Handle, v T) bool {
+    if live(mut p, h) {
+        p.slots[h.idx] = v
+        return true
+    }
+    return false
+}
+
+// Len は未返却（Acquire したが Release していない）の個数
+func Len[T](p mut Pool[T]) int {
+    return p.out
+}
+
+func live[T](p mut Pool[T], h Handle) bool {
+    return h.idx >= 0 && h.idx < len(p.gens) && p.gens[h.idx] == h.gen
+}

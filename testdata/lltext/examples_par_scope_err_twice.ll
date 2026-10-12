@@ -14579,6 +14579,13 @@ b0:
   store i64 0, ptr %s15.z6
   %s15.z7 = getelementptr i64, ptr %s15, i64 7
   store i64 0, ptr %s15.z7
+  %s16 = alloca [3 x i64], align 8
+  %s16.z0 = getelementptr i64, ptr %s16, i64 0
+  store i64 0, ptr %s16.z0
+  %s16.z1 = getelementptr i64, ptr %s16, i64 1
+  store i64 0, ptr %s16.z1
+  %s16.z2 = getelementptr i64, ptr %s16, i64 2
+  store i64 0, ptr %s16.z2
   %v392 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v392, i64 0
   %v0 = load i64, ptr %v0.p
@@ -15844,7 +15851,7 @@ b69:
   %v379 = load i64, ptr %v379.p
   %st253 = getelementptr i64, ptr %v371, i64 7
   store i64 %v379, ptr %st253
-  %v380 = getelementptr i64, ptr %s12, i64 0
+  %v380 = getelementptr i64, ptr %s16, i64 0
   call void @"std/strings.FormatInt"(ptr %v380, i64 %v370)
   %v381.p = getelementptr i64, ptr %v380, i64 0
   %v381 = load i64, ptr %v381.p

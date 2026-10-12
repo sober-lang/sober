@@ -1662,7 +1662,8 @@ b0:
 func @main.main() {
   slot s0 [7]
   slot s1 [6]
-  slot s2 [6]
+  slot s2 [7]
+  slot s3 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1717,7 +1718,7 @@ b2:
 b3:
   %26 = const 10
   call @rt.print_char(%26)
-  %27 = slotaddr s0
+  %27 = slotaddr s2
   %28 = const 2
   %29 = const 0
   %30 = sub %29, %28
@@ -1725,7 +1726,7 @@ b3:
   %31 = load.i64 %27[0]
   %32 = const 1
   %33 = gep.word %27, %32
-  %34 = slotaddr s2
+  %34 = slotaddr s3
   %35 = load.i64 %33[0]
   store %34[0], %35
   %36 = load.i64 %33[1]

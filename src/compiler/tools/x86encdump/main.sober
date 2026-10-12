@@ -145,6 +145,11 @@ func main() {
             at = x86.Here(mut c)
             x86.ImulRegReg(mut c, a, b)
             line(mut c, at, "imul ${regName(a)}, ${regName(b)}")
+            for k <- iter.Range(0, len(imms)) {
+                at = x86.Here(mut c)
+                x86.ImulRegRegImm(mut c, a, b, imms[k])
+                line(mut c, at, "imul ${regName(a)}, ${regName(b)}, ${imms[k]}")
+            }
             if b != x86.Rsp {
                 at = x86.Here(mut c)
                 x86.LeaRegSib(mut c, a, a, b, x86.Scale8)
@@ -301,6 +306,28 @@ func main() {
             at = x86.Here(mut c)
             x86.Cvttsd2siRX(mut c, a, b)
             line(mut c, at, "cvttsd2si ${regName(a)}, xmm${b}")
+            // packed double（段 4②a）
+            at = x86.Here(mut c)
+            x86.AddpdXX(mut c, a, b)
+            line(mut c, at, "addpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.SubpdXX(mut c, a, b)
+            line(mut c, at, "subpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.MulpdXX(mut c, a, b)
+            line(mut c, at, "mulpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.DivpdXX(mut c, a, b)
+            line(mut c, at, "divpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.SqrtpdXX(mut c, a, b)
+            line(mut c, at, "sqrtpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.UnpcklpdXX(mut c, a, b)
+            line(mut c, at, "unpcklpd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.UnpckhpdXX(mut c, a, b)
+            line(mut c, at, "unpckhpd xmm${a}, xmm${b}")
             at = x86.Here(mut c)
             x86.BsfRR(mut c, a, b)
             line(mut c, at, "bsf ${regName(a)}, ${regName(b)}")
@@ -332,6 +359,12 @@ func main() {
                 at = x86.Here(mut c)
                 x86.MovdquMemX(mut c, b, d, a)
                 line(mut c, at, "movdqu xmmword ptr ${mem(b, d)}, xmm${a}")
+                at = x86.Here(mut c)
+                x86.MovupdXMem(mut c, a, b, d)
+                line(mut c, at, "movupd xmm${a}, xmmword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.MovupdMemX(mut c, b, d, a)
+                line(mut c, at, "movupd xmmword ptr ${mem(b, d)}, xmm${a}")
             }
         }
     }

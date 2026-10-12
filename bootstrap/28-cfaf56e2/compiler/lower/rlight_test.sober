@@ -1,0 +1,40 @@
+package lower
+
+// ループの region の省略の判定（rlight.sober llInsAllocs）の単体テスト（`cd compiler && ../bin/sober test lower`）: rt.region_relocate（ptr, i64, 深度）と
+// rt.region_relocate8（ptr, 深度）は深度の実引数の位置が違う。relocate8 を relocate と同じ位置で読むと、2 引数の呼び出しはいつも「確保しうる」の
+// 保守の側に倒れて周回の region が残っていた（report-499 H1）。今の深度 / 外の深度の 2 形を IR で組んで直に見る
+
+import "desugar"
+
+// llT は relocate（r8 = false）か relocate8（r8 = true）を、行き先の深度 = 今の深度（here = true — region.depth の値）か外の深度（関数の引数）で
+// 1 回呼ぶ関数を組み、その呼び出しに llInsAllocs を当てる
+func llT(r8 bool, here bool) bool {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 2)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    desugar.HeapSet(mut st.d, pt + 2, TyI64)
+    st.rtReloc = addFunc(mut st, 0, desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), -1)
+    st.rtReloc8 = addFunc(mut st, 0, desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    begin(mut st, f)
+    d := if here { regionDepth(mut st) } else { 1 }
+    if r8 {
+        call(mut st, st.rtReloc8, list2(mut st, 0, d))
+    } else {
+        call(mut st, st.rtReloc, list3(mut st, 0, iconst(mut st, 3), d))
+    }
+    i := irBlkITail(mut st, st.cur)
+    ret(mut st, 0)
+    mut ma := mut map[int]int{}
+    return llInsAllocs(mut st, i, mut ma, llDepths(mut st, f))
+}
+
+func TestLlInsAllocsReloc() {
+    assert(llT(false, true))
+    assert(!llT(false, false))
+    assert(llT(true, true))
+    // 外の深度へ写す relocate8（append の伸長 — 外の out のヘッダの深度）は今の深度で確保しない
+    assert(!llT(true, false))
+}

@@ -2803,6 +2803,15 @@ b0:
   store i64 0, ptr %s7.z2
   %s7.z3 = getelementptr i64, ptr %s7, i64 3
   store i64 0, ptr %s7.z3
+  %s8 = alloca [4 x i64], align 8
+  %s8.z0 = getelementptr i64, ptr %s8, i64 0
+  store i64 0, ptr %s8.z0
+  %s8.z1 = getelementptr i64, ptr %s8, i64 1
+  store i64 0, ptr %s8.z1
+  %s8.z2 = getelementptr i64, ptr %s8, i64 2
+  store i64 0, ptr %s8.z2
+  %s8.z3 = getelementptr i64, ptr %s8, i64 3
+  store i64 0, ptr %s8.z3
   %v136 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v136, i64 0
   %v0 = load i64, ptr %v0.p
@@ -3057,7 +3066,7 @@ b7:
 b8:
   br label %b9
 b9:
-  %v92 = getelementptr i64, ptr %s1, i64 0
+  %v92 = getelementptr i64, ptr %s8, i64 0
   %v93 = getelementptr i64, ptr @"str.2", i64 0
   %v94 = add i64 0, 1
   %v95 = add i64 0, 0
@@ -3076,7 +3085,7 @@ b9:
   %v100.p = getelementptr i64, ptr %v96, i64 2
   %v100 = load i64, ptr %v100.p
   call void @"main.local"(ptr %v92, i64 %v98, i64 %v99, i64 %v100)
-  %v101 = getelementptr i64, ptr %s0, i64 0
+  %v101 = getelementptr i64, ptr %s1, i64 0
   %v102.p = getelementptr i64, ptr %v92, i64 0
   %v102 = load i64, ptr %v102.p
   %st47 = getelementptr i64, ptr %v101, i64 0

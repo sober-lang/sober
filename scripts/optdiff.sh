@@ -43,8 +43,8 @@ mkdir -p "$W/src" "$W/r"
 list=()
 if [ "$MUT" = 1 ]; then
     # 代表: 集約（slice / map / struct）・ループ・panic・error を突く例（hdr_mut2 = hdr の自分のヘッダの書き込み — 他の例は素通りした・
-    # callconv_cold = 冷たい呼び出しの退避 — report-463）
-    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold; do
+    # callconv_cold = 冷たい呼び出しの退避 — report-463・opt_hloop = mut slice の仮引数へループで append — hloop / rlim・opt_cpfwd = 写しと使い道の間の書き換え — cpfwd・opt_bce_const = 小さい定数添字の後の大きい定数添字が範囲外 — bce ⑤・opt_bver = 長さがちょうど最大の定数添字 — 版分けの入口の判定・opt_slp = nbody の形の束ね — SLP のレーン・結合）
+    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold opt_hloop opt_cpfwd opt_bce_const opt_bver opt_slp; do
         [ -f "examples/$n.out" ] && list+=("exp ex_$n examples/$n.sober")
     done
 else

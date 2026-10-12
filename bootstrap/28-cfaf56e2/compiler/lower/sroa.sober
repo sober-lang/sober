@@ -1,0 +1,233 @@
+package lower
+
+// SROA（性能投資 M1）: 多語のスロット（slice / string / map のヘッダ・小さい struct・T? — lower の -O0 形の集約の置き場）を、
+// 語ごとの 1 語スロットに割る IR → IR のパス。割った後の 1 語スロットは既存の mem2reg（m2r.sober — 写し・不変）が SSA 値へ持ち上げる。
+// 対象: スロットのアドレス（slotaddr の結果）の使い道が「定数オフセットの load の番地」「定数オフセットの store の番地」だけのスロット
+// （格納される値・他の命令の引数・辺の引数・ret・gep・ptoi・call の引数になったら逃げている — 対象外。load8 / store8 も逃げ）。
+// 書き換え: スロット s（w 語）の各 `%a = slotaddr s` を「語 0 のスロットの slotaddr」に変え、直後に語 1..w-1 の slotaddr を差し込み、
+// `load %a[k]` / `store %a[k], v` を語 k のアドレスのオフセット 0 へ付け替える。元のスロットは slotaddr が無くなり、mem2reg の出口で落ちる。
+// 意味は変えない: 逃げないスロットのメモリは語ごとに独立に読み書きされるだけ（スロットは入口でゼロ初期化 — 割った語も同じ）
+
+import "desugar"
+import "std/iter"
+
+// sroaModule はモジュールの全関数に SROA を掛ける
+func sroaModule(st mut St, cg bool) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            sroaFunc(mut st, f, cg)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+func sroaFunc(st mut St, f FnRef, cg bool) {
+    // スロットの語数（番号の順 = 鎖の順）
+    mut swords := mut []int{}
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        swords = append(swords, desugar.HeapGet(mut st.d, s + 1))
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    ns := len(swords)
+    if ns == 0 {
+        return
+    }
+    nv := irFnNVal(mut st, f)
+    mut slotOf := mut []int{}
+    xFill(mut slotOf, nv, -1)
+    mut ok := mut []int{}
+    xFill(mut ok, ns, 0)
+    mut any := false
+    for k <- iter.Range(0, ns) {
+        if swords[k] > 1 {
+            ok[k] = 1
+            any = true
+        }
+    }
+    if !any {
+        return
+    }
+    // cg（展開後の SROA だけ）: 定数の gep.word の結果も元のスロットの番地として扱う（cval = 定数の値・geps = gep.word の命令）
+    mut cval := mut []int{}
+    if cg {
+        xFill(mut cval, nv, -1)
+    }
+    mut geps := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpSlotaddr {
+                slotOf[irInsRes(mut st, ins)] = irInsA(mut st, ins)
+            } else if cg && op == OpConst {
+                cval[irInsRes(mut st, ins)] = irInsA(mut st, ins)
+            } else if cg && op == OpGepW {
+                geps = append(geps, int(ins))
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // gbase[g] = 定数 gep.word の結果 g の元の slotaddr の値・goff[g] = 語のずれ（slotOf[g] も元のスロット — 逃げの判定は slotaddr の値と同じ規則で、ずれを足して見る）
+    mut gbase := mut []int{}
+    mut goff := mut []int{}
+    for q <- iter.Range(0, len(geps)) {
+        ins := InsRef(geps[q])
+        a := irInsA(mut st, ins)
+        c := cval[irInsB(mut st, ins)]
+        // 土台は slotaddr の値だけ（gep の結果を土台にした gep は透かさない — 結果 g の使い道として逃げに数える）
+        if slotOf[a] >= 0 && c >= 0 && (len(gbase) == 0 || gbase[a] < 0) {
+            if len(gbase) == 0 {
+                xFill(mut gbase, nv, -1)
+                xFill(mut goff, nv, 0)
+            }
+            r := irInsRes(mut st, ins)
+            gbase[r] = a
+            goff[r] = c
+            slotOf[r] = slotOf[a]
+        }
+    }
+    hasG := len(gbase) > 0
+    so := freeze(slotOf)
+    gb := freeze(gbase)
+    gofs := freeze(goff)
+    sw := freeze(swords)
+    // 逃げる使い道（m2rEsc と同じ形 — 番地としての定数オフセットの load / store だけが逃げない）
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad || op == OpStore {
+                p := irInsA(mut st, ins)
+                if so[p] >= 0 && (irInsB(mut st, ins) < 0 || (if hasG { gofs[p] } else { 0 }) + irInsB(mut st, ins) >= sw[so[p]]) {
+                    ok[so[p]] = 0
+                }
+                if op == OpStore {
+                    m2rEsc(so, mut ok, irInsC(mut st, ins))
+                }
+            } else if op == OpGepW && hasG && gb[irInsRes(mut st, ins)] >= 0 {
+                // 定数 gep.word の元の番地は逃げない（結果 g の使い道で見る）
+            } else if op != OpSlotaddr {
+                for k <- iter.Range(0, xNOps(mut st, ins)) {
+                    m2rEsc(so, mut ok, xOpnd(mut st, ins, k))
+                }
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            m2rEsc(so, mut ok, xTermOpnd(mut st, b, k))
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 割るスロットごとに語の 1 語スロットを鎖の末尾へ（first[k] = 語 0 の新しい番号）
+    mut first := mut []int{}
+    xFill(mut first, ns, -1)
+    mut nsplit := 0
+    for k <- iter.Range(0, ns) {
+        if ok[k] == 1 && sw[k] > 1 {
+            first[k] = irFnNSlot(mut st, f)
+            for j <- iter.Range(0, sw[k]) {
+                sroaNewSlot(mut st, f)
+            }
+            nsplit += 1
+        }
+    }
+    if nsplit == 0 {
+        return
+    }
+    fs := freeze(first)
+    // 語ごとのアドレス: 語 0 = 元の slotaddr（語 0 のスロットを指すように付け替える）・語 j（≥ 1）= wbase[%a] + j（差し込んだ slotaddr の値は連番）
+    st.fn = f
+    mut wbase := mut []int{}
+    xFill(mut wbase, nv, -1)
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            nx := irInsNext(mut st, ins)
+            if irInsOp(mut st, ins) == OpSlotaddr {
+                k := irInsA(mut st, ins)
+                r := irInsRes(mut st, ins)
+                if fs[k] >= 0 {
+                    irSetInsA(mut st, ins, fs[k])
+                    mut at := ins
+                    for j <- iter.Range(1, sw[k]) {
+                        v := newValue(mut st)
+                        if j == 1 {
+                            wbase[r] = v - 1
+                        }
+                        at = sroaInsAfter(mut st, b, at, v, OpSlotaddr, fs[k] + j, 0, 0)
+                    }
+                }
+            }
+            ins = nx
+        }
+        b = irBlkNext(mut st, b)
+    }
+    wb := freeze(wbase)
+    // 使い道の付け替え
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpLoad || op == OpStore {
+                p := irInsA(mut st, ins)
+                if p < len(wb) && wb[p] >= 0 {
+                    off := irInsB(mut st, ins)
+                    if off > 0 {
+                        irSetInsA(mut st, ins, wb[p] + off)
+                        irSetInsB(mut st, ins, 0)
+                    }
+                } else if hasG && gb[p] >= 0 && fs[so[p]] >= 0 {
+                    // 定数 gep.word 越しの load / store は語 goff + k の 1 語スロットへ（語 0 = 元の slotaddr の値）
+                    r := gb[p]
+                    w := gofs[p] + irInsB(mut st, ins)
+                    irSetInsA(mut st, ins, if w == 0 { r } else { wb[r] + w })
+                    irSetInsB(mut st, ins, 0)
+                }
+            } else if op == OpGepW && hasG && gb[irInsRes(mut st, ins)] >= 0 && fs[so[irInsRes(mut st, ins)]] >= 0 {
+                // 使い道を全部付け替えた gep は死なせる（残すと mem2reg が語 0 の slotaddr の逃げに数え、入口の store が 1 本残る）
+                irSetInsOp(mut st, ins, OpDead)
+                irSetInsRes(mut st, ins, -1)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// sroaNewSlot は関数 f に 1 語のスロットを鎖の末尾へ足す（記録 = [次, 語数, 番号, 空き鎖の次, 直近の slotaddr の値] — newSlot と同じ形）
+func sroaNewSlot(st mut St, f FnRef) {
+    n := irFnNSlot(mut st, f)
+    s := rec4(mut st, -1, 1, n, -1)
+    desugar.HeapPush(mut st.d, -1)
+    tail := irFnSTail(mut st, f)
+    if tail < 0 {
+        irSetFnSHead(mut st, f, s)
+    } else {
+        desugar.HeapSet(mut st.d, tail, s)
+    }
+    irSetFnSTail(mut st, f, s)
+    irSetFnNSlot(mut st, f, n + 1)
+}
+
+// sroaInsAfter はブロック blk の命令 at の直後に命令 [res, op, a, b, c] を差し込み、その記録を返す
+func sroaInsAfter(st mut St, blk BlkRef, at InsRef, res int, op int, a int, b int, c int) InsRef {
+    r := InsRef(desugar.HeapLen(mut st.d))
+    desugar.HeapPush(mut st.d, int(irInsNext(mut st, at)))
+    desugar.HeapPush(mut st.d, res)
+    desugar.HeapPush(mut st.d, op)
+    desugar.HeapPush(mut st.d, a)
+    desugar.HeapPush(mut st.d, b)
+    desugar.HeapPush(mut st.d, c)
+    irSetInsNext(mut st, at, r)
+    if irBlkITail(mut st, blk) == at {
+        irSetBlkITail(mut st, blk, r)
+    }
+    return r
+}

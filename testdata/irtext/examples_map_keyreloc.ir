@@ -2648,8 +2648,9 @@ func @main.build(%0 ptr, %1 i64) {
   slot s9 [3]
   slot s10 [3]
   slot s11 [3]
-  slot s12 [2]
+  slot s12 [3]
   slot s13 [2]
+  slot s14 [2]
 b0:
   %2 = region.depth
   region.enter
@@ -2796,7 +2797,7 @@ b4:
   store %87[0], %88
   store %87[1], %85
   store %87[2], %86
-  %89 = slotaddr s9
+  %89 = slotaddr s12
   call @std/strings.FormatInt(%89, %83)
   %90 = load.i64 %87[1]
   %91 = load.i64 %89[1]
@@ -2830,7 +2831,7 @@ b4:
   %110 = load.i64 %78[2]
   store %107[2], %110
   %111 = call @rt.map_find.1.1.6.1(%9, %107)
-  %112 = slotaddr s12
+  %112 = slotaddr s13
   %113 = const 0
   %114 = ne %111, %113
   condbr %114, b7, b8
@@ -2860,7 +2861,7 @@ b8:
   store %112[0], %122
   br b9
 b9:
-  %123 = slotaddr s13
+  %123 = slotaddr s14
   %124 = load.i64 %112[0]
   store %123[0], %124
   %125 = load.i64 %112[1]
@@ -2897,7 +2898,7 @@ b13:
   store %140[5], %136
   br b15
 b14:
-  %144 = slotaddr s9
+  %144 = slotaddr s10
   %145 = load.i64 %126[0]
   store %144[0], %145
   %146 = load.i64 %126[1]

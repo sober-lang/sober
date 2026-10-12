@@ -1,0 +1,55 @@
+package main
+
+// mut slice の仮引数へループで append する形の網（std の work の席 — jsonapi の zeroFill）: ヘッダのループ昇格（hloop.sober — ヘッダを
+// ループの間レジスタに置き、出口の辺で書き戻す）と展開後の上限の巻き上げ（rlim.sober — region の上限の計算をループの外へ）が掛かる。
+// 出口が 2 つのループ・先端で伸ばす経路と写して伸ばす経路（rt.slice_grow）・式ブロックの region の中からの呼び出しを通す
+
+// zfill は xs に k, k + 1, … を n 個足す（出口は 1 つ）
+func zfill(xs mut []int, n int, k int) {
+    mut i := 0
+    while i < n {
+        xs = append(xs, k + i)
+        i += 1
+    }
+}
+
+// until は xs に 0, 3, 6, … を足していき、足す値を 11 で割った余りが stop になるか n 個で止まる（出口が 2 つ — どちらの出口でもヘッダを書き戻す）
+func until(xs mut []int, n int, stop int) {
+    mut i := 0
+    while i < n && (i * 3) % 11 != stop {
+        xs = append(xs, i * 3)
+        i += 1
+    }
+}
+
+func sum(xs mut []int) int {
+    mut s := 0
+    mut i := 0
+    while i < len(xs) {
+        s = s * 31 + xs[i]
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    mut a := mut []int{}
+    zfill(mut a, 5, 10)
+    mut b := mut []int{1, 2}
+    // a の後ろに b を確保したので、a への append は先端で伸ばせず写して伸ばす（rt.slice_grow）
+    zfill(mut a, 40, 100)
+    println(sum(mut a), len(a))
+    // 余りが 7 の値（3 × 6 = 18）で止まる出口・n 個で止まる出口
+    until(mut b, 20, 7)
+    println(sum(mut b), len(b))
+    until(mut b, 4, 99)
+    println(sum(mut b), len(b))
+    // 式ブロックの region の中（深度 1）で伸ばす
+    t := {
+        mut c := mut []int{}
+        zfill(mut c, 3000, 1)
+        until(mut c, 50, 5)
+        sum(mut c) + len(c)
+    }
+    println(t)
+}

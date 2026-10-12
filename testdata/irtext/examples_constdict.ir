@@ -1684,10 +1684,12 @@ func @main.main() {
   slot s10 [2]
   slot s11 [2]
   slot s12 [3]
-  slot s13 [1]
+  slot s13 [3]
   slot s14 [1]
   slot s15 [1]
   slot s16 [1]
+  slot s17 [1]
+  slot s18 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1895,12 +1897,12 @@ b10:
   %122 = load.i64 %111[1]
   store %116[5], %122
   %123 = const 3
-  %124 = slotaddr s4
+  %124 = slotaddr s1
   %125 = ptoi %116
   store %124[0], %125
   store %124[1], %123
   store %124[2], %114
-  %126 = slotaddr s1
+  %126 = slotaddr s0
   %127 = load.i64 %124[0]
   store %126[0], %127
   %128 = load.i64 %124[1]
@@ -1915,13 +1917,13 @@ b10:
   %133 = slotaddr s2
   %134 = load.i64 %131[0]
   store %133[0], %134
-  %135 = slotaddr s0
+  %135 = slotaddr s12
   %136 = load.i64 %126[0]
   %137 = load.i64 %126[1]
   %138 = load.i64 %126[2]
   %139 = load.i64 %133[0]
   call @"main.sort[main.Tok]"(%135, %136, %137, %138, %139)
-  %140 = slotaddr s12
+  %140 = slotaddr s13
   %141 = load.i64 %135[0]
   store %140[0], %141
   %142 = load.i64 %135[1]
@@ -2015,11 +2017,11 @@ b18:
   br b19(%193)
 b19(%194 i64):
   %195 = funcaddr @lambda#0
-  %196 = slotaddr s13
+  %196 = slotaddr s14
   %197 = const 0
   store %196[0], %197
   store %196[0], %195
-  %198 = slotaddr s14
+  %198 = slotaddr s15
   %199 = load.i64 %196[0]
   store %198[0], %199
   %200 = const 0
@@ -2047,16 +2049,16 @@ b21:
   br b22(%211)
 b22(%212 i64):
   %213 = funcaddr @lambda#0
-  %214 = slotaddr s15
+  %214 = slotaddr s16
   %215 = const 0
   store %214[0], %215
   store %214[0], %213
-  %216 = slotaddr s16
+  %216 = slotaddr s17
   %217 = load.i64 %214[0]
   store %216[0], %217
   %218 = const 0
   %219 = const 10
-  %220 = slotaddr s4
+  %220 = slotaddr s18
   %221 = const 0
   store %220[0], %221
   store %220[1], %221

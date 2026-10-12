@@ -1,0 +1,73 @@
+package loader
+
+// 多値の型 `(T, error?)`（ast.TTuple — P3b 残穴1）の置き場の検査: 文法は型引数の位置にだけ受ける（parser の typeArg）が、
+// 書けるのは std/par の Task の型引数の `(T, error?)`（error を返す task の handle — `mut hs := mut []par.Task[(T, error?)]{}`）だけ。
+// 一般の匿名タプル型は入れない（syntax.md 決定 4 の線のまま）— 他の総称の型引数・形の違う組は名指しで拒否（diag.Par kind 18）
+
+import "ast"
+import "diag"
+import "std/iter"
+
+const PAR_TUPLE = 18
+
+// tupleTypeAt は置き場の外の多値の型の最初の位置（無ければ None）
+func tupleTypeAt(cx Cx) diag.Pos {
+    par := pkgOf(cx, "std/par")
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        mut ok := mut []bool{}
+        mut any := false
+        for i <- iter.Range(0, len(t.nodes)) {
+            ok = append(ok, false)
+            if t.nodes[i].kind == ast.TTuple {
+                any = true
+            }
+        }
+        if any {
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if x.kind == ast.TGeneric && par >= 0 && isParTask(cx, f, par, Name(t, x.a)) && ast.ListLen(t, x.b) == 1 {
+                    a := ast.ListAt(t, x.b, 0)
+                    if t.nodes[a].kind == ast.TTuple && fallibleShape(t, a) {
+                        ok[a] = true
+                    }
+                }
+            }
+            for i <- iter.Range(0, len(t.nodes)) {
+                if t.nodes[i].kind == ast.TTuple && !ok[i] {
+                    return diag.Pos{file: f, tok: t.nodes[i].tok}
+                }
+            }
+        }
+    }
+    return diag.None()
+}
+
+// isParTask は型名 n（"Task" か "ref.Task"）がファイル f から見て std/par（package 番号 par）の Task か
+func isParTask(cx Cx, f int, par int, n string) bool {
+    b := bytes(n)
+    mut dot := -1
+    for i <- iter.Range(0, len(b)) {
+        if b[i] == '.' {
+            dot = i
+        }
+    }
+    if dot < 0 {
+        return n == "Task" && cx.file_pkg[f] == par
+    }
+    return cut(n, dot + 1, len(b)) == "Task" && fileImportOf(cx, f, cut(n, 0, dot)) == par
+}
+
+// fallibleShape は組の節 a が `(T, error?)` の形（2 つ・2 つ目が `error?`）か
+func fallibleShape(t ast.Tree, a int) bool {
+    l := t.nodes[a].a
+    if ast.ListLen(t, l) != 2 {
+        return false
+    }
+    e := t.nodes[ast.ListAt(t, l, 1)]
+    if e.kind != ast.TOpt {
+        return false
+    }
+    en := t.nodes[e.a]
+    return en.kind == ast.TName && Name(t, en.a) == "error"
+}

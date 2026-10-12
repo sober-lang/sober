@@ -366,7 +366,7 @@ func elfOutSt(st mut St, p loader.Program, passes bool, m2r bool, syms bool, cop
         vfyModule(mut st, "mem2reg")
     }
     if st.halted {
-        return []byte{}, nil
+        return if st.dumpIr { stDump(mut st) } else { []byte{} }, nil
     }
     if passes && !copy {
         // 軽い region.enter（第二便 M9 — rlight.sober。rtlower の手前・最適化のバックエンドだけ）
@@ -421,6 +421,9 @@ func elfOutSt(st mut St, p loader.Program, passes bool, m2r bool, syms bool, cop
             sroaModule(mut st, true)
             ccPostM2rModule(mut st)
             vfyModule(mut st, "post-inline sroa")
+            // 展開で開いた region.alloc の上限の load と算術をループの外へ（std の work の席 段 2 — rlim.sober）
+            rlimModule(mut st)
+            vfyModule(mut st, "region limit hoist")
             // UTF-8 の境界の畳み（ubf.sober — Str の写しの境界の判定を呼び手の事実から畳む）
             ubfModule(mut st)
             vfyModule(mut st, "utf8 boundary fold")
@@ -428,6 +431,13 @@ func elfOutSt(st mut St, p loader.Program, passes bool, m2r bool, syms bool, cop
             if !st.noVec {
                 _ = vecModule(mut st)
                 vfyModule(mut st, "vec")
+                // SLP の束ね（SIMD 段 4②b — slp.sober）
+                mut f := st.fhead
+                while f != -1 {
+                    slpFunc(mut st, f)
+                    f = irFnNext(mut st, f)
+                }
+                vfyModule(mut st, "slp")
             }
             // 分岐の条件の比較を使うブロックの末尾へ複製（cmp + jcc の融合に乗せる — hdr.sober）
             cmpDupModule(mut st)
@@ -479,6 +489,12 @@ func optimizeSsa(st mut St) {
         // mut slice の仮引数のヘッダの読みを入口の 1 本に（1.0× アタック便 ① — hdr.sober）
         hdrModule(mut st)
         vfyModule(mut st, "hdr")
+        // ループの中で書く mut slice の仮引数のヘッダをスロットへ昇格（std の work の席 段 1 — hloop.sober）
+        hloopModule(mut st)
+        vfyModule(mut st, "hloop")
+        // スロットへの語ごとの写しで、使い道が load と rt.str_eq だけなら写し元へ付け替える（G 便 — cpfwd.sober）
+        cpfwdModule(mut st)
+        vfyModule(mut st, "copy forward")
         // 定数上限のループの全展開（展開の便 — unroll.sober。gvn / hdr の後の大きさで見積もり、展開した関数だけ gvn を掛け直して bce / licm へ）
         unrollModule(mut st)
         vfyModule(mut st, "unroll")
@@ -738,7 +754,7 @@ func newFuncSig(st mut St, name int, decl desugar.NodeRef, pk int, params desuga
         }
     }
     irf := addFunc(mut st, name, ptys, if sret || nr == 0 { -1 } else { TyI64 })
-    irSetFnMutP(mut st, irf, mutp)
+    irSetFnMutP(mut st, irf, if sret { mutp | (1 << F_SRET_BIT) } else { mutp })
     fi := table.Len(mut st.infos)
     table.Push(mut st.infos, FnInfo{fn: fn, pkg: pk, ir: irf, params: params, results: results, next: st.work, decl: decl, env: env, transp: false})
     st.work = fi

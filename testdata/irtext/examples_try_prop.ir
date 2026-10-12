@@ -1675,16 +1675,21 @@ func @main.main() {
   slot s1 [3]
   slot s2 [3]
   slot s3 [7]
-  slot s4 [3]
-  slot s5 [7]
-  slot s6 [8]
-  slot s7 [7]
+  slot s4 [11]
+  slot s5 [3]
+  slot s6 [7]
+  slot s7 [8]
   slot s8 [7]
-  slot s9 [7]
+  slot s9 [8]
   slot s10 [7]
-  slot s11 [7]
+  slot s11 [8]
   slot s12 [7]
-  slot s13 [7]
+  slot s13 [8]
+  slot s14 [7]
+  slot s15 [8]
+  slot s16 [7]
+  slot s17 [7]
+  slot s18 [7]
 b0:
   %0 = region.depth
   region.enter
@@ -1805,7 +1810,7 @@ b6:
   call @rt.print_int(%67)
   %73 = const 10
   call @rt.print_char(%73)
-  %74 = slotaddr s0
+  %74 = slotaddr s4
   %75 = const 12
   %76 = const 7
   %77 = const 0
@@ -1830,14 +1835,14 @@ b6:
   %89 = load.i64 %74[3]
   %90 = const 4
   %91 = gep.word %74, %90
-  %92 = slotaddr s4
+  %92 = slotaddr s5
   %93 = load.i64 %74[0]
   store %92[0], %93
   %94 = load.i64 %74[1]
   store %92[1], %94
   %95 = load.i64 %74[2]
   store %92[2], %95
-  %96 = slotaddr s5
+  %96 = slotaddr s6
   %97 = load.i64 %91[0]
   store %96[0], %97
   %98 = load.i64 %91[1]
@@ -1870,13 +1875,13 @@ b6:
   call @rt.print_int(%112)
   %115 = const 10
   call @rt.print_char(%115)
-  %116 = slotaddr s6
+  %116 = slotaddr s7
   %117 = const 41
   call @main.guarded(%116, %117)
   %118 = load.i64 %116[0]
   %119 = const 1
   %120 = gep.word %116, %119
-  %121 = slotaddr s7
+  %121 = slotaddr s8
   %122 = load.i64 %120[0]
   store %121[0], %122
   %123 = load.i64 %120[1]
@@ -1891,13 +1896,13 @@ b6:
   store %121[5], %127
   %128 = load.i64 %120[6]
   store %121[6], %128
-  %129 = slotaddr s6
+  %129 = slotaddr s9
   %130 = const 150
   call @main.guarded(%129, %130)
   %131 = load.i64 %129[0]
   %132 = const 1
   %133 = gep.word %129, %132
-  %134 = slotaddr s8
+  %134 = slotaddr s10
   %135 = load.i64 %133[0]
   store %134[0], %135
   %136 = load.i64 %133[1]
@@ -1940,13 +1945,13 @@ b6:
   call @rt.print_int(%157)
   %161 = const 10
   call @rt.print_char(%161)
-  %162 = slotaddr s6
+  %162 = slotaddr s11
   %163 = const 20
   call @main.viaLambda(%162, %163)
   %164 = load.i64 %162[0]
   %165 = const 1
   %166 = gep.word %162, %165
-  %167 = slotaddr s9
+  %167 = slotaddr s12
   %168 = load.i64 %166[0]
   store %167[0], %168
   %169 = load.i64 %166[1]
@@ -1961,13 +1966,13 @@ b6:
   store %167[5], %173
   %174 = load.i64 %166[6]
   store %167[6], %174
-  %175 = slotaddr s6
+  %175 = slotaddr s13
   %176 = const 40
   call @main.viaLambda(%175, %176)
   %177 = load.i64 %175[0]
   %178 = const 1
   %179 = gep.word %175, %178
-  %180 = slotaddr s10
+  %180 = slotaddr s14
   %181 = load.i64 %179[0]
   store %180[0], %181
   %182 = load.i64 %179[1]
@@ -1982,7 +1987,7 @@ b6:
   store %180[5], %186
   %187 = load.i64 %179[6]
   store %180[6], %187
-  %188 = slotaddr s6
+  %188 = slotaddr s15
   %189 = const 2
   %190 = const 0
   %191 = sub %190, %189
@@ -1990,7 +1995,7 @@ b6:
   %192 = load.i64 %188[0]
   %193 = const 1
   %194 = gep.word %188, %193
-  %195 = slotaddr s11
+  %195 = slotaddr s16
   %196 = load.i64 %194[0]
   store %195[0], %196
   %197 = load.i64 %194[1]
@@ -2047,7 +2052,7 @@ b6:
   call @rt.print_int(%226)
   %232 = const 10
   call @rt.print_char(%232)
-  %233 = slotaddr s12
+  %233 = slotaddr s17
   %234 = const 3
   call @main.mustSmall(%233, %234)
   %235 = load.i64 %233[0]
@@ -2058,7 +2063,7 @@ b6:
   %240 = load.i64 %233[5]
   %241 = load.i64 %233[6]
   %242 = call @main.code(%235, %236, %237, %238, %239, %240, %241)
-  %243 = slotaddr s13
+  %243 = slotaddr s18
   %244 = const 3
   %245 = const 0
   %246 = sub %245, %244
@@ -3199,7 +3204,8 @@ b6:
 func @main.viaLambda(%0 ptr, %1 i64) {
   slot s0 [8]
   slot s1 [8]
-  slot s2 [7]
+  slot s2 [8]
+  slot s3 [7]
 b0:
   %2 = region.depth
   region.enter
@@ -3244,7 +3250,7 @@ b2:
   %22 = ne %20, %21
   condbr %22, b4, b5
 b3:
-  %25 = slotaddr s1
+  %25 = slotaddr s2
   %26 = const 3
   %27 = mul %6, %26
   call @main.check(%25, %27)
@@ -3287,7 +3293,7 @@ b6:
 b7:
   %47 = const 1
   %48 = add %28, %47
-  %49 = slotaddr s2
+  %49 = slotaddr s3
   %50 = const 0
   store %49[0], %50
   store %3[0], %48
@@ -3347,7 +3353,7 @@ b12:
   %79 = ne %77, %78
   condbr %79, b14, b15
 b13:
-  %82 = slotaddr s2
+  %82 = slotaddr s3
   %83 = const 0
   store %82[0], %83
   store %0[0], %63

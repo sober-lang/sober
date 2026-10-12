@@ -377,8 +377,8 @@ func emitCall(st mut St, irf FnRef, fv int, params desugar.ListRef, results desu
             rw += tWords(mut st, latI(mut st, results, i))
             i += 1
         }
-        // 結果スロットのアドレスは第 0 引数（スロットは入口で取るので先に作ってよい）
-        sp = newSlotAddr(mut st, if rw > 1 { rw } else { 1 })
+        // 結果スロットのアドレスは第 0 引数（スロットは入口で取るので先に作ってよい）。使い回さない（newSlotAddrOwn — 逃げるスロットの共用を断つ）
+        sp = newSlotAddrOwn(mut st, if rw > 1 { rw } else { 1 })
         desugar.HeapSet(mut st.d, argl + 1, sp)
         k = 1
     }

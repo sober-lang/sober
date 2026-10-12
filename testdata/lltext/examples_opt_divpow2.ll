@@ -3215,12 +3215,12 @@ b8:
   %v88 = sdiv i64 %v74, %v87
   %v89 = add i64 0, 2147483648
   %v90 = srem i64 %v74, %v89
-  %v91 = getelementptr i64, ptr %s0, i64 0
+  %v91 = getelementptr i64, ptr %s4, i64 0
   call void @"std/strings.FormatInt"(ptr %v91, i64 %v74)
   %v92 = getelementptr i64, ptr @"str.0", i64 0
   %v93 = add i64 0, 2
   %v94 = add i64 0, 0
-  %v95 = getelementptr i64, ptr %s4, i64 0
+  %v95 = getelementptr i64, ptr %s0, i64 0
   %v96 = ptrtoint ptr %v92 to i64
   %st38 = getelementptr i64, ptr %v95, i64 0
   store i64 %v96, ptr %st38

@@ -1690,6 +1690,9 @@ func @main.main() {
   slot s11 [3]
   slot s12 [3]
   slot s13 [3]
+  slot s14 [3]
+  slot s15 [3]
+  slot s16 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2409,7 +2412,7 @@ b70:
   store %477[0], %478
   store %477[1], %476
   store %477[2], %473
-  %479 = slotaddr s11
+  %479 = slotaddr s12
   %480 = load.i64 %477[0]
   store %479[0], %480
   %481 = load.i64 %477[1]
@@ -2481,7 +2484,7 @@ b78:
   store %422[0], %423
   store %422[1], %420
   store %422[2], %421
-  %424 = slotaddr s8
+  %424 = slotaddr s11
   call @std/strings.FormatInt(%424, %418)
   %425 = load.i64 %422[1]
   %426 = load.i64 %424[1]
@@ -2511,7 +2514,7 @@ b78:
   %446 = load.i64 %436[0]
   %447 = itop %446
   call @rt.copy8(%445, %447, %439)
-  %448 = slotaddr s11
+  %448 = slotaddr s12
   %449 = ptoi %444
   store %448[0], %449
   store %448[1], %440
@@ -2704,7 +2707,7 @@ b98:
   store %645[0], %646
   store %645[1], %644
   store %645[2], %641
-  %647 = slotaddr s12
+  %647 = slotaddr s14
   %648 = load.i64 %645[0]
   store %647[0], %648
   %649 = load.i64 %645[1]
@@ -2774,7 +2777,7 @@ b106:
   store %590[0], %591
   store %590[1], %588
   store %590[2], %589
-  %592 = slotaddr s8
+  %592 = slotaddr s13
   call @std/strings.FormatInt(%592, %586)
   %593 = load.i64 %590[1]
   %594 = load.i64 %592[1]
@@ -2804,7 +2807,7 @@ b106:
   %614 = load.i64 %604[0]
   %615 = itop %614
   call @rt.copy8(%613, %615, %607)
-  %616 = slotaddr s12
+  %616 = slotaddr s14
   %617 = ptoi %612
   store %616[0], %617
   store %616[1], %608
@@ -3036,7 +3039,7 @@ b139:
   store %771[0], %772
   store %771[1], %769
   store %771[2], %770
-  %773 = slotaddr s8
+  %773 = slotaddr s15
   call @std/strings.FormatInt(%773, %767)
   %774 = load.i64 %771[1]
   %775 = load.i64 %773[1]
@@ -3066,7 +3069,7 @@ b139:
   %795 = load.i64 %785[0]
   %796 = itop %795
   call @rt.copy8(%794, %796, %788)
-  %797 = slotaddr s13
+  %797 = slotaddr s16
   %798 = ptoi %793
   store %797[0], %798
   store %797[1], %789

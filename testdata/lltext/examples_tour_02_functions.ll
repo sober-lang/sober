@@ -2802,9 +2802,14 @@ b0:
   store i64 0, ptr %s7.z1
   %s7.z2 = getelementptr i64, ptr %s7, i64 2
   store i64 0, ptr %s7.z2
-  %s8 = alloca [1 x i64], align 8
+  %s8 = alloca [2 x i64], align 8
   %s8.z0 = getelementptr i64, ptr %s8, i64 0
   store i64 0, ptr %s8.z0
+  %s8.z1 = getelementptr i64, ptr %s8, i64 1
+  store i64 0, ptr %s8.z1
+  %s9 = alloca [1 x i64], align 8
+  %s9.z0 = getelementptr i64, ptr %s9, i64 0
+  store i64 0, ptr %s9.z0
   %v79 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v79, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2930,7 +2935,7 @@ b0:
   call void @"rt.print_str"(ptr %v55)
   %v57 = add i64 0, 10
   call void @"rt.print_char"(i64 %v57)
-  %v58 = getelementptr i64, ptr %s0, i64 0
+  %v58 = getelementptr i64, ptr %s8, i64 0
   %v59 = add i64 0, 17
   %v60 = add i64 0, 5
   call void @"main.divmod"(ptr %v58, i64 %v59, i64 %v60)
@@ -2949,7 +2954,7 @@ b0:
   %v68 = add i64 0, 10
   call void @"rt.print_char"(i64 %v68)
   %v69 = add i64 0, 2
-  %v70 = getelementptr i64, ptr %s8, i64 0
+  %v70 = getelementptr i64, ptr %s9, i64 0
   %v83 = getelementptr i64, ptr @"rt.meta", i64 0
   %v71.p = getelementptr i64, ptr %v83, i64 0
   %v71 = load i64, ptr %v71.p

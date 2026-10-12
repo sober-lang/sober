@@ -9250,6 +9250,7 @@ func @main.main() {
   slot s16 [5]
   slot s17 [6]
   slot s18 [6]
+  slot s19 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -9862,7 +9863,7 @@ b61:
   store %337[0], %338
   store %337[1], %335
   store %337[2], %336
-  %339 = slotaddr s6
+  %339 = slotaddr s19
   call @std/strings.FormatInt(%339, %326)
   %340 = load.i64 %337[1]
   %341 = load.i64 %339[1]

@@ -1679,10 +1679,14 @@ func @main.main() {
   slot s1 [3]
   slot s2 [3]
   slot s3 [8]
-  slot s4 [8]
+  slot s4 [9]
   slot s5 [8]
-  slot s6 [8]
+  slot s6 [9]
   slot s7 [8]
+  slot s8 [9]
+  slot s9 [8]
+  slot s10 [9]
+  slot s11 [8]
 b0:
   %0 = region.depth
   region.enter
@@ -1730,7 +1734,7 @@ b0:
   store %21[6], %28
   %29 = load.i64 %20[7]
   store %21[7], %29
-  %30 = slotaddr s0
+  %30 = slotaddr s4
   %31 = globaladdr @str.2
   %32 = const 5
   %33 = const 0
@@ -1746,7 +1750,7 @@ b0:
   %39 = load.i64 %30[0]
   %40 = const 1
   %41 = gep.word %30, %40
-  %42 = slotaddr s4
+  %42 = slotaddr s5
   %43 = load.i64 %41[0]
   store %42[0], %43
   %44 = load.i64 %41[1]
@@ -1763,13 +1767,13 @@ b0:
   store %42[6], %49
   %50 = load.i64 %41[7]
   store %42[7], %50
-  %51 = slotaddr s0
+  %51 = slotaddr s6
   %52 = const 5
   call @main.collect(%51, %52)
   %53 = load.i64 %51[0]
   %54 = const 1
   %55 = gep.word %51, %54
-  %56 = slotaddr s5
+  %56 = slotaddr s7
   %57 = load.i64 %55[0]
   store %56[0], %57
   %58 = load.i64 %55[1]
@@ -1786,13 +1790,13 @@ b0:
   store %56[6], %63
   %64 = load.i64 %55[7]
   store %56[7], %64
-  %65 = slotaddr s0
+  %65 = slotaddr s8
   %66 = const 2
   call @main.collect(%65, %66)
   %67 = load.i64 %65[0]
   %68 = const 1
   %69 = gep.word %65, %68
-  %70 = slotaddr s6
+  %70 = slotaddr s9
   %71 = load.i64 %69[0]
   store %70[0], %71
   %72 = load.i64 %69[1]
@@ -1809,7 +1813,7 @@ b0:
   store %70[6], %77
   %78 = load.i64 %69[7]
   store %70[7], %78
-  %79 = slotaddr s0
+  %79 = slotaddr s10
   %80 = const 0
   %81 = const 3
   %82 = sub %80, %81
@@ -1817,7 +1821,7 @@ b0:
   %83 = load.i64 %79[0]
   %84 = const 1
   %85 = gep.word %79, %84
-  %86 = slotaddr s7
+  %86 = slotaddr s11
   %87 = load.i64 %85[0]
   store %86[0], %87
   %88 = load.i64 %85[1]
@@ -2472,7 +2476,8 @@ func @main.openBoth(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [9]
-  slot s3 [8]
+  slot s3 [9]
+  slot s4 [8]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -2521,7 +2526,7 @@ b1:
   %32 = ne %30, %31
   condbr %32, b3, b4
 b2:
-  %66 = slotaddr s2
+  %66 = slotaddr s3
   %67 = load.i64 %8[0]
   %68 = load.i64 %8[1]
   %69 = load.i64 %8[2]
@@ -2627,7 +2632,7 @@ b18:
   condbr %88, b20, b21
 b19:
   %122 = add %15, %71
-  %123 = slotaddr s3
+  %123 = slotaddr s4
   %124 = const 0
   store %123[0], %124
   store %0[0], %122

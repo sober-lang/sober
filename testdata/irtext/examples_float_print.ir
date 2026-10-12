@@ -1700,9 +1700,17 @@ func @main.main() i64 {
   slot s10 [3]
   slot s11 [3]
   slot s12 [3]
-  slot s13 [1]
-  slot s14 [1]
-  slot s15 [1]
+  slot s13 [3]
+  slot s14 [3]
+  slot s15 [3]
+  slot s16 [3]
+  slot s17 [3]
+  slot s18 [1]
+  slot s19 [1]
+  slot s20 [1]
+  slot s21 [3]
+  slot s22 [3]
+  slot s23 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1793,14 +1801,14 @@ b0:
   %46 = const 4607182418800017408
   %47 = const 0
   %48 = fdiv %46, %47
-  %49 = slotaddr s12
+  %49 = slotaddr s13
   call @std/floatfmt.Format(%49, %48)
   %50 = const 4607182418800017408
   %51 = const -9223372036854775808
   %52 = xor %50, %51
   %53 = const 0
   %54 = fdiv %52, %53
-  %55 = slotaddr s11
+  %55 = slotaddr s14
   call @std/floatfmt.Format(%55, %54)
   %56 = const 0
   %57 = const 0
@@ -1808,15 +1816,15 @@ b0:
   %59 = const 0
   %60 = fne %58, %59
   %61 = const 9218868437227405311
-  %62 = slotaddr s10
+  %62 = slotaddr s15
   call @std/floatfmt.Format(%62, %61)
   %63 = const 4567911030049346683
-  %64 = slotaddr s9
+  %64 = slotaddr s16
   call @std/floatfmt.Format(%64, %63)
   %65 = const 4623367229960880128
   %66 = const -9223372036854775808
   %67 = xor %65, %66
-  %68 = slotaddr s8
+  %68 = slotaddr s17
   call @std/floatfmt.Format(%68, %67)
   call @rt.print_str(%49)
   %69 = const 32
@@ -1860,14 +1868,14 @@ b3:
   %83 = const 10
   call @rt.print_char(%83)
   %84 = const 4607182418800017408
-  %85 = slotaddr s13
+  %85 = slotaddr s18
   store %85[0], %84
   %86 = region.depth
   %87 = const 0
   %88 = const 12
-  %89 = slotaddr s14
+  %89 = slotaddr s19
   %90 = region.depth
-  %91 = slotaddr s15
+  %91 = slotaddr s20
   store %91[0], %87
   %92 = region.depth
   br b6
@@ -1876,7 +1884,7 @@ b4:
   %117 = globaladdr @str.0
   %118 = const 7
   %119 = const 0
-  %120 = slotaddr s9
+  %120 = slotaddr s23
   %121 = ptoi %117
   store %120[0], %121
   store %120[1], %118
@@ -1888,7 +1896,7 @@ b4:
   %125 = globaladdr @str.1
   %126 = const 5
   %127 = const 0
-  %128 = slotaddr s9
+  %128 = slotaddr s23
   %129 = ptoi %125
   store %128[0], %129
   store %128[1], %126
@@ -1900,7 +1908,7 @@ b4:
   %133 = globaladdr @str.2
   %134 = const 5
   %135 = const 0
-  %136 = slotaddr s9
+  %136 = slotaddr s23
   %137 = ptoi %133
   store %136[0], %137
   store %136[1], %134
@@ -1912,7 +1920,7 @@ b4:
   %141 = globaladdr @str.3
   %142 = const 3
   %143 = const 0
-  %144 = slotaddr s9
+  %144 = slotaddr s23
   %145 = ptoi %141
   store %144[0], %145
   store %144[1], %142
@@ -1924,7 +1932,7 @@ b4:
   %149 = globaladdr @str.4
   %150 = const 3
   %151 = const 0
-  %152 = slotaddr s9
+  %152 = slotaddr s23
   %153 = ptoi %149
   store %152[0], %153
   store %152[1], %150
@@ -1936,7 +1944,7 @@ b4:
   %157 = globaladdr @str.5
   %158 = const 3
   %159 = const 0
-  %160 = slotaddr s9
+  %160 = slotaddr s23
   %161 = ptoi %157
   store %160[0], %161
   store %160[1], %158
@@ -1948,7 +1956,7 @@ b4:
   %165 = globaladdr @str.6
   %166 = const 2
   %167 = const 0
-  %168 = slotaddr s9
+  %168 = slotaddr s23
   %169 = ptoi %165
   store %168[0], %169
   store %168[1], %166
@@ -1960,7 +1968,7 @@ b4:
   %173 = globaladdr @str.7
   %174 = const 2
   %175 = const 0
-  %176 = slotaddr s9
+  %176 = slotaddr s23
   %177 = ptoi %173
   store %176[0], %177
   store %176[1], %174
@@ -1993,9 +2001,9 @@ b7:
   %104 = fdiv %102, %103
   store %85[0], %104
   %105 = load.i64 %85[0]
-  %106 = slotaddr s8
+  %106 = slotaddr s21
   call @std/floatfmt.Format(%106, %105)
-  %107 = slotaddr s9
+  %107 = slotaddr s22
   %108 = load.i64 %85[0]
   %109 = load.i64 %85[0]
   %110 = fmul %108, %109
@@ -13896,6 +13904,8 @@ func @main.show(%0 i64, %1 i64, %2 i64) {
   slot s4 [3]
   slot s5 [3]
   slot s6 [3]
+  slot s7 [3]
+  slot s8 [3]
 b0:
   %3 = slotaddr s0
   store %3[0], %0
@@ -13943,7 +13953,7 @@ b1:
   %30 = eq %28, %29
   condbr %30, b4, b3
 b2:
-  %54 = slotaddr s4
+  %54 = slotaddr s8
   call @std/floatfmt.Format(%54, %9)
   call @rt.print_str(%3)
   %55 = const 32
@@ -13989,7 +13999,7 @@ b7(%45 ptr):
   store %46[1], %48
   %49 = load.i64 %45[2]
   store %46[2], %49
-  %50 = slotaddr s5
+  %50 = slotaddr s7
   call @std/floatfmt.Format(%50, %9)
   call @rt.print_str(%3)
   %51 = const 32

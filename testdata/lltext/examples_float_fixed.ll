@@ -2812,13 +2812,18 @@ b0:
   store i64 0, ptr %s6.z0
   %s6.z1 = getelementptr i64, ptr %s6, i64 1
   store i64 0, ptr %s6.z1
-  %s7 = alloca [3 x i64], align 8
+  %s7 = alloca [2 x i64], align 8
   %s7.z0 = getelementptr i64, ptr %s7, i64 0
   store i64 0, ptr %s7.z0
   %s7.z1 = getelementptr i64, ptr %s7, i64 1
   store i64 0, ptr %s7.z1
-  %s7.z2 = getelementptr i64, ptr %s7, i64 2
-  store i64 0, ptr %s7.z2
+  %s8 = alloca [3 x i64], align 8
+  %s8.z0 = getelementptr i64, ptr %s8, i64 0
+  store i64 0, ptr %s8.z0
+  %s8.z1 = getelementptr i64, ptr %s8, i64 1
+  store i64 0, ptr %s8.z1
+  %s8.z2 = getelementptr i64, ptr %s8, i64 2
+  store i64 0, ptr %s8.z2
   %v57 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v57, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2965,7 +2970,7 @@ b5:
   %v44 = load i64, ptr %v44.p
   %v45.p = getelementptr i64, ptr %v39, i64 1
   %v45 = load i64, ptr %v45.p
-  %v46 = getelementptr i64, ptr %s6, i64 0
+  %v46 = getelementptr i64, ptr %s7, i64 0
   %v47.p = getelementptr i64, ptr %v28, i64 0
   %v47 = load i64, ptr %v47.p
   %v48.p = getelementptr i64, ptr %v28, i64 1
@@ -2977,7 +2982,7 @@ b5:
   %v50 = load i64, ptr %v50.p
   %v51.p = getelementptr i64, ptr %v46, i64 1
   %v51 = load i64, ptr %v51.p
-  %v52 = getelementptr i64, ptr %s7, i64 0
+  %v52 = getelementptr i64, ptr %s8, i64 0
   call void @"std/floatfmt.FormatFixed"(ptr %v52, i64 %v44, i64 %v50)
   call void @"rt.print_str"(ptr %v52)
   %v53 = add i64 0, 10

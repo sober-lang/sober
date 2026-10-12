@@ -1694,7 +1694,8 @@ func @main.main() i64 {
   slot s16 [6]
   slot s17 [1]
   slot s18 [6]
-  slot s19 [6]
+  slot s19 [5]
+  slot s20 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -3146,7 +3147,7 @@ b185:
   store %641[0], %818
   br b143
 b186:
-  %953 = slotaddr s19
+  %953 = slotaddr s20
   %954 = load.i64 %819[0]
   store %953[0], %954
   %955 = load.i64 %819[1]
@@ -3329,9 +3330,9 @@ b210:
   %919 = const 5
   %920 = gep.word %9, %919
   store %920[0], %918
-  %921 = slotaddr s15
+  %921 = slotaddr s19
   call @std/io.errOf(%921, %917)
-  %922 = slotaddr s19
+  %922 = slotaddr s20
   %923 = const 1
   store %922[0], %923
   %924 = load.i64 %921[0]
@@ -3371,7 +3372,7 @@ b213:
   region.setdepth %820
   br b186
 b214:
-  %940 = slotaddr s19
+  %940 = slotaddr s20
   %941 = const 0
   store %940[0], %941
   %942 = load.i64 %940[0]

@@ -1,0 +1,64 @@
+package main
+
+// 写しの転送（cpfwd.sober — G 便）の網: slice の要素の struct を局所へ写し、先頭の欄の文字列を == で比べる形（rt.str_eq に番地で渡る）。
+// 写しと使い道の間に元の slice を書き換える形では転送してはいけない（局所は写した時の値を見る）— 書き換えの無い形は転送して元の要素を直に読む
+
+type Route struct {
+    method string
+    hits int
+}
+
+// count は rs の中で method が m に等しい要素の数（写しの後に書き換えない — 転送する形）
+func count(rs mut []Route, m string) int {
+    mut n := 0
+    mut i := 0
+    while i < len(rs) {
+        r := rs[i]
+        if r.method == m {
+            n += r.hits
+        }
+        i += 1
+    }
+    return n
+}
+
+// swapCount は要素を写してから元の要素の欄を書き換え、写しの方を比べて足す（転送してはいけない形 — 書き換えは別の要素の写し — relocate を伴わない store）
+func swapCount(rs mut []Route, m string, to int) int {
+    mut n := 0
+    mut i := 0
+    while i < len(rs) {
+        r := rs[i]
+        rs[i] = rs[to]
+        if r.method == m {
+            n += r.hits
+        }
+        i += 1
+    }
+    return n
+}
+
+// pick は局所 r を 2 か所の写し（先頭の要素・条件つきで k 番目）から作って比べる（使い道は合流の後 — どちらの写しも使い道を支配しない道がある）
+func pick(rs mut []Route, k int, m string) int {
+    mut r := rs[0]
+    if k > 2 {
+        r = rs[k]
+    }
+    if r.method == m {
+        return r.hits
+    }
+    return 0 - r.hits
+}
+
+func main() {
+    mut rs := mut []Route{}
+    names := []string{"GET", "POST", "DELETE", "PATCH", "GET", "OPTIONS"}
+    for k <- names {
+        rs = append(rs, Route{method: k + "_route", hits: len(rs) + 1})
+    }
+    m := names[0] + "_route"
+    println(count(mut rs, m))
+    println(swapCount(mut rs, m, 5))
+    println(count(mut rs, m))
+    println(swapCount(mut rs, names[2] + "_route", 1))
+    println(pick(mut rs, 1, m), pick(mut rs, 3, m), pick(mut rs, 4, rs[4].method))
+}

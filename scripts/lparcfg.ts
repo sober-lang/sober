@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from "fs";
 
 const DIR = new URL("../src/compiler/lower/", import.meta.url).pathname;
 // 関数ごとの入口（群の子の束の列 lB1Func / lB2Func — move.sober — と、〜Module が関数ごとに呼ぶもの）
-const ENTRIES = ["lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "cmpDupFunc"];
+const ENTRIES = ["lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "slpFunc", "cmpDupFunc"];
 // 子の St に写してよい欄（読みの種類: cfg = 親の値を写す・work = 子では空から〔作業域〕・fn = 子では渡した関数・tbl = kindsInit が組む・
 // ro = 子では既定〔偽 / 空〕のまま — x86 の読み口 xg は xro が偽ならヒープ st.d.h を読む）
 const ALLOW: Record<string, string> = {
@@ -18,7 +18,11 @@ const ALLOW: Record<string, string> = {
   opk: "tbl", tmk: "tbl",
   hfOn: "ro", hf: "ro",   // x86 の読み口 xg — 束の子では既定の偽（ヒープを読む）
   noVec: "cfg",
-  ubCheck: "cfg", ubBound: "cfg",   // UTF-8 の境界の畳み（ubf.sober — Check の呼び出しの点・boundary の写しの印の有無）
+  taskUse: "cfg",   // SLP（slp.sober）を task のプログラムで外す — lParCfg の 5 番の bit 1
+  ubCheck: "cfg", ubBound: "cfg",
+  rtGrow: "cfg", rtGrow8: "cfg", rtRalloc: "cfg", rtAlloc8: "cfg",
+  meta: "cfg",
+  rtStreq: "cfg",   // 写しの転送（cpfwd.sober — 読むだけの rt.str_eq）   // 展開後の上限の巻き上げ（rlim.sober — 種の番地 @rt.meta）   // ヘッダのループ昇格（hloop.sober — 許す rt の呼び出し・確保の根）   // UTF-8 の境界の畳み（ubf.sober — Check の呼び出しの点・boundary の写しの印の有無）
   lkid: "kid", lret: "kid",   // 群の子の印と呼び先の戻りの型の表（lFnRet — move.sober）
 };
 

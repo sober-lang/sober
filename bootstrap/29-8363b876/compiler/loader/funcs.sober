@@ -1,0 +1,381 @@
+package loader
+
+// 関数の表: callees / has_try（本体の木から導出 — Zig 版は cst_to_ast が数える）、expands の確定（関数型の引数 — 名前付き関数型を含む —
+// か mut 引数を持つ関数）、markMutDefs（mut 引数だけが展開の理由の関数のうち、package 内の呼び出しグラフで自分へ戻れるもの・`@noinline` を付けたものを Def にする）
+
+import "std/builder"
+import "ast"
+import "std/iter"
+
+type Funcs struct {
+    file []int
+    node []int
+    expands []bool
+    mut_def []bool
+    // 関数型の引数を持たない展開関数（mut 引数だけが展開の理由 — `--passes` の lower が region 透過の実体関数にする。language.md 26 節）
+    closed []bool
+    has_try []bool
+    clo []int
+    chi []int
+    callees []string
+    // `@noinline` を付けてはいけない関数に付けた最初の関数の添字（mut 引数が無い・関数型引数がある — Zig の markMutDefs の拒否）か -1
+    bad_noinline int
+}
+
+// push は x（-1 は無視）をスタックに積み、新しい深さを返す
+func push(st mut []int, sp int, x int) int {
+    if x < 0 {
+        return sp
+    }
+    if sp < len(st) {
+        st[sp] = x
+    } else {
+        st = append(st, x)
+    }
+    return sp + 1
+}
+
+// pushList は列 l の要素（穴 -1 は無視）を積む
+func pushList(st mut []int, sp0 int, t ast.Tree, l int) int {
+    mut sp := sp0
+    mut i := 0
+    while i < ast.ListLen(t, l) {
+        sp = push(mut st, sp, ast.ListAt(t, l, i))
+        i += 1
+    }
+    return sp
+}
+
+// unparen は括弧を剥がした節（Zig の AST は括弧を持たない）
+func unparen(t ast.Tree, n0 int) int {
+    mut n := n0
+    while n >= 0 && t.nodes[n].kind == ast.EParen {
+        n = t.nodes[n].a
+    }
+    return n
+}
+
+// calleeName は呼び出しの callee の綴り（裸の名前 `F` / `ref.F`。それ以外は空で ok = false — cst_to_ast と同じ判定）
+func calleeName(t ast.Tree, c0 int) (string, bool) {
+    c := t.nodes[unparen(t, c0)]
+    if c.kind == ast.EIdent {
+        return Name(t, c.a), true
+    }
+    if c.kind == ast.ESelector {
+        b := t.nodes[unparen(t, c.a)]
+        if b.kind == ast.EIdent {
+            return Name(t, b.a) + "." + Name(t, c.b), true
+        }
+        if b.kind == ast.EUtf8Ref {
+            return "$utf8." + Name(t, c.b), true
+        }
+    }
+    return "", false
+}
+
+// scanBody は本体 body（KBlock — 中のラムダ・補間の穴・パターンを含む）の呼び出しの callee と、後置 `?` の有無
+func scanBody(t ast.Tree, body int) ([]string, bool) {
+    mut names := mut []string{}
+    mut tries := false
+    mut st := mut []int{}
+    mut sp := push(mut st, 0, body)
+    while sp > 0 {
+        sp -= 1
+        x := t.nodes[st[sp]]
+        k := x.kind
+        if k == ast.ECall {
+            nm, ok := calleeName(t, x.a)
+            if ok {
+                names = append(names, nm)
+            }
+            sp = push(mut st, sp, x.a)
+            sp = pushList(mut st, sp, t, x.b)
+        } else if k == ast.ETry {
+            tries = true
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.EBinary || k == ast.ESlice3 {
+            sp = push(mut st, sp, x.b)
+            sp = push(mut st, sp, x.c)
+            if k == ast.ESlice3 {
+                sp = push(mut st, sp, x.a)
+            }
+        } else if k == ast.EUnary {
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.EPipe {
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.EIndex {
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.EInterp || k == ast.ESlicelit || k == ast.EComposite {
+            sp = pushList(mut st, sp, t, x.b)
+        } else if k == ast.EMaplit {
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.KEntry {
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.KElem || k == ast.KFieldPat || k == ast.ELambda {
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.ESelector || k == ast.EParen || k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+            sp = push(mut st, sp, x.a)
+        } else if k == ast.EIf {
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+            sp = push(mut st, sp, x.c)
+        } else if k == ast.ESwitch {
+            sp = pushList(mut st, sp, t, x.a)
+            sp = pushList(mut st, sp, t, x.b)
+            sp = push(mut st, sp, x.c)
+        } else if k == ast.KCase {
+            sp = pushList(mut st, sp, t, x.a)
+            sp = push(mut st, sp, x.b)
+        } else if k == ast.EBlock || k == ast.KBlock || k == ast.KPConst || k == ast.SRet {
+            sp = pushList(mut st, sp, t, x.a)
+        } else if k == ast.KPType {
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.EFor {
+            sp = pushList(mut st, sp, t, x.a)
+            if x.b == 0 {
+                sp = push(mut st, sp, x.c)
+            } else {
+                sp = pushList(mut st, sp, t, x.c)
+            }
+        } else if k == ast.KGen {
+            sp = push(mut st, sp, x.b)
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.SBind {
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.SAssign {
+            sp = pushList(mut st, sp, t, x.a)
+            sp = pushList(mut st, sp, t, x.c)
+        } else if k == ast.SWhile {
+            sp = push(mut st, sp, x.a)
+            sp = push(mut st, sp, x.b)
+        }
+    }
+    return freeze(names), tries
+}
+
+// namedFunc は型の名前 name（"N" / "ref.N"）が、ファイル f から見て関数型の型宣言か（名前付き関数型 — 展開すると関数型の引数になる）
+func namedFunc(cx Cx, f0 int, name string) bool {
+    mut from := cx.file_pkg[f0]
+    nb := bytes(name)
+    n := len(nb)
+    mut dot := 0 - 1
+    for i <- iter.Range(0, len(nb)) {
+        if nb[i] == '.' && dot < 0 {
+            dot = i
+        }
+    }
+    if dot >= 0 {
+        from = fileImportOf(cx, f0, cut(name, 0, dot))
+        if from < 0 {
+            return false
+        }
+    }
+    mut f := cx.pkg_lo[from]
+    while f < cx.pkg_hi[from] {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        mut k := 0
+        while k < ast.ListLen(t, tys) {
+            td := t.nodes[ast.ListAt(t, tys, k)]
+            if StrIs(t, td.a, cut(name, dot + 1, n)) {
+                return t.nodes[td.c].kind == ast.BFunc
+            }
+            k += 1
+        }
+        f += 1
+    }
+    return false
+}
+
+// scanFuncs は関数の表を組む。表の列は関数ごとに 8 本が交互に伸びるので、std/builder で積む
+// （mut slice の append だと先端一致にならず、毎回の全コピーで O(n²) — 関数 1,200 個で region の上限を超えた）
+func scanFuncs(cx Cx) Funcs {
+    mut ffile := builder.Builder[int]{}
+    mut fnode := builder.Builder[int]{}
+    mut hasMut := builder.Builder[bool]{}
+    mut hasFunc := builder.Builder[bool]{}
+    mut htry := builder.Builder[bool]{}
+    mut clo := builder.Builder[int]{}
+    mut chi := builder.Builder[int]{}
+    mut all := builder.Builder[string]{}
+    mut noinl := builder.Builder[bool]{}
+    mut nobody := builder.Builder[bool]{}
+    mut f := 0
+    while f < len(cx.trees) {
+        t := cx.trees[f]
+        pk := cx.file_pkg[f]
+        fns := t.nodes[t.file].d
+        mut k := 0
+        while k < ast.ListLen(t, fns) {
+            fnode_k := ast.ListAt(t, fns, k)
+            fd := t.nodes[fnode_k]
+            mut m := false
+            mut fu := false
+            mut p := 0
+            while p < ast.ListLen(t, fd.c) {
+                prm := t.nodes[ast.ListAt(t, fd.c, p)]
+                if ast.ParamIsMut(prm) {
+                    m = true
+                }
+                ty := t.nodes[prm.b]
+                if ty.kind == ast.TFunc || (ty.kind == ast.TName || ty.kind == ast.TGeneric) && namedFunc(cx, f, Name(t, ty.a)) {
+                    fu = true
+                }
+                if cx.pkg_path[pk] == "std/par" && parHandles(t, ty) {
+                    fu = true
+                }
+                p += 1
+            }
+            names, tr := scanBody(t, fd.e)
+            builder.Push(mut clo, builder.Len(mut all))
+            mut q := 0
+            while q < len(names) {
+                builder.Push(mut all, names[q])
+                q += 1
+            }
+            builder.Push(mut chi, builder.Len(mut all))
+            builder.Push(mut ffile, f)
+            builder.Push(mut fnode, fnode_k)
+            builder.Push(mut hasMut, m)
+            builder.Push(mut hasFunc, fu)
+            builder.Push(mut htry, tr)
+            // 本体の無い宣言（.sobi の署名だけ）は呼び先の package で展開しないと決まった関数（再帰する mut 関数・@noinline・非展開）— 本体が無いので
+            // 再帰を辿れない。mut 引数を持てば mut_def に倒す（3'' M3 — 展開の判定が package の中で閉じる: iface-draft 1.3 (b)）
+            builder.Push(mut noinl, t.data[fd.f] >= 5 && t.data[fd.f + 5] != 0)
+            builder.Push(mut nobody, fd.e < 0)
+            k += 1
+        }
+        f += 1
+    }
+    cs := builder.Build(mut all)
+    lo := builder.Build(mut clo)
+    hi := builder.Build(mut chi)
+    files := builder.Build(mut ffile)
+    nodes := builder.Build(mut fnode)
+    hm := builder.Build(mut hasMut)
+    hf := builder.Build(mut hasFunc)
+    ni := builder.Build(mut noinl)
+    nb := builder.Build(mut nobody)
+    mut ex := builder.Builder[bool]{}
+    mut md := builder.Builder[bool]{}
+    mut cl := builder.Builder[bool]{}
+    mut bad := -1
+    ix := indexFns(cx, files, nodes, cs)
+    mut seen := mut []int{}
+    for i <- iter.Range(0, len(files)) {
+        seen = append(seen, -1)
+    }
+    for i <- iter.Range(0, len(files)) {
+        if ni[i] && (!hm[i] || hf[i]) && bad == -1 {
+            bad = i
+        }
+        mdef := hm[i] && !hf[i] && (ni[i] || nb[i] || reachesSelf(cx, files, nodes, lo, hi, cs, ix, mut seen, i))
+        builder.Push(mut ex, (hm[i] || hf[i]) && !mdef)
+        builder.Push(mut md, mdef)
+        builder.Push(mut cl, hm[i] && !hf[i] && !mdef)
+    }
+    return Funcs{files, nodes, builder.Build(mut ex), builder.Build(mut md), builder.Build(mut cl), builder.Build(mut htry), lo, hi, cs, bad}
+}
+
+// fnName は関数 i の名前
+func fnName(cx Cx, files []int, nodes []int, i int) string {
+    t := cx.trees[files[i]]
+    return Name(t, t.nodes[nodes[i]].a)
+}
+
+// fnIs は関数 i の名前が name か（コピーしない — reachesSelf の鎖の比較）
+func fnIs(cx Cx, files []int, nodes []int, i int, name string) bool {
+    t := cx.trees[files[i]]
+    return StrIs(t, t.nodes[nodes[i]].a, name)
+}
+
+// FnIndex は (package, 名前) → 関数の索引（開番地でなく鎖 — head[バケツ] と next[関数]、hc[呼び出し名] = 名前のハッシュ）。
+// reachesSelf が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約 4 s）のを、鎖の数本の比較にする
+type FnIndex struct {
+    head []int
+    next []int
+    hc []int
+    mask int
+}
+
+// nameHash は名前のハッシュ（mask 以下 — 幅を抑えて溢れさせない）
+func nameHash(name string, mask int) int {
+    b := bytes(name)
+    mut h := 0
+    for i <- iter.Range(0, len(b)) {
+        h = (h * 31 + int(b[i])) & mask
+    }
+    return h
+}
+
+func indexFns(cx Cx, files []int, nodes []int, cs []string) FnIndex {
+    mut mask := 1023
+    while mask < len(files) * 2 {
+        mask = mask * 2 + 1
+    }
+    mut head := mut []int{}
+    mut i := 0
+    while i <= mask {
+        head = append(head, -1)
+        i += 1
+    }
+    mut next := mut []int{}
+    i = 0
+    while i < len(files) {
+        b := nameHash(fnName(cx, files, nodes, i), mask)
+        next = append(next, head[b])
+        head[b] = i
+        i += 1
+    }
+    mut hc := mut []int{}
+    i = 0
+    while i < len(cs) {
+        hc = append(hc, nameHash(cs[i], mask))
+        i += 1
+    }
+    return FnIndex{freeze(head), freeze(next), freeze(hc), mask}
+}
+
+// reachesSelf は関数 i の本体から、同じ package の裸の名前の呼び出しを辿って i に戻れるか（到達可能性の反復 — Zig の DFS と同じ集合）。
+// 同名の関数が同じ package に複数あれば全部を辿る（索引の鎖を最後まで見る）。seen は訪問の印（seen[h] == i なら i からの探索で印済み — 探索ごとに消さない）
+func reachesSelf(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, seen mut []int, i int) bool {
+    pk := cx.file_pkg[files[i]]
+    // i から 1 歩で届く関数を印し、印の付いた関数から届く関数を印す（増えなくなるまで）
+    mut frontier := mut []int{i}
+    mut fi := 0
+    while fi < len(frontier) {
+        g := frontier[fi]
+        mut c := lo[g]
+        while c < hi[g] {
+            mut h := ix.head[ix.hc[c]]
+            while h >= 0 {
+                if cx.file_pkg[files[h]] == pk && seen[h] != i && fnIs(cx, files, nodes, h, cs[c]) {
+                    if h == i {
+                        return true
+                    }
+                    seen[h] = i
+                    frontier = append(frontier, h)
+                }
+                h = ix.next[h]
+            }
+            c += 1
+        }
+        fi += 1
+    }
+    return false
+}
+
+// parHandles は std/par の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/par の口
+// （Gather — 段 6 P3b-5）は呼び出し点で展開する（関数型の引数と同じ扱い）
+func parHandles(t ast.Tree, ty ast.Node) bool {
+    if ty.kind != ast.TSlice {
+        return false
+    }
+    e := t.nodes[ty.a]
+    return e.kind == ast.TGeneric && StrIs(t, e.a, "Task")
+}

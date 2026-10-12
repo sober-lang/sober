@@ -1674,15 +1674,18 @@ b0:
 func @main.main() {
   slot s0 [4]
   slot s1 [13]
-  slot s2 [3]
-  slot s3 [6]
-  slot s4 [4]
-  slot s5 [3]
-  slot s6 [6]
+  slot s2 [4]
+  slot s3 [3]
+  slot s4 [6]
+  slot s5 [13]
+  slot s6 [4]
   slot s7 [3]
-  slot s8 [3]
-  slot s9 [9]
-  slot s10 [6]
+  slot s8 [6]
+  slot s9 [3]
+  slot s10 [3]
+  slot s11 [9]
+  slot s12 [3]
+  slot s13 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1720,7 +1723,7 @@ b3(%7 i64):
   %25 = gep.word %22, %24
   %26 = const 7
   %27 = gep.word %22, %26
-  %28 = slotaddr s0
+  %28 = slotaddr s2
   %29 = load.i64 %22[0]
   store %28[0], %29
   %30 = load.i64 %22[1]
@@ -1729,14 +1732,14 @@ b3(%7 i64):
   store %28[2], %31
   %32 = load.i64 %22[3]
   store %28[3], %32
-  %33 = slotaddr s2
+  %33 = slotaddr s3
   %34 = load.i64 %25[0]
   store %33[0], %34
   %35 = load.i64 %25[1]
   store %33[1], %35
   %36 = load.i64 %25[2]
   store %33[2], %36
-  %37 = slotaddr s3
+  %37 = slotaddr s4
   %38 = load.i64 %27[0]
   store %37[0], %38
   %39 = load.i64 %27[1]
@@ -1807,14 +1810,14 @@ b8:
 b9:
   %78 = const 10
   call @rt.print_char(%78)
-  %79 = slotaddr s1
+  %79 = slotaddr s5
   %80 = const 3
   call @main.lookup(%79, %80)
   %81 = const 4
   %82 = gep.word %79, %81
   %83 = const 7
   %84 = gep.word %79, %83
-  %85 = slotaddr s4
+  %85 = slotaddr s6
   %86 = load.i64 %79[0]
   store %85[0], %86
   %87 = load.i64 %79[1]
@@ -1823,14 +1826,14 @@ b9:
   store %85[2], %88
   %89 = load.i64 %79[3]
   store %85[3], %89
-  %90 = slotaddr s5
+  %90 = slotaddr s7
   %91 = load.i64 %82[0]
   store %90[0], %91
   %92 = load.i64 %82[1]
   store %90[1], %92
   %93 = load.i64 %82[2]
   store %90[2], %93
-  %94 = slotaddr s6
+  %94 = slotaddr s8
   %95 = load.i64 %84[0]
   store %94[0], %95
   %96 = load.i64 %84[1]
@@ -1901,11 +1904,11 @@ b14:
 b15:
   %135 = const 10
   call @rt.print_char(%135)
-  %136 = slotaddr s7
+  %136 = slotaddr s9
   %137 = const 3
   call @main.named(%136, %137)
   %138 = load.i64 %136[1]
-  %139 = slotaddr s8
+  %139 = slotaddr s10
   %140 = const 4
   call @main.direct(%139, %140)
   %141 = load.i64 %139[1]
@@ -1915,19 +1918,19 @@ b15:
   call @rt.print_int(%141)
   %143 = const 10
   call @rt.print_char(%143)
-  %144 = slotaddr s9
+  %144 = slotaddr s11
   %145 = const 2
   call @main.pair(%144, %145)
   %146 = const 3
   %147 = gep.word %144, %146
-  %148 = slotaddr s8
+  %148 = slotaddr s12
   %149 = load.i64 %144[0]
   store %148[0], %149
   %150 = load.i64 %144[1]
   store %148[1], %150
   %151 = load.i64 %144[2]
   store %148[2], %151
-  %152 = slotaddr s10
+  %152 = slotaddr s13
   %153 = load.i64 %147[0]
   store %152[0], %153
   %154 = load.i64 %147[1]

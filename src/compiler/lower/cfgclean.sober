@@ -8,6 +8,7 @@ package lower
 //      このブロックへ寄せる（bce の後に残る直列の鎖 — gep と load / store が別ブロックに分かれて番地の融合〔M7〕が効かない・jmp が増える）
 //   ②' 短絡（&& / ||）の合流の飛び越し（ccThread — 第三便・部分インライン便で否定 / 辺の実引数 / 中継へ一般化）
 //   ③ 定数の畳み込み（既存の P2 — インラインした本体の定数の実引数）
+//   ③' 前任 1 つの ptr の仮引数の付け替え（F 便 段 2 — report-517 F-b b2 / ccSinglePtr）
 // 後始末は既存の P4（到達しないブロックを消して番号を振り直す）・P3（死んだ純粋命令）・値の振り直し
 
 import "desugar"
@@ -49,7 +50,8 @@ func cfgCleanFunc(st mut St, f FnRef) {
     merged := ccMerge(mut st, f)
     // ③ 定数の畳み込み（P2 — インラインした rt の本体の定数の実引数〔n = 1 の確保の n * 8 等〕が畳める）と P3・振り直し
     optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
-    if removed || merged || threaded {
+    single := ccSinglePtr(mut st, f)
+    if removed || merged || threaded || single {
         optBlocks(mut st, f)
     }
     optFold(mut st, f)
@@ -546,6 +548,92 @@ func ccKeepArgs(st mut St, to BlkRef, args int, live mut []int) int {
     return out
 }
 
+// ccSinglePtr は入る辺が 1 本だけのブロック（入口でない）の ptr の仮引数を、その辺の実引数へ付け替えて消す（F 便 段 2 — report-517 F-b b2。
+// 付け替えたら true）。catch の成功の値は一時スロットの番地を ptr の仮引数で合流へ運ぶ形に下り、腕が発散する（`catch return …`）と合流の前任は
+// 1 つになる。番地が仮引数に流れたままだと SROA が一時スロットを割れない（φ への逃げ）— 付け替えると一時スロットと束縛のスロットが昇格する。
+// 値の付け替えは opt の付け替えの鎖（OW_AL — 呼び手が optReset の後に呼ぶ）で、使う点は opnd の resolve が書き換える。辺は 1 本なので、
+// 実引数は辺の元のブロックで定義され、行き先（その唯一の後続の側）を支配する。ptr だけに絞るのは、整数の仮引数の付け替えが割り当てのヒントを
+// 動かす（シーソーの型 — regalloc.md 13 節 6）のを避けるため
+func ccSinglePtr(st mut St, f FnRef) bool {
+    entry := irFnBHead(mut st, f)
+    nb := irFnNBlk(mut st, f)
+    mut nin := mut []int{}
+    xFill(mut nin, nb, 0)
+    mut b := entry
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+            to := if t == TmBr { irBrTo(mut st, b) } else if e == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+            nin[irBlkId(mut st, to)] = nin[irBlkId(mut st, to)] + 1
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut live := mut []int{}
+    xFill(mut live, irFnNVal(mut st, f), 1)
+    mut any := false
+    b = entry
+    while b != -1 {
+        t := irBlkTerm(mut st, b)
+        for e <- iter.Range(0, if t == TmBr { 1 } else if t == TmCondbr { 2 } else { 0 }) {
+            to := if t == TmBr { irBrTo(mut st, b) } else if e == 0 { irCondThen(mut st, b) } else { irCondElse(mut st, b) }
+            args := if t == TmBr { irBlkX2(mut st, b) } else if e == 0 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+            if to != entry && to != b && args >= 0 && nin[irBlkId(mut st, to)] == 1 && ccSinglePtrMark(mut st, to, args, mut live) {
+                nl := ccKeepArgs(mut st, to, args, mut live)
+                if t == TmBr {
+                    irSetBlkX2(mut st, b, nl)
+                } else if e == 0 {
+                    irSetBlkX3(mut st, b, nl)
+                } else {
+                    irSetBlkX5(mut st, b, nl)
+                }
+                ccDropParams(mut st, to, mut live)
+                any = true
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return any
+}
+
+// ccSinglePtrMark は行き先 to の ptr の仮引数を辺の実引数 args へ付け替え（OW_AL）、live を 0 にする（1 つでも付け替えたら true）
+func ccSinglePtrMark(st mut St, to BlkRef, args int, live mut []int) bool {
+    mut any := false
+    mut k := 0
+    mut p := irBlkPHead(mut st, to)
+    while p >= 0 {
+        v := desugar.HeapGet(mut st.d, p + 1)
+        a := desugar.HeapGet(mut st.d, args + 1 + k)
+        if desugar.HeapGet(mut st.d, p + 2) == TyPtr && a >= 0 && resolve(mut st, a) != v {
+            owSet(mut st, v, OW_AL, resolve(mut st, a))
+            live[v] = 0
+            any = true
+        }
+        k += 1
+        p = desugar.HeapGet(mut st.d, p)
+    }
+    return any
+}
+
+// ccDropParams は to の仮引数のうち live が 0 のものを鎖から外す
+func ccDropParams(st mut St, to BlkRef, live mut []int) {
+    mut p := irBlkPHead(mut st, to)
+    irSetBlkPHead(mut st, to, -1)
+    irSetBlkPTail(mut st, to, -1)
+    while p >= 0 {
+        nx := desugar.HeapGet(mut st.d, p)
+        if live[desugar.HeapGet(mut st.d, p + 1)] == 1 {
+            desugar.HeapSet(mut st.d, p, -1)
+            if irBlkPHead(mut st, to) < 0 {
+                irSetBlkPHead(mut st, to, p)
+            } else {
+                desugar.HeapSet(mut st.d, irBlkPTail(mut st, to), p)
+            }
+            irSetBlkPTail(mut st, to, p)
+        }
+        p = nx
+    }
+}
+
 // ccMerge は直列のブロックを併合する（併合したら true）。前任の数は B_PREDS（各段の後に正しい — 検証器が見る）
 func ccMerge(st mut St, f FnRef) bool {
     entry := irFnBHead(mut st, f)
@@ -598,10 +686,100 @@ func ccPostM2rModule(st mut St) {
             m2rFunc(mut st, f)
             if ccNParams(mut st, f) > p0 {
                 ccDeadAfterM2r(mut st, f)
+                ccPostFold(mut st, f)
             }
         }
         f = irFnNext(mut st, f)
     }
+}
+
+// ccPostFold は展開後の mem2reg の後の分岐の畳み（段 3' — report-520 3 節・report-524）。展開後の SROA + mem2reg で tag の語が定数になっても、
+// 畳み（P2）と飛び越し（ccThread）は cfgClean の中（展開後の mem2reg の前）でしか回らず、x86 に `mov rax,0; cmp rax,0; je`（定数の条件の condbr）と
+// `mov rdi,0; jmp X` → `X: cmp rdi,0; jne`（冷たい道からだけ非 0 の仮引数を受けて分岐）が届いていた（logagg main の catch の値の検査）。
+// 飛び越しを 1 回 → 畳み → 定数の条件の condbr を br に（ccConstBr）→ 後始末（P4 は辺が変わったときだけ・P3・振り直し）
+func ccPostFold(st mut St, f FnRef) {
+    threaded := ccThread(mut st, f)
+    if threaded {
+        recountPreds(mut st, f)
+    }
+    // 門: 飛び越さず、条件が定数の命令の結果の condbr も無ければ何もしない（畳み・振り直しを全部の関数に掛けると判定の仕事 +0.24 G — report-524）
+    if !threaded && !ccConstCond(mut st, f) {
+        return
+    }
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optFold(mut st, f)
+    if ccConstBr(mut st, f) || threaded {
+        optBlocks(mut st, f)
+    }
+    // 畳みの付け替え（aliasTo — 命令を OpDead にする）は振り直しで消えるので、何も畳まなくても P3・振り直しは要る
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+}
+
+// ccConstCond は条件が定数の condbr があるか（ccPostFold の門）: 条件が定数の命令（OpConst）の結果か、両辺が定数の比較の結果。
+// 展開後の mem2reg は tag の load を定数へ置き換えるので、`condbr (cmp ne k, 0)` の形で残る（logagg main の catch の値の検査）
+func ccConstCond(st mut St, f FnRef) bool {
+    // 印: 1 = condbr の条件・2 = 定数の命令の結果（両方立つ値もある）
+    mut mk := mut []int{}
+    xFill(mut mk, irFnNVal(mut st, f), 0)
+    mut nc := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr && irBlkX1(mut st, b) >= 0 {
+            mk[irBlkX1(mut st, b)] = 1
+            nc += 1
+        }
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpConst {
+                r := irInsRes(mut st, i)
+                mk[r] = mk[r] | 2
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if nc == 0 {
+        return false
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 && mk[r] & 1 == 1 {
+                op := irInsOp(mut st, i)
+                if op == OpConst || op == OpCmp && irInsA(mut st, i) < CFEq && mk[irInsB(mut st, i)] & 2 == 2 && mk[irInsC(mut st, i)] & 2 == 2 {
+                    return true
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// ccConstBr は条件が定数の condbr を、取る側への br にする（取らない側の辺と実引数は消える — 到達しなくなった側は P4 が消す。書き換えたら true）。
+// 畳み（optFold）の後に呼ぶ（条件の定数は畳みの印 OW_K で見る）
+func ccConstBr(st mut St, f FnRef) bool {
+    mut any := false
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            c := resolve(mut st, irBlkX1(mut st, b))
+            if isConst(mut st, c) {
+                if constOf(mut st, c) != 0 {
+                    ilTerm(mut st, b, TmBr, int(irCondThen(mut st, b)), irBlkX3(mut st, b), -1, -1, -1)
+                } else {
+                    ilTerm(mut st, b, TmBr, int(irCondElse(mut st, b)), irBlkX5(mut st, b), -1, -1, -1)
+                }
+                any = true
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return any
 }
 
 // ccNParams は関数 f のブロックの仮引数の総数（展開後の mem2reg が仮引数を足したかの門 — 足さなければ新しい死んだ仮引数は無い）

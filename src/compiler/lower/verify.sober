@@ -69,6 +69,7 @@ type vfyS struct {
     defI mut []int      // 値 → ブロック内の位置（引数は -1）
     curB int
     curI int
+    np int              // packed f64 の op（OpPMem / OpPArith）の数 — 0 でなければ v128 の約束の走査（vfyV128）
 }
 
 func vfyFunc(st mut St, f FnRef, nf int) string {
@@ -83,7 +84,7 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
     if irBlkPreds(mut st, entry) != 0 || irBlkPHead(mut st, entry) >= 0 {
         return "the entry block has predecessors or parameters"
     }
-    mut v := vfyS{vt: valueTypes(mut st, f), nv: nv, defB: mut []int{}, defI: mut []int{}, curB: 0, curI: 0}
+    mut v := vfyS{vt: valueTypes(mut st, f), nv: nv, defB: mut []int{}, defI: mut []int{}, curB: 0, curI: 0, np: 0}
     xFill(mut v.defB, nv, -1)
     xFill(mut v.defI, nv, 0)
     np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
@@ -148,7 +149,73 @@ func vfyFunc(st mut St, f FnRef, nf int) string {
             return "b${bi}: ${m}"
         }
     }
+    return if v.np > 0 { vfyV128(mut st, mut v, mut w) } else { "" }
+}
+
+// vfyV128 は v128 の値の約束（段 4②a — ir.sober の OpPMem の注）: 使うのは packed の op だけ・定義と同じブロックの中だけ（終端の欄に現れない）・
+// 定義から使用までの間に呼び出し系の op（call・間接 call・罠・切替・開始・原子・clone）が無い。packed の op を含む関数だけ走る（vfyFunc の 2 周目）
+func vfyV128(st mut St, v mut vfyS, w mut m2rW) string {
+    for bi <- iter.Range(0, w.nb) {
+        b := BlkRef(w.blk[bi])
+        mut lastCall := -1
+        mut ins := irBlkIHead(mut st, b)
+        mut k := 0
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            mut r := st.opk[op]
+            mut at := int(ins) + I_A
+            while r != 0 {
+                kind := r & 15
+                if kind == K_VAL || kind == K_VLIST {
+                    x0 := desugar.HeapGet(mut st.d, at)
+                    n := if kind == K_VAL { 1 } else { xLen(mut st, x0) }
+                    for j <- iter.Range(0, n) {
+                        x := if kind == K_VAL { x0 } else { xAt(mut st, x0, j) }
+                        if x >= 0 && x < v.nv && desugar.HeapGet(mut st.d, v.vt + 1 + x) == TyV128 {
+                            if op != OpPMem && op != OpPArith {
+                                return "b${bi}: v128 %${x} is used by a non-packed op"
+                            }
+                            if v.defB[x] != bi {
+                                return "b${bi}: v128 %${x} is used outside its block"
+                            }
+                            if v.defI[x] < lastCall {
+                                return "b${bi}: v128 %${x} lives across a call"
+                            }
+                        }
+                    }
+                }
+                r = r >> 4
+                at += 1
+            }
+            if op == OpCall || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone {
+                lastCall = k
+            }
+            k += 1
+            ins = irInsNext(mut st, ins)
+        }
+        mut r := st.tmk[irBlkTerm(mut st, b)]
+        mut at := int(b) + B_X1
+        while r != 0 {
+            kind := r & 15
+            x0 := desugar.HeapGet(mut st.d, at)
+            if kind == K_VAL || (kind == K_VOPT && x0 >= 0) || kind == K_VLIST {
+                n := if kind == K_VLIST { xLen(mut st, x0) } else { 1 }
+                for j <- iter.Range(0, n) {
+                    x := if kind == K_VLIST { xAt(mut st, x0, j) } else { x0 }
+                    if x >= 0 && x < v.nv && desugar.HeapGet(mut st.d, v.vt + 1 + x) == TyV128 {
+                        return "b${bi}: v128 %${x} is used by the terminator"
+                    }
+                }
+            }
+            r = r >> 4
+            at += 1
+        }
+    }
     return ""
+}
+
+func vfyTyName(t int) string {
+    return if t == TyPtr { "ptr" } else if t == TyV128 { "v128" } else { "i64" }
 }
 
 func vfyDef(v mut vfyS, x int, b int, k int) bool {
@@ -187,7 +254,7 @@ func vfyUse(st mut St, v mut vfyS, w mut m2rW, x int, wantTy int, what string) s
     }
     t := desugar.HeapGet(mut st.d, v.vt + 1 + x)
     if wantTy >= 0 && t != wantTy {
-        return "${what} wants ${if wantTy == TyPtr { "ptr" } else { "i64" }} but %${x} is ${if t == TyPtr { "ptr" } else { "i64" }}"
+        return "${what} wants ${vfyTyName(wantTy)} but %${x} is ${vfyTyName(t)}"
     }
     if w.rpoIx[v.curB] < 0 {
         return ""
@@ -383,6 +450,28 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
         return if m != "" { m } else { vfyList(mut st, mut v, mut w, b, -1, "clone operand") }
     case OpConst | OpGlobal | OpFsAddr | OpFuncaddr | OpREnter | OpRDepth:
         return ""
+    case OpPMem:
+        // load = 結果あり・c = a（埋め）/ store = 結果なし・c = v128
+        v.np += 1
+        m := vfyUse(mut st, mut v, mut w, a, TyPtr, "packed memory")
+        return if m != "" { m } else if hasRes { if c != a { "packed load with c != a" } else { "" } } else { vfyUse(mut st, mut v, mut w, c, TyV128, "packed store") }
+    case OpPArith:
+        v.np += 1
+        if !hasRes {
+            return "the result is missing"
+        }
+        if a >= BFAdd && a <= BFDiv {
+            m := vfyUse(mut st, mut v, mut w, b, TyV128, "packed arith")
+            return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyV128, "packed arith") }
+        }
+        if a == PK_PACK {
+            m := vfyUse(mut st, mut v, mut w, b, TyI64, "pack")
+            return if m != "" { m } else { vfyUse(mut st, mut v, mut w, c, TyI64, "pack") }
+        }
+        if a != BFSqrt && a != PK_SPLAT && a != PK_LO && a != PK_HI {
+            return "unknown packed kind ${a}"
+        }
+        return if c != b { "unary packed op with c != b" } else { vfyUse(mut st, mut v, mut w, b, if a == PK_SPLAT { TyI64 } else { TyV128 }, "packed unary") }
     }
     return "unknown op ${op}"
 }

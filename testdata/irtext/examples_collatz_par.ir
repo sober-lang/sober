@@ -9237,6 +9237,7 @@ func @main.main() i64 {
   slot s20 [2]
   slot s21 [5]
   slot s22 [6]
+  slot s23 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -10158,7 +10159,7 @@ b85:
   store %529[0], %530
   store %529[1], %527
   store %529[2], %528
-  %531 = slotaddr s0
+  %531 = slotaddr s23
   call @std/strings.FormatInt(%531, %525)
   %532 = load.i64 %529[1]
   %533 = load.i64 %531[1]
@@ -10172,7 +10173,7 @@ b85:
   %541 = load.i64 %531[0]
   %542 = itop %541
   call @rt.copy8(%540, %542, %533)
-  %543 = slotaddr s8
+  %543 = slotaddr s0
   %544 = ptoi %539
   store %543[0], %544
   store %543[1], %534

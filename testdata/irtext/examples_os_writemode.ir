@@ -1685,8 +1685,11 @@ func @main.main() i64 {
   slot s4 [6]
   slot s5 [6]
   slot s6 [6]
-  slot s7 [5]
-  slot s8 [3]
+  slot s7 [6]
+  slot s8 [6]
+  slot s9 [6]
+  slot s10 [5]
+  slot s11 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1750,13 +1753,13 @@ b3:
   call @rt.print_int(%35)
   %36 = const 10
   call @rt.print_char(%36)
-  %37 = slotaddr s2
+  %37 = slotaddr s4
   %38 = load.i64 %6[0]
   %39 = load.i64 %6[1]
   %40 = load.i64 %6[2]
   %41 = const 493
   call @std/os.WriteMode(%37, %38, %39, %40, %41)
-  %42 = slotaddr s4
+  %42 = slotaddr s5
   %43 = load.i64 %37[0]
   store %42[0], %43
   %44 = load.i64 %37[1]
@@ -1805,13 +1808,13 @@ b6:
   call @rt.print_int(%65)
   %66 = const 10
   call @rt.print_char(%66)
-  %67 = slotaddr s2
+  %67 = slotaddr s6
   %68 = load.i64 %6[0]
   %69 = load.i64 %6[1]
   %70 = load.i64 %6[2]
   %71 = const 420
   call @std/os.WriteMode(%67, %68, %69, %70, %71)
-  %72 = slotaddr s5
+  %72 = slotaddr s7
   %73 = load.i64 %67[0]
   store %72[0], %73
   %74 = load.i64 %67[1]
@@ -1860,7 +1863,7 @@ b9:
   call @rt.print_int(%95)
   %96 = const 10
   call @rt.print_char(%96)
-  %97 = slotaddr s2
+  %97 = slotaddr s8
   %98 = globaladdr @str.3
   %99 = const 16
   %100 = const 0
@@ -1874,7 +1877,7 @@ b9:
   %105 = load.i64 %101[2]
   %106 = const 493
   call @std/os.WriteMode(%97, %103, %104, %105, %106)
-  %107 = slotaddr s6
+  %107 = slotaddr s9
   %108 = load.i64 %97[0]
   store %107[0], %108
   %109 = load.i64 %97[1]
@@ -1894,7 +1897,7 @@ b9:
 b10:
   %117 = const 1
   %118 = gep.word %107, %117
-  %119 = slotaddr s7
+  %119 = slotaddr s10
   %120 = load.i64 %118[0]
   store %119[0], %120
   %121 = load.i64 %118[1]
@@ -1913,7 +1916,7 @@ b11:
   %140 = globaladdr @str.6
   %141 = const 10
   %142 = const 0
-  %143 = slotaddr s8
+  %143 = slotaddr s11
   %144 = ptoi %140
   store %143[0], %144
   store %143[1], %141
@@ -2962,6 +2965,7 @@ func @std/os.Run(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64) {
   slot s13 [1]
   slot s14 [1]
   slot s15 [1]
+  slot s16 [5]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -3518,7 +3522,7 @@ b58:
   br b31
 b59:
   %304 = const 0
-  %305 = slotaddr s11
+  %305 = slotaddr s16
   %306 = const 0
   %307 = sub %306, %301
   call @std/os.errOf(%305, %307)

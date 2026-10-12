@@ -1,0 +1,127 @@
+package conv
+
+// 数値と文字列の変換（language.md 37 節・34 節の Format… / Parse…）。float の最短の往復表現と正しく丸めた解析の公開の口 — 中身は std/floatfmt
+// （整数だけの多倍長・float の字句を含まない内部の算法）。遍在する std/strings から分けた（float を使わないプログラムの error の集合・iface を
+// 動かさない）。将来の int の解析（ParseInt）・decimal もこの席
+
+import "std/floatfmt"
+
+// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+@intrinsic("fbits")
+func sysFBits(x float) int
+
+@intrinsic("ffrombits")
+func sysFFromBits(b int) float
+
+// FormatFloat は f の最短の往復表現（読み戻すと同じビットになる最短の 10 進 — Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴り・println と同じ）
+func FormatFloat(f float) string {
+    return floatfmt.Format(sysFBits(f))
+}
+
+// FormatFixed は f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）
+func FormatFixed(f float, prec int) string {
+    return floatfmt.FormatFixed(sysFBits(f), prec)
+}
+
+// InvalidFloat は ParseFloat の構文の違い（10 進の数字・小数点・指数、または inf / infinity / nan でない）
+type InvalidFloat error {
+}
+
+// FloatOutOfRange は ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
+type FloatOutOfRange error {
+}
+
+// ParseFloat は s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。0 に丸まる小さい値は誤りでない）。
+// 受ける形は [+-]? 数字の列（小数点 1 つ・指数 e / E [+-] 数字）か inf / infinity（符号可）/ nan（大文字小文字を問わない）。16 進・_ は受けない
+@errors(InvalidFloat, FloatOutOfRange)
+func ParseFloat(s string) (float, error?) {
+    // Clinger の速い道: 仮数 ≤ 2^53・|10 の指数| ≤ 22 なら仮数も 10 の累乗も binary64 で正確 → 乗除 1 回の丸め 1 回で正しく丸まる（外れは多倍長へ）
+    ok, f := fastFloat(bytes(s))
+    if ok {
+        return f, nil
+    }
+    bits, err := floatfmt.ParseBits(bytes(s))
+    if err != nil {
+        syntax := switch err {
+        case floatfmt.InvalidSyntax{}: true
+        case floatfmt.OutOfRange{}: false
+        }
+        if syntax {
+            return 0.0, InvalidFloat{}
+        }
+        return sysFFromBits(bits), FloatOutOfRange{}
+    }
+    return sysFFromBits(bits), nil
+}
+
+// fastFloat は Clinger の速い道（受けるのは `[+-]? 数字+ ('.' 数字+)? ([eE] [+-]? 数字+)?` で仮数 ≤ 2^53・|指数| ≤ 22 の形だけ — 他は (false, _) で多倍長へ）
+func fastFloat(b []byte) (bool, float) {
+    mut i := 0
+    neg := len(b) > 0 && b[0] == '-'
+    if len(b) > 0 && (b[0] == '-' || b[0] == '+') {
+        i = 1
+    }
+    mut m := 0
+    mut e := 0
+    mut nd := 0
+    while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+        m = m * 10 + (int(b[i]) - 48)
+        nd += 1
+        if m > 9007199254740992 {
+            return false, 0.0
+        }
+        i += 1
+    }
+    if nd == 0 {
+        return false, 0.0
+    }
+    if i < len(b) && b[i] == '.' {
+        i += 1
+        mut fd := 0
+        while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+            m = m * 10 + (int(b[i]) - 48)
+            fd += 1
+            if m > 9007199254740992 {
+                return false, 0.0
+            }
+            i += 1
+        }
+        if fd == 0 {
+            return false, 0.0
+        }
+        e -= fd
+    }
+    if i < len(b) && (b[i] == 'e' || b[i] == 'E') {
+        i += 1
+        mut eneg := false
+        if i < len(b) && (b[i] == '-' || b[i] == '+') {
+            eneg = b[i] == '-'
+            i += 1
+        }
+        mut x := 0
+        mut xd := 0
+        while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+            x = x * 10 + (int(b[i]) - 48)
+            xd += 1
+            if x > 1000 {
+                return false, 0.0
+            }
+            i += 1
+        }
+        if xd == 0 {
+            return false, 0.0
+        }
+        e += if eneg { 0 - x } else { x }
+    }
+    if i != len(b) || e < -22 || e > 22 {
+        return false, 0.0
+    }
+    mut p := 1.0
+    mut k := if e < 0 { 0 - e } else { e }
+    while k > 0 {
+        p = p * 10.0
+        k -= 1
+    }
+    f := if e < 0 { float(m) / p } else { float(m) * p }
+    return true, if neg { -f } else { f }
+}

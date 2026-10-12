@@ -1689,9 +1689,10 @@ func @main.main() {
   slot s11 [1]
   slot s12 [2]
   slot s13 [2]
-  slot s14 [2]
-  slot s15 [4]
+  slot s14 [3]
+  slot s15 [2]
   slot s16 [4]
+  slot s17 [4]
 b0:
   %0 = region.depth
   region.enter
@@ -1986,7 +1987,7 @@ b27:
   store %161[0], %162
   store %161[1], %159
   store %161[2], %160
-  %163 = slotaddr s8
+  %163 = slotaddr s14
   call @std/strings.FormatInt(%163, %144)
   %164 = load.i64 %161[1]
   %165 = load.i64 %163[1]
@@ -2000,7 +2001,7 @@ b27:
   %173 = load.i64 %163[0]
   %174 = itop %173
   call @rt.copy8(%172, %174, %165)
-  %175 = slotaddr s7
+  %175 = slotaddr s8
   %176 = ptoi %171
   store %175[0], %176
   store %175[1], %166
@@ -2033,7 +2034,7 @@ b29:
   store %182[0], %192
   br b30
 b30:
-  %193 = slotaddr s14
+  %193 = slotaddr s15
   %194 = load.i64 %182[0]
   store %193[0], %194
   %195 = load.i64 %182[1]
@@ -2116,7 +2117,7 @@ b42(%230 i64):
   store %248[2], %249
   %253 = const 0
   store %248[3], %253
-  %254 = slotaddr s15
+  %254 = slotaddr s16
   %255 = load.i64 %248[0]
   store %254[0], %255
   %256 = load.i64 %248[1]
@@ -2145,7 +2146,7 @@ b43:
   store %305[2], %308
   %309 = load.i64 %254[3]
   store %305[3], %309
-  %310 = slotaddr s16
+  %310 = slotaddr s17
   %311 = load.i64 %254[0]
   store %310[0], %311
   %312 = load.i64 %254[1]
@@ -2442,7 +2443,7 @@ b81(%450 i64):
   %463 = slotaddr s3
   store %463[0], %462
   %464 = call @rt.map_find.0.0.3.1(%305, %463)
-  %465 = slotaddr s14
+  %465 = slotaddr s15
   %466 = const 0
   %467 = ne %464, %466
   condbr %467, b82, b83
@@ -2467,7 +2468,7 @@ b84:
   %476 = slotaddr s3
   store %476[0], %475
   %477 = call @rt.map_find.0.0.3.1(%310, %476)
-  %478 = slotaddr s14
+  %478 = slotaddr s15
   %479 = const 0
   %480 = ne %477, %479
   condbr %480, b85, b86

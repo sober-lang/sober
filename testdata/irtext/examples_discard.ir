@@ -1670,7 +1670,8 @@ func @main.main() {
   slot s1 [3]
   slot s2 [7]
   slot s3 [6]
-  slot s4 [6]
+  slot s4 [7]
+  slot s5 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1736,13 +1737,13 @@ b0:
   store %34[4], %39
   %40 = load.i64 %33[5]
   store %34[5], %40
-  %41 = slotaddr s2
+  %41 = slotaddr s4
   %42 = const 0
   call @main.step(%41, %42)
   %43 = load.i64 %41[0]
   %44 = const 1
   %45 = gep.word %41, %44
-  %46 = slotaddr s4
+  %46 = slotaddr s5
   %47 = load.i64 %45[0]
   store %46[0], %47
   %48 = load.i64 %45[1]

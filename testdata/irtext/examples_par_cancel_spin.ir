@@ -9233,6 +9233,7 @@ func @main.main() {
   slot s13 [6]
   slot s14 [6]
   slot s15 [3]
+  slot s16 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -9710,7 +9711,7 @@ b30:
 b31:
   br b32
 b32:
-  %258 = slotaddr s15
+  %258 = slotaddr s16
   call @std/strings.FormatInt(%258, %233)
   call @rt.print_str(%258)
   %259 = const 10

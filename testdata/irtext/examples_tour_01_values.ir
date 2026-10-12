@@ -1689,6 +1689,12 @@ func @main.main() i64 {
   slot s5 [3]
   slot s6 [3]
   slot s7 [3]
+  slot s8 [3]
+  slot s9 [3]
+  slot s10 [3]
+  slot s11 [3]
+  slot s12 [3]
+  slot s13 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1787,15 +1793,15 @@ b0:
   call @rt.print_str(%66)
   %68 = const 10
   call @rt.print_char(%68)
-  %69 = slotaddr s7
+  %69 = slotaddr s8
   %70 = const 0
   %71 = const 3
   %72 = sub %70, %71
   call @main.sign(%69, %72)
-  %73 = slotaddr s6
+  %73 = slotaddr s9
   %74 = const 0
   call @main.sign(%73, %74)
-  %75 = slotaddr s5
+  %75 = slotaddr s10
   %76 = const 7
   call @main.sign(%75, %76)
   call @rt.print_str(%69)
@@ -1807,13 +1813,13 @@ b0:
   call @rt.print_str(%75)
   %79 = const 10
   call @rt.print_char(%79)
-  %80 = slotaddr s5
+  %80 = slotaddr s11
   %81 = const 5
   call @main.size(%80, %81)
-  %82 = slotaddr s6
+  %82 = slotaddr s12
   %83 = const 500
   call @main.size(%82, %83)
-  %84 = slotaddr s7
+  %84 = slotaddr s13
   %85 = const 50000
   call @main.size(%84, %85)
   call @rt.print_str(%80)

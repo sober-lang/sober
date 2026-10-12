@@ -64,7 +64,7 @@ func main() int {
 
 ### 高速
 
-- Rust に匹敵する実行速度。同じアルゴリズムの素直な Rust と比べて、逐次 9 題材で勝ち 3・互角 3・負け 3（負けは k-nucleotide 1.33×・1BRC 1.28×・n-body 1.27×）。Go には 6 勝 2 互角 1 敗です。
+- Rust に匹敵する実行速度。同じアルゴリズムの素直な Rust と比べて、逐次 9 題材で勝ち 5・互角 2・負け 2（負けは n-body 1.18×・1BRC 1.12×）。Go には 7 勝 1 互角 1 敗です。
 - Rust 並みのメモリフットプリント。GC はありません。最大 RSS は 9 題材中 7 題材で Rust 以下です（上回るのは reverse-complement と k-nucleotide）。
 - 高い並列処理性能 — しかも決定的。structured concurrency の task は軽く（Skynet の 111 万 task が Go の 5 倍速い）、ワーカー数を変えても出力は同じバイトです。
 

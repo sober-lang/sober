@@ -1684,6 +1684,7 @@ func @main.main() {
   slot s9 [3]
   slot s10 [3]
   slot s11 [3]
+  slot s12 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1735,12 +1736,12 @@ b1:
   store %87[3], %83
   store %87[4], %84
   %88 = const 5
-  %89 = slotaddr s4
+  %89 = slotaddr s0
   %90 = ptoi %87
   store %89[0], %90
   store %89[1], %88
   store %89[2], %85
-  %91 = slotaddr s6
+  %91 = slotaddr s7
   %92 = load.i64 %89[0]
   store %91[0], %92
   %93 = load.i64 %89[1]
@@ -1751,26 +1752,26 @@ b1:
   %96 = const 0
   %97 = region.alloc %95, %96
   %98 = const 0
-  %99 = slotaddr s4
+  %99 = slotaddr s0
   %100 = ptoi %97
   store %99[0], %100
   store %99[1], %98
   store %99[2], %95
-  %101 = slotaddr s0
+  %101 = slotaddr s5
   %102 = load.i64 %99[0]
   store %101[0], %102
   %103 = load.i64 %99[1]
   store %101[1], %103
   %104 = load.i64 %99[2]
   store %101[2], %104
-  %105 = slotaddr s4
+  %105 = slotaddr s0
   %106 = load.i64 %91[0]
   store %105[0], %106
   %107 = load.i64 %91[1]
   store %105[1], %107
   %108 = load.i64 %91[2]
   store %105[2], %108
-  %109 = slotaddr s7
+  %109 = slotaddr s8
   %110 = load.i64 %105[0]
   store %109[0], %110
   %111 = load.i64 %105[1]
@@ -1796,9 +1797,9 @@ b4:
   %20 = region.depth
   %21 = load.i64 %16[0]
   %22 = region.depth
-  %23 = slotaddr s0
+  %23 = slotaddr s4
   call @main.mk(%23, %21)
-  %24 = slotaddr s4
+  %24 = slotaddr s0
   %25 = load.i64 %23[0]
   store %24[0], %25
   %26 = load.i64 %23[1]
@@ -1807,14 +1808,14 @@ b4:
   store %24[2], %27
   %28 = const 1
   %29 = add %0, %28
-  %30 = slotaddr s0
+  %30 = slotaddr s5
   %31 = load.i64 %7[0]
   store %30[0], %31
   %32 = load.i64 %7[1]
   store %30[1], %32
   %33 = load.i64 %7[2]
   store %30[2], %33
-  %34 = slotaddr s5
+  %34 = slotaddr s6
   %35 = load.i64 %24[0]
   store %34[0], %35
   %36 = load.i64 %24[1]
@@ -1858,7 +1859,7 @@ b7(%41 ptr, %42 ptr):
   %64 = load.i64 %30[1]
   %65 = const 1
   %66 = add %64, %65
-  %67 = slotaddr s6
+  %67 = slotaddr s7
   %68 = ptoi %41
   store %67[0], %68
   store %67[1], %66
@@ -1922,16 +1923,16 @@ b15:
   %131 = load.i64 %130[0]
   %132 = const 1
   %133 = add %0, %132
-  %134 = slotaddr s8
+  %134 = slotaddr s9
   %135 = load.i64 %101[0]
   store %134[0], %135
   %136 = load.i64 %101[1]
   store %134[1], %136
   %137 = load.i64 %101[2]
   store %134[2], %137
-  %138 = slotaddr s9
+  %138 = slotaddr s10
   call @main.mk(%138, %131)
-  %139 = slotaddr s10
+  %139 = slotaddr s11
   %140 = load.i64 %138[0]
   store %139[0], %140
   %141 = load.i64 %138[1]
@@ -1959,7 +1960,7 @@ b16(%146 ptr, %147 ptr):
   %166 = load.i64 %134[1]
   %167 = const 1
   %168 = add %166, %167
-  %169 = slotaddr s11
+  %169 = slotaddr s12
   %170 = ptoi %146
   store %169[0], %170
   store %169[1], %168

@@ -2752,6 +2752,21 @@ b0:
   store i64 0, ptr %s3.z0
   %s3.z1 = getelementptr i64, ptr %s3, i64 1
   store i64 0, ptr %s3.z1
+  %s4 = alloca [2 x i64], align 8
+  %s4.z0 = getelementptr i64, ptr %s4, i64 0
+  store i64 0, ptr %s4.z0
+  %s4.z1 = getelementptr i64, ptr %s4, i64 1
+  store i64 0, ptr %s4.z1
+  %s5 = alloca [2 x i64], align 8
+  %s5.z0 = getelementptr i64, ptr %s5, i64 0
+  store i64 0, ptr %s5.z0
+  %s5.z1 = getelementptr i64, ptr %s5, i64 1
+  store i64 0, ptr %s5.z1
+  %s6 = alloca [2 x i64], align 8
+  %s6.z0 = getelementptr i64, ptr %s6, i64 0
+  store i64 0, ptr %s6.z0
+  %s6.z1 = getelementptr i64, ptr %s6, i64 1
+  store i64 0, ptr %s6.z1
   %v56 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v56, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2768,10 +2783,10 @@ b0:
   %v5 = load i64, ptr %v5.p
   %st1 = getelementptr i64, ptr %v3, i64 1
   store i64 %v5, ptr %st1
-  %v6 = getelementptr i64, ptr %s0, i64 0
+  %v6 = getelementptr i64, ptr %s2, i64 0
   %v7 = add i64 0, 1
   call void @"main.find"(ptr %v6, i64 %v7)
-  %v8 = getelementptr i64, ptr %s2, i64 0
+  %v8 = getelementptr i64, ptr %s3, i64 0
   %v9.p = getelementptr i64, ptr %v6, i64 0
   %v9 = load i64, ptr %v9.p
   %st2 = getelementptr i64, ptr %v8, i64 0
@@ -2846,10 +2861,10 @@ b5:
   call void @"rt.print_char"(i64 %v34)
   br label %b6
 b6:
-  %v35 = getelementptr i64, ptr %s0, i64 0
+  %v35 = getelementptr i64, ptr %s4, i64 0
   %v36 = add i64 0, 7
   call void @"main.find"(ptr %v35, i64 %v36)
-  %v37 = getelementptr i64, ptr %s3, i64 0
+  %v37 = getelementptr i64, ptr %s5, i64 0
   %v38.p = getelementptr i64, ptr %v35, i64 0
   %v38 = load i64, ptr %v38.p
   %st8 = getelementptr i64, ptr %v37, i64 0
@@ -2858,7 +2873,7 @@ b6:
   %v39 = load i64, ptr %v39.p
   %st9 = getelementptr i64, ptr %v37, i64 1
   store i64 %v39, ptr %st9
-  %v40 = getelementptr i64, ptr %s0, i64 0
+  %v40 = getelementptr i64, ptr %s6, i64 0
   %v41 = add i64 0, 0
   %st10 = getelementptr i64, ptr %v40, i64 0
   store i64 %v41, ptr %st10

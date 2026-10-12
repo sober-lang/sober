@@ -653,7 +653,7 @@ func termOperands(st mut St, b BlkRef, mode int) {
 
 func isPure(op int) bool {
     return op == OpConst || op == OpCmp || op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop ||
-        op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth
+        op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpPArith || op == OpPMem
 }
 
 func pureIns(st mut St, ins InsRef) bool {

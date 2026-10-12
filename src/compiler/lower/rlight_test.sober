@@ -38,3 +38,70 @@ func TestLlInsAllocsReloc() {
     // 外の深度へ写す relocate8（append の伸長 — 外の out のヘッダの深度）は今の深度で確保しない
     assert(!llT(true, false))
 }
+
+// llcT は入口で region を開かない関数 g（仮引数 0 = 条件）に、頭 H（setdepth）・本体の入口 B0（region.enter）・呼び出しのブロック C の
+// ループを組み、llCallees が C の呼び出し（確保しうる関数 a）を g の要約の呼び先に数えた数を返す（0 = 除いた — G' report-541）。
+// kind: 0 = C は B0 の後で H へ戻る（除く）・1 = C は break の側（ループの外の出口へ — 次の周へ戻れない）・2 = 入口から C へ直に入る辺がある
+// （本体が B0 だけから入られない）・3 = 呼び出しがループの外（出口のブロック）・4 = C の呼び出しの前に setdepth（本体の途中の深度の戻し）
+func llcT(kind int) int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 1)
+    desugar.HeapSet(mut st.d, pt + 1, TyI64)
+    a := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    g := addFunc(mut st, 0, desugar.ListRef(pt), -1)
+    st.fn = g
+    entry := newBlock(mut st)
+    h := newBlock(mut st)
+    b0 := newBlock(mut st)
+    c := newBlock(mut st)
+    x := newBlock(mut st)
+    st.cur = entry
+    d := regionDepth(mut st)
+    if kind == 2 {
+        condbr(mut st, 0, h, -1, c, -1)
+    } else {
+        br(mut st, h, -1)
+    }
+    setCur(mut st, h)
+    regionSetDepth(mut st, d)
+    condbr(mut st, 0, b0, -1, x, -1)
+    setCur(mut st, b0)
+    regionEnter(mut st)
+    br(mut st, c, -1)
+    setCur(mut st, c)
+    if kind == 4 {
+        regionSetDepth(mut st, d)
+    }
+    if kind != 3 {
+        _ = call(mut st, a, listN(mut st, 0))
+    }
+    if kind == 1 {
+        br(mut st, x, -1)
+    } else {
+        br(mut st, h, -1)
+    }
+    setCur(mut st, x)
+    regionSetDepth(mut st, d)
+    if kind == 3 {
+        _ = call(mut st, a, listN(mut st, 0))
+    }
+    ret(mut st, -1)
+    mut cs := mut []int{}
+    llCallees(mut st, g, mut cs)
+    return cs[1]
+}
+
+func TestLlCalleesInLoop() {
+    // 0: 残る enter の下で次の周へ戻る呼び出しは g の要約に数えない
+    assert(llcT(0) == 0)
+    // 1: 戻れない側（break）の呼び出しは数える — その確保だけなら enter は消え、確保は g の入口の深度に落ちる（戻れるかの検査を外す変異はここで落ちる）
+    assert(llcT(1) == 1)
+    // 2: 本体へ B0 以外から入る道があれば数える（一つの入口の検査を外す変異はここで落ちる）
+    assert(llcT(2) == 1)
+    // 3: ループの外の呼び出しは数える
+    assert(llcT(3) == 1)
+    // 4: 本体の途中の setdepth の後ろの呼び出しは数える
+    assert(llcT(4) == 1)
+}

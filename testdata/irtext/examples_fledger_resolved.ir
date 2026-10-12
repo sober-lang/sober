@@ -1814,16 +1814,16 @@ b2:
 b3:
   %66 = const 10
   call @rt.print_char(%66)
-  %67 = slotaddr s2
+  %67 = slotaddr s7
   %68 = globaladdr @str.1
   %69 = const 1
   %70 = const 0
-  %71 = slotaddr s1
+  %71 = slotaddr s2
   %72 = ptoi %68
   store %71[0], %72
   store %71[1], %69
   store %71[2], %70
-  %73 = slotaddr s7
+  %73 = slotaddr s1
   %74 = load.i64 %71[0]
   store %73[0], %74
   %75 = load.i64 %71[1]
@@ -1908,7 +1908,7 @@ b4:
   %120 = globaladdr @str.2
   %121 = const 2
   %122 = const 0
-  %123 = slotaddr s8
+  %123 = slotaddr s1
   %124 = ptoi %120
   store %123[0], %124
   store %123[1], %121
@@ -1918,7 +1918,7 @@ b5:
   %125 = globaladdr @str.3
   %126 = const 1
   %127 = const 0
-  %128 = slotaddr s7
+  %128 = slotaddr s2
   %129 = ptoi %125
   store %128[0], %129
   store %128[1], %126
@@ -1932,7 +1932,7 @@ b6(%130 ptr):
   %133 = globaladdr @str.2
   %134 = const 2
   %135 = const 0
-  %136 = slotaddr s7
+  %136 = slotaddr s2
   %137 = ptoi %133
   store %136[0], %137
   store %136[1], %134
@@ -1944,7 +1944,7 @@ b6(%130 ptr):
   %142 = globaladdr @str.1
   %143 = const 1
   %144 = const 0
-  %145 = slotaddr s8
+  %145 = slotaddr s1
   %146 = ptoi %142
   store %145[0], %146
   store %145[1], %143

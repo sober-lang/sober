@@ -1675,6 +1675,7 @@ func @main.main() {
   slot s1 [3]
   slot s2 [3]
   slot s3 [3]
+  slot s4 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1710,7 +1711,7 @@ b0:
   call @rt.print_int(%19)
   %20 = const 10
   call @rt.print_char(%20)
-  %21 = slotaddr s1
+  %21 = slotaddr s3
   %22 = const 1
   %23 = const 2
   %24 = const 3
@@ -1721,7 +1722,7 @@ b0:
   store %27[1], %23
   store %27[2], %24
   %28 = const 3
-  %29 = slotaddr s0
+  %29 = slotaddr s1
   %30 = ptoi %27
   store %29[0], %30
   store %29[1], %28
@@ -1731,7 +1732,7 @@ b0:
   %33 = load.i64 %29[2]
   %34 = const 5
   call @main.appendCopy(%21, %31, %32, %33, %34)
-  %35 = slotaddr s3
+  %35 = slotaddr s4
   %36 = load.i64 %21[0]
   store %35[0], %36
   %37 = load.i64 %21[1]

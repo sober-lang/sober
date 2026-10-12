@@ -1686,7 +1686,9 @@ func @main.main() {
   slot s9 [3]
   slot s10 [1]
   slot s11 [1]
-  slot s12 [1]
+  slot s12 [3]
+  slot s13 [1]
+  slot s14 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2371,7 +2373,7 @@ b60:
   br b31
 b61:
   %473 = load.i64 %413[0]
-  %474 = slotaddr s8
+  %474 = slotaddr s12
   call @std/strings.FormatInt(%474, %473)
   call @rt.print_str(%474)
   %475 = const 10
@@ -2483,7 +2485,7 @@ b76:
   br b61
 b77:
   %537 = load.i64 %477[0]
-  %538 = slotaddr s4
+  %538 = slotaddr s14
   call @std/strings.FormatInt(%538, %537)
   call @rt.print_str(%538)
   %539 = const 10
@@ -2509,7 +2511,7 @@ b82(%485 i64):
   %489 = slotaddr s3
   store %489[0], %488
   %490 = const 8
-  %491 = slotaddr s12
+  %491 = slotaddr s13
   store %491[0], %490
   %492 = region.depth
   br b83
@@ -2563,7 +2565,7 @@ b90:
   %519 = const 3
   %520 = mul %513, %519
   %521 = gep.word %518, %520
-  %522 = slotaddr s8
+  %522 = slotaddr s4
   %523 = load.i64 %521[0]
   store %522[0], %523
   %524 = load.i64 %521[1]

@@ -1733,7 +1733,7 @@ b0:
   store %27[0], %28
   store %27[1], %25
   store %27[2], %26
-  %29 = slotaddr s0
+  %29 = slotaddr s5
   call @std/strings.FormatInt(%29, %21)
   %30 = load.i64 %27[1]
   %31 = load.i64 %29[1]
@@ -1747,7 +1747,7 @@ b0:
   %39 = load.i64 %29[0]
   %40 = itop %39
   call @rt.copy8(%38, %40, %31)
-  %41 = slotaddr s5
+  %41 = slotaddr s0
   %42 = ptoi %37
   store %41[0], %42
   store %41[1], %32

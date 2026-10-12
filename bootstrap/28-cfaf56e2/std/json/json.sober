@@ -1,0 +1,782 @@
+package json
+
+// JSON（RFC 8259）の読みと決定的な印字（language.md 16 節）。文書は平らな表 Doc（節の番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、
+// 触るのは 1 段だけ開くビューの union Value（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — 16 節）。
+// 再帰の union にしないのはコアに再帰型が無いため（形式化の箱「ジェネリック union 段 (3) 再帰」— 入ったら再訪）。
+//
+//     d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
+//     switch json.At(d, json.Root(d)) {
+//     case json.Obj{names, vals}: …              // 子は節の番号 — json.At(d, vals[i]) で 1 段ずつ開く
+//     …
+//     }
+//     s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
+//
+// 数（Num）は字句のまま持つ（解釈はデコードの点まで遅らせる — 64 ビットを超える整数・精度・金額を float に黙って丸めない）。
+// 重複したキーは拒否（防御の既定 — パーサ間で解釈が割れる攻撃面。Go は後勝ち）。不正な UTF-8 は文書のどこでも拒否（Go は U+FFFD に置き換え）
+
+import "std/builder"
+import "std/iter"
+import "std/utf8"
+
+// 節の種類（Doc.kind）
+const kNull = 0
+const kFalse = 1
+const kTrue = 2
+const kNum = 3      // a, b = src の [a, b)
+const kStr = 4      // a, b = src の [a, b)（エスケープなし — 入力をそのまま指す）
+const kStrEsc = 5   // a, b = esc の [a, b)（エスケープを解いた写し）
+const kArr = 6      // a = kids の先頭, b = 要素の数
+const kObj = 7      // a = kids の先頭（キーの節 b 個、続けて値の節 b 個）, b = 欄の数
+
+// MaxDepth は入れ子の深さの上限（配列とオブジェクトの開き — 防御の上限。読みは明示のスタックで再帰しないので、深さはスタックの長さにだけ効く）
+const MaxDepth = 1000
+
+// InvalidJson の kind
+const Syntax = 1
+const BadUtf8 = 2
+const TooDeep = 3
+const DupKey = 4
+
+// InvalidJson は読めなかった位置（src 上のバイトオフセット）と種類（Syntax・BadUtf8・TooDeep・DupKey）
+type InvalidJson error {
+    pos int
+    kind int
+}
+
+// Doc は読んだ文書: 節の表（番号 = 添字。子は親より先に並ぶ — 根は最後）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:
+// 非公開の型の封の欄 seal があるので、外からは composite に書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開のまま
+// （引数の型に json.Doc と書ける — shape[T] の写しの関数も）。欄の読みは塞いでいない（裸の int で At なしには解釈できない — 規律の面だけ）。
+// 再訪条件: 可視性の細分（構築のみ私有・欄の私有）が入ったら封を外してそれに置き換える
+type Doc struct {
+    src []byte
+    esc []byte
+    kind []int
+    a []int
+    b []int
+    pos []int
+    kids []int
+    seal sealed
+}
+
+// sealed は Doc の封（非公開 — 外で値を書けない）
+type sealed struct {
+}
+
+// Value は節 1 つのビュー（子は節の番号 — json.At で開く）
+type Value union {
+    Null {}
+    Bool { v bool }
+    Num { lit string }
+    Str { v string }
+    Arr { items []int }
+    Obj { names []string; vals []int }
+}
+
+// Root は根の節
+func Root(d Doc) int {
+    return len(d.kind) - 1
+}
+
+// Pos は節 n の src 上の位置（値の先頭のバイト）
+func Pos(d Doc, n int) int {
+    return d.pos[n]
+}
+
+// At は節 n を 1 段開く
+func At(d Doc, n int) Value {
+    a := d.a[n]
+    b := d.b[n]
+    k := d.kind[n]
+    // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する — F-ab）
+    if k == kObj {
+        return Obj{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
+    }
+    return switch k {
+    case kNull: Null{}
+    case kFalse: Bool{v: false}
+    case kTrue: Bool{v: true}
+    case kNum: Num{lit: bytesToString(d.src[a:b])}
+    case kStr: Str{v: bytesToString(d.src[a:b])}
+    case kStrEsc: Str{v: bytesToString(d.esc[a:b])}
+    default: Arr{items: d.kids[a:a + b]}
+    }
+}
+
+// keysOf はオブジェクトのキーの節 kids[a, a + n) の文字列の列
+func keysOf(d Doc, a int, n int) []string {
+    mut ks := mut []string{}
+    for i <- iter.Range(0, n) {
+        ks = append(ks, text(d, d.kids[a + i]))
+    }
+    return ks
+}
+
+// text は文字列の節 k の中身
+func text(d Doc, k int) string {
+    return if d.kind[k] == kStr { bytesToString(d.src[d.a[k]:d.b[k]]) } else { bytesToString(d.esc[d.a[k]:d.b[k]]) }
+}
+
+// Get はオブジェクトの節 n の欄 key の値の節（n がオブジェクトでない・欄が無ければ nil）
+func Get(d Doc, n int, key string) int? {
+    return GetAt(d, n, key, -1)
+}
+
+// GetAt は Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
+// 渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）
+func GetAt(d Doc, n int, key string, hint int) int? {
+    if d.kind[n] != kObj {
+        return nil
+    }
+    a := d.a[n]
+    m := d.b[n]
+    kb := bytes(key)
+    if hint >= 0 && hint < m && keyIs(d, d.kids[a + hint], kb) {
+        return d.kids[a + m + hint]
+    }
+    for i <- iter.Range(0, m) {
+        if keyIs(d, d.kids[a + i], kb) {
+            return d.kids[a + m + i]
+        }
+    }
+    return nil
+}
+
+// keyIs は文字列の節 k の中身が key か（string を作らずにバイトで比べる — 長さを先に）
+func keyIs(d Doc, k int, key []byte) bool {
+    a := d.a[k]
+    n := d.b[k] - a
+    if n != len(key) {
+        return false
+    }
+    mut i := 0
+    if d.kind[k] == kStr {
+        while i < n && d.src[a + i] == key[i] {
+            i += 1
+        }
+    } else {
+        while i < n && d.esc[a + i] == key[i] {
+            i += 1
+        }
+    }
+    return i == n
+}
+
+// keyEq は文字列の節 x と y の中身が同じか
+func keyEq(d Doc, x int, y int) bool {
+    return if d.kind[x] == kStr { keyIs(d, y, d.src[d.a[x]:d.b[x]]) } else { keyIs(d, y, d.esc[d.a[x]:d.b[x]]) }
+}
+
+// isWs は JSON の空白（space・\t・\n・\r）
+func isWs(c byte) bool {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+func skipWs(b []byte, i int) int {
+    mut j := i
+    while j < len(b) && isWs(b[j]) {
+        j += 1
+    }
+    return j
+}
+
+func isDigit(c byte) bool {
+    return c >= '0' && c <= '9'
+}
+
+// numEnd は b[i] から始まる数の字句の終わり（文法に合わなければ -1 — 「-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?」）
+func numEnd(b []byte, i int) int {
+    mut j := i
+    if j < len(b) && b[j] == '-' {
+        j += 1
+    }
+    if j >= len(b) || !isDigit(b[j]) {
+        return -1
+    }
+    if b[j] == '0' {
+        j += 1
+    } else {
+        while j < len(b) && isDigit(b[j]) {
+            j += 1
+        }
+    }
+    if j < len(b) && b[j] == '.' {
+        j += 1
+        if j >= len(b) || !isDigit(b[j]) {
+            return -1
+        }
+        while j < len(b) && isDigit(b[j]) {
+            j += 1
+        }
+    }
+    if j < len(b) && (b[j] == 'e' || b[j] == 'E') {
+        j += 1
+        if j < len(b) && (b[j] == '+' || b[j] == '-') {
+            j += 1
+        }
+        if j >= len(b) || !isDigit(b[j]) {
+            return -1
+        }
+        while j < len(b) && isDigit(b[j]) {
+            j += 1
+        }
+    }
+    return j
+}
+
+// hexVal は 16 進の 1 桁の値（16 進でなければ -1）
+func hexVal(c byte) int {
+    return if c >= '0' && c <= '9' {
+        int(c) - 48
+    } else if c >= 'a' && c <= 'f' {
+        int(c) - 87
+    } else if c >= 'A' && c <= 'F' {
+        int(c) - 55
+    } else {
+        -1
+    }
+}
+
+// hex4 は b[i:i + 4] の 16 進 4 桁の値（足りない・16 進でなければ -1）
+func hex4(b []byte, i int) int {
+    if i + 4 > len(b) {
+        return -1
+    }
+    mut v := 0
+    for k <- iter.Range(0, 4) {
+        h := hexVal(b[i + k])
+        if h < 0 {
+            return -1
+        }
+        v = v * 16 + h
+    }
+    return v
+}
+
+// strScan は b[i] = '"' から始まる文字列の字句を読む: (閉じの '"' の位置, エスケープを含むか) — 不正なら位置 -1 と不正の位置を 2 つ目の int に
+func strScan(b []byte, i int) (int, bool, int) {
+    mut j := i + 1
+    mut esc := false
+    while j < len(b) {
+        c := b[j]
+        if c == '"' {
+            return j, esc, 0
+        }
+        if c < ' ' {
+            return -1, false, j
+        }
+        if c == '\\' {
+            esc = true
+            if j + 1 >= len(b) {
+                return -1, false, j
+            }
+            e := b[j + 1]
+            if e == 'u' {
+                cp := hex4(b, j + 2)
+                if cp < 0 {
+                    return -1, false, j
+                }
+                if cp >= 55296 && cp <= 56319 {
+                    // 上位サロゲート — 続く \uDC00..DFFF が要る（単独のサロゲートは UTF-8 に写せないので拒否）
+                    lo := if j + 7 < len(b) && b[j + 6] == '\\' && b[j + 7] == 'u' { hex4(b, j + 8) } else { -1 }
+                    if lo < 56320 || lo > 57343 {
+                        return -1, false, j
+                    }
+                    j += 12
+                } else if cp >= 56320 && cp <= 57343 {
+                    return -1, false, j
+                } else {
+                    j += 6
+                }
+            } else if e == '"' || e == '\\' || e == '/' || e == 'b' || e == 'f' || e == 'n' || e == 'r' || e == 't' {
+                j += 2
+            } else {
+                return -1, false, j
+            }
+        } else {
+            j += 1
+        }
+    }
+    return -1, false, j
+}
+
+// unescape は検査済みの字句 b(i, e)（両端の '"' の内側）のエスケープを解いて out に積む
+func unescape(out mut builder.Builder[byte], b []byte, i int, e int) {
+    mut j := i
+    while j < e {
+        c := b[j]
+        if c != '\\' {
+            builder.Push(mut out, c)
+            j += 1
+        } else {
+            x := b[j + 1]
+            if x == 'u' {
+                mut cp := hex4(b, j + 2)
+                j += 6
+                if cp >= 55296 && cp <= 56319 {
+                    cp = 65536 + (cp - 55296) * 1024 + (hex4(b, j + 2) - 56320)
+                    j += 6
+                }
+                putRune(mut out, cp)
+            } else {
+                builder.Push(mut out, unesc(x))
+                j += 2
+            }
+        }
+    }
+}
+
+// putRune はコードポイント cp（サロゲートでない）の UTF-8 を out に積む
+func putRune(out mut builder.Builder[byte], cp int) {
+    if cp < 128 {
+        builder.Push(mut out, byte(cp))
+    } else if cp < 2048 {
+        builder.Push(mut out, byte(192 | (cp >> 6)))
+        builder.Push(mut out, byte(128 | (cp & 63)))
+    } else if cp < 65536 {
+        builder.Push(mut out, byte(224 | (cp >> 12)))
+        builder.Push(mut out, byte(128 | ((cp >> 6) & 63)))
+        builder.Push(mut out, byte(128 | (cp & 63)))
+    } else {
+        builder.Push(mut out, byte(240 | (cp >> 18)))
+        builder.Push(mut out, byte(128 | ((cp >> 12) & 63)))
+        builder.Push(mut out, byte(128 | ((cp >> 6) & 63)))
+        builder.Push(mut out, byte(128 | (cp & 63)))
+    }
+}
+
+// litAt は b[i:] が綴り w で始まるか
+func litAt(b []byte, i int, w string) bool {
+    p := bytes(w)
+    if i + len(p) > len(b) {
+        return false
+    }
+    for k <- iter.Range(0, len(p)) {
+        if b[i + k] != p[k] {
+            return false
+        }
+    }
+    return true
+}
+
+// put は明示のスタック st の sp 番目に x を置く（伸ばすのは末尾だけ — 1 本のスタックなので先端の append）
+func put(st mut []int, sp int, x int) {
+    if sp < len(st) {
+        st[sp] = x
+    } else {
+        st = append(st, x)
+    }
+}
+
+// nodes は節の表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
+// （Builder に積んで Build で写す形は chunk の倍々の余りと写しで RSS が表の 3 倍だった）。n = 節の数・nk = 子の数
+type nodes struct {
+    kind mut []int
+    a mut []int
+    b mut []int
+    pos mut []int
+    kids mut []int
+    n int
+    nk int
+}
+
+// node は節を足してその番号を返す
+func node(ns mut nodes, k int, a int, b int, p int) int {
+    i := ns.n
+    ns.kind[i] = k
+    ns.a[i] = a
+    ns.b[i] = b
+    ns.pos[i] = p
+    ns.n = i + 1
+    return i
+}
+
+// bound は節の数の上界（根 1 つ + 値と鍵の前に来る区切り `{` `[` `,` `:` の数 — 文字列の中のものも数えるので多めになる）
+func bound(b []byte) int {
+    mut n := 1
+    mut i := 0
+    while i < len(b) {
+        c := b[i]
+        if c == '{' || c == '[' || c == ',' || c == ':' {
+            n += 1
+        }
+        i += 1
+    }
+    return n
+}
+
+// zeroFill は空の列 xs を長さ n の 0 にする（先端に続けて伸ばす）
+func zeroFill(xs mut []int, n int) {
+    mut i := 0
+    while i < n {
+        xs = append(xs, 0)
+        i += 1
+    }
+}
+
+// Parse は b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろに何か残れば Syntax）
+@errors(InvalidJson)
+func Parse(b []byte) (Doc, error?) {
+    bad := utf8.IndexInvalid(b)
+    if bad >= 0 {
+        return Doc{}, InvalidJson{pos: bad, kind: BadUtf8}
+    }
+    nb := bound(b)
+    // 列を 1 本ずつ確保しきる（交互に伸ばすと先端を失って 2 乗の写し）
+    mut ns := nodes{kind: mut []int{}, a: mut []int{}, b: mut []int{}, pos: mut []int{}, kids: mut []int{}, n: 0, nk: 0}
+    zeroFill(mut ns.kind, nb)
+    zeroFill(mut ns.a, nb)
+    zeroFill(mut ns.b, nb)
+    zeroFill(mut ns.pos, nb)
+    zeroFill(mut ns.kids, nb)
+    mut esc := builder.Builder[byte]{}
+    // 1 本のスタック: 開いた入れ物ごとに [種類, 外側の枠の位置, 開きの位置] の枠を積み、続けて子の節（オブジェクトはキーと値を交互）を積む
+    mut st := mut []int{}
+    mut sp := 0
+    mut ft := -1
+    mut depth := 0
+    mut v := -1
+    mut i := skipWs(b, 0)
+    mut done := false
+    while !done {
+        if v < 0 {
+            // 値の始まり
+            if i >= len(b) {
+                return Doc{}, InvalidJson{pos: i, kind: Syntax}
+            }
+            c := b[i]
+            if c == '[' || c == '{' {
+                depth += 1
+                if depth > MaxDepth {
+                    return Doc{}, InvalidJson{pos: i, kind: TooDeep}
+                }
+                put(mut st, sp, if c == '[' { kArr } else { kObj })
+                put(mut st, sp + 1, ft)
+                put(mut st, sp + 2, i)
+                ft = sp
+                sp += 3
+                i = skipWs(b, i + 1)
+                if i < len(b) && ((c == '[' && b[i] == ']') || (c == '{' && b[i] == '}')) {
+                    v = closeFrame(mut ns, mut st, ft, sp)
+                    sp = ft
+                    ft = st[ft + 1]
+                    depth -= 1
+                    i += 1
+                } else if c == '{' {
+                    // 最初のキー
+                    k, ni, err := readKey(mut ns, mut esc, b, i)
+                    if err != nil {
+                        return Doc{}, err
+                    }
+                    put(mut st, sp, k)
+                    sp += 1
+                    i = ni
+                }
+            } else if c == '"' {
+                e, hasEsc, at := strScan(b, i)
+                if e < 0 {
+                    return Doc{}, InvalidJson{pos: at, kind: Syntax}
+                }
+                v = strNode(mut ns, mut esc, b, i, e, hasEsc)
+                i = e + 1
+            } else if c == '-' || isDigit(c) {
+                e := numEnd(b, i)
+                if e < 0 {
+                    return Doc{}, InvalidJson{pos: i, kind: Syntax}
+                }
+                v = node(mut ns, kNum, i, e, i)
+                i = e
+            } else if litAt(b, i, "true") {
+                v = node(mut ns, kTrue, 0, 0, i)
+                i += 4
+            } else if litAt(b, i, "false") {
+                v = node(mut ns, kFalse, 0, 0, i)
+                i += 5
+            } else if litAt(b, i, "null") {
+                v = node(mut ns, kNull, 0, 0, i)
+                i += 4
+            } else {
+                return Doc{}, InvalidJson{pos: i, kind: Syntax}
+            }
+        } else if ft < 0 {
+            done = true
+        } else {
+            // 値が 1 つできた — 開いた入れ物に積んで、区切りか閉じを読む
+            put(mut st, sp, v)
+            sp += 1
+            v = -1
+            i = skipWs(b, i)
+            if i >= len(b) {
+                return Doc{}, InvalidJson{pos: i, kind: Syntax}
+            }
+            arr := st[ft] == kArr
+            c := b[i]
+            if c == ',' {
+                i = skipWs(b, i + 1)
+                if !arr {
+                    k, ni, err := readKey(mut ns, mut esc, b, i)
+                    if err != nil {
+                        return Doc{}, err
+                    }
+                    put(mut st, sp, k)
+                    sp += 1
+                    i = ni
+                }
+            } else if (arr && c == ']') || (!arr && c == '}') {
+                v = closeFrame(mut ns, mut st, ft, sp)
+                sp = ft
+                ft = st[ft + 1]
+                depth -= 1
+                i += 1
+            } else {
+                return Doc{}, InvalidJson{pos: i, kind: Syntax}
+            }
+        }
+        if v >= 0 {
+            i = skipWs(b, i)
+        }
+    }
+    if i != len(b) {
+        return Doc{}, InvalidJson{pos: i, kind: Syntax}
+    }
+    n := ns.n
+    fkd := freeze(ns.kind)
+    fa := freeze(ns.a)
+    fb := freeze(ns.b)
+    fp := freeze(ns.pos)
+    fk := freeze(ns.kids)
+    d := Doc{src: b, esc: builder.Build(mut esc), kind: fkd[0:n], a: fa[0:n], b: fb[0:n], pos: fp[0:n], kids: fk[0:ns.nk], seal: sealed{}}
+    dup := dupKey(d)
+    if dup >= 0 {
+        return Doc{}, InvalidJson{pos: dup, kind: DupKey}
+    }
+    return d, nil
+}
+
+// readKey は b[i] から オブジェクトのキーの文字列と ':' を読む: (キーの節, ':' の後の位置)
+@errors(InvalidJson)
+func readKey(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int) (int, int, error?) {
+    if i >= len(b) || b[i] != '"' {
+        return 0, 0, InvalidJson{pos: i, kind: Syntax}
+    }
+    e, hasEsc, at := strScan(b, i)
+    if e < 0 {
+        return 0, 0, InvalidJson{pos: at, kind: Syntax}
+    }
+    k := strNode(mut ns, mut esc, b, i, e, hasEsc)
+    j := skipWs(b, e + 1)
+    if j >= len(b) || b[j] != ':' {
+        return 0, 0, InvalidJson{pos: j, kind: Syntax}
+    }
+    return k, skipWs(b, j + 1), nil
+}
+
+// strNode は検査済みの文字列の字句 b[i..e]（両端の '"' 込み）の節
+func strNode(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int, e int, hasEsc bool) int {
+    if !hasEsc {
+        return node(mut ns, kStr, i + 1, e, i)
+    }
+    s := builder.Len(mut esc)
+    unescape(mut esc, b, i + 1, e)
+    return node(mut ns, kStrEsc, s, builder.Len(mut esc), i)
+}
+
+// closeFrame は枠 ft（子は st[ft + 3, sp)）を閉じた入れ物の節
+func closeFrame(ns mut nodes, st mut []int, ft int, sp int) int {
+    k := st[ft]
+    a := ns.nk
+    n := sp - ft - 3
+    if k == kArr {
+        for j <- iter.Range(0, n) {
+            ns.kids[a + j] = st[ft + 3 + j]
+        }
+        ns.nk = a + n
+        return node(mut ns, kArr, a, n, st[ft + 2])
+    }
+    // オブジェクト: キーを先に、値を後に
+    m := n / 2
+    for j <- iter.Range(0, m) {
+        ns.kids[a + j] = st[ft + 3 + 2 * j]
+        ns.kids[a + m + j] = st[ft + 4 + 2 * j]
+    }
+    ns.nk = a + n
+    return node(mut ns, kObj, a, m, st[ft + 2])
+}
+
+// dupKey は重複したキーのうち src で最も前の 2 つ目のキーの位置（無ければ -1）
+func dupKey(d Doc) int {
+    mut best := -1
+    for n <- iter.Range(0, len(d.kind)) {
+        if d.kind[n] == kObj && d.b[n] > 1 {
+            a := d.a[n]
+            m := d.b[n]
+            at := if m <= 16 { dupSmall(d, a, m) } else { dupLarge(d, a, m) }
+            if at >= 0 && (best < 0 || at < best) {
+                best = at
+            }
+        }
+    }
+    return best
+}
+
+func dupSmall(d Doc, a int, m int) int {
+    for i <- iter.Range(1, m) {
+        ki := d.kids[a + i]
+        li := d.b[ki] - d.a[ki]
+        for j <- iter.Range(0, i) {
+            kj := d.kids[a + j]
+            // 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）
+            if d.b[kj] - d.a[kj] == li && keyEq(d, kj, ki) {
+                return d.pos[d.kids[a + i]]
+            }
+        }
+    }
+    return -1
+}
+
+func dupLarge(d Doc, a int, m int) int {
+    ks := keysOf(d, a, m)
+    mut seen := mut map[string]bool{}
+    for i <- iter.Range(0, m) {
+        k := ks[i]
+        if seen[k] != nil {
+            return d.pos[d.kids[a + i]]
+        }
+        seen[k] = true
+    }
+    return -1
+}
+
+// Format は節 n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
+func Format(d Doc, n int) string {
+    mut out := builder.Builder[byte]{}
+    // 明示のスタック: [節, 次の子の添字] の組
+    mut st := mut []int{}
+    mut sp := 0
+    mut cur := n
+    mut going := true
+    while going {
+        if cur >= 0 {
+            k := d.kind[cur]
+            if k == kArr || k == kObj {
+                builder.Push(mut out, open(k))
+                put(mut st, sp, cur)
+                put(mut st, sp + 1, 0)
+                sp += 2
+            } else {
+                scalar(mut out, d, cur)
+            }
+            cur = -1
+        } else if sp == 0 {
+            going = false
+        } else {
+            p := st[sp - 2]
+            i := st[sp - 1]
+            k := d.kind[p]
+            if i == d.b[p] {
+                builder.Push(mut out, shut(k))
+                sp -= 2
+            } else {
+                if i > 0 {
+                    builder.Push(mut out, ',')
+                }
+                st[sp - 1] = i + 1
+                a := d.a[p]
+                if k == kArr {
+                    cur = d.kids[a + i]
+                } else {
+                    scalar(mut out, d, d.kids[a + i])
+                    builder.Push(mut out, ':')
+                    cur = d.kids[a + d.b[p] + i]
+                }
+            }
+        }
+    }
+    return bytesToString(builder.Build(mut out))
+}
+
+// scalar は入れ物でない節 n を out に書く
+func scalar(out mut builder.Builder[byte], d Doc, n int) {
+    k := d.kind[n]
+    if k == kNull {
+        putLit(mut out, "null")
+    } else if k == kTrue {
+        putLit(mut out, "true")
+    } else if k == kFalse {
+        putLit(mut out, "false")
+    } else if k == kNum {
+        builder.PushAll(mut out, d.src[d.a[n]:d.b[n]])
+    } else {
+        quote(mut out, bytes(text(d, n)))
+    }
+}
+
+func putLit(out mut builder.Builder[byte], s string) {
+    builder.PushStr(mut out, s)
+}
+
+// quote は s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む）
+func quote(out mut builder.Builder[byte], s []byte) {
+    builder.Push(mut out, '"')
+    mut run := 0
+    mut i := 0
+    while i < len(s) {
+        c := s[i]
+        if c == '"' || c == '\\' || c < ' ' {
+            builder.PushAll(mut out, s[run:i])
+            if c == '"' {
+                putLit(mut out, "\\\"")
+            } else if c == '\\' {
+                putLit(mut out, "\\\\")
+            } else if c == '\n' {
+                putLit(mut out, "\\n")
+            } else if c == '\r' {
+                putLit(mut out, "\\r")
+            } else if c == '\t' {
+                putLit(mut out, "\\t")
+            } else {
+                putLit(mut out, "\\u00")
+                builder.Push(mut out, hexDigit(int(c) >> 4))
+                builder.Push(mut out, hexDigit(int(c) & 15))
+            }
+            run = i + 1
+        }
+        i += 1
+    }
+    builder.PushAll(mut out, s[run:len(s)])
+    builder.Push(mut out, '"')
+}
+
+// open / shut は入れ物の開きと閉じの字
+func open(k int) byte {
+    if k == kArr {
+        return '['
+    }
+    return '{'
+}
+
+func shut(k int) byte {
+    if k == kArr {
+        return ']'
+    }
+    return '}'
+}
+
+// unesc は 1 字のエスケープ（\ の後の字 x — u 以外）の値
+func unesc(x byte) byte {
+    if x == 'b' {
+        return byte(8)
+    } else if x == 'f' {
+        return byte(12)
+    } else if x == 'n' {
+        return '\n'
+    } else if x == 'r' {
+        return '\r'
+    } else if x == 't' {
+        return '\t'
+    }
+    return x
+}
+
+func hexDigit(n int) byte {
+    return byte(if n < 10 { n + 48 } else { n + 87 })
+}

@@ -3312,7 +3312,7 @@ b25:
   %v189 = load i64, ptr %v189.p
   %st61 = getelementptr i64, ptr %v184, i64 4
   store i64 %v189, ptr %st61
-  %v190 = getelementptr i64, ptr %s5, i64 0
+  %v190 = getelementptr i64, ptr %s7, i64 0
   %v191.p = getelementptr i64, ptr %v184, i64 0
   %v191 = load i64, ptr %v191.p
   %v192.p = getelementptr i64, ptr %v184, i64 1
@@ -3324,7 +3324,7 @@ b25:
   %v195.p = getelementptr i64, ptr %v184, i64 4
   %v195 = load i64, ptr %v195.p
   call void @"main.shift"(ptr %v190, i64 %v191, i64 %v192, i64 %v193, i64 %v194, i64 %v195)
-  %v196 = getelementptr i64, ptr %s7, i64 0
+  %v196 = getelementptr i64, ptr %s5, i64 0
   %v197.p = getelementptr i64, ptr %v190, i64 0
   %v197 = load i64, ptr %v197.p
   %st62 = getelementptr i64, ptr %v196, i64 0

@@ -2781,24 +2781,20 @@ b0:
   store i64 0, ptr %s5.z1
   %s5.z2 = getelementptr i64, ptr %s5, i64 2
   store i64 0, ptr %s5.z2
-  %s6 = alloca [4 x i64], align 8
+  %s6 = alloca [3 x i64], align 8
   %s6.z0 = getelementptr i64, ptr %s6, i64 0
   store i64 0, ptr %s6.z0
   %s6.z1 = getelementptr i64, ptr %s6, i64 1
   store i64 0, ptr %s6.z1
   %s6.z2 = getelementptr i64, ptr %s6, i64 2
   store i64 0, ptr %s6.z2
-  %s6.z3 = getelementptr i64, ptr %s6, i64 3
-  store i64 0, ptr %s6.z3
-  %s7 = alloca [4 x i64], align 8
+  %s7 = alloca [3 x i64], align 8
   %s7.z0 = getelementptr i64, ptr %s7, i64 0
   store i64 0, ptr %s7.z0
   %s7.z1 = getelementptr i64, ptr %s7, i64 1
   store i64 0, ptr %s7.z1
   %s7.z2 = getelementptr i64, ptr %s7, i64 2
   store i64 0, ptr %s7.z2
-  %s7.z3 = getelementptr i64, ptr %s7, i64 3
-  store i64 0, ptr %s7.z3
   %s8 = alloca [4 x i64], align 8
   %s8.z0 = getelementptr i64, ptr %s8, i64 0
   store i64 0, ptr %s8.z0
@@ -2808,6 +2804,33 @@ b0:
   store i64 0, ptr %s8.z2
   %s8.z3 = getelementptr i64, ptr %s8, i64 3
   store i64 0, ptr %s8.z3
+  %s9 = alloca [4 x i64], align 8
+  %s9.z0 = getelementptr i64, ptr %s9, i64 0
+  store i64 0, ptr %s9.z0
+  %s9.z1 = getelementptr i64, ptr %s9, i64 1
+  store i64 0, ptr %s9.z1
+  %s9.z2 = getelementptr i64, ptr %s9, i64 2
+  store i64 0, ptr %s9.z2
+  %s9.z3 = getelementptr i64, ptr %s9, i64 3
+  store i64 0, ptr %s9.z3
+  %s10 = alloca [4 x i64], align 8
+  %s10.z0 = getelementptr i64, ptr %s10, i64 0
+  store i64 0, ptr %s10.z0
+  %s10.z1 = getelementptr i64, ptr %s10, i64 1
+  store i64 0, ptr %s10.z1
+  %s10.z2 = getelementptr i64, ptr %s10, i64 2
+  store i64 0, ptr %s10.z2
+  %s10.z3 = getelementptr i64, ptr %s10, i64 3
+  store i64 0, ptr %s10.z3
+  %s11 = alloca [4 x i64], align 8
+  %s11.z0 = getelementptr i64, ptr %s11, i64 0
+  store i64 0, ptr %s11.z0
+  %s11.z1 = getelementptr i64, ptr %s11, i64 1
+  store i64 0, ptr %s11.z1
+  %s11.z2 = getelementptr i64, ptr %s11, i64 2
+  store i64 0, ptr %s11.z2
+  %s11.z3 = getelementptr i64, ptr %s11, i64 3
+  store i64 0, ptr %s11.z3
   %v92 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v92, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2858,11 +2881,11 @@ b0:
   call void @"rt.print_str"(ptr %v11)
   %v22 = add i64 0, 10
   call void @"rt.print_char"(i64 %v22)
-  %v23 = getelementptr i64, ptr %s3, i64 0
+  %v23 = getelementptr i64, ptr %s4, i64 0
   %v24 = getelementptr i64, ptr @"str.2", i64 0
   %v25 = add i64 0, 5
   %v26 = add i64 0, 0
-  %v27 = getelementptr i64, ptr %s2, i64 0
+  %v27 = getelementptr i64, ptr %s3, i64 0
   %v28 = ptrtoint ptr %v24 to i64
   %st6 = getelementptr i64, ptr %v27, i64 0
   store i64 %v28, ptr %st6
@@ -2878,11 +2901,11 @@ b0:
   %v31 = load i64, ptr %v31.p
   %v32 = add i64 0, 0
   call void @"main.orLit"(ptr %v23, i64 %v29, i64 %v30, i64 %v31, i64 %v32)
-  %v33 = getelementptr i64, ptr %s1, i64 0
+  %v33 = getelementptr i64, ptr %s5, i64 0
   %v34 = getelementptr i64, ptr @"str.2", i64 0
   %v35 = add i64 0, 5
   %v36 = add i64 0, 0
-  %v37 = getelementptr i64, ptr %s0, i64 0
+  %v37 = getelementptr i64, ptr %s1, i64 0
   %v38 = ptrtoint ptr %v34 to i64
   %st9 = getelementptr i64, ptr %v37, i64 0
   store i64 %v38, ptr %st9
@@ -2898,11 +2921,11 @@ b0:
   %v41 = load i64, ptr %v41.p
   %v42 = add i64 0, 1
   call void @"main.orLit"(ptr %v33, i64 %v39, i64 %v40, i64 %v41, i64 %v42)
-  %v43 = getelementptr i64, ptr %s4, i64 0
+  %v43 = getelementptr i64, ptr %s6, i64 0
   %v44 = getelementptr i64, ptr @"str.2", i64 0
   %v45 = add i64 0, 5
   %v46 = add i64 0, 0
-  %v47 = getelementptr i64, ptr %s5, i64 0
+  %v47 = getelementptr i64, ptr %s7, i64 0
   %v48 = ptrtoint ptr %v44 to i64
   %st12 = getelementptr i64, ptr %v47, i64 0
   store i64 %v48, ptr %st12
@@ -2927,11 +2950,11 @@ b0:
   call void @"rt.print_str"(ptr %v43)
   %v55 = add i64 0, 10
   call void @"rt.print_char"(i64 %v55)
-  %v56 = getelementptr i64, ptr %s6, i64 0
+  %v56 = getelementptr i64, ptr %s8, i64 0
   %v57 = getelementptr i64, ptr @"str.3", i64 0
   %v58 = add i64 0, 1
   %v59 = add i64 0, 0
-  %v60 = getelementptr i64, ptr %s5, i64 0
+  %v60 = getelementptr i64, ptr %s7, i64 0
   %v61 = ptrtoint ptr %v57 to i64
   %st15 = getelementptr i64, ptr %v60, i64 0
   store i64 %v61, ptr %st15
@@ -2947,7 +2970,7 @@ b0:
   %v64 = load i64, ptr %v64.p
   %v65 = add i64 0, 0
   call void @"main.item"(ptr %v56, i64 %v62, i64 %v63, i64 %v64, i64 %v65)
-  %v66 = getelementptr i64, ptr %s7, i64 0
+  %v66 = getelementptr i64, ptr %s9, i64 0
   %v67.p = getelementptr i64, ptr %v56, i64 0
   %v67 = load i64, ptr %v67.p
   %st18 = getelementptr i64, ptr %v66, i64 0
@@ -2964,11 +2987,11 @@ b0:
   %v70 = load i64, ptr %v70.p
   %st21 = getelementptr i64, ptr %v66, i64 3
   store i64 %v70, ptr %st21
-  %v71 = getelementptr i64, ptr %s6, i64 0
+  %v71 = getelementptr i64, ptr %s10, i64 0
   %v72 = getelementptr i64, ptr @"str.3", i64 0
   %v73 = add i64 0, 1
   %v74 = add i64 0, 0
-  %v75 = getelementptr i64, ptr %s5, i64 0
+  %v75 = getelementptr i64, ptr %s7, i64 0
   %v76 = ptrtoint ptr %v72 to i64
   %st22 = getelementptr i64, ptr %v75, i64 0
   store i64 %v76, ptr %st22
@@ -2984,7 +3007,7 @@ b0:
   %v79 = load i64, ptr %v79.p
   %v80 = add i64 0, 5
   call void @"main.item"(ptr %v71, i64 %v77, i64 %v78, i64 %v79, i64 %v80)
-  %v81 = getelementptr i64, ptr %s8, i64 0
+  %v81 = getelementptr i64, ptr %s11, i64 0
   %v82.p = getelementptr i64, ptr %v71, i64 0
   %v82 = load i64, ptr %v82.p
   %st25 = getelementptr i64, ptr %v81, i64 0

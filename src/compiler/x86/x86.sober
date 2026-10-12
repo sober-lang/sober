@@ -344,6 +344,17 @@ func ImulRegReg(c mut table.Table[byte], dst int, src int) {
     opRR(mut c, 0x0f, 0xaf, dst, src)
 }
 
+// ImulRegRegImm は imul dst, src, imm — as と同じ最短形: imm8 に収まれば REX.W 6B /r ib・それ以外は REX.W 69 /r id（reg = dst, rm = src・imm は 64 ビットへ符号拡張）
+func ImulRegRegImm(c mut table.Table[byte], dst int, src int, imm int) {
+    if imm >= -128 && imm <= 127 {
+        opRR(mut c, 0x6b, -1, dst, src)
+        put(mut c, imm & 255)
+    } else {
+        opRR(mut c, 0x69, -1, dst, src)
+        imm32(mut c, imm)
+    }
+}
+
 // aluRegImm は op reg, imm — as と同じ最短形を選ぶ:
 // imm8 に収まれば 83 /ext ib、rax なら短縮形（ext × 8 + 5）id、それ以外は 81 /ext id
 func aluRegImm(c mut table.Table[byte], ext int, reg int, imm int) {
@@ -667,6 +678,53 @@ func MovdquXMem(c mut table.Table[byte], x int, base int, disp int) {
 // MovdquMemX は movdqu xmmword ptr [base + disp], x — F3 0F 7F /r
 func MovdquMemX(c mut table.Table[byte], base int, disp int, x int) {
     sseMem(mut c, 0xf3, 0x7f, x, base, disp)
+}
+
+// ── SSE2 packed double（段 4②a — packed f64 の語彙。SSE3 以上は使わない）──
+
+// MovupdXMem は movupd x, xmmword ptr [base + disp]（非整列）— 66 0F 10 /r
+func MovupdXMem(c mut table.Table[byte], x int, base int, disp int) {
+    sseMem(mut c, 0x66, 0x10, x, base, disp)
+}
+
+// MovupdMemX は movupd xmmword ptr [base + disp], x — 66 0F 11 /r
+func MovupdMemX(c mut table.Table[byte], base int, disp int, x int) {
+    sseMem(mut c, 0x66, 0x11, x, base, disp)
+}
+
+// AddpdXX は addpd x, y — 66 0F 58 /r
+func AddpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x58, x, y)
+}
+
+// SubpdXX は subpd x, y — 66 0F 5C /r
+func SubpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x5c, x, y)
+}
+
+// MulpdXX は mulpd x, y — 66 0F 59 /r
+func MulpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x59, x, y)
+}
+
+// DivpdXX は divpd x, y — 66 0F 5E /r
+func DivpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x5e, x, y)
+}
+
+// SqrtpdXX は sqrtpd x, y — 66 0F 51 /r
+func SqrtpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x51, x, y)
+}
+
+// UnpcklpdXX は unpcklpd x, y（x = [x.lo, y.lo]）— 66 0F 14 /r
+func UnpcklpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x14, x, y)
+}
+
+// UnpckhpdXX は unpckhpd x, y（x = [x.hi, y.hi]）— 66 0F 15 /r
+func UnpckhpdXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x15, x, y)
 }
 
 // BsfRR は bsf dst, src — REX.W 0F BC /r

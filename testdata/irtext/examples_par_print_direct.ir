@@ -9240,15 +9240,17 @@ func @main.main() {
   slot s5 [1]
   slot s6 [1]
   slot s7 [6]
-  slot s8 [1]
-  slot s9 [1]
-  slot s10 [6]
+  slot s8 [6]
+  slot s9 [6]
+  slot s10 [1]
   slot s11 [1]
-  slot s12 [1]
-  slot s13 [2]
-  slot s14 [5]
-  slot s15 [6]
-  slot s16 [6]
+  slot s12 [6]
+  slot s13 [1]
+  slot s14 [1]
+  slot s15 [2]
+  slot s16 [5]
+  slot s17 [6]
+  slot s18 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -9409,7 +9411,7 @@ b4:
   %106 = slotaddr s6
   %107 = load.i64 %104[0]
   store %106[0], %107
-  %108 = slotaddr s0
+  %108 = slotaddr s7
   %109 = globaladdr @str.1
   %110 = const 7
   %111 = const 0
@@ -9422,7 +9424,7 @@ b4:
   %115 = load.i64 %112[1]
   %116 = load.i64 %112[2]
   call @std/io.WriteStdout(%108, %114, %115, %116)
-  %117 = slotaddr s7
+  %117 = slotaddr s8
   %118 = load.i64 %108[0]
   store %117[0], %118
   %119 = load.i64 %108[1]
@@ -9709,14 +9711,14 @@ b51:
   br b53(%244)
 b52:
   %256 = load.i64 %241[0]
-  %257 = slotaddr s0
+  %257 = slotaddr s9
   store %257[0], %21
   store %257[1], %21
   store %257[2], %21
   store %257[3], %21
   store %257[4], %21
   store %257[5], %21
-  %258 = slotaddr s8
+  %258 = slotaddr s10
   %259 = load.i64 %20[5]
   store %258[0], %259
   br b55
@@ -9785,8 +9787,8 @@ b58:
 b59:
   %293 = load.i64 %257[0]
   region.setdepth %17
-  %294 = slotaddr s9
-  %295 = slotaddr s10
+  %294 = slotaddr s11
+  %295 = slotaddr s12
   %296 = ne %240, %21
   condbr %296, b62, b63
 b60:
@@ -9798,12 +9800,12 @@ b61:
   br b59
 b62:
   store %294[0], %21
-  %304 = slotaddr s11
+  %304 = slotaddr s13
   store %304[0], %256
-  %305 = slotaddr s12
+  %305 = slotaddr s14
   %306 = load.i64 %304[0]
   store %305[0], %306
-  %307 = slotaddr s13
+  %307 = slotaddr s15
   %308 = const 0
   store %307[0], %308
   store %307[1], %308
@@ -9811,7 +9813,7 @@ b62:
   store %307[0], %309
   %310 = load.i64 %305[0]
   store %307[1], %310
-  %311 = slotaddr s14
+  %311 = slotaddr s16
   %312 = load.i64 %307[0]
   store %311[0], %312
   %313 = load.i64 %307[1]
@@ -9820,7 +9822,7 @@ b62:
   store %311[2], %314
   store %311[3], %314
   store %311[4], %314
-  %315 = slotaddr s15
+  %315 = slotaddr s17
   %316 = const 1
   store %315[0], %316
   %317 = load.i64 %311[0]
@@ -9851,7 +9853,7 @@ b63:
   condbr %297, b65, b66
 b64:
   %328 = load.i64 %294[0]
-  %329 = slotaddr s16
+  %329 = slotaddr s18
   %330 = load.i64 %295[0]
   store %329[0], %330
   %331 = load.i64 %295[1]

@@ -2760,7 +2760,7 @@ b0:
   store i64 0, ptr %s1.z4
   %s1.z5 = getelementptr i64, ptr %s1, i64 5
   store i64 0, ptr %s1.z5
-  %s2 = alloca [6 x i64], align 8
+  %s2 = alloca [7 x i64], align 8
   %s2.z0 = getelementptr i64, ptr %s2, i64 0
   store i64 0, ptr %s2.z0
   %s2.z1 = getelementptr i64, ptr %s2, i64 1
@@ -2773,6 +2773,21 @@ b0:
   store i64 0, ptr %s2.z4
   %s2.z5 = getelementptr i64, ptr %s2, i64 5
   store i64 0, ptr %s2.z5
+  %s2.z6 = getelementptr i64, ptr %s2, i64 6
+  store i64 0, ptr %s2.z6
+  %s3 = alloca [6 x i64], align 8
+  %s3.z0 = getelementptr i64, ptr %s3, i64 0
+  store i64 0, ptr %s3.z0
+  %s3.z1 = getelementptr i64, ptr %s3, i64 1
+  store i64 0, ptr %s3.z1
+  %s3.z2 = getelementptr i64, ptr %s3, i64 2
+  store i64 0, ptr %s3.z2
+  %s3.z3 = getelementptr i64, ptr %s3, i64 3
+  store i64 0, ptr %s3.z3
+  %s3.z4 = getelementptr i64, ptr %s3, i64 4
+  store i64 0, ptr %s3.z4
+  %s3.z5 = getelementptr i64, ptr %s3, i64 5
+  store i64 0, ptr %s3.z5
   %v63 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v63, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2848,7 +2863,7 @@ b2:
 b3:
   %v26 = add i64 0, 10
   call void @"rt.print_char"(i64 %v26)
-  %v27 = getelementptr i64, ptr %s0, i64 0
+  %v27 = getelementptr i64, ptr %s2, i64 0
   %v28 = add i64 0, 2
   %v29 = add i64 0, 0
   %v30 = sub i64 %v29, %v28
@@ -2857,7 +2872,7 @@ b3:
   %v31 = load i64, ptr %v31.p
   %v32 = add i64 0, 1
   %v33 = getelementptr i64, ptr %v27, i64 %v32
-  %v34 = getelementptr i64, ptr %s2, i64 0
+  %v34 = getelementptr i64, ptr %s3, i64 0
   %v35.p = getelementptr i64, ptr %v33, i64 0
   %v35 = load i64, ptr %v35.p
   %st8 = getelementptr i64, ptr %v34, i64 0

@@ -1681,6 +1681,8 @@ b0:
 func @main.main() {
   slot s0 [3]
   slot s1 [3]
+  slot s2 [3]
+  slot s3 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -1703,7 +1705,7 @@ b0:
   call @rt.print_str(%6)
   %10 = const 10
   call @rt.print_char(%10)
-  %11 = slotaddr s1
+  %11 = slotaddr s2
   %12 = const 0
   call @main.digit(%11, %12)
   call @rt.print_str(%11)
@@ -1714,7 +1716,7 @@ b0:
   %15 = globaladdr @str.0
   %16 = const 11
   %17 = const 0
-  %18 = slotaddr s1
+  %18 = slotaddr s3
   %19 = ptoi %15
   store %18[0], %19
   store %18[1], %16

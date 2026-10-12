@@ -2850,15 +2850,71 @@ b0:
   store i64 0, ptr %s12.z1
   %s12.z2 = getelementptr i64, ptr %s12, i64 2
   store i64 0, ptr %s12.z2
-  %s13 = alloca [1 x i64], align 8
+  %s13 = alloca [3 x i64], align 8
   %s13.z0 = getelementptr i64, ptr %s13, i64 0
   store i64 0, ptr %s13.z0
-  %s14 = alloca [1 x i64], align 8
+  %s13.z1 = getelementptr i64, ptr %s13, i64 1
+  store i64 0, ptr %s13.z1
+  %s13.z2 = getelementptr i64, ptr %s13, i64 2
+  store i64 0, ptr %s13.z2
+  %s14 = alloca [3 x i64], align 8
   %s14.z0 = getelementptr i64, ptr %s14, i64 0
   store i64 0, ptr %s14.z0
-  %s15 = alloca [1 x i64], align 8
+  %s14.z1 = getelementptr i64, ptr %s14, i64 1
+  store i64 0, ptr %s14.z1
+  %s14.z2 = getelementptr i64, ptr %s14, i64 2
+  store i64 0, ptr %s14.z2
+  %s15 = alloca [3 x i64], align 8
   %s15.z0 = getelementptr i64, ptr %s15, i64 0
   store i64 0, ptr %s15.z0
+  %s15.z1 = getelementptr i64, ptr %s15, i64 1
+  store i64 0, ptr %s15.z1
+  %s15.z2 = getelementptr i64, ptr %s15, i64 2
+  store i64 0, ptr %s15.z2
+  %s16 = alloca [3 x i64], align 8
+  %s16.z0 = getelementptr i64, ptr %s16, i64 0
+  store i64 0, ptr %s16.z0
+  %s16.z1 = getelementptr i64, ptr %s16, i64 1
+  store i64 0, ptr %s16.z1
+  %s16.z2 = getelementptr i64, ptr %s16, i64 2
+  store i64 0, ptr %s16.z2
+  %s17 = alloca [3 x i64], align 8
+  %s17.z0 = getelementptr i64, ptr %s17, i64 0
+  store i64 0, ptr %s17.z0
+  %s17.z1 = getelementptr i64, ptr %s17, i64 1
+  store i64 0, ptr %s17.z1
+  %s17.z2 = getelementptr i64, ptr %s17, i64 2
+  store i64 0, ptr %s17.z2
+  %s18 = alloca [1 x i64], align 8
+  %s18.z0 = getelementptr i64, ptr %s18, i64 0
+  store i64 0, ptr %s18.z0
+  %s19 = alloca [1 x i64], align 8
+  %s19.z0 = getelementptr i64, ptr %s19, i64 0
+  store i64 0, ptr %s19.z0
+  %s20 = alloca [1 x i64], align 8
+  %s20.z0 = getelementptr i64, ptr %s20, i64 0
+  store i64 0, ptr %s20.z0
+  %s21 = alloca [3 x i64], align 8
+  %s21.z0 = getelementptr i64, ptr %s21, i64 0
+  store i64 0, ptr %s21.z0
+  %s21.z1 = getelementptr i64, ptr %s21, i64 1
+  store i64 0, ptr %s21.z1
+  %s21.z2 = getelementptr i64, ptr %s21, i64 2
+  store i64 0, ptr %s21.z2
+  %s22 = alloca [3 x i64], align 8
+  %s22.z0 = getelementptr i64, ptr %s22, i64 0
+  store i64 0, ptr %s22.z0
+  %s22.z1 = getelementptr i64, ptr %s22, i64 1
+  store i64 0, ptr %s22.z1
+  %s22.z2 = getelementptr i64, ptr %s22, i64 2
+  store i64 0, ptr %s22.z2
+  %s23 = alloca [3 x i64], align 8
+  %s23.z0 = getelementptr i64, ptr %s23, i64 0
+  store i64 0, ptr %s23.z0
+  %s23.z1 = getelementptr i64, ptr %s23, i64 1
+  store i64 0, ptr %s23.z1
+  %s23.z2 = getelementptr i64, ptr %s23, i64 2
+  store i64 0, ptr %s23.z2
   %v182 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v182, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2959,7 +3015,7 @@ b0:
   %v48.b = bitcast i64 %v47 to double
   %v48.f = fdiv double %v48.a, %v48.b
   %v48 = bitcast double %v48.f to i64
-  %v49 = getelementptr i64, ptr %s12, i64 0
+  %v49 = getelementptr i64, ptr %s13, i64 0
   call void @"std/floatfmt.Format"(ptr %v49, i64 %v48)
   %v50 = add i64 0, 4607182418800017408
   %v51 = add i64 0, -9223372036854775808
@@ -2969,7 +3025,7 @@ b0:
   %v54.b = bitcast i64 %v53 to double
   %v54.f = fdiv double %v54.a, %v54.b
   %v54 = bitcast double %v54.f to i64
-  %v55 = getelementptr i64, ptr %s11, i64 0
+  %v55 = getelementptr i64, ptr %s14, i64 0
   call void @"std/floatfmt.Format"(ptr %v55, i64 %v54)
   %v56 = add i64 0, 0
   %v57 = add i64 0, 0
@@ -2983,15 +3039,15 @@ b0:
   %v60.c = fcmp une double %v60.a, %v60.b
   %v60 = zext i1 %v60.c to i64
   %v61 = add i64 0, 9218868437227405311
-  %v62 = getelementptr i64, ptr %s10, i64 0
+  %v62 = getelementptr i64, ptr %s15, i64 0
   call void @"std/floatfmt.Format"(ptr %v62, i64 %v61)
   %v63 = add i64 0, 4567911030049346683
-  %v64 = getelementptr i64, ptr %s9, i64 0
+  %v64 = getelementptr i64, ptr %s16, i64 0
   call void @"std/floatfmt.Format"(ptr %v64, i64 %v63)
   %v65 = add i64 0, 4623367229960880128
   %v66 = add i64 0, -9223372036854775808
   %v67 = xor i64 %v65, %v66
-  %v68 = getelementptr i64, ptr %s8, i64 0
+  %v68 = getelementptr i64, ptr %s17, i64 0
   call void @"std/floatfmt.Format"(ptr %v68, i64 %v67)
   call void @"rt.print_str"(ptr %v49)
   %v69 = add i64 0, 32
@@ -3040,7 +3096,7 @@ b3:
   %v83 = add i64 0, 10
   call void @"rt.print_char"(i64 %v83)
   %v84 = add i64 0, 4607182418800017408
-  %v85 = getelementptr i64, ptr %s13, i64 0
+  %v85 = getelementptr i64, ptr %s18, i64 0
   %st2 = getelementptr i64, ptr %v85, i64 0
   store i64 %v84, ptr %st2
   %v183 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3048,11 +3104,11 @@ b3:
   %v86 = load i64, ptr %v86.p
   %v87 = add i64 0, 0
   %v88 = add i64 0, 12
-  %v89 = getelementptr i64, ptr %s14, i64 0
+  %v89 = getelementptr i64, ptr %s19, i64 0
   %v184 = getelementptr i64, ptr @"rt.meta", i64 0
   %v90.p = getelementptr i64, ptr %v184, i64 0
   %v90 = load i64, ptr %v90.p
-  %v91 = getelementptr i64, ptr %s15, i64 0
+  %v91 = getelementptr i64, ptr %s20, i64 0
   %st3 = getelementptr i64, ptr %v91, i64 0
   store i64 %v87, ptr %st3
   %v185 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3066,7 +3122,7 @@ b4:
   %v117 = getelementptr i64, ptr @"str.0", i64 0
   %v118 = add i64 0, 7
   %v119 = add i64 0, 0
-  %v120 = getelementptr i64, ptr %s9, i64 0
+  %v120 = getelementptr i64, ptr %s23, i64 0
   %v121 = ptrtoint ptr %v117 to i64
   %st5 = getelementptr i64, ptr %v120, i64 0
   store i64 %v121, ptr %st5
@@ -3084,7 +3140,7 @@ b4:
   %v125 = getelementptr i64, ptr @"str.1", i64 0
   %v126 = add i64 0, 5
   %v127 = add i64 0, 0
-  %v128 = getelementptr i64, ptr %s9, i64 0
+  %v128 = getelementptr i64, ptr %s23, i64 0
   %v129 = ptrtoint ptr %v125 to i64
   %st8 = getelementptr i64, ptr %v128, i64 0
   store i64 %v129, ptr %st8
@@ -3102,7 +3158,7 @@ b4:
   %v133 = getelementptr i64, ptr @"str.2", i64 0
   %v134 = add i64 0, 5
   %v135 = add i64 0, 0
-  %v136 = getelementptr i64, ptr %s9, i64 0
+  %v136 = getelementptr i64, ptr %s23, i64 0
   %v137 = ptrtoint ptr %v133 to i64
   %st11 = getelementptr i64, ptr %v136, i64 0
   store i64 %v137, ptr %st11
@@ -3120,7 +3176,7 @@ b4:
   %v141 = getelementptr i64, ptr @"str.3", i64 0
   %v142 = add i64 0, 3
   %v143 = add i64 0, 0
-  %v144 = getelementptr i64, ptr %s9, i64 0
+  %v144 = getelementptr i64, ptr %s23, i64 0
   %v145 = ptrtoint ptr %v141 to i64
   %st14 = getelementptr i64, ptr %v144, i64 0
   store i64 %v145, ptr %st14
@@ -3138,7 +3194,7 @@ b4:
   %v149 = getelementptr i64, ptr @"str.4", i64 0
   %v150 = add i64 0, 3
   %v151 = add i64 0, 0
-  %v152 = getelementptr i64, ptr %s9, i64 0
+  %v152 = getelementptr i64, ptr %s23, i64 0
   %v153 = ptrtoint ptr %v149 to i64
   %st17 = getelementptr i64, ptr %v152, i64 0
   store i64 %v153, ptr %st17
@@ -3156,7 +3212,7 @@ b4:
   %v157 = getelementptr i64, ptr @"str.5", i64 0
   %v158 = add i64 0, 3
   %v159 = add i64 0, 0
-  %v160 = getelementptr i64, ptr %s9, i64 0
+  %v160 = getelementptr i64, ptr %s23, i64 0
   %v161 = ptrtoint ptr %v157 to i64
   %st20 = getelementptr i64, ptr %v160, i64 0
   store i64 %v161, ptr %st20
@@ -3174,7 +3230,7 @@ b4:
   %v165 = getelementptr i64, ptr @"str.6", i64 0
   %v166 = add i64 0, 2
   %v167 = add i64 0, 0
-  %v168 = getelementptr i64, ptr %s9, i64 0
+  %v168 = getelementptr i64, ptr %s23, i64 0
   %v169 = ptrtoint ptr %v165 to i64
   %st23 = getelementptr i64, ptr %v168, i64 0
   store i64 %v169, ptr %st23
@@ -3192,7 +3248,7 @@ b4:
   %v173 = getelementptr i64, ptr @"str.7", i64 0
   %v174 = add i64 0, 2
   %v175 = add i64 0, 0
-  %v176 = getelementptr i64, ptr %s9, i64 0
+  %v176 = getelementptr i64, ptr %s23, i64 0
   %v177 = ptrtoint ptr %v173 to i64
   %st26 = getelementptr i64, ptr %v176, i64 0
   store i64 %v177, ptr %st26
@@ -3256,9 +3312,9 @@ b7:
   store i64 %v104, ptr %st33
   %v105.p = getelementptr i64, ptr %v85, i64 0
   %v105 = load i64, ptr %v105.p
-  %v106 = getelementptr i64, ptr %s8, i64 0
+  %v106 = getelementptr i64, ptr %s21, i64 0
   call void @"std/floatfmt.Format"(ptr %v106, i64 %v105)
-  %v107 = getelementptr i64, ptr %s9, i64 0
+  %v107 = getelementptr i64, ptr %s22, i64 0
   %v108.p = getelementptr i64, ptr %v85, i64 0
   %v108 = load i64, ptr %v108.p
   %v109.p = getelementptr i64, ptr %v85, i64 0
@@ -24066,6 +24122,20 @@ b0:
   store i64 0, ptr %s6.z1
   %s6.z2 = getelementptr i64, ptr %s6, i64 2
   store i64 0, ptr %s6.z2
+  %s7 = alloca [3 x i64], align 8
+  %s7.z0 = getelementptr i64, ptr %s7, i64 0
+  store i64 0, ptr %s7.z0
+  %s7.z1 = getelementptr i64, ptr %s7, i64 1
+  store i64 0, ptr %s7.z1
+  %s7.z2 = getelementptr i64, ptr %s7, i64 2
+  store i64 0, ptr %s7.z2
+  %s8 = alloca [3 x i64], align 8
+  %s8.z0 = getelementptr i64, ptr %s8, i64 0
+  store i64 0, ptr %s8.z0
+  %s8.z1 = getelementptr i64, ptr %s8, i64 1
+  store i64 0, ptr %s8.z1
+  %s8.z2 = getelementptr i64, ptr %s8, i64 2
+  store i64 0, ptr %s8.z2
   %v3 = getelementptr i64, ptr %s0, i64 0
   %st0 = getelementptr i64, ptr %v3, i64 0
   store i64 %v0, ptr %st0
@@ -24153,7 +24223,7 @@ b1.t15:
 b1.e16:
   br label %b3
 b2:
-  %v54 = getelementptr i64, ptr %s4, i64 0
+  %v54 = getelementptr i64, ptr %s8, i64 0
   call void @"std/floatfmt.Format"(ptr %v54, i64 %v9)
   call void @"rt.print_str"(ptr %v3)
   %v55 = add i64 0, 32
@@ -24220,7 +24290,7 @@ b7:
   %v49 = load i64, ptr %v49.p
   %st26 = getelementptr i64, ptr %v46, i64 2
   store i64 %v49, ptr %st26
-  %v50 = getelementptr i64, ptr %s5, i64 0
+  %v50 = getelementptr i64, ptr %s7, i64 0
   call void @"std/floatfmt.Format"(ptr %v50, i64 %v9)
   call void @"rt.print_str"(ptr %v3)
   %v51 = add i64 0, 32

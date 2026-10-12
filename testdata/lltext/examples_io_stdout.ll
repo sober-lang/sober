@@ -2810,6 +2810,32 @@ b0:
   store i64 0, ptr %s5.z4
   %s5.z5 = getelementptr i64, ptr %s5, i64 5
   store i64 0, ptr %s5.z5
+  %s6 = alloca [6 x i64], align 8
+  %s6.z0 = getelementptr i64, ptr %s6, i64 0
+  store i64 0, ptr %s6.z0
+  %s6.z1 = getelementptr i64, ptr %s6, i64 1
+  store i64 0, ptr %s6.z1
+  %s6.z2 = getelementptr i64, ptr %s6, i64 2
+  store i64 0, ptr %s6.z2
+  %s6.z3 = getelementptr i64, ptr %s6, i64 3
+  store i64 0, ptr %s6.z3
+  %s6.z4 = getelementptr i64, ptr %s6, i64 4
+  store i64 0, ptr %s6.z4
+  %s6.z5 = getelementptr i64, ptr %s6, i64 5
+  store i64 0, ptr %s6.z5
+  %s7 = alloca [6 x i64], align 8
+  %s7.z0 = getelementptr i64, ptr %s7, i64 0
+  store i64 0, ptr %s7.z0
+  %s7.z1 = getelementptr i64, ptr %s7, i64 1
+  store i64 0, ptr %s7.z1
+  %s7.z2 = getelementptr i64, ptr %s7, i64 2
+  store i64 0, ptr %s7.z2
+  %s7.z3 = getelementptr i64, ptr %s7, i64 3
+  store i64 0, ptr %s7.z3
+  %s7.z4 = getelementptr i64, ptr %s7, i64 4
+  store i64 0, ptr %s7.z4
+  %s7.z5 = getelementptr i64, ptr %s7, i64 5
+  store i64 0, ptr %s7.z5
   %v118 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v118, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2939,7 +2965,7 @@ b3:
   call void @"rt.print_str"(ptr %v43)
   %v45 = add i64 0, 10
   call void @"rt.print_char"(i64 %v45)
-  %v46 = getelementptr i64, ptr %s1, i64 0
+  %v46 = getelementptr i64, ptr %s4, i64 0
   %v47 = getelementptr i64, ptr @"str.4", i64 0
   %v48 = add i64 0, 10
   %v49 = add i64 0, 0
@@ -2958,7 +2984,7 @@ b3:
   %v54.p = getelementptr i64, ptr %v50, i64 2
   %v54 = load i64, ptr %v54.p
   call void @"std/io.WriteStderr"(ptr %v46, i64 %v52, i64 %v53, i64 %v54)
-  %v55 = getelementptr i64, ptr %s4, i64 0
+  %v55 = getelementptr i64, ptr %s5, i64 0
   %v56.p = getelementptr i64, ptr %v46, i64 0
   %v56 = load i64, ptr %v56.p
   %st28 = getelementptr i64, ptr %v55, i64 0
@@ -3036,7 +3062,7 @@ b4:
 b5:
   br label %b6
 b6:
-  %v79 = getelementptr i64, ptr %s1, i64 0
+  %v79 = getelementptr i64, ptr %s6, i64 0
   %v80 = getelementptr i64, ptr @"str.6", i64 0
   %v81 = add i64 0, 18
   %v82 = add i64 0, 0
@@ -3055,7 +3081,7 @@ b6:
   %v87.p = getelementptr i64, ptr %v83, i64 2
   %v87 = load i64, ptr %v87.p
   call void @"std/io.WriteStdout"(ptr %v79, i64 %v85, i64 %v86, i64 %v87)
-  %v88 = getelementptr i64, ptr %s5, i64 0
+  %v88 = getelementptr i64, ptr %s7, i64 0
   %v89.p = getelementptr i64, ptr %v79, i64 0
   %v89 = load i64, ptr %v89.p
   %st47 = getelementptr i64, ptr %v88, i64 0

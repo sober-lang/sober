@@ -9232,16 +9232,17 @@ func @main.main() {
   slot s7 [3]
   slot s8 [2]
   slot s9 [2]
-  slot s10 [1]
-  slot s11 [6]
-  slot s12 [1]
+  slot s10 [3]
+  slot s11 [1]
+  slot s12 [6]
   slot s13 [1]
-  slot s14 [6]
-  slot s15 [1]
+  slot s14 [1]
+  slot s15 [6]
   slot s16 [1]
-  slot s17 [5]
-  slot s18 [6]
+  slot s17 [1]
+  slot s18 [5]
   slot s19 [6]
+  slot s20 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -9539,7 +9540,7 @@ b25:
   %160 = load.i64 %87[2]
   %161 = call @main.total(%158, %159, %160)
   %162 = add %157, %161
-  %163 = slotaddr s6
+  %163 = slotaddr s10
   %164 = load.i64 %77[0]
   %165 = const 50
   %166 = add %164, %165
@@ -9687,7 +9688,7 @@ b51:
   %244 = load.i64 %4[8]
   store %243[19], %244
   %245 = load.i64 %4[0]
-  %246 = slotaddr s10
+  %246 = slotaddr s11
   store %246[0], %5
   %247 = ne %245, %5
   condbr %247, b52, b53
@@ -9696,14 +9697,14 @@ b52:
   br b54(%249)
 b53:
   %261 = load.i64 %246[0]
-  %262 = slotaddr s11
+  %262 = slotaddr s12
   store %262[0], %5
   store %262[1], %5
   store %262[2], %5
   store %262[3], %5
   store %262[4], %5
   store %262[5], %5
-  %263 = slotaddr s12
+  %263 = slotaddr s13
   %264 = load.i64 %4[5]
   store %263[0], %264
   br b56
@@ -9772,8 +9773,8 @@ b59:
 b60:
   %298 = load.i64 %262[0]
   region.setdepth %1
-  %299 = slotaddr s13
-  %300 = slotaddr s14
+  %299 = slotaddr s14
+  %300 = slotaddr s15
   %301 = ne %245, %5
   condbr %301, b63, b64
 b61:
@@ -9785,9 +9786,9 @@ b62:
   br b60
 b63:
   store %299[0], %5
-  %309 = slotaddr s15
+  %309 = slotaddr s16
   store %309[0], %261
-  %310 = slotaddr s16
+  %310 = slotaddr s17
   %311 = load.i64 %309[0]
   store %310[0], %311
   %312 = slotaddr s9
@@ -9798,7 +9799,7 @@ b63:
   store %312[0], %314
   %315 = load.i64 %310[0]
   store %312[1], %315
-  %316 = slotaddr s17
+  %316 = slotaddr s18
   %317 = load.i64 %312[0]
   store %316[0], %317
   %318 = load.i64 %312[1]
@@ -9807,7 +9808,7 @@ b63:
   store %316[2], %319
   store %316[3], %319
   store %316[4], %319
-  %320 = slotaddr s18
+  %320 = slotaddr s19
   %321 = const 1
   store %320[0], %321
   %322 = load.i64 %316[0]
@@ -9838,7 +9839,7 @@ b64:
   condbr %302, b66, b67
 b65:
   %333 = load.i64 %299[0]
-  %334 = slotaddr s19
+  %334 = slotaddr s20
   %335 = load.i64 %300[0]
   store %334[0], %335
   %336 = load.i64 %300[1]
@@ -12397,6 +12398,7 @@ func @kid#0(%0 ptr) {
   slot s3 [3]
   slot s4 [3]
   slot s5 [3]
+  slot s6 [3]
 b0:
   %1 = slotaddr s0
   %2 = load.i64 %0[1]
@@ -12528,12 +12530,12 @@ b16:
   %75 = gt %73, %74
   condbr %75, b18, b19
 b17:
-  %79 = slotaddr s3
+  %79 = slotaddr s5
   %80 = load.i64 %7[0]
   %81 = const 10
   %82 = add %80, %81
   call @main.build(%79, %82)
-  %83 = slotaddr s5
+  %83 = slotaddr s6
   %84 = load.i64 %79[0]
   store %83[0], %84
   %85 = load.i64 %79[1]

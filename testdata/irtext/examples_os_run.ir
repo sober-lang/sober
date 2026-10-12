@@ -1686,9 +1686,12 @@ func @main.main() {
   slot s5 [3]
   slot s6 [3]
   slot s7 [6]
-  slot s8 [6]
+  slot s8 [7]
   slot s9 [6]
-  slot s10 [6]
+  slot s10 [7]
+  slot s11 [6]
+  slot s12 [7]
+  slot s13 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -1798,7 +1801,7 @@ b1:
 b2:
   br b3
 b3:
-  %63 = slotaddr s1
+  %63 = slotaddr s8
   %64 = globaladdr @str.1
   %65 = const 7
   %66 = const 0
@@ -1868,7 +1871,7 @@ b3:
   %105 = load.i64 %63[0]
   %106 = const 1
   %107 = gep.word %63, %106
-  %108 = slotaddr s8
+  %108 = slotaddr s9
   %109 = load.i64 %107[0]
   store %108[0], %109
   %110 = load.i64 %107[1]
@@ -1893,7 +1896,7 @@ b4:
 b5:
   br b6
 b6:
-  %119 = slotaddr s1
+  %119 = slotaddr s10
   %120 = globaladdr @str.5
   %121 = const 12
   %122 = const 0
@@ -1921,7 +1924,7 @@ b6:
   %137 = load.i64 %119[0]
   %138 = const 1
   %139 = gep.word %119, %138
-  %140 = slotaddr s9
+  %140 = slotaddr s11
   %141 = load.i64 %139[0]
   store %140[0], %141
   %142 = load.i64 %139[1]
@@ -1946,7 +1949,7 @@ b7:
 b8:
   br b9
 b9:
-  %151 = slotaddr s1
+  %151 = slotaddr s12
   %152 = globaladdr @str.6
   %153 = const 9
   %154 = const 0
@@ -1974,7 +1977,7 @@ b9:
   %169 = load.i64 %151[0]
   %170 = const 1
   %171 = gep.word %151, %170
-  %172 = slotaddr s10
+  %172 = slotaddr s13
   %173 = load.i64 %171[0]
   store %172[0], %173
   %174 = load.i64 %171[1]
@@ -2584,6 +2587,7 @@ func @std/os.Run(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64) {
   slot s13 [1]
   slot s14 [1]
   slot s15 [1]
+  slot s16 [5]
 b0:
   %7 = slotaddr s0
   store %7[0], %1
@@ -3140,7 +3144,7 @@ b58:
   br b31
 b59:
   %304 = const 0
-  %305 = slotaddr s11
+  %305 = slotaddr s16
   %306 = const 0
   %307 = sub %306, %301
   call @std/os.errOf(%305, %307)

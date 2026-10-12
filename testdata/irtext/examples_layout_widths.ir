@@ -1845,6 +1845,8 @@ func @main.main() {
   slot s135 [3]
   slot s136 [21]
   slot s137 [21]
+  slot s138 [21]
+  slot s139 [21]
 b0:
   %0 = region.depth
   region.enter
@@ -23446,7 +23448,7 @@ b2363:
   call @rt.print_char(%12930)
   br b2364
 b2364:
-  %12931 = slotaddr s136
+  %12931 = slotaddr s138
   %12932 = const 0
   %12933 = load.i64 %12782[1]
   %12934 = const 1
@@ -23518,7 +23520,7 @@ b2372:
 b2373:
   %12967 = const 10
   call @rt.print_char(%12967)
-  %12968 = slotaddr s136
+  %12968 = slotaddr s139
   %12969 = load.i64 %12782[0]
   %12970 = load.i64 %12782[1]
   %12971 = load.i64 %12782[2]

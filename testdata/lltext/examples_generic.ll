@@ -2762,6 +2762,11 @@ b0:
   store i64 0, ptr %s5.z0
   %s5.z1 = getelementptr i64, ptr %s5, i64 1
   store i64 0, ptr %s5.z1
+  %s6 = alloca [2 x i64], align 8
+  %s6.z0 = getelementptr i64, ptr %s6, i64 0
+  store i64 0, ptr %s6.z0
+  %s6.z1 = getelementptr i64, ptr %s6, i64 1
+  store i64 0, ptr %s6.z1
   %v97 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v97, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2928,13 +2933,13 @@ b6:
   %v64 = load i64, ptr %v64.p
   %st21 = getelementptr i64, ptr %v62, i64 1
   store i64 %v64, ptr %st21
-  %v65 = getelementptr i64, ptr %s0, i64 0
+  %v65 = getelementptr i64, ptr %s4, i64 0
   %v66.p = getelementptr i64, ptr %v62, i64 0
   %v66 = load i64, ptr %v66.p
   %v67.p = getelementptr i64, ptr %v62, i64 1
   %v67 = load i64, ptr %v67.p
   call void @"main.swap[int]"(ptr %v65, i64 %v66, i64 %v67)
-  %v68 = getelementptr i64, ptr %s4, i64 0
+  %v68 = getelementptr i64, ptr %s0, i64 0
   %v69.p = getelementptr i64, ptr %v65, i64 0
   %v69 = load i64, ptr %v69.p
   %st22 = getelementptr i64, ptr %v68, i64 0
@@ -2947,7 +2952,7 @@ b6:
   %v71 = load i64, ptr %v71.p
   %v72.p = getelementptr i64, ptr %v68, i64 1
   %v72 = load i64, ptr %v72.p
-  %v73 = getelementptr i64, ptr %s0, i64 0
+  %v73 = getelementptr i64, ptr %s3, i64 0
   %v74.p = getelementptr i64, ptr %v12, i64 0
   %v74 = load i64, ptr %v74.p
   %st24 = getelementptr i64, ptr %v73, i64 0
@@ -2956,13 +2961,13 @@ b6:
   %v75 = load i64, ptr %v75.p
   %st25 = getelementptr i64, ptr %v73, i64 1
   store i64 %v75, ptr %st25
-  %v76 = getelementptr i64, ptr %s3, i64 0
+  %v76 = getelementptr i64, ptr %s5, i64 0
   %v77.p = getelementptr i64, ptr %v73, i64 0
   %v77 = load i64, ptr %v77.p
   %v78.p = getelementptr i64, ptr %v73, i64 1
   %v78 = load i64, ptr %v78.p
   call void @"main.swap[bool]"(ptr %v76, i64 %v77, i64 %v78)
-  %v79 = getelementptr i64, ptr %s5, i64 0
+  %v79 = getelementptr i64, ptr %s6, i64 0
   %v80.p = getelementptr i64, ptr %v76, i64 0
   %v80 = load i64, ptr %v80.p
   %st26 = getelementptr i64, ptr %v79, i64 0

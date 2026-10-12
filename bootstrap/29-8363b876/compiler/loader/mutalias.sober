@@ -1,0 +1,64 @@
+package loader
+
+// mut 実引数の排他（language.md 26 節）: 同じ呼び出しの mut 実引数どうしで、経路が同じか一方が他方の接頭
+// （`f(mut s, mut s)`・`f(mut t, mut t.xs)`）なら拒否する（diag.MutAlias — 位置 = 後ろの mut 実引数）。mut 実引数は mut の場所から欄を辿る
+// 経路の綴り（EMutArg の名前）だけなので、重なりは呼び出し点の綴りで決まる（同じ呼び出しの中では同じ名前は同じ束縛）。
+// mut と imm の重なりは禁じない（imm 側は値渡し — 呼び出しの前の値を見る）。check と build の両方が通る loader に置く
+// （呼ばれた側の mut 仮引数の欄の昇格がこの規則に依る — 違反を build が黙って通すと最適化で観測が割れる）。
+// 名前付き実引数を位置へ写した後（namedargs.sober）に走る。棄てた置き場: analyzer（check だけで走る）
+
+import "std/iter"
+import "ast"
+import "diag"
+
+// mutAliasAt は最初の重なりの位置（無ければ file = -1）
+func mutAliasAt(cx Cx) diag.Pos {
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            at := if x.kind == ast.ECall { aliasIn(t, x.b) } else if x.kind == ast.EPipe { aliasIn(t, x.c) } else { 0 - 1 }
+            if at >= 0 {
+                return diag.Pos{file: f, tok: t.nodes[at].tok}
+            }
+        }
+    }
+    return diag.Pos{file: 0 - 1, tok: 0}
+}
+
+// aliasIn は実引数の列 l（穴は -1）で前の mut 実引数と重なる最初の mut 実引数の節（無ければ -1）
+func aliasIn(t ast.Tree, l int) int {
+    if l < 0 {
+        return 0 - 1
+    }
+    n := ast.ListLen(t, l)
+    for j <- iter.Range(1, n) {
+        b := ast.ListAt(t, l, j)
+        if b >= 0 && t.nodes[b].kind == ast.EMutArg {
+            for i <- iter.Range(0, j) {
+                a := ast.ListAt(t, l, i)
+                if a >= 0 && t.nodes[a].kind == ast.EMutArg && pathOverlap(t, t.nodes[a].a, t.nodes[b].a) {
+                    return b
+                }
+            }
+        }
+    }
+    return 0 - 1
+}
+
+// pathOverlap は文字列 p・q（t.data の添字 — 長さ + バイト）が同じか、一方が他方の接頭（境目が `.`）か
+func pathOverlap(t ast.Tree, p int, q int) bool {
+    np := t.data[p]
+    nq := t.data[q]
+    m := if np <= nq { np } else { nq }
+    for i <- iter.Range(0, m) {
+        if t.data[p + 1 + i] != t.data[q + 1 + i] {
+            return false
+        }
+    }
+    if np == nq {
+        return true
+    }
+    next := if np < nq { t.data[q + 1 + m] } else { t.data[p + 1 + m] }
+    return next == 46 // '.'
+}

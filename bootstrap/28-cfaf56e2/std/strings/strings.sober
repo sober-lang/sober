@@ -1,0 +1,224 @@
+package strings
+
+// Go の strings パッケージが仕様のオラクル。string は不透明なので、中身はバイト列ビュー
+// （bytes(s)）越しに見る。位置はすべて bytes(s) 上のバイトオフセット（Go と同じ）
+
+// hasPrefixAt は b[at:] が p で始まるか（呼び手が at + len(p) <= len(b) を保証）
+func hasPrefixAt(b []byte, at int, p []byte) bool {
+    mut i := 0
+    while i < len(p) && b[at + i] == p[i] {
+        i += 1
+    }
+    return i == len(p)
+}
+
+// indexAt は b[from:] で p が最初に現れる位置（b 上のオフセット）、無ければ -1
+func indexAt(b []byte, from int, p []byte) int {
+    mut i := from
+    mut at := -1
+    while at < 0 && i + len(p) <= len(b) {
+        if hasPrefixAt(b, i, p) {
+            at = i
+        }
+        i += 1
+    }
+    return at
+}
+
+// runeCount は UTF-8 のコードポイント数。先頭バイト（継続バイト 10xxxxxx 以外）を数える。
+// 妥当な UTF-8 では Go の utf8.RuneCount と一致する（不正なバイト列では一致しない —
+// Go は不正バイトを 1 つずつ RuneError として数える）
+func runeCount(b []byte) int {
+    mut n := 0
+    mut i := 0
+    while i < len(b) {
+        if (int(b[i]) & 192) != 128 {
+            n += 1
+        }
+        i += 1
+    }
+    return n
+}
+
+// HasPrefix は s が prefix で始まるかを返す
+func HasPrefix(s string, prefix string) bool {
+    b := bytes(s)
+    p := bytes(prefix)
+    return len(b) >= len(p) && hasPrefixAt(b, 0, p)
+}
+
+// HasSuffix は s が suffix で終わるかを返す
+func HasSuffix(s string, suffix string) bool {
+    b := bytes(s)
+    p := bytes(suffix)
+    return len(b) >= len(p) && hasPrefixAt(b, len(b) - len(p), p)
+}
+
+// Index は substr が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。
+// 無ければ -1。substr が空なら 0
+func Index(s string, substr string) int {
+    return indexAt(bytes(s), 0, bytes(substr))
+}
+
+// Contains は substr が s に含まれるかを返す（空の substr は常に含まれる）
+func Contains(s string, substr string) bool {
+    return Index(s, substr) >= 0
+}
+
+// Count は s に含まれる substr の重ならない出現数を返す。
+// substr が空なら s のコードポイント数 + 1（Go と同じ。妥当な UTF-8 を前提 — runeCount 参照）
+func Count(s string, substr string) int {
+    b := bytes(s)
+    p := bytes(substr)
+    return if len(p) == 0 { runeCount(b) + 1 } else { countFrom(b, p) }
+}
+
+// countFrom は b 中の p（非空）の重ならない出現数
+func countFrom(b []byte, p []byte) int {
+    mut n := 0
+    mut i := 0
+    while i + len(p) <= len(b) {
+        if hasPrefixAt(b, i, p) {
+            n += 1
+            i += len(p)
+        } else {
+            i += 1
+        }
+    }
+    return n
+}
+
+// lastIndexAt は b で p が最後に現れる位置、無ければ -1（p が空なら len(b) — Go の strings.LastIndex と同じ）
+func lastIndexAt(b []byte, p []byte) int {
+    mut i := len(b) - len(p)
+    while i >= 0 && !hasPrefixAt(b, i, p) {
+        i -= 1
+    }
+    return i
+}
+
+// Cut は s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s・""・false）。
+// 割った 2 つは検査し直さない: 妥当な s の中で妥当な sep にバイト列として一致した位置は文字の頭（sep の頭は継続バイトでない）、一致の末尾も
+// 文字の頭（完結した列の直後に継続バイトは来ない）— 自己同期。`bytes(s)` に落として切って `string(…) catch` で戻す回り道が要らない
+func Cut(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := indexAt(b, 0, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// CutLast は s を最後の sep の前と後に割る（無ければ s・""・false — Cut の最後の出現版。検査し直さない理由は Cut と同じ）
+func CutLast(s string, sep string) (string, string, bool) {
+    b := bytes(s)
+    p := bytes(sep)
+    at := lastIndexAt(b, p)
+    if at < 0 {
+        return s, "", false
+    }
+    return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
+}
+
+// TrimPrefix は s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
+func TrimPrefix(s string, prefix string) string {
+    b := bytes(s)
+    p := bytes(prefix)
+    return if len(b) >= len(p) && hasPrefixAt(b, 0, p) { bytesToString(b[len(p):len(b)]) } else { s }
+}
+
+// IndexByte は c が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1
+func IndexByte(s string, c byte) int {
+    b := bytes(s)
+    mut i := 0
+    mut at := -1
+    while at < 0 && i < len(b) {
+        if b[i] == c {
+            at = i
+        }
+        i += 1
+    }
+    return at
+}
+
+// utoa は n >= 0 の 10 進表記（桁を 1 本の列に下から積んで逆に写す — 1 桁ごとの string の連結は写しが積もる）
+func utoa(n int) string {
+    mut rev := mut []byte{}
+    mut m := n
+    rev = append(rev, byte(48 + m % 10))
+    m = m / 10
+    while m > 0 {
+        rev = append(rev, byte(48 + m % 10))
+        m = m / 10
+    }
+    mut out := mut []byte{}
+    mut i := len(rev) - 1
+    while i >= 0 {
+        out = append(out, rev[i])
+        i -= 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// FormatInt は n の 10 進表記（Go の strconv.Itoa と同じ）。文字列補間 `${n}` の int の変換もこれ
+// （interp.zig — コアに変換 op を足さない）。最小値は符号反転が溢れるので綴りをそのまま返す
+func FormatInt(n int) string {
+    return if n == -9223372036854775807 - 1 {
+        "-9223372036854775808"
+    } else if n < 0 {
+        "-" + utoa(-n)
+    } else {
+        utoa(n)
+    }
+}
+
+// Arena は string のコピー先の region を表す（region 多相の裁定 S — seed の慣用句）。
+// seed は空の mut ヘッダで、mut slice の append はヘッダの region へ書くので「その region への確保権」として働く。
+// Arena を宣言した region に string を置き直したいとき（深い位置で作った string を外側の Pool / map / 表に入れる等）に使う:
+//
+//     mut a := strings.Arena{}
+//     ...
+//     t := strings.Clone(mut a, s)   // t は a の region にある s のコピー
+//
+// 同じ seed からの 2 回目以降の append は必ずコピーになる（21 節）ので、Clone の結果どうしが重なることはない
+type Arena struct {
+    seed mut []byte
+}
+
+// Clone は s のバイト列を a の region へコピーした string を返す（コピーのコストはソースに見える — 境界コピー = 明示イディオム）
+func Clone(a mut Arena, s string) string {
+    b := bytes(s)
+    mut c := a.seed
+    mut i := 0
+    while i < len(b) {
+        c = append(c, b[i])
+        i += 1
+    }
+    return bytesToString(freeze(c))
+}
+
+// Join は ps を sep で繋いだ string（Go の strings.Join と同じ）。片の長さの和を 1 回だけ写す — 素直な `s = s + sep + p` の繰り返しは
+// 写しが積もる（先端一致の concat の in-place 成長はまだ無い）。積みは 1 本の列の先端なので写しが起きない
+func Join(ps []string, sep string) string {
+    sb := bytes(sep)
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(ps) {
+        if i > 0 {
+            mut j := 0
+            while j < len(sb) {
+                out = append(out, sb[j])
+                j += 1
+            }
+        }
+        p := bytes(ps[i])
+        mut k := 0
+        while k < len(p) {
+            out = append(out, p[k])
+            k += 1
+        }
+        i += 1
+    }
+    return bytesToString(freeze(out))
+}

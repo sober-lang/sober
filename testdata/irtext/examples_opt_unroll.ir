@@ -1683,6 +1683,7 @@ func @main.main() {
   slot s4 [1]
   slot s5 [1]
   slot s6 [1]
+  slot s7 [3]
 b0:
   %0 = region.depth
   region.enter
@@ -2225,7 +2226,7 @@ b68:
   call @rt.print_int(%304)
   %309 = const 10
   call @rt.print_char(%309)
-  %310 = slotaddr s0
+  %310 = slotaddr s7
   call @main.words(%310)
   call @rt.print_str(%310)
   %311 = const 10

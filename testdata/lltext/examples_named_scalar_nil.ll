@@ -2747,6 +2747,11 @@ b0:
   store i64 0, ptr %s2.z0
   %s2.z1 = getelementptr i64, ptr %s2, i64 1
   store i64 0, ptr %s2.z1
+  %s3 = alloca [2 x i64], align 8
+  %s3.z0 = getelementptr i64, ptr %s3, i64 0
+  store i64 0, ptr %s3.z0
+  %s3.z1 = getelementptr i64, ptr %s3, i64 1
+  store i64 0, ptr %s3.z1
   %v25 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v25, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2763,7 +2768,7 @@ b0:
   %v5 = load i64, ptr %v5.p
   %st1 = getelementptr i64, ptr %v3, i64 1
   store i64 %v5, ptr %st1
-  %v6 = getelementptr i64, ptr %s0, i64 0
+  %v6 = getelementptr i64, ptr %s2, i64 0
   %v7 = add i64 0, 0
   %st2 = getelementptr i64, ptr %v6, i64 0
   store i64 %v7, ptr %st2
@@ -2775,7 +2780,7 @@ b0:
   %v9 = load i64, ptr %v9.p
   %st4 = getelementptr i64, ptr %v3, i64 1
   store i64 %v9, ptr %st4
-  %v10 = getelementptr i64, ptr %s0, i64 0
+  %v10 = getelementptr i64, ptr %s3, i64 0
   %v11 = add i64 0, 3
   call void @"main.find"(ptr %v10, i64 %v11)
   %v12 = getelementptr i64, ptr %s2, i64 0

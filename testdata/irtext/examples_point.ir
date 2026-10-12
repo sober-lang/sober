@@ -1669,6 +1669,8 @@ func @main.main() {
   slot s6 [2]
   slot s7 [2]
   slot s8 [4]
+  slot s9 [4]
+  slot s10 [2]
 b0:
   %0 = region.depth
   region.enter
@@ -1775,7 +1777,7 @@ b0:
   store %50[3], %54
   %55 = const 3
   store %50[0], %55
-  %56 = slotaddr s4
+  %56 = slotaddr s9
   %57 = load.i64 %50[0]
   %58 = load.i64 %50[1]
   %59 = load.i64 %50[2]
@@ -1788,7 +1790,7 @@ b0:
   store %63[0], %64
   %65 = load.i64 %56[1]
   store %63[1], %65
-  %66 = slotaddr s6
+  %66 = slotaddr s0
   %67 = load.i64 %62[0]
   store %66[0], %67
   %68 = load.i64 %62[1]
@@ -1798,7 +1800,7 @@ b0:
   %71 = load.i64 %27[2]
   %72 = load.i64 %27[3]
   %73 = call @main.length2(%69, %70, %71, %72)
-  %74 = slotaddr s0
+  %74 = slotaddr s10
   %75 = load.i64 %5[0]
   %76 = load.i64 %5[1]
   %77 = const 1

@@ -11615,6 +11615,7 @@ func @main.report(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64, %6 i64, %7 i64
   slot s17 [3]
   slot s18 [3]
   slot s19 [3]
+  slot s20 [3]
 b0:
   %8 = slotaddr s0
   store %8[0], %2
@@ -11709,12 +11710,12 @@ b3:
   %165 = globaladdr @str.0
   %166 = const 6
   %167 = const 0
-  %168 = slotaddr s15
+  %168 = slotaddr s16
   %169 = ptoi %165
   store %168[0], %169
   store %168[1], %166
   store %168[2], %167
-  %170 = slotaddr s16
+  %170 = slotaddr s17
   call @std/strings.FormatInt(%170, %0)
   %171 = load.i64 %168[1]
   %172 = load.i64 %170[1]
@@ -11728,7 +11729,7 @@ b3:
   %180 = load.i64 %170[0]
   %181 = itop %180
   call @rt.copy8(%179, %181, %172)
-  %182 = slotaddr s17
+  %182 = slotaddr s18
   %183 = ptoi %178
   store %182[0], %183
   store %182[1], %173
@@ -11736,7 +11737,7 @@ b3:
   %184 = globaladdr @str.5
   %185 = const 3
   %186 = const 0
-  %187 = slotaddr s18
+  %187 = slotaddr s19
   %188 = ptoi %184
   store %187[0], %188
   store %187[1], %185
@@ -11753,7 +11754,7 @@ b3:
   %198 = load.i64 %187[0]
   %199 = itop %198
   call @rt.copy8(%197, %199, %190)
-  %200 = slotaddr s19
+  %200 = slotaddr s20
   %201 = ptoi %196
   store %200[0], %201
   store %200[1], %191
@@ -11772,7 +11773,7 @@ b4:
   store %66[0], %67
   store %66[1], %64
   store %66[2], %65
-  %68 = slotaddr s4
+  %68 = slotaddr s7
   call @std/strings.FormatInt(%68, %0)
   %69 = load.i64 %66[1]
   %70 = load.i64 %68[1]
@@ -11786,7 +11787,7 @@ b4:
   %78 = load.i64 %68[0]
   %79 = itop %78
   call @rt.copy8(%77, %79, %70)
-  %80 = slotaddr s3
+  %80 = slotaddr s4
   %81 = ptoi %76
   store %80[0], %81
   store %80[1], %71
@@ -11794,7 +11795,7 @@ b4:
   %82 = globaladdr @str.2
   %83 = const 6
   %84 = const 0
-  %85 = slotaddr s2
+  %85 = slotaddr s3
   %86 = ptoi %82
   store %85[0], %86
   store %85[1], %83
@@ -11816,7 +11817,7 @@ b4:
   store %98[0], %99
   store %98[1], %89
   store %98[2], %90
-  %100 = slotaddr s7
+  %100 = slotaddr s8
   call @std/strings.FormatInt(%100, %62)
   %101 = load.i64 %98[1]
   %102 = load.i64 %100[1]
@@ -11830,7 +11831,7 @@ b4:
   %110 = load.i64 %100[0]
   %111 = itop %110
   call @rt.copy8(%109, %111, %102)
-  %112 = slotaddr s8
+  %112 = slotaddr s9
   %113 = ptoi %108
   store %112[0], %113
   store %112[1], %103
@@ -11838,7 +11839,7 @@ b4:
   %114 = globaladdr @str.3
   %115 = const 2
   %116 = const 0
-  %117 = slotaddr s9
+  %117 = slotaddr s10
   %118 = ptoi %114
   store %117[0], %118
   store %117[1], %115
@@ -11855,12 +11856,12 @@ b4:
   %128 = load.i64 %117[0]
   %129 = itop %128
   call @rt.copy8(%127, %129, %120)
-  %130 = slotaddr s10
+  %130 = slotaddr s11
   %131 = ptoi %126
   store %130[0], %131
   store %130[1], %121
   store %130[2], %122
-  %132 = slotaddr s11
+  %132 = slotaddr s12
   call @std/strings.FormatInt(%132, %1)
   %133 = load.i64 %130[1]
   %134 = load.i64 %132[1]
@@ -11874,7 +11875,7 @@ b4:
   %142 = load.i64 %132[0]
   %143 = itop %142
   call @rt.copy8(%141, %143, %134)
-  %144 = slotaddr s12
+  %144 = slotaddr s13
   %145 = ptoi %140
   store %144[0], %145
   store %144[1], %135
@@ -11882,7 +11883,7 @@ b4:
   %146 = globaladdr @str.4
   %147 = const 1
   %148 = const 0
-  %149 = slotaddr s13
+  %149 = slotaddr s14
   %150 = ptoi %146
   store %149[0], %150
   store %149[1], %147
@@ -11899,7 +11900,7 @@ b4:
   %160 = load.i64 %149[0]
   %161 = itop %160
   call @rt.copy8(%159, %161, %152)
-  %162 = slotaddr s14
+  %162 = slotaddr s15
   %163 = ptoi %158
   store %162[0], %163
   store %162[1], %153

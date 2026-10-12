@@ -126,6 +126,8 @@ func valueTypes(st mut St, f FnRef) int {
                     lFnRet(mut st, irInsFn(mut st, ins))
                 } else if op == OpCallI {
                     irInsC(mut st, ins)
+                } else if op == OpPMem || (op == OpPArith && irInsA(mut st, ins) != PK_LO && irInsA(mut st, ins) != PK_HI) {
+                    TyV128
                 } else {
                     TyI64
                 }

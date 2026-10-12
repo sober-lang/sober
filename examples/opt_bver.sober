@@ -1,0 +1,21 @@
+package main
+
+// 定数添字の検査の版分け（bver.sober — 段 2）の網: 定数添字の検査が 8 本以上なら入口で「最大の添字 <u 長さ」を 1 回判定して検査の無い写しへ進む。
+// 長さがちょうど最大の添字（9）の列では判定が偽になり、元の本体が b[9] で添字の範囲外の panic（判定を 1 ずらす変異は範囲外を黙って読む）
+
+import "std/iter"
+
+func bump(b mut []int) {
+    for k <- iter.Range(0, 10) {
+        b[k] = b[k] + k
+    }
+}
+
+func main() {
+    mut a := mut []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+    bump(mut a)
+    println(a[0], a[9], a[10])
+    mut c := mut []int{1, 1, 1, 1, 1, 1, 1, 1, 1}
+    bump(mut c)
+    println(c[0])
+}

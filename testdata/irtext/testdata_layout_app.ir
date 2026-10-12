@@ -1711,8 +1711,8 @@ func @main.main() {
   slot s20 [3]
   slot s21 [3]
   slot s22 [3]
-  slot s23 [1]
-  slot s24 [3]
+  slot s23 [3]
+  slot s24 [1]
   slot s25 [3]
   slot s26 [3]
   slot s27 [3]
@@ -1727,8 +1727,9 @@ func @main.main() {
   slot s36 [3]
   slot s37 [3]
   slot s38 [3]
-  slot s39 [4]
+  slot s39 [3]
   slot s40 [4]
+  slot s41 [4]
 b0:
   %0 = region.depth
   region.enter
@@ -1811,7 +1812,7 @@ b1:
   store %1503[0], %1501
   store %1503[1], %1498
   store %1503[2], %1502
-  %1505 = slotaddr s2
+  %1505 = slotaddr s13
   %1506 = load.i64 %1503[0]
   store %1505[0], %1506
   %1507 = load.i64 %1503[1]
@@ -4267,7 +4268,7 @@ b275:
   store %1497[0], %1495
   br b246
 b276:
-  %2977 = slotaddr s2
+  %2977 = slotaddr s13
   %2978 = region.depth
   %2979 = region.depth
   %2980 = const 0
@@ -4278,7 +4279,7 @@ b276:
   store %2983[0], %2984
   store %2983[1], %2982
   store %2983[2], %2979
-  %2985 = slotaddr s28
+  %2985 = slotaddr s29
   %2986 = load.i64 %2983[0]
   store %2985[0], %2986
   %2987 = load.i64 %2983[1]
@@ -4307,7 +4308,7 @@ b280:
   %1517 = globaladdr @str.0
   %1518 = const 10
   %1519 = const 0
-  %1520 = slotaddr s13
+  %1520 = slotaddr s21
   %1521 = ptoi %1517
   store %1520[0], %1521
   store %1520[1], %1518
@@ -4318,7 +4319,7 @@ b280:
   %1525 = globaladdr @str.1
   %1526 = const 2
   %1527 = const 0
-  %1528 = slotaddr s21
+  %1528 = slotaddr s23
   %1529 = ptoi %1525
   store %1528[0], %1529
   store %1528[1], %1526
@@ -4380,7 +4381,7 @@ b291:
   %1557 = gep.word %13, %1556
   store %1557[0], %1555
   %1558 = const 0
-  %1559 = slotaddr s23
+  %1559 = slotaddr s24
   store %1559[0], %1558
   %1560 = region.depth
   br b293
@@ -4397,7 +4398,7 @@ b294:
   %1564 = region.depth
   %1565 = const 1
   %1566 = add %0, %1565
-  %1567 = slotaddr s21
+  %1567 = slotaddr s23
   %1568 = load.i64 %13[0]
   store %1567[0], %1568
   %1569 = load.i64 %13[1]
@@ -4406,7 +4407,7 @@ b294:
   store %1567[2], %1570
   %1571 = const 3
   %1572 = gep.word %13, %1571
-  %1573 = slotaddr s13
+  %1573 = slotaddr s21
   %1574 = load.i64 %1572[0]
   store %1573[0], %1574
   %1575 = load.i64 %1572[1]
@@ -4437,7 +4438,7 @@ b296(%1580 ptr, %1581 ptr):
   %1600 = load.i64 %1567[1]
   %1601 = const 1
   %1602 = add %1600, %1601
-  %1603 = slotaddr s24
+  %1603 = slotaddr s25
   %1604 = ptoi %1580
   store %1603[0], %1604
   store %1603[1], %1602
@@ -4513,7 +4514,7 @@ b306:
   %1635 = const 3
   %1636 = mul %1629, %1635
   %1637 = gep.word %1634, %1636
-  %1638 = slotaddr s24
+  %1638 = slotaddr s25
   %1639 = load.i64 %1637[0]
   store %1638[0], %1639
   %1640 = load.i64 %1637[1]
@@ -4521,7 +4522,7 @@ b306:
   %1641 = load.i64 %1637[2]
   store %1638[2], %1641
   %1642 = const 0
-  %1643 = slotaddr s23
+  %1643 = slotaddr s24
   store %1643[0], %1642
   %1644 = region.depth
   br b307
@@ -4536,7 +4537,7 @@ b308:
   %1648 = region.depth
   %1649 = const 1
   %1650 = add %0, %1649
-  %1651 = slotaddr s21
+  %1651 = slotaddr s23
   %1652 = load.i64 %1638[0]
   store %1651[0], %1652
   %1653 = load.i64 %1638[1]
@@ -4562,7 +4563,7 @@ b310(%1658 ptr, %1659 ptr):
   %1669 = load.i64 %1651[1]
   %1670 = const 1
   %1671 = add %1669, %1670
-  %1672 = slotaddr s25
+  %1672 = slotaddr s26
   %1673 = ptoi %1658
   store %1672[0], %1673
   store %1672[1], %1671
@@ -4592,7 +4593,7 @@ b313:
   call @rt.panic(%1683)
   exit 101
 b314:
-  %1684 = slotaddr s25
+  %1684 = slotaddr s26
   %1685 = load.i64 %1638[0]
   store %1684[0], %1685
   %1686 = load.i64 %1638[1]
@@ -4633,7 +4634,7 @@ b316:
   %1709 = const 3
   %1710 = mul %1703, %1709
   %1711 = gep.word %1708, %1710
-  %1712 = slotaddr s21
+  %1712 = slotaddr s23
   %1713 = load.i64 %1711[0]
   store %1712[0], %1713
   %1714 = load.i64 %1711[1]
@@ -4678,7 +4679,7 @@ b322:
   %1739 = globaladdr @str.2
   %1740 = const 9
   %1741 = const 0
-  %1742 = slotaddr s21
+  %1742 = slotaddr s23
   %1743 = ptoi %1739
   store %1742[0], %1743
   store %1742[1], %1740
@@ -4689,7 +4690,7 @@ b322:
   %1747 = globaladdr @str.3
   %1748 = const 5
   %1749 = const 0
-  %1750 = slotaddr s24
+  %1750 = slotaddr s25
   %1751 = ptoi %1747
   store %1750[0], %1751
   store %1750[1], %1748
@@ -4751,7 +4752,7 @@ b333:
   %1779 = gep.word %13, %1778
   store %1779[0], %1777
   %1780 = const 0
-  %1781 = slotaddr s23
+  %1781 = slotaddr s24
   store %1781[0], %1780
   %1782 = region.depth
   br b335
@@ -4768,7 +4769,7 @@ b336:
   %1786 = region.depth
   %1787 = const 1
   %1788 = add %0, %1787
-  %1789 = slotaddr s24
+  %1789 = slotaddr s25
   %1790 = load.i64 %13[0]
   store %1789[0], %1790
   %1791 = load.i64 %13[1]
@@ -4777,7 +4778,7 @@ b336:
   store %1789[2], %1792
   %1793 = const 3
   %1794 = gep.word %13, %1793
-  %1795 = slotaddr s21
+  %1795 = slotaddr s23
   %1796 = load.i64 %1794[0]
   store %1795[0], %1796
   %1797 = load.i64 %1794[1]
@@ -4808,7 +4809,7 @@ b338(%1802 ptr, %1803 ptr):
   %1822 = load.i64 %1789[1]
   %1823 = const 1
   %1824 = add %1822, %1823
-  %1825 = slotaddr s26
+  %1825 = slotaddr s27
   %1826 = ptoi %1802
   store %1825[0], %1826
   store %1825[1], %1824
@@ -4884,7 +4885,7 @@ b348:
   %1857 = const 3
   %1858 = mul %1851, %1857
   %1859 = gep.word %1856, %1858
-  %1860 = slotaddr s26
+  %1860 = slotaddr s27
   %1861 = load.i64 %1859[0]
   store %1860[0], %1861
   %1862 = load.i64 %1859[1]
@@ -4892,7 +4893,7 @@ b348:
   %1863 = load.i64 %1859[2]
   store %1860[2], %1863
   %1864 = const 0
-  %1865 = slotaddr s23
+  %1865 = slotaddr s24
   store %1865[0], %1864
   %1866 = region.depth
   br b349
@@ -4907,7 +4908,7 @@ b350:
   %1870 = region.depth
   %1871 = const 1
   %1872 = add %0, %1871
-  %1873 = slotaddr s24
+  %1873 = slotaddr s25
   %1874 = load.i64 %1860[0]
   store %1873[0], %1874
   %1875 = load.i64 %1860[1]
@@ -4933,7 +4934,7 @@ b352(%1880 ptr, %1881 ptr):
   %1891 = load.i64 %1873[1]
   %1892 = const 1
   %1893 = add %1891, %1892
-  %1894 = slotaddr s27
+  %1894 = slotaddr s28
   %1895 = ptoi %1880
   store %1894[0], %1895
   store %1894[1], %1893
@@ -4963,7 +4964,7 @@ b355:
   call @rt.panic(%1905)
   exit 101
 b356:
-  %1906 = slotaddr s27
+  %1906 = slotaddr s28
   %1907 = load.i64 %1860[0]
   store %1906[0], %1907
   %1908 = load.i64 %1860[1]
@@ -5004,7 +5005,7 @@ b358:
   %1931 = const 3
   %1932 = mul %1925, %1931
   %1933 = gep.word %1930, %1932
-  %1934 = slotaddr s24
+  %1934 = slotaddr s25
   %1935 = load.i64 %1933[0]
   store %1934[0], %1935
   %1936 = load.i64 %1933[1]
@@ -5084,7 +5085,7 @@ b370:
   %1979 = gep.word %13, %1978
   store %1979[0], %1977
   %1980 = const 0
-  %1981 = slotaddr s23
+  %1981 = slotaddr s24
   store %1981[0], %1980
   %1982 = region.depth
   br b372
@@ -5101,7 +5102,7 @@ b373:
   %1986 = region.depth
   %1987 = const 1
   %1988 = add %0, %1987
-  %1989 = slotaddr s24
+  %1989 = slotaddr s25
   %1990 = load.i64 %13[0]
   store %1989[0], %1990
   %1991 = load.i64 %13[1]
@@ -5110,7 +5111,7 @@ b373:
   store %1989[2], %1992
   %1993 = const 3
   %1994 = gep.word %13, %1993
-  %1995 = slotaddr s26
+  %1995 = slotaddr s27
   %1996 = load.i64 %1994[0]
   store %1995[0], %1996
   %1997 = load.i64 %1994[1]
@@ -5141,7 +5142,7 @@ b375(%2002 ptr, %2003 ptr):
   %2022 = load.i64 %1989[1]
   %2023 = const 1
   %2024 = add %2022, %2023
-  %2025 = slotaddr s28
+  %2025 = slotaddr s29
   %2026 = ptoi %2002
   store %2025[0], %2026
   store %2025[1], %2024
@@ -5217,7 +5218,7 @@ b385:
   %2057 = const 3
   %2058 = mul %2051, %2057
   %2059 = gep.word %2056, %2058
-  %2060 = slotaddr s28
+  %2060 = slotaddr s29
   %2061 = load.i64 %2059[0]
   store %2060[0], %2061
   %2062 = load.i64 %2059[1]
@@ -5225,7 +5226,7 @@ b385:
   %2063 = load.i64 %2059[2]
   store %2060[2], %2063
   %2064 = const 0
-  %2065 = slotaddr s23
+  %2065 = slotaddr s24
   store %2065[0], %2064
   %2066 = region.depth
   br b386
@@ -5240,7 +5241,7 @@ b387:
   %2070 = region.depth
   %2071 = const 1
   %2072 = add %0, %2071
-  %2073 = slotaddr s24
+  %2073 = slotaddr s25
   %2074 = load.i64 %2060[0]
   store %2073[0], %2074
   %2075 = load.i64 %2060[1]
@@ -5266,7 +5267,7 @@ b389(%2080 ptr, %2081 ptr):
   %2091 = load.i64 %2073[1]
   %2092 = const 1
   %2093 = add %2091, %2092
-  %2094 = slotaddr s29
+  %2094 = slotaddr s30
   %2095 = ptoi %2080
   store %2094[0], %2095
   store %2094[1], %2093
@@ -5296,7 +5297,7 @@ b392:
   call @rt.panic(%2105)
   exit 101
 b393:
-  %2106 = slotaddr s29
+  %2106 = slotaddr s30
   %2107 = load.i64 %2060[0]
   store %2106[0], %2107
   %2108 = load.i64 %2060[1]
@@ -5337,7 +5338,7 @@ b395:
   %2131 = const 3
   %2132 = mul %2125, %2131
   %2133 = gep.word %2130, %2132
-  %2134 = slotaddr s24
+  %2134 = slotaddr s25
   %2135 = load.i64 %2133[0]
   store %2134[0], %2135
   %2136 = load.i64 %2133[1]
@@ -5382,7 +5383,7 @@ b401:
   %2161 = globaladdr @str.4
   %2162 = const 9
   %2163 = const 0
-  %2164 = slotaddr s24
+  %2164 = slotaddr s25
   %2165 = ptoi %2161
   store %2164[0], %2165
   store %2164[1], %2162
@@ -5393,7 +5394,7 @@ b401:
   %2169 = globaladdr @str.5
   %2170 = const 5
   %2171 = const 0
-  %2172 = slotaddr s28
+  %2172 = slotaddr s29
   %2173 = ptoi %2169
   store %2172[0], %2173
   store %2172[1], %2170
@@ -5455,7 +5456,7 @@ b412:
   %2201 = gep.word %13, %2200
   store %2201[0], %2199
   %2202 = const 0
-  %2203 = slotaddr s23
+  %2203 = slotaddr s24
   store %2203[0], %2202
   %2204 = region.depth
   br b414
@@ -5472,7 +5473,7 @@ b415:
   %2208 = region.depth
   %2209 = const 1
   %2210 = add %0, %2209
-  %2211 = slotaddr s28
+  %2211 = slotaddr s29
   %2212 = load.i64 %13[0]
   store %2211[0], %2212
   %2213 = load.i64 %13[1]
@@ -5481,7 +5482,7 @@ b415:
   store %2211[2], %2214
   %2215 = const 3
   %2216 = gep.word %13, %2215
-  %2217 = slotaddr s24
+  %2217 = slotaddr s25
   %2218 = load.i64 %2216[0]
   store %2217[0], %2218
   %2219 = load.i64 %2216[1]
@@ -5512,7 +5513,7 @@ b417(%2224 ptr, %2225 ptr):
   %2244 = load.i64 %2211[1]
   %2245 = const 1
   %2246 = add %2244, %2245
-  %2247 = slotaddr s30
+  %2247 = slotaddr s31
   %2248 = ptoi %2224
   store %2247[0], %2248
   store %2247[1], %2246
@@ -5588,7 +5589,7 @@ b427:
   %2279 = const 3
   %2280 = mul %2273, %2279
   %2281 = gep.word %2278, %2280
-  %2282 = slotaddr s30
+  %2282 = slotaddr s31
   %2283 = load.i64 %2281[0]
   store %2282[0], %2283
   %2284 = load.i64 %2281[1]
@@ -5596,7 +5597,7 @@ b427:
   %2285 = load.i64 %2281[2]
   store %2282[2], %2285
   %2286 = const 0
-  %2287 = slotaddr s23
+  %2287 = slotaddr s24
   store %2287[0], %2286
   %2288 = region.depth
   br b428
@@ -5611,7 +5612,7 @@ b429:
   %2292 = region.depth
   %2293 = const 1
   %2294 = add %0, %2293
-  %2295 = slotaddr s28
+  %2295 = slotaddr s29
   %2296 = load.i64 %2282[0]
   store %2295[0], %2296
   %2297 = load.i64 %2282[1]
@@ -5637,7 +5638,7 @@ b431(%2302 ptr, %2303 ptr):
   %2313 = load.i64 %2295[1]
   %2314 = const 1
   %2315 = add %2313, %2314
-  %2316 = slotaddr s31
+  %2316 = slotaddr s32
   %2317 = ptoi %2302
   store %2316[0], %2317
   store %2316[1], %2315
@@ -5667,7 +5668,7 @@ b434:
   call @rt.panic(%2327)
   exit 101
 b435:
-  %2328 = slotaddr s31
+  %2328 = slotaddr s32
   %2329 = load.i64 %2282[0]
   store %2328[0], %2329
   %2330 = load.i64 %2282[1]
@@ -5708,7 +5709,7 @@ b437:
   %2353 = const 3
   %2354 = mul %2347, %2353
   %2355 = gep.word %2352, %2354
-  %2356 = slotaddr s28
+  %2356 = slotaddr s29
   %2357 = load.i64 %2355[0]
   store %2356[0], %2357
   %2358 = load.i64 %2355[1]
@@ -5788,7 +5789,7 @@ b449:
   %2401 = gep.word %13, %2400
   store %2401[0], %2399
   %2402 = const 0
-  %2403 = slotaddr s23
+  %2403 = slotaddr s24
   store %2403[0], %2402
   %2404 = region.depth
   br b451
@@ -5805,7 +5806,7 @@ b452:
   %2408 = region.depth
   %2409 = const 1
   %2410 = add %0, %2409
-  %2411 = slotaddr s28
+  %2411 = slotaddr s29
   %2412 = load.i64 %13[0]
   store %2411[0], %2412
   %2413 = load.i64 %13[1]
@@ -5814,7 +5815,7 @@ b452:
   store %2411[2], %2414
   %2415 = const 3
   %2416 = gep.word %13, %2415
-  %2417 = slotaddr s30
+  %2417 = slotaddr s31
   %2418 = load.i64 %2416[0]
   store %2417[0], %2418
   %2419 = load.i64 %2416[1]
@@ -5845,7 +5846,7 @@ b454(%2424 ptr, %2425 ptr):
   %2444 = load.i64 %2411[1]
   %2445 = const 1
   %2446 = add %2444, %2445
-  %2447 = slotaddr s32
+  %2447 = slotaddr s33
   %2448 = ptoi %2424
   store %2447[0], %2448
   store %2447[1], %2446
@@ -5921,7 +5922,7 @@ b464:
   %2479 = const 3
   %2480 = mul %2473, %2479
   %2481 = gep.word %2478, %2480
-  %2482 = slotaddr s32
+  %2482 = slotaddr s33
   %2483 = load.i64 %2481[0]
   store %2482[0], %2483
   %2484 = load.i64 %2481[1]
@@ -5929,7 +5930,7 @@ b464:
   %2485 = load.i64 %2481[2]
   store %2482[2], %2485
   %2486 = const 0
-  %2487 = slotaddr s23
+  %2487 = slotaddr s24
   store %2487[0], %2486
   %2488 = region.depth
   br b465
@@ -5944,7 +5945,7 @@ b466:
   %2492 = region.depth
   %2493 = const 1
   %2494 = add %0, %2493
-  %2495 = slotaddr s28
+  %2495 = slotaddr s29
   %2496 = load.i64 %2482[0]
   store %2495[0], %2496
   %2497 = load.i64 %2482[1]
@@ -5970,7 +5971,7 @@ b468(%2502 ptr, %2503 ptr):
   %2513 = load.i64 %2495[1]
   %2514 = const 1
   %2515 = add %2513, %2514
-  %2516 = slotaddr s33
+  %2516 = slotaddr s34
   %2517 = ptoi %2502
   store %2516[0], %2517
   store %2516[1], %2515
@@ -6000,7 +6001,7 @@ b471:
   call @rt.panic(%2527)
   exit 101
 b472:
-  %2528 = slotaddr s33
+  %2528 = slotaddr s34
   %2529 = load.i64 %2482[0]
   store %2528[0], %2529
   %2530 = load.i64 %2482[1]
@@ -6041,7 +6042,7 @@ b474:
   %2553 = const 3
   %2554 = mul %2547, %2553
   %2555 = gep.word %2552, %2554
-  %2556 = slotaddr s28
+  %2556 = slotaddr s29
   %2557 = load.i64 %2555[0]
   store %2556[0], %2557
   %2558 = load.i64 %2555[1]
@@ -6121,7 +6122,7 @@ b486:
   %2601 = gep.word %13, %2600
   store %2601[0], %2599
   %2602 = const 0
-  %2603 = slotaddr s23
+  %2603 = slotaddr s24
   store %2603[0], %2602
   %2604 = region.depth
   br b488
@@ -6138,7 +6139,7 @@ b489:
   %2608 = region.depth
   %2609 = const 1
   %2610 = add %0, %2609
-  %2611 = slotaddr s28
+  %2611 = slotaddr s29
   %2612 = load.i64 %13[0]
   store %2611[0], %2612
   %2613 = load.i64 %13[1]
@@ -6147,7 +6148,7 @@ b489:
   store %2611[2], %2614
   %2615 = const 3
   %2616 = gep.word %13, %2615
-  %2617 = slotaddr s32
+  %2617 = slotaddr s33
   %2618 = load.i64 %2616[0]
   store %2617[0], %2618
   %2619 = load.i64 %2616[1]
@@ -6178,7 +6179,7 @@ b491(%2624 ptr, %2625 ptr):
   %2644 = load.i64 %2611[1]
   %2645 = const 1
   %2646 = add %2644, %2645
-  %2647 = slotaddr s34
+  %2647 = slotaddr s35
   %2648 = ptoi %2624
   store %2647[0], %2648
   store %2647[1], %2646
@@ -6254,7 +6255,7 @@ b501:
   %2679 = const 3
   %2680 = mul %2673, %2679
   %2681 = gep.word %2678, %2680
-  %2682 = slotaddr s34
+  %2682 = slotaddr s35
   %2683 = load.i64 %2681[0]
   store %2682[0], %2683
   %2684 = load.i64 %2681[1]
@@ -6262,7 +6263,7 @@ b501:
   %2685 = load.i64 %2681[2]
   store %2682[2], %2685
   %2686 = const 0
-  %2687 = slotaddr s23
+  %2687 = slotaddr s24
   store %2687[0], %2686
   %2688 = region.depth
   br b502
@@ -6277,7 +6278,7 @@ b503:
   %2692 = region.depth
   %2693 = const 1
   %2694 = add %0, %2693
-  %2695 = slotaddr s28
+  %2695 = slotaddr s29
   %2696 = load.i64 %2682[0]
   store %2695[0], %2696
   %2697 = load.i64 %2682[1]
@@ -6303,7 +6304,7 @@ b505(%2702 ptr, %2703 ptr):
   %2713 = load.i64 %2695[1]
   %2714 = const 1
   %2715 = add %2713, %2714
-  %2716 = slotaddr s35
+  %2716 = slotaddr s36
   %2717 = ptoi %2702
   store %2716[0], %2717
   store %2716[1], %2715
@@ -6333,7 +6334,7 @@ b508:
   call @rt.panic(%2727)
   exit 101
 b509:
-  %2728 = slotaddr s35
+  %2728 = slotaddr s36
   %2729 = load.i64 %2682[0]
   store %2728[0], %2729
   %2730 = load.i64 %2682[1]
@@ -6374,7 +6375,7 @@ b511:
   %2753 = const 3
   %2754 = mul %2747, %2753
   %2755 = gep.word %2752, %2754
-  %2756 = slotaddr s28
+  %2756 = slotaddr s29
   %2757 = load.i64 %2755[0]
   store %2756[0], %2757
   %2758 = load.i64 %2755[1]
@@ -6451,7 +6452,7 @@ b523:
   %2801 = gep.word %13, %2800
   store %2801[0], %2799
   %2802 = const 0
-  %2803 = slotaddr s23
+  %2803 = slotaddr s24
   store %2803[0], %2802
   %2804 = region.depth
   br b525
@@ -6468,7 +6469,7 @@ b526:
   %2808 = region.depth
   %2809 = const 1
   %2810 = add %0, %2809
-  %2811 = slotaddr s28
+  %2811 = slotaddr s29
   %2812 = load.i64 %13[0]
   store %2811[0], %2812
   %2813 = load.i64 %13[1]
@@ -6477,7 +6478,7 @@ b526:
   store %2811[2], %2814
   %2815 = const 3
   %2816 = gep.word %13, %2815
-  %2817 = slotaddr s34
+  %2817 = slotaddr s35
   %2818 = load.i64 %2816[0]
   store %2817[0], %2818
   %2819 = load.i64 %2816[1]
@@ -6508,7 +6509,7 @@ b528(%2824 ptr, %2825 ptr):
   %2844 = load.i64 %2811[1]
   %2845 = const 1
   %2846 = add %2844, %2845
-  %2847 = slotaddr s36
+  %2847 = slotaddr s37
   %2848 = ptoi %2824
   store %2847[0], %2848
   store %2847[1], %2846
@@ -6584,7 +6585,7 @@ b538:
   %2879 = const 3
   %2880 = mul %2873, %2879
   %2881 = gep.word %2878, %2880
-  %2882 = slotaddr s36
+  %2882 = slotaddr s37
   %2883 = load.i64 %2881[0]
   store %2882[0], %2883
   %2884 = load.i64 %2881[1]
@@ -6592,7 +6593,7 @@ b538:
   %2885 = load.i64 %2881[2]
   store %2882[2], %2885
   %2886 = const 0
-  %2887 = slotaddr s23
+  %2887 = slotaddr s24
   store %2887[0], %2886
   %2888 = region.depth
   br b539
@@ -6607,7 +6608,7 @@ b540:
   %2892 = region.depth
   %2893 = const 1
   %2894 = add %0, %2893
-  %2895 = slotaddr s28
+  %2895 = slotaddr s29
   %2896 = load.i64 %2882[0]
   store %2895[0], %2896
   %2897 = load.i64 %2882[1]
@@ -6633,7 +6634,7 @@ b542(%2902 ptr, %2903 ptr):
   %2913 = load.i64 %2895[1]
   %2914 = const 1
   %2915 = add %2913, %2914
-  %2916 = slotaddr s37
+  %2916 = slotaddr s38
   %2917 = ptoi %2902
   store %2916[0], %2917
   store %2916[1], %2915
@@ -6663,7 +6664,7 @@ b545:
   call @rt.panic(%2927)
   exit 101
 b546:
-  %2928 = slotaddr s37
+  %2928 = slotaddr s38
   %2929 = load.i64 %2882[0]
   store %2928[0], %2929
   %2930 = load.i64 %2882[1]
@@ -6704,7 +6705,7 @@ b548:
   %2953 = const 3
   %2954 = mul %2947, %2953
   %2955 = gep.word %2952, %2954
-  %2956 = slotaddr s28
+  %2956 = slotaddr s29
   %2957 = load.i64 %2955[0]
   store %2956[0], %2957
   %2958 = load.i64 %2955[1]
@@ -6840,7 +6841,7 @@ b565:
   %3028 = region.depth
   %3029 = const 1
   %3030 = add %0, %3029
-  %3031 = slotaddr s36
+  %3031 = slotaddr s37
   %3032 = load.i64 %2985[0]
   store %3031[0], %3032
   %3033 = load.i64 %2985[1]
@@ -6886,7 +6887,7 @@ b569(%3046 ptr, %3047 ptr):
   %3057 = load.i64 %3031[1]
   %3058 = const 1
   %3059 = add %3057, %3058
-  %3060 = slotaddr s38
+  %3060 = slotaddr s39
   %3061 = ptoi %3046
   store %3060[0], %3061
   store %3060[1], %3059
@@ -6927,13 +6928,13 @@ b575:
   %3096 = region.depth
   %3097 = load.i64 %3092[0]
   %3098 = region.depth
-  %3099 = slotaddr s39
+  %3099 = slotaddr s40
   %3100 = load.i64 %3079[0]
   %3101 = load.i64 %3079[1]
   %3102 = load.i64 %3079[2]
   %3103 = const 0
   call @main.$layoutDecodeAt_1_0(%3099, %3100, %3101, %3102, %3103, %3097)
-  %3104 = slotaddr s40
+  %3104 = slotaddr s41
   %3105 = load.i64 %3099[0]
   store %3104[0], %3105
   %3106 = load.i64 %3099[1]
@@ -6959,7 +6960,7 @@ b577:
 b578:
   %3112 = const 1
   %3113 = gep.word %3104, %3112
-  %3114 = slotaddr s28
+  %3114 = slotaddr s29
   %3115 = load.i64 %3113[0]
   store %3114[0], %3115
   %3116 = load.i64 %3113[1]
@@ -8006,6 +8007,7 @@ b26:
 func @main.$layoutDecodeAt_1_0(%0 ptr, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) {
   slot s0 [3]
   slot s1 [4]
+  slot s2 [4]
 b0:
   %6 = slotaddr s0
   store %6[0], %1
@@ -8041,7 +8043,7 @@ b3:
 b4:
   br b5
 b5:
-  %21 = slotaddr s1
+  %21 = slotaddr s2
   %22 = load.i64 %6[0]
   %23 = load.i64 %6[1]
   %24 = load.i64 %6[2]

@@ -1996,14 +1996,14 @@ b25:
   store %184[3], %188
   %189 = load.i64 %179[4]
   store %184[4], %189
-  %190 = slotaddr s5
+  %190 = slotaddr s7
   %191 = load.i64 %184[0]
   %192 = load.i64 %184[1]
   %193 = load.i64 %184[2]
   %194 = load.i64 %184[3]
   %195 = load.i64 %184[4]
   call @main.shift(%190, %191, %192, %193, %194, %195)
-  %196 = slotaddr s7
+  %196 = slotaddr s5
   %197 = load.i64 %190[0]
   store %196[0], %197
   %198 = load.i64 %190[1]

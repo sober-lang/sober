@@ -1680,6 +1680,7 @@ func @main.main() {
   slot s3 [5]
   slot s4 [5]
   slot s5 [4]
+  slot s6 [4]
 b0:
   %0 = region.depth
   region.enter
@@ -1789,7 +1790,7 @@ b4:
   call @rt.print_int(%64)
   %67 = const 10
   call @rt.print_char(%67)
-  %68 = slotaddr s0
+  %68 = slotaddr s5
   %69 = globaladdr @str.2
   %70 = const 9
   %71 = const 0
@@ -1802,7 +1803,7 @@ b4:
   %75 = load.i64 %72[1]
   %76 = load.i64 %72[2]
   call @main.failed(%68, %74, %75, %76)
-  %77 = slotaddr s5
+  %77 = slotaddr s6
   %78 = load.i64 %68[0]
   store %77[0], %78
   %79 = load.i64 %68[1]

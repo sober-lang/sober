@@ -1703,11 +1703,12 @@ func @main.main() {
   slot s28 [7]
   slot s29 [2]
   slot s30 [6]
-  slot s31 [1]
+  slot s31 [7]
   slot s32 [1]
-  slot s33 [7]
-  slot s34 [2]
-  slot s35 [6]
+  slot s33 [1]
+  slot s34 [7]
+  slot s35 [2]
+  slot s36 [6]
 b0:
   %0 = region.depth
   region.enter
@@ -4075,7 +4076,7 @@ b240:
   %1968 = load.i64 %1961[5]
   store %1962[5], %1968
   %1969 = const 4
-  %1970 = slotaddr s28
+  %1970 = slotaddr s31
   %1971 = region.depth
   %1972 = slotaddr s25
   %1973 = const 0
@@ -4090,7 +4091,7 @@ b240:
   %1978 = slotaddr s14
   %1979 = region.depth
   %1980 = const 0
-  %1981 = slotaddr s31
+  %1981 = slotaddr s32
   store %1981[0], %1980
   %1982 = load.i64 %19[9]
   %1983 = const 0
@@ -4793,7 +4794,7 @@ b313:
   %2429 = load.i64 %1970[0]
   %2430 = const 1
   %2431 = gep.word %1970, %2430
-  %2432 = slotaddr s35
+  %2432 = slotaddr s36
   %2433 = load.i64 %2431[0]
   store %2432[0], %2433
   %2434 = load.i64 %2431[1]
@@ -4822,7 +4823,7 @@ b314:
   store %2132[0], %2133
   %2134 = load.i64 %1978[1]
   store %2132[1], %2134
-  %2135 = slotaddr s33
+  %2135 = slotaddr s34
   call @main.check(%2135, %1969)
   %2136 = load.i64 %2135[0]
   %2137 = const 1
@@ -4854,7 +4855,7 @@ b316:
   store %2038[1], %2040
   %2041 = load.i64 %19[2]
   store %2038[2], %2041
-  %2042 = slotaddr s32
+  %2042 = slotaddr s33
   %2043 = load.i64 %1976[0]
   store %2042[0], %2043
   %2044 = load.i64 %2038[2]
@@ -5076,14 +5077,14 @@ b334:
   store %2152[0], %2153
   %2154 = load.i64 %2149[1]
   store %2152[1], %2154
-  %2155 = slotaddr s31
+  %2155 = slotaddr s32
   %2156 = region.depth
   %2157 = slotaddr s29
   %2158 = load.i64 %2152[0]
   store %2157[0], %2158
   %2159 = load.i64 %2152[1]
   store %2157[1], %2159
-  %2160 = slotaddr s34
+  %2160 = slotaddr s35
   %2161 = load.i64 %2157[0]
   store %2160[0], %2161
   %2162 = load.i64 %2157[1]
@@ -5097,7 +5098,7 @@ b334:
 b335:
   %2284 = const 2
   %2285 = mul %2136, %2284
-  %2286 = slotaddr s35
+  %2286 = slotaddr s36
   %2287 = const 0
   store %2286[0], %2287
   store %1970[0], %2285
@@ -5123,9 +5124,9 @@ b335:
   store %2297[0], %2298
   %2299 = load.i64 %2294[1]
   store %2297[1], %2299
-  %2300 = slotaddr s31
+  %2300 = slotaddr s32
   %2301 = region.depth
-  %2302 = slotaddr s34
+  %2302 = slotaddr s35
   %2303 = load.i64 %2297[0]
   store %2302[0], %2303
   %2304 = load.i64 %2297[1]
@@ -5571,7 +5572,7 @@ b391:
   store %2470[0], %2471
   store %2470[1], %2468
   store %2470[2], %2469
-  %2472 = slotaddr s31
+  %2472 = slotaddr s32
   %2473 = region.depth
   %2474 = load.i64 %19[10]
   store %2472[0], %2474

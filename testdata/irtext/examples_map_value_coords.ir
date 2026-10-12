@@ -1677,6 +1677,7 @@ func @main.main() {
   slot s5 [3]
   slot s6 [3]
   slot s7 [4]
+  slot s8 [4]
 b0:
   %0 = region.depth
   region.enter
@@ -1829,7 +1830,7 @@ b7:
 b8:
   br b9
 b9:
-  %92 = slotaddr s1
+  %92 = slotaddr s8
   %93 = globaladdr @str.2
   %94 = const 1
   %95 = const 0
@@ -1842,7 +1843,7 @@ b9:
   %99 = load.i64 %96[1]
   %100 = load.i64 %96[2]
   call @main.local(%92, %98, %99, %100)
-  %101 = slotaddr s0
+  %101 = slotaddr s1
   %102 = load.i64 %92[0]
   store %101[0], %102
   %103 = load.i64 %92[1]

@@ -2824,6 +2824,20 @@ b0:
   store i64 0, ptr %s9.z1
   %s9.z2 = getelementptr i64, ptr %s9, i64 2
   store i64 0, ptr %s9.z2
+  %s10 = alloca [3 x i64], align 8
+  %s10.z0 = getelementptr i64, ptr %s10, i64 0
+  store i64 0, ptr %s10.z0
+  %s10.z1 = getelementptr i64, ptr %s10, i64 1
+  store i64 0, ptr %s10.z1
+  %s10.z2 = getelementptr i64, ptr %s10, i64 2
+  store i64 0, ptr %s10.z2
+  %s11 = alloca [3 x i64], align 8
+  %s11.z0 = getelementptr i64, ptr %s11, i64 0
+  store i64 0, ptr %s11.z0
+  %s11.z1 = getelementptr i64, ptr %s11, i64 1
+  store i64 0, ptr %s11.z1
+  %s11.z2 = getelementptr i64, ptr %s11, i64 2
+  store i64 0, ptr %s11.z2
   %v484 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v484, i64 0
   %v0 = load i64, ptr %v0.p
@@ -3998,7 +4012,7 @@ b68:
 b69:
   %v441.p = getelementptr i64, ptr %v405, i64 0
   %v441 = load i64, ptr %v441.p
-  %v442 = getelementptr i64, ptr %s4, i64 0
+  %v442 = getelementptr i64, ptr %s10, i64 0
   call void @"std/strings.FormatInt"(ptr %v442, i64 %v441)
   call void @"rt.print_str"(ptr %v442)
   %v443 = add i64 0, 10
@@ -4093,7 +4107,7 @@ b76:
 b77:
   %v481.p = getelementptr i64, ptr %v445, i64 0
   %v481 = load i64, ptr %v481.p
-  %v482 = getelementptr i64, ptr %s4, i64 0
+  %v482 = getelementptr i64, ptr %s11, i64 0
   call void @"std/strings.FormatInt"(ptr %v482, i64 %v481)
   call void @"rt.print_str"(ptr %v482)
   %v483 = add i64 0, 10

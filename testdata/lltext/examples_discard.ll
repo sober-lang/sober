@@ -2776,7 +2776,7 @@ b0:
   store i64 0, ptr %s3.z4
   %s3.z5 = getelementptr i64, ptr %s3, i64 5
   store i64 0, ptr %s3.z5
-  %s4 = alloca [6 x i64], align 8
+  %s4 = alloca [7 x i64], align 8
   %s4.z0 = getelementptr i64, ptr %s4, i64 0
   store i64 0, ptr %s4.z0
   %s4.z1 = getelementptr i64, ptr %s4, i64 1
@@ -2789,6 +2789,21 @@ b0:
   store i64 0, ptr %s4.z4
   %s4.z5 = getelementptr i64, ptr %s4, i64 5
   store i64 0, ptr %s4.z5
+  %s4.z6 = getelementptr i64, ptr %s4, i64 6
+  store i64 0, ptr %s4.z6
+  %s5 = alloca [6 x i64], align 8
+  %s5.z0 = getelementptr i64, ptr %s5, i64 0
+  store i64 0, ptr %s5.z0
+  %s5.z1 = getelementptr i64, ptr %s5, i64 1
+  store i64 0, ptr %s5.z1
+  %s5.z2 = getelementptr i64, ptr %s5, i64 2
+  store i64 0, ptr %s5.z2
+  %s5.z3 = getelementptr i64, ptr %s5, i64 3
+  store i64 0, ptr %s5.z3
+  %s5.z4 = getelementptr i64, ptr %s5, i64 4
+  store i64 0, ptr %s5.z4
+  %s5.z5 = getelementptr i64, ptr %s5, i64 5
+  store i64 0, ptr %s5.z5
   %v81 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v81, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2885,14 +2900,14 @@ b0:
   %v40 = load i64, ptr %v40.p
   %st11 = getelementptr i64, ptr %v34, i64 5
   store i64 %v40, ptr %st11
-  %v41 = getelementptr i64, ptr %s2, i64 0
+  %v41 = getelementptr i64, ptr %s4, i64 0
   %v42 = add i64 0, 0
   call void @"main.step"(ptr %v41, i64 %v42)
   %v43.p = getelementptr i64, ptr %v41, i64 0
   %v43 = load i64, ptr %v43.p
   %v44 = add i64 0, 1
   %v45 = getelementptr i64, ptr %v41, i64 %v44
-  %v46 = getelementptr i64, ptr %s4, i64 0
+  %v46 = getelementptr i64, ptr %s5, i64 0
   %v47.p = getelementptr i64, ptr %v45, i64 0
   %v47 = load i64, ptr %v47.p
   %st12 = getelementptr i64, ptr %v46, i64 0

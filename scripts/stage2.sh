@@ -62,7 +62,7 @@ if [ "$force" = 0 ] && [ -x "$OUT/sober2" ] && [ -f "$STATF" ] && [ "$(stat_key)
 fi
 
 # 鎖 = bootstrap/chain.txt（畳んだ鎖 — 段のソースのスナップショット bootstrap/<段>/{compiler,std} と建て方。git の履歴に依らない — 公開準備便 ①）。
-# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 51 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
+# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 57 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
 mapfile -t CHAIN < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $1 }')
 mapfile -t FORM < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $2 }')
 [ "${#CHAIN[@]}" -gt 0 ] || { echo "stage2.sh: bootstrap/chain.txt has no step" >&2; exit 1; }

@@ -2802,6 +2802,15 @@ b0:
   store i64 0, ptr %s5.z2
   %s5.z3 = getelementptr i64, ptr %s5, i64 3
   store i64 0, ptr %s5.z3
+  %s6 = alloca [4 x i64], align 8
+  %s6.z0 = getelementptr i64, ptr %s6, i64 0
+  store i64 0, ptr %s6.z0
+  %s6.z1 = getelementptr i64, ptr %s6, i64 1
+  store i64 0, ptr %s6.z1
+  %s6.z2 = getelementptr i64, ptr %s6, i64 2
+  store i64 0, ptr %s6.z2
+  %s6.z3 = getelementptr i64, ptr %s6, i64 3
+  store i64 0, ptr %s6.z3
   %v108 = getelementptr i64, ptr @"rt.meta", i64 0
   %v0.p = getelementptr i64, ptr %v108, i64 0
   %v0 = load i64, ptr %v0.p
@@ -2968,7 +2977,7 @@ b4:
   call void @"rt.print_int"(i64 %v64)
   %v67 = add i64 0, 10
   call void @"rt.print_char"(i64 %v67)
-  %v68 = getelementptr i64, ptr %s0, i64 0
+  %v68 = getelementptr i64, ptr %s5, i64 0
   %v69 = getelementptr i64, ptr @"str.2", i64 0
   %v70 = add i64 0, 9
   %v71 = add i64 0, 0
@@ -2987,7 +2996,7 @@ b4:
   %v76.p = getelementptr i64, ptr %v72, i64 2
   %v76 = load i64, ptr %v76.p
   call void @"main.failed"(ptr %v68, i64 %v74, i64 %v75, i64 %v76)
-  %v77 = getelementptr i64, ptr %s5, i64 0
+  %v77 = getelementptr i64, ptr %s6, i64 0
   %v78.p = getelementptr i64, ptr %v68, i64 0
   %v78 = load i64, ptr %v78.p
   %st22 = getelementptr i64, ptr %v77, i64 0
