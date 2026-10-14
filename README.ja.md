@@ -97,7 +97,7 @@ func main() int {
   <img alt="9 題材の最大 RSS の相対値（Rust = 1.0・ラベルは MB）" src="docs/assets/bench-rss-light.svg">
 </picture>
 
-グラフは `out/bench` の raw から `scripts/benchchart.ts` で生成しています。再現: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`。各題材の Go と Rust の双子は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md)。
+速度とメモリのグラフは、このページのベンチの数字の正である [bench/data/official.tsv](bench/data/official.tsv) から `scripts/benchsync.sh` で生成しています（グラフと数字がそれと一致することを gate が見ます）。再現: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`。各題材の Go と Rust の双子は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md)。
 
 ## 試す
 

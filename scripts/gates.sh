@@ -157,7 +157,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             lean/FeatherweightSober/UniqFreeze.lean|scripts/uniqfreeze.sh|scripts/uniqfreeze.list) echo lean; echo analyzer ;;
             scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
-            docs/guide/*|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*) echo docs ;;
+            docs/guide/*|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*|scripts/benchchart.ts|docs/assets/bench-*) echo docs ;;
             docs/*|*.md) ;;
             *) echo all ;;
         esac

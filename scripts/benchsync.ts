@@ -2,6 +2,7 @@
 // 数字の行・表をここから生成する（docsync と同型 — 文書の写しがずれたら鳴る）。生成するのはマーカーの中だけ:
 //   行の印  `… <!-- benchsync:NAME -->`（行末）— その行を丸ごと生成し直す
 //   塊の印  `<!-- benchsync:begin NAME -->` 〜 `<!-- benchsync:end NAME -->` — 間の行を生成し直す
+// グラフ: docs/assets/bench-{speed,rss}-{light,dark}.svg の 4 枚はファイルごと生成物（scripts/benchchart.ts の seqCharts — 同じ tsv から）
 // 勝敗の物差し: cycles:u の最小の比を小数 2 桁に丸め、0.95 未満 = 勝ち・1.05 超 = 負け・その間 = 互角（表に見える数字と分類を一致させる）
 //   node --experimental-strip-types scripts/benchsync.ts           文書を書き換える
 //   node --experimental-strip-types scripts/benchsync.ts --check   生成結果と現物が違えば差を出して exit 1（gates）
@@ -9,6 +10,7 @@
 //       公式計測の raw から official.tsv を作り直す（seqperf = bench/seqperf.sh --rust・webrust = Web 3 本の交互〔列 = 題材 実装 wall cycles 命令 task-clock-ms RSS-KB〕・
 //       extsort = bench/extsort.sh）。wall は中央値（EPOCHREALTIME の差は WSL2 で壊れた値を含むことがある — report-632）
 import { readFileSync, writeFileSync } from "node:fs";
+import { seqCharts } from "./benchchart.ts";
 
 const TSV = "bench/data/official.tsv";
 const COLS = ["run", "bench", "impl", "cycles_min", "insts", "wall_med", "rss_kb", "taskclock_med_ms", "n", "date", "commit", "raw"] as const;
@@ -219,7 +221,14 @@ for (const f of ["README.md", "README.ja.md", "bench/README.md"]) {
     console.log(`benchsync: updated ${f}`);
   }
 }
+for (const [f, next] of Object.entries(seqCharts(TSV))) {
+  let cur = "";
+  try { cur = readFileSync(f, "utf8"); } catch { /* 無ければ作る */ }
+  if (next === cur) continue;
+  if (check) { console.log(`FAIL: ${f} differs from the chart generated from ${TSV}`); fail++; }
+  else { writeFileSync(f, next); console.log(`benchsync: updated ${f}`); }
+}
 const unused = Object.keys(gen).filter((k) => !used.has(k));
 if (unused.length) { console.log(`FAIL: benchsync: 文書に印が無い生成物: ${unused.join(" ")}`); fail++; }
-console.log(`benchsync: ${used.size} generated regions in README.md / README.ja.md / bench/README.md checked against ${TSV}, fail=${fail}`);
+console.log(`benchsync: ${used.size} generated regions in README.md / README.ja.md / bench/README.md + 4 charts in docs/assets checked against ${TSV}, fail=${fail}`);
 process.exit(fail === 0 ? 0 : 1);

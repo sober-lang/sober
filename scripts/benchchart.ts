@@ -1,5 +1,7 @@
-// benchchart: bench の raw の TSV から README のグラフ（SVG）を作る。依存なし（自前の SVG の組み立て — 将来の Sober 化の候補）。
-//   node --experimental-strip-types scripts/benchchart.ts --seq <seqperf の raw TSV> [--budget <budget の時系列 TSV>] [-o docs/assets]
+// benchchart: README のグラフ（SVG）を作る。依存なし（自前の SVG の組み立て — 将来の Sober 化の候補）。
+// 速度・RSS の 4 枚の正は bench/data/official.tsv（seqperf の行）で、scripts/benchsync.sh が生成と --check（gates）をする（seqCharts をここから読む）。
+//   node --experimental-strip-types scripts/benchchart.ts [--seq <seqperf の raw TSV>] [--budget <budget の時系列 TSV>] [-o docs/assets]
+//   （--seq は旧来の口 — 公式の図は benchsync.sh で。budget の図は official.tsv に無いデータなので benchsync の網の外）
 // 出力（各ライト / ダークの 2 枚 — README は <picture> で出し分ける）:
 //   bench-speed-{light,dark}.svg   9 題材の相対の実行時間（cycles:u・Rust素 = 1.0・短いほど速い）— Sober / Go の横棒と 1.0 の基準線
 //   bench-rss-{light,dark}.svg     9 題材の最大 RSS（Rust = 1.0 の相対・線形の軸 — 速度のグラフと同じ文法）— Sober / Go の横棒。ラベルは絶対値の MB と比
@@ -7,6 +9,7 @@
 //   bench-budget-{light,dark}.svg  メモリの天井（budget）の時系列 — 天井の線・天井ありの RSS・天井なしの RSS（--budget を渡したとき）
 // 集計は bench/seqperf.sh の表と同じ: cycles は回の最小・RSS は回の最大。題材の順は名前の順で固定（回ごとに並びが動かない）
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 type Theme = { name: string; fg: string; sub: string; grid: string; base: string; sober: string; go: string; rust: string; cap: string; nocap: string };
 const THEMES: Theme[] = [
@@ -35,6 +38,29 @@ function readSeq(path: string): Map<string, { cyc: number; rss: number }> {
     if (!v) m.set(k, { cyc, rss }); else { v.cyc = Math.min(v.cyc, cyc); v.rss = Math.max(v.rss, rss); }
   }
   return m;
+}
+
+// official.tsv（benchsync.ts の正）の seqperf の行 → 同じ形（名前-実装 → cycles 最小・RSS 最大 MB）
+function readOfficial(path: string): Map<string, { cyc: number; rss: number }> {
+  const ls = readFileSync(path, "utf8").split("\n").filter((l) => l.trim() !== "" && !l.startsWith("#"));
+  const h = ls[0].split("\t");
+  const m = new Map<string, { cyc: number; rss: number }>();
+  for (const l of ls.slice(1)) {
+    const r = Object.fromEntries(h.map((k, i) => [k, l.split("\t")[i]]));
+    if (r.run === "seqperf") m.set(`${r.bench}-${r.impl}`, { cyc: Number(r.cycles_min), rss: Number(r.rss_kb) / 1024 });
+  }
+  return m;
+}
+
+// seqCharts は速度・RSS の 4 枚（ファイル名 → 中身）— benchsync.ts が生成と照合に使う
+export function seqCharts(official: string, dir = "docs/assets"): Record<string, string> {
+  const m = readOfficial(official);
+  const o: Record<string, string> = {};
+  for (const t of THEMES) {
+    o[`${dir}/bench-speed-${t.name}.svg`] = speed(t, m);
+    o[`${dir}/bench-rss-${t.name}.svg`] = rss(t, m);
+  }
+  return o;
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -92,7 +118,7 @@ function rss(t: Theme, m: Map<string, { cyc: number; rss: number }>): string {
   const mb = (v: number) => (v < 1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : v.toFixed(0)) + " MB";
   const ser = (label: string, color: (t: Theme) => string, k: string): Series => {
     const rel = SUBJECTS.map(([p]) => get(p, k) / get(p, "rust"));
-    return { label, color, values: rel, labels: SUBJECTS.map(([p], i) => `${mb(get(p, k))} (${rel[i].toFixed(2)}×)`) };
+    return { label, color, values: rel, labels: SUBJECTS.map(([p], i) => `${mb(get(p, k))} (${rel[i].toFixed(rel[i] < 0.01 ? 3 : 2)}×)`) };
   };
   const s: Series[] = [ser("Sober", (t) => t.sober, "sober"), ser("Go", (t) => t.go, "go")];
   const mx = Math.ceil(Math.max(...s.flatMap((x) => x.values)) * 2) / 2;
@@ -131,15 +157,17 @@ function budget(t: Theme, path: string): string {
   return o.join("\n") + "\n";
 }
 
-const a = args();
-const out = a.o ?? "docs/assets";
-mkdirSync(out, { recursive: true });
-if (a.seq) {
-  const m = readSeq(a.seq);
-  for (const t of THEMES) {
-    writeFileSync(`${out}/bench-speed-${t.name}.svg`, speed(t, m));
-    writeFileSync(`${out}/bench-rss-${t.name}.svg`, rss(t, m));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const a = args();
+  const out = a.o ?? "docs/assets";
+  mkdirSync(out, { recursive: true });
+  if (a.seq) {
+    const m = readSeq(a.seq);
+    for (const t of THEMES) {
+      writeFileSync(`${out}/bench-speed-${t.name}.svg`, speed(t, m));
+      writeFileSync(`${out}/bench-rss-${t.name}.svg`, rss(t, m));
+    }
   }
+  if (a.budget) for (const t of THEMES) writeFileSync(`${out}/bench-budget-${t.name}.svg`, budget(t, a.budget));
+  console.log(`benchchart: wrote ${out}/bench-*.svg`);
 }
-if (a.budget) for (const t of THEMES) writeFileSync(`${out}/bench-budget-${t.name}.svg`, budget(t, a.budget));
-console.log(`benchchart: wrote ${out}/bench-*.svg`);
