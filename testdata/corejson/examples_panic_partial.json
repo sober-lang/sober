@@ -1,0 +1,1 @@
+{"k":"block","e":{"k":"let","e":{"k":"let","e":{"k":"strlit","bs":[98,101,102,111,114,101],"r":0},"body":{"k":"triv"}},"body":{"k":"let","e":{"k":"let","e":{"k":"pair","a":{"k":"lit","n":0},"b":{"k":"pair","a":{"k":"strlit","bs":[108,101,97,102],"r":0},"b":{"k":"false"}}},"body":{"k":"unreach","t":{"k":"unit"}}},"body":{"k":"triv"}}}}

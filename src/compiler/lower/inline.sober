@@ -509,7 +509,7 @@ func liftLambda(st mut St, lam desugar.NodeRef, ft int, at desugar.NodeRef) (Val
 // lowerFor は for 式 → Iter[T] 型のラムダ `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`（組み立ては desugar.ForLower と共有）
 func lowerFor(st mut St, fe desugar.NodeRef) (desugar.NodeRef, error?) {
     kind := forKind(mut st, fe)?
-    return desugar.ForLower(mut st.d, fe, kind), nil
+    return desugar.ForLower(mut st.d, fe, kind, st.curPkg), nil
 }
 
 // isForStmt は文形の for か（desugar.IsForStmt）
@@ -519,13 +519,13 @@ func isForStmt(st mut St, e desugar.NodeRef) bool {
 
 // callGenFn は呼び出し形の生成元（`x <- iter.Range(0, n)`）の関数表の添字（desugar.CallGenFn と同じ判定。当たらなければ -1）
 func callGenFn(st mut St, src desugar.NodeRef) int {
-    return desugar.CallGenFn(mut st.d, src, st.curPkg)
+    return desugar.CallGenFn(mut st.d, desugar.GenCallOf(mut st.d, src, st.curPkg), st.curPkg)
 }
 
 // forGen は for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（文形 for はこれを文として下ろす。組み立ては desugar.ForGen と共有）
 func forGen(st mut St, fe desugar.NodeRef) (desugar.NodeRef, error?) {
     kind := forKind(mut st, fe)?
-    return desugar.ForGen(mut st.d, fe, kind), nil
+    return desugar.ForGen(mut st.d, fe, kind, st.curPkg), nil
 }
 
 // forKind は for の生成元の種類（desugar.FSlice 等）: 閉包の名前（束縛表）→ 呼び出し形 → 型（map か slice — 表層型検査器の表）

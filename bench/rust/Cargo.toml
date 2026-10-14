@@ -68,3 +68,7 @@ path = "../routing/rust/main.rs"
 [[bin]]
 name = "logagg"
 path = "../logagg/rust/main.rs"
+
+[[bin]]
+name = "extsort"
+path = "../extsort/rust/main.rs"

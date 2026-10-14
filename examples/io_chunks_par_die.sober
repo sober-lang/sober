@@ -1,0 +1,73 @@
+package main
+
+// A task that dies while it streams a file (io.Chunks — the next slot's read is already in flight): its defers do not run, so the
+// runtime finishes the stream at the task's exit — waits for the read in flight, gives the slots back, and closes the file.
+// 200 scopes with two dying readers each: the open files do not grow and the readers that live still see every byte.
+// Run from the repository root.
+import "std/io"
+import "std/par"
+
+type Boom panic
+
+func fds() int {
+    es := io.ReadDir("/proc/self/fd") catch return -1
+    return len(es)
+}
+
+// stream streams p and returns its size; die > 0 dies after that many slots
+func stream(p string, die int) (int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut n := 0
+    mut k := 0
+    for c <- io.Chunks(f)? {
+        n += len(io.Raw(c))
+        k += 1
+        if die > 0 && k == die {
+            panic(Boom{})
+        }
+    }
+    return n, nil
+}
+
+func read(p string, die int) int {
+    n := stream(p, die) catch return -1
+    return n
+}
+
+// dying runs two readers that die mid-stream (the scope fails with their deaths — the caller lives on)
+func dying(p string) int {
+    _, _ = par.Scope((s par.S) => {
+        b := par.Spawn(s, () => read(p, 1))
+        c := par.Spawn(s, () => read(p, 2))
+        _ = par.Try(b)
+        _ = par.Try(c)
+        0
+    })
+    return 0
+}
+
+// round reads p whole next to the dying readers
+func round(p string) int {
+    r, err := par.Scope((s par.S) => {
+        a := par.Spawn(s, () => read(p, 0))
+        d := par.Spawn(s, () => dying(p))
+        par.Join(d) + par.Join(a)
+    })
+    return if err == nil { r } else { -3 }
+}
+
+func main() {
+    p := "testdata/io_par/access-4.log"
+    println("read ${round(p)} bytes")
+    n0 := fds()
+    mut ok := true
+    mut i := 0
+    while i < 200 {
+        ok = ok && round(p) == 213841
+        i += 1
+    }
+    grew := fds() - n0
+    println(if ok { "every round read the whole file" } else { "a round lost bytes" })
+    println(if grew < 200 { "dead readers' files closed" } else { "leaked ${grew}" })
+}

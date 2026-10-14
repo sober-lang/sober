@@ -1,0 +1,98 @@
+package main
+
+// 定数引数の特化（展開便 段 1 — spec.sober）の回帰例: 定数の引数で呼ぶ点（文字列リテラル・整数）を、同じ関数を実行時の値（列から引いた引数 —
+// 特化に乗らない）で呼んだ参照と突き合わせる。形 = 2 段 / 3 段の連鎖（hp3 → hp → pfx）・同じ callee に違う定数・同じ定数で 2 点・2 つの定数の
+// 仮引数（入れ替えると答えが変わる）・片方の仮引数だけが定数で位置が違う 2 点（同じ値 — 複製の鍵が位置を見ないと取り違える）・定数の上限の
+// ループ・再帰する callee・std の HasPrefix / TrimPrefix / Cut。食い違いの数（0）と和を印字
+
+import "std/iter"
+import "std/strings"
+
+// pfx は b[at:] が p で始まるか（std の hasPrefixAt と同じ形）
+func pfx(b []byte, at int, p []byte) bool {
+    mut i := 0
+    while i < len(p) {
+        if b[at + i] != p[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// hp は 2 段の連鎖（hp → pfx）
+func hp(s string, p string) bool {
+    b := bytes(s)
+    q := bytes(p)
+    return len(b) >= len(q) && pfx(b, 0, q)
+}
+
+// hp3 は 3 段（hp3 → hp → pfx）
+func hp3(s string, p string) bool {
+    return hp(s, p)
+}
+
+// pick は 2 つの定数の仮引数（a と b を入れ替えると答えが変わる）
+func pick(x int, a int, b int) int {
+    return if x < a { x * 3 + b } else { x - a * b }
+}
+
+// tri は 1 つだけ定数の仮引数（位置 1 か 2 — 同じ値 4 で）
+func tri(x int, a int, b int) int {
+    return if a < b { x + a * 10 - b } else { x * 2 - a + b * 3 }
+}
+
+// steps は定数の上限のループ
+func steps(x int, n int) int {
+    mut s := x
+    for k <- iter.Range(0, n) {
+        s = s * 2 + k
+    }
+    return s
+}
+
+func fact(n int) int {
+    return if n <= 1 { 1 } else { n * fact(n - 1) }
+}
+
+func main() {
+    words := []string{"", ":", "*", ":id", "*rest", "abc", "ab", "a", "xyz:", "::", ":*", "abcdefghijklmnopqrstu", "k=v", "=", "k==v", "kv"}
+    pats := []string{":", "*", "ab", "abc", "", "abcdefghijklmnopq", "="}
+    mut bad := 0
+    mut h := 0
+    for w <- words {
+        r := []bool{hp(w, ":"), hp(w, "*"), hp(w, "ab"), hp3(w, "abc"), hp(w, ""), hp(w, "abcdefghijklmnopq"), strings.HasPrefix(w, ":"), strings.HasPrefix(w, "*"), hp(w, ":")}
+        for k <- iter.Range(0, 6) {
+            if r[k] != hp(w, pats[k]) {
+                bad += 1
+            }
+        }
+        if r[6] != strings.HasPrefix(w, pats[0]) || r[7] != strings.HasPrefix(w, pats[1]) || r[8] != r[0] {
+            bad += 1
+        }
+        t1 := strings.TrimPrefix(strings.TrimPrefix(w, ":"), "*")
+        t2 := strings.TrimPrefix(strings.TrimPrefix(w, pats[0]), pats[1])
+        k1, v1, ok1 := strings.Cut(w, "=")
+        k2, v2, ok2 := strings.Cut(w, pats[6])
+        if t1 != t2 || k1 != k2 || v1 != v2 || ok1 != ok2 {
+            bad += 1
+        }
+        for k <- iter.Range(0, 9) {
+            h = h * 3 + (if r[k] { 1 } else { 0 })
+        }
+        h = h % 1000000007 + len(bytes(t1)) * 7 + len(bytes(v1)) * 11
+    }
+    ks := []int{4, 7, 3, 5, 6}
+    for x <- iter.Range(0, 12) {
+        a := []int{pick(x, 4, 7), pick(x, 7, 4), tri(x, 4, x), tri(x, x, 4), steps(x, 3), steps(x, 5), fact(6)}
+        b := []int{pick(x, ks[0], ks[1]), pick(x, ks[1], ks[0]), tri(x, ks[0], x), tri(x, x, ks[0]), steps(x, ks[2]), steps(x, ks[3]), fact(ks[4])}
+        for k <- iter.Range(0, len(a)) {
+            if a[k] != b[k] {
+                bad += 1
+            }
+            h = (h * 31 + a[k]) % 1000000007
+        }
+    }
+    println("bad ${bad}")
+    println("hash ${h}")
+}

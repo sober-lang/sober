@@ -154,6 +154,23 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
   判定は宣言の署名だけで決まる固定テンプレート。yield 形・文形の両方に効く。std/iter.Range（半開区間 `[lo, hi)`・昇順）を置いた。
   逆順・刻み幅つきは要るときに std へ足す（言語は変わらない）。最後の仮引数は関数型リテラル（`func(int)`）に限る（名前付き関数型は
   積み）
+- 失敗しうる生成元（決定 2026-10-13 — IO 設計の Q1。実装 2026-10-13 — IO 便 段 2・report-592 / 593）: 走査の途中で失敗しうる生成元（`io.Chunks(f)` —
+  読みの errno・デッドライン）は、for 自体が error を返す形で書く — `for chunk <- io.Chunks(f)? { … }`。生成元は呼び出し形の生成元（上の項）で、
+  callee の結果が `error?` のもの（`func Chunks(f File, k func(Bytes)) error?`）。脱糖は呼び出し形の継続の付け足しのまま、`?` が継続を足した
+  呼び出しに付く — `io.Chunks(f, (chunk) => { … })?`（文の位置の式文）。`? L{…}` の包み替えも同じ形で効く。callee が失敗を返したら、生成元の展開の defer を
+  内側から走らせてから `?` の伝播（break と同じ抜け方 + 13 節の `?`）
+  - 印のない形（`for chunk <- io.Chunks(f) { }`）は拒否する — 結果の `error?` を黙って捨てる形で、11 節「defer 内のエラー」の暗黙の drop の拒否と同じ線。
+    捨てるなら `_ = io.Chunks(f, (chunk) => { … })` と呼び出しで書く
+  - 範囲: 文形 for だけ。yield 形（式の位置の for）の生成元に置けない（Iter[T] は失敗の通り道を持たない — 要るまで入れない）。`catch` の後置は v1 の外
+    （`for c <- g() catch D { }` は本体のブロックとの読みが割れる — 需要 0。今は catch の左辺の規則〔13 節 — `(T, error?)` を返す呼び出し〕で diag.CatchLhs）
+  - 包み替えは括弧で: `for d <- (g(a)? L{…}) { … }`（条件の位置の composite literal は読まない — syntax.md 決定 5。括弧は透過）
+  - 実装: 拒否は loader（src/compiler/loader/forfallible.sober — check と build が同じ層・diag.ForFallible: kind 1 = 印なし・2 = yield 形・3 = 印つきだが結果が
+    `error?` 1 つでない）。脱糖は desugar の forGen の FCall の組み立てを生成元の `?` の節で包むだけ（lower と共有 — 継続の位置は `?` の内側の呼び出し）。
+    コア・Lean は無変更（行き先 = 呼び出し + ラムダ + `?` の既存の形）。呼び出し形でない `f()?`（slice を返す `([]T, error?)` に `?`）は今どおり普通の `?`。
+    網 = examples/for_fallible（成功・途中の失敗・ガード・break / continue / 非局所 return・生成元の defer・包み替え — check ≡ build）・負例 for_fallible_{unmarked,yield,result}。
+    実装の前は印なしの形が黙って受理され error を捨てていた（report-592 0 節）
+  - 棄てた案: 走査の後に `io.Err(f)` で失敗を読む（Go の bufio.Scanner の形 — 見忘れが構造で防げない・原則「違うものは構造で切る」に反する）・
+    生成元が `(T, error?)` の要素を流す形（全反復の本体に失敗の分岐が出る・失敗の後に走査を続けるかが本体の書き方次第になる）
 - `Iter` は push 型（Go 1.23 range-over-func）。for もパイプも中間コレクションなしで融合
 - for 式を `Iter` 上の関数群に脱糖すると決めておけば、パイプと for の二重表記でも IR は一本
 - fmt の整形構想（2026-09-20 積み）: for 式は初見の「おっ？」ポイント（一行に生成元・ガード・yield が潰れると密度が Go の感覚を超える）なので、fmt が形で補う — ジェネレータ 1 本かつガード無しだけ一行を許し、2 本以上またはガード付きは節ごとに改行（生成元が縦・ガードが右列・`yield` が結論行）。構文を知らなくても「クエリのブロック」として読める形にする。整形の分岐が構文の複雑さと一致するので、見た目自体が単純 map / 直積の信号になる。実装は printer の AST ベース置き換え（コメント帰属の未決と同時期）で。先に確認するのはセミコロン自動挿入と複数行 for 式の相性のみ
@@ -170,7 +187,7 @@ func sort[T](xs Iter[T], ord Ord[T]) []T { ... }
 - 結果、`for` = ジェネレータ式 + 文形の消費、`while` = 状態機械（カーソル走査・終端条件つきループ）の命令型ループ
 - 非局所 return は inline ラムダ内のみ（決定 2026-09-17）。yield 形の for 本体（7 節）は push 型に脱糖され消費時に囲みの関数が終わっている可能性があるので、yield 形の本体からの非局所 return は禁止。文形 for（7 節、2026-09-28）の本体は inline ラムダの本体として展開点で走るので return できる。inline ラムダは呼び出し点に展開されるので健全
 - inline は宣言しない。展開は生成方式で、意味には触れない（決定 2026-09-18）。ラムダの渡し方は一様（コード + 環境）で意味を決め、呼び出し点への展開はジェネリクスの「辞書渡しが意味、特化は最適化器」と同じ扱い。ラムダ内の `return` を許せるかを決めるのは inline かどうかではなく、その関数型引数が逃げないこと（フィールドに格納・返す・spawn に渡す、のいずれもしない）で、これは 12 節の透過性と Phase 2 の escape 規則の土俵。決定 10 が「読み手は inline かを知らなくてよい」と言っているので、inline を宣言に見せる理由が無い。Phase 1 の codegen は関数型引数を持つ関数を全部展開し（実体のコードは出さない）、再帰するものは拒否する。mut 引数だけが展開の理由の関数（関数型引数なし・非再帰）は、`--passes` の build では region 透過の実体関数として呼ぶ（改訂 2026-09-29 — 26 節） — 展開と同じ region 意味論・check は展開か（anchor 1 slot に収まる関数は）既存の callM の Def として型付けする（E2-S 2026-10-02 — formal.md「check の callM の段」）ので、これも「生成方式で意味に触れない」の 1 例（関数型引数の展開・ジェネリクスの特化に続く 3 例目）。関数型引数を持つ関数は展開のまま（非局所 return と文形 for の本体はそれに依る）。再帰の拒否は現行の言語規則として扱う（明文化 2026-09-27） — 関数型引数・mut 引数（26 節）を持つ関数は直接・相互とも再帰できない。当初は「実装制限で、規則ではない」としていたが、利用者から見えて検査で落ちる以上は規則で、緩めるなら仕様変更として扱う。緩める候補（展開をやめて閉包 = コード + 環境で渡す実装）は IR / バックエンド移行時の未決に積んだ。展開中の callee からは呼び手のローカルは見えず、ラムダ本体からは定義時に見えていた名前 + 自分の引数だけが見える。ラムダ本体の `break` / `continue` は境界を越えない。棄てた案: `@inline` 注釈（Phase 1 実装時に一度入れて戻した。根拠「読み手が宣言で inline を知る」は決定 10 が消していた。Kotlin が `inline` を要るのは JVM のクロージャ割り当てと非局所 return の都合で、Sober が継ぐ理由がない）
-- ラムダ内の `return` は常に囲みの名前付き関数から戻る（決定 2026-09-18、syntax.md 決定 10）。読み手は `each` が inline かどうかを知らないと `x => { ... return err }` の意味を決められない（Go が range-over-func でループ本体を構文に残した理由）。構文を増やす代わりに読み規則を 1 本にする: `return` は例外なく名前付き関数を出る。inline でないラムダに `return` を書いたら拒否。ラムダ自身の値は末尾式。帰結: 早期脱出が要る複数文のラムダ（サンプル 2 の Handler）は名前付き関数に切り出し、ラムダは `(req Request) => lookup(c, req)` の部分適用だけになる。14 節「公開境界は名前付き」とも揃う。Kotlin の inline 関数と同じ規則で、`return@label` は持たない
+- ラムダ内の `return` は常に囲みの名前付き関数から戻る（決定 2026-09-18、syntax.md 決定 10）。読み手は `each` が inline かどうかを知らないと `x => { ... return err }` の意味を決められない（Go が range-over-func でループ本体を構文に残した理由）。構文を増やす代わりに読み規則を 1 本にする: `return` は例外なく名前付き関数を出る（`?` も同じ — ただし `par.Scope` の本体の中の `?` は scope の失敗で、本体を出る — 11 節「本体の `?`」・2026-10-13）。inline でないラムダに `return` を書いたら拒否。ラムダ自身の値は末尾式。帰結: 早期脱出が要る複数文のラムダ（サンプル 2 の Handler）は名前付き関数に切り出し、ラムダは `(req Request) => lookup(c, req)` の部分適用だけになる。14 節「公開境界は名前付き」とも揃う。Kotlin の inline 関数と同じ規則で、`return@label` は持たない
 
 ### 9. comptime は持たない。analyzer + アノテーションに振る
 
@@ -232,8 +249,8 @@ comptime は、analyzer 基盤前提ではほとんど外へ出せる。
 r, err := par.Scope((s par.S) => {
     h1 := par.Spawn(s, () => load(a))
     h2 := par.Spawn(s, () => load(b))
-    v1 := par.Join(h1) ?            // task の @errors だけを 2 値で運ぶ。h1 が死んでいたら、この親も死ぬ
-    v2 := par.Join(h2) ?
+    v1 := par.Join(h1) catch empty  // task の @errors だけを 2 値で運ぶ（catch で既定値に落とす）。h1 が死んでいたら、この親も死ぬ
+    v2 := par.Join(h2) catch empty
     merge(v1, v2)
 })
 sums := xs |> par.Map(f)            // データ並列の最頻形（並列度・chunk は実装が決める）
@@ -245,7 +262,17 @@ if err != nil { restart() }
 
 - `par.Scope` は region を 1 段開く。中で spawn した task は全部、scope を出る前に終わる（寿命結合 — 親 region の imm を子が読んでよい根拠）。handle の結果の置き場は scope の region
 - `par.Spawn(s, g)` は式で handle（= future）を返す。g の捕獲は imm / loc-free だけ（mut の捕獲は拒否 — 「レースが書けない」の顔なので診断は名指しにする）。子は自前の region スタックを持つ
-- `par.Join(h)` は冪等な読み（未完なら待つ・完了済みは即返す）。task の宣言された @errors だけを `(T, error?)` で返し、`?` / catch がそのまま効く。handle に線形性は持たせない（境界を渡る値は loc-free / imm + 境界コピーなので move が要らない）。未回収の Failed は scope の戻りの err に集約され、意図的に捨てるときだけ `_ = par.Join(h)` と書く
+- `par.Join(h)` は冪等な読み（未完なら待つ・完了済みは即返す）。task の宣言された @errors だけを `(T, error?)` で返し、2 値の束縛と catch がそのまま効く（catch の D は値の式 — `catch return` は本体からの脱出なので下の脱出の規則で拒否。infallible な task の Join への catch は diag.CatchLhs、fallible な task の Join の値 1 つの束縛 `d := par.Join(h)` は diag.MultiBind — Join の結果は字面で `T` 1 つなので、loader でなく表層型の後〔ParCheck の層 — check と build が同じ〕で名指す。実装 2026-10-13・report-583）。本体の中の `?` は **scope の失敗**（下の項）。handle に線形性は持たせない（境界を渡る値は loc-free / imm + 境界コピーなので move が要らない）。未回収の Failed は scope の戻りの err に集約され、意図的に捨てるときだけ `_ = par.Join(h)` と書く
+- 本体の `?` = scope の失敗（裁定 2026-10-13 — Go の errgroup の顔。設計の確定・実装 2026-10-13 — report-584 / 585。例 examples/par_scope_try〔逐次の双子 _seq〕・par_scope_try_errors・負例 par_spawn_try）:
+  - 意味: `par.Scope` の本体（とその中のインラインのラムダ）の `f()?` / `f()? L{…}` は、関数でなく**本体を抜ける**。出口はいつもどおり子を全部待ち（寿命結合）、scope は `(ゼロ値, err)` を返す（r は T のゼロ値 — 死・未回収の失敗の道と同じ。本体の `?` の後ろは走らない）
+  - 脱出先の規則: `?` は字面で最も内側の「名前付き関数の本体か scope の本体」へ抜ける — 8 節「ラムダの中の return は囲みの名前付き関数から戻る」の `?` についての例外（scope の本体は関数の境界と同じ壁）。return / break / continue は今どおり本体を越えられない（kind 7）。`par.Spawn` の g の中の `?` も今どおり拒否（kind 7 — 子の失敗は g の結果 `(T, error?)` で書く）
+  - 出口の優先は今の規則のまま: 死（TaskDied）> 生んだ順で最初の未回収の失敗 > 本体の結果（値でも `?` の失敗でも）。本体の `?` は本体の結果の腕なので、Join しなかった子の失敗に負ける（未回収の失敗を落とさない）
+  - キャンセルしない: `?` で抜けても兄弟の子は切らず、決着まで待つ。切ると上の優先（後から決着する子の死・未回収の失敗）の観測が変わる — 値を変えない最適化にならない（死のキャンセルは死が最優先なので値を変えない — 非対称はそこから）
+  - 脱糖（コア・Lean は新しい構成子なし）: scope の注釈を組 `(t, err?)` にし、本体を関数の本体と同じ戻りのラベルで包む — `scope (t, err?) ε (label (t, err?) (pair body nil))`・本体の `?` は `jump 0 (pair zero (some e))`（関数の `?` と同じテンプレート — 戻りのラベルが scope の本体のラベルに替わるだけ）。ラベルは本体の内側なので scope の Λ = [] は保たれる（Lean の例 exQ1〜exQ4 — 型付け・両スケジュールの一致・優先）
+  - 実装: desugar は `?` が使ったときだけ本体を包む（使わない scope のコアは従来の形）・`par.Join(h)?` は fallible な task の Join の結果の組を `(T, error?)` として読む・
+    lower は本体に結果 [error?] だけの戻りの文脈を立て（`?` は err を書いて本体の defer → 深度を scope の region へ → 出口の合流へ）、本体に `?` が無ければ立てない（IR は従来のまま）・
+    analyzer は scope の本体の `?` のラベルを囲みの関数の導出集合へ流さない（scope の err は開いた集合）
+  - 棄てた案: (B) 本体の `?` を未回収の失敗より優先する（Machine の scopeK に本体の失敗の印が要る — 規則の追加と保存の証明の書き直し。errgroup の「最初の失敗」に寄るが、どちらも何かを落とすことは同じで、優先の規則が値と失敗で割れる）・本体の `?` で関数ごと抜ける（子を待てない — 寿命結合が壊れる）・`?` で兄弟をキャンセル（上の理由）
 - 死（panic・region 超過 102）は値でなく構造で伝播（裁定 2026-10-06 — 揉みどころ A = A1 の形 (X)）。死の扱いは呼び手が字面で選ぶ 3 通りで、1 対 1:
   - `par.Join(h)` = 「この子の死は私の死」 — 死んだ子を Join した task は自分も死ぬ（先へ進まない。Scope の err には来ない — 親が main ならプロセス exit 101 で `TaskDied`）
   - `par.Try(h)` = 「死は値」 — `Died` を返して本体は続く
@@ -256,7 +283,7 @@ if err != nil { restart() }
 - 監督の口だけが死を値で観測する: `par.Try(h)` は `Outcome[T]`（`Ok{v}` / `Failed{e}` / `Died{cause}` の union 1 値 — `cause` は不透明な `par.Cause`。コアでは Died は欄なしの variant で、死因の中身は実装が運ぶ実行時の値 — 揉みどころ B）。3 つ組の戻り値は作らない（全呼び手に panic の席を払わせない）。原則 =「ラベルの粒度 = 呼び手の分岐の粒度」
 - Try は死を吸収しない: Try は死を値として早く見せるだけで（ログ・判断）、scope は出口で TaskDied に失敗する。監督（張り直し）は「子ごとに内側の `par.Scope` を張り、本体で `par.Try` して完走させ、その err を見る」で書く（本体で Join すると死は監督自身の死になる — 上の 3 通り） — 既存の語彙で足り、死の瞬間の兄弟のキャンセルとも食い違わない（吸収できるなら、親が Try で吸収するかは後にならないと分からず、死の瞬間に兄弟を切るのが誤りになる）。棄てた案: 吸収する spawn を別に持つ（`par.SpawnSup`）・キャンセルを scope の出口まで遅らせる（fail-fast が消える）。形式化: Lean のコア（formal.md 段 6）で try は nil を返すだけで、死は scope の出口で `inr`（scope の型 `union t unit`）になる
 - `par.Map` は fail-fast: `([]U, error?)`（失敗 = 添字が最小の失敗 — 下の失敗の決定性）。全結果が欲しい側は `par.MapAll` → `[]Outcome[T]`（未提供 — 残穴3）
-- P3a（即時形）の制限と綴り（裁定 2026-10-06）: 型名は `par.S`（札）・`par.Task[T]`（handle）・`par.Outcome[T]`・`par.Cause`（D）。~~task の結果は loc-free だけ~~ → P3b-4 で解除（2026-10-06）: task の結果は imm のデータなら何でも（string・slice・map・error・それらの struct）— Join / Try が子の region の値を scope の region へ写す（境界コピー — formal.md「段 6 P3b-4」）。写せないのは関数値・札・handle・端点だけ（kind 8 の名指し）（C）。`give:`（端点の引き渡し）は P3a の Spawn の署名に入れず、chan と一緒に P3b で足す（E）。main の死の印字は `panic: TaskDied{cause: <子の死因>} at <Join の位置>` + 子の死因の位置の 2 行（位置表の再利用 — 子の 102 は `RegionExceeded{…}` をそのまま死因に）（F）（P3a-2c 実装: 子の死因 = 点の文面〔`index out of range` 等〕・`RegionExceeded{cause: depth_limit}`・`TaskDied`〔孫の死を Join で受けて死んだ子〕・`panic(L{…})` の子は `L{…}`〔欄は運ばない〕。2 行目 `  cause at <位置>` は死因に位置があるときだけ）。関数の本体でも Scope を開ける（2026-10-06 — コアの Def の本体の制限〔noNewchan〕を scope / spawn / join / try について解禁。チャネルの生成も P3b-2 で解禁）
+- P3a（即時形）の制限と綴り（裁定 2026-10-06）: 型名は `par.S`（札）・`par.Task[T]`（handle）・`par.Outcome[T]`・`par.Cause`（D）。~~task の結果は loc-free だけ~~ → P3b-4 で解除（2026-10-06）: task の結果は imm のデータなら何でも（string・slice・map・error・それらの struct）— Join / Try が子の region の値を scope の region へ写す（境界コピー — formal.md「段 6 P3b-4」）。写せないのは関数値・札・handle・端点だけ（kind 8 の名指し）（C）。本体から外への脱出（return / 外のループへの break・continue — `?` は上の「本体の `?`」で scope の失敗）と `par.Spawn` の g の中の `?` は拒否（diag.Par kind 7 — scope は出口で子を待つ〔寿命結合〕・コアの scope の本体はラベルを越えない〔Λ = []・巻き戻しは scope の出口を越えない〕）。棄てた案: 本体の `?` で関数ごと抜ける（子を待たずに — 寿命結合が壊れる）（2026-10-13 明文化 — report-582）。`give:`（端点の引き渡し）は P3a の Spawn の署名に入れず、chan と一緒に P3b で足す（E）。main の死の印字は `panic: TaskDied{cause: <子の死因>} at <Join の位置>` + 子の死因の位置の 2 行（位置表の再利用 — 子の 102 は `RegionExceeded{…}` をそのまま死因に）（F）（P3a-2c 実装: 子の死因 = 点の文面〔`index out of range` 等〕・`RegionExceeded{cause: depth_limit}`・`TaskDied`〔孫の死を Join で受けて死んだ子〕・`panic(L{…})` の子は `L{…}`〔欄は運ばない〕。2 行目 `  cause at <位置>` は死因に位置があるときだけ）。関数の本体でも Scope を開ける（2026-10-06 — コアの Def の本体の制限〔noNewchan〕を scope / spawn / join / try について解禁。チャネルの生成も P3b-2 で解禁）
 - 予算と admission（P5 の裁定 2026-10-07 — ユーザー確定）: 並列度の設定項目は作らない — 並列度は「天井 ÷ task の上界」= 同時に入場できる task の数として rt が導出する。入場済みの task は予算が計上済みなので実行中に枯れない（性能の隔離）
   - 宣言: `par.Spawn(s, g, budget: 64 * par.MB)`・`par.Map(xs, f, budget: 8 * par.MB)`（パイプは `xs |> par.Map(_, f, budget: …)`）・`par.Scope(body, budget: 512 * par.MB)`・`par.Spawn(s, g, give: tx, budget: …)`・`par.SpawnIn(s, pool, g, budget: …)` — 末尾の名前付き引数で省略可（名前付き引数の後ろに位置引数は置けない — give: と同じ末尾形。2026-10-07 P5-3 で綴りを実装に合わせた）。budget: は呼び出し・割り算を含まない整数式（check の経路は捨てる — diag.Par kind 20）（書かない形が既定で正しい — 宣言は精度を上げる口）。`budget:` の意味は 1 つ: その task（scope）を逐次（ワーカー 1・子を先に）で走らせたときの使用量の上界（逐次の上界は子の上界を含む — 下の縮退の根拠）。脱糖がコアへ運ばない（rt への実引数としてだけ lower が渡す）。棄てた案: 関数の属性（`@budget`）— 同じ関数を別の文脈で別の予算で使えない・会計の点は spawn の境界／並列度の宣言（`workers:`）
   - task の上界の梯子: ① mem-report の静的上界（未実装 — 差し込み口だけ）② 宣言値 ③ 見積もり（spawn の点ごとに観測した使用量の高水位の最大・初期値 1 MiB）。宣言 > 見積もりの順に使う。見積もりは入場の判断（= 並列度）だけを動かし値を動かさない。宣言を超えた task は今は記帳だけ（強制 = task 境界の `RegionExceeded{cause: budget}` は後便 — 見積もりの外れで正しいプログラムを殺す形を先に作らない）
@@ -316,7 +343,7 @@ for l <- par.Recv(rx) { handle(l) }
 | poll / select | 構造で消す — 提供しない |
 | scope の失敗の「どれが先か」 | 構造で消す — 正準順（下記「失敗の決定性」） |
 | キャンセルが間に合ったか | scope の値については構造で消す — キャンセルは scope の値を変えない最適化。io を持つ task の打ち切りの位置は入力として録る |
-| timeout（`par.Scope(timeout:)`） | 入力として録る — 時計は io |
+| デッドライン（`par.Scope(deadline:)` — 旧綴り `timeout:`） | 入力として録る — 時計は io |
 | admission の失敗（`SpawnIn` の shed） | 入力として録る — 失敗するかは兄弟の予算の返却時刻に依る |
 | admission の縮退（入場できない `Spawn` / `par.Map` の子をその場で呼ぶ） | 構造で消す — 縮退は「子を先に」の 1 つのスケジュール（Kahn）。旧 = 待ち（`SpawnWait`）は chan と入れ子でデッドロックの有無がスケジュールに依るので削除（2026-10-07） |
 | 並列度（予算 ÷ 上界） | 構造で消す — Kahn により結果に漏れない |
@@ -340,15 +367,18 @@ for l <- par.Recv(rx) { handle(l) }
 問いは 2 つに割れる。配達（タスクがキャンセルを知る手段）と巻き戻し（知った地点からスコープ境界まで戻る手段）。大域脱出（例外・panic/recover・setjmp）はどれも持たない。巻き戻しは要らない — 切られた task は検査点で前に進まなくなり、その task の region・スタックは scope が丸ごと捨てる（後始末は region + pool + scope に登録された資源の構造が払う）。
 
 - 通信コードにキャンセルの分岐は書かない。io 呼び出しは暗黙のキャンセル点で、切られた task はそこから戻らない。対向から見た切断は普通の error（ConnReset — 対向の @errors の語彙）。1 回の io は完了型で 2 値（完了した / していない — io はフェンス）
-- 単発の op の時間切れはただの error（`net.Read(c, timeout:)` — 包まない）。外からの切断を局所で値にしたいときは内側の scope で包んで catch する（どこで切れうるかがソースに書いてある）。何もしなければ構造が巻き取る
-- 配達は scope の木。キャンセルは scope に立てるフラグで、scope 木 = region 木なので親を取り消せば子孫全部に伝わる。「現在の scope」はタスクが持つので `ctx` 引数は消える。タイムアウトは `par.Scope(timeout: 200 * ms, …)` の名前付き引数で、同じフラグを期限で立てる（子へは構造で伝播 — 個々の task に書かない）。子が 1 つ死んだら兄弟を取り消すのも同じ機構
+- 時間切れは scope の属性で書く（改訂 2026-10-13 — IO 設計）: io の口に timeout の引数は持たせない。単発の op だけ期限を切りたいときは、その op を内側の `par.Scope(…, deadline:)` で包む（「別のタイムアウトはスコープを切る」— 違うものは構造で切る）。期限切れは待っている io の口の値 `io.Timeout`（28 節）。外からの切断を局所で値にしたいときも内側の scope で包んで catch する（どこで切れうるかがソースに書いてある）。何もしなければ構造が巻き取る。棄てた案: `net.Read(c, timeout:)` の op ごとの引数（2026-09-17 の旧記述 — 期限の席が 2 つになり、入れ子の scope の期限との合成の規則が要る）
+- 配達は scope の木。キャンセルは scope に立てるフラグで、scope 木 = region 木なので親を取り消せば子孫全部に伝わる。「現在の scope」はタスクが持つので `ctx` 引数は消える。デッドラインは `par.Scope(…, deadline: 200 * par.MS)` の名前付き引数（28 節「デッドライン」— 相対のみ）で、同じフラグを期限で立てる（子へは構造で伝播 — 個々の task に書かない）。子が 1 つ死んだら兄弟を取り消すのも同じ機構
 - 検査点 = 中断点（io・chan・sleep・join）+ 中断点を含まないループのバックエッジ。後者はコンパイラが load + 分岐 1 回を挿す（最内で呼び出しの無いループは戻り辺 N 回に 1 回 — 遅延の上限は IR 命令で K = 1,024。上の「キャンセル = 印 + 決定的セーフポイント」）。CPU 束縛ループ（ソート・ハッシュ結合）もタイムアウトで止まる。バックエッジの検査点はフラグを見るだけで yield しない（時間ベースの公平性は決定性の外・ワーカー固定 + pull なので飢餓は仕事の偏りの形でしか起きない — 段 6 で計測して再訪）
 - 届かない場所: native FFI のシステムスタックで止まっている間は観測できず、戻ってから（wasm FFI は AOT が fuel 検査点を挿すので届く。design-dev.md Phase 6）
-- シールド: 切られたくない区間だけ明示する（稀な側だけ儀式）。`par.Shield(() => { … })` の関数形（新構文ゼロの線に揃える）。中の検査点では止まらない。期限は持たせない — 後始末に期限を課したければ内側で `par.Scope(timeout:)` を切る
+- シールド: 切られたくない区間だけ明示する（稀な側だけ儀式）。`par.Shield(() => { … })` の関数形（新構文ゼロの線に揃える）。中の検査点では止まらない。期限は持たせない — 後始末に期限を課したければ内側で `par.Scope(deadline:)` を切る
 - 棄てた案（2026-10-05 退役）: ①`parallel scope { spawn e }` のキーワード構文 — 新構文ゼロの表層（package 関数）に置き換え。lexer の `parallel` / `spawn` / `shield` は予約語のまま据え置く（消すと識別子に戻り後から取り返せない — 撤回は 1.0 前の掃除で裁定）。examples/scope.sober は凍結コーパスの旧構文として残す ②`Cancelled` を block 効果の導出エラー集合に暗黙に含めて `?` で戻す — 通信コードの全呼び出しにキャンセルの経路を通させる上、「どの io が Cancelled を返したか」がスケジュールに依存する ③join のエラー集約「最初の非 `Cancelled`」— 「最初」が到着順で決定性を壊す（正準順の定義に置き換え） ④`shield { }` 構文 — 関数形に
 - 棄てた案（2026-09-17）: 例外型の CancellationException（Kotlin / Trio）は例外機構そのものが無い
 
 structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io は入力の境界（録画・リプレイの単位）・io 呼び出しはキャンセル点・1 回の io は完了型。抽象は完了型（io_uring / IOCP — readiness はラップ可）に寄せる。実装は Web 波（段 6 の第一題材〔コンパイラの並列化〕は入力を冒頭で読むだけで、ワーカー上の同期 read で足りる）。
+- 実装の線（決定 2026-10-13 — IO 設計。表面は 28 節「資源とストリーム」）: rt はワーカーごとに io_uring の ring を 1 本持つ（起動時に 1 回 probe — 使えなければ epoll / 同期 syscall。std/par を使うプログラムでだけ — 逐次のプログラムは同期 syscall のまま）。io の口は SQE を自分の ring に積んで task を待ちに入れ、スケジューラが次の task を選ぶ前にまとめて提出する。走れる task が無いワーカーの眠りは ring の待ち。走り始めた task はワーカーに固定なので、完了は提出したワーカーの CQ に届く — 盗みの規則と衝突しない。段 0（probe + ワーカーごとの ring の setup・e34d0721）は着地済み
+- io で待つ task のキャンセル: 実装は今の線（上の「実装の線」— 切るのは純な子だけ）のまま。io で待っている task は完了かデッドラインまで待つ。打ち切り（`IORING_OP_ASYNC_CANCEL` + 打ち切りの位置を入力として録る — 上の決定性の約束の範囲）は便を分ける
+- in-flight のバッファ（提出から完了までカーネルが書く）は pool の lease で受ける（region-domain-pool.md 4c 節）— scope の出口は貸出中の世代の完了を待つ（join と同じ形）
 
 キャンセルの子項目（決定 2026-09-27）:
 - defer 内のエラー: defer の式が `error?` を返したとき、暗黙の drop は拒否する。捨てるなら `_ = close(f)` と明示する（Go は黙って捨てる）。値を捨てた事実がコードに残り、analyzer の網羅の外へ黙って漏れない
@@ -394,6 +424,7 @@ structured io の線（決定 2026-10-05）: 意味論だけ先に引く — io 
   `catch nil`（決定 2026-10-04・F-v。実装 2026-10-05）: nil の腕の型は兄弟の `$v` の `T?` から取る — 写しは
   `{ mut $r := $v; if $e != nil { $r = nil }; $r }`（代入の nil は束縛の型が期待型を与える。文の値の位置では 2 文を束縛の後ろへ・値は `$r` だけ）
   左辺が func 宣言の直接呼び出しで結果が `(T, error?)` でなければ loader が名指して拒否する（diag.CatchLhs — 負例 examples/catch_infallible・catch_infallible_pkg。関数型の値を通した呼び出しは写した後の束縛の数の照合が拒否）。
+  `par.Join(h)` は結果が字面で `T` 1 つ（fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）なので loader は判定を保留し、表層型の後の ParCheck の層が同じ CatchLhs を名指す（2026-10-13 — 11 節 Join の項・負例 examples/par_join_catch_infallible）。
   コア・Lean・lower は無変更。需要 = エラーハンドリングの全数分類（2026-10-02）の「既定値 / 番兵」23 か所（推論器の「不明に落とす」）。
   棄てた案: B = 最も弱い二項演算子（Swift の `??` 型 — `f() catch -1 + 1` の読みが割れる・`?` との対称が崩れる）・
   C = エラーを束縛する `f() catch e => D`（Zig の `catch |e|` — 需要 0。ラベルで分けたくなり case の形の混雑に近づく。D〔境界で報告して終了〕のブロック形の吸収も
@@ -557,7 +588,21 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
   testdata/analyzer_neg/switch_nil_nonexh
 - `Option[T]` は作らない。`T?` と二重になる。else なし if が値を取れない規則も「`T?` を暗黙に返さない」として一貫
 - エラーの戻り値は `(User, error?)`。Go の `(User, error)` が nil を返せたのは error が interface だったから。1 文字で `return u, nil` / `case v, nil` の見た目は残る。式位置の `?`（伝播）と型位置の `?`（optional）の共存は Kotlin / Swift / TS で問題になっていない
-- `T{}` は全ゼロ値の明示（全部の欄をゼロ値に — 欄の一部だけ省く部分リテラル `T{a: 1}` とは意図が違い、後者は拒否。末尾の未決の節の 2026-09-30 の決定）
+- `T{}` は全ゼロ値の明示（全部の欄をゼロ値に）。部分リテラル `T{a: 1}`（名前つきで一部の欄だけ書く）は省いた欄をゼロ値で埋める（決定 2026-10-13 — ユーザー裁定・
+  report-594 / 595。2026-09-30 の拒否〔X4 — 末尾の節〕からの付け替え）。理由: 構築の口の摩擦（全欄を書かせると内部の欄〔Writer の枠・添字〕まで利用者が書くか、
+  `NewX` 関数が要る — mut の欄を持つ struct を返す関数は 26 節 G3 で棄却済みで、ゼロ値 + 付け替えの口が増える）・リテラルは「ロジックが無い」ことの証明
+  （構築に計算が要らない型は関数でなくリテラルで作れる方が読み手に優しい）・`NewX` の増殖の防止。位置のリテラルは今どおり欄の数ちょうど。
+  書いた値は書いた順に評価する（27 節 (a)）。ゼロ値を持たない欄（union）を省くのは `T{}` と同じく拒否。脱糖 = 表層で省いた欄にゼロ値を置くだけ
+  （desugar・lower が同じ欄の照合〔CompositeFields〕を読む — コア・Lean は無変更）。
+  共存の規則: ① 封の型（欄の型に宣言した package の非公開の型を持つ struct — utf8.View・json.Doc）は、外では欄つきのリテラル（部分も全部も）を拒否する
+  （diag.Sealed — loader）。封の欄をゼロ値で埋めた偽の証人を組ませない（`utf8.View{b: 未検査のバイト列}` は `utf8.Str` が境界しか見ずに string を返すので、
+  string の UTF-8 の不変条件が崩れる — report-594）。ゼロ値 `T{}` は無害なので今どおり。封の型を欄に持つ封の無い struct の部分リテラルは受理（封の型の欄がゼロ値になるだけ）
+  ② 同一性の型（std/par の札 `S`・handle `Task`・端点 `Tx` / `Rx`・`Pool`、std/io の `File`）のゼロ値は std の外で作れない（diag.Identity — loader。2026-10-13 の裁定 Qa1・28 節）:
+  型そのもののリテラル `T{}` と、同一性の型を（欄・総称の裸の型パラメータの欄を通して推移的に）持つ欄を省いた composite（`W{}`・部分リテラル）を拒否する。
+  `T?` の欄（ゼロ値 = nil）・slice / map の欄（ゼロ値 = 空）は偽物を作らないので今どおり。族は名前で閉じた集合（std に印を書く形は鎖の最後の boot が読めない —
+  freeze の信頼の口と同じく名前の焼き込み。棄てた案: std 専用の注釈 `@identity`〔鎖の行が要る — 族が std の外へ開くときに再審〕・ゼロ値を「閉じた資源」として許して
+  使ったら実行時に error / panic〔型で言えることを値の検査で言う〕）③ panic のラベル・error のラベルの
+  リテラルも同じ規則（27 節）
 - ゼロ値は持てる型だけ — 「全型にゼロ値」は非 null デフォルトと両立しない。`T?`・数値・文字列・空コレクションは持ち、非 optional の参照的フィールドを含む struct は持たない。持たない型は definite initialization（全フィールド指定か明示のデフォルト）を要求。「ゼロ値検査」が analyzer からコンパイラの規則に昇格
 - `?` の脱出が埋めるゼロ値の座標（決定 2026-09-27、V4-4b） — region を持つゼロ値（空の slice / map / string を含む型）は
   関数本体の先頭（戻り値の座標 = region 1）で束縛しておき、`?` の脱出はそれを返す。深い位置（式ブロックの中）で組むと
@@ -666,12 +711,15 @@ Go の nil を踏襲しない。nil が這い回る経路（interface、メソ�
 - 暗黙の freeze（決定 2026-10-11 — 便②・report-482〜485）: 期待型が imm のコンテナ（`[]T`・`map[K]V`）の位置に、同じ形の mut のコンテナの道
   （局所の束縛を根に持つ `x`・`x.f`・`x[i]`）を置くと、`freeze(道)` と同じ意味になる。
   位置 = 実引数（総称は決まった型引数で・関数値・パイプの左辺・チャネルの送信も std/par の関数の実引数）・関数の return・欄 / imm の場所への代入・
-  添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素。
+  添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素・for の生成元（slice — 決定 2026-10-13: 書き換え `iter.Slice(xs, k)` の
+  xs の位置〔imm の `[]T`〕。文形・yield 形とも。本体や for の後で同じ道に書けば U2 が拒否する — 凍らせたものを回している間に書けば中身が変わる）。
   起こさない = 束縛 `y := x`（期待型が無い — スナップショットは明示の `freeze(x)` で書く）・if / switch の腕の合流・ラムダの return・par の子の捕獲・
   道でない式（呼び出しの結果・if 式の値 — ただし clone(x) は点。下の「写しの手段」）・par の handle を含む型（freeze できない — 11 節）・総称 `Id[T](x T)` に mut を渡す形（T が mut に推論されて期待型が mut）。
   U1〜U3 は暗黙の点にも明示の freeze と同じく掛かり、診断は点を注で名指す（直し方 =「書き終えてから渡すか、写しを渡す」）。
   受理の集合は U2 そのもので規則は増えない — 点を「最後の書きの直後」へ動かす推論は採らない（凍らせる時点が字面から離れる）。
   明示の freeze は残る: 期待型の無い位置では必須、ある位置では冗長（冗長の lint は後）。
+  棄てた案（for の生成元 — 2026-10-13）: 拒否のまま「mut の slice は freeze(…) で回す」と名指す診断だけを足す（書き換え先が imm の位置なのは他の実引数と同じで、
+  位置の列から for だけ外す理由が無い — report-580 の最小形は型の失敗が名指されないまま拒否されていた）
   写しの手段（決定 2026-10-11 — report-489〜491）: builtin `clone(x)`（freeze の双対）。mut / imm の slice・map を受けて、浅い写し（ヘッダとセル列 —
   要素・値がコンテナなら中身は共有する。Go の slices.Clone / maps.Clone と同じ）を最内 region の mut で返す。元は凍らせない（読むだけ）。
   mut を返すのは、imm が要る位置では置いた場所で凍るから — `f(clone(xs))` の clone(x) は暗黙の freeze の点（道でない式の中で clone の呼び出しだけを点にする:
@@ -807,7 +855,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   道のどこかに他の package の struct の欄の選択があれば拒否（入れ子の `v.f.g = x`・添字や map の格納を挟む `v.f[i] = x` / `v.f[k] = x` — 欄が指す buffer への書きも）。
   型で決まるので、mut の仮引数越し（`func h(v mut utf8.View) { v.b = … }`）・写しの mut 束縛越し（`mut w := v; w.b = …`）も同じ。
   読みは許すが、欄の型が mut の中身（mut の slice / map — 入れ子の struct・`T?` の中も）を持つときは外から読めない（中身の別名が package の外にできると、
-  型の不変条件と std の信頼の口〔17 節 — table.Freeze〕の前提が崩れる）。構築（composite で欄を全部書く）は今までどおり（封の欄を持つ型は部分リテラルで拒否 — 16 節）。
+  型の不変条件と std の信頼の口〔17 節 — table.Freeze〕の前提が崩れる）。構築（composite — 部分リテラルも）は今までどおり外から書ける（封の型の外での欄つきリテラルは拒否 — 15 節の共存の規則 ①）。
   struct ごと `mut` で渡す `g(mut v)` は許す（書くのは受け手の関数で、その中の欄の書きもこの規則に掛かる）。
   実装: 表層型検査器が型付けのついでに表へ積み（desugar/fieldwrite.sober）、check は analyzer の指摘・build は lower の Typed の表の数で拒否（行は analyzer が
   引き直す — 診断は一致）。コアと Lean の規則は不変（受理の集合を狭めるだけ）。負例 testdata/analyzer_neg/field_*（check と build の診断がバイト一致）・
@@ -1243,6 +1291,11 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
      無く・b0 へ戻れる）の中の呼び出しを数えない — そこで確保が起きるなら b0 の enter は残るので、確保は呼び手の深度に届かない
      （2026-10-12 G' — routing の照合のループの enter が match の k のループの中の rest / Join のせいで残っていた）。
      棄てた案: 入口で region を開く関数の呼び先も伝播しない（宛先の深度 W_DEST・anchor 経由の確保の論証が要る — 別に積む）
+     ループの本体の範囲は、外の深度へ戻す setdepth の手前まで — 内側のループの頭・出口（本体の中で読んだ深度へ戻す setdepth）は越える
+     （2026-10-14 L1 — 旧は内側のループの頭で止まり、その後ろの確保を見落として外の反復の enter を消していた。反復の region の約束〔ループ本体はスコープ〕の
+     破れで、routing の RSS が行数に比例した）。反復ごとの確保と数えるのは、本体の中で読んだ深度への確保と呼び手の深度で確保しうる呼び出しだけ —
+     本体の外で読んだ深度（本体を支配する外の反復・関数の深度）への写しは、enter を消しても行き先が同じ region なので数えない（同 P1）。
+     網 = scripts/iterregion.sh（llight の後の enter の残り + 反復 10 倍で RSS が比例しないこと）
      観測の差は 102 の発火点と dump の depth が深度の際でずれうることだけ（既存の例・黄金に差は無かった）。
      棄てた案: 深度は全フレームで厳密に数える — 観測の厳密さより葉の呼び出しの固定費（utf8.Str で 1 回 ~100 命令）
   2. 到達 = プログラムのバグ — 正しいプログラムなら入力に依らず到達しない違反。範囲外添字（21 節）・
@@ -1257,7 +1310,8 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
   - 組み込みのラベル: `Unreachable`（「ここには来ない」）・`InvariantBroken`（「前提・不変条件が破れた」）— 欄なし・import なしで綴れる（`error` / `nil` と同じ層）。
     ランタイムが上げる資源の上限（exit 102）は `RegionExceeded{cause, depth}` として印字する（宣言は組み込みの名前の予約だけ — 利用者が `panic(RegionExceeded{…})` を
     書くのは拒否: 偽の資源枯渇を作らせない）。組み込みと同名の panic ラベルの宣言は拒否
-  - 使い方は `panic(L{欄})` だけ: 実引数はラベルのリテラル 1 つ（名前つきの欄・省略不可 — 部分リテラルの拒否と同じ「欄の初期化忘れ」の検出）。
+  - 使い方は `panic(L{欄})` だけ: 実引数はラベルのリテラル 1 つ（名前つきの欄・1 回ずつ。省いた欄はゼロ値 — 2026-10-13 に一般の部分リテラルと揃えた〔15 節〕。
+    旧: 省略不可〔部分リテラルの拒否と同じ「欄の初期化忘れ」の検出 — 一般の規則を付け替えたので 1 本に揃えた〕）。
     ラベルは値の型として使えない（束縛・仮引数・欄・戻り値の型に書けない — error ラベルが型位置に立てないのと同じ）。他 package のラベルは修飾して書く（`layout.WidthOverflow{…}`）。
     裸の `panic()` は廃止（理由なき死を書けなくする — supervisor / join が構造化された死因を常に受けることを言語の保証にする。予算宣言と同じ「書き忘れの手薄をなくす」型）
   - 意味: 欄の値を書いた順に評価してから死ぬ（下の評価順 — 欄の評価中の panic はそちらが先）。結果は Never（腕・`return panic(…)`・`catch panic(…)` で兄弟の型に合う）。
@@ -1311,7 +1365,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     （`default: panic` の到達不能化）と逆行する
   - 文法から panic を消す（refinement 型・借用検査・エラーラベルの嘘のいずれかが代金 — どれも棄却済みの方向）
 
-### 28. io — 同期 syscall の最小面（決定 2026-09-27、随時回収の io シム）
+### 28. io — 同期 syscall の最小面（決定 2026-09-27、随時回収の io シム。改訂 2026-10-13 — 資源とストリームを引き上げ）
 
 - std/io: `ReadFile(path string) ([]int, error?)` / `WriteFile(path string, b []int) error?`。ラベル `io.NotFound`（ENOENT /
   ENOTDIR）/ `io.Denied`（EACCES / EPERM / EROFS）/ `io.Other{errno}`（開いたバケツ — 13 節「正直な宣言」の最初の実例）。
@@ -1335,7 +1389,7 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     呼ぶたびに呼び手の region へ写す（ReadFile と同じ）。string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば呼び出し全体が `utf8.InvalidUtf8`
     （27 節の規準 — 入力次第で起きる）。環境変数はスコープ外のまま（`SOBER_REGION_MB` はランタイムが読むだけ）
   - ディレクトリ列挙: `std/io.ReadDir(path string) ([]DirEntry, error?)`、`DirEntry{Name string, Kind EntryKind}`、
-    `EntryKind` = `File` / `Dir` / `Symlink` / `Irregular`（d_type をそのまま写す。Irregular = fifo・socket・デバイス・DT_UNKNOWN — stat の追い打ちはしない。
+    `EntryKind` = `Regular` / `Dir` / `Symlink` / `Irregular`（d_type をそのまま写す。通常のファイルの variant は 2026-10-13 に `File` → `Regular`〔資源の型 `io.File` と名前が衝突 — Irregular と対〕。Irregular = fifo・socket・デバイス・DT_UNKNOWN — stat の追い打ちはしない。
     Irregular は Go の fs.ModeIrregular に合わせた — `Other` は io のラベル名と衝突する）。並びは名前のバイト列の辞書順を API の契約にする
     （ファイルシステムの列挙順に依らせない — loader の決定性、29 節）。`.` / `..` は含めない（Go と同じ）。不正な UTF-8 の名前があれば全体が `utf8.InvalidUtf8`
     （1 件だけ飛ばすと黙って欠ける）。種類を返す理由: loader の「通常ファイルの `.sober`」は名前だけでは書けない（symlink・`x.sober/` ディレクトリを拾う）
@@ -1356,16 +1410,100 @@ Phase 2 の名前解決に要る最小形だけ先に確定する。
     エポックからの ns。値は比べるためだけ・失敗は io の errno のラベル）・`std/os.Sleep(ms int)`（nanosleep(2)）。std 専用 builtin `sysStat(path) int`（更新時刻 / 負の errno）・
     `sysSleep(ms) int`（errno）。使うプログラムでだけ rt を足す（他の出力はバイト不変）。棄てた案: FileInfo を返す `Stat`（大きさ・種類の需要 0 — 出たら隣に足す）・inotify（io 面の拡張 — 後便）
   - 標準入力（追記 2026-10-04 — 開発スクリプトの Sober 化の前提・ロードマップの裁定済み）: `std/io.ReadStdin() ([]byte, error?)`（fd 0 を EOF まで全部 —
-    Unix フィルタの入口）・`std/io.ReadFd(fd int, n int) ([]byte, error?)`（read(2) 1 回分 — n バイトまで・短い読みあり・空 = EOF・n = 0 も空）。どちらも読む前に
+    Unix フィルタの入口）。読む前に
     println の行バッファを出す（プロンプト → 入力の順）・EINTR は内側で再試行・失敗は io の errno のラベル。std 専用 builtin `sysReadFd(fd, n) []byte`（n < 0 = 全量 —
-    ReadStdin の下ろし先。errno は sysErrno）。同期形のまま（Phase 5a の structured io で中身を差し替えても API は同じ）。使うプログラムでだけ rt.read_fd を足す。
+    ReadStdin の下ろし先。errno は sysErrno）。切片ずつの読みは開いた File の `io.Chunks(f)`（下の「資源とストリーム」— 標準入力の切片の口 `io.StdinChunks()` は後便の席。Chunks の受け手は File だけで、Stream は別の型）— 2026-10-04〜13 の
+    `io.ReadFd(fd int, n int)`（read(2) 1 回分）は fd を int で受ける穴（Open の後に番号を推して渡せる）なので廃した（下の「標準ストリーム」）。同期形のまま（Phase 5a の structured io で中身を差し替えても API は同じ）。使うプログラムでだけ rt.read_fd を足す。
     棄てた案: 行単位の ReadLine（区切りの解釈は呼び手 — 需要が出たら std/strings 側で）・非同期の読み口（parallel の structured io の領分）
   - 効果: 12 節の枠組みでは葉（std の builtin）が `io` を宣言する側。効果の実装が無いので素通し（ReadFile と同じ）
   - バイト列の `[]int` は byte 型の導入時に `[]byte` 化する前提（API の形はそのまま — 方向確定・実装は言語拡張枠）
   - 棄てた案: `os.Args() []string` で不正な引数を panic（27 節の規準違反）・U+FFFD 置換（置換した名前でファイルを開けなくなる — 黙って別物になる）・
     `os.ArgBytes() [][]int` を唯一の形に（全員が `string(…)?` を書く — 需要が出たら互換で隣に足せる）・ReadDir が名前だけ / `IsDir()` だけ（symlink を区別できない）・
     `io.Write(io.Stdout, b)`（Stream の閉じた union が将来の File ハンドルと別系統で残る）
-- スコープ外: fd を値として持つ API（Open / Read / Close・ストリーム）、~~argv~~ / 環境変数、~~ディレクトリ列挙~~、stdin 専用 API
+- 資源とストリーム（決定 2026-10-13 — IO 設計の裁定 11 点。実装は IO 便の段 2〜4 の予定 — 下の「段」）: 下のスコープ外から「開いた資源を値として持つ API」を引き上げる。
+  fd の番号は値にしない線は保つ（資源の値の中身は封）。上の ReadFile / WriteFile / ReadDir / ReadStdin の署名は変えない（Phase 5a で中身を差し替えても API は同期形のまま、の見込みどおり）
+  - 資源は同一性を持つ型: `f := io.Open(path)?` は `io.File`（接続は `Conn` — Web 波）。チャネルの端点・Pool と同じ「同一性を持つ型」の規則を流用する。
+    標準ストリームの型とは分ける（2026-10-13 の裁定 Qa4 — 標準ストリームはプロセスの寿命・Close なし・コピーして害なしの値の型 `io.Stream`。Open の File は
+    scope の寿命・Close あり・コピー不可。原則「違うものは構造で切る」）。ゼロ値は無い（15 節の部分リテラルの共存の規則 ② — diag.Identity）ので、
+    「ゼロ = 未指定」を表す内部表現（番号 + 1）は要らない（裁定 Qa2）
+    （新しい型規則なし — 11 節・region-domain-pool.md 1 節）: コピーできない・作ったスコープより外へ出せない（子から親へ返せない）・閉包に捕獲できない・`give:` でも渡せない（子は path を受けて自分で開く）。
+    実装（2026-10-13 — IO 便 段 2・裁定 Q1 (A) / 3.3 (i) — report-601 / 603）: File はコアでは封のデータ（fd 1 語 — Lean・コア無変更）で、同一性は表層の規則
+    desugar/filecheck が持つ（check の ParCheck と build の ParCheckTyped が通る表層型つきの共有層 — check ≡ build。io.Open を書かないプログラムでは走らない）。
+    許す使い方 = Open の束縛・io の口と利用者の関数の実引数（受けた仮引数も同じ規則の下 — 外へは出せない）。拒否（diag.FileUse — kind で分ける）= 写しの束縛・代入・
+    return と File を持つ値を返す呼び出し（総称の関数を通す写しも）・型が File を持つ composite（struct / slice / map / チャネル）と append・閉包の捕獲・give:。
+    give: を外した理由: scope の本体で開いた File を子へ渡すと、本体の defer Close が出口の合流（子を待つ）より先に走り（11 節の順序）、子は閉じた fd か
+    再利用された番号（別のファイル）を読む。棄てた案: (ii) File の捕獲を par.Scope の本体の生の lambda にだけ許し、give: は scope の外で開いた File に限る
+    （defer Close が Scope の呼び出しの後に走る）・(iii) scope の本体の defer を子の合流の後へ動かす（11 節の順序と Lean の scope の巻き戻しの変更）・
+    (B) コアに OwnK = file を足して give: で持ち主を移す（preservation の改修 — 数日）。再審の条件 = 1 つの fd を子と共有する需要（Web 波の accept の後の fd の
+    受け渡し）が出たとき — give: の口を端点以外へ広げる仕事（今は端点だけ — FLEDGER）と上の順序を (ii) か (iii) で一緒に決める
+    中身は封の欄（utf8.View・json.Doc と同じ — 外で組めない）を持ち、fd の番号は rt と std の中にだけある。File と int の間の変換の口は無い。
+    封は構築だけを塞ぎ欄の読みは塞がないので、番号の欄を外から読めなくする形（非公開の型に包む・欄の私有 — 12 節の積み）は段 2 で決める。
+    ゼロ値のリテラル `io.File{}`（と File を欄に持つ struct のゼロ値）は封では塞がらない（utf8.View と同じ）が、同一性の型のゼロ値の規則（15 節 ②）が塞ぐ（裁定 Qa3）
+  - 標準ストリーム（決定 2026-10-13 — 段 2 の前の fd の封の穴の裁定・report-578 4 節 / report-590。型の名前は同日に `io.File` → `io.Stream` — 名前を Open の側へ空けた・Qa4）:
+    `io.Stdin` / `io.Stdout` / `io.Stderr`（封の値の型 `io.Stream` の const —
+    開いている fd 0 / 1 / 2）。fd を int で受けていた `io.ReadFd(fd, n)` と `io.SetFd(mut w, fd)` は廃し、標準入力の読みは ReadStdin、Writer の先は File で持つ
+    （欄 `to Stream`・付け替えは `io.SetFile(mut w, io.Stderr)` — 番号を書く口が std の外に無い。ゼロ値の Writer = 標準出力の約束は保つ）。棄てた案: ReadFd / SetFd を残して実引数を 0〜2 に絞る実行時検査（型で言えることを値の検査で言う — 範囲外は panic か error の新しい席が要る）
+  - 後始末: `defer io.Close(f)` を Open の直後の文に書く — 30 節の acquire / release の局所照合の形（R-a）の移植: `f := io.Open(p)?` か `f := io.Open(p) catch D`
+    の直後の文が同じ名前の `defer io.Close(f)` でなければ拒否し、文面が入れる行を示す。Open はこの束縛の形の外（多値の束縛・関数値・`|>`）に書けず、Close はこの defer の形の外に
+    書けない（二重の close・早すぎる close が形で書けない）。層は R-a（analyzer — check だけ）でなく上の filecheck（check ≡ build — F を作らない）。
+    `io.Close(f File)` は error を返さない（読むためだけに開いた fd の close の失敗に打つ手は無い — error? を返すと defer の暗黙の drop の拒否〔11 節〕に当たり `defer _ = …` の形が要る）。
+    読みの口: `io.ReadAll(f File) ([]byte, error?)`（今の位置から EOF まで — ReadFile の開いた File 版。切片ずつの読みは段 2 の後便の io.Chunks）。
+    task の死では defer が走らない（11 節）ので、開いた fd は開いた task の登録簿にも載り、子の出口（死・切られた子も通る）で rt が閉じる（11 節「io 資源は scope に登録され、
+    後始末は region + pool + scope の構造が払う」の席）。実装（2026-10-13 — 裁定 Q4）: 登録簿は task ごと（TCB の鎖の頭 + fd ごとの 1 語の次 — rt.open が積み rt.close が外し、
+    rt.task_start の出口の rt.fd_drain が残りを閉じる）・std/par を使わないプログラムは使わない（defer が必ず走る — IR は不変）・番号が 65536 以上の fd は閉じて EMFILE。
+    棄てた案: scope ごとの列（死ぬ単位は task で、scope の出口は子が全部決着した後なので task の分で足りる）
+  - 読みのストリーム = View を貸す for: `for chunk <- io.Chunks(f)? { n += count(chunk) }`。chunk は `io.Bytes`（読むだけのバイト列の View）で、
+    この反復のブロックの region の値 — 外へは写してしか出せない。View の寿命（次の切片まで）を for の 1 反復 = 1 ブロックで言う（Pool の acquire のピン済み参照と同じ狭め替え —
+    新しい型規則なし）。`next` の関数は公開しない — 古い View が生きたまま中身が差し替わる形は書けない。切片は std の io の pool（region-domain-pool.md 4c 節）を指し、
+    反復の終わりに pool へ戻る — ゼロコピーが既定。失敗（読みの errno・デッドライン）は for 自体が返す（7 節「失敗しうる生成元」— 印の `?` が要る）。
+    行・区切りで割るのは std の上の層（`io.Lines(f)` — 行が切片をまたぐときだけ std の中で写す）
+    実装（2026-10-13 — IO 便 段 2 (c)・裁定 U1 = 案 P / U5 — report-606〜608）: `io.Chunks(f File, k func(Bytes)) error?`・`io.Lines(f File, k func(Bytes)) error?`
+    （失敗しうる生成元 — 7 節）・`io.Raw(c Bytes) []byte`（同じ反復の中の読むだけのバイト列 — 写さない）。Bytes は封の struct（utf8.View と同じ形 — 外で組めない）。
+    切片は 1 回の読みの分（通常のファイルは最後以外 64 KiB）。Lines は '\n' で割り、行末の '\r' を 1 つ落とし、最後の行は改行が無くても渡す（Go の bufio.ScanLines と同じ）。
+    pool はストリームの私有（案 P — 1 本の for が自分のスロット gens 個を持つ。**既定 64 KiB × 2 で固定・大きさと段数の口は後便**: Web 波の `pool:` 引数か、
+    1brc の実証で切片の大きさの需要が出たときに生成元の名前つき引数〔PINS — 今の言語では for の生成元の呼び出しに名前つき引数が通らない〕とセットで）。
+    先読みは 1 本（前の切片を渡している間に次の読みを出す — ring の無い道では同じ位置で同期の read）。for を途中で抜けたら（break / return / 本体の `?`）、
+    先に読んで渡していない分だけファイルの位置を戻す（通常のファイル — 後の ReadAll が続きから読める。pipe 等は戻せず先読みの分は捨てる）。
+    外へ持ち出した View は写しになる（境界コピー — 新しい型規則・検査器なし。ヘッダの深度の印は反復の region で、lower の region の軽量化は rt.chunk_next を
+    「今の深度で確保する」として反復の region を消さない — rlight の前提）。task が読みの途中で死んだら、子の出口の rt.chunk_drain が先読み中の読みの完了を待って
+    スロットを返す（fd_drain の前）
+  - 位置を指定する読み（決定 2026-10-13 — 実証便 その 2 の外部ソートと 1brcpar の需要 2 件・report-612 / 613）: `io.ChunksAt(f File, off int, k func(Bytes)) error?`
+    （`for c <- io.ChunksAt(f, off)? { … }`）は f の off バイト目から EOF まで、Chunks と同じ切片・先読み・View の規則で渡す。読みは pread の形
+    （ring では SQE の off）で、**f の位置を動かさない** — 途中で抜けても巻き戻すものが無い（Chunks の巻き戻しと同じく、後の Chunks / ReadAll は ChunksAt を
+    呼ぶ前の位置から読む）。off が EOF 以上なら空の列。pipe 等の位置を持たない fd は最初の切片で `io.Other{errno: 29}`（ESPIPE）。off < 0 は
+    `io.Other{errno: 22}`（EINVAL — pread と同じ。読みを出す前に std が返す）。用途 = 開いた File を列に持てない形（同一性の型）で k 本の run を交互に読む
+    （run ごとに「次に読む位置」の int だけを持ち、Open → ChunksAt → 1 切片 → break → Close）・task ごとに区間を読む並列の走査。
+    実装 = rt.chunk_open の 4 つ目の引数（off — Chunks は -1 = 今の位置で read / ring の off -1）。記録は次に出す読みの位置を持ち、完了を受け取るたびに
+    結果のバイト数だけ進める（先読みは前の読みの完了の後にだけ出るので、位置は常に確定している）。棄てた案: seek の口（`io.Seek(f, off)` — f の位置という
+    共有の状態を利用者に見せる。位置を動かさない読みなら子と親・2 本の読みの間で位置の取り合いが起きない）・区間 `ChunksAt(f, off, n)`（終わりは呼び手が break で切れる —
+    n の需要は 1brcpar の区間の読みで出たら隣に足す）
+  - ソケットの受信も同じ for に載せる（Web 波）: 列の終わりは「相手が閉じた」で必ず来る（有限）・待ちはデッドラインの scope が区切る。棄てた案: chan 形の受信
+    （`for c <- par.Recv(…)` — 接続を chan に見せると「送り手がプログラムの中にいる」の嘘が入る）
+  - 書き: 既存の Writer（65,536 B の枠・失敗は Flush で後から返す）を File / Conn に向ける口は `io.SetFile(mut w, f)`（ゼロ値の Writer の先を付け替える — 2026-10-13 に標準ストリームの便で入った口）。
+    ゼロコピーの送信は書きの lease（4c 節の L4 — Web 波）の後。棄てた案: 構築の関数 `io.WriterOf(f) Writer`（93933bd9 の起案 — mut の欄を持つ struct を返す関数で、
+    26 節 G3〔mut を返す関数〕の棄却に当たる。再審は同類の需要が IO 段 2 で 2 件以上出たら値札つきで — report-590）
+  - バッファの pool: `io.NewPool(slots: 64, size: 64 * KB, gens: 2)`（名前つき引数 — 世代の段数 `gens:` の既定は 2）。登録・世代の回転・検査は region-domain-pool.md 4c 節。
+    **段 2 (c) では入れない**（裁定 U1 = 案 P 2026-10-13 — 共有の pool と空き切れの背圧は、実需〔Web 波の多数の接続 × 有界のメモリ〕と一緒に `io.Chunks(f, pool: p)` の名前つき引数で）。
+    棄てた案（同日）: 案 S = NewPool の 1 本を task とワーカーの間で共有（空きの列の原子操作・全ワーカーの ring への登録・空き切れの待ちと逐次での食い切りの扱いが要り、
+    今の題材に需要が無い — 行き先のない往復）
+  - デッドライン = scope の属性: `par.Scope(body, deadline: 500 * par.MS)`（budget: と同じ席 — 性質は境界に書く）。その scope の中の io の口が暗黙に見る。値は相対だけ
+    （時刻源は CLOCK_MONOTONIC）— 絶対時刻は時計の巻き戻りの穴を持ち込むので取らない。入れ子は内側と外側の早い方。scope の外の task には効かない（構造で切る）。
+    時刻は io（決定性の外）— デッドラインを持つ scope の中は io を持つ task として扱う（11 節の決定性の範囲・表の「デッドライン」の行）。単位の語 `par.MS` は段 3 で足す
+    （今の std/par の単位は `MB` だけ）。未決（段 3 の入口で裁定）: 期限が切れたときに io で待っていない task（純な計算）をどう扱うか — 11 節の「同じフラグを期限で立てる」
+    （検査点で止める）に乗せるなら scope の値を何にするか
+  - エラーのラベル: 既存の NotFound / Denied / Other{errno} に `Timeout`（デッドライン）・`Closed`（相手が閉じた後の書き — EPIPE と ECONNRESET を分けるかは Web 波で）を足す。
+    io の口の @errors に載る（13 節の正直な宣言）。キャンセルは値にしない（11 節）
+  - 出力のバイト列は backend に依らない（約束）: 同じ入力・同じ io の結果なら、io_uring / epoll / 同期 syscall のどれで動いても同じ出力。網 = 同じ例を backend を固定して回し出力一致
+    （`--no-vec ≟ vec` と同じ形）。backend は `io.Backend()`（io 効果の観測の口 — par.Ledger と同じ席）で見える — 黙って遅くなる形を作らない
+  - rt の裏（11 節「structured io の線」の実装の線）: ワーカーごとの io_uring の ring・バッチ提出・眠り = ring の待ち・使えなければ epoll（ソケット）/ 同期 syscall（ファイル）。
+    逐次のプログラム（std/par に届かない）は ring を使わない — 待つ間に回す task が無く、同期 syscall より 1 往復重い。受信のバッファの選び方は、ファイルは `IORING_OP_READ_FIXED`
+    （rt が先にスロットを選ぶ）・net で provided buffer ring（カーネルが選ぶ）を評価
+  - 段: 0 = probe + ワーカーごとの ring（着地 2026-10-13）・1 = std/par を使うプログラムの ReadFile / ReadFd（今は ReadStdin）/ WriteFile を ring で（表面不変）・2 = Open / Close / Chunks / Lines / NewPool（Open / Close / ReadAll と登録簿・Chunks / Lines / ChunksAt は着地 2026-10-13 — NewPool は Web 波へ）・
+    3 = デッドライン・4 = net（Web 波 0.6.0）
+  - 棄てた案: `Read(f, p []byte)`（バッファの持ち込み — Go の形。バッファの管理の詳細がコードに漏れ、貸出中のバッファへの書きを型で止められない）・
+    走査の後に `io.Err(f)` で失敗を読む（7 節）・ring をプロセスで 1 本（提出に鍵が要る — SQPOLL とは相性がよいが、ワーカー固定の下では鍵なしのワーカーごとが素直）・
+    File を普通の値の型にして close 忘れを lint で拾う（コピーした別名からの二重 close・子への暗黙の共有が残る）
+- スコープ外: ~~fd を値として持つ API（Open / Read / Close・ストリーム）~~（2026-10-13 に資源とストリームとして回収 — fd の番号は封のまま）、~~argv~~ / 環境変数、~~ディレクトリ列挙~~、stdin 専用 API
   （`ReadFile("/dev/stdin")` で足りる）。argv とディレクトリ列挙は上の io の器（2026-09-28）で回収
 
 ### 29. コンパイル単位と interface（決定 2026-09-27、V5-4。実装 V5-5・V5-6、実地 V5-7）
@@ -1643,6 +1781,14 @@ std の公開名は次の 5 つに従う。新しい公開関数はこの規則�
    - 生成元・消費（iter）: 生成元は源の名詞（`Range`・`Slice`）、消費は `Each`・`Count`・`Sum`
    - バイナリの写し（layout — 36 節）: `Decode…` / `Encode…`（@layout の struct ⇄ バイト列。読みの不足は nil — `Parse…` の `(T, error?)` と族を分ける）・`Size`（静的サイズ）
    - 数学（math — 37 節）: 関数は数学の名前（`Sqrt`・`Abs`）。float のビットの見方は `Bits` ⇄ `FromBits`（値 ⇄ IEEE 754 のビット列の int — 変換でなく同じビットの読み替え）
+   - 並べ替え（sort — 追記 2026-10-13・std/sort 新設）: `Order`（0..n−1 を比較の閉包の順に並べた添字の列 — 安定。値の列を並べ替えて返す形は置かない:
+     比べ方と元の列は呼び手が持ち、添字の列からその順で読むか組み直す — 外部ソートの行の開始位置の列のように、並べる値と比べる値が別の列にある形が素直に書ける）。
+     棄てた案: `Sort` / `Sorted`（`sort.Sort` の重複・値の列の写しを既定にする）・`Slice[T](xs, less)`（実需が出たら隣に — Order の上に 3 行で書ける）。
+     不安定版 `OrderUnstable`（追記 2026-10-14 — 仮決め・朝の追認待ち）: 同じ形・同じ less の契約で、等しい要素の順を約束しない代わりに速い（pdqsort — 作業域なし）。
+     **不安定 ≠ 非決定**: 乱択の pivot を使わず、同じ入力・同じ less なら常に同じ列（Hyrum の検疫の対象は「等しい要素の順」だけ — 走りごとには揺れない）。
+     語は「安定が既定・外すときに名前で断る」の形（Order が短い方 — 迷ったら安全な方を書かせる。Rust の `sort` / `sort_unstable` と同じ向き）。
+     棄てた案: `OrderFast`（速さは約束でなく記録 — 落とした性質〔安定〕を名前に出す）・`OrderAny`（何でもよいと読める — 決定的であることが伝わらない）・
+     `Order(n, less, stable: false)` の名前付き引数（同じ名前で約束が違う 2 つの口になる — 34 節の「族ごとに戻りの形は 1 つ」と同じ線で口を分ける）
    - 棚（今は使わない）: `Cut`・`Split`・`Fields`・`Trim…`・`Replace`・`LastIndex…` — 確定は strings の語彙拡充の入口（裁定 N4）
 2. 対称性: 対になる語は両方を埋めるか、片方だけの理由を宣言の注記に書く（`HasPrefix` ⇄ `HasSuffix`・`ReadFile` ⇄ `WriteFile`・
    `Acquire` ⇄ `Release`）。標準入力の読み（`WriteStdout` の対）は実需まで足さない — `ReadFile("/dev/stdin")` で書ける（裁定 N3）
@@ -2011,6 +2157,7 @@ func MultiLookup(c PageCache, keys []int64) ([]Row, error?) {
 | byte はコアの格納単位のスカラー（比較のみ・算術は `int(b)`・リテラル割り当て可）、`[]byte` は 1 バイトに詰め、幅の族は @layout の欄の語彙 | 詰めの健全性を Lean が保ち、計算の世界は int + byte のまま（33 節） |
 | @layout の struct の欄に幅の語（`u16le` …）と `[N]T`、読み書きは loader のテンプレートが合成する写し（Decode は `T?`・Encode の幅あふれは panic） | 幅の型族なしで struct の宣言がワイヤの表として読め、コアと Lean は無傷（36 節） |
 | 浮動小数は float の 1 本・暗黙の変換なし（整数リテラルも不可）・リテラルは正確な値を 1 回丸め・畳みは実行時と同じ IEEE・map キー不可・超越関数なし | 丸めが黙って入る経路が無く、どのビルドでも同じビット（37 節） |
+| io の資源は同一性を持つ型（端点の規則の流用）、読みは View を貸す失敗しうる for、in-flight のバッファは pool 単位の lease、デッドラインは scope の属性（28 節） | fd の番号もバッファの管理も貸出中の reset もコードに出ず、完了ベースの io が region の意味論と新しい型規則なしで噛み合う |
 
 ## この設計の賭け
 
@@ -2096,7 +2243,9 @@ analyzer が型システム並みになる条件:
   raw・複数行リテラルとの交差 / バイナリ出力タグ。
   入口は用意済み（R7）: 補間は字句解釈と連結の脱糖の間にテンプレート正規形（ast.Template = 定数部 n+1 個 + 穴 n 個、
   空の定数部も保持）を通すので、タグ付きテンプレートはこの形をそのまま呼び出しの引数に写せばよい
-- ~~部分フィールドの struct リテラル `T{a: 1}`~~ → 決定 2026-09-30（X4）: build・check とも拒否（名前つきでも位置でも、
+- ~~部分フィールドの struct リテラル `T{a: 1}`~~ → 決定 2026-10-13（ユーザー裁定 — 15 節）: 名前つきの部分リテラルは省いた欄をゼロ値で埋めて受理（下の X4 からの付け替え。
+  再付け替えの理由 = 構築の口の摩擦・リテラル = ロジックが無いことの証明・NewX の増殖の防止。X4 の懸念〔欄を足すと既存のリテラルが黙って部分になる〕は受け入れる —
+  欄の追加でゼロ値が意味を持たない欄は、構築の口〔検査の関数・封〕で守る）。旧 → 決定 2026-09-30（X4）: build・check とも拒否（名前つきでも位置でも、
   値を置くなら全部の欄）。全部の欄をゼロ値にするのは `T{}`（15 節 — 合法のまま）。理由: struct に欄を足すと既存のリテラルが黙って部分になる
   「欄の初期化忘れ」を検査が捕まえる（ゼロ値で埋めると静かに壊れる）。旧: lower だけが省いた欄をゼロ値で埋めて受理（check は拒否 — split）。
   依存していた examples/point.sober は `from: Point{}` を明示する形に書き換え（出力同じ）、examples/partial_lit は負例に。
@@ -2127,6 +2276,10 @@ analyzer が型システム並みになる条件:
   - 裁定の順序: 本丸が親で残り 3 点は従属。5a（1 スレッド決定的スケジューラ）は (a)(b)(c) どれでも同じ見た目になるので、5a 着手だけなら未決のまま進められるが、Executor の契約（2 点目）だけは 5a の最初に要る
   - 方向づけ追記（2026-09-26）: io_uring は io の問題でなく Executor の問題 — std io の意味論は全ターゲット一枚（ブロッキングの見た目・効果は `io` 一個。完了ベースかレディネスかは「意味を持たない機械的なもの」で隠れてよい側）。下回りは Executor（Domain の Policy）の差し替え: Linux = io_uring 既定・epoll フォールバック、Windows = IoRing/IOCP、組み込み = HAL の同期 / 割り込み Executor。stackful・色なしなので差し替えがユーザーコードに漏れない — Go が epoll から動けないのと違い、最初から完了ベースを既定に置ける後発の配当。nginx 級の性能主張（design-dev.md 賭けの節の Web サーバ行）はこの既定に依存する
   - 新しい急所（同日追記）: region × in-flight バッファ。完了ベース io は提出から完了までカーネルがバッファを所有する — 「scope を抜けたら region 解放」と衝突し、提出中バッファを抱えたまま scope を出るとダングリング。io_uring 固有でなく完了ベース io と region 意味論の交点で、Sober が自分で解く唯一の新問題。方向: structured io — in-flight な io を子タスクと同じ扱いにし、scope 出口は join 同様に完了（またはキャンセル回収）を待つ。structured concurrency に io を従わせるだけなので新機構なしで済む見込み。キャンセル（検査点）との整合込みで Phase 5 の設計対象
+  - → 決定 2026-10-13（IO 設計 — 28 節「資源とストリーム」・11 節「structured io の線」）: 本丸は (a) — ワーカーごとの io_uring（使えなければ epoll / 同期 syscall）。task は動かさず、
+    ブロックした task は自分のワーカーの ring の完了を待つ。Executor の契約 = io の口が SQE を積んで task を待ちに入れ・スケジューラが切り替えの前にまとめて提出・完了で走れる積みへ戻す。
+    in-flight のバッファの急所は pool の lease で受ける（region-domain-pool.md 4c 節 — pool 単位・世代の回転・scope の出口は貸出中の世代の完了を待つ）。select は提供しない（11 節）。
+    残る未決は native FFI 中のブロックだけ
 - ワーカー固定の代償緩和（積み 2026-09-18。決定タイミング: Phase 5b と同時）。固定はパフォーマンス制約として重い（ロードバランス不能・飢餓）が、買っているものは 3 つ — メモリモデルの単純さ（同期はチャネル・join・不変読みのみ、切替点にフェンス不要）、region アロケータのワーカー単一スレッド性（atomics なしの bump）、FFI スレッドローカル。「stackful でスタックを動かさない」と固定は独立（別スレッド実行はスタックコピーを要求しない。Go は動かさず移動している）なので、緩和はこの 3 つを壊さない範囲で探す:
   - 「生成時固定」→「初回実行時固定」: 未着手タスクはスタックも region も持たないので spawn キューからの stealing は何も壊さない — 渡るのは mutFree な閉包だけで、安全性は形式化（spawn の Γ 検査）が既に保証。ロードバランスの大半は初期配置で取れる
   - タスクでなく仕事を動かす: データ並列はワークキュー = チャネルで分配（チャネルは既にスレッド境界を越えてよい）。std の parallel-for / chunked iterator（Phase 3）がイディオムの置き場で、機構追加ゼロ

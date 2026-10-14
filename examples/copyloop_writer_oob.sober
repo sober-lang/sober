@@ -1,0 +1,20 @@
+package main
+
+// Writer への写しの一括化の負例（区間が範囲の外 — 元の for に落ちて、途中まで書いてから同じ点で panic: s[j] の添字が範囲外 — exit 101）
+
+import "std/io"
+import "std/iter"
+
+func main() {
+    s := bytes("hello, world\n")
+    mut w := io.Writer{}
+    for j <- iter.Range(0, len(s)) {
+        io.WriteByte(mut w, s[j])
+    }
+    e := io.Flush(mut w)
+    println(e == nil)
+    for j <- iter.Range(7, 20) {
+        io.WriteByte(mut w, s[j])
+    }
+    println("unreachable")
+}

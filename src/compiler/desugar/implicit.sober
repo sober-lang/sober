@@ -5,7 +5,7 @@ package desugar
 // lower（mut → imm の型の付け替え）は位置を見ず、節が表にあるか（IsImplicit）だけを引く — 受理する点 ⊆ 表 = 規則が見る点が構成で決まる
 // （差し込み忘れは型の拒否に落ちるだけ。位置ごとに 3 者が判定すると、腕の合流で期待型が腕へ押し込まれる形などで点の集合がずれる — report-484 4 節）。
 // 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/par の関数 — チャネルの送信も）・関数の return・欄 / imm の場所への代入・
-// 添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素。起こさない位置 = 束縛（期待型が無い）・if / switch の腕の合流・
+// 添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素・for の slice の生成元（iter.Slice の xs — 2026-10-13）。起こさない位置 = 束縛（期待型が無い）・if / switch の腕の合流・
 // ラムダの return（typer がラムダの結果の型を持たない）・par の子の捕獲
 
 import "ast"
@@ -135,6 +135,13 @@ func IsImplicit(st mut S, e NodeRef) bool {
     return st.nimpl > 0 && e != -1 && yGet(mut st, 0 - IMPLKEY - int(e)) >= 0
 }
 
+const FORSRCKEY = 4503599627370496  // 2^52（for の生成元の点の印の別キー — IMPLKEY〔2^51〕と重ならない）
+
+// IsForSource は暗黙の freeze の点 e が for の生成元か（診断の文面を分ける — 「渡す」でなく「for で回す」）
+func IsForSource(st mut S, e NodeRef) bool {
+    return IsImplicit(mut st, e) && yGet(mut st, 0 - FORSRCKEY - int(e)) >= 0
+}
+
 // yCand は位置の値 e が点の候補か（mut のコンテナ — 期待型を引く前の篩い。FreezeSites のときは明示の freeze の呼び出しも）
 func yCand(st mut S, e NodeRef) bool {
     return MutContainer(mut st, e) || (st.yexplOn && explicitFreezeArg(mut st, e) != -1)
@@ -162,6 +169,16 @@ func FreezeSites(p loader.Program) []diag.Pos {
         out = append(out, posOf(mut st, NodeRef(table.Get(mut st.yexpl, i))))
     }
     return freeze(out)
+}
+
+// ImplicitCount / ImplicitNode は暗黙の freeze の点の列（積んだ順 — analyzer の freeze の規則が自前の集合に写す。IsImplicit の
+// yGet は型の全項と鎖を共有していて、式ごとに引くと重い — report-598）
+func ImplicitCount(st mut S) int {
+    return table.Len(mut st.ypts)
+}
+
+func ImplicitNode(st mut S, i int) NodeRef {
+    return NodeRef(table.Get(mut st.ypts, i))
 }
 
 // ImplicitPoints は p の暗黙の freeze の点の位置（std を含む全部 — 開発の口 `check --implicit-points`）

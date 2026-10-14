@@ -254,6 +254,34 @@ type CatchLhs error {
     at Pos
 }
 
+// Sealed は封の型（欄の型に宣言した package の非公開の型を持つ struct — utf8.View・json.Doc）の、外での欄つきリテラル（loader/sealx.sober・language.md 15 節）
+type Sealed error {
+    at Pos
+}
+
+// Identity は同一性を持つ型（std/par の札・handle・端点・Pool、std/io の File）のゼロ値を std の外で作る composite（loader/identityx.sober・language.md 28 節 /
+// 11 節 — 2026-10-13 の裁定 Qa1）。kind 1〜6 = 型そのもののゼロ値 `T{}`（1 par.S・2 par.Task・3 par.Tx・4 par.Rx・5 par.Pool・6 io.File）・
+// 11〜16 = その型を（欄を通して）持つ欄を省いた composite（`W{}`・部分リテラル）
+type Identity error {
+    at Pos
+    kind int
+}
+
+// FileUse は開いたファイル io.File の使い方の拒否（desugar/filecheck.sober・language.md 28 節「資源とストリーム」— IO 便 段 2）。kind = filecheck の FC_*
+// （1 規則の形の外の Open・2 直後の文が defer Close でない・3 規則の形の外の Close・4 defer が別の名前を閉じる・5 写しの束縛・6 代入・7 return / File を返す呼び出し・
+// 8 composite・append・9 閉包の捕獲・10 give:）
+type FileUse error {
+    at Pos
+    kind int
+}
+
+// ForFallible は失敗しうる生成元（結果が `error?` の呼び出し形の生成元 — language.md 7 節）の印の誤り（loader/forfallible.sober）。
+// kind 1 = 印 `?` が無い（error を黙って捨てる形）・2 = 式の位置の for（yield 形）の生成元・3 = 印 `?` つきだが生成元の結果が `error?` 1 つでない
+type ForFallible error {
+    at Pos
+    kind int
+}
+
 // AssertOutsideTest は `_test.sober` の外の `assert(…)`（T7 — assert はテストの語彙）
 type AssertOutsideTest error {
     at Pos
@@ -374,11 +402,15 @@ func At(err error?) Pos {
     case CatchLhs{at}: at
     case MultiBind{at}: at
     case MutAlias{at}: at
+    case ForFallible{at}: at
+    case Sealed{at}: at
+    case Identity{at}: at
     case Layout{at}: at
     case JsonShape{at}: at
     case Intrinsic{at}: at
     case PanicLabel{at}: at
     case Par{at}: at
+    case FileUse{at}: at
     default: None()
     }
 }
@@ -437,6 +469,17 @@ func Format(err error?, where string) string {
     case Frozen{n}: "error: ${n} soundness findings (Analyzer)"
     case AssertOutsideTest{at}: loadLine(err, where, "assert is only available in _test.sober files")
     case CatchLhs{at}: loadLine(err, where, "the left of catch must be a call that returns (T, error?)")
+    case Sealed{at}: loadLine(err, where, "this type is sealed (a field has a non-public type of its package): only its own package builds it with fields — write T{} for the zero value, or use the package's constructor")
+    case Identity{at, kind}: loadLine(err, where, if kind < 10 {
+        "`${identityName(kind)}` has identity: only ${identityMaker(kind)} makes one — a zero value would refer to nothing"
+    } else {
+        "this literal leaves a field at its zero value that holds a `${identityName(kind - 10)}`, which has identity: only ${identityMaker(kind - 10)} makes one — set the field, or declare it `T?`"
+    })
+    case ForFallible{at, kind}: loadLine(err, where, switch kind {
+        case 1: "this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`"
+        case 2: "a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression"
+        default: "`?` on a generator needs a generator that returns error? only"
+    })
     case MultiBind{at}: loadLine(err, where, "this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)")
     case MutAlias{at}: loadLine(err, where, "mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call")
     case Layout{at, kind}: loadLine(err, where, switch kind {
@@ -465,7 +508,7 @@ func Format(err error?, where string) string {
         case 4: "a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)"
         case 5: "a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body"
         case 6: "a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body"
-        case 7: "return, ? and break / continue cannot leave a par.Scope / par.Spawn body (the scope waits for its children at its end)"
+        case 7: "return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)"
         case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, par.S, par.Task or a channel endpoint)"
         case 9: "the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)"
         case 13: "par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)"
@@ -480,12 +523,24 @@ func Format(err error?, where string) string {
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
         default: "par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)"
     }) }
+    case FileUse{at, kind}: loadLine(err, where, switch kind {
+        case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`"
+        case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line"
+        case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes"
+        case 4: "this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open"
+        case 5: "an io.File cannot be copied to another binding (it has identity — keep using the name bound by io.Open)"
+        case 6: "an io.File cannot be assigned (it has identity — keep using the name bound by io.Open)"
+        case 7: "an io.File cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
+        case 8: "an io.File cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
+        case 9: "a closure cannot capture an io.File — pass it as an argument"
+        default: "an io.File cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
+    })
     case PanicLabel{at, kind}: loadLine(err, where, switch kind {
         case 1: "panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})"
         case 2: "the argument of panic is a single panic label literal L{…}"
         case 3: "not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)"
         case 4: "RegionExceeded is raised by the runtime only"
-        case 5: "a panic label literal names every field of the label once (name: value)"
+        case 5: "a panic label literal names its fields (name: value), each at most once — omitted fields are zero"
         case 6: "a panic label field is int, byte, bool or string"
         case 7: "Unreachable, InvariantBroken and RegionExceeded are built-in panic labels"
         default: "a panic label is only used as the argument of panic(L{…})"
@@ -514,6 +569,29 @@ func Format(err error?, where string) string {
 }
 
 // loadLine は loader の拒否の 1 行（位置があれば `load error at <where>: <理由>`）
+// identityName / identityMaker は同一性の族の番号（Identity の kind）の型の綴りと生成の口
+func identityName(k int) string {
+    return switch k {
+    case 1: "par.S"
+    case 2: "par.Task"
+    case 3: "par.Tx"
+    case 4: "par.Rx"
+    case 5: "par.Pool"
+    default: "io.File"
+    }
+}
+
+func identityMaker(k int) string {
+    return switch k {
+    case 1: "par.Scope (the body's parameter)"
+    case 2: "par.Spawn"
+    case 3: "par.NewChan"
+    case 4: "par.NewChan"
+    case 5: "par.NewPool"
+    default: "io.Open"
+    }
+}
+
 func loadLine(err error?, where string, why string) string {
     return if At(err).file >= 0 { "load error at ${where}: ${why}" } else { "load error: ${why}" }
 }

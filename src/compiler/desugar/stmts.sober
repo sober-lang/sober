@@ -333,7 +333,9 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
                 gen := forStmt(mut st, e, eb, ef)?
                 brk := newLabel(mut st, LBrk, st.tUnit)
                 bi := pushLabel(mut st, brk)
-                ga := lB(nodeOf(mut st, gen))
+                // 失敗しうる生成元は `g(a, k)?`（forGen が `?` の節で包む）— 継続 k は `?` の内側の呼び出しの末尾の実引数
+                gcall := if kindN(mut st, gen) == ast.ETry { nA(nodeOf(mut st, gen)) } else { gen }
+                ga := lB(nodeOf(mut st, gcall))
                 lam := latN(mut st, ga, lenL(mut st, ga) - 1)
                 ln := ast.WithC(nodeOf(mut st, lam), bi + 1)
                 synSet(mut st, int(lam), ln)

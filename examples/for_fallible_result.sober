@@ -1,0 +1,18 @@
+package main
+
+import "std/iter"
+
+// 印 `?` は結果が error? 1 つの生成元にだけ付く — 失敗しない呼び出し形の生成元（iter.Range）に `?`（language.md 7 節・diag.ForFallible kind 3）
+func total(n int) (int, error?) {
+    mut s := 0
+    for i <- iter.Range(0, n)? {
+        s += i
+    }
+    return s, nil
+}
+
+func main() int {
+    s := total(4) catch return 1
+    println(s)
+    return 0
+}

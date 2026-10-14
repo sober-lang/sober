@@ -1,0 +1,64 @@
+package main
+
+// Split one file into byte ranges and read each range in its own task with io.ChunksAt (the pread-shaped read — the tasks never
+// fight over the file's position). Each task opens the file itself (an io.File does not cross to a child), reads from its offset and
+// leaves the loop once it is past the end of its range. The pieces add up to the whole file. Run from the repository root.
+import "std/io"
+import "std/iter"
+import "std/par"
+
+// piece counts the newlines and the byte sum of p's bytes in [lo, hi)
+func piece(p string, lo int, hi int) ([]int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut off := lo
+    mut nl := 0
+    mut sum := 0
+    for c <- io.ChunksAt(f, lo)? {
+        b := io.Raw(c)
+        mut i := 0
+        while i < len(b) && off + i < hi {
+            if b[i] == '\n' {
+                nl += 1
+            }
+            sum += int(b[i])
+            i += 1
+        }
+        off += len(b)
+        if off >= hi {
+            break
+        }
+    }
+    return []int{nl, sum}, nil
+}
+
+func main() int {
+    p := "testdata/io_par/access-4.log"
+    whole := io.ReadFile(p) catch return 1
+    n := len(whole)
+    // 7 ranges of unequal sizes (some inside one slot, some across several)
+    cuts := []int{0, 1000, 70000, 70001, 140000, 150000, 200000, n}
+    ks := []int{0, 1, 2, 3, 4, 5, 6}
+    rs, err := par.Map(ks, (k) => piece(p, cuts[k], cuts[k + 1]))
+    if err != nil {
+        println("cannot read the pieces")
+        return 1
+    }
+    mut nl := 0
+    mut sum := 0
+    for k <- iter.Range(0, len(rs)) {
+        println("range ${cuts[k]}..${cuts[k + 1]}: ${rs[k][0]} newlines")
+        nl += rs[k][0]
+        sum += rs[k][1]
+    }
+    mut wnl := 0
+    mut wsum := 0
+    for x <- whole {
+        if x == '\n' {
+            wnl += 1
+        }
+        wsum += int(x)
+    }
+    println("pieces ≡ whole: ${nl == wnl && sum == wsum} (${nl} newlines)")
+    return 0
+}

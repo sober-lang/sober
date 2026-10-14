@@ -1,0 +1,118 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/par",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Inbox",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "rx",
+            "type": {
+              "k": "generic",
+              "name": "par.Rx",
+              "args": [
+                {
+                  "k": "name",
+                  "name": "string"
+                }
+              ]
+            },
+            "tok": 10
+          },
+          {
+            "name": "seen",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 18
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 23
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Inbox",
+                "elems": [
+                  {
+                    "key": "seen",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 34
+                    }
+                  }
+                ],
+                "tok": 30,
+                "type_args": []
+              }
+            ],
+            "tok": 28
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 37
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 39
+                  },
+                  "field": "seen",
+                  "tok": 41
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 24,
+      "bodiless": false,
+      "span": {
+        "start": 23,
+        "end": 46
+      },
+      "sig_end": 27
+    }
+  ],
+  "consts": []
+}

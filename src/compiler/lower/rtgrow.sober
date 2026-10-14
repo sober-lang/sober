@@ -179,7 +179,11 @@ func buildMapGrow(st mut St) {
     bigM := newBlock(mut st)
     condbr(mut st, cmp(mut st, CLt, n1, iconst(mut st, MAP_IDX_MIN)), smallM, -1, bigM, -1)
     setCur(mut st, smallM)
+    sb0 := if st.rtMut == 13 { ptoi(mut st, regionBump(mut st, d)) } else { 0 }
     ps := call(mut st, st.rtGrow, list5(mut st, bs, ln, cellw, d, iconst(mut st, 1)))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_CELLB, bin(mut st, BSub, ptoi(mut st, regionBump(mut st, d)), sb0))
+    }
     br(mut st, join, list2(mut st, ps, gepWord(mut st, ps, bin(mut st, BMul, ln, cellw))))
     setCur(mut st, bigM)
     tried := call(mut st, st.rtGrowTry, list4(mut st, bs, ln, cellw, d))
@@ -216,7 +220,17 @@ func buildMapGrow(st mut St) {
     br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
     setCur(mut st, alloc)
     words := bin(mut st, BAdd, cap, iconst(mut st, 3))
+    // 先端の索引の巻き戻し（K1a — report-625 / 630）: ここへは ownTip（古い索引 [ix, ixEnd) が深度 d の region の先端 — bump == ixEnd）でだけ来るので、
+    // bump を古い索引の頭へ戻してそこに新しい索引を取る（古い索引の後ろに積まない）。新しい容量は古い容量以上（容量は長さから決まり、長さは減らない）
+    // なので、新しい索引は古い索引の場所を覆い、その外の領域を空けない。古い索引を指す旧ヘッダ（22 節）は、持ち主（0 語目 = 新しいセル列）が違えば作り直し、
+    // 同じでも候補の位置 < ヘッダの長さで絞る（map_find）ので、新しい中身を権威として読まない。rt.gcache の項（セル列の番地・水位・容量の終わり）と
+    // rt.btip（byte の列の終わり）は古い索引より前に確保した列のもので、索引の範囲を指さない
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.meta), d), W_BUMP, ix)
     ip := regionAlloc(mut st, d, words)
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_IDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+        msAdd(mut st, MS_GIDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+    }
     zl := newBlock(mut st)
     zi := param(mut st, zl, TyI64)
     zb := newBlock(mut st)
@@ -234,7 +248,11 @@ func buildMapGrow(st mut St) {
     setCur(mut st, cells)
     n := bin(mut st, BMul, ln, cellw)
     // 初回（表に載っていない）は長さちょうどで先端へ写して表に載せる・載っていればその場か余剰容量つき
+    cb0 := if st.rtMut == 13 { ptoi(mut st, regionBump(mut st, d)) } else { 0 }
     p := call(mut st, st.rtGrow, list5(mut st, bs, ln, cellw, d, geo))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_CELLB, bin(mut st, BSub, ptoi(mut st, regionBump(mut st, d)), cb0))
+    }
     // 索引を先に作ったなら持ち主は新しいセル列（作っていなければヘッダの索引は古い持ち主のまま — map_find が作り直す）
     own := newBlock(mut st)
     joinOwn := newBlock(mut st)

@@ -1,0 +1,16 @@
+package main
+
+// for の生成元に置いた mut の仮引数（暗黙の freeze — 2026-10-13）は呼び手がまだ持つ（U1）。文面は「for で回す」（report-586）
+
+func sum(xs mut []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() {
+    mut a := mut []int{1, 2}
+    println(sum(mut a))
+}

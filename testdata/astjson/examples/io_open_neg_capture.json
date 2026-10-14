@@ -1,0 +1,271 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/par",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 16
+                    },
+                    "field": "Open",
+                    "tok": 18
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io/hello.txt",
+                      "tok": 20
+                    }
+                  ],
+                  "tok": 19
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 23
+                },
+                "tok": 22
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 26
+                },
+                "field": "Close",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 30
+                }
+              ],
+              "tok": 29
+            },
+            "tok": 25
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "par",
+                    "tok": 37
+                  },
+                  "field": "Scope",
+                  "tok": 39
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "par.S"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "h"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "par",
+                                  "tok": 51
+                                },
+                                "field": "Spawn",
+                                "tok": 53
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 55
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "ident",
+                                      "name": "len",
+                                      "tok": 60
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "catch",
+                                        "e": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "io",
+                                              "tok": 62
+                                            },
+                                            "field": "ReadAll",
+                                            "tok": 64
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "ident",
+                                              "name": "f",
+                                              "tok": 66
+                                            }
+                                          ],
+                                          "tok": 65
+                                        },
+                                        "rhs": {
+                                          "k": "slicelit",
+                                          "elem": {
+                                            "k": "name",
+                                            "name": "byte"
+                                          },
+                                          "elems": [],
+                                          "mut": false,
+                                          "tok": 69
+                                        },
+                                        "tok": 68
+                                      }
+                                    ],
+                                    "tok": 61
+                                  },
+                                  "tok": 59
+                                }
+                              ],
+                              "tok": 54
+                            }
+                          ],
+                          "tok": 49
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "par",
+                                "tok": 77
+                              },
+                              "field": "Join",
+                              "tok": 79
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "h",
+                                "tok": 81
+                              }
+                            ],
+                            "tok": 80
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 47
+                  }
+                ],
+                "tok": 40
+              }
+            ],
+            "tok": 33
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 87
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 89
+                }
+              ],
+              "tok": 88
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 94
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

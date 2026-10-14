@@ -1,0 +1,15 @@
+package main
+
+// 負例: 総称の struct の裸の型パラメータの欄に同一性を持つ型（par.Tx）を渡して、その欄をゼロ値にする（diag.Identity）
+
+import "std/par"
+
+type Box[T] struct {
+    v T
+    n int
+}
+
+func main() {
+    b := Box[par.Tx[int]]{n: 1}
+    println(b.n)
+}

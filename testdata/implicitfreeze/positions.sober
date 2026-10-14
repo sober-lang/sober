@@ -69,8 +69,14 @@ func main() int {
     mut mp := mut map[string]int{}
     mp["z"] = 1
     n := count(freeze(mp))
+    mut w := mut []int{5}
+    w = append(w, 6)
+    mut ws := 0
+    for x <- freeze(w) {
+        ws += x
+    }
     sum := total(build(4))
     s := strings.Join([]string{"x"}, ",")
-    println("${t} ${f} ${h.xs[0]} ${h.ys[0]} ${bb.xs[0]} ${ls[0][0]} ${len(mm)} ${keep[0][0]} ${ys[0][0]} ${len(store)} ${im[0]} ${n} ${sum} ${s}")
+    println("${t} ${f} ${h.xs[0]} ${h.ys[0]} ${bb.xs[0]} ${ls[0][0]} ${len(mm)} ${keep[0][0]} ${ys[0][0]} ${len(store)} ${im[0]} ${n} ${sum} ${s} ${ws}")
     return 0
 }

@@ -856,7 +856,7 @@ func variantInst(st mut St, pk int, name desugar.StrRef, args desugar.ListRef, a
     return u, r.sub, nil
 }
 
-// composite はリテラル: 新しいスロットに位置か名前でフィールドを埋める（全部の欄 — 名前指定で省く部分リテラルは拒否）。
+// composite はリテラル: 新しいスロットに位置か名前でフィールドを埋める（名前つきは一部の欄だけでよい — 省いた欄はゼロ値）。
 // 型名が variant なら union 値（語 0 にタグ、ペイロードは語 1 から）。`T{}` はゼロ値
 func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     at := e
@@ -902,7 +902,7 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
     els := lB(nodeOf(mut st, e))
     n := lenL(mut st, els)
     keyed := n > 0 && nodeOf(mut st, latN(mut st, els, 0)).a >= 0
-    // 欄の照合は check と共有（desugar.CompositeFields — 混在・重複・未知・個数。部分リテラルは拒否 = X4）
+    // 欄の照合は check と共有（desugar.CompositeFields — 混在・重複・未知・位置の個数）
     nf := lenL(mut st, fields)
     names := desugar.ListRef(listN(mut st, nf))
     for k <- iter.Range(0, nf) {
@@ -976,6 +976,20 @@ func composite(st mut St, e desugar.NodeRef) (Val, error?) {
             f := latI(mut st, fields, i)
             zeroFill(mut st, p, bs + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1))
             i += 1
+        }
+    }
+    // 部分リテラル: 書かなかった欄はゼロ値（`T{}` と同じ — slice / map の欄は空ヘッダ）
+    if keyed && n < lenL(mut st, fields) {
+        for k <- iter.Range(0, lenL(mut st, fields)) {
+            mut given := false
+            for j <- iter.Range(0, n) {
+                given = given || latI(mut st, fof, j) == k
+            }
+            if !given {
+                f := latI(mut st, fields, k)
+                requireZero(mut st, desugar.HeapGet(mut st.d, f + 1), at)?
+                zeroFill(mut st, p, bs + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1))
+            }
         }
     }
     i = 0

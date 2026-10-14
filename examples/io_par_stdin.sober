@@ -1,0 +1,39 @@
+package main
+
+// Count the lines of standard input in one task while another task tallies a log shard.
+// Run from the repository root (reads testdata/io_par).
+import "std/io"
+import "std/par"
+import "std/strings"
+
+func countLines() (int, error?) {
+    mut lines := 0
+    input := io.ReadStdin()?
+    for c <- input {
+        if c == '\n' {
+            lines += 1
+        }
+    }
+    return lines, nil
+}
+
+func countErrors(path string) (int, error?) {
+    text := string(io.ReadFile(path)?)?
+    return strings.Count(text, " 500 ") + strings.Count(text, " 503 "), nil
+}
+
+func main() int {
+    r, err := par.Scope((s par.S) => {
+        lines := par.Spawn(s, () => countLines())
+        errors := par.Spawn(s, () => countErrors("testdata/io_par/access-2.log"))
+        n, ne := par.Join(lines)
+        e, ee := par.Join(errors)
+        if ne != nil || ee != nil { "" } else { "${n} lines on stdin, ${e} server errors in the shard" }
+    })
+    if err != nil || r == "" {
+        println("cannot read the input")
+        return 1
+    }
+    println(r)
+    return 0
+}

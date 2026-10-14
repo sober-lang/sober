@@ -1,0 +1,8 @@
+range 0..1000: 41 newlines
+range 1000..70000: 2899 newlines
+range 70000..70001: 0 newlines
+range 70001..140000: 2935 newlines
+range 140000..150000: 424 newlines
+range 150000..200000: 2116 newlines
+range 200000..213841: 585 newlines
+pieces ≡ whole: true (9000 newlines)

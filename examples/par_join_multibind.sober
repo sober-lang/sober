@@ -1,0 +1,21 @@
+package main
+
+// 負例（diag.MultiBind — check と build が同じ文面）: error を返す task の Join を値 1 つに束縛。以前は check が受理・build が lower の
+// Mismatch で割れていた（report-583）
+
+import "std/par"
+
+type Missing error
+
+func load(n int) (int, error?) {
+    return 0, Missing{}
+}
+
+func main() {
+    r, err := par.Scope((s par.S) => {
+        h := par.Spawn(s, () => load(1))
+        d := par.Join(h)
+        0
+    })
+    println(r)
+}

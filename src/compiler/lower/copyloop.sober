@@ -4,13 +4,15 @@ import "std/iter"
 import "ast"
 import "lexer"
 import "desugar"
+import "diag"
 
 // 写しのループの一括化（宛先構築レーン M1b: シリアライザ・パーサ・Builder の Build / PushAll・strings.Join の 1 要素ずつの写しが
 // 合成の写しの帰属の 70% だった）。最適化のバックエンドの経路（--passes）だけ・Lean 無変更・意味論は不変（観測等価 — optdiff が網）。
 // 形を構文で見分ける（while の本体がちょうど 2 文）:
 //   (A) `while j < E { dst = append(dst, src[j]); j += 1 }`    — append の写し（dst は mut slice の束縛・src は別の名前）
-//   (B) `while j < E { D[a + j] = S[b + j]; j += 1 }`           — 添字の写し（a・b は無くてもよい・D は mut slice の束縛・S は別の名前）
-//   (C) `while j < E { dst = append(dst, x); j += 1 }`          — 同じ値の詰め（x は名前 — Builder.Push の chunk の確保がこれ）
+//   (B) `while j < E { D[a + j] = S[b + j]; j += 1 }`           — 添字の写し（a・b は無くてもよい・D は mut slice の束縛か欄の経路・S は別の名前）
+//   (C) `while j < E { dst = append(dst, x); j += 1 }`          — 同じ値の詰め（x は名前 — Builder.Push の chunk の確保がこれ — か整数の字面 —
+//       定数〔constFill〕— 0 埋めの初期化のループ〔std/json の zeroFill〕がこれ・ラウンド 9 — report-624）
 // E は名前（本体で代入しない）・整数・欄読み（根の名前が本体で代入されない）・`len(X)`（X は本体で代入しない名前）。範囲の検査を先に 1 回（j0 ≥ 0・終わり ≤ len）して、通れば
 // まとめて写して j = E。通らなければ元のループ（panic の点も同じ — 写しの途中で落ちる入力は元の形で落とす）。前向きの写しなので重なりの意味も元と同じ
 
@@ -64,7 +66,7 @@ func matchCopyLoop(st mut St, s desugar.NodeRef) CopyLoop {
             return no
         }
         ix := latN(mut st, args, 1)
-        if kindN(mut st, ix) == ast.EIdent && !sameName(mut st, ix, t1) && !sameName(mut st, ix, j) && invariantBound(mut st, e, t1, j) {
+        if (constFill(mut st, ix) || kindN(mut st, ix) == ast.EIdent && !sameName(mut st, ix, t1) && !sameName(mut st, ix, j)) && invariantBound(mut st, e, t1, j) {
             // (C) 同じ値の詰め
             return CopyLoop{kind: 3, j: j, e: e, dst: t1, src: ix, a: -1, b: -1}
         }
@@ -83,7 +85,12 @@ func matchCopyLoop(st mut St, s desugar.NodeRef) CopyLoop {
     }
     d := nA(nodeOf(mut st, t1))
     sv := nA(nodeOf(mut st, v1))
-    if kindN(mut st, d) != ast.EIdent || kindN(mut st, sv) != ast.EIdent || sameName(mut st, d, sv) || sameName(mut st, d, j) || sameName(mut st, sv, j) {
+    // D は名前か欄の経路（`w.buf` — 根の名前が S・j でない。Writer の枠への写し — ラウンド 3・report-618）
+    mut dr := d
+    while kindN(mut st, dr) == ast.ESelector {
+        dr = nA(nodeOf(mut st, dr))
+    }
+    if kindN(mut st, dr) != ast.EIdent || kindN(mut st, sv) != ast.EIdent || sameName(mut st, dr, sv) || sameName(mut st, dr, j) || sameName(mut st, sv, j) {
         return no
     }
     da := offsetOf(mut st, nB(nodeOf(mut st, t1)), j)
@@ -145,16 +152,32 @@ func sameName(st mut St, x desugar.NodeRef, y desugar.NodeRef) bool {
 // copyLoopStmt は見分けた写しのループ m を下ろす: 範囲が通れば一括・でなければ元のループ（whileLoop）。下ろせない形（束縛が引けない・型が合わない）は false
 func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     lj := lookup(mut st, sA(nodeOf(mut st, m.j)))
-    ld := lookup(mut st, sA(nodeOf(mut st, m.dst)))
-    if lj < 0 || ld < 0 || desugar.HeapGet(mut st.d, lj + 2) != LCell || desugar.HeapGet(mut st.d, ld + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lj + 3), TInt) {
+    if lj < 0 || desugar.HeapGet(mut st.d, lj + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lj + 3), TInt) {
         return false, nil
     }
-    dt := desugar.HeapGet(mut st.d, ld + 3)
-    if !isTag(mut st, dt, TSlice) || desugar.HeapGet(mut st.d, dt + 2) == 0 {
-        return false, nil
+    // D のセル（名前）か欄の場所（経路 — (B) だけ）
+    mut dt := 0
+    mut haddr := 0
+    if kindN(mut st, m.dst) == ast.EIdent {
+        ld := lookup(mut st, sA(nodeOf(mut st, m.dst)))
+        if ld < 0 || desugar.HeapGet(mut st.d, ld + 2) != LCell {
+            return false, nil
+        }
+        dt = desugar.HeapGet(mut st.d, ld + 3)
+        haddr = desugar.HeapGet(mut st.d, ld + 4)
+        if m.kind == 3 && isTag(mut st, dt, TSlice) && desugar.HeapGet(mut st.d, dt + 2) != 0 {
+            return fillLoopStmt(mut st, s, m, lj, ld, dt)
+        }
+    } else {
+        if m.kind != 2 {
+            return false, nil
+        }
+        p := target(mut st, m.dst, s)?
+        dt = p.t
+        haddr = p.v
     }
-    if m.kind == 3 {
-        return fillLoopStmt(mut st, s, m, lj, ld, dt)
+    if !isTag(mut st, dt, TSlice) || desugar.HeapGet(mut st.d, dt + 2) == 0 || m.kind == 3 {
+        return false, nil
     }
     // src / S の値（名前 — 本体で変わらない）
     sx := expr(mut st, m.src)?
@@ -164,7 +187,6 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     elem := desugar.HeapGet(mut st.d, dt + 1)
     bytesKind := isBytes(mut st, dt)
     jaddr := desugar.HeapGet(mut st.d, lj + 4)
-    haddr := desugar.HeapGet(mut st.d, ld + 4)
     ev := expr(mut st, m.e)?
     if !isTag(mut st, ev.t, TInt) {
         return false, nil
@@ -203,22 +225,7 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     setCur(mut st, fast)
     cellw := tWords(mut st, elem)
     if m.kind == 1 {
-        h := copyVal(mut st, dt, haddr)
-        d := load(mut st, h, 2)
-        mut gp := 0
-        if bytesKind {
-            p8, d8 := growN8(mut st, h, d, n)
-            gp = p8
-            call(mut st, st.rtCopy8, list3(mut st, d8, gepByte(mut st, hdrPtr(mut st, sx.v), s0), n))
-        } else {
-            pw, dw := growN(mut st, h, cellw, d, n)
-            gp = pw
-            call(mut st, st.rtCopy, list3(mut st, dw, gepWord(mut st, hdrPtr(mut st, sx.v), bin(mut st, BMul, s0, iconst(mut st, cellw))), bin(mut st, BMul, n, iconst(mut st, cellw))))
-        }
-        nh := newHeader(mut st, dt, gp, bin(mut st, BAdd, load(mut st, h, 1), n), d)
-        for w <- iter.Range(0, tWords(mut st, dt)) {
-            store(mut st, haddr, w, load(mut st, nh, w))
-        }
+        appendBulk(mut st, dt, haddr, sx.v, s0, n)
     } else {
         d0 := bin(mut st, BAdd, av, j0)
         if bytesKind {
@@ -237,6 +244,315 @@ func copyLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop) (bool, error?) {
     }
     setCur(mut st, done)
     return true, nil
+}
+
+// appendBulk は mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、同じ要素の型の slice の値 sv の [s0, s0 + n) を一括で積む
+// （n > 0・範囲は検査済み — while の形 (A) と for の形が共有）
+func appendBulk(st mut St, dt int, haddr int, sv int, s0 int, n int) {
+    cellw := tWords(mut st, desugar.HeapGet(mut st.d, dt + 1))
+    h := copyVal(mut st, dt, haddr)
+    d := load(mut st, h, 2)
+    mut gp := 0
+    if isBytes(mut st, dt) {
+        p8, d8 := growN8(mut st, h, d, n)
+        gp = p8
+        call(mut st, st.rtCopy8, list3(mut st, d8, gepByte(mut st, hdrPtr(mut st, sv), s0), n))
+    } else {
+        pw, dw := growN(mut st, h, cellw, d, n)
+        gp = pw
+        call(mut st, st.rtCopy, list3(mut st, dw, gepWord(mut st, hdrPtr(mut st, sv), bin(mut st, BMul, s0, iconst(mut st, cellw))), bin(mut st, BMul, n, iconst(mut st, cellw))))
+    }
+    nh := newHeader(mut st, dt, gp, bin(mut st, BAdd, load(mut st, h, 1), n), d)
+    for w <- iter.Range(0, tWords(mut st, dt)) {
+        store(mut st, haddr, w, load(mut st, nh, w))
+    }
+}
+
+// forAppendStmt は文形の for の写しの形を一括で下ろす（ラウンド 2 — report-617。下ろせない形は false で、呼び手が普通の for で下ろす）:
+//   (S) `for x <- S { D = append(D, x) }`                      — S は slice の式（評価は 1 回 — iter.Slice と同じ）
+//   (R) `for j <- iter.Range(lo, hi) { D = append(D, S[j]) }`  — S は名前・lo / hi は呼び出し（len を除く）を持たない整数式（pureInt）。
+//       範囲の検査を先に 1 回（lo ≥ 0・hi ≤ len(S)）して、通らなければ元の for（panic の点も同じ）
+//   (Z) `for _ <- iter.Range(lo, hi) { D = append(D, c) }`     — c は定数（constFill — 0 / -1 / false の初期化 — ラウンド 9・report-624）。hi − lo > 0 なら n 個の詰め
+//       （添字が無いので範囲の検査は要らない・Range の実引数の評価は元と同じく 1 回）
+// D は mut slice の束縛の名前。要素は表層型で byte か int（同じ型 — 写しに変換が挟まらない — (Z) は bool も）
+func forAppendStmt(st mut St, e desugar.NodeRef) (bool, error?) {
+    fx := nodeOf(mut st, e)
+    if lenL(mut st, lA(fx)) != 1 || lenL(mut st, lC(fx)) != 1 {
+        return false, nil
+    }
+    g := latN(mut st, lA(fx), 0)
+    if lenL(mut st, lA(nodeOf(mut st, g))) != 1 || lenL(mut st, lC(nodeOf(mut st, g))) != 0 {
+        return false, nil
+    }
+    xn := latS(mut st, lA(nodeOf(mut st, g)), 0)
+    src := nB(nodeOf(mut st, g))
+    // 本体: D = append(D, v)
+    s1 := latN(mut st, lC(fx), 0)
+    if kindN(mut st, s1) != ast.SAssign || nodeOf(mut st, s1).b != lexer.Equal || lenL(mut st, lA(nodeOf(mut st, s1))) != 1 || lenL(mut st, lC(nodeOf(mut st, s1))) != 1 {
+        return false, nil
+    }
+    dn := latN(mut st, lA(nodeOf(mut st, s1)), 0)
+    v1 := latN(mut st, lC(nodeOf(mut st, s1)), 0)
+    if kindN(mut st, dn) != ast.EIdent || strEq(mut st, sA(nodeOf(mut st, dn)), xn) || kindN(mut st, v1) != ast.ECall || kindN(mut st, nA(nodeOf(mut st, v1))) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, nA(nodeOf(mut st, v1)))), "append") {
+        return false, nil
+    }
+    args := lB(nodeOf(mut st, v1))
+    if lenL(mut st, args) != 2 || !sameName(mut st, latN(mut st, args, 0), dn) {
+        return false, nil
+    }
+    v := latN(mut st, args, 1)
+    kind := forKind(mut st, e)?
+    // (S) は v = x・(R) は v = S[x]（S は名前 — D でも x でもない）。写す元の値の式 sv
+    mut sv := desugar.NodeRef(-1)
+    // (Z) は v = 定数（写す元なし — 添字が無いので Range の実引数は pureInt でなくてよい）
+    fill := kind == desugar.FCall && constFill(mut st, v)
+    if kind == desugar.FSlice && kindN(mut st, v) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, v)), xn) {
+        sv = src
+    } else if fill || kind == desugar.FCall && kindN(mut st, v) == ast.EIndex && kindN(mut st, nB(nodeOf(mut st, v))) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, nB(nodeOf(mut st, v)))), xn) {
+        if !fill {
+            sv = nA(nodeOf(mut st, v))
+        }
+        fi := callGenFn(mut st, src)
+        if (!fill && (kindN(mut st, sv) != ast.EIdent || sameName(mut st, sv, dn) || strEq(mut st, sA(nodeOf(mut st, sv)), xn))) || fi < 0 || !strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, fi)), "std/iter") || !strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, fi))), "Range") {
+            return false, nil
+        }
+        rargs := lB(nodeOf(mut st, src))
+        if lenL(mut st, rargs) != 2 || (!fill && (!pureInt(mut st, latN(mut st, rargs, 0)) || !pureInt(mut st, latN(mut st, rargs, 1)))) {
+            return false, nil
+        }
+    } else {
+        return false, nil
+    }
+    // 要素の型（表層型）: D と写す元が同じ byte / int の slice（(Z) は D だけ — bool も）
+    yd := desugar.YTypeOf(mut st.d, latN(mut st, args, 0))
+    ys := if fill { yd } else { desugar.YTypeOf(mut st.d, sv) }
+    if yd < 0 || ys < 0 || desugar.YAt(mut st.d, yd).k != desugar.YSlice || desugar.YAt(mut st.d, ys).k != desugar.YSlice {
+        return false, nil
+    }
+    ek := desugar.YAt(mut st.d, desugar.YAt(mut st.d, yd).a).k
+    if desugar.YAt(mut st.d, desugar.YAt(mut st.d, ys).a).k != ek || (ek != desugar.YByte && ek != desugar.YInt && !(fill && ek == desugar.YBool)) {
+        return false, nil
+    }
+    ld := lookup(mut st, sA(nodeOf(mut st, dn)))
+    if ld < 0 || desugar.HeapGet(mut st.d, ld + 2) != LCell {
+        return false, nil
+    }
+    dt := desugar.HeapGet(mut st.d, ld + 3)
+    if !isTag(mut st, dt, TSlice) || desugar.HeapGet(mut st.d, dt + 2) == 0 {
+        return false, nil
+    }
+    haddr := desugar.HeapGet(mut st.d, ld + 4)
+    zero := iconst(mut st, 0)
+    done := newBlock(mut st)
+    go_b := newBlock(mut st)
+    if kind == desugar.FSlice {
+        sx := expr(mut st, sv)?
+        if !isTag(mut st, sx.t, TSlice) || !tEql(mut st, desugar.HeapGet(mut st.d, sx.t + 1), desugar.HeapGet(mut st.d, dt + 1)) || isBytes(mut st, sx.t) != isBytes(mut st, dt) {
+            return false, diag.Mismatch{at: posOf(mut st, e)}
+        }
+        n := load(mut st, sx.v, 1)
+        condbr(mut st, cmp(mut st, CLe, n, zero), done, -1, go_b, -1)
+        setCur(mut st, go_b)
+        appendBulk(mut st, dt, haddr, sx.v, zero, n)
+        br(mut st, done, -1)
+        setCur(mut st, done)
+        return true, nil
+    }
+    rargs := lB(nodeOf(mut st, src))
+    lo := expr(mut st, latN(mut st, rargs, 0))?
+    hi := expr(mut st, latN(mut st, rargs, 1))?
+    if fill {
+        elem := desugar.HeapGet(mut st.d, dt + 1)
+        xv := exprExpecting(mut st, v, elem, v)?
+        if !isTag(mut st, lo.t, TInt) || !isTag(mut st, hi.t, TInt) || !tEql(mut st, xv.t, elem) {
+            return false, diag.Mismatch{at: posOf(mut st, e)}
+        }
+        nf := bin(mut st, BSub, hi.v, lo.v)
+        condbr(mut st, cmp(mut st, CLe, nf, zero), done, -1, go_b, -1)
+        setCur(mut st, go_b)
+        fillBulk(mut st, dt, haddr, xv.t, copyVal(mut st, xv.t, xv.v), nf)
+        br(mut st, done, -1)
+        setCur(mut st, done)
+        return true, nil
+    }
+    sx := expr(mut st, sv)?
+    if !isTag(mut st, lo.t, TInt) || !isTag(mut st, hi.t, TInt) || !isTag(mut st, sx.t, TSlice) || !tEql(mut st, desugar.HeapGet(mut st.d, sx.t + 1), desugar.HeapGet(mut st.d, dt + 1)) || isBytes(mut st, sx.t) != isBytes(mut st, dt) {
+        return false, diag.Mismatch{at: posOf(mut st, e)}
+    }
+    n := bin(mut st, BSub, hi.v, lo.v)
+    slow := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, n, zero), done, -1, go_b, -1)
+    setCur(mut st, go_b)
+    fast := newBlock(mut st)
+    okc := bin(mut st, BAnd, cmp(mut st, CGe, lo.v, zero), cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)))
+    condbr(mut st, cmp(mut st, CNe, okc, zero), fast, -1, slow, -1)
+    setCur(mut st, fast)
+    appendBulk(mut st, dt, haddr, sx.v, lo.v, n)
+    br(mut st, done, -1)
+    // 元の for（範囲の外 — 途中の panic の点も元のまま）
+    setCur(mut st, slow)
+    forGenStmt(mut st, e)?
+    if cur(mut st) != -1 {
+        br(mut st, done, -1)
+    }
+    setCur(mut st, done)
+    return true, nil
+}
+
+// constFill は詰める値 x が定数か: 整数の字面・`-字面`・`字面 - 字面`（あふれない形だけ）・true / false（組み込みの名前 — 束縛し直せない）・括弧
+func constFill(st mut St, x0 desugar.NodeRef) bool {
+    mut x := x0
+    while kindN(mut st, x) == ast.EParen {
+        x = nA(nodeOf(mut st, x))
+    }
+    k := kindN(mut st, x)
+    if k == ast.EInt {
+        return true
+    }
+    if k == ast.EIdent {
+        return strIs(mut st, sA(nodeOf(mut st, x)), "true") || strIs(mut st, sA(nodeOf(mut st, x)), "false")
+    }
+    if k == ast.EUnary {
+        return nodeOf(mut st, x).a == lexer.Minus && kindN(mut st, nB(nodeOf(mut st, x))) == ast.EInt
+    }
+    if k == ast.EBinary {
+        return nodeOf(mut st, x).a == lexer.Minus && kindN(mut st, nB(nodeOf(mut st, x))) == ast.EInt && kindN(mut st, nC(nodeOf(mut st, x))) == ast.EInt
+    }
+    return false
+}
+
+// forWriteStmt は Writer への写しの for を一括で下ろす（ラウンド 3 — report-618。下ろせない形は false）:
+//   `for j <- iter.Range(lo, hi) { io.WriteByte(mut w, S[j]) }`（std/io の WriteByte・w は名前・S は byte の slice の名前・lo / hi は pureInt）
+// 区間が S の範囲の中で、w の枠の空き（len(w.buf) − w.n）にまるごと収まるなら、枠へ一括で写して w.n を進める（WriteByte の速い道を hi − lo 回と同じ）。
+// 収まらない（枠の境目を跨ぐ — 書き出しの遅い道が要る）か範囲の外なら元の for
+func forWriteStmt(st mut St, e desugar.NodeRef) (bool, error?) {
+    fx := nodeOf(mut st, e)
+    if lenL(mut st, lA(fx)) != 1 || lenL(mut st, lC(fx)) != 1 {
+        return false, nil
+    }
+    g := latN(mut st, lA(fx), 0)
+    if lenL(mut st, lA(nodeOf(mut st, g))) != 1 || lenL(mut st, lC(nodeOf(mut st, g))) != 0 {
+        return false, nil
+    }
+    xn := latS(mut st, lA(nodeOf(mut st, g)), 0)
+    src := nB(nodeOf(mut st, g))
+    s1 := latN(mut st, lC(fx), 0)
+    if kindN(mut st, s1) != ast.SExpr || kindN(mut st, nA(nodeOf(mut st, s1))) != ast.ECall {
+        return false, nil
+    }
+    c := nA(nodeOf(mut st, s1))
+    callee := nA(nodeOf(mut st, c))
+    args := lB(nodeOf(mut st, c))
+    if kindN(mut st, callee) != ast.ESelector || kindN(mut st, nA(nodeOf(mut st, callee))) != ast.EIdent || lenL(mut st, args) != 2 {
+        return false, nil
+    }
+    bn := sA(nodeOf(mut st, nA(nodeOf(mut st, callee))))
+    if lookup(mut st, bn) >= 0 || importOf(mut st, st.curPkg, bn, 0, slen(mut st, bn)) < 0 {
+        return false, nil
+    }
+    wf := desugar.ResolveSelFn(mut st.d, st.curPkg, bn, sB(nodeOf(mut st, callee)))
+    if wf < 0 || !strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, wf)), "std/io") || !strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, wf))), "WriteByte") {
+        return false, nil
+    }
+    wa := latN(mut st, args, 0)
+    v := latN(mut st, args, 1)
+    if kindN(mut st, wa) != ast.EMutArg || dotAt(mut st, sA(nodeOf(mut st, wa))) >= 0 || kindN(mut st, v) != ast.EIndex || kindN(mut st, nB(nodeOf(mut st, v))) != ast.EIdent || !strEq(mut st, sA(nodeOf(mut st, nB(nodeOf(mut st, v)))), xn) {
+        return false, nil
+    }
+    sv := nA(nodeOf(mut st, v))
+    wn := sA(nodeOf(mut st, wa))
+    if kindN(mut st, sv) != ast.EIdent || strEq(mut st, sA(nodeOf(mut st, sv)), wn) || strEq(mut st, sA(nodeOf(mut st, sv)), xn) || strEq(mut st, wn, xn) {
+        return false, nil
+    }
+    kind := forKind(mut st, e)?
+    fi := callGenFn(mut st, src)
+    if kind != desugar.FCall || fi < 0 || !strIs(mut st, desugar.PkgPath(mut st.d, fnPkg(mut st, fi)), "std/iter") || !strIs(mut st, sA(nodeOf(mut st, fnNode(mut st, fi))), "Range") {
+        return false, nil
+    }
+    rargs := lB(nodeOf(mut st, src))
+    if lenL(mut st, rargs) != 2 || !pureInt(mut st, latN(mut st, rargs, 0)) || !pureInt(mut st, latN(mut st, rargs, 1)) {
+        return false, nil
+    }
+    ys := desugar.YTypeOf(mut st.d, sv)
+    if ys < 0 || desugar.YAt(mut st.d, ys).k != desugar.YSlice || desugar.YAt(mut st.d, desugar.YAt(mut st.d, ys).a).k != desugar.YByte {
+        return false, nil
+    }
+    // w の枠（buf）と書いた数（n）の場所
+    lw := lookup(mut st, wn)
+    if lw < 0 || desugar.HeapGet(mut st.d, lw + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lw + 3), TStruct) {
+        return false, nil
+    }
+    fs := hgetL(mut st, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, lw + 3) + 1) + SI_FIELDS)
+    fb := findField(mut st, fs, strLit(mut st, "buf"))
+    fnn := findField(mut st, fs, strLit(mut st, "n"))
+    if fb < 0 || fnn < 0 || !isTag(mut st, desugar.HeapGet(mut st.d, fb + 1), TSlice) || !isBytes(mut st, desugar.HeapGet(mut st.d, fb + 1)) || !isTag(mut st, desugar.HeapGet(mut st.d, fnn + 1), TInt) {
+        return false, nil
+    }
+    lo := expr(mut st, latN(mut st, rargs, 0))?
+    hi := expr(mut st, latN(mut st, rargs, 1))?
+    sx := expr(mut st, sv)?
+    if !isTag(mut st, lo.t, TInt) || !isTag(mut st, hi.t, TInt) || !isTag(mut st, sx.t, TSlice) || !isBytes(mut st, sx.t) {
+        return false, diag.Mismatch{at: posOf(mut st, e)}
+    }
+    wv := desugar.HeapGet(mut st.d, lw + 4)
+    bufp := fieldPtr(mut st, wv, desugar.HeapGet(mut st.d, fb + 2))
+    np := fieldPtr(mut st, wv, desugar.HeapGet(mut st.d, fnn + 2))
+    zero := iconst(mut st, 0)
+    n := bin(mut st, BSub, hi.v, lo.v)
+    done := newBlock(mut st)
+    go_b := newBlock(mut st)
+    fast := newBlock(mut st)
+    slow := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, n, zero), done, -1, go_b, -1)
+    setCur(mut st, go_b)
+    n0 := load(mut st, np, 0)
+    mut okc := bin(mut st, BAnd, cmp(mut st, CGe, lo.v, zero), cmp(mut st, CLe, hi.v, load(mut st, sx.v, 1)))
+    okc = bin(mut st, BAnd, okc, bin(mut st, BAnd, cmp(mut st, CGe, n0, zero), cmp(mut st, CLe, bin(mut st, BAdd, n0, n), load(mut st, bufp, 1))))
+    condbr(mut st, cmp(mut st, CNe, okc, zero), fast, -1, slow, -1)
+    setCur(mut st, fast)
+    call(mut st, st.rtCopy8, list3(mut st, gepByte(mut st, hdrPtr(mut st, bufp), n0), gepByte(mut st, hdrPtr(mut st, sx.v), lo.v), n))
+    store(mut st, np, 0, bin(mut st, BAdd, n0, n))
+    br(mut st, done, -1)
+    // 元の for（枠の境目を跨ぐ・範囲の外 — 書き出しの遅い道と panic の点は元のまま）
+    setCur(mut st, slow)
+    forGenStmt(mut st, e)?
+    if cur(mut st) != -1 {
+        br(mut st, done, -1)
+    }
+    setCur(mut st, done)
+    return true, nil
+}
+
+// pureInt は x が呼び出し（len(名前) を除く）・割り算を持たない整数の式か（字面・名前・欄読み・名前の添字読み・len(名前)・+ / − / *・括弧 — 2 回下ろしても同じ値）
+func pureInt(st mut St, x desugar.NodeRef) bool {
+    k := kindN(mut st, x)
+    if k == ast.EInt || k == ast.EIdent {
+        return true
+    }
+    if k == ast.EParen {
+        return pureInt(mut st, nA(nodeOf(mut st, x)))
+    }
+    if k == ast.EIndex {
+        // 添字読み `名前[i]`（範囲の外なら 1 回目の評価が元と同じ点で落ちる）
+        y := desugar.YTypeOf(mut st.d, nA(nodeOf(mut st, x)))
+        return kindN(mut st, nA(nodeOf(mut st, x))) == ast.EIdent && y >= 0 && desugar.YAt(mut st.d, y).k == desugar.YSlice && pureInt(mut st, nB(nodeOf(mut st, x)))
+    }
+    if k == ast.ESelector {
+        mut r := x
+        while kindN(mut st, r) == ast.ESelector {
+            r = nA(nodeOf(mut st, r))
+        }
+        return kindN(mut st, r) == ast.EIdent
+    }
+    if k == ast.EBinary {
+        op := nodeOf(mut st, x).a
+        return (op == lexer.Plus || op == lexer.Minus || op == lexer.Star) && pureInt(mut st, nB(nodeOf(mut st, x))) && pureInt(mut st, nC(nodeOf(mut st, x)))
+    }
+    if k == ast.ECall && kindN(mut st, nA(nodeOf(mut st, x))) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, nA(nodeOf(mut st, x)))), "len") {
+        a := lB(nodeOf(mut st, x))
+        return lenL(mut st, a) == 1 && kindN(mut st, latN(mut st, a, 0)) == ast.EIdent
+    }
+    return false
 }
 
 // fillLoopStmt は (C) 同じ値の詰め: n = E - j0 > 0 なら n セル伸ばして値で埋め、j = E（範囲の検査は要らない — 添字が無い）
@@ -259,6 +575,16 @@ func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt i
     go_b := newBlock(mut st)
     condbr(mut st, cmp(mut st, CLe, n, iconst(mut st, 0)), done, -1, go_b, -1)
     setCur(mut st, go_b)
+    fillBulk(mut st, dt, haddr, xv.t, v, n)
+    store(mut st, jaddr, 0, ev.v)
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    return true, nil
+}
+
+// fillBulk は mut slice の束縛（セルの番地 haddr・型 dt）の末尾へ、値 v（型 xt — 要素の型）を n 個積む（n > 0 — (C) と for の (Z) が共有）
+func fillBulk(st mut St, dt int, haddr int, xt int, v int, n int) {
+    elem := desugar.HeapGet(mut st.d, dt + 1)
     h := copyVal(mut st, dt, haddr)
     d := load(mut st, h, 2)
     bytesKind := isBytes(mut st, dt)
@@ -286,7 +612,7 @@ func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt i
     if bytesKind {
         store8(mut st, gepByte(mut st, gd, i), 0, v)
     } else {
-        storeVal(mut st, cellAt(mut st, gd, i, cellw), 0, xv.t, v)
+        storeVal(mut st, cellAt(mut st, gd, i, cellw), 0, xt, v)
     }
     br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
     setCur(mut st, after)
@@ -294,10 +620,6 @@ func fillLoopStmt(st mut St, s desugar.NodeRef, m CopyLoop, lj int, ld int, dt i
     for w <- iter.Range(0, tWords(mut st, dt)) {
         store(mut st, haddr, w, load(mut st, nh, w))
     }
-    store(mut st, jaddr, 0, ev.v)
-    br(mut st, done, -1)
-    setCur(mut st, done)
-    return true, nil
 }
 
 // growN はヘッダ h（cellw 語のセル）を n セル伸ばす先を取る: 先端に接していればその場で伸長・でなければ全コピー（grow の n 版）。（新しいセル列の先頭, 伸ばした先の最初のセル）

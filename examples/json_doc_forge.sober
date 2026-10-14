@@ -1,7 +1,7 @@
 package main
 
-// 負例（check が拒否）: json.Doc は Parse だけが作る証人 — 外から composite で偽造できない（非公開の型の封の欄 seal が書けない。
-// 欄を全部書いても seal が欠けた部分リテラルになる — language.md 16 節）
+// 負例（loader が拒否 — diag.Sealed）: json.Doc は Parse だけが作る証人 — 外から composite で偽造できない（非公開の型の封の欄 seal を持つ封の型は、
+// 外では欄つきのリテラルを書けない。部分リテラルの解禁〔2026-10-13〕でも封の欄をゼロ値で埋める形は拒否 — language.md 15 節）
 
 import "std/json"
 

@@ -47,7 +47,8 @@ const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先�
 
 // installRt はランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
 func installRt(st mut St) {
-    st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS)
+    // 変異 13（--map-stat）は meta の後ろに map の成長の計数を置く（panic.sober の msAdd）
+    st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { MS_N } else { 0 }))
     if st.trapUse {
         st.trapG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.trap")), TRAP_WORDS)
     }
@@ -569,6 +570,9 @@ func buildMapFind(st mut St, f FnRef, r MapRepr) {
     setCur(mut st, alloc)
     words := bin(mut st, BAdd, cap, iconst(mut st, 3))
     np := call(mut st, st.rtRalloc, list2(mut st, load(mut st, hdr, 2), words))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_IDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+    }
     zl := newBlock(mut st)
     zi := param(mut st, zl, TyI64)
     zb := newBlock(mut st)
@@ -758,15 +762,23 @@ func installIo(st mut St) {
     cstr := addFunc(mut st, int(strLit(mut st, "rt.cstr")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtCstr = cstr
     wall := addFunc(mut st, int(strLit(mut st, "rt.write_all")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
+    // std/par を使うプログラムの write_file は ring を通る写し（IO 便 段 1 — write_fd〔標準出力・標準エラー〕は同期のまま）
+    mut wallF := wall
+    if st.taskUse {
+        wallF = addFunc(mut st, int(strLit(mut st, "rt.write_all_u")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
+    }
     st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
     st.rtWrite = addFunc(mut st, int(strLit(mut st, "rt.write_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtArgs = addFunc(mut st, int(strLit(mut st, "rt.read_args")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtDir = addFunc(mut st, int(strLit(mut st, "rt.read_dir")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
     st.rtWfd = addFunc(mut st, int(strLit(mut st, "rt.write_fd")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     buildCstr(mut st, cstr)
-    buildWriteAll(mut st, wall)
+    buildWriteAll(mut st, wall, false)
+    if st.taskUse {
+        buildWriteAll(mut st, wallF, true)
+    }
     buildReadFile(mut st, cstr)
-    buildWriteFile(mut st, cstr, wall)
+    buildWriteFile(mut st, cstr, wallF)
     buildReadArgs(mut st)
     buildReadDir(mut st, cstr)
     buildWriteFd(mut st, wall)
@@ -879,7 +891,8 @@ func buildReadFd(st mut St) {
     nonzero := branchIf(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)))
     br(mut st, done, -1)
     setCur(mut st, nonzero)
-    r := syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c))
+    // std/par を使うプログラムは region の先端へ直に読む（read_file と同じ — 読みの間に task が切り替わるので、ワーカーごとの iobuf は使えない）
+    r := if st.taskUse { rfdDirect(mut st, depth, bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1)), fd, c) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
     notIntr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
     br(mut st, loop, -1)
     setCur(mut st, notIntr)
@@ -890,9 +903,11 @@ func buildReadFd(st mut St) {
     setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), r))
     br(mut st, done, -1)
     setCur(mut st, got)
-    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
-    call(mut st, st.rtExtend8, list3(mut st, depth, end, r))
-    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, end), buf, r))
+    if !st.taskUse {
+        end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+        call(mut st, st.rtExtend8, list3(mut st, depth, end, r))
+        call(mut st, st.rtCopy8, list3(mut st, itop(mut st, end), buf, r))
+    }
     store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), r))
     more := branchIf(mut st, cmp(mut st, CLt, limit, iconst(mut st, 0)))
     br(mut st, loop, -1)
@@ -900,6 +915,14 @@ func buildReadFd(st mut St) {
     br(mut st, done, -1)
     setCur(mut st, done)
     ret(mut st, -1)
+}
+
+// rfdDirect は read_fd の 1 回の読み（std/par を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
+func rfdDirect(st mut St, depth int, end int, fd int, c int) int {
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, c))
+    r := ioRw(mut st, 0, fd, end, c)
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, imax(mut st, r, iconst(mut st, 0))))
+    return r
 }
 
 func needSleep(st mut St) {
@@ -942,6 +965,124 @@ func buildSleep(st mut St) {
     store(mut st, ts, 0, bin(mut st, BDiv, ms, iconst(mut st, 1000)))
     store(mut st, ts, 1, bin(mut st, BMul, bin(mut st, BRem, ms, iconst(mut st, 1000)), iconst(mut st, 1000000)))
     retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 35), ptoi(mut st, ts), iconst(mut st, 0))))
+}
+
+// 開いた fd の登録簿（IO 便 段 2 — language.md 28 節「後始末」・裁定 Q4 = task ごと）: std/par のプログラムでは rt.open が開いた fd を今の task の
+// 鎖に積み、rt.close が外す。task が死ぬと defer が走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）が rt.fd_drain で
+// 鎖に残った fd を閉じる。鎖の頭 = TCB の TC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fd ごとに 1 語 — 別の fd の語は別の task しか書かないので
+// ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（defer が必ず走る — 鎖も表も足さない）
+const FD_CAP = 65536
+
+// needOpen は rt.open / rt.close（と std/par のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
+func needOpen(st mut St) {
+    if st.rtOpen == -1 {
+        st.rtOpen = addFunc(mut st, int(strLit(mut st, "rt.open")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+        st.rtClose = addFunc(mut st, int(strLit(mut st, "rt.close")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+        if st.taskUse {
+            st.fdregG = addGlobalInit(mut st, int(strLit(mut st, "rt.fdreg")), FD_CAP, -1)
+            st.rtFdDrain = addFunc(mut st, int(strLit(mut st, "rt.fd_drain")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+        }
+    }
+}
+
+// buildOpen は open(path) → fd / 負の errno（std/io の sysOpen）: path を C 文字列にして openat（257 — AT_FDCWD・O_RDONLY | O_CLOEXEC）。
+// std/par のプログラムは今の task の鎖に積む（番号が FD_CAP 以上なら閉じて EMFILE — 登録簿に載らない fd を作らない）
+func buildOpen(st mut St) {
+    if st.rtOpen == -1 {
+        return
+    }
+    begin(mut st, st.rtOpen)
+    buf := globaladdr(mut st, st.iobuf)
+    e := call(mut st, st.rtCstr, list2(mut st, 0, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, bin(mut st, BSub, iconst(mut st, 0), e))
+    setCur(mut st, named)
+    o0 := iconst(mut st, 257)
+    o1 := iconst(mut st, -100)
+    o2 := ptoi(mut st, buf)
+    o3 := iconst(mut st, 524288)
+    o4 := iconst(mut st, 0)
+    oargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, oargs + 1, o0)
+    desugar.HeapSet(mut st.d, oargs + 2, o1)
+    desugar.HeapSet(mut st.d, oargs + 3, o2)
+    desugar.HeapSet(mut st.d, oargs + 4, o3)
+    desugar.HeapSet(mut st.d, oargs + 5, o4)
+    fd := syscall(mut st, oargs)
+    opened := branchIf(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
+    ret(mut st, fd)
+    setCur(mut st, opened)
+    if st.taskUse {
+        fits := branchIf(mut st, cmp(mut st, CGe, fd, iconst(mut st, FD_CAP)))
+        syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+        setErrno(mut st, iconst(mut st, 24))
+        ret(mut st, iconst(mut st, -24))
+        setCur(mut st, fits)
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, gepWord(mut st, globaladdr(mut st, st.fdregG), fd), 0, load(mut st, me, TC_FDS))
+        store(mut st, me, TC_FDS, bin(mut st, BAdd, fd, iconst(mut st, 1)))
+    }
+    setErrno(mut st, iconst(mut st, 0))
+    ret(mut st, fd)
+}
+
+// buildClose は close(fd) → errno（std/io の sysClose）: std/par のプログラムは今の task の鎖から外してから close（3 — EINTR でも再試行しない:
+// Linux は fd を既に解放している）。鎖は Open と defer Close の対で積んだ順の逆に外れるので、ふつうは頭で当たる
+func buildClose(st mut St) {
+    if st.rtClose == -1 {
+        return
+    }
+    begin(mut st, st.rtClose)
+    fd := 0
+    if st.taskUse {
+        reg := globaladdr(mut st, st.fdregG)
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        key := bin(mut st, BAdd, fd, iconst(mut st, 1))
+        loop := newBlock(mut st)
+        p := param(mut st, loop, TyI64)
+        done := newBlock(mut st)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, me, iconst(mut st, TC_FDS)))))
+        setCur(mut st, loop)
+        v := load(mut st, itop(mut st, p), 0)
+        more := branchIf(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)))
+        br(mut st, done, -1)
+        setCur(mut st, more)
+        miss := branchIf(mut st, cmp(mut st, CEq, v, key))
+        store(mut st, itop(mut st, p), 0, load(mut st, gepWord(mut st, reg, fd), 0))
+        br(mut st, done, -1)
+        setCur(mut st, miss)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, reg, bin(mut st, BSub, v, iconst(mut st, 1))))))
+        setCur(mut st, done)
+    }
+    retErrno(mut st, syscall(mut st, list2(mut st, iconst(mut st, 3), fd)))
+}
+
+// buildFdDrain は fd_drain(tcb, stop): task の鎖の頭が stop になるまで fd を閉じて外す（子の入口の出口 — 死・切られた子は stop = 0 で全部。
+// ふつうに終わった子の鎖は空。縮退して親の中で走った子〔admit.sober の rt.task_inline〕は、子に入る前の頭を stop に渡して子が開いた分だけ）
+func buildFdDrain(st mut St) {
+    if st.rtFdDrain == -1 {
+        return
+    }
+    begin(mut st, st.rtFdDrain)
+    tcb := 0
+    stop := 1
+    reg := globaladdr(mut st, st.fdregG)
+    loop := newBlock(mut st)
+    v := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, tcb, TC_FDS)))
+    setCur(mut st, loop)
+    more := branchIf(mut st, cmp(mut st, CEq, v, stop))
+    br(mut st, done, -1)
+    setCur(mut st, more)
+    fd := bin(mut st, BSub, v, iconst(mut st, 1))
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    br(mut st, loop, list1(mut st, load(mut st, gepWord(mut st, reg, fd), 0)))
+    setCur(mut st, done)
+    store(mut st, tcb, TC_FDS, stop)
+    ret(mut st, -1)
 }
 
 // retErrno は syscall の結果 r（負 = -errno）を errno（成功 0）にして W_ERRNO にも置いて返す（関数の出口）
@@ -1023,6 +1164,14 @@ func buildEnviron(st mut St) {
     br(mut st, loop, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
     setCur(mut st, done)
     ret(mut st, -1)
+}
+
+// ioRw は read(2)（nr 0）/ write(2)（nr 1）の 1 回: std/par を使うプログラムは rt.uio（ワーカーの ring があれば SQE を積んで待つ — IO 便 段 1）・他は syscall
+func ioRw(st mut St, nr int, fd int, p int, n int) int {
+    if st.taskUse {
+        return call(mut st, st.rtUio, list4(mut st, iconst(mut st, 22 + nr), fd, p, n))
+    }
+    return syscall(mut st, list4(mut st, iconst(mut st, nr), fd, p, n))
 }
 
 // branchIf は条件 c が真なら新しいブロックへ分岐して cur にし、偽側のブロックを返す
@@ -1117,7 +1266,7 @@ func buildReadFile(st mut St, cstr FnRef) {
     br(mut st, chunk, list1(mut st, iconst(mut st, READ_CHUNK)))
     setCur(mut st, chunk)
     call(mut st, st.rtExtend8, list3(mut st, depth, end, ch))
-    n := syscall(mut st, list4(mut st, iconst(mut st, 0), fd, end, ch))
+    n := ioRw(mut st, 0, fd, end, ch)
     // 読めた分（失敗・EOF は 0）に先端を詰め直す
     got0 := newBlock(mut st)
     gn := param(mut st, got0, TyI64)
@@ -1149,7 +1298,7 @@ func buildReadFile(st mut St, cstr FnRef) {
 
 // buildWriteAll は write_all(fd, data) → errno（0 = 成功）: data のバイト列をそのまま書く（[]byte — 段 C で詰め直しのループは消えた）。
 // 短い書き込みは続きから、EINTR は再試行
-func buildWriteAll(st mut St, f FnRef) {
+func buildWriteAll(st mut St, f FnRef, ring bool) {
     begin(mut st, f)
     fd := 0
     data := 1
@@ -1163,7 +1312,7 @@ func buildWriteAll(st mut St, f FnRef) {
     has := branchIf(mut st, cmp(mut st, CEq, left, iconst(mut st, 0)))
     ret(mut st, iconst(mut st, 0))
     setCur(mut st, has)
-    r := syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, gepByte(mut st, src, pos)), left))
+    r := if ring { call(mut st, st.rtUio, list4(mut st, iconst(mut st, 23), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) } else { syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) }
     not_intr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
     br(mut st, xl, list1(mut st, pos))
     setCur(mut st, not_intr)

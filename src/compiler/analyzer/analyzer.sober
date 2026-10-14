@@ -48,6 +48,7 @@ type Az struct {
     swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
     swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
     lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
+    trySink int              // par.Scope の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
 }
 
 
@@ -62,11 +63,12 @@ func runAz(p loader.Program, only bool) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, trySink: 0}
     desugar.Typed(mut az.d, p)
     mut z := Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
         esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
-        hs: table.Table[int]{}, seen: table.Table[int]{}, work: table.Table[int]{}, dkey: table.Table[int]{}, dval: table.Table[int]{}, rstart: table.Table[int]{}, rlist: table.Table[int]{}, bhead: table.Table[int]{}, bstamp: table.Table[int]{}, bnext: table.Table[int]{}, stamp: 0, nNames: 0, nHold: 0, nEsc: 0, nEv: 0, nLoops: 0, nRoots: 0, nSeen: 0, pk: 0, out: table.Table[int]{}}
+        hs: table.Table[int]{}, seen: table.Table[int]{}, work: table.Table[int]{}, dkey: table.Table[int]{}, dval: table.Table[int]{}, rstart: table.Table[int]{}, rlist: table.Table[int]{}, bhead: table.Table[int]{}, bstamp: table.Table[int]{}, bnext: table.Table[int]{}, stamp: 0, nNames: 0, nHold: 0, nEsc: 0, nEv: 0, nLoops: 0, nRoots: 0, nSeen: 0, pk: 0, out: table.Table[int]{},
+        iset: table.Table[int]{}, imask: 0}
     if only {
         freezeRules(mut z, mut az.d, true)
     }
@@ -351,7 +353,7 @@ func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}}
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, trySink: 0}
     desugar.Init(mut az.d, p)
     errInit(mut az)
     errSolve(mut az)

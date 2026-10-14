@@ -405,12 +405,16 @@ func ev(az mut Az, e desugar.NodeRef) int {
         m := ev(mut az, desugar.NodeRef(x.a))
         w := desugar.NodeRef(x.b)
         if w == -1 {
-            addSlot(mut az, az.cur, m)
+            if az.trySink == 0 {
+                addSlot(mut az, az.cur, m)
+            }
         } else {
             wx := node(mut az, w)
             evElems(mut az, desugar.ListRef(wx.b))
             L := labelOf(mut az, desugar.StrRef(wx.a))
-            addSlot(mut az, az.cur, bit(L))
+            if az.trySink == 0 {
+                addSlot(mut az, az.cur, bit(L))
+            }
             if L != -1 {
                 addSlot(mut az, az.nfn + L, m)
             }
@@ -567,11 +571,19 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
         argTo(mut az, fi, 0, lm)
         j = 1
     }
+    // par.Scope の本体の `?` は scope の失敗（関数の戻りへ流さない）
+    sink := fi >= 0 && desugar.ParKey(mut az.d, fi) == desugar.PAR_SCOPE
+    if sink {
+        az.trySink += 1
+    }
     for i <- iter.Range(0, n) {
         a := nat(mut az, args, i)
         m := if a == -1 { lm } else { ev(mut az, a) }
         argTo(mut az, fi, j, m)
         j += 1
+    }
+    if sink {
+        az.trySink -= 1
     }
     if fi == -2 {
         az.unknown += 1

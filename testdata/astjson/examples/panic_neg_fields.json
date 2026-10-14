@@ -62,6 +62,14 @@
                         "value": 1,
                         "tok": 26
                       }
+                    },
+                    {
+                      "key": "c",
+                      "value": {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 30
+                      }
                     }
                   ],
                   "tok": 22,
@@ -77,7 +85,7 @@
       "bodiless": false,
       "span": {
         "start": 15,
-        "end": 32
+        "end": 36
       },
       "sig_end": 19
     }

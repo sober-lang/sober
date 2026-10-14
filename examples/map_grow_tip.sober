@@ -1,0 +1,58 @@
+package main
+
+// map の索引の先端の巻き戻し（rt.map_grow の旧来の道 — K1a・report-630）の回帰例: 挿入の間に同じ深度の他の確保が無いので、索引は region の先端に
+// あり、成長のたびに新しい索引を古い索引の場所に作り直す。成長を何度も跨いで ①全部のキーが元の値で引ける ②無いキーは無い ③旧ヘッダ（索引の
+// ある長さで取った別名）は旧テーブルを見る — 長さ・自分のキーの値・後から入れたキーは無い（新しい索引の中身を権威として読まない）④列挙は挿入の順
+
+import "std/iter"
+
+func main() {
+    mut m := mut map[int]int{}
+    for i <- iter.Range(0, 40) {
+        m[i * 7] = i
+    }
+    mut old := m
+    for i <- iter.Range(40, 3000) {
+        m[i * 7] = i
+    }
+    mut bad := 0
+    for i <- iter.Range(0, 3000) {
+        v := m[i * 7]
+        if v != nil {
+            if v != i {
+                bad += 1
+            }
+        } else {
+            bad += 1
+        }
+        if m[i * 7 + 1] != nil {
+            bad += 1
+        }
+    }
+    println("new len ${len(m)} bad ${bad}")
+    mut oldBad := 0
+    for i <- iter.Range(0, 3000) {
+        v := old[i * 7]
+        if i < 40 {
+            if v != nil {
+                if v != i {
+                    oldBad += 1
+                }
+            } else {
+                oldBad += 1
+            }
+        } else if v != nil {
+            oldBad += 1
+        }
+    }
+    println("old len ${len(old)} bad ${oldBad}")
+    mut pos := 0
+    mut order := 0
+    for k <- keys(freeze(m)) {
+        if k != pos * 7 {
+            order += 1
+        }
+        pos += 1
+    }
+    println("order bad ${order}")
+}

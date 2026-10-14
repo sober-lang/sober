@@ -1,0 +1,60 @@
+package main
+
+// 写しの for の一括化（lower/copyloop.sober の forAppendStmt — report-617）: `for x <- S { D = append(D, x) }` と
+// `for j <- iter.Range(lo, hi) { D = append(D, S[j]) }` を一括の写しに。形の外（積む値が生成元の値でない・要素の型が違う）は普通の for
+
+import "std/iter"
+
+func viaCall(b []byte) []byte {
+    return b
+}
+
+func main() {
+    src := bytes("hello, world")
+    mut d := mut []byte{}
+    for x <- src {
+        d = append(d, x)
+    }
+    // 生成元が呼び出し（評価は 1 回）
+    for x <- viaCall(src) {
+        d = append(d, x)
+    }
+    // 区間の写し（lo / hi は添字読み・len の式）
+    ends := []int{3, len(src) - 2}
+    for j <- iter.Range(ends[0], ends[1]) {
+        d = append(d, src[j])
+    }
+    // 空の区間・空の生成元
+    for j <- iter.Range(5, 2) {
+        d = append(d, src[j])
+    }
+    empty := []byte{}
+    for x <- empty {
+        d = append(d, x)
+    }
+    // 形の外: 積む値が生成元の値でない（同じ値の詰め — 1 要素ずつ）
+    k := byte('!')
+    for x <- src {
+        d = append(d, k)
+    }
+    // 自分自身を回す（生成元は回す前の値）
+    for x <- d {
+        d = append(d, x)
+    }
+    println(string(d) catch "?")
+    println(len(d))
+    // int の列
+    mut w := mut []int{1, 2}
+    ws := []int{7, 8, 9}
+    for x <- ws {
+        w = append(w, x)
+    }
+    for i <- iter.Range(1, 3) {
+        w = append(w, ws[i])
+    }
+    mut tot := 0
+    for x <- w {
+        tot = tot * 10 + x
+    }
+    println(tot)
+}

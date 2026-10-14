@@ -13,6 +13,7 @@ Go の双子は言語比較のためでなく追跡の物差し（同じアル�
 | bench/fasta | ALU の繰り返しと線形合同法の乱数による記号の選択を 1 行 60 文字で書く（benchmarks game）。Sober は float が無いので累積確率を整数の閾値に前計算 | 出力の構築と書き出し（書き出しの塊ごとに関数の region を捨てる） |
 | bench/revcomp | fasta の出力を読み、記録ごとに配列を逆順の相補にして書く（reverse-complement） | 長い区間のバイト走査（scanb の的）・表引き・出力の構築 |
 | bench/knucleotide | fasta の出力の ">THREE" の配列の長さ k の部分列を map[string]int で数える（k-nucleotide） | map（std の map の索引）の計器・イディオム双子（(b) 作って返す ↔ (a) mut out — 下の「イディオムギャップ」） |
+| bench/extsort（2026-10-13 — 実証便 その 2） | 1 行 1 キー（`[a-z]` 8〜32 文字）のテキストを窓 W（既定 64 MiB）より大きくても辞書順に並べる外部ソート（run を窓の中で並べて io.WriteFile・k 本の run を io.ChunksAt で 1 切片ずつ引いてマージ・io.Writer で標準出力へ） | 読み + 書き + 窓に縛られたメモリ（RSS が入力の大きさに比例しない）。相手 = GNU sort（`LC_ALL=C sort -S W --parallel=1`）と Go / Rust の双子。測り方 = `bench/extsort.sh`（seqperf の外 — 引数 3 つ・GNU sort の列・RSS の図） |
 
 各題材の Go の双子は `bench/<題材>/go`（同じアルゴリズムの素直な形）。逐次 9 題材には Rust の双子 `bench/<題材>/rust/main.rs` もある（2026-10-09 — Go の双子の逐語訳。--release の既定のまま・明示 SIMD / unsafe / 依存の crate なし。束ねは `bench/rust/Cargo.toml`・建て方 `bench/rust/build.sh` → `out/rust/release/`・測り方 `bench/seqperf.sh --rust`。Go と同じく追跡の物差し — 取り方の恣意が残る題材〔fasta / revcomp / mandelbrot の 1 バイト書き・binary-trees の Box〕は README に注記）。fasta / revcomp / k-nucleotide は benchmarks game の公式の n = 1000 の期待出力（`bench/<題材>/expect-1000.txt`）とも bench.sh の準備段で照合する（入力はファイル — 公式は標準入力）。1BRC の入力は `bench/1brc/gen`（決定的 — 自前の xorshift・413 個の合成の観測所名〔多バイトの名前を含む〕。公式の weather_stations.csv は使わない）。
 
@@ -24,7 +25,7 @@ Go の双子は言語比較のためでなく追跡の物差し（同じアル�
 - build: Sober は `bin/sober build`（stage2 は温めてから — 作り直しは測らない・std は L0 の焼き込み）。Go は冷（空の GOCACHE — runtime / std から）と温（同じ GOCACHE でもう一度）の 2 列
 - コンパイラ自身: stage2 で src/compiler/app を build（`--emit=elf --passes`）・一括の check・`check --split` の冷（空の置き場）と温（同じ置き場でもう一度）。木は stage2.sh の tree_of と同じ形（compiler/* + std/）
 - 規模: 既定 = 1BRC 10M 行（138 MB）・binary-trees 18・fannkuch 11 / `--quick` = 1M・16・10（数秒 — 変更の当たりを付ける用）/ `--heavy` = 100M（1.4 GB）・21・12。
-  1BRC の 10 億行は今は測れない: 入力 14 GB を `io.ReadFile` で一度に読む形しか無い（std に読みの口〔ReadFd の chunk 読み〕が無い — 開発スクリプトの波の「標準入力の最小形」と同じ積み）。読みの口が入ったら 1B を足す
+  1BRC の 10 億行: 逐次は 2026-10-13 に `io.Chunks`（切片ずつ・写さない — RSS は入力の大きさに依らない）の形へ差し替えたので測れる（1B の規模の足し込みは積み）。並列版は全体を `io.ReadFile` で読む形のまま（区間を指して読む口が無い — 積み）
 
 ## 基準値（初回 — 2026-10-03・f49f7db の木 + bench の追加）
 

@@ -403,15 +403,137 @@
             }
           },
           {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 131
+                },
+                "field": "SetFile",
+                "tok": 133
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w",
+                  "tok": 136
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "io",
+                    "tok": 138
+                  },
+                  "field": "Stderr",
+                  "tok": 140
+                }
+              ],
+              "tok": 134
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 143
+                },
+                "field": "WriteString",
+                "tok": 145
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w",
+                  "tok": 148
+                },
+                {
+                  "k": "strlit",
+                  "value": "to stderr\n",
+                  "tok": 150
+                }
+              ],
+              "tok": 146
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e3"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "io",
+                    "tok": 155
+                  },
+                  "field": "Flush",
+                  "tok": 157
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "w",
+                    "tok": 160
+                  }
+                ],
+                "tok": 158
+              }
+            ],
+            "tok": 153
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 163
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "e3",
+                    "tok": 165
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 167
+                  },
+                  "tok": 166
+                }
+              ],
+              "tok": 164
+            }
+          },
+          {
             "k": "ret",
             "values": [
               {
                 "k": "int",
                 "value": 0,
-                "tok": 132
+                "tok": 171
               }
             ],
-            "tok": 131
+            "tok": 170
           }
         ]
       },
@@ -419,7 +541,7 @@
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 136
+        "end": 175
       },
       "sig_end": 11
     }

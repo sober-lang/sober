@@ -1,0 +1,33 @@
+package main
+
+type Bad error {
+    at int
+}
+
+@errors(Bad)
+func digits(s string, k func(int)) error? {
+    bs := bytes(s)
+    mut i := 0
+    while i < len(bs) {
+        if bs[i] < 48 {
+            return Bad{at: i}
+        }
+        k(int(bs[i]) - 48)
+        i += 1
+    }
+    return nil
+}
+
+// 失敗しうる生成元は式の位置の for（yield 形）に置けない（Iter[T] は失敗の通り道を持たない — language.md 7 節・diag.ForFallible kind 2）
+func doubled(s string) (int, error?) {
+    mut n := 0
+    xs := for d <- digits(s)? yield d * 2
+    xs((v) => { n += v })
+    return n, nil
+}
+
+func main() int {
+    n := doubled("12") catch return 1
+    println(n)
+    return 0
+}

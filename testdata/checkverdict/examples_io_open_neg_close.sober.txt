@@ -1,0 +1,2 @@
+sober: load error at examples/io_open_neg_close.sober:10:13: io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes
+exit=1

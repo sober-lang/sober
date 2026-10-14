@@ -105,6 +105,10 @@ func isJsonOp(op string) bool {
 func jsonFile(ts []ast.Tree, fpkg []string, f int) (ast.Tree, string, error?) {
     t := ts[f]
     n0 := len(t.nodes)
+    // std/json を import しないファイルに口は無い（isJsonDecode は常に偽 — 節ごとに名前の string と import の引きを作らない）
+    if !importsPath(t, "std/json") {
+        return t, "", nil
+    }
     // 呼び出しの位置（節の番号）と型の式
     mut calls := mut []int{}
     mut done := mut []bool{}
@@ -360,7 +364,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
             s = s + "\nfunc $jsonField_${f}_${k}($d $jj.Doc, $m int?, rename map[string]string) (${sp}, error?) {\n    if $m != nil {\n        return ${fname}($d, $m, rename)\n    }\n"
             s = s + "    return nil, nil\n}\n"
         }
-        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k)
+        s = s + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, false) + jsonEncodeFn(ts, fpkg, rs, ps, pkg, f, k, true)
     }
     return s
 }
@@ -370,45 +374,94 @@ func decTail(e JReq) string {
     return if e.kind >= jStruct { ", rename" } else { "" }
 }
 
-// jsonEncodeFn は要求 k の書きの写しの関数（mut の builder に積む — struct は根の口 $jsonEncodeTop も）
-func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int) string {
+// jsonEncodeFn は要求 k の書きの写しの関数（mut の builder に積む — struct は根の口 $jsonEncodeTop も）。2 系統を合成する:
+// rn = 偽 — rename なし（Encode）: 欄の頭は定数の断片（`{"name":` / `,"name":` — キーのエスケープは合成時に jsonKeyLit）を 1 回の PushStr・
+// 根の口 _0 は空の rename の map を作らずに直に呼ぶ。rn = 真 — rename つき（EncodeWith の根の口 _1 から）: 欄ごとに KeyOf で引いて PutKey（旧の形）。
+// 系統どうしは呼び合わない（rename つきの値の中の struct も rename つきで書く）。lower は届く関数しか下ろさないので、使わない系統は ELF に入らない
+func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int, rn bool) string {
     r := rs[k]
     sp := spell(ts, fpkg, rs, ps, pkg, k)
-    fname := "$jsonEncode_${f}_${k}"
+    fname := encName(f, k, rn)
+    rp := if rn { ", rename map[string]string" } else { "" }
     mut s := ""
     if r.kind == jStruct {
         st := ts[r.file]
         body := st.nodes[st.nodes[r.node].c]
-        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}, rename map[string]string) {\n    $jb.Push(mut $o, '{')\n"
-        for j <- iter.Range(0, ast.ListLen(st, body.a)) {
+        n := ast.ListLen(st, body.a)
+        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n"
+        if rn || n == 0 {
+            s = s + "    $jb.Push(mut $o, '{')\n"
+        }
+        for j <- iter.Range(0, n) {
             fd := st.nodes[ast.ListAt(st, body.a, j)]
             nm := Name(st, fd.a)
             e, _ := jsonType(ts, fpkg, r.file, fd.b)
-            s = s + "    $jj.PutKey(mut $o, $jj.KeyOf(rename, \"${nm}\"), ${if j == 0 { "true" } else { "false" }})\n"
-            s = s + "    ${encCall(rs, f, e, "$v.${nm}", nm)}\n"
+            if rn {
+                s = s + "    $jj.PutKey(mut $o, $jj.KeyOf(rename, \"${nm}\"), ${if j == 0 { "true" } else { "false" }})\n"
+            } else {
+                s = s + "    $jb.PushStr(mut $o, \"${if j == 0 { "{" } else { "," }}${jsonKeyLit(nm)}:\")\n"
+            }
+            s = s + "    ${encCall(rs, f, e, "$v.${nm}", nm, rn)}\n"
         }
         s = s + "    $jb.Push(mut $o, '}')\n}\n"
-        s = s + "\nfunc $jsonEncodeTop_${f}_${k}_1($v ${sp}, rename map[string]string) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v, rename)\n    return $jj.Done(mut $o)\n}\n"
-        s = s + "\nfunc $jsonEncodeTop_${f}_${k}_0($v ${sp}) string {\n    return $jsonEncodeTop_${f}_${k}_1($v, map[string]string{})\n}\n"
+        if rn {
+            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_1($v ${sp}, rename map[string]string) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v, rename)\n    return $jj.Done(mut $o)\n}\n"
+        } else {
+            s = s + "\nfunc $jsonEncodeTop_${f}_${k}_0($v ${sp}) string {\n    mut $o := $jb.Builder[byte]{}\n    ${fname}(mut $o, $v)\n    return $jj.Done(mut $o)\n}\n"
+        }
     } else if r.kind == jSlice {
         e, _ := jsonType(ts, fpkg, r.file, r.node)
-        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}, rename map[string]string) {\n    $jb.Push(mut $o, '[')\n    mut $i := 0\n    while $i < len($v) {\n"
-        s = s + "        if $i > 0 {\n            $jb.Push(mut $o, ',')\n        }\n        ${encCall(rs, f, e, "$v[$i]", "")}\n        $i += 1\n    }\n    $jb.Push(mut $o, ']')\n}\n"
+        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n    $jb.Push(mut $o, '[')\n    mut $i := 0\n    while $i < len($v) {\n"
+        s = s + "        if $i > 0 {\n            $jb.Push(mut $o, ',')\n        }\n        ${encCall(rs, f, e, "$v[$i]", "", rn)}\n        $i += 1\n    }\n    $jb.Push(mut $o, ']')\n}\n"
     } else if r.kind == jOpt {
         e, _ := jsonType(ts, fpkg, r.file, r.node)
-        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}, rename map[string]string) {\n    if $v != nil {\n        ${encCall(rs, f, e, "$v", "")}\n    } else {\n        $jj.Put(mut $o, \"null\")\n    }\n}\n"
+        s = s + "\nfunc ${fname}($o mut $jb.Builder[byte], $v ${sp}${rp}) {\n    if $v != nil {\n        ${encCall(rs, f, e, "$v", "", rn)}\n    } else {\n        $jj.Put(mut $o, \"null\")\n    }\n}\n"
     }
     return s
 }
 
-// encCall は値 x（綴り）を要求 e で $o に書く文（nm = 欄名 — float の panic の名指し）
-func encCall(rs []JReq, f int, e JReq, x string, nm string) string {
+// encName は要求 k の書きの写しの関数の名前（rn = rename つきの系統）
+func encName(f int, k int, rn bool) string {
+    return if rn { "$jsonEncodeR_${f}_${k}" } else { "$jsonEncode_${f}_${k}" }
+}
+
+// jsonKeyLit は欄名 nm の JSON の文字列（'"' 込み・std/json の quote と同じエスケープ — '"' '\\' と制御文字）を、合成ファイルの string の字面の
+// 中身として綴る（字面のエスケープを重ねる）。欄名は識別子なので普通はそのまま
+func jsonKeyLit(nm string) string {
+    h := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    for c <- bytes(nm) {
+        if c == '"' || c == '\\' {
+            // JSON の \" / \\ を字面の中で綴る（\\\" / \\\\）
+            out = append(out, '\\')
+            out = append(out, '\\')
+            out = append(out, '\\')
+            out = append(out, c)
+        } else if c < 32 {
+            // JSON の \u00XX を字面の中で綴る（\\u00XX）
+            out = append(out, '\\')
+            out = append(out, '\\')
+            out = append(out, 'u')
+            out = append(out, '0')
+            out = append(out, '0')
+            out = append(out, h[int(c) >> 4])
+            out = append(out, h[int(c) & 15])
+        } else {
+            out = append(out, c)
+        }
+    }
+    body := string(freeze(out)) catch nm
+    return "\\\"" + body + "\\\""
+}
+
+// encCall は値 x（綴り）を要求 e で $o に書く文（nm = 欄名 — float の panic の名指し・rn = rename つきの系統）
+func encCall(rs []JReq, f int, e JReq, x string, nm string, rn bool) string {
     return switch e.kind {
     case jInt: "$jj.PutInt(mut $o, ${x})"
     case jFloat: "$jj.PutFloat(mut $o, ${x}, \"${nm}\")"
     case jBool: "$jj.PutBool(mut $o, ${x})"
     case jString: "$jj.PutString(mut $o, ${x})"
-    default: "$jsonEncode_${f}_${reqIndex(rs, e.canon)}(mut $o, ${x}, rename)"
+    default: if rn { "${encName(f, reqIndex(rs, e.canon), true)}(mut $o, ${x}, rename)" } else { "${encName(f, reqIndex(rs, e.canon), false)}(mut $o, ${x})" }
     }
 }
 

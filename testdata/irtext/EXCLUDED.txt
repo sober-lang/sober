@@ -31,8 +31,15 @@ examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:
 examples/float_neg_mapkey.sober: sober: lower error at examples/float_neg_mapkey.sober:6:18 (Unsupported)
 examples/float_neg_mix.sober: sober: lower error at examples/float_neg_mix.sober:6:14 (Mismatch)
 examples/for.sober: examples/for.sober:7:6: error: Iter (UndefinedType)
+examples/for_fallible_result.sober: sober: load error at examples/for_fallible_result.sober:8:30: `?` on a generator needs a generator that returns error? only
+examples/for_fallible_unmarked.sober: sober: load error at examples/for_fallible_unmarked.sober:24:20: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
+examples/for_fallible_yield.sober: sober: load error at examples/for_fallible_yield.sober:24:29: a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression
 examples/generic_union_arity.sober: sober: lower error at examples/generic_union_arity.sober:11:10 (Mismatch)
 examples/generic_union_noargs.sober: sober: lower error at examples/generic_union_noargs.sober:18:17 (Undefined)
+examples/identity_neg_field.sober: sober: load error at examples/identity_neg_field.sober:14:10: this literal leaves a field at its zero value that holds a `par.Rx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
+examples/identity_neg_generic.sober: sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `par.Tx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
+examples/identity_neg_nested.sober: sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `par.Pool`, which has identity: only par.NewPool makes one — set the field, or declare it `T?`
+examples/identity_neg_tx.sober: sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
 examples/imm_write.sober: sober: error at examples/imm_write.sober:8:9 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
 examples/inline_unknown_fnparam.sober: sober: lower error at examples/inline_unknown_fnparam.sober:6:24 (Undefined)
 examples/inline_unknown_mutparam.sober: sober: lower error at examples/inline_unknown_mutparam.sober:6:12 (Undefined)
@@ -40,6 +47,15 @@ examples/inline_unknown_param.sober: sober: lower error at examples/inline_unkno
 examples/inline_unknown_result.sober: sober: lower error at examples/inline_unknown_result.sober:6:27 (Undefined)
 examples/inline_unknown_results.sober: sober: lower error at examples/inline_unknown_results.sober:6:33 (Undefined)
 examples/interp_tparam_named.sober: sober: lower error at examples/interp_tparam_named.sober:9:12 (Mismatch)
+examples/io_open_neg_capture.sober: sober: load error at examples/io_open_neg_capture.sober:12:48: a closure cannot capture an io.File — pass it as an argument
+examples/io_open_neg_close.sober: sober: load error at examples/io_open_neg_close.sober:10:13: io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes
+examples/io_open_neg_copy.sober: sober: load error at examples/io_open_neg_copy.sober:10:10: an io.File cannot be copied to another binding (it has identity — keep using the name bound by io.Open)
+examples/io_open_neg_defer.sober: sober: load error at examples/io_open_neg_defer.sober:11:20: this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open
+examples/io_open_neg_give.sober: sober: load error at examples/io_open_neg_give.sober:15:18: an io.File cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child
+examples/io_open_neg_hold.sober: sober: load error at examples/io_open_neg_hold.sober:15:10: an io.File cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+examples/io_open_neg_return.sober: sober: load error at examples/io_open_neg_return.sober:11:12: an io.File cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead
+examples/io_open_neg_unclosed.sober: sober: load error at examples/io_open_neg_unclosed.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line
+examples/io_open_neg_value.sober: sober: load error at examples/io_open_neg_value.sober:8:14: io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`
 examples/json_decode_neg_field.sober: sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode supports struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
 examples/json_decode_neg_type.sober: sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode must be a struct type without type parameters
 examples/json_doc_forge.sober: sober: lower error at examples/json_doc_forge.sober:9:10 (Mismatch)
@@ -94,6 +110,8 @@ examples/panic_neg_fieldty.sober: sober: load error at examples/panic_neg_fieldt
 examples/panic_neg_notlabel.sober: sober: load error at examples/panic_neg_notlabel.sober:9:11: not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)
 examples/panic_neg_runtime.sober: sober: load error at examples/panic_neg_runtime.sober:5:11: RegionExceeded is raised by the runtime only
 examples/panic_neg_use.sober: sober: load error at examples/panic_neg_use.sober:8:13: a panic label is only used as the argument of panic(L{…})
+examples/par_join_catch_infallible.sober: sober: load error at examples/par_join_catch_infallible.sober:11:21: the left of catch must be a call that returns (T, error?)
+examples/par_join_multibind.sober: sober: load error at examples/par_join_multibind.sober:17:9: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
 examples/par_neg_budget.sober: sober: load error at examples/par_neg_budget.sober:12:79: budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only
 examples/par_neg_cap.sober: sober: load error at examples/par_neg_cap.sober:10:35: par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)
 examples/par_neg_chan_endpoint.sober: sober: load error at examples/par_neg_chan_endpoint.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
@@ -117,7 +135,7 @@ examples/par_neg_tuple_shape.sober: sober: load error at examples/par_neg_tuple_
 examples/par_neg_wrap_endpoint.sober: sober: load error at examples/par_neg_wrap_endpoint.sober:16:27: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
 examples/par_neg_wrap_handle.sober: sober: load error at examples/par_neg_wrap_handle.sober:19:42: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
 examples/par_neg_wrap_token.sober: sober: load error at examples/par_neg_wrap_token.sober:14:52: a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body
-examples/partial_lit.sober: sober: lower error at examples/partial_lit.sober:14:10 (Mismatch)
+examples/par_spawn_try.sober: sober: load error at examples/par_spawn_try.sober:17:24: return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)
 examples/partial_lit_nozero.sober: sober: lower error 3 at token 38
 examples/pipe.sober: examples/pipe.sober:13:21: error: load (UndefinedFunction)
 examples/println_opt.sober: sober: lower error at examples/println_opt.sober:8:12 (Unsupported)

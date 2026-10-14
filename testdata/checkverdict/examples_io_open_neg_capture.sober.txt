@@ -1,0 +1,2 @@
+sober: load error at examples/io_open_neg_capture.sober:12:48: a closure cannot capture an io.File — pass it as an argument
+exit=1

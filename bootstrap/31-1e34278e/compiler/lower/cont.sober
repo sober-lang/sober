@@ -1,0 +1,1195 @@
+package lower
+
+// コンテナ: slice / string / map（src/stage1/lower_cont.zig の写し — メモリ形は docs/ir.md 6 節）。
+// ヘッダは 3 語 (ptr, len, 深度)。ptr は語として（ptoi して）置き、読むときに itop する。セルは region アリーナ（region.alloc / region.bump）。
+// 文字列リテラルは rodata（8 バイトを 1 語に詰める — []byte と同じ 1 バイトのセル）で、深度 0 の imm セル。成長は mut = 「ヘッダの region の先端なら 1 セル伸長、他は同じ region へ全コピー」、
+// imm = 「現在の最内 region へ常に全コピー」
+
+import "diag"
+import "desugar"
+import "loader"
+import "ast"
+import "lexer"
+import "std/iter"
+
+func mkSlice(st mut St, elem int, m bool) int {
+    return rec4(mut st, TSlice, elem, if m { 1 } else { 0 }, 0)
+}
+
+func mkString(st mut St) int {
+    return rec4(mut st, TSlice, tByte(mut st), 0, 1)
+}
+
+func mkMap(st mut St, k int, v int, m bool) int {
+    return rec4(mut st, TMap, k, v, if m { 1 } else { 0 })
+}
+
+func hdrPtr(st mut St, h int) int {
+    return itop(mut st, load(mut st, h, 0))
+}
+
+func newHeader(st mut St, t int, p int, n int, d int) int {
+    h := newAgg(mut st, t)
+    store(mut st, h, 0, ptoi(mut st, p))
+    store(mut st, h, 1, n)
+    store(mut st, h, 2, d)
+    return h
+}
+
+// cellAt は p + i * cellw 語
+func cellAt(st mut St, p int, i int, cellw int) int {
+    return gepWord(mut st, p, bin(mut st, BMul, i, iconst(mut st, cellw)))
+}
+
+// ── []byte（セル 1 バイト — language.md 21 節の詰め表現・段 B）。他の要素型のセルは語のまま（byte を欄に持つ struct の列も）──
+
+// isBytes は []byte / mut []byte か
+func isBytes(st mut St, t int) bool {
+    return isTag(mut st, t, TSlice) && isTag(mut st, desugar.HeapGet(mut st.d, t + 1), TByte)
+}
+
+// elemAt は slice 型 t のセル列 p の i 番のセルの番地（[]byte はバイト、他は語）
+func elemAt(st mut St, t int, p int, i int) int {
+    if isBytes(mut st, t) {
+        return gepByte(mut st, p, i)
+    }
+    return cellAt(mut st, p, i, tWords(mut st, desugar.HeapGet(mut st.d, t + 1)))
+}
+
+// grow8 は []byte の成長（grow のバイト版）: mut なら先端一致の判定（rt.tip8 — その場で 1 バイト伸ばせたか）、他は深度 d へ全コピー。結果は（新しい base, 書くセル）
+func grow8(st mut St, h int, d int, tip bool) (int, int) {
+    needByteRt(mut st)
+    bs := load(mut st, h, 0)
+    ln := load(mut st, h, 1)
+    join := newBlock(mut st)
+    np := param(mut st, join, TyPtr)
+    dst := param(mut st, join, TyPtr)
+    copy_b := newBlock(mut st)
+    if tip {
+        tip_b := newBlock(mut st)
+        ok := call(mut st, st.rtTip8, list2(mut st, d, bin(mut st, BAdd, bs, ln)))
+        condbr(mut st, cmp(mut st, CNe, ok, iconst(mut st, 0)), tip_b, -1, copy_b, -1)
+        setCur(mut st, tip_b)
+        base := itop(mut st, bs)
+        br(mut st, join, list2(mut st, base, gepByte(mut st, base, ln)))
+    } else {
+        br(mut st, copy_b, -1)
+    }
+    // 先端でなければ幾何成長（rtgrow.sober — 余剰容量つきの全コピーか、割り当ての水位でその場）
+    setCur(mut st, copy_b)
+    p := call(mut st, st.rtGrow8, list4(mut st, bs, ln, d, iconst(mut st, 1)))
+    br(mut st, join, list2(mut st, p, gepByte(mut st, p, ln)))
+    setCur(mut st, join)
+    return np, dst
+}
+
+// panicIf は c が 0 でなければ点 at（種類 kind — panic.sober）の panic: rt.panic(点の番号) → exit 101（範囲外 — language.md 27 節）
+func panicIf(st mut St, c int, kind int, at desugar.NodeRef) {
+    bad := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, c, bad, -1, ok, -1)
+    setCur(mut st, bad)
+    panicSite(mut st, kind, at)
+    setCur(mut st, ok)
+}
+
+// strlit は文字列リテラル（同じ綴りの rodata は 1 つ — 名前は str.<出現順>）
+func strlit(st mut St, s desugar.StrRef) int {
+    mut x := st.strs
+    mut g := -1
+    while x >= 0 && g < 0 {
+        if strEq(mut st, hgetS(mut st, x + 1), s) {
+            g = desugar.HeapGet(mut st.d, x + 2)
+        }
+        x = desugar.HeapGet(mut st.d, x)
+    }
+    if g < 0 {
+        n := st.nstr
+        name := strLit(mut st, "str.")
+        digits := decimal(mut st, n)
+        full := strCat(mut st, name, digits)
+        // rodata も詰める（8 バイトを 1 語にリトルエンディアンで — 段 C: string = imm []byte）
+        nb := slen(mut st, s)
+        nw := (nb + 7) / 8
+        ws := listN(mut st, nw)
+        for w <- iter.Range(0, nw) {
+            mut v := 0
+            mut k := 7
+            while k >= 0 {
+                j := w * 8 + k
+                v = (v << 8) | (if j < nb { sat(mut st, s, j) } else { 0 })
+                k -= 1
+            }
+            desugar.HeapSet(mut st.d, ws + 1 + w, v)
+        }
+        g = addGlobalInit(mut st, int(full), nw, ws)
+        en := rec4(mut st, st.strs, int(s), g, 0)
+        st.strs = en
+        st.nstr = n + 1
+    }
+    ga := globaladdr(mut st, g)
+    ln := iconst(mut st, slen(mut st, s))
+    return newHeader(mut st, mkString(mut st), ga, ln, iconst(mut st, 0))
+}
+
+// decimal は n の 10 進の文字列（n ≥ 0）
+func decimal(st mut St, n int) desugar.StrRef {
+    mut p := 1
+    while p <= n / 10 {
+        p = p * 10
+    }
+    mut k := 0
+    mut q := p
+    while q > 0 {
+        k += 1
+        q = q / 10
+    }
+    at := desugar.StrRef(listN(mut st, k))
+    mut i := 0
+    while p > 0 {
+        sput(mut st, at, i, 48 + n / p % 10)
+        p = p / 10
+        i += 1
+    }
+    return at
+}
+
+func strCat(st mut St, a desugar.StrRef, b desugar.StrRef) desugar.StrRef {
+    na := slen(mut st, a)
+    nb := slen(mut st, b)
+    at := desugar.StrRef(listN(mut st, na + nb))
+    for i <- iter.Range(0, na) {
+        sput(mut st, at, i, sat(mut st, a, i))
+    }
+    for i <- iter.Range(0, nb) {
+        sput(mut st, at, na + i, sat(mut st, b, i))
+    }
+    return at
+}
+
+// slicelit は `[]T{e, ...}`: 要素を全部評価してから、現在の深度の先端へまとめて書く
+func slicelit(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    elem := resolveType(mut st, st.curPkg, nA(nodeOf(mut st, e)), false)?
+    if tWords(mut st, elem) == 0 {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    els := lB(nodeOf(mut st, e))
+    n := lenL(mut st, els)
+    vs := listN(mut st, n)
+    for i <- iter.Range(0, n) {
+        x := latN(mut st, els, i)
+        ev := exprExpecting(mut st, x, elem, x)?
+        if isTag(mut st, ev.t, TNever) {
+            return ev, nil
+        }
+        v := copyVal(mut st, ev.t, ev.v)
+        desugar.HeapSet(mut st.d, vs + 1 + i, v)
+    }
+    cellw := tWords(mut st, elem)
+    // 宛先構築（loader/dest.sober の印 — 宛先構築レーン M1）: return に流れ着くリテラルで要素が参照を持たないものは入口の深度（呼び手の region）に作る
+    d := if destHere(mut st, e) && !containsSlice(mut st, elem) { st.destDepth } else { regionDepth(mut st) }
+    t := mkSlice(mut st, elem, nodeOf(mut st, e).c != 0)
+    if isBytes(mut st, t) {
+        needByteRt(mut st)
+        p := call(mut st, st.rtAlloc8, list2(mut st, d, iconst(mut st, n)))
+        for i <- iter.Range(0, n) {
+            store8(mut st, gepByte(mut st, p, iconst(mut st, i)), 0, desugar.HeapGet(mut st.d, vs + 1 + i))
+        }
+        return Val{t: t, v: newHeader(mut st, t, p, iconst(mut st, n), d)}, nil
+    }
+    p := regionAlloc(mut st, d, iconst(mut st, cellw * n))
+    for i <- iter.Range(0, n) {
+        storeVal(mut st, p, cellw * i, elem, desugar.HeapGet(mut st.d, vs + 1 + i))
+    }
+    return Val{t: t, v: newHeader(mut st, t, p, iconst(mut st, n), d)}, nil
+}
+
+// destHere は節 e に宛先構築の印（loader/dest.sober — 欄 e = 1）があるか。印を使うのは最適化のバックエンド（--passes）の経路だけ
+// （既定の --emit と照合の相手の形は今のまま — 黄金を動かさない）
+func destHere(st mut St, e desugar.NodeRef) bool {
+    return (st.transparent && st.destOk && nodeOf(mut st, e).e == 1) || (int(e) == st.forceDest && st.forceDest >= 0)
+}
+
+// emptyAt は空のヘッダ（現在の深度の先端・長さ 0）を p へ
+func emptyAt(st mut St, p int, isMap bool) {
+    emptyAtDepth(mut st, p, isMap, regionDepth(mut st))
+}
+
+// emptyAtDepth は空のヘッダ（深度 d の region の先端・長さ 0）を p へ
+func emptyAtDepth(st mut St, p int, isMap bool, d int) {
+    store(mut st, p, 0, ptoi(mut st, regionBump(mut st, d)))
+    store(mut st, p, 1, iconst(mut st, 0))
+    store(mut st, p, 2, d)
+    if isMap {
+        // 索引なし（rt.sober の buildMapFind）
+        store(mut st, p, 3, iconst(mut st, 0))
+    }
+}
+
+// zeroFill は `T{}` の slice / map フィールド（入れ子の struct も）を空ヘッダにする
+func zeroFill(st mut St, p int, off int, t int) {
+    k := desugar.HeapGet(mut st.d, t)
+    if k == TSlice || k == TMap {
+        emptyAt(mut st, fieldPtr(mut st, p, off), k == TMap)
+        return
+    }
+    if k != TStruct {
+        return
+    }
+    fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+    for i <- iter.Range(0, lenL(mut st, fs)) {
+        f := latI(mut st, fs, i)
+        zeroFill(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1))
+    }
+}
+
+// maplit は `map[K]V{k: v, ...}`: 空ヘッダからエントリごとに set（重複キーは後勝ち）
+func maplit(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    pk := st.curPkg
+    kt := resolveType(mut st, pk, nA(nodeOf(mut st, e)), false)?
+    if !isIntLike(mut st, kt) && !isString(mut st, kt) {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    vt := resolveType(mut st, pk, nB(nodeOf(mut st, e)), false)?
+    if tWords(mut st, vt) == 0 {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    t := mkMap(mut st, kt, vt, nodeOf(mut st, e).d != 0)
+    h := newAgg(mut st, t)
+    // 宛先構築（slicelit と同じ — キーも値も参照を持たない map だけ）
+    if destHere(mut st, e) && !containsSlice(mut st, kt) && !containsSlice(mut st, vt) {
+        emptyAtDepth(mut st, h, true, st.destDepth)
+    } else {
+        emptyAt(mut st, h, true)
+    }
+    ens := lC(nodeOf(mut st, e))
+    for i <- iter.Range(0, lenL(mut st, ens)) {
+        en := latN(mut st, ens, i)
+        x := exprExpecting(mut st, nA(nodeOf(mut st, en)), desugar.HeapGet(mut st.d, t + 1), at)?
+        kp := keyPtr(mut st, x.t, x.v, t, at)?
+        if kp < 0 {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        ex := exprExpecting(mut st, nB(nodeOf(mut st, en)), vt, nB(nodeOf(mut st, en)))?
+        if isTag(mut st, ex.t, TNever) {
+            return ex, nil
+        }
+        ev := copyVal(mut st, ex.t, ex.v)
+        mapSet(mut st, h, kp, ex.t, ev, t, false, false)
+    }
+    return Val{t: t, v: h}, nil
+}
+
+// keyPtr はキーの置き場（int は 1 語のスロット、string はヘッダのコピー）。到達しなければ -1
+func keyPtr(st mut St, kt int, kv int, mt int, at desugar.NodeRef) (int, error?) {
+    if isTag(mut st, kt, TNever) {
+        return -1, nil
+    }
+    if !tEql(mut st, kt, desugar.HeapGet(mut st.d, mt + 1)) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if isIntLike(mut st, kt) {
+        p := newSlotAddr(mut st, 1)
+        store(mut st, p, 0, kv)
+        return p, nil
+    }
+    return copyVal(mut st, kt, kv), nil
+}
+
+// mapFind は一致するセルのアドレス（i64、不在は 0）
+func mapFind(st mut St, h int, kp int, mt int) int {
+    return call(mut st, needMapFind(mut st, mapRepr(mut st, mt)), list2(mut st, h, kp))
+}
+
+// grow はヘッダ h のセル列を 1 セル伸ばす先を取る。tip なら「深度 d の先端に接していれば 1 セル伸長」、
+// それ以外は深度 d へ len + 1 セルを取って全コピー。(新しいセル列, 新しいセルの位置)
+func grow(st mut St, h int, cellw int, d int, tip bool) (int, int) {
+    bs := load(mut st, h, 0)
+    ln := load(mut st, h, 1)
+    join := newBlock(mut st)
+    np := param(mut st, join, TyPtr)
+    dst := param(mut st, join, TyPtr)
+    copy_b := newBlock(mut st)
+    if tip {
+        end := bin(mut st, BAdd, bs, bin(mut st, BMul, ln, iconst(mut st, 8 * cellw)))
+        tip_b := newBlock(mut st)
+        bump := ptoi(mut st, regionBump(mut st, d))
+        condbr(mut st, cmp(mut st, CEq, bump, end), tip_b, -1, copy_b, -1)
+        setCur(mut st, tip_b)
+        cell := regionAlloc(mut st, d, iconst(mut st, cellw))
+        br(mut st, join, list2(mut st, itop(mut st, bs), cell))
+    } else {
+        br(mut st, copy_b, -1)
+    }
+    // 先端でなければ幾何成長（rtgrow.sober — 余剰容量つきの全コピーか、割り当ての水位でその場）
+    setCur(mut st, copy_b)
+    n := bin(mut st, BMul, ln, iconst(mut st, cellw))
+    p := call(mut st, st.rtGrow, list5(mut st, bs, ln, iconst(mut st, cellw), d, iconst(mut st, 1)))
+    br(mut st, join, list2(mut st, p, gepWord(mut st, p, n)))
+    setCur(mut st, join)
+    return np, dst
+}
+
+// mapGrow は map のセル列を 1 セル伸ばす先を取る（grow の tip 形の map 版）。先端に接していれば 1 セル伸長・でなければ全コピー（rt.slice_grow — 2 つの map が先端を奪い合う〔表に載った列の再コピー〕なら
+// 幾何成長で索引は先に作らない — データ構造便の続編）。
+// 全コピーで長さが MAP_IDX_MIN 以上になるなら、索引（rt.map_find の形 — [持ち主, 索引済みの数 0, 容量, 0 の枠…]・容量 = 4 × 新しい長さ以上の 2 の冪）を
+// 先に確保してからセル列を取る — セル列が先端に残るので次からの挿入は伸長で済み、索引は持ち主が同じなので map_find が追いつくだけ
+// （第三便 M14: 索引をセル列の後ろに作ると先端が外れて挿入ごとに全コピー + 索引の作り直し — 挿入 1 万件で 3.5 GB の O(n²) だった）。
+// 索引の作り直しは長さの倍化ごと（容量の検査 — map_find）なので全コピーは償却 O(1)
+func mapGrow(st mut St, h int, cellw int) (int, int) {
+    bs := load(mut st, h, 0)
+    ln := load(mut st, h, 1)
+    d := load(mut st, h, 2)
+    join := newBlock(mut st)
+    np := param(mut st, join, TyPtr)
+    dst := param(mut st, join, TyPtr)
+    copy_b := newBlock(mut st)
+    end := bin(mut st, BAdd, bs, bin(mut st, BMul, ln, iconst(mut st, 8 * cellw)))
+    tip_b := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ptoi(mut st, regionBump(mut st, d)), end), tip_b, -1, copy_b, -1)
+    setCur(mut st, tip_b)
+    br(mut st, join, list2(mut st, itop(mut st, bs), regionAlloc(mut st, d, iconst(mut st, cellw))))
+    // 先端でなければ rt.map_grow（rtgrow.sober — 水位でその場・自分の索引が先端なら索引を先に長さちょうど・でなければ幾何成長。
+    // 代入の点ごとに展開しない — 熱い関数が膨らんで IR インライナの予算を外れた）
+    setCur(mut st, copy_b)
+    p := call(mut st, st.rtMapGrow, list2(mut st, h, iconst(mut st, cellw)))
+    br(mut st, join, list2(mut st, p, gepWord(mut st, p, bin(mut st, BMul, ln, iconst(mut st, cellw)))))
+    setCur(mut st, join)
+    return np, dst
+}
+
+// mapSet は map の set: 既存キー（墓石も）はその場で tag = 1 と値を書く。新規は成長してセルを足し、ヘッダ h を書き戻す
+// mapSet は h[kp] = v（kp で引き、在れば値を書き、無ければ挿入）。relocKey = 挿入のときだけ鍵を写して map のヘッダの深度へ再配置する・
+// relocVal = 値を map のヘッダの深度へ再配置する（引きの後の両方の枝で — 引きの前に置くと 2 回の引きの間に呼び出しが入り融合が外れる）
+// （格納点の写し — 宛先構築レーン M5。引きは元の鍵 kp で行うので、直前の読み `m[k]` の引きと実引数が揃い mapfuse が 2 回目を畳める —
+// 鍵を引きの前に写していた形が M16 の融合を外していた退行の修理。更新のときはセルの鍵をそのまま使うので写しは要らない）
+func mapSet(st mut St, h int, kp int, vt int, v int, mt int, relocKey bool, relocVal bool) {
+    c := mapFind(mut st, h, kp, mt)
+    upd := newBlock(mut st)
+    ins := newBlock(mut st)
+    done := newBlock(mut st)
+    r := mapRepr(mut st, mt)
+    condbr(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)), upd, -1, ins, -1)
+    setCur(mut st, upd)
+    if relocVal {
+        relocateTo(mut st, v, 0, vt, load(mut st, h, 2))
+    }
+    cp := itop(mut st, c)
+    mrSetLive(mut st, r, cp, true)
+    storeVal(mut st, cp, r.valOff, vt, v)
+    br(mut st, done, -1)
+    setCur(mut st, ins)
+    if relocVal {
+        relocateTo(mut st, v, 0, vt, load(mut st, h, 2))
+    }
+    mut kq := kp
+    if relocKey {
+        kq = copyVal(mut st, r.kt, loadVal(mut st, kp, 0, r.kt))
+        relocateTo(mut st, kq, 0, r.kt, load(mut st, h, 2))
+    }
+    gp, gd := mapGrow(mut st, h, r.cellw)
+    mrKeyInsert(mut st, r, gd, kq)
+    storeVal(mut st, gd, r.valOff, vt, v)
+    store(mut st, h, 0, ptoi(mut st, gp))
+    store(mut st, h, 1, bin(mut st, BAdd, load(mut st, h, 1), iconst(mut st, 1)))
+    br(mut st, done, -1)
+    setCur(mut st, done)
+}
+
+// sliceOf は添字・部分列の対象の検査（string は拒否）
+func sliceOf(st mut St, t int, at desugar.NodeRef) error? {
+    if isString(mut st, t) || !isTag(mut st, t, TSlice) {
+        return diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return nil
+}
+
+// index は `xs[i]`（符号なしの境界検査 1 本 — 負も範囲外）/ `m[k]`（V? — 不在は nil）
+func index(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    bx := expr(mut st, nA(nodeOf(mut st, e)))?
+    if isTag(mut st, bx.t, TNever) {
+        return bx, nil
+    }
+    if isTag(mut st, bx.t, TMap) {
+        x := exprExpecting(mut st, nB(nodeOf(mut st, e)), desugar.HeapGet(mut st.d, bx.t + 1), at)?
+        kp := keyPtr(mut st, x.t, x.v, bx.t, at)?
+        if kp < 0 {
+            return Val{t: tNever(mut st), v: 0}, nil
+        }
+        c := mapFind(mut st, bx.v, kp, bx.t)
+        ot := optOf(mut st, desugar.HeapGet(mut st.d, bx.t + 2))
+        r := newAgg(mut st, ot)
+        hit := newBlock(mut st)
+        miss := newBlock(mut st)
+        done := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)), hit, -1, miss, -1)
+        setCur(mut st, hit)
+        // V? = [tag][value]（墓石はタグ 0 = nil）
+        cp := itop(mut st, c)
+        mr := mapRepr(mut st, bx.t)
+        store(mut st, r, 0, mrTag(mut st, mr, cp))
+        mut w := 1
+        while w < tWords(mut st, ot) {
+            store(mut st, r, w, load(mut st, cp, mr.valOff + w - 1))
+            w += 1
+        }
+        br(mut st, done, -1)
+        setCur(mut st, miss)
+        store(mut st, r, 0, iconst(mut st, 0))
+        br(mut st, done, -1)
+        setCur(mut st, done)
+        return Val{t: ot, v: r}, nil
+    }
+    sliceOf(mut st, bx.t, at)?
+    i := expr(mut st, nB(nodeOf(mut st, e)))?
+    if isTag(mut st, i.t, TNever) {
+        return i, nil
+    }
+    want(mut st, i.t, tInt(mut st), at)?
+    panicIf(mut st, cmp(mut st, CUge, i.v, load(mut st, bx.v, 1)), PK_INDEX, at)
+    elem := desugar.HeapGet(mut st.d, bx.t + 1)
+    if isBytes(mut st, bx.t) {
+        return Val{t: elem, v: load8(mut st, gepByte(mut st, hdrPtr(mut st, bx.v), i.v), 0)}, nil
+    }
+    return Val{t: elem, v: loadVal(mut st, cellAt(mut st, hdrPtr(mut st, bx.v), i.v, tWords(mut st, elem)), 0, elem)}, nil
+}
+
+// slice3 は `xs[a:b]`（imm 限定）: 同じセル列を指す新ヘッダ。0 ≤ a ≤ b ≤ len でなければ panic
+func slice3(st mut St, e desugar.NodeRef) (Val, error?) {
+    at := e
+    bx := expr(mut st, nA(nodeOf(mut st, e)))?
+    if isTag(mut st, bx.t, TNever) {
+        return bx, nil
+    }
+    sliceOf(mut st, bx.t, at)?
+    if desugar.HeapGet(mut st.d, bx.t + 2) != 0 {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    l := expr(mut st, nB(nodeOf(mut st, e)))?
+    if isTag(mut st, l.t, TNever) {
+        return l, nil
+    }
+    want(mut st, l.t, tInt(mut st), at)?
+    h := expr(mut st, nC(nodeOf(mut st, e)))?
+    if isTag(mut st, h.t, TNever) {
+        return h, nil
+    }
+    want(mut st, h.t, tInt(mut st), at)?
+    panicIf(mut st, cmp(mut st, CLt, l.v, iconst(mut st, 0)), PK_SLICE, at)
+    panicIf(mut st, cmp(mut st, CLt, h.v, l.v), PK_SLICE, at)
+    panicIf(mut st, cmp(mut st, CGt, h.v, load(mut st, bx.v, 1)), PK_SLICE, at)
+    p := elemAt(mut st, bx.t, hdrPtr(mut st, bx.v), l.v)
+    n := bin(mut st, BSub, h.v, l.v)
+    return Val{t: bx.t, v: newHeader(mut st, bx.t, p, n, load(mut st, bx.v, 2))}, nil
+}
+
+// stringBinary は string の == / != / +（左辺は評価済み）。連結は最内 region の先端へ両セル列を写す
+func stringBinary(st mut St, e desugar.NodeRef, lt int, lv int) (Val, error?) {
+    at := e
+    r := expr(mut st, nC(nodeOf(mut st, e)))?
+    if isTag(mut st, r.t, TNever) {
+        return r, nil
+    }
+    if !isString(mut st, r.t) {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    op := nodeOf(mut st, e).a
+    if op == lexer.Plus {
+        l1 := load(mut st, lv, 1)
+        l2 := load(mut st, r.v, 1)
+        n := bin(mut st, BAdd, l1, l2)
+        // 宛先構築（return に流れ着く連結 — string のバイトは参照を持たないので常に可）
+        d := if destHere(mut st, e) { st.destDepth } else { regionDepth(mut st) }
+        p := concatHead(mut st, lv, d, l2)
+        q := gepByte(mut st, p, l1)
+        call(mut st, st.rtCopy8, list3(mut st, q, hdrPtr(mut st, r.v), l2))
+        return Val{t: lt, v: newHeader(mut st, lt, p, n, d)}, nil
+    }
+    eq := strEqual(mut st, e, lv, r.v)
+    if op == lexer.EqualEqual {
+        return Val{t: tBool(mut st), v: eq}, nil
+    }
+    return Val{t: tBool(mut st), v: bin(mut st, BXor, eq, iconst(mut st, 1))}, nil
+}
+
+// strEqual は string の等値（i64 の真偽）。呼び出しの多くは長さの不一致で抜けるので（report-450 — logagg 70%・routing 39%）、
+// 呼ぶ前にその場で長さを比べる（S1）。片側が 8 バイト以下のリテラルなら呼ばずに閉じる（S2）: 長さ = 定数 K と比べ、もう片側の先頭 8 バイトを
+// 1 回読んでリテラルの語（rodata と同じ詰め方の定数）と下位 K バイトだけ比べる — 8 バイトの load はページの末尾 7 バイトに掛からなければフォルトしない
+// （掛かるときだけ rt.str_eq）。開発用 --rt-mutant=12 は常に rt.str_eq を呼ぶ（短い等値の速い道の差分オラクル — scripts/streq.sh）
+func strEqual(st mut St, e desugar.NodeRef, lv int, rv int) int {
+    if st.rtMut == 12 {
+        return call(mut st, st.rtStreq, list2(mut st, lv, rv))
+    }
+    x := nodeOf(mut st, e)
+    lit := if kindN(mut st, nC(x)) == ast.EStrlit { nC(x) } else if kindN(mut st, nB(x)) == ast.EStrlit { nB(x) } else { desugar.NodeRef(-1) }
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    same := newBlock(mut st)
+    if int(lit) < 0 {
+        condbr(mut st, cmp(mut st, CNe, load(mut st, lv, 1), load(mut st, rv, 1)), done, list1(mut st, iconst(mut st, 0)), same, -1)
+        setCur(mut st, same)
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+        setCur(mut st, done)
+        return res
+    }
+    s := sA(nodeOf(mut st, lit))
+    k := slen(mut st, s)
+    other := if lit == nC(x) { lv } else { rv }
+    condbr(mut st, cmp(mut st, CNe, load(mut st, other, 1), iconst(mut st, k)), done, list1(mut st, iconst(mut st, 0)), same, -1)
+    setCur(mut st, same)
+    if k == 0 {
+        br(mut st, done, list1(mut st, iconst(mut st, 1)))
+    } else if k > 8 {
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+    } else {
+        word := newBlock(mut st)
+        slow := newBlock(mut st)
+        pi := load(mut st, other, 0)
+        fits := bin(mut st, BSub, bin(mut st, BAnd, pi, iconst(mut st, 4095)), iconst(mut st, 4089))
+        condbr(mut st, cmp(mut st, CLt, fits, iconst(mut st, 0)), word, -1, slow, -1)
+        setCur(mut st, word)
+        mut lw := 0
+        mut j := k - 1
+        while j >= 0 {
+            lw = (lw << 8) | sat(mut st, s, j)
+            j -= 1
+        }
+        d := bin(mut st, BXor, load(mut st, itop(mut st, pi), 0), iconst(mut st, lw))
+        dm := if k == 8 { d } else { bin(mut st, BShl, d, iconst(mut st, 64 - 8 * k)) }
+        br(mut st, done, list1(mut st, cmp(mut st, CEq, dm, iconst(mut st, 0))))
+        setCur(mut st, slow)
+        br(mut st, done, list1(mut st, call(mut st, st.rtStreq, list2(mut st, lv, rv))))
+    }
+    setCur(mut st, done)
+    return res
+}
+
+// concatHead は連結の結果のセル列（左の片 lv を先頭に写した・残り rest バイトを書ける — 深度 d）: 左の片のヘッダの深度が d で終わりが d の先端なら
+// その場で rest バイト伸ばして左の片のセル列をそのまま使う（rt.cat8 → rt.tipn8 — 先端一致の concat。左の片のバイトは変えないので値の意味論は不変 —
+// 同じ片から 2 本目を作ると先端がずれて写しに落ちる。`s = s + x` が償却 O(n)・M5b の行き先の深度で作る形と組んで外の束縛でも効く）。でなければ確保して写す
+func concatHead(st mut St, lv int, d int, rest int) int {
+    needByteRt(mut st)
+    return call(mut st, st.rtCat8, list5(mut st, load(mut st, lv, 0), load(mut st, lv, 1), load(mut st, lv, 2), d, rest))
+}
+
+// one1 は値 1 つの結果の列（never は -1、値なしは空）
+func one1(st mut St, t int, v int) int {
+    if isTag(mut st, t, TNever) {
+        return -1
+    }
+    if isTag(mut st, t, TNone) {
+        return list0(mut st)
+    }
+    r := list2(mut st, t, v)
+    desugar.HeapSet(mut st.d, r, 1)
+    return r
+}
+
+// builtin は組み込み（len / bytes / freeze / delete / append、std 専用の bytesToString と io）。組み込みでなければ -2
+func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    std := isStdPkg(mut st, st.curPkg)
+    if std {
+        // float の組み込み（std/math — language.md 37 節）: sqrt は sqrtsd・ビット列の読み替えは同じ語（型だけ変わる）
+        // std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — desugar の SysKey）: 鍵の番号で実装を引く
+        sk := desugar.SysKey(mut st.d, st.curPkg, name)
+        fsq := sk == loader.IFSqrt
+        fbi := sk == loader.IFBits
+        ffb := sk == loader.IFFromBits
+        if fsq || fbi || ffb {
+            if lenL(mut st, args) != 1 {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            x := expr(mut st, latN(mut st, args, 0))?
+            if isTag(mut st, x.t, TNever) {
+                return one1(mut st, x.t, x.v), nil
+            }
+            if !isTag(mut st, x.t, if ffb { TInt } else { TFloat }) {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            if fsq {
+                return one1(mut st, tFloat(mut st), bin(mut st, BFSqrt, x.v, x.v)), nil
+            }
+            return one1(mut st, if fbi { tInt(mut st) } else { tFloat(mut st) }, x.v), nil
+        }
+        r := ioBuiltin(mut st, sk, args, at)?
+        if r != -2 {
+            return r, nil
+        }
+    }
+    k := if strIs(mut st, name, "len") {
+        1
+    } else if strIs(mut st, name, "bytes") {
+        2
+    } else if strIs(mut st, name, "freeze") {
+        3
+    } else if strIs(mut st, name, "delete") {
+        4
+    } else if strIs(mut st, name, "append") {
+        5
+    } else if std && strIs(mut st, name, "bytesToString") {
+        6
+    } else if strIs(mut st, name, "keys") {
+        7
+    } else if strIs(mut st, name, "clone") {
+        8
+    } else {
+        0
+    }
+    if k == 0 {
+        return -2, nil
+    }
+    arity := if k == 4 || k == 5 { 2 } else { 1 }
+    if lenL(mut st, args) != arity {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    x := expr(mut st, latN(mut st, args, 0))?
+    if isTag(mut st, x.t, TNever) {
+        return -1, nil
+    }
+    switch k {
+    case 1:
+        if isTag(mut st, x.t, TMap) {
+            return one1(mut st, tInt(mut st), mapLen(mut st, x.v, x.t)), nil
+        }
+        if isString(mut st, x.t) || !isTag(mut st, x.t, TSlice) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), load(mut st, x.v, 1)), nil
+    case 8:
+        if (isTag(mut st, x.t, TSlice) && !isString(mut st, x.t)) || isTag(mut st, x.t, TMap) {
+            c := cloneVal(mut st, x.t, x.v)
+            return one1(mut st, c.t, c.v), nil
+        }
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    case 7:
+        if !isTag(mut st, x.t, TMap) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        kt := desugar.HeapGet(mut st.d, x.t + 1)
+        return one1(mut st, mkSlice(mut st, kt, false), mapKeys(mut st, x.v, x.t)), nil
+    case 2:
+        if !isString(mut st, x.t) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, mkSlice(mut st, tByte(mut st), false), x.v), nil
+    case 6:
+        if !isTag(mut st, x.t, TSlice) || isString(mut st, x.t) || !isTag(mut st, desugar.HeapGet(mut st.d, x.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, mkString(mut st), x.v), nil
+    case 3:
+        if isTag(mut st, x.t, TSlice) || isTag(mut st, x.t, TMap) {
+            return one1(mut st, freezeTy(mut st, x.t), x.v), nil
+        }
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    case 4:
+        // 墓石（tag = 0）をその場で書く。不在は何もしない
+        if !isTag(mut st, x.t, TMap) || desugar.HeapGet(mut st.d, x.t + 3) == 0 {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        y := exprExpecting(mut st, latN(mut st, args, 1), desugar.HeapGet(mut st.d, x.t + 1), at)?
+        kp := keyPtr(mut st, y.t, y.v, x.t, at)?
+        if kp < 0 {
+            return -1, nil
+        }
+        c := mapFind(mut st, x.v, kp, x.t)
+        hit := newBlock(mut st)
+        done := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, c, iconst(mut st, 0)), hit, -1, done, -1)
+        setCur(mut st, hit)
+        mrSetLive(mut st, mapRepr(mut st, x.t), itop(mut st, c), false)
+        br(mut st, done, -1)
+        setCur(mut st, done)
+        return list0(mut st), nil
+    }
+    a := appendCall(mut st, x.t, x.v, latN(mut st, args, 1), at)?
+    return one1(mut st, a.t, a.v), nil
+}
+
+// ioBuiltin は std 専用の io 組み込み（`@intrinsic("鍵")` の宣言 — 鍵の番号 sk で引く。下は従来の名前での説明）: sysReadFile(path) []int・sysWriteFile(path, []int) int（errno）・sysErrno() int・
+// sysArgs() []int（argv の「バイト + 0」の連結）・sysReadDir(path) []int（「d_type + 名前 + 0」の連結）・sysWriteFd(fd, []int) int（errno）・
+// sysRun(argv []byte) int（子プロセスの終了コード / 負の errno — rt.run）・sysWriteMode(path, mode int) int（errno — rt.write_mode）・
+// sysMkdir(path) int（errno — rt.mkdir）・sysRename(from, to) int（errno — rt.rename）・sysEnviron() []byte（環境変数の「NAME=値 + 0」の連結 — rt.environ）・
+// sysStat(path) int（更新時刻 ns / 負の errno — rt.stat）・sysSleep(ms) int（errno — rt.sleep）・sysReadFd(fd, n) []byte（rt.read_fd — n < 0 = 全量）。
+// 組み込みでなければ -2
+func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else { 0 }
+    arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
+    if k == 0 {
+        return -2, nil
+    }
+    if lenL(mut st, args) != arity {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    switch k {
+    case 15:
+        // std/par の名前つきプールの節（段 6 P5-4 — admit.sober）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        pa := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, pa.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TInt) || !isTag(mut st, pa.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needPoolRt(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtPoolNew, list2(mut st, b.v, pa.v))), nil
+    case 16:
+        // std/par の台帳の 1 語（段 6 P5-4 — io）
+        x := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, x.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needPoolRt(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtLedger, list1(mut st, x.v))), nil
+    case 3:
+        return one1(mut st, tInt(mut st), load(mut st, globaladdr(mut st, st.meta), W_ERRNO)), nil
+    case 4:
+        t := mkSlice(mut st, tByte(mut st), false)
+        out := newAgg(mut st, t)
+        call(mut st, st.rtArgs, list1(mut st, out))
+        return one1(mut st, t, out), nil
+    case 11:
+        needEnviron(mut st)
+        t := mkSlice(mut st, tByte(mut st), false)
+        out := newAgg(mut st, t)
+        call(mut st, st.rtEnv, list1(mut st, out))
+        return one1(mut st, t, out), nil
+    case 14:
+        f := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, f.t, TNever) {
+            return -1, nil
+        }
+        n := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, n.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, f.t, TInt) || !isTag(mut st, n.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needReadFd(mut st)
+        t := mkSlice(mut st, tByte(mut st), false)
+        out := newAgg(mut st, t)
+        call(mut st, st.rtRfd, list3(mut st, f.v, n.v, out))
+        return one1(mut st, t, out), nil
+    case 13:
+        ms := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, ms.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, ms.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needSleep(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtSleep, list1(mut st, ms.v))), nil
+    case 7:
+        a := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, a.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, a.t, TSlice) || isString(mut st, a.t) || !isTag(mut st, desugar.HeapGet(mut st.d, a.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needRun(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtRun, list1(mut st, a.v))), nil
+    case 6:
+        f := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, f.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, f.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        d := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, d.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, d.t, TSlice) || isString(mut st, d.t) || !isTag(mut st, desugar.HeapGet(mut st.d, d.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), call(mut st, st.rtWfd, list2(mut st, f.v, d.v))), nil
+    }
+    p := expr(mut st, latN(mut st, args, 0))?
+    if isTag(mut st, p.t, TNever) {
+        return -1, nil
+    }
+    if !isString(mut st, p.t) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if k == 12 {
+        needStat(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtStat, list1(mut st, p.v))), nil
+    }
+    if k == 9 {
+        needMkdir(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtMkdir, list1(mut st, p.v))), nil
+    }
+    if k == 10 {
+        q := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, q.t, TNever) {
+            return -1, nil
+        }
+        if !isString(mut st, q.t) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needRename(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtRename, list2(mut st, p.v, q.v))), nil
+    }
+    if k == 8 {
+        m := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, m.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, m.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needWriteMode(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtMode, list2(mut st, p.v, m.v))), nil
+    }
+    if k == 1 || k == 5 {
+        t := mkSlice(mut st, tByte(mut st), false)
+        out := newAgg(mut st, t)
+        if destHere(mut st, at) {
+            // 宛先構築（1.0× アタック便 — M1 の印）: 結果が return に流れ着くなら、読む間だけ深度を宛先へ切り替えて宛先の region の先端へ直に読む
+            // （io.ReadFile の戻り値の境界コピー — 1BRC の 140 MB の写し — が消える）。宛先の region の先端は呼び手が止まっている間は空いている
+            saved := regionDepth(mut st)
+            regionSetDepth(mut st, st.destDepth)
+            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list2(mut st, p.v, out))
+            regionSetDepth(mut st, saved)
+        } else {
+            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list2(mut st, p.v, out))
+        }
+        return one1(mut st, t, out), nil
+    }
+    dx := expr(mut st, latN(mut st, args, 1))?
+    if isTag(mut st, dx.t, TNever) {
+        return -1, nil
+    }
+    if !isTag(mut st, dx.t, TSlice) || isString(mut st, dx.t) || !isTag(mut st, desugar.HeapGet(mut st.d, dx.t + 1), TByte) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return one1(mut st, tInt(mut st), call(mut st, st.rtWrite, list2(mut st, p.v, dx.v))), nil
+}
+
+// mapLen は生きたエントリ（tag = 1）の数。墓石は数えない
+func mapLen(st mut St, h int, mt int) int {
+    p := hdrPtr(mut st, h)
+    n := load(mut st, h, 1)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    acc := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    zero := iconst(mut st, 0)
+    br(mut st, loop, list2(mut st, zero, zero))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, list1(mut st, acc))
+    setCur(mut st, body)
+    r := mapRepr(mut st, mt)
+    tagv := mrTag(mut st, r, cellAt(mut st, p, i, r.cellw))
+    i1 := bin(mut st, BAdd, i, iconst(mut st, 1))
+    br(mut st, loop, list2(mut st, i1, bin(mut st, BAdd, acc, tagv)))
+    setCur(mut st, done)
+    return res
+}
+
+// mapKeys は keys(m)（keysm の段）: 生きたエントリ（tag = 1）のキーを挿入順に、現在の深度へ imm slice として写す
+// （Lean の liveKeys と同じ走査 — 墓石はスキップ、キーのセル（int 1 語 / string ヘッダ）をそのままコピー）
+func mapKeys(st mut St, h int, mt int) int {
+    r := mapRepr(mut st, mt)
+    kw := r.kw
+    cw := r.cellw
+    live := mapLen(mut st, h, mt)
+    d := regionDepth(mut st)
+    out := regionAlloc(mut st, d, bin(mut st, BMul, live, iconst(mut st, kw)))
+    p := hdrPtr(mut st, h)
+    n := load(mut st, h, 1)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    j := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    hit := newBlock(mut st)
+    done := newBlock(mut st)
+    zero := iconst(mut st, 0)
+    br(mut st, loop, list2(mut st, zero, zero))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    cell := cellAt(mut st, p, i, cw)
+    inext := bin(mut st, BAdd, i, iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CNe, mrTag(mut st, r, cell), zero), hit, -1, loop, list2(mut st, inext, j))
+    setCur(mut st, hit)
+    mrKeyCopy(mut st, r, cellAt(mut st, out, j, kw), cell)
+    br(mut st, loop, list2(mut st, inext, bin(mut st, BAdd, j, iconst(mut st, 1))))
+    setCur(mut st, done)
+    return newHeader(mut st, mkSlice(mut st, desugar.HeapGet(mut st.d, mt + 1), false), out, live, d)
+}
+
+// cloneVal は clone(x)（clone の段 — freeze の双対・Lean の clone）: slice / map のセル列を今の region（最内）の先端へ一括で写した mut のヘッダ
+// （浅い写し — 要素の中身は共有）。map は墓石ごと並びのまま写す（列挙の順・削除 → 再挿入の位置が元と同じ）。索引は持たない（初回の引きで rt.map_find が作る）
+func cloneVal(st mut St, xt int, xv int) Val {
+    d := regionDepth(mut st)
+    n := load(mut st, xv, 1)
+    if isTag(mut st, xt, TMap) {
+        w := bin(mut st, BMul, n, iconst(mut st, mapRepr(mut st, xt).cellw))
+        p := regionAlloc(mut st, d, w)
+        call(mut st, st.rtCopy, list3(mut st, p, hdrPtr(mut st, xv), w))
+        mt := mkMap(mut st, desugar.HeapGet(mut st.d, xt + 1), desugar.HeapGet(mut st.d, xt + 2), true)
+        h := newHeader(mut st, mt, p, n, d)
+        store(mut st, h, 3, iconst(mut st, 0))
+        return Val{t: mt, v: h}
+    }
+    elem := desugar.HeapGet(mut st.d, xt + 1)
+    t := mkSlice(mut st, elem, true)
+    if isBytes(mut st, xt) {
+        // []byte はバイト数で写す（確保は語の切り上げ）
+        needByteRt(mut st)
+        p := regionAlloc(mut st, d, bin(mut st, BSar, bin(mut st, BAdd, n, iconst(mut st, 7)), iconst(mut st, 3)))
+        call(mut st, st.rtCopy8, list3(mut st, p, hdrPtr(mut st, xv), n))
+        return Val{t: t, v: newHeader(mut st, t, p, n, d)}
+    }
+    w := bin(mut st, BMul, n, iconst(mut st, tWords(mut st, elem)))
+    p := regionAlloc(mut st, d, w)
+    call(mut st, st.rtCopy, list3(mut st, p, hdrPtr(mut st, xv), w))
+    return Val{t: t, v: newHeader(mut st, t, p, n, d)}
+}
+
+// appendCall は append(xs, v): mut はヘッダの深度で先端伸長か全コピー、imm は現在の深度へ全コピー
+func appendCall(st mut St, xt int, xv0 int, src desugar.NodeRef, at desugar.NodeRef) (Val, error?) {
+    if isString(mut st, xt) || !isTag(mut st, xt, TSlice) {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    elem := desugar.HeapGet(mut st.d, xt + 1)
+    m := desugar.HeapGet(mut st.d, xt + 2) != 0
+    xv := copyVal(mut st, xt, xv0)
+    vx := exprExpecting(mut st, src, elem, at)?
+    if isTag(mut st, vx.t, TNever) {
+        return vx, nil
+    }
+    v := copyVal(mut st, vx.t, vx.v)
+    // imm の append の結果は、外の束縛への代入の右辺の最上段（M5b — forceDest）なら行き先の深度で作る（M1 の return の印は使わない — 最適化の有無で 102 の死亡ダンプが割れる）
+    d := if m { load(mut st, xv, 2) } else if int(at) >= 0 && int(at) == st.forceDest && !containsSlice(mut st, elem) { st.destDepth } else { regionDepth(mut st) }
+    if isBytes(mut st, xt) {
+        bp, bd := grow8(mut st, xv, d, m)
+        store8(mut st, bd, 0, v)
+        return Val{t: xt, v: newHeader(mut st, xt, bp, bin(mut st, BAdd, load(mut st, xv, 1), iconst(mut st, 1)), d)}, nil
+    }
+    gp, gd := grow(mut st, xv, tWords(mut st, elem), d, m)
+    // 格納点の写し（M5）: mut slice の要素がヘッダの深度より深い region のコンテナを指すなら、行き先（ヘッダの深度）へ写す
+    if m && containsSlice(mut st, vx.t) {
+        relocateTo(mut st, v, 0, vx.t, d)
+        writeBack(mut st, src, vx.t, v)
+    }
+    storeVal(mut st, gd, 0, vx.t, v)
+    n := bin(mut st, BAdd, load(mut st, xv, 1), iconst(mut st, 1))
+    return Val{t: xt, v: newHeader(mut st, xt, gp, n, d)}, nil
+}
+
+// setIndex は `xs[i] = v`（mut slice）/ `m[k] = v`（mut 束縛の mut map — 成長でヘッダが変わるので束縛の置き場を書き戻す）。
+// 評価順: 基底 → 添字 → 右辺 → 境界検査
+func setIndex(st mut St, ix desugar.NodeRef, value desugar.NodeRef) error? {
+    at := ix
+    base := nA(nodeOf(mut st, ix))
+    if kindN(mut st, base) == ast.EIdent {
+        l := lookup(mut st, sA(nodeOf(mut st, base)))
+        if l >= 0 && isTag(mut st, desugar.HeapGet(mut st.d, l + 3), TMap) {
+            mt := desugar.HeapGet(mut st.d, l + 3)
+            // imm の map への書き込みは名指す（`mut m := map[K]V{}` — 右辺の mut の書き忘れ。check と同じ diag.ImmWrite）
+            if desugar.HeapGet(mut st.d, mt + 3) == 0 {
+                return diag.ImmWrite{at: posOf(mut st, at)}
+            }
+            if desugar.HeapGet(mut st.d, l + 2) != LCell {
+                return diag.Mismatch{at: posOf(mut st, at)}
+            }
+            h := desugar.HeapGet(mut st.d, l + 4)
+            x := exprExpecting(mut st, nB(nodeOf(mut st, ix)), desugar.HeapGet(mut st.d, mt + 1), at)?
+            kp := keyPtr(mut st, x.t, x.v, mt, at)?
+            if kp < 0 {
+                return nil
+            }
+            vx := exprExpecting(mut st, value, desugar.HeapGet(mut st.d, mt + 2), at)?
+            if isTag(mut st, vx.t, TNever) {
+                return nil
+            }
+            v := copyVal(mut st, vx.t, vx.v)
+            // 格納点の写し（M5）: キー・値を map のヘッダの深度へ（mapSet の中 — 引きの後に）
+            mapSet(mut st, h, kp, vx.t, v, mt, containsSlice(mut st, desugar.HeapGet(mut st.d, mt + 1)), containsSlice(mut st, vx.t))
+            return nil
+        }
+    }
+    bx := expr(mut st, base)?
+    if isTag(mut st, bx.t, TNever) {
+        return nil
+    }
+    if isTag(mut st, bx.t, TMap) {
+        return diag.Unsupported{at: posOf(mut st, at)}
+    }
+    sliceOf(mut st, bx.t, at)?
+    if desugar.HeapGet(mut st.d, bx.t + 2) == 0 {
+        return diag.ImmWrite{at: posOf(mut st, at)}
+    }
+    i := expr(mut st, nB(nodeOf(mut st, ix)))?
+    if isTag(mut st, i.t, TNever) {
+        return nil
+    }
+    want(mut st, i.t, tInt(mut st), at)?
+    elem := desugar.HeapGet(mut st.d, bx.t + 1)
+    ev := exprExpecting(mut st, value, elem, at)?
+    if isTag(mut st, ev.t, TNever) {
+        return nil
+    }
+    panicIf(mut st, cmp(mut st, CUge, i.v, load(mut st, bx.v, 1)), PK_INDEX, at)
+    if isBytes(mut st, bx.t) {
+        store8(mut st, gepByte(mut st, hdrPtr(mut st, bx.v), i.v), 0, ev.v)
+        return nil
+    }
+    // 格納点の写し（M5）: 要素をヘッダの深度へ
+    if containsSlice(mut st, ev.t) {
+        ec := copyVal(mut st, ev.t, ev.v)
+        relocateTo(mut st, ec, 0, ev.t, load(mut st, bx.v, 2))
+        writeBack(mut st, value, ev.t, ec)
+        storeVal(mut st, cellAt(mut st, hdrPtr(mut st, bx.v), i.v, tWords(mut st, elem)), 0, ev.t, ec)
+        return nil
+    }
+    storeVal(mut st, cellAt(mut st, hdrPtr(mut st, bx.v), i.v, tWords(mut st, elem)), 0, ev.t, ev.v)
+    return nil
+}
+
+// writeBack は格納点で写した値 c（型 t）を、値の式 src が名前ならその束縛の置き場へ書き戻す（M5 — 同じ名前を繰り返し格納するとき
+// 2 回目以降を空にする。builder.Push の chunk の詰め〔同じ x を cap 回 append〕が毎回 x を写し直して外の先端を奪う 2 乗を実測で踏んだ）。
+// 中身は同じ値（写しは観測不能）なので imm の束縛でも書き戻してよい
+func writeBack(st mut St, src desugar.NodeRef, t int, c int) {
+    if int(src) < 0 || kindN(mut st, src) != ast.EIdent {
+        return
+    }
+    l := lookup(mut st, sA(nodeOf(mut st, src)))
+    if l < 0 || !isAggregate(mut st, desugar.HeapGet(mut st.d, l + 3)) || !tEql(mut st, desugar.HeapGet(mut st.d, l + 3), t) {
+        return
+    }
+    storeVal(mut st, desugar.HeapGet(mut st.d, l + 4), 0, t, c)
+}
+
+// ── 境界コピー（relocateTo — docs/ir.md 6 節）──
+
+// relocateArm は c が真の腕へ入る（cur = 腕）。返すのは合流ブロック
+func relocateArm(st mut St, c int) BlkRef {
+    arm := newBlock(mut st)
+    join := newBlock(mut st)
+    condbr(mut st, c, arm, -1, join, -1)
+    setCur(mut st, arm)
+    return join
+}
+
+// relocateTo は型 t の値（p + off 語）の中の slice / map ヘッダのうち、深度が floor より深いものを深度 floor の region の先端へ写す
+// （Lean の relocT）。struct は静的オフセット、opt / union はタグで生きている腕だけ。slice / map は 2 相（中身を先に、外側のセル列を後に）
+func relocateTo(st mut St, p int, off int, t int, floor int) {
+    slotPin(mut st, p)
+    k := desugar.HeapGet(mut st.d, t)
+    if k == TSlice {
+        elem := desugar.HeapGet(mut st.d, t + 1)
+        relocateCells(mut st, fieldPtr(mut st, p, off), tWords(mut st, elem), floor, t, if containsSlice(mut st, elem) { 1 } else { 0 })
+    } else if k == TMap {
+        inner := containsSlice(mut st, desugar.HeapGet(mut st.d, t + 1)) || containsSlice(mut st, desugar.HeapGet(mut st.d, t + 2))
+        h := fieldPtr(mut st, p, off)
+        old := load(mut st, h, 0)
+        relocateCells(mut st, h, mapRepr(mut st, t).cellw, floor, t, if inner { 2 } else { 0 })
+        // セル列が動いたら索引を外す（索引は元の深度の region — 動いた先より先に捨てられる。持ち主の照合だけに頼らない）
+        moved := relocateArm(mut st, cmp(mut st, CNe, load(mut st, h, 0), old))
+        store(mut st, h, 3, iconst(mut st, 0))
+        br(mut st, moved, -1)
+        setCur(mut st, moved)
+    } else if k == TStruct {
+        fs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            f := latI(mut st, fs, i)
+            relocateTo(mut st, p, off + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor)
+        }
+    } else if k == TOpt {
+        if containsSlice(mut st, desugar.HeapGet(mut st.d, t + 1)) {
+            tag := load(mut st, p, off)
+            live := relocateArm(mut st, cmp(mut st, CNe, tag, iconst(mut st, 0)))
+            relocateTo(mut st, p, off + 1, desugar.HeapGet(mut st.d, t + 1), floor)
+            br(mut st, live, -1)
+            setCur(mut st, live)
+        }
+    } else if k == TUnion {
+        if containsSlice(mut st, t) {
+            tag := load(mut st, p, off)
+            vs := hgetL(mut st, desugar.HeapGet(mut st.d, t + 1) + SI_FIELDS)
+            for vi <- iter.Range(0, lenL(mut st, vs)) {
+                vr := latI(mut st, vs, vi)
+                fs := hgetL(mut st, vr + 2)
+                mut has := false
+                for i <- iter.Range(0, lenL(mut st, fs)) {
+                    if containsSlice(mut st, desugar.HeapGet(mut st.d, latI(mut st, fs, i) + 1)) {
+                        has = true
+                    }
+                }
+                if has {
+                    join := relocateArm(mut st, cmp(mut st, CEq, tag, iconst(mut st, desugar.HeapGet(mut st.d, vr + 1))))
+                    for i <- iter.Range(0, lenL(mut st, fs)) {
+                        f := latI(mut st, fs, i)
+                        relocateTo(mut st, p, off + 1 + desugar.HeapGet(mut st.d, f + 2), desugar.HeapGet(mut st.d, f + 1), floor)
+                    }
+                    br(mut st, join, -1)
+                    setCur(mut st, join)
+                }
+            }
+        }
+    }
+}
+
+// relocateCells はヘッダ h のセル列を floor の region へ写す。inner（0 = 無し、1 = slice の要素、2 = map のセル）があれば先に各セルの中身を写す
+func relocateCells(st mut St, h int, cellw int, floor int, t int, inner int) {
+    if inner == 0 {
+        // []byte（段 B）はバイト数で写す（rt.region_relocate8）
+        if isBytes(mut st, t) {
+            needByteRt(mut st)
+            call(mut st, st.rtReloc8, list2(mut st, h, floor))
+            return
+        }
+        regionRelocate(mut st, h, cellw, floor)
+        return
+    }
+    // 外側が floor 以下なら中身ごと触らない
+    deep := relocateArm(mut st, cmp(mut st, CGt, load(mut st, h, 2), floor))
+    bs := itop(mut st, load(mut st, h, 0))
+    n := load(mut st, h, 1)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    after := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, after, -1)
+    setCur(mut st, body)
+    cp := cellAt(mut st, bs, i, cellw)
+    if inner == 1 {
+        relocateTo(mut st, cp, 0, desugar.HeapGet(mut st.d, t + 1), floor)
+    } else {
+        r := mapRepr(mut st, t)
+        mrRelocKey(mut st, r, cp, floor)
+        if containsSlice(mut st, r.vt) {
+            live := relocateArm(mut st, cmp(mut st, CNe, mrTag(mut st, r, cp), iconst(mut st, 0)))
+            relocateTo(mut st, cp, r.valOff, r.vt, floor)
+            br(mut st, live, -1)
+            setCur(mut st, live)
+        }
+    }
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, after)
+    regionRelocate(mut st, h, cellw, floor)
+    br(mut st, deep, -1)
+    setCur(mut st, deep)
+}

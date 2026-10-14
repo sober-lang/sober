@@ -1,0 +1,95 @@
+package main
+
+// 数え上げ（文字列 SIMD 便 段 3 — vec.sober の vecCount・x86.sober の xCountB）の回帰例: `if b[i] == K1 || … { n += 1 }` のループを、長さ 0〜40
+// （16 バイトの塊の境目の前後）× 当たりの位置 × 始点、重なる K（同じ K を 2 度書く）、当たりが 255 塊（4,080 B）を超えて続く長い列（バイトの積算を
+// 畳む間隔を外すと溢れる）で回し、認識に乗らない表引きの参照と突き合わせる。食い違いの数（0）と和を印字
+
+import "std/iter"
+
+// count4 は json.bound と同じ形（構造の文字の数）
+func count4(b []byte, i0 int) int {
+    mut c := 0
+    mut i := i0
+    while i < len(b) {
+        x := b[i]
+        if x == '{' || x == '[' || x == ',' || x == ':' {
+            c += 1
+        }
+        i += 1
+    }
+    return c
+}
+
+// countDup は同じ K を 2 度書いた形（K は重ねずに数える）
+func countDup(b []byte) int {
+    mut c := 0
+    mut i := 0
+    while i < len(b) {
+        x := b[i]
+        if x == 'a' || x == 'b' || x == 'a' {
+            c += 1
+        }
+        i += 1
+    }
+    return c
+}
+
+// ref は表引きの参照（等値の鎖でないので認識に乗らない）
+func ref(b []byte, i0 int, n int, t []int) int {
+    mut c := 0
+    for i <- iter.Range(i0, n) {
+        c += t[int(b[i])]
+    }
+    return c
+}
+
+func main() {
+    mut t4 := mut []int{}
+    mut tab := mut []int{}
+    for k <- iter.Range(0, 256) {
+        t4 = append(t4, if k == 123 || k == 91 || k == 44 || k == 58 { 1 } else { 0 })
+        tab = append(tab, if k == 97 || k == 98 { 1 } else { 0 })
+    }
+    pat := bytes("x{y[z,w:v")
+    patAB := bytes("ab_bxa")
+    mut bad := 0
+    mut sum := 0
+    for n <- iter.Range(0, 41) {
+        for p <- iter.Range(0, n + 1) {
+            mut b := mut []byte{}
+            for k <- iter.Range(0, n) {
+                b = append(b, if k == p { byte(':') } else { pat[(k * 7 + p) % len(pat)] })
+            }
+            for i0 <- iter.Range(0, 3) {
+                got := count4(b, i0)
+                want := ref(b, i0, n, t4)
+                if got != want {
+                    bad += 1
+                    println("mismatch", n, p, i0, got, want)
+                }
+                sum += got
+            }
+            mut ab := mut []byte{}
+            for k <- iter.Range(0, n) {
+                ab = append(ab, patAB[(k + p) % len(patAB)])
+            }
+            d := countDup(ab)
+            if d != ref(ab, 0, n, tab) {
+                bad += 1
+                println("mismatch dup", n, p)
+            }
+            sum += d
+        }
+    }
+    // 長い列: 当たりだけが 10,000 B（625 塊 — 255 塊ごとに畳まないとレーンのバイトの積算が溢れる）+ 端数
+    mut big := mut []byte{}
+    for k <- iter.Range(0, 10007) {
+        big = append(big, if k % 1000 == 999 { byte('x') } else { byte(',') })
+    }
+    g := count4(big, 0)
+    if g != ref(big, 0, len(big), t4) {
+        bad += 1
+        println("mismatch big", g)
+    }
+    println(bad, sum, g)
+}

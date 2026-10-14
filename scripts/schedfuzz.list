@@ -45,3 +45,9 @@ examples/par_cancel_map.sober
 examples/par_steal.sober
 examples/par_budget.sober
 examples/par_shed.sober
+examples/par_scope_try.sober
+examples/par_scope_try_errors.sober
+examples/io_chunks_par.sober
+examples/io_chunks_par_die.sober
+examples/io_chunks_at_par.sober
+examples/io_open_par.sober

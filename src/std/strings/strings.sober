@@ -6,10 +6,13 @@ package strings
 // hasPrefixAt は b[at:] が p で始まるか（呼び手が at + len(p) <= len(b) を保証）
 func hasPrefixAt(b []byte, at int, p []byte) bool {
     mut i := 0
-    while i < len(p) && b[at + i] == p[i] {
+    while i < len(p) {
+        if b[at + i] != p[i] {
+            return false
+        }
         i += 1
     }
-    return i == len(p)
+    return true
 }
 
 // indexAt は b[from:] で p が最初に現れる位置（b 上のオフセット）、無ければ -1

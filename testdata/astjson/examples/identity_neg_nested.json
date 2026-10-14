@@ -1,0 +1,136 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/par",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Quota",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": {
+              "k": "name",
+              "name": "par.Pool"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 17
+      }
+    },
+    {
+      "name": "Tenant",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 21
+          },
+          {
+            "name": "quota",
+            "type": {
+              "k": "name",
+              "name": "Quota"
+            },
+            "tok": 24
+          }
+        ]
+      },
+      "tok": 18,
+      "span": {
+        "start": 17,
+        "end": 29
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Tenant",
+                "elems": [],
+                "tok": 36,
+                "type_args": []
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 40
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 42
+                  },
+                  "args": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 44
+                      },
+                      "field": "name",
+                      "tok": 46
+                    }
+                  ],
+                  "tok": 43
+                }
+              ],
+              "tok": 41
+            }
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 52
+      },
+      "sig_end": 33
+    }
+  ],
+  "consts": []
+}

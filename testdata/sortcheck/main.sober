@@ -1,0 +1,149 @@
+package main
+
+// std/sort の乱択の検査（scripts/sortcheck.sh — report-619）: 形 9 種（乱数・昇順・降順・4 値・全部同じ・山・鋸・ほぼ昇順・100 値）× 長さ 27 種 × 種 3 で、
+// Order は「並び・安定・置換」、OrderUnstable は「並び・置換」と同じ呼び出しの 2 回の一致を見る。狭義の弱順序でない less（決まった乱数で答える）でも
+// 両方が 0..n−1 の置換を返す（落ちない）ことも見る。最後の行 = OrderUnstable の結果の全部の検査和（2 回の走り・最適化の有無で一致 — 決定性）
+
+import "std/iter"
+import "std/sort"
+
+// 乱数（決定的 — 種から）
+func next(x int) int {
+    mut y := x
+    y = y ^ (y << 13)
+    y = y ^ (y >> 7)
+    y = y ^ (y << 17)
+    return y
+}
+
+// gen は形 kind・長さ n・種 seed の値の列
+func gen(kind int, n int, seed int) []int {
+    mut v := mut []int{}
+    mut x := seed * 2654435761 + 1
+    for i <- iter.Range(0, n) {
+        x = next(x)
+        r := if x < 0 { 0 - x } else { x }
+        v = append(v, if kind == 0 { r % 1000000 } else if kind == 1 { i } else if kind == 2 { n - i } else if kind == 3 { r % 4 } else if kind == 4 { 7 } else if kind == 5 { if i < n / 2 { i } else { n - i } } else if kind == 6 { i % 17 } else if kind == 7 { if r % 10 == 0 { r % 1000 } else { i } } else { r % 100 })
+    }
+    return freeze(v)
+}
+
+// check は o が v を less の順（stable なら安定）に並べた 0..n−1 の置換か
+func check(v []int, o []int, stable bool) bool {
+    n := len(v)
+    if len(o) != n {
+        return false
+    }
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    for i <- iter.Range(0, n) {
+        if o[i] < 0 || o[i] >= n || seen[o[i]] {
+            return false
+        }
+        seen[o[i]] = true
+    }
+    for i <- iter.Range(1, n) {
+        if v[o[i]] < v[o[i - 1]] {
+            return false
+        }
+        if stable && v[o[i]] == v[o[i - 1]] && o[i] < o[i - 1] {
+            return false
+        }
+    }
+    return true
+}
+
+// perm は o が 0..n−1 の置換か（壊れた less の後）
+func perm(o []int, n int) bool {
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    if len(o) != n {
+        return false
+    }
+    for i <- iter.Range(0, n) {
+        if o[i] < 0 || o[i] >= n || seen[o[i]] {
+            return false
+        }
+        seen[o[i]] = true
+    }
+    return true
+}
+
+func stableOf(v []int) []int {
+    return sort.Order(len(v), (a, b) => v[a] < v[b])
+}
+
+func unstableOf(v []int) []int {
+    return sort.OrderUnstable(len(v), (a, b) => v[a] < v[b])
+}
+
+func same(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// 壊れた less（狭義の弱順序でない — 決まった乱数で答える）
+func brokenS(n int, seed int) []int {
+    return sort.Order(n, (a, b) => (a * 7919 + b * 104729 + seed) % 3 == 0)
+}
+
+func brokenU(n int, seed int) []int {
+    return sort.OrderUnstable(n, (a, b) => (a * 7919 + b * 104729 + seed) % 3 == 0)
+}
+
+func main() {
+    mut fails := 0
+    mut cases := 0
+    mut h := 0
+    sizes := []int{0, 1, 2, 3, 4, 5, 7, 15, 16, 17, 23, 24, 25, 31, 32, 33, 63, 100, 127, 128, 129, 200, 257, 1000, 1023, 5000, 20000}
+    for k <- iter.Range(0, 9) {
+        for si <- iter.Range(0, len(sizes)) {
+            for seed <- iter.Range(0, 3) {
+                v := gen(k, sizes[si], seed)
+                s := stableOf(v)
+                u := unstableOf(v)
+                u2 := unstableOf(v)
+                cases += 1
+                if !check(v, s, true) {
+                    fails += 1
+                    println("FAIL stable")
+                    println(k)
+                    println(sizes[si])
+                }
+                for i <- iter.Range(0, len(u)) {
+                    h = (h * 31 + u[i] + 1) % 1000000007
+                }
+                if !check(v, u, false) || !same(u, u2) {
+                    fails += 1
+                    println("FAIL unstable")
+                    println(k)
+                    println(sizes[si])
+                }
+            }
+        }
+    }
+    for si <- iter.Range(0, len(sizes)) {
+        for seed <- iter.Range(0, 3) {
+            cases += 1
+            if !perm(brokenS(sizes[si], seed), sizes[si]) || !perm(brokenU(sizes[si], seed), sizes[si]) {
+                fails += 1
+                println("FAIL broken less")
+                println(sizes[si])
+            }
+        }
+    }
+    println(cases)
+    println(fails)
+    println(h)
+}

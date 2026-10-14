@@ -1628,13 +1628,22 @@ func yFor(st mut S, e NodeRef) {
         names := lA(g)
         nn := lenL(mut st, names)
         srcN := nB(g)
+        // 失敗しうる生成元の印 `g(a)?` は `?` の内側の呼び出しを呼び出し形として見る（呼び出し形でなければ普通の `?` の式 — 下の値の道）
         mut el := yGenCall(mut st, srcN)
+        if el == -2 && kindN(mut st, srcN) == ast.ETry {
+            el = yGenCall(mut st, nA(nodeOf(mut st, srcN)))
+        }
         mut el2 := -1
         if el == -2 {
             src := yExpr(mut st, srcN)
             el = yElemOf(mut st, src)
             if yk(mut st, src) == YMap {
                 el2 = YAt(mut st, src).b
+            }
+            // slice の生成元は書き換え iter.Slice(xs, k) の xs（imm []T）の位置 — mut の slice の道は暗黙の freeze（17 節・裁定 2026-10-13）
+            if yk(mut st, src) == YSlice && el >= 0 && yCand(mut st, srcN) {
+                yNoteImplicit(mut st, srcN, yMk(mut st, YSlice, el, 0, 0))
+                yPut(mut st, 0 - FORSRCKEY - int(srcN), 1)
             }
         }
         for j <- iter.Range(0, nn) {

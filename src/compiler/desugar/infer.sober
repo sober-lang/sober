@@ -397,6 +397,11 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     }
     pkey := ParKey(mut st, fi)
     if pkey != 0 {
+        if skip == 1 && pkey == PAR_JOIN && lenL(mut st, args) == 1 && parTaskFallible(mut st, latN(mut st, args, 0)) {
+            // `par.Join(h)?`（scope の本体 — language.md 11 節「本体の `?`」）: 結果の組 (T, error?) の T
+            jt := parTy(mut st, pkey, fi, args, eb, ef, explicit)
+            return if jt != -1 && tg(mut st, jt) == TPr { tLeft(mut st, jt) } else { TyRef(-1) }
+        }
         return if skip == 0 { parTy(mut st, pkey, fi, args, eb, ef, explicit) } else { TyRef(-1) }
     }
     rs := fnResults(mut st, fi)

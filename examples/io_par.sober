@@ -1,0 +1,74 @@
+package main
+
+// Summarize access logs that are split into shards — one task per shard.
+// Each task reads its shard and writes a one-line summary next to the report; main merges the counts.
+// Run from the repository root (writes under out/).
+import "std/io"
+import "std/par"
+import "std/strings"
+
+type Tally struct {
+    requests int
+    errors int
+    sent int
+}
+
+func number(s string) int {
+    mut n := 0
+    for c <- bytes(s) {
+        n = n * 10 + int(c) - '0'
+    }
+    return n
+}
+
+// a line is `METHOD PATH STATUS BYTES`
+func tally(text string) Tally {
+    mut t := Tally{requests: 0, errors: 0, sent: 0}
+    mut rest := text
+    while rest != "" {
+        line, tail, _ := strings.Cut(rest, "\n")
+        rest = tail
+        _, a, _ := strings.Cut(line, " ")
+        _, b, _ := strings.Cut(a, " ")
+        status, size, _ := strings.Cut(b, " ")
+        t.requests += 1
+        if strings.HasPrefix(status, "5") {
+            t.errors += 1
+        }
+        t.sent += number(size)
+    }
+    return t
+}
+
+func summarize(shard int) (Tally, error?) {
+    text := string(io.ReadFile("testdata/io_par/access-${shard}.log")?)?
+    t := tally(text)
+    line := "shard ${shard}: ${t.requests} requests, ${t.errors} errors, ${t.sent} bytes\n"
+    io.WriteFile("out/io_par-${shard}.txt", bytes(line))?
+    return t, nil
+}
+
+func main() int {
+    shards := []int{1, 2, 3, 4}
+    ts, err := par.Map(shards, (k) => summarize(k))
+    if err != nil {
+        println(switch err {
+        case io.NotFound{}: "a log shard is missing"
+        default: "cannot summarize the logs"
+        })
+        return 1
+    }
+    mut total := Tally{requests: 0, errors: 0, sent: 0}
+    for t <- ts {
+        total.requests += t.requests
+        total.errors += t.errors
+        total.sent += t.sent
+    }
+    for k <- shards {
+        text := string(io.ReadFile("out/io_par-${k}.txt") catch return 1) catch return 1
+        line, _, _ := strings.Cut(text, "\n")
+        println(line)
+    }
+    println("total: ${total.requests} requests, ${total.errors} errors, ${total.sent} bytes")
+    return 0
+}

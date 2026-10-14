@@ -1,0 +1,89 @@
+package main
+
+// Read a file from a given offset (io.ChunksAt — language.md 28 節「位置を指定する読み」). The read is pread-shaped: the file's own
+// position does not move, so leaving the loop early has nothing to rewind and a later io.Chunks / io.ReadAll still reads from the start.
+// The pull shape below — keep only the next offset of each run, open it, take one slot, break — is how a k-way merge reads k runs
+// without holding k open files (an io.File cannot go in a slice). Run from the repository root.
+import "std/io"
+import "std/iter"
+
+// pull returns the slot at off of p (a copy — the view does not outlive the loop) and the offset after it
+func pull(p string, off int) ([]byte, int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut got := []byte{}
+    for c <- io.ChunksAt(f, off)? {
+        got = io.Raw(c)
+        break
+    }
+    return got, off + len(got), nil
+}
+
+// sum adds the bytes of a slot (a checksum to compare the pieces with the whole)
+func sum(b []byte) int {
+    mut s := 0
+    for x <- b {
+        s += int(x)
+    }
+    return s
+}
+
+// position reads from the middle and past the end of p, then the whole file (size bytes) from where the file's position was
+func position(p string, size int) error? {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut mid := 0
+    for c <- io.ChunksAt(f, 100000)? {
+        mid += len(io.Raw(c))
+    }
+    rest := io.ReadAll(f)?
+    println("from 100000: ${mid} bytes, then ReadAll: ${len(rest)} bytes")
+    // at or past the end: an empty stream
+    mut past := 0
+    for c <- io.ChunksAt(f, size)? {
+        past += 1
+    }
+    println("at the end: ${past} slots")
+    // a negative offset fails before reading (EINVAL = 22)
+    bad := io.ChunksAt(f, -1, (c) => {})
+    if bad != nil {
+        println(switch bad {
+        case io.Other{errno}: "negative offset: errno ${errno}"
+        default: "negative offset: ?"
+        })
+    }
+    return nil
+}
+
+func main() int {
+    big := "testdata/io_par/access-4.log"
+    small := "testdata/io_par/access-3.log"
+    whole := io.ReadFile(big) catch return 1
+    // two runs read in turn, one slot at a time — only the offsets are kept
+    paths := []string{big, small}
+    mut offs := mut []int{0, 0}
+    mut total := mut []int{0, 0}
+    mut turn := 0
+    mut busy := true
+    while busy {
+        busy = false
+        for r <- iter.Range(0, 2) {
+            b, next, e := pull(paths[r], offs[r])
+            if e != nil {
+                return 1
+            }
+            if len(b) > 0 {
+                busy = true
+                offs[r] = next
+                total[r] = total[r] + sum(b)
+                turn += 1
+            }
+        }
+    }
+    println("pulled ${turn} slots: ${offs[0]} + ${offs[1]} bytes")
+    println("big checksum matches: ${total[0] == sum(whole)}")
+    if position(big, len(whole)) != nil {
+        return 1
+    }
+    return 0
+}

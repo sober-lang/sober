@@ -138,6 +138,12 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
   - 同じ型の論証で、写しの転送（src/compiler/lower/cpfwd.sober — G 便・2026-10-12 裁定）: rt.str_eq は引数の指す先（文字列の語 0 / 1 とそのバイト）を読むだけで、
     書かず・番地を残さない。番地 A からの語ごとの写しで書かれたスロット S の使い道が load と str_eq の引数だけで、写しから使い道までの道に A の指す先か S を
     書きうるもの（根がほかのスロットでない store・str_eq / panic 以外の呼び出し・region の入り / 深度の書き換え ほか）が無いなら、使い道は S でなく A を読んでよい
+  - 同じ型の論証の席（貸出 — region-domain-pool.md 4c 節の前提の 1 文・IO 便 段 2 (c) 2026-10-13。**表に載せるだけ — 最適化はまだ読まない**。開くのは別便）:
+    io の口の呼び出しが書きうるのは、貸出中の pool のスロットと、その口の戻りの値だけ。実装の rt では rt.chunk_open / chunk_next / chunk_close（と内側の
+    chunk_submit・死の出口の chunk_drain）が書くのは、ストリームの記録（chunk_open が呼んだ深度の region に取った語 — 組の結果は rt.uring_poll も書く）・
+    スロット（ワーカーのアリーナか記録と同じ region の列 — カーネルが READ / READ_FIXED で書く）・ワーカーの ring の記録（アリーナの空きのビット）・
+    戻りの値の置き場（out のヘッダ）・W_ERRNO と、task の鎖（TCB の TC_CHS）だけ。chunk_next / chunk_close は待ちで task を切り替えうる（rt.task_wait）が、
+    ほかの task が書けるのはその task の持ち物だけ（mut は task をまたいで共有できない — 11 節）なので、呼び手の関数の別名の事実は変わらない
 
 ## 7. ランタイムは IR で書く
 

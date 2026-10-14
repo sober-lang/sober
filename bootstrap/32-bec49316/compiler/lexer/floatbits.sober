@@ -1,0 +1,14 @@
+package lexer
+
+// 10 進の浮動小数リテラル → IEEE 754 binary64 のビット列（float の段 — language.md 37 節）。算法は std/floatfmt の ParseBits
+// （正確な値を整数だけの多倍長で持ち、最近接・偶数への丸めを 1 回だけ — strings.ParseFloat と同じ算法なので、リテラルと実行時の解析は同じビット）。
+// 鎖の 31 行目（79fd0e6）から compiler/ が std/floatfmt を使える — それまでは同じ算法の写しを lexer に持っていた（mut []int の引数の多い関数群が
+// 一括 check を 8.6 → 17 s に膨らませた）
+
+import "std/floatfmt"
+
+// FloatBits は字句 FloatLiteral（b[s:e] — `数字+ ("." 数字+)? ([eE] [+-]? 数字+)?`）の値のビット列。溢れ（Inf に丸まる）は false
+func FloatBits(b []byte, s int, e int) (int, bool) {
+    v, err := floatfmt.ParseBits(b[s:e])
+    return v, err == nil
+}

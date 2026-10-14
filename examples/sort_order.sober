@@ -1,0 +1,47 @@
+package main
+
+// Sort with std/sort: Order returns the indices 0..n−1 in the order of a comparison closure. The values stay where they are —
+// read them in that order, or build a sorted copy. The order is stable: items that compare equal keep their original order.
+// OrderUnstable has the same shape and is faster, but makes no promise about the order of equal items (it is still deterministic:
+// the same input always gives the same order) — use it when ties cannot be observed.
+import "std/iter"
+import "std/sort"
+
+type Item struct {
+    name string
+    price int
+}
+
+func main() int {
+    items := []Item{
+        Item{name: "tea", price: 300},
+        Item{name: "bread", price: 250},
+        Item{name: "milk", price: 180},
+        Item{name: "coffee", price: 300},
+        Item{name: "jam", price: 250},
+    }
+    // cheapest first; equal prices keep the list order (bread before jam, tea before coffee)
+    byPrice := sort.Order(len(items), (a, b) => items[a].price < items[b].price)
+    for i <- byPrice {
+        println("${items[i].price} ${items[i].name}")
+    }
+    // sorting by one column and reading another: the rank of each item in the original list
+    mut rank := mut []int{}
+    for i <- iter.Range(0, len(items)) {
+        rank = append(rank, 0)
+    }
+    for k <- iter.Range(0, len(byPrice)) {
+        rank[byPrice[k]] = k + 1
+    }
+    for i <- iter.Range(0, len(items)) {
+        println("${items[i].name}: #${rank[i]}")
+    }
+    // no two keys are equal (here: the list positions, last first), so ties cannot be observed and the unstable sort gives the one possible order
+    reversed := sort.OrderUnstable(len(items), (a, b) => a > b)
+    for i <- reversed {
+        println(items[i].name)
+    }
+    // empty and single are fine
+    println(len(sort.Order(0, (a, b) => a < b)), sort.Order(1, (a, b) => a < b)[0])
+    return 0
+}

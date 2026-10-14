@@ -60,7 +60,7 @@ for n in "$@"; do
         fail=1
         continue
     fi
-    # 標準入力 = 例の .in があればそれ・無ければ /dev/null（ReadStdin / ReadFd の例）
+    # 標準入力 = 例の .in があればそれ・無ければ /dev/null（ReadStdin の例）
     inp=/dev/null
     [ -f "$exp.in" ] && inp=$exp.in
     # 上限つきで走らせる（ハングを FAIL に — 無いと gates が止まったまま返らない で 20 分。SIGTERM を受けない形もあるので KILL）

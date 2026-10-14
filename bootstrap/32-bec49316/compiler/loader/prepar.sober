@@ -1,0 +1,73 @@
+package loader
+
+// 巡の前読み（ビルド並列化 段 A — report-567 / 568）: load の 1 巡で読む package のファイルを列の順に並べ、parse を子 task へ配る。
+// load の逐次の巡回は前読みの木を列の順に取るだけ — 失敗したファイルは逐次に parse し直して同じ拒否を返す（診断は逐次と同一）。
+// parse は 1 ファイルについて純（ast.Tree を返す）で、ファイルの番号は列の位置から先に決まる（逐次の len(trees) と同じ値）。
+// par.Map は添字の順で返すので、木の列はワーカーの数に依らない。ワーカー 1 は前読みをせず今までの逐次の経路
+
+import "ast"
+import "std/iter"
+import "std/par"
+
+type PTree struct {
+    t ast.Tree
+    ok bool
+}
+
+type PJob struct {
+    path string
+    std bool
+    fi int
+}
+
+// PRound は 1 巡の前読み（on = 前読みした・fss = pending の添字ごとのファイルの列〔重複と既読は空〕・ts = ファイルの列の順の木）
+type PRound struct {
+    on bool
+    fss [][]string
+    ts []PTree
+}
+
+// preParse は pending（この巡の package の列・出現順 — 重複を含みうる）のうち seen に無い初出の package のファイルを並べ、子 task で parse する
+func preParse(m Manifest, fsm bool, sm map[string]string, pending []string, seen []string, base int) PRound {
+    if par.Ledger().workers <= 1 {
+        return PRound{false, [][]string{}, []PTree{}}
+    }
+    mut fss := mut [][]string{}
+    mut jobs := mut []PJob{}
+    mut got := mut []string{}
+    for j <- iter.Range(0, len(pending)) {
+        p := pending[j]
+        if has(seen, p) || has(freeze(got), p) {
+            fss = append(fss, []string{})
+        } else {
+            got = append(got, p)
+            fs := dirFiles(m, fsm, sm, p)
+            fss = append(fss, fs)
+            for q <- iter.Range(0, len(fs)) {
+                jobs = append(jobs, PJob{fs[q], isStd(p), base + len(jobs)})
+            }
+        }
+    }
+    if len(jobs) < 2 {
+        return PRound{true, freeze(fss), []PTree{}}
+    }
+    ts, err := par.Map(freeze(jobs), (jb) => preOne(m, fsm, sm, jb))
+    if err != nil {
+        return PRound{true, freeze(fss), []PTree{}}
+    }
+    return PRound{true, freeze(fss), ts}
+}
+
+// preOne は子の本体（1 ファイルの parse — 失敗は印だけ。拒否は逐次の巡回が parse し直して返す）
+func preOne(m Manifest, fsm bool, sm map[string]string, jb PJob) PTree {
+    t, e := parseFile(m, fsm, sm, jb.path, jb.std, jb.fi)
+    return PTree{t, e == nil}
+}
+
+// preOr は前読みの k 番目の木（無いか失敗なら逐次に parse）
+func preOr(pr PRound, k int, m Manifest, fsm bool, sm map[string]string, path string, std bool, fi int) (ast.Tree, error?) {
+    if k < len(pr.ts) && pr.ts[k].ok {
+        return pr.ts[k].t, nil
+    }
+    return parseFile(m, fsm, sm, path, std, fi)
+}

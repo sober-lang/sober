@@ -1175,9 +1175,10 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
     if cm != CMOk {
         return 0, 0, diag.Malformed{at: posOf(mut st, at)}
     }
+    // 書いた順が欄の順と違うときだけ let で包む（部分リテラルで欄を飛ばしても、順が増える向きなら素の組のまま）
     mut perm := false
-    for j <- iter.Range(0, ne) {
-        if latI(mut st, fof, j) != j {
+    for j <- iter.Range(1, ne) {
+        if latI(mut st, fof, j) <= latI(mut st, fof, j - 1) {
             perm = true
         }
     }
@@ -1227,6 +1228,23 @@ func fieldValuesIn(st mut S, pk int, fenv int, fs ListRef, elems ListRef, at Nod
             hsetCore(mut st, int(out) + 1 + i, cVar(mut st, ne - 1 - j))
         } else {
             hsetCore(mut st, int(out) + 1 + i, v)
+        }
+    }
+    // 部分リテラル: 書かなかった欄はゼロ値（`T{}` と同じ — 欄の宣言型の zeroOf）
+    if ne < n {
+        mut given := mut []bool{}
+        for i <- iter.Range(0, n) {
+            given = append(given, false)
+        }
+        for j <- iter.Range(0, ne) {
+            given[latI(mut st, fof, j)] = true
+        }
+        for i <- iter.Range(0, n) {
+            if !given[i] {
+                w := tyIn(mut st, pk, fenv, nB(nodeOf(mut st, latN(mut st, fs, i))), at) catch return 0, 0, diag.CoreFragment{at: posOf(mut st, at)}
+                zv := zeroOf(mut st, w, at)?
+                hsetCore(mut st, int(out) + 1 + i, zv)
+            }
         }
     }
     return out, lets, nil

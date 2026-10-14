@@ -1,0 +1,31 @@
+package main
+
+// json.Encode の書きの写し（loader/jsonshape.sober の 2 系統 — rename なし = 定数のキーの断片・rename つき = 欄ごとの KeyOf）と PutInt（桁を直に積む）の境界:
+// int の 0・1 桁・桁の繰り上がり（9 / 10・99 / 100）・負・最大・最小・入れ子の struct と struct の列と U? を、Encode と EncodeWith（入れ子の欄の改名も）で
+
+import "std/json"
+
+type Leaf struct {
+    n int
+}
+
+type Box struct {
+    id int
+    leaf Leaf
+    leaves []Leaf
+    extra Leaf?
+}
+
+func main() {
+    ns := []int{0, 7, 9, 10, 99, 100, 101, 1000000007, -1, -9, -10, -100, 9223372036854775807, -9223372036854775807 - 1}
+    for n <- ns {
+        println(json.Encode[Leaf](Leaf{n: n}))
+    }
+    b := Box{id: 42, leaf: Leaf{n: -3}, leaves: []Leaf{Leaf{n: 1}, Leaf{n: 20}}, extra: nil}
+    println(json.Encode[Box](b))
+    r := map[string]string{"n": "num", "leaves": "ls"}
+    println(json.EncodeWith[Box](b, r))
+    c := Box{id: 0, leaf: Leaf{n: 5}, leaves: []Leaf{}, extra: Leaf{n: 6}}
+    println(json.Encode[Box](c))
+    println(json.EncodeWith[Box](c, r))
+}

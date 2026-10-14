@@ -3,3 +3,4 @@ examples/par_capture.sober examples/par_capture_seq.sober
 examples/par_def.sober examples/par_def_seq.sober
 examples/par_chan_regions.sober examples/par_chan_regions_seq.sober
 examples/par_print_chan.sober examples/par_print_chan_seq.sober
+examples/par_scope_try.sober examples/par_scope_try_seq.sober

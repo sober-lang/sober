@@ -1,0 +1,2 @@
+sober: load error at examples/par_join_catch_infallible.sober:11:21: the left of catch must be a call that returns (T, error?)
+exit=1

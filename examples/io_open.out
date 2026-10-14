@@ -1,0 +1,6 @@
+hello.txt: 17 bytes
+missing.txt: not found
+testdata/io: errno 21
+hello, io
+(none)
+open fds after: 0

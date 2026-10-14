@@ -313,6 +313,8 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     if lam == -1 {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
+    et := errTy(mut st, st.curPkg, at, TYFUEL)?
+    nilv := zeroOf(mut st, tOpt(mut st, et), at)?
     saved := fnCtx(mut st)
     st.retTarget = -1
     st.loopFloor = st.nlab
@@ -321,7 +323,33 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     saved_ps := st.parScope1
     st.parScope1 = st.rdepth
     tb := lambdaBodyTy(mut st, lam, benv, ef)
-    body, berr := lambdaBody(mut st, lam, benv, ef, depth + 1)
+    // 本体の `?` = scope の失敗（language.md 11 節「本体の `?`」）: 本体を関数の本体と同じ戻りのラベル `label (tb, err?)` で包み、`?` はそこへの
+    // jump（関数の `?` と同じテンプレート — call.sober）。return は ParCheck の kind 7 が先に拒否する。ラベルは本体の内側なので scope の Λ = [] は保たれる。
+    // `?` が使わなければ包まない（コアは従来の形のまま）
+    mut rl := -1
+    // ラベルの型は本体の内側の座標（err の鎖の region = scope の region — 外の et とは座標が違う）
+    etRaw := if tb != -1 { errTy(mut st, st.curPkg, at, TYFUEL) catch TyRef(-1) } else { TyRef(-1) }
+    etIn := if etRaw != -1 { pointTy(mut st, etRaw) } else { TyRef(-1) }
+    if tb != -1 && etIn != -1 {
+        rtys := ListRef(listN(mut st, 2))
+        hsetTy(mut st, int(rtys) + 1, tb)
+        hsetTy(mut st, int(rtys) + 2, tOpt(mut st, etIn))
+        st.curRes = -1
+        rl = newLabel(mut st, LRet, tyChain(mut st, rtys))
+        setLabelRtys(mut st, rl, rtys)
+        setLabelAnn(mut st, rl, true)
+        st.retTarget = pushLabel(mut st, rl)
+        st.loopFloor = st.nlab
+    }
+    body0, berr := lambdaBody(mut st, lam, benv, ef, depth + 1)
+    mut body := body0
+    if rl != -1 {
+        st.nlab = st.nlab - 1
+        if berr == nil && lab(mut st, rl).used {
+            nilIn := zeroOf(mut st, tOpt(mut st, etIn), at)?
+            body = labelNode(mut st, rl, c2(mut st, CPair, body0, nilIn), WAnn)
+        }
+    }
     st.parScope1 = saved_ps
     kk := st.rdepth - 2
     st.rdepth = st.rdepth - 1
@@ -333,8 +361,6 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
     t := if tyRegionAbove(mut st, tb, kk) { tyClamp(mut st, tb, kk) } else { tb }
-    et := errTy(mut st, st.curPkg, at, TYFUEL)?
-    nilv := zeroOf(mut st, tOpt(mut st, et), at)?
     zv := zeroOf(mut st, t, at)?
     td := variantIn(mut st, fnPkg(mut st, fi), strLit(mut st, "TaskDied"), 0)
     if td.decl != NodeRef(ERRS) {
@@ -347,12 +373,15 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     topv := coreRelocAnn(mut st, encodeVariant(mut st, td.pkg, td.decl, 0, td.idx, tz, at)?, st.rdepth - 1)
     ch := emptyChain(mut st, at)?
     errv := c1(mut st, CSome, c2(mut st, CPair, topv, ch))
-    live := c2(mut st, CPair, cVar(mut st, 0), nilv)
+    // 本体を包んだなら本体の値は組 (t, err?) そのもの（`?` の失敗は本体の結果の腕 — 出口の優先は 死 > 未回収の失敗 > 本体の結果のまま）
+    wrapped := rl != -1 && lab(mut st, rl).used
+    live := if wrapped { cVar(mut st, 0) } else { c2(mut st, CPair, cVar(mut st, 0), nilv) }
     dead := c2(mut st, CPair, zv, errv)
     // 未回収の失敗（P3b-4 1b'）: scope の err = 子の err（親の最内へ写った値 — var 0）
     failed := c2(mut st, CPair, zv, c1(mut st, CSome, cVar(mut st, 0)))
     eps := parErrTy(mut st, at)?
-    return c3(mut st, CCase, cScope(mut st, t, eps, body), live, c3(mut st, CCase, cVar(mut st, 0), dead, failed)), nil
+    st_t := if wrapped { tProd(mut st, t, tOpt(mut st, pointTy(mut st, et))) } else { t }
+    return c3(mut st, CCase, cScope(mut st, st_t, eps, body), live, c3(mut st, CCase, cVar(mut st, 0), dead, failed)), nil
 }
 
 // parInTaskTy は `par.SpawnIn(s, pool, () => g)` の handle の型（Spawn と同じ — 分からなければ -1）

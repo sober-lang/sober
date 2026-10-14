@@ -1,9 +1,10 @@
 package main
 
 // 1BRC（看板 — docs/bench.md）: `<名前>;<気温>` の行（気温は小数 1 桁）を観測所ごとに min / mean / max で集計して名前のバイト順に印字する。
-// 素直な形（Go の双子 bench/1brc/go と同じアルゴリズム）: 全体を読み、行ごとに分割・map[string] で観測所の番号を引き・気温は ×10 の整数。
+// 素直な形（Go の双子 bench/1brc/go と同じアルゴリズム）: 行ごとに分割・map[string] で観測所の番号を引き・気温は ×10 の整数。
 // 平均は floor((2 × 和 + 件数) / (2 × 件数)) — 0.5 は正の方向へ丸める。
-// UTF-8 の検査は全体に 1 回（utf8.Check — 型つき証人）・名前は `;` の手前で切るので Str が検査し直さない（第三便 M13）
+// 読みは io.Chunks（ファイルを開いて 64 KiB の切片の View を順に貸す — 全体を読まない・写さない。language.md 28 節）。UTF-8 の検査は切片の中の完全な行の範囲に
+// 1 回（utf8.Check — 型つき証人。改行で切るので文字の境界・全バイトを検査する保証は全体に 1 回と同じ。切片をまたぐ行だけ写して検査）・名前は `;` の手前で切るので Str が検査し直さない
 
 import "std/io"
 import "std/iter"
@@ -15,19 +16,104 @@ func main() int {
     if len(args) != 2 {
         return 2
     }
-    b := io.ReadFile(args[1]) catch return 1
-    v := utf8.Check(b) catch return 1
     mut ix := mut map[string]int{}
     mut names := mut []string{}
     // 観測所ごとに [min, max, sum, count]
     mut st := mut []int{}
+    e := tally(args[1], mut ix, mut names, mut st)
+    if e != nil {
+        return 1
+    }
+    order := sorted(names)
+    stats := freeze(st)
+    ix2 := freeze(ix)
+    mut out := mut []byte{'{'}
+    for j <- iter.Range(0, len(order)) {
+        if j > 0 {
+            out = append(out, ',')
+            out = append(out, ' ')
+        }
+        nb := bytes(order[j])
+        for c <- iter.Range(0, len(nb)) {
+            out = append(out, nb[c])
+        }
+        out = append(out, '=')
+        k := indexOf(ix2, order[j])
+        o := k * 4
+        put10(mut out, stats[o])
+        out = append(out, '/')
+        put10(mut out, floorDiv(2 * stats[o + 2] + stats[o + 3], 2 * stats[o + 3]))
+        out = append(out, '/')
+        put10(mut out, stats[o + 1])
+    }
+    out = append(out, '}')
+    out = append(out, '\n')
+    return if io.WriteStdout(out) != nil { 1 } else { 0 }
+}
+
+// tally は path を切片ずつ読んで観測所ごとに集計する（切片は io.Chunks の View — 写さない）。切片の中の完全な行の範囲を utf8.Check で 1 回だけ検査して
+// 行ごとに集計し（名前は観測所が初めて出たときだけ写す）、切片をまたぐ行は前の切片の残りと次の切片の頭をつないだ写しで同じように集計する
+func tally(path string, ix mut map[string]int, names mut []string, st mut []int) error? {
+    f := io.Open(path)?
+    defer io.Close(f)
+    mut carry := mut []byte{}
+    for c <- io.Chunks(f)? {
+        b := io.Raw(c)
+        // 最初の改行（前の切片の残りの行の終わり）と最後の改行
+        mut h := 0
+        while h < len(b) && b[h] != '\n' {
+            h += 1
+        }
+        if h == len(b) {
+            // 改行の無い切片（行が切片より長い）: 全部を残りへ
+            for x <- b {
+                carry = append(carry, x)
+            }
+            continue
+        }
+        mut e := len(b) - 1
+        while b[e] != '\n' {
+            e -= 1
+        }
+        mut s := 0
+        if len(carry) > 0 {
+            for j <- iter.Range(0, h + 1) {
+                carry = append(carry, b[j])
+            }
+            if !scan(freeze(carry), mut ix, mut names, mut st) {
+                return utf8.InvalidUtf8{pos: 0}
+            }
+            carry = mut []byte{}
+            s = h + 1
+        }
+        if s <= e {
+            if !scan(b[s:e + 1], mut ix, mut names, mut st) {
+                return utf8.InvalidUtf8{pos: 0}
+            }
+        }
+        for j <- iter.Range(e + 1, len(b)) {
+            carry = append(carry, b[j])
+        }
+    }
+    if len(carry) > 0 {
+        // 最後の行に改行が無い入力は 1BRC の形の外（旧の実装も読まない — 終わりの改行が要る）
+        return utf8.InvalidUtf8{pos: 0}
+    }
+    return nil
+}
+
+// scan は行の列 b（改行で終わる）を検査して集計する（旧の実装の行のループそのまま — 不正な UTF-8 なら false）。検査は同じ関数の
+// `catch` の束縛で取る: lower が Str の境界の検査を検査の事実から畳む（ubf — 検査済みの View を引数で受けると畳めない）
+func scan(b []byte, ix mut map[string]int, names mut []string, st mut []int) bool {
+    v := utf8.Check(b) catch return false
+    n := len(b)
     mut i := 0
-    while i < len(b) {
+    while i < n {
         s := i
         while b[i] != ';' {
             i += 1
         }
-        name := utf8.Str(v, s, i) catch return 1
+        name := utf8.Str(v, s, i) catch return false
         i += 1
         neg := b[i] == '-'
         if neg {
@@ -64,31 +150,7 @@ func main() int {
             st = append(st, 1)
         }
     }
-    order := sorted(names)
-    stats := freeze(st)
-    ix2 := freeze(ix)
-    mut out := mut []byte{'{'}
-    for j <- iter.Range(0, len(order)) {
-        if j > 0 {
-            out = append(out, ',')
-            out = append(out, ' ')
-        }
-        nb := bytes(order[j])
-        for c <- iter.Range(0, len(nb)) {
-            out = append(out, nb[c])
-        }
-        out = append(out, '=')
-        k := indexOf(ix2, order[j])
-        o := k * 4
-        put10(mut out, stats[o])
-        out = append(out, '/')
-        put10(mut out, floorDiv(2 * stats[o + 2] + stats[o + 3], 2 * stats[o + 3]))
-        out = append(out, '/')
-        put10(mut out, stats[o + 1])
-    }
-    out = append(out, '}')
-    out = append(out, '\n')
-    return if io.WriteStdout(out) != nil { 1 } else { 0 }
+    return true
 }
 
 func indexOf(ix map[string]int, name string) int {

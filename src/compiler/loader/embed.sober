@@ -117,9 +117,12 @@ func walk(dir string, segs []string, si int) []string {
         case io.Dir{}: true
         default: false
         }
+        // 通常のファイル = 下の 3 つ以外（variant の名前 File → Regular〔report-590〕を書かない形 — 鎖の行を足すまで boot の焼き込みの std と今の std の両方で通る）
         entFile := switch e.Kind {
-        case io.File{}: true
-        default: false
+        case io.Dir{}: false
+        case io.Symlink{}: false
+        case io.Irregular{}: false
+        default: true
         }
         mut sub := []string{}
         if star2 {

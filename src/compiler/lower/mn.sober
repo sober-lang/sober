@@ -58,9 +58,11 @@ const MN_LSHED = MN_LED + 6         // SpawnIn の shed の数（段 6 P5-4）
 const MN_WORDS = MN_LED + 16
 // @rt.sres（共有の予備のスロット — [数, 基底…]）
 const SRES_CAP = 4096
+// 予備の冷えた水位（rt.sres の SRES_WM 語 = 下から何本を先頭の W_MADV まで返し済みか・SRES_WM + 1 語 = そのときの水位の位置のスロット — 番兵。rt.slot_trim）
+const SRES_WM = 1 + SRES_CAP
 // @rt.wk（ワーカーの表）
 const WK_ID = 0
-const WK_SLEEP = 1    // 1 = 眠っている（futex の語）
+const WK_SLEEP = 1    // 1 = 眠っている（futex の語）・2 = ring で眠っている（IO 便 段 1 — uring.sober）
 const WK_INBOX = 2    // 受け箱（TC_INEXT の鎖）
 const WK_ZOMBIE = 3   // 終わった task の塊（次に終わる task が返す）
 const WK_NFREE = 4    // （空き — 手元の鎖の長さは鎖の節の TC_FLEN へ移した）
@@ -88,7 +90,7 @@ const SLOT_KEEP = 16
 // needMnRt は宣言（needTaskRt から）
 func needMnRt(st mut St) {
     st.mnG = addGlobalInit(mut st, int(strLit(mut st, "rt.mn")), MN_WORDS, -1)
-    st.sresG = addGlobalInit(mut st, int(strLit(mut st, "rt.sres")), 1 + SRES_CAP, -1)
+    st.sresG = addGlobalInit(mut st, int(strLit(mut st, "rt.sres")), 3 + SRES_CAP, -1)
     st.wkG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.wk")), WK_WORDS)
     st.rtMnStart = addFunc(mut st, int(strLit(mut st, "rt.mn_start")), desugar.ListRef(list0(mut st)), -1)
     st.rtWorkerMain = addFunc(mut st, int(strLit(mut st, "rt.worker_main")), desugar.ListRef(list1(mut st, TyPtr)), -1)
@@ -104,6 +106,7 @@ func needMnRt(st mut St) {
     st.rtMnAnyDq = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtMnTrace = addFunc(mut st, int(strLit(mut st, "rt.mn_trace")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtTcbFree = addFunc(mut st, int(strLit(mut st, "rt.tcb_free")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    needUringRt(mut st)
 }
 
 func buildMnRt(st mut St) {
@@ -120,6 +123,9 @@ func buildMnRt(st mut St) {
     buildMnAnyDq(mut st)
     buildMnTrace(mut st)
     buildTcbFree(mut st)
+    buildUringInit(mut st)
+    buildUio(mut st)
+    buildUpoll(mut st)
 }
 
 // mnOn は M:N か（ワーカー数 > 1 — 値は 0 / 1）
@@ -164,6 +170,9 @@ func mnInit(st mut St, sp int) {
     // 台帳の器（段 6 P5-1）: 計測の印と、プロセスの天井（cgroup の cpu.max / memory.max・MemTotal・入口の RSS — rt.pcap_init）
     store(mut st, mn, MN_STATS, envMb(mut st, sp, "SOBER_PAR_STATS=", 0, true))
     call(mut st, st.rtPcapInit, list1(mut st, envMb(mut st, sp, "SOBER_BUDGET_MB=", -1, true)))
+    // io_uring の probe の口（IO 便 段 0 — uring.sober）
+    store(mut st, mn, MN_IOMODE, envMb(mut st, sp, "SOBER_IO=", 0, true))
+    store(mut st, mn, MN_IOTR, envMb(mut st, sp, "SOBER_IO_TRACE=", 0, true))
     bAff := newBlock(mut st)
     bSet := newBlock(mut st)
     nv := param(mut st, bSet, TyI64)
@@ -219,6 +228,7 @@ func buildMnStart(st mut St) {
     begin(mut st, st.rtMnStart)
     mn := globaladdr(mut st, st.mnG)
     store(mut st, mn, MN_STARTED, iconst(mut st, 1))
+    call(mut st, st.rtUringInit, list0(mut st))
     mut total := 0
     mut g := st.ghead
     while g >= 0 {
@@ -307,6 +317,7 @@ func buildWorkerMain(st mut St) {
     store(mut st, wk, WK_SS + 2, iconst(mut st, SIG_ALT))
     syscall(mut st, list3(mut st, iconst(mut st, 131), ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SS))), iconst(mut st, 0)))
     store(mut st, globaladdr(mut st, st.taskG), TK_CUR, ptoi(mut st, 0))
+    call(mut st, st.rtUringInit, list0(mut st))
     loop := newBlock(mut st)
     br(mut st, loop, -1)
     setCur(mut st, loop)
@@ -517,6 +528,14 @@ func buildMnNext(st mut St) {
     loop := newBlock(mut st)
     br(mut st, loop, -1)
     setCur(mut st, loop)
+    // ring に task の io があれば提出と完了の取り込み（IO 便 段 1 — 無ければ分岐 1 本）
+    bIo := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, wk, WK_IOFLY), zero), bIo, -1, bGo, -1)
+    setCur(mut st, bIo)
+    call(mut st, st.rtUpoll, list1(mut st, zero))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
     r := load(mut st, tk, TK_READY)
     bR := newBlock(mut st)
     bI := newBlock(mut st)
@@ -611,6 +630,10 @@ func buildMnNext(st mut St) {
     // 回っている間は暇の数に入らない — spawn は起こしに行かない）
     // 回るのは MN_SPINMAX 本まで（段 6 P4-6 — 全員が回ると spawn ごとに pull 列の鍵へ殺到して W8 で往復 2.8 µs）。越えたら回らずに眠る
     setCur(mut st, bSpin)
+    // ring に task の io があれば回らずに眠りへ（ring で眠る — 完了か起こしで起きる）
+    bSpinGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, wk, WK_IOFLY), zero), bSleep, -1, bSpinGo, -1)
+    setCur(mut st, bSpinGo)
     spl := newBlock(mut st)
     spi := param(mut st, spl, TyI64)
     spb := newBlock(mut st)
@@ -648,6 +671,27 @@ func buildMnNext(st mut St) {
     ret(mut st, gp)
     // 眠る: 眠りの語 = 1・暇の数 + 1 → 見直し
     setCur(mut st, bSleep)
+    bRing := newBlock(mut st)
+    bFutex := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, wk, WK_IOFLY), zero), bRing, -1, bFutex, -1)
+    // ring で眠る（IO 便 段 1）: 眠りの語 = 2・暇の数には入らない（ring の完了が必ず来るのでデッドロックの判定の外 — 判定は io の無いワーカーが眠るときに）。
+    // 起こし手は眠りの語を 2 → 0 に取って eventfd へ書く（mnClaim）。走れる task が出来たか眠りの語が 0 になったら回り直す
+    setCur(mut st, bRing)
+    atomicXchg(mut st, wk, WK_SLEEP, iconst(mut st, 2))
+    rUn := newBlock(mut st)
+    rl := newBlock(mut st)
+    rb := newBlock(mut st)
+    rwork0 := bin(mut st, BOr, cmp(mut st, CNe, load(mut st, wk, WK_INBOX), zero), cmp(mut st, CNe, load(mut st, mn, MN_PHEAD), zero))
+    condbr(mut st, bin(mut st, BOr, rwork0, call(mut st, st.rtMnAnyDq, list0(mut st))), rUn, -1, rl, -1)
+    setCur(mut st, rl)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_SLEEP), iconst(mut st, 2)), rb, -1, loop, -1)
+    setCur(mut st, rb)
+    call(mut st, st.rtUpoll, list1(mut st, iconst(mut st, 1)))
+    condbr(mut st, cmp(mut st, CNe, load(mut st, tk, TK_READY), zero), rUn, -1, rl, -1)
+    setCur(mut st, rUn)
+    atomicCas(mut st, wk, WK_SLEEP, iconst(mut st, 2), zero)
+    br(mut st, loop, -1)
+    setCur(mut st, bFutex)
     atomicXchg(mut st, wk, WK_SLEEP, iconst(mut st, 1))
     n := bin(mut st, BAdd, atomicXadd(mut st, mn, MN_IDLE, iconst(mut st, 1)), iconst(mut st, 1))
     unsleep := newBlock(mut st)
@@ -714,15 +758,25 @@ func condbrTo(st mut St, b BlkRef, args int) {
 }
 
 // mnClaim は眠っているワーカー（rt.wk の番地 wp）を起こす: 眠りの語を 1 → 0 に CAS で取れたら暇の数を減らして futex_wake（値 = 取れたか）
+// 眠りの語が 2（ring で眠っている — IO 便 段 1）なら 2 → 0 に取って、そのワーカーの eventfd へ 1 を書く（暇の数には入っていない）
 func mnClaim(st mut St, wp int, done BlkRef, miss BlkRef) {
     mn := globaladdr(mut st, st.mnG)
     bTry := newBlock(mut st)
     bGot := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, load(mut st, wp, WK_SLEEP), iconst(mut st, 1)), bTry, -1, miss, -1)
+    bF := newBlock(mut st)
+    bR := newBlock(mut st)
+    v := load(mut st, wp, WK_SLEEP)
+    condbr(mut st, cmp(mut st, CNe, v, iconst(mut st, 0)), bTry, -1, miss, -1)
     setCur(mut st, bTry)
-    o := atomicCas(mut st, wp, WK_SLEEP, iconst(mut st, 1), iconst(mut st, 0))
-    condbr(mut st, cmp(mut st, CEq, o, iconst(mut st, 1)), bGot, -1, miss, -1)
+    o := atomicCas(mut st, wp, WK_SLEEP, v, iconst(mut st, 0))
+    condbr(mut st, cmp(mut st, CEq, o, v), bGot, -1, miss, -1)
     setCur(mut st, bGot)
+    condbr(mut st, cmp(mut st, CEq, v, iconst(mut st, 1)), bF, -1, bR, -1)
+    setCur(mut st, bR)
+    rec := itop(mut st, load(mut st, wp, WK_RING))
+    syscall(mut st, list4(mut st, iconst(mut st, 1), load(mut st, rec, UR_EFD), ptoi(mut st, gepWord(mut st, rec, iconst(mut st, UR_ONE))), iconst(mut st, 8)))
+    br(mut st, done, -1)
+    setCur(mut st, bF)
     atomicXadd(mut st, mn, MN_IDLE, iconst(mut st, -1))
     syscall(mut st, list4(mut st, iconst(mut st, 202), ptoi(mut st, gepWord(mut st, wp, iconst(mut st, WK_SLEEP))), iconst(mut st, 129), iconst(mut st, 1)))
     br(mut st, done, -1)
@@ -951,6 +1005,7 @@ func buildTaskStartMn(st mut St) {
     }
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    fdDrainCall(mut st)
     tg := globaladdr(mut st, st.trapG)
     cause := bin(mut st, BOr, bin(mut st, BShl, load(mut st, tg, TW_SITE), iconst(mut st, 8)), load(mut st, tg, TW_CODE))
     store(mut st, frame, FR_CAUSE, cause)

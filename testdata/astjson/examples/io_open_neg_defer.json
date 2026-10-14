@@ -1,0 +1,161 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 13
+                    },
+                    "field": "Open",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io/hello.txt",
+                      "tok": 17
+                    }
+                  ],
+                  "tok": 16
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 20
+                },
+                "tok": 19
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 23
+                },
+                "field": "Close",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 27
+                }
+              ],
+              "tok": 26
+            },
+            "tok": 22
+          },
+          {
+            "k": "bind",
+            "names": [
+              "g"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 32
+                    },
+                    "field": "Open",
+                    "tok": 34
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io/hello.txt",
+                      "tok": 36
+                    }
+                  ],
+                  "tok": 35
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 39
+                },
+                "tok": 38
+              }
+            ],
+            "tok": 30
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 42
+                },
+                "field": "Close",
+                "tok": 44
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 46
+                }
+              ],
+              "tok": 45
+            },
+            "tok": 41
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 51
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

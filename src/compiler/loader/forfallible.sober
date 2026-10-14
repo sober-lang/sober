@@ -1,0 +1,63 @@
+package loader
+
+// 失敗しうる生成元の印（language.md 7 節「失敗しうる生成元」— IO 便 段 2）: 呼び出し形の生成元（仮引数が実引数より 1 つ多く、最後が関数型）で
+// 結果が `error?` 1 つのものは、for に印 `?` を付けて書く — `for x <- g(a)? { … }`（脱糖 = `g(a, (x) => { … })?` — desugar の forGen が `?` の節で包む）。
+// 判定は宣言の署名だけ（固定テンプレート — 呼び出し形の生成元と同じ）。呼び出し形でない `f()?`（slice を返す `([]T, error?)` の呼び出し）は普通の `?` のまま。
+// 拒否（diag.ForFallible の kind）: 1 = 印が無い（結果の `error?` を黙って捨てる — 11 節「defer 内のエラー」の暗黙の drop の拒否と同じ線）・
+// 2 = 式の位置の for（yield 形 — Iter[T] は失敗の通り道を持たない）・3 = 印つきだが生成元の結果が `error?` 1 つでない。check と build が同じ層（loader）
+
+import "std/iter"
+import "ast"
+
+// forHit はファイル f の for x の生成元の最初の印の誤りの kind と生成元の字句（無ければ kind 0 — noderules.sober の走査から）
+func forHit(cx Cx, ft FnTab, f int, x ast.Node) (int, int) {
+    t := cx.trees[f]
+    for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+        g := ast.ListAt(t, x.a, j)
+        k := forGenHit(cx, ft, f, g, x.b == 1)
+        if k > 0 {
+            return k, t.nodes[t.nodes[g].b].tok
+        }
+    }
+    return 0, 0
+}
+
+// forGenHit は生成元の節 g（文形の for なら stmt）の印の誤りの kind（無ければ 0）
+func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
+    t := cx.trees[f]
+    src := t.nodes[g].b
+    marked := t.nodes[src].kind == ast.ETry
+    c := if marked { t.nodes[src].a } else { src }
+    if t.nodes[c].kind != ast.ECall {
+        return 0
+    }
+    fi := calleeFn(cx, ft, f, t.nodes[c].a, false)
+    if fi < 0 {
+        return 0
+    }
+    dt := cx.trees[ft.file[fi]]
+    d := ft.node[fi]
+    ps := dt.nodes[d].c
+    np := ast.ListLen(dt, ps)
+    if np != ast.ListLen(t, t.nodes[c].b) + 1 || dt.nodes[dt.nodes[ast.ListAt(dt, ps, np - 1)].b].kind != ast.TFunc {
+        return 0
+    }
+    fallible := errOptOnly(dt, d)
+    if !marked {
+        return if fallible { 1 } else { 0 }
+    }
+    if !stmt {
+        return 2
+    }
+    return if fallible { 0 } else { 3 }
+}
+
+// errOptOnly は func 宣言 d の結果が `error?` 1 つか
+func errOptOnly(t ast.Tree, d int) bool {
+    rs := t.nodes[d].d
+    if ast.ListLen(t, rs) != 1 {
+        return false
+    }
+    e := t.nodes[ast.ListAt(t, rs, 0)]
+    return e.kind == ast.TOpt && t.nodes[e.a].kind == ast.TName && Name(t, t.nodes[e.a].a) == "error"
+}

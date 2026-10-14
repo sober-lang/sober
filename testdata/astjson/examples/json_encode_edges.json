@@ -1,0 +1,734 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Leaf",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 15
+      }
+    },
+    {
+      "name": "Box",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 19
+          },
+          {
+            "name": "leaf",
+            "type": {
+              "k": "name",
+              "name": "Leaf"
+            },
+            "tok": 22
+          },
+          {
+            "name": "leaves",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "Leaf"
+              },
+              "mut": false
+            },
+            "tok": 25
+          },
+          {
+            "name": "extra",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Leaf"
+              }
+            },
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 36
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "ns"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 47
+                  },
+                  {
+                    "k": "int",
+                    "value": 7,
+                    "tok": 49
+                  },
+                  {
+                    "k": "int",
+                    "value": 9,
+                    "tok": 51
+                  },
+                  {
+                    "k": "int",
+                    "value": 10,
+                    "tok": 53
+                  },
+                  {
+                    "k": "int",
+                    "value": 99,
+                    "tok": 55
+                  },
+                  {
+                    "k": "int",
+                    "value": 100,
+                    "tok": 57
+                  },
+                  {
+                    "k": "int",
+                    "value": 101,
+                    "tok": 59
+                  },
+                  {
+                    "k": "int",
+                    "value": 1000000007,
+                    "tok": 61
+                  },
+                  {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 64
+                    },
+                    "tok": 63
+                  },
+                  {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 9,
+                      "tok": 67
+                    },
+                    "tok": 66
+                  },
+                  {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 10,
+                      "tok": 70
+                    },
+                    "tok": 69
+                  },
+                  {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 100,
+                      "tok": 73
+                    },
+                    "tok": 72
+                  },
+                  {
+                    "k": "int",
+                    "value": 9223372036854775807,
+                    "tok": 75
+                  },
+                  {
+                    "k": "binary",
+                    "op": "-",
+                    "lhs": {
+                      "k": "unary",
+                      "op": "-",
+                      "operand": {
+                        "k": "int",
+                        "value": 9223372036854775807,
+                        "tok": 78
+                      },
+                      "tok": 77
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 80
+                    },
+                    "tok": 79
+                  }
+                ],
+                "mut": false,
+                "tok": 43
+              }
+            ],
+            "tok": 41
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "n"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "ns",
+                    "tok": 86
+                  },
+                  "guards": [],
+                  "tok": 84
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 88
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "index",
+                            "base": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "json",
+                                "tok": 90
+                              },
+                              "field": "Encode",
+                              "tok": 92
+                            },
+                            "idx": {
+                              "k": "ident",
+                              "name": "Leaf",
+                              "tok": 94
+                            },
+                            "tok": 93
+                          },
+                          "args": [
+                            {
+                              "k": "composite",
+                              "type_name": "Leaf",
+                              "elems": [
+                                {
+                                  "key": "n",
+                                  "value": {
+                                    "k": "ident",
+                                    "name": "n",
+                                    "tok": 101
+                                  }
+                                }
+                              ],
+                              "tok": 97,
+                              "type_args": []
+                            }
+                          ],
+                          "tok": 96
+                        }
+                      ],
+                      "tok": 89
+                    }
+                  }
+                ]
+              },
+              "tok": 83
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Box",
+                "elems": [
+                  {
+                    "key": "id",
+                    "value": {
+                      "k": "int",
+                      "value": 42,
+                      "tok": 114
+                    }
+                  },
+                  {
+                    "key": "leaf",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "Leaf",
+                      "elems": [
+                        {
+                          "key": "n",
+                          "value": {
+                            "k": "unary",
+                            "op": "-",
+                            "operand": {
+                              "k": "int",
+                              "value": 3,
+                              "tok": 123
+                            },
+                            "tok": 122
+                          }
+                        }
+                      ],
+                      "tok": 118,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "leaves",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Leaf"
+                      },
+                      "elems": [
+                        {
+                          "k": "composite",
+                          "type_name": "Leaf",
+                          "elems": [
+                            {
+                              "key": "n",
+                              "value": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 136
+                              }
+                            }
+                          ],
+                          "tok": 132,
+                          "type_args": []
+                        },
+                        {
+                          "k": "composite",
+                          "type_name": "Leaf",
+                          "elems": [
+                            {
+                              "key": "n",
+                              "value": {
+                                "k": "int",
+                                "value": 20,
+                                "tok": 143
+                              }
+                            }
+                          ],
+                          "tok": 139,
+                          "type_args": []
+                        }
+                      ],
+                      "mut": false,
+                      "tok": 128
+                    }
+                  },
+                  {
+                    "key": "extra",
+                    "value": {
+                      "k": "nil",
+                      "tok": 149
+                    }
+                  }
+                ],
+                "tok": 110,
+                "type_args": []
+              }
+            ],
+            "tok": 108
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 152
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 154
+                      },
+                      "field": "Encode",
+                      "tok": 156
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Box",
+                      "tok": 158
+                    },
+                    "tok": 157
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 161
+                    }
+                  ],
+                  "tok": 160
+                }
+              ],
+              "tok": 153
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "maplit",
+                "key": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "value": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "entries": [
+                  {
+                    "key": {
+                      "k": "strlit",
+                      "value": "n",
+                      "tok": 173
+                    },
+                    "value": {
+                      "k": "strlit",
+                      "value": "num",
+                      "tok": 175
+                    }
+                  },
+                  {
+                    "key": {
+                      "k": "strlit",
+                      "value": "leaves",
+                      "tok": 177
+                    },
+                    "value": {
+                      "k": "strlit",
+                      "value": "ls",
+                      "tok": 179
+                    }
+                  }
+                ],
+                "mut": false,
+                "tok": 167
+              }
+            ],
+            "tok": 165
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 182
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 184
+                      },
+                      "field": "EncodeWith",
+                      "tok": 186
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Box",
+                      "tok": 188
+                    },
+                    "tok": 187
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 191
+                    },
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 193
+                    }
+                  ],
+                  "tok": 190
+                }
+              ],
+              "tok": 183
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Box",
+                "elems": [
+                  {
+                    "key": "id",
+                    "value": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 203
+                    }
+                  },
+                  {
+                    "key": "leaf",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "Leaf",
+                      "elems": [
+                        {
+                          "key": "n",
+                          "value": {
+                            "k": "int",
+                            "value": 5,
+                            "tok": 211
+                          }
+                        }
+                      ],
+                      "tok": 207,
+                      "type_args": []
+                    }
+                  },
+                  {
+                    "key": "leaves",
+                    "value": {
+                      "k": "slicelit",
+                      "elem": {
+                        "k": "name",
+                        "name": "Leaf"
+                      },
+                      "elems": [],
+                      "mut": false,
+                      "tok": 216
+                    }
+                  },
+                  {
+                    "key": "extra",
+                    "value": {
+                      "k": "composite",
+                      "type_name": "Leaf",
+                      "elems": [
+                        {
+                          "key": "n",
+                          "value": {
+                            "k": "int",
+                            "value": 6,
+                            "tok": 228
+                          }
+                        }
+                      ],
+                      "tok": 224,
+                      "type_args": []
+                    }
+                  }
+                ],
+                "tok": 199,
+                "type_args": []
+              }
+            ],
+            "tok": 197
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 232
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 234
+                      },
+                      "field": "Encode",
+                      "tok": 236
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Box",
+                      "tok": 238
+                    },
+                    "tok": 237
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 241
+                    }
+                  ],
+                  "tok": 240
+                }
+              ],
+              "tok": 233
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 245
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "index",
+                    "base": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "json",
+                        "tok": 247
+                      },
+                      "field": "EncodeWith",
+                      "tok": 249
+                    },
+                    "idx": {
+                      "k": "ident",
+                      "name": "Box",
+                      "tok": 251
+                    },
+                    "tok": 250
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "c",
+                      "tok": 254
+                    },
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 256
+                    }
+                  ],
+                  "tok": 253
+                }
+              ],
+              "tok": 246
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 262
+      },
+      "sig_end": 40
+    }
+  ],
+  "consts": []
+}

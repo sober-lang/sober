@@ -2,7 +2,7 @@ package main
 
 // UTF-8 の SIMD 速い道（std/utf8.validPrefix — 最適化のバックエンドでは SSE2 の検査器）の網: 長い妥当な列（ASCII・2 / 3 / 4 バイト列が
 // 16 バイトの塊の境目をまたぐ）の 1 バイトを全部の位置で壊し、utf8.IndexInvalid の答えを例の中のスカラーの参照（std の本体と同じ判定の写し）と
-// 突き合わせる。食い違いの数（0）と答えの和を印字（scripts/optdiff.sh の代表 — 最適化なしの経路とも突き合わせる）
+// 突き合わせる（長い ASCII の区間を挟む列で、検査の環と速い道の切り替えも跨ぐ）。食い違いの数（0）と答えの和を印字（scripts/optdiff.sh の代表 — 最適化なしの経路とも突き合わせる）
 
 import "std/iter"
 import "std/utf8"
@@ -82,4 +82,6 @@ func main() {
     // 特別な頭（E0・ED・F0 — 検査器がスカラーへ渡す）を含む列と、含まない列（検査器がベクトルのまま読む 2 / 3 バイト列だけ）
     run(bytes("abéあx😀ün-कà한　z"))
     run(bytes("abéあxün-àz　éé"))
+    // 長い ASCII の区間（16 バイトの塊 4 つ以上）を挟む列: 検査器が非 ASCII の塊の後に検査の環に留まり、ASCII の塊が続くと速い道へ戻る切り替えを跨ぐ
+    run(bytes("éaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaあbcüaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax"))
 }

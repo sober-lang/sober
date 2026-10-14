@@ -1,2 +1,2 @@
-sober: load error at examples/par_neg_escape.sober:10:13: return, ? and break / continue cannot leave a par.Scope / par.Spawn body (the scope waits for its children at its end)
+sober: load error at examples/par_neg_escape.sober:10:13: return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)
 exit=1

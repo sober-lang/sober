@@ -65,7 +65,8 @@ cmd_build() {
             --via=stage1) via=stage1 ;;
             --no-opt) noopt=--no-opt; passes="" ;;
             --backend=copy) backend=--backend=copy ;;
-            --no-vec) backend="$backend --no-vec" ;;   # ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
+            --no-vec) backend="$backend --no-vec" ;;
+            --no-spec) backend="$backend --no-spec" ;;   # 定数引数の特化（展開便 段 1）を外す — 網の 特化 ≟ なし   # ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
             --passes) epasses=--passes ;;
             --mem-trace) to_stage1 "build --mem-trace" build "${all[@]}" ;;
             -*) echo "sober: unknown flag '$1'" >&2; exit 1 ;;

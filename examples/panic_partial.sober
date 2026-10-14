@@ -1,0 +1,13 @@
+package main
+
+// panic ラベルの部分リテラル（language.md 27 節 — 2026-10-13 に一般の部分リテラルと揃えた）: 省いた欄はゼロ値で印字される
+type BadNode panic {
+    node int
+    kind string
+    leaf bool
+}
+
+func main() {
+    println("before")
+    panic(BadNode{kind: "leaf"})
+}

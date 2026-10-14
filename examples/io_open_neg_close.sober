@@ -1,0 +1,11 @@
+package main
+
+// 負例: Close は Open の直後の defer の形でだけ書ける（二重の close・早すぎる close が形で書けない）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+
+import "std/io"
+
+func main() {
+    f := io.Open("testdata/io/hello.txt") catch return
+    defer io.Close(f)
+    io.Close(f)
+}

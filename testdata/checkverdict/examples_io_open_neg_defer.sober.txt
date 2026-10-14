@@ -1,0 +1,2 @@
+sober: load error at examples/io_open_neg_defer.sober:11:20: this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open
+exit=1

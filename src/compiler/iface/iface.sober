@@ -7,6 +7,7 @@ package iface
 // - 型宣言（struct / union / error / 名前付き関数型 / named scalar）・辞書 const = 宣言ごと
 // - 展開される関数（関数型の引数・mut 引数 — loader の fn_expands）・総称関数 = 宣言ごと（脱糖器の inlineCall・単相化が本体を要る）
 // - 他の関数 = 署名だけ（注釈 `@errors` / `@noinline` つき — 本体なし）
+// - std の `@intrinsic` の宣言 = 載せた範囲（展開される関数の本体）が参照したものだけ（std/io の Chunks — 本体から鍵を呼ぶ展開される関数。stage1 の .sobi には無い — std だけ）
 // - 畳める const = 畳んだ値だけ（`const step = 4`）・他の const（辞書・@embed）は原文の宣言のまま
 // - E2-S の逃げ（callM の Def として型付かなかった関数 — checker.ExclE2）は宣言の前に `@expand`（呼び出し点ごとに展開する — 判定 D'）
 // 載せる範囲 = 根（公開の項目 + error ラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（欄の選択 `x.f` の f と文字列リテラルを除く）が
@@ -20,7 +21,7 @@ import "printer"
 import "std/iter"
 import "std/strings"
 
-// Item は package のトップレベルの宣言 1 つ（kind 0 = 型・1 = 関数・2 = const）
+// Item は package のトップレベルの宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic の宣言）
 type Item struct {
     file int
     node int
@@ -67,6 +68,13 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
             } else {
                 appendB(mut out, printer.ConstText(q.trees[items[i].file], items[i].node))
             }
+            out = append(out, '\n')
+        }
+    }
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] && items[i].kind == 3 {
+            out = append(out, '\n')
+            appendB(mut out, printer.IntrinsicDeclText(q.trees[items[i].file], items[i].node))
             out = append(out, '\n')
         }
     }
@@ -126,6 +134,12 @@ func pkgItems(p loader.Program, pk int) []Item {
         for k <- iter.Range(0, ast.ListLen(t, fl.e)) {
             n := ast.ListAt(t, fl.e, k)
             out = append(out, Item{file: f, node: n, kind: 2, name: loader.Name(t, t.nodes[n].a)})
+        }
+        if fl.f != 0 {
+            for k <- iter.Range(0, ast.ListLen(t, fl.f)) {
+                n := ast.ListAt(t, fl.f, k)
+                out = append(out, Item{file: f, node: n, kind: 3, name: loader.Name(t, t.nodes[n].a)})
+            }
         }
     }
     return freeze(out)
@@ -240,7 +254,7 @@ func itemRefs(p loader.Program, it Item) []string {
         if wholeFn(p, it, fnIndex(p, it)) && x.e >= 0 {
             roots = append(roots, x.e)
         }
-    } else {
+    } else if it.kind == 2 {
         ci := constIndex(p, it)
         if ci < 0 || p.c_dict[ci] || !p.c_has[ci] {
             roots = append(roots, x.b)

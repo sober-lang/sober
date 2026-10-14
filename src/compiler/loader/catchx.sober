@@ -14,7 +14,6 @@ import "std/builder"
 import "std/iter"
 import "ast"
 import "lexer"
-import "diag"
 
 // catchExprs は木 t の catch 式を写した木（節は末尾に足し、catch の節をその場で差し替える）
 func catchExprs(t ast.Tree) ast.Tree {
@@ -160,36 +159,24 @@ func catchExprs(t ast.Tree) ast.Tree {
     return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
 }
 
-// catchLhsHit は catch の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でない最初の位置（無ければ file = -1）。
-// 写した後の束縛 `$ctKv, $ctKe := f()` を拾う（catchExprs が parseFile の直後に写している）。func 宣言を引けない呼び出し（関数型の値を通した呼び出し等）は
-// 後段の束縛の数の照合に任せる
-func catchLhsHit(cx Cx) diag.Pos {
-    mut any := false
-    for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        for i <- iter.Range(0, len(t.nodes)) {
-            any = any || isCatchBind(t, i)
-        }
+// catchLhsBad はファイル f の catchExprs の写した束縛 x（`$ctKv, $ctKe := f()`）の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でないか
+// （noderules.sober の走査から — 写した後の束縛の数の照合より先に名指す）。func 宣言を引けない呼び出し（関数型の値を通した呼び出し等）は
+// 後段の束縛の数の照合に任せる。std/par の Join（結果は字面で型パラメータ 1 つ — fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）は
+// 判定を保留し、表層型の後の desugar.ParCheckTyped が同じ CatchLhs を名指す（check と build が同じ層 — report-582 2 節）
+func catchLhsBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
+    t := cx.trees[f]
+    c := t.nodes[ast.ListAt(t, x.c, 0)]
+    if c.kind != ast.ECall {
+        return false
     }
-    if !any {
-        return diag.Pos{file: 0 - 1, tok: 0}
-    }
-    ft := fnTab(cx)
-    for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        for i <- iter.Range(0, len(t.nodes)) {
-            if isCatchBind(t, i) {
-                c := t.nodes[ast.ListAt(t, t.nodes[i].c, 0)]
-                if c.kind == ast.ECall {
-                    fi := calleeFn(cx, ft, f, c.a, false)
-                    if fi >= 0 && !fallibleResults(cx.trees[ft.file[fi]], ft.node[fi]) {
-                        return diag.Pos{file: f, tok: t.nodes[i].tok}
-                    }
-                }
-            }
-        }
-    }
-    return diag.Pos{file: 0 - 1, tok: 0}
+    fi := calleeFn(cx, ft, f, c.a, false)
+    return fi >= 0 && !parJoin(cx, ft, fi) && !fallibleResults(cx.trees[ft.file[fi]], ft.node[fi])
+}
+
+// parJoin は関数表の fi が std/par の Join か
+func parJoin(cx Cx, ft FnTab, fi int) bool {
+    dt := cx.trees[ft.file[fi]]
+    return cx.pkg_path[ft.pkg[fi]] == "std/par" && Name(dt, dt.nodes[ft.node[fi]].a) == "Join"
 }
 
 // isCatchBind は節 i が catchExprs の写した束縛（名前の先頭が `$ct`）か
@@ -213,24 +200,17 @@ func fallibleResults(t ast.Tree, d int) bool {
     return e.kind == ast.TOpt && t.nodes[e.a].kind == ast.TName && Name(t, t.nodes[e.a].a) == "error"
 }
 
-// multiBindAt は値 1 つの束縛（`d := f()`・`mut d := f()`）の値が 2 つ以上の結果を返す関数の呼び出しなら、その束縛の位置（無ければ file = -1）。
+// multiBindBad はファイル f の値 1 つの束縛 x（`d := f()`・`mut d := f()`）の値が 2 つ以上の結果を返す関数の呼び出しか（noderules.sober の走査から）。
 // 以前は check が型の不一致（位置なし）・build が lower の Mismatch で落ちていた（`d := io.ReadStdin()` — 掃除便 D）。呼び先が引けない呼び出し（関数値・組み込み）は見ない
-func multiBindAt(cx Cx) diag.Pos {
-    ft := fnTab(cx)
-    for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        for i <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[i]
-            if x.kind == ast.SBind && ast.ListLen(t, x.a) == 1 && ast.ListLen(t, x.c) == 1 {
-                c := t.nodes[ast.ListAt(t, x.c, 0)]
-                if c.kind == ast.ECall {
-                    fi := calleeFn(cx, ft, f, c.a, false)
-                    if fi >= 0 && ast.ListLen(cx.trees[ft.file[fi]], cx.trees[ft.file[fi]].nodes[ft.node[fi]].d) >= 2 {
-                        return diag.Pos{file: f, tok: x.tok}
-                    }
-                }
-            }
-        }
+func multiBindBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
+    t := cx.trees[f]
+    if ast.ListLen(t, x.a) != 1 || ast.ListLen(t, x.c) != 1 {
+        return false
     }
-    return diag.Pos{file: 0 - 1, tok: 0}
+    c := t.nodes[ast.ListAt(t, x.c, 0)]
+    if c.kind != ast.ECall {
+        return false
+    }
+    fi := calleeFn(cx, ft, f, c.a, false)
+    return fi >= 0 && ast.ListLen(cx.trees[ft.file[fi]], cx.trees[ft.file[fi]].nodes[ft.node[fi]].d) >= 2
 }

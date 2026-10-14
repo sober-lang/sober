@@ -139,6 +139,23 @@ const xNXmmWide = 14
 
 // xXmmReg は割り当ての k 番目の xmm（xmm8〜15 を先に・広い組では続けて xmm2〜7）
 func xXmmReg(k int) int { return if k < 8 { xX0 + 8 + k } else { xX0 + 2 + (k - 8) } }
+// xHasUtf8Pre は関数に UTF-8 の検査器（記述の列の先頭 = -1 の scanb）があるか
+func xHasUtf8Pre(st mut St, e mut xF) bool {
+    for k <- iter.Range(0, e.nb) {
+        b := BlkRef(e.blk[k])
+        if int(b) >= 0 {
+            mut i := xbIHead(mut st, b)
+            while i != -1 {
+                if xiOp(mut st, i) == OpScanB && xAt(mut st, xiB(mut st, i), 0) == -1 {
+                    return true
+                }
+                i = xiNext(mut st, i)
+            }
+        }
+    }
+    return false
+}
+
 // xHasScanB は関数に scanb があるか（xmm0〜7 を作業に使う）
 func xHasScanB(st mut St, e mut xF) bool {
     for k <- iter.Range(0, e.nb) {
@@ -770,6 +787,8 @@ type xF struct {
     mC int
     mD int
     memOn bool
+    // UTF-8 の検査器（xUtf8Pre）の定数 6 本を置く xmm の先頭（xmm8〜13 — この関数が割り当てに使っていないときだけ。-1 = スタックに置く）
+    u8x int
 }
 
 // xFunc は関数 f を c / fx へ吐く（ab = c の位置 0 の絶対の番地 — 親は elf.CodeOffset・群の子は 0〔子の表は親の 64 B に整列した位置へ
@@ -779,7 +798,7 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, ev: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
         nsave: 0, blockAt: mut []int{}, jAt: mut []int{}, jTo: mut []int{}, nj: 0, eoA: mut []int{}, eoP: mut []int{}, eoT: mut []int{}, eoX: mut []int{}, bdep: mut []int{}, hvV: mut []int{}, hvB: mut []int{}, hdB: mut []int{}, div0: mut []int{}, nd: 0, pos: 0, mvD: mut []int{}, mvS: mut []int{}, mvLive: mut []int{},
-        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false}
+        opt: !st.xcopy, fuse: mut []int{}, flg: mut []int{}, fcc: 0, next: -1, fell: false, hP: mut []int{}, hA1: mut []int{}, hA2: mut []int{}, hOp: mut []int{}, wt: mut []int{}, wc: mut []int{}, hu: mut []int{}, cold: mut []int{}, c0: 9223372036854775807, tS: mut []int{}, tE: mut []int{}, npc0: 0, porig: mut []int{}, remat: mut []int{}, fold: mut []int{}, fA: mut []int{}, fB: mut []int{}, fS: mut []int{}, fcls: mut []int{}, nx: xNXmm, svOk: mut []int{}, cp: mut []int{}, cpc: mut []int{}, cpm: mut []int{}, csd: mut []int{}, nofr: false, zTop: 0, zCnt: 0, rc: false, nreg: 0, hR: mut []int{}, putV: -1, putR: -1, putAt: -1, zAt: mut []int{}, mA: -1, mC: -1, mD: -1, memOn: false, u8x: -1}
     xFill(mut e.blk, e.nb, -1)
     e.rc = xRegCc(mut st, f, frecs)
     e.nreg = if !e.rc { 0 } else if e.np < xNArgReg { e.np } else { xNArgReg }
@@ -3909,6 +3928,22 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
             used[xX0 + k] = 1
         }
     }
+    // UTF-8 の検査器の定数は、この関数が xmm8〜13 を割り当てに使っていなければそこに置く（塊ごとのスタックからの読み直し 6 本が消える）。
+    // 値を載せない作業なので退避は入口の 8 B で足りる（v128 は呼び出しを跨がない — 呼び手の xmm の値は f64 の 8 B だけ）
+    if e.opt && e.nx == xNXmm && xHasUtf8Pre(mut st, mut e) {
+        mut free := true
+        for k <- iter.Range(8, 14) {
+            if used[xX0 + k] == 1 {
+                free = false
+            }
+        }
+        if free {
+            e.u8x = 8
+            for k <- iter.Range(8, 14) {
+                used[xX0 + k] = 1
+            }
+        }
+    }
     sysRegs := []int{x86.Rdi, x86.Rsi, x86.Rdx, x86.R10, x86.R8, x86.R9}
     for bi <- iter.Range(0, if e.opt { 0 } else { e.nb }) {
         mut i := xbIHead(mut st, BlkRef(e.blk[bi]))
@@ -5437,6 +5472,10 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
         xUtf8Pre(mut st, mut e, mut c, res, ops)
         return
     }
+    if xAt(mut st, desc, 0) == -2 {
+        xCountB(mut st, mut e, mut c, res, ops, desc)
+        return
+    }
     xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
     xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
     xGetInto(mut e, mut c, xAt(mut st, ops, 2), x86.Rdx)
@@ -5510,8 +5549,8 @@ func xScanB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc
 // SSE2 だけ（pshufb / palignr なし）: y = x ^ 0x80（符号つき）で a = 頭（≥ C0）・b3 = 3 バイト頭（≥ E0）の印、要る継続 = a を 1・b3 を 2 バイト右へ
 // ずらした列（前の塊の末尾を pslldq / psrldq の or で継ぐ）、誤り = (継続 xor 要る継続) | C0 / C1 | 特別な頭（E0・ED・≥ F0 — 2 番目のバイトの
 // 狭い範囲と 4 バイト列はスカラーに任せる）。誤りの塊で止め、最後に読み終えた列の頭まで戻る（継続バイトを読み戻す）。ASCII の塊は前の塊からの
-// 持ち越し（rsi）が無ければ pmovmskb 1 本で飛ばす。使うレジスタ = rax（j）・rdx（n）・r11（p）・rcx（作業）・rsi / rdi（退避）・xmm0〜7・
-// スタックの 96 バイト（定数 6 本）
+// 持ち越し（rsi）が無ければ pmovmskb 1 本で飛ばす（非 ASCII の塊の後は検査の環に留まる — 下）。使うレジスタ = rax（j）・rdx（n）・r11（p）・
+// rcx（作業）・rsi / rdi / r8（退避）・xmm0〜7・定数 6 本（xmm8〜13 — 関数が割り当てに使っていなければ。でなければスタックの 96 バイト）
 func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
     xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
@@ -5521,15 +5560,24 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     early := x86.JccRel32(mut c, x86.CondG)
     x86.PushReg(mut c, x86.Rsi)
     x86.PushReg(mut c, x86.Rdi)
+    x86.PushReg(mut c, x86.R8)
     x86.MovRegReg(mut c, x86.Rdi, x86.Rax)
-    x86.SubRegImm(mut c, x86.Rsp, 96)
-    // 定数（y と比べる値）: [rsp + 0] 0x3F（≥ C0）・16 0x5F（≥ E0）・32 0x41（≥ C2）・48 0x60（= E0）・64 0x6D（= ED）・80 0x6F（≥ F0）
+    kx := e.u8x
+    if kx < 0 {
+        x86.SubRegImm(mut c, x86.Rsp, 96)
+    }
+    // 定数（y と比べる値）: 0x3F（≥ C0）・0x5F（≥ E0）・0x41（≥ C2）・0x60（= E0）・0x6D（= ED）・0x6F（≥ F0）— xmm(kx + k) か [rsp + 16k]
     ks := []int{63, 95, 65, 96, 109, 111}
     for k <- iter.Range(0, len(ks)) {
         x86.MovRegImm64(mut c, x86.Rcx, ks[k] * 72340172838076673)
-        x86.MovqXR(mut c, 4, x86.Rcx)
-        x86.PunpcklqdqXX(mut c, 4, 4)
-        x86.MovdquMemX(mut c, x86.Rsp, 16 * k, 4)
+        if kx >= 0 {
+            x86.MovqXR(mut c, kx + k, x86.Rcx)
+            x86.PunpcklqdqXX(mut c, kx + k, kx + k)
+        } else {
+            x86.MovqXR(mut c, 4, x86.Rcx)
+            x86.PunpcklqdqXX(mut c, 4, 4)
+            x86.MovdquMemX(mut c, x86.Rsp, 16 * k, 4)
+        }
     }
     x86.MovRegImm64(mut c, x86.Rcx, 128 * 72340172838076673)
     x86.MovqXR(mut c, 7, x86.Rcx)
@@ -5538,6 +5586,9 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PxorXX(mut c, 6, 6)
     x86.XorRegReg(mut c, x86.Rsi, x86.Rsi)
     topAt := x86.Here(mut c)
+    // 速い道: 持ち越し（rsi）が無く ASCII だけの塊は pmovmskb 1 本で飛ばす。非 ASCII の塊を見たら検査の環（fullAt — 塊ごとの ASCII の判定を
+    // しない）に入り、ASCII の塊が 4 つ続くまで留まる（非 ASCII が混ざる入力で「ASCII だけの塊か」の分岐が塊ごとの乱数になって予測ミスが
+    // 出ていた — 1BRC の名前。分岐なしで全部の塊を検査する形は ASCII だけの入力で命令 +6%〔logagg〕・32 B ずつの判定は得が小さく棄てた）
     x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
     x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
     endJ := x86.JccRel32(mut c, x86.CondG)
@@ -5549,15 +5600,22 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     back1 := x86.JmpRel32(mut c)
     x86.PatchRel32(mut c, back1, topAt)
     x86.PatchRel32(mut c, slowJ, x86.Here(mut c))
+    // 検査の環に入る（ASCII の塊が続いた数 r8 = 0）
+    x86.XorRegReg(mut c, x86.R8, x86.R8)
+    toBody := x86.JmpRel32(mut c)
+    fullAt := x86.Here(mut c)
+    x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
+    x86.CmpRegReg(mut c, x86.Rcx, x86.Rdx)
+    endJ2 := x86.JccRel32(mut c, x86.CondG)
+    x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
+    x86.PatchRel32(mut c, toBody, x86.Here(mut c))
     // y・a（xmm2）・b3（xmm3）
     x86.MovdqaXX(mut c, 1, 0)
     x86.PxorXX(mut c, 1, 7)
     x86.MovdqaXX(mut c, 2, 1)
-    x86.MovdquXMem(mut c, 4, x86.Rsp, 0)
-    x86.PcmpgtbXX(mut c, 2, 4)
+    x86.PcmpgtbXX(mut c, 2, xU8K(mut c, kx, 0, 4))
     x86.MovdqaXX(mut c, 3, 1)
-    x86.MovdquXMem(mut c, 4, x86.Rsp, 16)
-    x86.PcmpgtbXX(mut c, 3, 4)
+    x86.PcmpgtbXX(mut c, 3, xU8K(mut c, kx, 1, 4))
     // 要る継続（xmm5）= a を 1 バイト・b3 を 2 バイト右へ（前の塊の末尾を継ぐ）
     x86.PsrldqXI(mut c, 5, 15)
     x86.MovdqaXX(mut c, 4, 2)
@@ -5577,21 +5635,23 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PxorXX(mut c, 6, 5)
     // C0 / C1（a かつ y ≤ 0x41）
     x86.MovdqaXX(mut c, 4, 1)
-    x86.MovdquXMem(mut c, 5, x86.Rsp, 32)
-    x86.PcmpgtbXX(mut c, 4, 5)
+    x86.PcmpgtbXX(mut c, 4, xU8K(mut c, kx, 2, 5))
     x86.MovdqaXX(mut c, 5, 4)
     x86.PandnXX(mut c, 5, 2)
     x86.PorXX(mut c, 6, 5)
     // 特別な頭（E0・ED・≥ F0）はスカラーへ
-    x86.MovdquXMem(mut c, 5, x86.Rsp, 48)
-    x86.PcmpeqbXX(mut c, 5, 1)
-    x86.PorXX(mut c, 6, 5)
-    x86.MovdquXMem(mut c, 5, x86.Rsp, 64)
-    x86.PcmpeqbXX(mut c, 5, 1)
-    x86.PorXX(mut c, 6, 5)
+    for k <- iter.Range(3, 5) {
+        if kx >= 0 {
+            x86.MovdqaXX(mut c, 5, 1)
+            x86.PcmpeqbXX(mut c, 5, kx + k)
+        } else {
+            x86.MovdquXMem(mut c, 5, x86.Rsp, 16 * k)
+            x86.PcmpeqbXX(mut c, 5, 1)
+        }
+        x86.PorXX(mut c, 6, 5)
+    }
     x86.MovdqaXX(mut c, 5, 1)
-    x86.MovdquXMem(mut c, 4, x86.Rsp, 80)
-    x86.PcmpgtbXX(mut c, 5, 4)
+    x86.PcmpgtbXX(mut c, 5, xU8K(mut c, kx, 5, 4))
     x86.PorXX(mut c, 6, 5)
     x86.PmovmskbRX(mut c, x86.Rcx, 6)
     x86.CmpRegImm(mut c, x86.Rcx, 0)
@@ -5605,12 +5665,24 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.MovdqaXX(mut c, 5, 2)
     x86.MovdqaXX(mut c, 6, 3)
     x86.AddRegImm(mut c, x86.Rax, 16)
-    back2 := x86.JmpRel32(mut c)
-    x86.PatchRel32(mut c, back2, topAt)
+    // ASCII の塊が続いた数（分岐なし — mask − 1 の符号で 0 に戻す）。4 つ続いたら速い道へ戻る
+    x86.PmovmskbRX(mut c, x86.Rcx, 0)
+    x86.SubRegImm(mut c, x86.Rcx, 1)
+    x86.SarRegImm(mut c, x86.Rcx, 63)
+    x86.AddRegImm(mut c, x86.R8, 1)
+    x86.AndRegReg(mut c, x86.R8, x86.Rcx)
+    x86.CmpRegImm(mut c, x86.R8, 4)
+    fastJ := x86.JccRel32(mut c, x86.CondAe)
+    x86.PatchRel32(mut c, fastJ, topAt)
+    backF := x86.JmpRel32(mut c)
+    x86.PatchRel32(mut c, backF, fullAt)
     // 止め: 最後に読み終えた列の頭まで戻る（j − 1 から継続バイトを読み戻す・i より手前へは行かない）
     x86.PatchRel32(mut c, endJ, x86.Here(mut c))
     x86.PatchRel32(mut c, stopJ, x86.Here(mut c))
-    x86.AddRegImm(mut c, x86.Rsp, 96)
+    x86.PatchRel32(mut c, endJ2, x86.Here(mut c))
+    if kx < 0 {
+        x86.AddRegImm(mut c, x86.Rsp, 96)
+    }
     x86.CmpRegReg(mut c, x86.Rax, x86.Rdi)
     noneJ := x86.JccRel32(mut c, x86.CondE)
     x86.SubRegImm(mut c, x86.Rax, 1)
@@ -5627,10 +5699,78 @@ func xUtf8Pre(st mut St, e mut xF, c mut table.Table[byte], res int, ops int) {
     x86.PatchRel32(mut c, noneJ, x86.Here(mut c))
     x86.PatchRel32(mut c, bk1, x86.Here(mut c))
     x86.PatchRel32(mut c, bk2, x86.Here(mut c))
+    x86.PopReg(mut c, x86.R8)
     x86.PopReg(mut c, x86.Rdi)
     x86.PopReg(mut c, x86.Rsi)
     x86.PatchRel32(mut c, early, x86.Here(mut c))
     xPut(mut e, mut c, res, x86.Rax)
+}
+
+// xCountB は数え上げ（scanb の記述の列の先頭 = -2 — vec.sober の vecCount）: ops = [p, i0, j]（j − i0 は 16 の倍数）・記述 = [-2, m, K1 … Km]（K は重ならない）。
+// [i0, j) のバイトのうち K のどれかに等しいものの数を返す。塊ごとに K ごとの pcmpeqb（当たり = −1）を psubb でバイトの積算へ足し（K が重ならないので
+// レーンごとの和は 0 か 1）、255 塊ごとに psadbw で 64 ビットの和へ畳む（バイトの積算は 255 で溢れる手前）。使うレジスタ = rax（i）・rdx（j）・r11（p）・
+// rcx（作業）・rsi（和）/ rdi（塊の残り）— 退避・xmm0（塊）・xmm1〜4（K）・xmm5（積算）・xmm6（作業）・xmm7（0）
+func xCountB(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, desc int) {
+    xGetInto(mut e, mut c, xAt(mut st, ops, 0), x86.R11)
+    xGetInto(mut e, mut c, xAt(mut st, ops, 1), x86.Rax)
+    xGetInto(mut e, mut c, xAt(mut st, ops, 2), x86.Rdx)
+    x86.PushReg(mut c, x86.Rsi)
+    x86.PushReg(mut c, x86.Rdi)
+    x86.XorRegReg(mut c, x86.Rsi, x86.Rsi)
+    x86.CmpRegReg(mut c, x86.Rax, x86.Rdx)
+    early := x86.JccRel32(mut c, x86.CondGe)
+    m := xAt(mut st, desc, 1)
+    for k <- iter.Range(0, m) {
+        x86.MovRegImm64(mut c, x86.Rcx, (xAt(mut st, desc, 2 + k) & 255) * 72340172838076673)
+        x86.MovqXR(mut c, 1 + k, x86.Rcx)
+        x86.PunpcklqdqXX(mut c, 1 + k, 1 + k)
+    }
+    x86.PxorXX(mut c, 7, 7)
+    // 外の環: 積算を 0 にして最大 255 塊
+    outerAt := x86.Here(mut c)
+    x86.PxorXX(mut c, 5, 5)
+    x86.MovRegImm64(mut c, x86.Rdi, XCOUNT_FLUSH)
+    innerAt := x86.Here(mut c)
+    x86.MovdquXMemSib(mut c, 0, x86.R11, x86.Rax)
+    for k <- iter.Range(0, m) {
+        x86.MovdqaXX(mut c, 6, 0)
+        x86.PcmpeqbXX(mut c, 6, 1 + k)
+        x86.PsubbXX(mut c, 5, 6)
+    }
+    x86.AddRegImm(mut c, x86.Rax, 16)
+    x86.CmpRegReg(mut c, x86.Rax, x86.Rdx)
+    flushJ := x86.JccRel32(mut c, x86.CondGe)
+    x86.SubRegImm(mut c, x86.Rdi, 1)
+    innerJ := x86.JccRel32(mut c, x86.CondNe)
+    x86.PatchRel32(mut c, innerJ, innerAt)
+    // 畳む（塊の残りが尽きたか j に着いた）: psadbw x5, 0 → 2 つの 64 ビットの和
+    x86.PatchRel32(mut c, flushJ, x86.Here(mut c))
+    x86.PsadbwXX(mut c, 5, 7)
+    x86.MovqRX(mut c, x86.Rcx, 5)
+    x86.AddRegReg(mut c, x86.Rsi, x86.Rcx)
+    x86.PsrldqXI(mut c, 5, 8)
+    x86.MovqRX(mut c, x86.Rcx, 5)
+    x86.AddRegReg(mut c, x86.Rsi, x86.Rcx)
+    x86.CmpRegReg(mut c, x86.Rax, x86.Rdx)
+    outerJ := x86.JccRel32(mut c, x86.CondL)
+    x86.PatchRel32(mut c, outerJ, outerAt)
+    x86.PatchRel32(mut c, early, x86.Here(mut c))
+    x86.MovRegReg(mut c, x86.Rax, x86.Rsi)
+    x86.PopReg(mut c, x86.Rdi)
+    x86.PopReg(mut c, x86.Rsi)
+    xPut(mut e, mut c, res, x86.Rax)
+}
+
+// 数え上げの積算を畳む間隔（塊の数 — バイトの積算は 255 まで）
+const XCOUNT_FLUSH = 255
+
+// xU8K は UTF-8 の検査器の k 番目の定数のレジスタ（xmm(kx + k) — kx < 0 なら [rsp + 16k] を作業の xmm t に読んで t）
+func xU8K(c mut table.Table[byte], kx int, k int, t int) int {
+    if kx >= 0 {
+        return kx + k
+    }
+    x86.MovdquXMem(mut c, t, x86.Rsp, 16 * k)
+    return t
 }
 
 // xScanLanes は xmm0 の各バイトの出口のレーンを xmm5 に（xScanB の環の中身 — 述語ごとに比べて or）

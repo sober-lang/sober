@@ -53,7 +53,7 @@
                       {
                         "k": "type",
                         "bind": null,
-                        "variant": "io.File",
+                        "variant": "io.Regular",
                         "fields": [],
                         "tok": 21
                       }

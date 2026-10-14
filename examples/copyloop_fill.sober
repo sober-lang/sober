@@ -1,0 +1,81 @@
+package main
+
+// 定数の詰めの一括化（lower/copyloop.sober の (C) と for の (Z) — report-624）: `while i < n { xs = append(xs, 0); i += 1 }` と
+// `for _ <- iter.Range(lo, hi) { xs = append(xs, c) }`（c = 整数の字面・`-字面`・`字面 - 字面`・true / false）を一括の伸長 + 詰めに。
+// 空の区間・逆向きの区間は 1 つも積まない。mut 仮引数への詰め・先端でない列（全コピーの道）・byte / int / bool の要素
+
+import "std/iter"
+
+// zeroFill は std/json の Parse の 0 埋めと同じ形（mut 仮引数）
+func zeroFill(xs mut []int, n int) {
+    mut i := 0
+    while i < n {
+        xs = append(xs, 0)
+        i += 1
+    }
+}
+
+func sum(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() {
+    mut a := mut []int{7}
+    zeroFill(mut a, 5)
+    zeroFill(mut a, 0)
+    println("a ${len(a)} ${a[0]} ${a[5]} ${sum(a)}")
+    // 2 本を交互に伸ばす（先端でない列 — 全コピーの道）
+    mut p := mut []int{1}
+    mut q := mut []int{2}
+    for k <- iter.Range(0, 3) {
+        p = append(p, 0 - 1)
+        q = append(q, -2)
+    }
+    for _ <- iter.Range(0, 4) {
+        p = append(p, 5)
+    }
+    println("p ${len(p)} ${sum(p)} q ${len(q)} ${sum(q)}")
+    // byte と bool
+    mut b := mut []byte{1}
+    for _ <- iter.Range(2, 6) {
+        b = append(b, 0)
+    }
+    mut i := 0
+    while i < 3 {
+        b = append(b, 255)
+        i += 1
+    }
+    mut f := mut []bool{}
+    for _ <- iter.Range(0, 3) {
+        f = append(f, false)
+    }
+    for _ <- iter.Range(0, 2) {
+        f = append(f, (true))
+    }
+    println("b ${len(b)} ${int(b[0])} ${int(b[3])} ${int(b[7])} i ${i} f ${len(f)} ${f[2]} ${f[3]}")
+    // 空・逆向きの区間
+    mut e := mut []int{}
+    for _ <- iter.Range(3, 3) {
+        e = append(e, 1)
+    }
+    for _ <- iter.Range(5, 1) {
+        e = append(e, 1)
+    }
+    mut j := 4
+    while j < 2 {
+        e = append(e, 1)
+        j += 1
+    }
+    println("e ${len(e)} j ${j}")
+    // 大きい n（region の粒を跨ぐ）
+    mut big := mut []int{}
+    zeroFill(mut big, 300000)
+    for _ <- iter.Range(0, 100000) {
+        big = append(big, 3)
+    }
+    println("big ${len(big)} ${sum(big)} ${big[299999]} ${big[300000]}")
+}

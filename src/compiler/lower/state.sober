@@ -99,6 +99,7 @@ type St struct {
     rtMut int // M:N の rt の変異（段 6 P4-4 — RtMutant・0 = 無し）
     scopeKeep bool // 下ろしている scope の本体に結果が region を持つ子がいる（出口で預かりのスロットを返す — 段 6 P4-4 (B1)）
     rtSlotGive FnRef
+    rtSlotTrim FnRef
     // M:N の rt（段 6 P4-4 — mn.sober）
     mnG int
     sresG int
@@ -136,6 +137,9 @@ type St struct {
     rtMnSteal FnRef
     rtMnAnyDq FnRef
     rtMnTrace FnRef
+    rtUringInit FnRef   // rt.uring_init（IO 便 段 0 — uring.sober）
+    rtUio FnRef         // rt.uio（IO 便 段 1 — ring に出して待つ io の口）
+    rtUpoll FnRef       // rt.uring_poll（同 — 提出と完了の取り込み）
     rtTcbFree FnRef
     rtSlotTake FnRef
     rtUnmap FnRef
@@ -264,6 +268,7 @@ type St struct {
     stopAt int       // 計測の口（`--stop-after=<段>` — scripts/passstats.sh）: 0 = 最後まで・k = 段 k の後で止めて空の出力（StageCode の表）
     halted bool      // stopAt の段に着いた
     dumpIr bool      // 計測の口（`--dump-ir`）: 止めた段の IR テキストを出力にする
+    noSpec bool      // `--no-spec`（展開便 段 1）: 定数引数の特化を掛けない（網 = 掛けた ≟ 掛けない）
     noVec bool       // `--no-vec`（第三便のスパイク）: ベクトル化を掛けない（網 = 掛けた ≟ 掛けない）
     noVfy bool       // 計測の口（`--no-verify`）: IR の検証器を掛けない（検証器の費用の帰属用）
     vfyLast bool     // ELF の build の既定: 検証器を段ごとでなく最後に 1 回だけ（vfyFinal — 段ごとは SOBER_VERIFY=each・gates が立てる。仕上げ便）
@@ -294,6 +299,12 @@ type St struct {
     rtStat FnRef   // rt.stat / rt.sleep（std/os の sysStat / sysSleep — sober watch の mtime ポーリング）
     rtSleep FnRef
     rtRfd FnRef    // rt.read_fd（std/io の sysReadFd）
+    rtOpen FnRef   // rt.open / rt.close / rt.fd_drain（std/io の sysOpen / sysClose — IO 便 段 2。fd_drain は std/par のプログラムの task の死の出口）
+    rtClose FnRef
+    rtFdDrain FnRef
+    rtCh int        // rt.chunk_open / next / close / submit / drain の記録（std/io の Chunks — IO 便 段 2 (c)・chunk.sober の chF。-1 = 使わない。
+                    // St の欄 1 つに畳む — 欄は St を組む箇所ごとに自己 check の核の節を足す）
+    fdregG int     // rt.fdreg（開いた fd の登録簿の鎖 — fd ごとに 1 語。std/par のプログラムだけ）
     statbuf int    // rt.statbuf（stat(2) の struct stat — 18 語）
     rtPanic FnRef     // rt.panic(点の番号) / rt.panic_mem(種類) — panic の観測性 第一便（panic.sober）
     rtPanicMem FnRef
@@ -379,6 +390,11 @@ func initScalars(st mut St) {
     st.rtStat = -1
     st.rtSleep = -1
     st.rtRfd = -1
+    st.rtOpen = -1
+    st.rtClose = -1
+    st.rtFdDrain = -1
+    st.fdregG = -1
+    st.rtCh = -1
     st.rtCstr = -1
     st.rtPanic = -1
     st.rtPqstr = -1

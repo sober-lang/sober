@@ -8,7 +8,7 @@
 
 | package | 用途 | 主なもの |
 |---|---|---|
-| `std/io` | ファイル・標準入出力・ディレクトリ | `ReadFile`・`WriteFile`・`ReadStdin`・`WriteStdout`・`WriteStderr`・`ReadDir`・バッファつきの `Writer`（`WriteString` / `WriteByte` / `Flush`）。エラーのラベルは `NotFound`・`Denied`・`Other` |
+| `std/io` | ファイル・標準入出力・ディレクトリ | `ReadFile`・`WriteFile`・`ReadStdin`・`WriteStdout`・`WriteStderr`・`ReadDir`・開いたファイル `Open` / `Close`（`defer io.Close(f)` を直後に）/ `ReadAll`・切片を写さずに借りる読み `for c <- io.Chunks(f)?`（`Lines`・位置を指定する `ChunksAt`・中身は `Raw`）・バッファつきの `Writer`（`WriteString` / `WriteByte` / `Flush`）。エラーのラベルは `NotFound`・`Denied`・`Other` |
 | `std/os` | プロセスと環境 | `Args`・`Getenv`・`Run`（子プロセス）・`Mkdir`・`Rename`・`ModTime`・`WriteMode`・`Sleep` |
 
 ## テキスト
@@ -28,6 +28,7 @@
 | package | 用途 | 主なもの |
 |---|---|---|
 | `std/iter` | 遅延の列 `Iter[T]` | `Range`・`Slice`・`Each`・`Count`・`Sum`（`for … yield` の結果をパイプで消費する） |
+| `std/sort` | 並べ替え | `Order`（0..n−1 を比較の閉包 `less(a, b)` の順に並べた添字の列 — 安定。比べ方と元の列は呼び手が持つ）・`OrderUnstable`（同じ形で等しい要素の順を約束しない代わりに速い — 決定的） |
 | `std/table` | 大きな表（固定長の塊の列 — 伸ばしても写しが起きない） | `Table[T]` に `Push`・`Get`・`Set`・`Len`、`Freeze` で不変の `Frozen[T]` に |
 | `std/pool` | ハンドルで引く貸し借りの溜め | `Acquire`・`Release`・`Get`・`Set` |
 | `std/json` | JSON の読み書き | `Parse` で文書 `Doc` を得て `Get` / `Items` / `Dec*` で読む・`Put*` で書く・型への写しは `json.Decode[T]` / `json.Encode[T]` |

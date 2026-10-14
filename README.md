@@ -64,8 +64,8 @@ func main() int {
 
 ### Fast
 
-- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 5 wins, 2 ties, 2 losses (the losses are n-body 1.18× and 1BRC 1.12×). Against Go: 7 wins, 1 tie, 1 loss.
-- A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 7 of the 9 benchmarks (the exceptions are reverse-complement and k-nucleotide).
+- Runtime speed on par with Rust. Against straightforward Rust using the same algorithms, across 9 sequential benchmarks: 4 wins, 3 ties, 2 losses (the losses are n-body 1.18× and 1BRC 1.11×). Against Go: 6 wins, 3 ties, no losses. <!-- benchsync:readme-speed-en -->
+- A memory footprint on par with Rust. There is no GC. Peak RSS is at or below Rust's in 7 of the 9 benchmarks (the exceptions are reverse-complement and k-nucleotide). <!-- benchsync:readme-rss-en -->
 - High parallel performance — and deterministic. Structured-concurrency tasks are light (Skynet with 1.11 million tasks runs 5× faster than Go), and the output is the same bytes for any number of workers.
 
 → [Why fast](docs/design-notes/fast.md) (in Japanese)

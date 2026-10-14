@@ -1,16 +1,50 @@
 package main
 
-// 負例（language.md 7 節 — X4 の裁定 2026-09-30）: 名前つきで欄を省く部分フィールドの struct リテラルは build・check とも拒否。
-// 全部の欄をゼロ値にするのは `T{}`（examples/zero_lit_fields）、一部だけ値を置くなら残りの欄も名指しする
-// （旧: lower だけ省いた欄をゼロ値で埋めて受理していた — check は拒否。欄を足したとき既存のリテラルが黙って部分になるのを捕まえる側に揃えた）
+// 部分リテラル（language.md 15 節 — 2026-10-13 のユーザー裁定で 2026-09-30 の拒否〔X4〕から付け替え）: 名前つきで一部の欄だけ書き、
+// 省いた欄はゼロ値（`T{}` と同じ — int 0・string ""・mut の slice は空・入れ子の struct はその欄ごと）。書いた値は書いた順に評価する。
+// 封の型（utf8.View）を欄に持つ封の無い struct も部分リテラルで書ける — 封の型の欄はゼロ値（空の検査済み列 — 無害）
+
+import "std/utf8"
+
+type Q struct {
+    c int
+    d bool
+}
 
 type St struct {
     xs mut []int
     name string
     n int
+    q Q
+}
+
+type Line struct {
+    v utf8.View
+    no int
+}
+
+type Img struct {
+    w int
+    h int
+    tags []string
+}
+
+func tick(s string) int {
+    println("eval ${s}")
+    return len(bytes(s))
 }
 
 func main() {
     s := St{name: "x"}
-    println(s.name, s.n)
+    println(s.name, s.n, len(s.xs), s.q.c, s.q.d)
+    // mut の束縛・入れ子の部分リテラル・欄の順と違う順（値は書いた順に評価）
+    mut m := St{q: Q{d: true}, n: tick("ab")}
+    m.xs = append(m.xs, 7)
+    m.n += tick("c")
+    println(m.n, len(m.xs), m.q.d, m.name == "")
+    // imm の欄（[]string）を省く
+    i := Img{h: 2, w: 3}
+    println(i.w * i.h, len(i.tags))
+    l := Line{no: 4}
+    println(l.no, len(utf8.Bytes(l.v)))
 }

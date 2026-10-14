@@ -7,7 +7,6 @@ package json
 
 import "std/builder"
 import "std/conv"
-import "std/strings"
 
 // NotFinite は JSON に書けない float（NaN・±Inf）を Encode に渡した
 type NotFinite panic {
@@ -46,8 +45,31 @@ func PutString(o mut builder.Builder[byte], s string) {
     quote(mut o, bytes(s))
 }
 
+// PutInt は n の 10 進を builder へ直に積む（FormatInt の string を経ない — 上の桁から: 桁の数の 10 の冪 p を求めて n / p の桁を順に）
 func PutInt(o mut builder.Builder[byte], n int) {
-    Put(mut o, strings.FormatInt(n))
+    if n < 0 {
+        builder.Push(mut o, '-')
+        if n == -9223372036854775807 - 1 {
+            builder.PushStr(mut o, "9223372036854775808")
+            return
+        }
+    }
+    v := if n < 0 { 0 - n } else { n }
+    if v < 10 {
+        builder.Push(mut o, byte(48 + v))
+        return
+    }
+    mut p := 10
+    while p <= v / 10 {
+        p = p * 10
+    }
+    mut r := v
+    while p > 0 {
+        d := r / p
+        builder.Push(mut o, byte(48 + d))
+        r = r - d * p
+        p = p / 10
+    }
 }
 
 func PutBool(o mut builder.Builder[byte], b bool) {

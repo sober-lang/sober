@@ -1,0 +1,60 @@
+package main
+
+// 反復の region の約束（llight の本体の範囲 — report-620 の L1）の回帰例（routing の形）: 外の while の本体の先頭に内側の while があり、
+// 外の反復の確保（split の区間の列）がその後ろにある。外の反復の enter を残さないと、毎行の列が関数の region に積もり、RSS が行数に比例する
+// （HEAD の llLoopBody は内側のループの頭の setdepth で走査を止め、後ろの確保を見落として enter を消していた）。
+// 行数は引数で変えられる（既定 2000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
+
+import "std/os"
+
+// split は b の [s, e) を区切り c で割った区間の長さの列
+func split(b []byte, s int, e int, c byte) []int {
+    mut out := mut []int{}
+    mut i := s
+    mut j := s
+    while j <= e {
+        if j == e || b[j] == c {
+            out = append(out, j - i)
+            i = j + 1
+        }
+        j += 1
+    }
+    return out
+}
+
+func lines() int {
+    args := os.Args() catch return 2000
+    if len(args) != 2 {
+        return 2000
+    }
+    mut n := 0
+    for c <- bytes(args[1]) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func main() int {
+    b := bytes("GET /api/v1/users/12345/orders/67890/items/abcdef?page=3&sort=asc")
+    n := lines()
+    mut sum := 0
+    mut segs := 0
+    mut r := 0
+    while r < n {
+        // 内側のループ（外の本体の先頭 — 頭の setdepth は外の反復の深度へ戻す）
+        mut k := 0
+        while b[k] != '/' {
+            k += 1
+        }
+        // 外の反復の確保（内側のループの後ろ）
+        xs := split(b, k + 1, len(b), '/')
+        segs += len(xs)
+        for x <- xs {
+            sum += x
+        }
+        r += 1
+    }
+    println(segs)
+    println(sum)
+    return 0
+}

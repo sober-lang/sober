@@ -13,7 +13,7 @@ import "std/table"
 
 // CallStat は呼び出しの計数つきの実行ファイル（site = 呼び出し点ごと — `--call-stat=site`・展開便の段 0〔report-466〕: 数え口を直の / 間接の
 // call の手前に置き、`callsite <呼び手> <点の通し番号> <callee〔間接は *〕> <ループの深さ> <回数>` を出す。深さは ilLoopDepth — パスの後の IR で）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.Frozen)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
 func CallStat(p loader.Program, site bool, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.callStat = true

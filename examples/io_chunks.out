@@ -1,0 +1,20 @@
+testdata/io_par/access-4.log: 213841 bytes, 9000 newlines, 4 chunks
+testdata/io/hello.txt: 17 bytes, 2 newlines, 1 chunks
+testdata/io/empty.txt: 0 bytes, 0 newlines, 0 chunks
+testdata/io/crlf.txt
+  [alpha]
+  [beta]
+  []
+  5 lines, 19 bytes
+testdata/io/empty.txt
+  0 lines, 0 bytes
+testdata/io_par/access-4.log
+  [GET /health 200 16737]
+  [GET /api/items/42 200 10961]
+  [GET /api/cart 200 13847]
+  9000 lines, 204841 bytes
+kept the first slot: true
+early 0: 2082769
+early 1: 65636
+early 2: failed in the body
+missing: not found

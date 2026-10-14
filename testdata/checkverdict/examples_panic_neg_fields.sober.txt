@@ -1,2 +1,2 @@
-sober: load error at examples/panic_neg_fields.sober:10:11: a panic label literal names every field of the label once (name: value)
+sober: load error at examples/panic_neg_fields.sober:10:11: a panic label literal names its fields (name: value), each at most once — omitted fields are zero
 exit=1

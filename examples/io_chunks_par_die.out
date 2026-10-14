@@ -1,0 +1,3 @@
+read 213841 bytes
+every round read the whole file
+dead readers' files closed

@@ -1,0 +1,2 @@
+sober: load error at examples/for_fallible_yield.sober:24:29: a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression
+exit=1

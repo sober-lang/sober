@@ -12,7 +12,7 @@ const PAR_TUPLE = 18
 
 // tupleTypeAt は置き場の外の多値の型の最初の位置（無ければ None）
 func tupleTypeAt(cx Cx) diag.Pos {
-    par := pkgOf(cx, "std/par")
+    pp := pkgOf(cx, "std/par")
     for f <- iter.Range(0, len(cx.trees)) {
         t := cx.trees[f]
         mut ok := mut []bool{}
@@ -26,7 +26,7 @@ func tupleTypeAt(cx Cx) diag.Pos {
         if any {
             for i <- iter.Range(0, len(t.nodes)) {
                 x := t.nodes[i]
-                if x.kind == ast.TGeneric && par >= 0 && isParTask(cx, f, par, Name(t, x.a)) && ast.ListLen(t, x.b) == 1 {
+                if x.kind == ast.TGeneric && pp >= 0 && isParTask(cx, f, pp, Name(t, x.a)) && ast.ListLen(t, x.b) == 1 {
                     a := ast.ListAt(t, x.b, 0)
                     if t.nodes[a].kind == ast.TTuple && fallibleShape(t, a) {
                         ok[a] = true
@@ -43,8 +43,8 @@ func tupleTypeAt(cx Cx) diag.Pos {
     return diag.None()
 }
 
-// isParTask は型名 n（"Task" か "ref.Task"）がファイル f から見て std/par（package 番号 par）の Task か
-func isParTask(cx Cx, f int, par int, n string) bool {
+// isParTask は型名 n（"Task" か "ref.Task"）がファイル f から見て std/par（package 番号 pp）の Task か
+func isParTask(cx Cx, f int, pp int, n string) bool {
     b := bytes(n)
     mut dot := -1
     for i <- iter.Range(0, len(b)) {
@@ -53,9 +53,9 @@ func isParTask(cx Cx, f int, par int, n string) bool {
         }
     }
     if dot < 0 {
-        return n == "Task" && cx.file_pkg[f] == par
+        return n == "Task" && cx.file_pkg[f] == pp
     }
-    return cut(n, dot + 1, len(b)) == "Task" && fileImportOf(cx, f, cut(n, 0, dot)) == par
+    return cut(n, dot + 1, len(b)) == "Task" && fileImportOf(cx, f, cut(n, 0, dot)) == pp
 }
 
 // fallibleShape は組の節 a が `(T, error?)` の形（2 つ・2 つ目が `error?`）か

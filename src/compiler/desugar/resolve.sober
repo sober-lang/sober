@@ -906,14 +906,15 @@ func structFields(st mut S, dr int) ListRef {
 
 // fieldIndex はフィールドの列 fs の名前 name の位置（無ければ -1）
 // ── composite の欄の照合（build と check の共有 — reaudit 第 2 弾 C1 A2 ⑦。受理の集合は X4 の裁定で揃えた）──
-// 規則: 空の要素の列は `T{}`（全ゼロ値）・位置と名前の混在は誤り・位置は欄の数ちょうど・名前は重複なし・未知の欄なし・欄の数ちょうど
-// （部分リテラルは拒否 — language.md 末尾の 2026-09-30 の決定）。誤りの種類は層ごとの診断に写す（desugar = Malformed、lower = 種類ごと）
+// 規則: 空の要素の列は `T{}`（全ゼロ値）・位置と名前の混在は誤り・位置は欄の数ちょうど・名前は重複なし・未知の欄なし。
+// 名前つきは一部の欄だけでよい（部分リテラル — 省いた欄はゼロ値。2026-10-13 のユーザー裁定で 2026-09-30 の拒否〔X4〕から付け替え — language.md 15 節）。
+// 誤りの種類は層ごとの診断に写す（desugar = Malformed、lower = 種類ごと）
 
 const CMOk = 0
 const CMMixed = 1     // 位置と名前の混在
 const CMDup = 2       // 名前の重複
 const CMUnknown = 3   // 未知の欄の名前
-const CMCount = 4     // 個数が欄の数と違う（位置の過不足・名前つきの部分リテラル）
+const CMCount = 4     // 位置の個数が欄の数と違う
 
 // CompositeFields は struct / variant のリテラルの要素の列 elems（KElem — a = 欄の名前か -1、b = 値）を欄の名前の列 names（文字列の列）に照らし、
 // 要素ごとの欄の添字の列と誤りの種類（CMOk 以外なら列は -1）を返す。空の elems は長さ 0 の列（`T{}`）
@@ -938,9 +939,6 @@ func CompositeFields(st mut S, names ListRef, elems ListRef) (ListRef, int) {
             lput(mut st, out, i, i)
         }
         return out, CMOk
-    }
-    if ne != nf {
-        return -1, CMCount
     }
     for i <- iter.Range(0, ne) {
         key := sA(nodeOf(mut st, latN(mut st, elems, i)))

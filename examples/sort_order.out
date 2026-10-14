@@ -1,0 +1,16 @@
+180 milk
+250 bread
+250 jam
+300 tea
+300 coffee
+tea: #4
+bread: #2
+milk: #1
+coffee: #5
+jam: #3
+jam
+coffee
+milk
+bread
+tea
+0 0

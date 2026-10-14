@@ -1,0 +1,243 @@
+package loader
+
+// catch 式（language.md 13 節・syntax.md）: 可謬の呼び出しの後置 `f() catch D` を脱糖の固定テンプレートで写す:
+//
+//     f() catch D           →  { $ctKv, $ctKe := f(); if $ctKe != nil { D } else { $ctKv } }
+//     f() catch return E…   →  { $ctKv, $ctKe := f(); if $ctKe != nil { return E… } else { $ctKv } }
+//
+// catch が文の値そのもの（式文・値 1 つの束縛 / 代入の値・return の先頭の値 — mvcase.sober の directValue）なら、束縛をその文の直前に文として置き、
+// 値は if だけにする（評価の順は同じ）。それ以外の位置はブロック式に包む（左にある式より先に f() を走らせない — 評価の順を保つ）。
+// desugar・lower・typer・analyzer は写した後の木（多値の束縛と if）だけを読む — コア・Lean は無変更。parse の直後（parseFile）に掛ける。
+// v1 の範囲: 左辺は `(T, error?)` を返す呼び出し・エラーの値は束縛しない（違えば写した後の多値の束縛が数の照合で拒否する）
+
+import "std/builder"
+import "std/iter"
+import "ast"
+import "lexer"
+import "diag"
+
+// catchExprs は木 t の catch 式を写した木（節は末尾に足し、catch の節をその場で差し替える）
+func catchExprs(t ast.Tree) ast.Tree {
+    n0 := len(t.nodes)
+    mut found := false
+    for i <- iter.Range(0, n0) {
+        if t.nodes[i].kind == ast.ECatch {
+            found = true
+        }
+    }
+    if !found {
+        return t
+    }
+    // 文の値そのものになっている catch → その文
+    mut stmtOf := mut []int{}
+    for i <- iter.Range(0, n0) {
+        stmtOf = append(stmtOf, 0 - 1)
+    }
+    for i <- iter.Range(0, n0) {
+        sl := stmtList(t.nodes[i])
+        if sl >= 0 {
+            for j <- iter.Range(0, ast.ListLen(t, sl)) {
+                sn := ast.ListAt(t, sl, j)
+                v := directValue(t, sn)
+                if v >= 0 && t.nodes[v].kind == ast.ECatch {
+                    stmtOf[v] = sn
+                }
+            }
+        }
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, n0) {
+        ns = append(ns, t.nodes[i])
+    }
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    for j <- iter.Range(0, len(t.data)) {
+        builder.Push(mut db, t.data[j])
+    }
+    mut pend := mut []int{}
+    // catch nil の文の値の位置: 束縛の後ろに置く 2 文（mut $ctKr := $ctKv・if $ctKe != nil { $ctKr = nil }）の先頭の節（-1 = 無し）
+    mut pendNil := mut []int{}
+    // 1 本ずつ積む（2 本へ交互に append すると、どちらも region の先端に居ないので毎回写し — 2 乗の RSS）
+    for i <- iter.Range(0, n0) {
+        pend = append(pend, 0 - 1)
+    }
+    for i <- iter.Range(0, n0) {
+        pendNil = append(pendNil, 0 - 1)
+    }
+    mut k := 0
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        if x.kind == ast.ECatch {
+            tok := x.tok
+            vn := ast.PutLit(mut db, "$ct${k}v")
+            en := ast.PutLit(mut db, "$ct${k}e")
+            base := n0 + builder.Len(mut nb)
+            // base + 0 = then の文（右辺が return ならその文・でなければ式文）・1 = then の KBlock・2 = else の値・3 = else の式文・4 = else の EBlock
+            // 5 = 判定の名前・6 = nil・7 = 判定・8 = 束縛
+            if t.nodes[x.b].kind == ast.SRet {
+                builder.Push(mut nb, t.nodes[x.b])
+            } else {
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, x.b, 0, 0, 0, 0, 0})
+            }
+            builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{base}), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, vn, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SExpr, tok, base + 2, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{base + 3}), 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EIdent, tok, en, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.ENil, tok, 0, 0, 0, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.EBinary, tok, lexer.BangEqual, base + 5, base + 6, 0, 0, 0})
+            builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{vn, en}), 0, ast.PutList(mut db, []int{x.a}), 0, 0, 0})
+            mut ifn := ast.Node{ast.EIf, tok, base + 7, base + 1, base + 4, 0, 0, 0}
+            if t.nodes[x.b].kind == ast.ENil {
+                // `f() catch nil`（F-v）: nil の腕の型を兄弟の $ctKv の T? から取る —
+                // `{ mut $ctKr := $ctKv; if $ctKe != nil { $ctKr = nil }; $ctKr }`（代入の nil は束縛の型 T? が期待型を与える）
+                rn := ast.PutLit(mut db, "$ct${k}r")
+                q := n0 + builder.Len(mut nb)
+                // q + 0 = $ctKv・1 = mut $ctKr := $ctKv・2 = $ctKr（代入先）・3 = nil・4 = 代入・5 = then の KBlock・6 = if・7 = if の式文・8 = $ctKr（値）・9 = 値の式文
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, vn, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SBind, tok, ast.PutList(mut db, []int{rn}), 1, ast.PutList(mut db, []int{q}), 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.ENil, tok, 0, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SAssign, tok, ast.PutList(mut db, []int{q + 2}), lexer.Equal, ast.PutList(mut db, []int{q + 3}), 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.KBlock, tok, ast.PutList(mut db, []int{q + 4}), 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.EIf, tok, base + 7, q + 5, 0 - 1, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, q + 6, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0})
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, q + 8, 0, 0, 0, 0, 0})
+                ifn = ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{q + 1, q + 7, q + 9}), 0, 0, 0, 0, 0}
+                if stmtOf[i] >= 0 {
+                    // 文の値の位置: 2 文を束縛の後ろへ・値は $ctKr の名前だけ（式ブロックの region を挟まない）
+                    pendNil[stmtOf[i]] = q + 1
+                    ifn = ast.Node{ast.EIdent, tok, rn, 0, 0, 0, 0, 0}
+                }
+            }
+            if stmtOf[i] >= 0 {
+                pend[stmtOf[i]] = base + 8
+                ns[i] = ifn
+            } else {
+                // 次の 2 節 = if（catch nil は値のブロック）・その式文
+                w := n0 + builder.Len(mut nb)
+                builder.Push(mut nb, ifn)
+                builder.Push(mut nb, ast.Node{ast.SExpr, tok, w, 0, 0, 0, 0, 0})
+                ns[i] = ast.Node{ast.EBlock, tok, ast.PutList(mut db, []int{base + 8, w + 1}), 0, 0, 0, 0, 0}
+            }
+            k += 1
+        }
+    }
+    // 前に置く束縛を文の列へ差し込む（mvcase.sober と同じ）
+    for i <- iter.Range(0, n0) {
+        x := t.nodes[i]
+        sl := stmtList(x)
+        if sl >= 0 {
+            mut any := false
+            for j <- iter.Range(0, ast.ListLen(t, sl)) {
+                if pend[ast.ListAt(t, sl, j)] >= 0 {
+                    any = true
+                }
+            }
+            if any {
+                mut l := mut []int{}
+                for j <- iter.Range(0, ast.ListLen(t, sl)) {
+                    sn := ast.ListAt(t, sl, j)
+                    if pend[sn] >= 0 {
+                        l = append(l, pend[sn])
+                    }
+                    if pendNil[sn] >= 0 {
+                        l = append(l, pendNil[sn])
+                        l = append(l, pendNil[sn] + 6)
+                    }
+                    l = append(l, sn)
+                }
+                nl := ast.PutList(mut db, freeze(l))
+                ns[i] = if x.kind == ast.EFor { ast.Node{x.kind, x.tok, x.a, x.b, nl, x.d, x.e, x.f} } else { ast.Node{x.kind, x.tok, nl, x.b, x.c, x.d, x.e, x.f} }
+            }
+        }
+    }
+    added := builder.Build(mut nb)
+    for i <- iter.Range(0, len(added)) {
+        ns = append(ns, added[i])
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// catchLhsHit は catch の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でない最初の位置（無ければ file = -1）。
+// 写した後の束縛 `$ctKv, $ctKe := f()` を拾う（catchExprs が parseFile の直後に写している）。func 宣言を引けない呼び出し（関数型の値を通した呼び出し等）は
+// 後段の束縛の数の照合に任せる。std/par の Join（結果は字面で型パラメータ 1 つ — fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）は
+// 判定を保留し、表層型の後の desugar.ParCheckTyped が同じ CatchLhs を名指す（check と build が同じ層 — report-582 2 節）
+func catchLhsHit(cx Cx) diag.Pos {
+    mut any := false
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            any = any || isCatchBind(t, i)
+        }
+    }
+    if !any {
+        return diag.Pos{file: 0 - 1, tok: 0}
+    }
+    ft := fnTab(cx)
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            if isCatchBind(t, i) {
+                c := t.nodes[ast.ListAt(t, t.nodes[i].c, 0)]
+                if c.kind == ast.ECall {
+                    fi := calleeFn(cx, ft, f, c.a, false)
+                    if fi >= 0 && !parJoin(cx, ft, fi) && !fallibleResults(cx.trees[ft.file[fi]], ft.node[fi]) {
+                        return diag.Pos{file: f, tok: t.nodes[i].tok}
+                    }
+                }
+            }
+        }
+    }
+    return diag.Pos{file: 0 - 1, tok: 0}
+}
+
+// parJoin は関数表の fi が std/par の Join か
+func parJoin(cx Cx, ft FnTab, fi int) bool {
+    dt := cx.trees[ft.file[fi]]
+    return cx.pkg_path[ft.pkg[fi]] == "std/par" && Name(dt, dt.nodes[ft.node[fi]].a) == "Join"
+}
+
+// isCatchBind は節 i が catchExprs の写した束縛（名前の先頭が `$ct`）か
+func isCatchBind(t ast.Tree, i int) bool {
+    x := t.nodes[i]
+    if x.kind != ast.SBind || ast.ListLen(t, x.a) != 2 || ast.ListLen(t, x.c) != 1 {
+        return false
+    }
+    s := ast.ListAt(t, x.a, 0)
+    // 36 = '$'・99 = 'c'・116 = 't'（`$` は合成の名前にだけ現れる）
+    return t.data[s] >= 3 && t.data[s + 1] == 36 && t.data[s + 2] == 99 && t.data[s + 3] == 116
+}
+
+// fallibleResults は func 宣言 d の結果が `(T, error?)` か
+func fallibleResults(t ast.Tree, d int) bool {
+    rs := t.nodes[d].d
+    if ast.ListLen(t, rs) != 2 {
+        return false
+    }
+    e := t.nodes[ast.ListAt(t, rs, 1)]
+    return e.kind == ast.TOpt && t.nodes[e.a].kind == ast.TName && Name(t, t.nodes[e.a].a) == "error"
+}
+
+// multiBindAt は値 1 つの束縛（`d := f()`・`mut d := f()`）の値が 2 つ以上の結果を返す関数の呼び出しなら、その束縛の位置（無ければ file = -1）。
+// 以前は check が型の不一致（位置なし）・build が lower の Mismatch で落ちていた（`d := io.ReadStdin()` — 掃除便 D）。呼び先が引けない呼び出し（関数値・組み込み）は見ない
+func multiBindAt(cx Cx) diag.Pos {
+    ft := fnTab(cx)
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if x.kind == ast.SBind && ast.ListLen(t, x.a) == 1 && ast.ListLen(t, x.c) == 1 {
+                c := t.nodes[ast.ListAt(t, x.c, 0)]
+                if c.kind == ast.ECall {
+                    fi := calleeFn(cx, ft, f, c.a, false)
+                    if fi >= 0 && ast.ListLen(cx.trees[ft.file[fi]], cx.trees[ft.file[fi]].nodes[ft.node[fi]].d) >= 2 {
+                        return diag.Pos{file: f, tok: x.tok}
+                    }
+                }
+            }
+        }
+    }
+    return diag.Pos{file: 0 - 1, tok: 0}
+}

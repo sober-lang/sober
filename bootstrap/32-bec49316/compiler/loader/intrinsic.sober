@@ -1,0 +1,143 @@
+package loader
+
+// std の本体なしの宣言 `@intrinsic("鍵") func 名前(仮引数) 結果`（息継ぎ ③ — sys の組み込みの署名をソースに置く。KIntrinsic・KFile の f の列）。
+// 鍵の集合は閉じる（ここの表 — ユーザーは鋳造できない）。宣言は std の中でだけ受理し、署名は鍵の実装（desugar のコアの近似・lower の rt の呼び出し）と
+// 一致しなければ拒否する。呼び出しは desugar / lower が現在の package の宣言を名前で引いて鍵の番号へ（desugar の SysKey）
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 鍵の番号（desugar / lower の鍵の実装の表の添字 — 0 = 鍵でない）
+const IFSqrt = 1
+const IFBits = 2
+const IFFromBits = 3
+const IErrno = 4
+const IArgs = 5
+const IEnviron = 6
+const IReadFile = 7
+const IReadDir = 8
+const IReadFd = 9
+const IRun = 10
+const IMkdir = 11
+const IStat = 12
+const ISleep = 13
+const IWriteFile = 14
+const IWriteFd = 15
+const IWriteMode = 16
+const IRename = 17
+const IParPool = 18     // std/par の名前つきプールの節（段 6 P5-4 — lower/admit.sober の rt.pool_new）
+const IParLedger = 19   // std/par の台帳の 1 語の読み（段 6 P5-4 — io: 読んだ値は時刻に依る）
+const IOpen = 20        // std/io の Open（IO 便 段 2 — fd / 負の errno。std/par のプログラムは task の登録簿に積む）
+const IClose = 21       // std/io の Close（errno — 登録簿から外す）
+
+// IntrinsicCode は鍵の綴り → 番号（閉じた集合の外は 0）
+func IntrinsicCode(key string) int {
+    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "mkdir" { IMkdir } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "open" { IOpen } else if key == "close" { IClose } else { 0 }
+}
+
+// IntrinsicSig は鍵の番号の署名（仮引数の型の並び ">" 結果の型 — i = int・f = float・s = string・b = []byte）
+func IntrinsicSig(code int) string {
+    return switch code {
+    case IFSqrt: "f>f"
+    case IFBits: "f>i"
+    case IFFromBits: "i>f"
+    case IErrno: ">i"
+    case IArgs: ">b"
+    case IEnviron: ">b"
+    case IReadFile: "s>b"
+    case IReadDir: "s>b"
+    case IReadFd: "ii>b"
+    case IRun: "b>i"
+    case IMkdir: "s>i"
+    case IStat: "s>i"
+    case ISleep: "i>i"
+    case IWriteFile: "sb>i"
+    case IWriteFd: "ib>i"
+    case IWriteMode: "si>i"
+    case IRename: "ss>i"
+    case IParPool: "ii>i"
+    case IParLedger: "i>i"
+    case IOpen: "s>i"
+    case IClose: "i>i"
+    default: "?"
+    }
+}
+
+// typeCode は型式 n の署名の 1 文字（int / float / string / []byte の外は '?'）
+func typeCode(t ast.Tree, n int) byte {
+    x := t.nodes[n]
+    if x.kind == ast.TName {
+        s := Name(t, x.a)
+        return byte(if s == "int" { 'i' } else if s == "float" { 'f' } else if s == "string" { 's' } else { '?' })
+    }
+    if x.kind == ast.TSlice && x.b == 0 && t.nodes[x.a].kind == ast.TName && Name(t, t.nodes[x.a].a) == "byte" {
+        return byte('b')
+    }
+    return byte('?')
+}
+
+// declSig は KIntrinsic の宣言 x の署名（IntrinsicSig と同じ書式）
+func declSig(t ast.Tree, x ast.Node) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, ast.ListLen(t, x.c)) {
+        p := t.nodes[ast.ListAt(t, x.c, i)]
+        out = append(out, if p.c != 0 { byte('?') } else { typeCode(t, p.b) })
+    }
+    out = append(out, '>')
+    if ast.ListLen(t, x.d) == 1 {
+        out = append(out, typeCode(t, ast.ListAt(t, x.d, 0)))
+    } else if ast.ListLen(t, x.d) > 1 {
+        out = append(out, '?')
+    }
+    r := string(freeze(out)) catch return "?"
+    return r
+}
+
+// intrinsicAll は全ファイルの @intrinsic の宣言を検査する（std の中だけ・閉じた鍵・署名の一致・package の中で名前が重ならない）
+@errors(diag.Intrinsic)
+func intrinsicAll(trees []ast.Tree, fpkg []string, fstd []bool) error? {
+    for f <- iter.Range(0, len(trees)) {
+        t := trees[f]
+        xs := t.nodes[t.file].f
+        if xs != 0 {
+            for i <- iter.Range(0, ast.ListLen(t, xs)) {
+                x := t.nodes[ast.ListAt(t, xs, i)]
+                at := diag.Pos{file: f, tok: x.tok}
+                if !fstd[f] {
+                    return diag.Intrinsic{at: at, kind: 1}
+                }
+                code := IntrinsicCode(Name(t, x.b))
+                if code == 0 {
+                    return diag.Intrinsic{at: at, kind: 2}
+                }
+                if declSig(t, x) != IntrinsicSig(code) {
+                    return diag.Intrinsic{at: at, kind: 3}
+                }
+                if intrinsicDupBefore(trees, fpkg, f, i, Name(t, x.a)) {
+                    return diag.Intrinsic{at: at, kind: 4}
+                }
+            }
+        }
+    }
+    return nil
+}
+
+// intrinsicDupBefore は同じ package の手前（前のファイル・同じファイルの手前）に同じ名前の @intrinsic の宣言があるか
+func intrinsicDupBefore(trees []ast.Tree, fpkg []string, f0 int, i0 int, name string) bool {
+    for f <- iter.Range(0, f0 + 1) {
+        if fpkg[f] == fpkg[f0] {
+            t := trees[f]
+            xs := t.nodes[t.file].f
+            if xs != 0 {
+                n := if f == f0 { i0 } else { ast.ListLen(t, xs) }
+                for i <- iter.Range(0, n) {
+                    if Name(t, t.nodes[ast.ListAt(t, xs, i)].a) == name {
+                        return true
+                    }
+                }
+            }
+        }
+    }
+    return false
+}

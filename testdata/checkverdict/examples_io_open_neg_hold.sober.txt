@@ -1,0 +1,2 @@
+sober: load error at examples/io_open_neg_hold.sober:15:10: an io.File cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+exit=1

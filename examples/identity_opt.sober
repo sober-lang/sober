@@ -1,0 +1,20 @@
+package main
+
+// 同一性を持つ型を `T?` の欄に持つ struct はゼロ値を作れる（`T?` のゼロ値は nil — 偽の端点を作らない・language.md 28 節 / 11 節の裁定 Qa1）。
+// 値の型の標準ストリーム io.Stream（同一性なし）を欄に持つ io.Writer のゼロ値も今どおり（標準出力へ書く）
+
+import "std/io"
+import "std/par"
+
+type Slot struct {
+    tx par.Tx[int]?
+    n int
+}
+
+func main() {
+    s := Slot{n: 2}
+    println(if s.tx == nil { s.n } else { 0 })
+    mut w := io.Writer{}
+    io.WriteString(mut w, "ok\n")
+    _ = io.Flush(mut w)
+}

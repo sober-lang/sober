@@ -1,0 +1,2 @@
+sober: load error at examples/for_fallible_result.sober:8:30: `?` on a generator needs a generator that returns error? only
+exit=1

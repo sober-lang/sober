@@ -27,7 +27,7 @@ func Print(t ast.Tree) []byte {
 // ── 整形の骨（再帰しない — 呼び出し点に展開される）──
 
 // newline は改行 + d 段のインデント（4 桁 — JSON の obuf.Nl は 2 桁）
-// TypeDeclText / FuncDeclText / ConstText は宣言 1 つの綴り（file と同じ印字 — .sobi の書き出し compiler/iface が宣言を選んで並べる）。
+// TypeDeclText / FuncDeclText / ConstText / IntrinsicDeclText は宣言 1 つの綴り（file と同じ印字 — .sobi の書き出し compiler/iface が宣言を選んで並べる）。
 // FuncDeclText の sig = 署名だけ（本体を書かない）・expand = `@expand` の行を足す
 func TypeDeclText(t ast.Tree, n int) []byte {
     mut out := mut []byte{}
@@ -44,6 +44,12 @@ func FuncDeclText(t ast.Tree, n int, sig bool, expand bool) []byte {
 func ConstText(t ast.Tree, n int) []byte {
     mut out := mut []byte{}
     constLine(mut out, t, t.nodes[n])
+    return freeze(out)
+}
+
+func IntrinsicDeclText(t ast.Tree, n int) []byte {
+    mut out := mut []byte{}
+    intrinsicDecl(mut out, t, t.nodes[n])
     return freeze(out)
 }
 

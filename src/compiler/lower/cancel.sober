@@ -199,7 +199,7 @@ func cutIsRt(st mut St, f FnRef) bool {
 func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
-        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtStreq ||
+        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq ||
         g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
 }
 
@@ -540,7 +540,7 @@ func cutThinN(st mut St, f FnRef, s BlkRef, mb mut []int, ms mut []int, rs mut [
 
 // CutStat は間引きの表（開発用 `sober build --cut-stat` — 網 scripts/cutstat.sh）: 検査点を置いた利用者のループの頭ごとに 1 行
 // 「関数 b<頭> B=<本体の重み> N=<間引き> <形>」（形 = count〔数え口〕/ every〔毎反復〕・B の負は間引けない理由 — cutThinN）
-@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.Frozen)
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
 func CutStat(p loader.Program, n int, vmode int) ([]byte, error?) {
     mut k := knob(KElf, true, true, false, false, 0, vmode)
     k.rtMut = n

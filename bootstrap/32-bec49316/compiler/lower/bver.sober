@@ -1,0 +1,248 @@
+package lower
+
+// 定数添字の検査の版分け（検査の資格つき消去 段 2 (c2) — report-545）: bce の後に掛ける。関数の入口のブロックの後ろに、同じ長さ y に対する
+// 定数添字（定数か定数の式 — bceCv）の境界検査 `uge c, y` が BV_N 本以上残っていれば、入口の終わりで `cmax <u y`（cmax = それらの最大）を 1 回だけ判定し、
+// 真なら入口の後ろの全ブロックの写し（それらの検査を偽の辺へ畳んだもの）へ、偽なら元の本体へ進む。
+// 論拠: 写しの中の検査はどれも c ≤ cmax <u y なので偽（panic の点へ行かない）。偽の側は元の本体をそのまま走るので、panic の点・印字・それまでの
+// 副作用は変わらない — 観測は不変（入口で panic を早める形は採らない — report-545 2 節）。
+// y は入口のブロックで定まる値（入口の命令か関数の仮引数）だけ。入口のブロックの中の検査は対象外（判定より前に走る）。
+// 対象: nbody の advance（全展開した組のループの定数添字 — bce の ⑤ が畳んだ後にその時点の最大を更新する検査が 17 本残る）
+
+import "desugar"
+import "std/iter"
+
+const BV_N = 8
+// 写すのは関数の IR 命令が BV_MAXINS 以下のときだけ（コードの膨らみと判定の仕事の上限）
+const BV_MAXINS = 4000
+
+// bverFunc は関数 f に版分けを掛ける（先に安い走査 — `uge` の比較が BV_N 本以上で、命令が BV_MAXINS 以下で、panic の点〔exit のブロック〕の外に
+// 呼び出しが無い関数だけ作業域を作る。呼び出しのある関数では検査の分岐の費用は呼び出しに埋もれ、写しの大きさ〔自己 build の lParGroup 等 —
+// 判定の仕事 +0.2 G〕だけを払う）
+func bverFunc(st mut St, f FnRef) {
+    b0 := irFnBHead(mut st, f)
+    if int(b0) == -1 {
+        return
+    }
+    mut nuge := 0
+    mut nins := 0
+    mut b := irBlkNext(mut st, b0)
+    while int(b) != -1 {
+        ex := irBlkTerm(mut st, b) == TmExit
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            nins += 1
+            op := irInsOp(mut st, i)
+            if op == OpCmp && irInsA(mut st, i) == CUge {
+                nuge += 1
+            } else if (op == OpCall || op == OpCallI) && !ex {
+                return
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if nuge < BV_N || nins > BV_MAXINS {
+        return
+    }
+    saved := st.fn
+    st.fn = f
+    bverRun(mut st, f)
+    st.fn = saved
+}
+
+// bverRun は候補を数え、足りれば写す
+func bverRun(st mut St, f FnRef) {
+    nv := irFnNVal(mut st, f)
+    b0 := irFnBHead(mut st, f)
+    mut bw := BceW{defIns: mut []int{}, defBlk: mut []int{}, parBlk: mut []int{}, parIx: mut []int{}}
+    xFill(mut bw.defIns, nv, -1)
+    // inE[v] = 1: 入口のブロックで定まる値（入口の命令の結果・関数の仮引数）
+    mut inE := mut []int{}
+    xFill(mut inE, nv, 0)
+    np := desugar.HeapGet(mut st.d, irFnPtys(mut st, f))
+    for v <- iter.Range(0, if np < nv { np } else { nv }) {
+        inE[v] = 1
+    }
+    mut b := b0
+    while int(b) != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 {
+                bw.defIns[r] = int(i)
+                if b == b0 {
+                    inE[r] = 1
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        // 入口へ戻る辺があれば諦める（入口は 1 回だけ走る前提）
+        if bverTargets(mut st, b, b0) {
+            return
+        }
+        b = irBlkNext(mut st, b)
+    }
+    // 長さ y ごとの候補の数と最大の添字（ys / cnt / mx — 小さい線形の表）
+    mut ys := mut []int{}
+    mut cnt := mut []int{}
+    mut mx := mut []int{}
+    b = irBlkNext(mut st, b0)
+    while int(b) != -1 {
+        if irBlkTerm(mut st, b) == TmCondbr {
+            d := bw.defIns[irBlkX1(mut st, b)]
+            if d >= 0 && irInsOp(mut st, InsRef(d)) == OpCmp && irInsA(mut st, InsRef(d)) == CUge && inE[irInsC(mut st, InsRef(d))] == 1 {
+                cv := bceCv(mut st, mut bw, irInsB(mut st, InsRef(d)))
+                if cv >= 0 {
+                    y := irInsC(mut st, InsRef(d))
+                    mut k := 0
+                    while k < len(ys) && ys[k] != y {
+                        k += 1
+                    }
+                    if k == len(ys) {
+                        ys = append(ys, y)
+                        cnt = append(cnt, 0)
+                        mx = append(mx, 0)
+                    }
+                    cnt[k] = cnt[k] + 1
+                    if cv > mx[k] {
+                        mx[k] = cv
+                    }
+                }
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut best := -1
+    for k <- iter.Range(0, len(ys)) {
+        if cnt[k] >= BV_N && (best < 0 || cnt[k] > cnt[best]) {
+            best = k
+        }
+    }
+    if best < 0 {
+        return
+    }
+    bverClone(mut st, f, mut bw, ys[best], mx[best])
+    recountPreds(mut st, f)
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optBlocks(mut st, f)
+    optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+    optDce(mut st, f)
+    optRenumber(mut st, f)
+}
+
+// bverTargets はブロック b の終端の行き先に to があるか
+func bverTargets(st mut St, b BlkRef, to BlkRef) bool {
+    t := irBlkTerm(mut st, b)
+    if t == TmBr {
+        return irBlkX1(mut st, b) == int(to)
+    }
+    if t == TmCondbr {
+        return irBlkX2(mut st, b) == int(to) || irBlkX4(mut st, b) == int(to)
+    }
+    return false
+}
+
+// bverClone は入口の後ろの全ブロックを写し、入口の終わりに `cmax <u y` の判定を置く（真 = 写し・偽 = 元）。写しの中の `uge c, y`
+// （c は定数の式で c ≤ cmax）の condbr は偽の辺への br に畳む
+func bverClone(st mut St, f FnRef, bw mut BceW, y int, cmax int) {
+    nv0 := irFnNVal(mut st, f)
+    b0 := irFnBHead(mut st, f)
+    // 元のブロックの列（写しを足す前に控える）と、番号 → 写しの表
+    mut olds := mut []int{}
+    mut b := irBlkNext(mut st, b0)
+    while int(b) != -1 {
+        olds = append(olds, int(b))
+        b = irBlkNext(mut st, b)
+    }
+    mut bm := mut []int{}
+    xFill(mut bm, irFnNBlk(mut st, f), -1)
+    vm := listN(mut st, nv0)
+    for v <- iter.Range(0, nv0) {
+        desugar.HeapSet(mut st.d, vm + 1 + v, v)
+    }
+    // 写しのブロックと、その仮引数・命令の結果の新しい値
+    for q <- iter.Range(0, len(olds)) {
+        ob := BlkRef(olds[q])
+        nbk := newBlock(mut st)
+        irSetBlkLoop(mut st, nbk, irBlkLoop(mut st, ob))
+        bm[irBlkId(mut st, ob)] = int(nbk)
+        mut pp := irBlkPHead(mut st, ob)
+        while pp >= 0 {
+            nvv := newValueIn(mut st, f)
+            desugar.HeapSet(mut st.d, vm + 1 + desugar.HeapGet(mut st.d, pp + 1), nvv)
+            np := rec4(mut st, -1, nvv, desugar.HeapGet(mut st.d, pp + 2), 0)
+            if irBlkPHead(mut st, nbk) < 0 {
+                irSetBlkPHead(mut st, nbk, np)
+            } else {
+                desugar.HeapSet(mut st.d, irBlkPTail(mut st, nbk), np)
+            }
+            irSetBlkPTail(mut st, nbk, np)
+            pp = desugar.HeapGet(mut st.d, pp)
+        }
+        mut i := irBlkIHead(mut st, ob)
+        while i != -1 {
+            if irInsRes(mut st, i) >= 0 {
+                desugar.HeapSet(mut st.d, vm + 1 + irInsRes(mut st, i), newValueIn(mut st, f))
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
+    // 命令と終端を写す
+    for q <- iter.Range(0, len(olds)) {
+        ob := BlkRef(olds[q])
+        nbk := BlkRef(bm[irBlkId(mut st, ob)])
+        mut i := irBlkIHead(mut st, ob)
+        while i != -1 {
+            _ = ilCopyInst(mut st, nbk, i, vm)
+            i = irInsNext(mut st, i)
+        }
+        t := irBlkTerm(mut st, ob)
+        if t == TmCondbr && bverFolds(mut st, mut bw, irBlkX1(mut st, ob), y, cmax) {
+            ilTerm(mut st, nbk, TmBr, bverTo(mut st, irBlkX4(mut st, ob), mut bm), ilList(mut st, irBlkX5(mut st, ob), vm), -1, -1, -1)
+        } else {
+            bverTerm(mut st, ob, nbk, mut bm, vm)
+        }
+    }
+    // 入口: 元の終端は「遅い道」のブロックへ移し、入口は判定の condbr に
+    slow := newBlock(mut st)
+    fast := newBlock(mut st)
+    ilTerm(mut st, slow, irBlkTerm(mut st, b0), irBlkX1(mut st, b0), irBlkX2(mut st, b0), irBlkX3(mut st, b0), irBlkX4(mut st, b0), irBlkX5(mut st, b0))
+    bverTerm(mut st, b0, fast, mut bm, vm)
+    kc := newValueIn(mut st, f)
+    linkInst(mut st, b0, mkInst(mut st, kc, OpConst, cmax, 0, 0))
+    kt := newValueIn(mut st, f)
+    linkInst(mut st, b0, mkInst(mut st, kt, OpCmp, CUlt, kc, y))
+    ilTerm(mut st, b0, TmCondbr, kt, int(fast), -1, int(slow), -1)
+}
+
+// bverFolds は条件 c が `uge x, y`（x は定数の式で x ≤ cmax）か
+func bverFolds(st mut St, bw mut BceW, c int, y int, cmax int) bool {
+    d := bw.defIns[c]
+    if d < 0 || irInsOp(mut st, InsRef(d)) != OpCmp || irInsA(mut st, InsRef(d)) != CUge || irInsC(mut st, InsRef(d)) != y {
+        return false
+    }
+    cv := bceCv(mut st, mut bw, irInsB(mut st, InsRef(d)))
+    return cv >= 0 && cv <= cmax
+}
+
+// bverTerm はブロック ob の終端を、行き先と値を写しへ付け替えて nb に置く（欄の種別は termRow）
+func bverTerm(st mut St, ob BlkRef, nb BlkRef, bm mut []int, vm int) {
+    t := irBlkTerm(mut st, ob)
+    tk := termRow(t)
+    mut xs := mut []int{0, 0, 0, 0, 0}
+    for k <- iter.Range(0, 5) {
+        x := desugar.HeapGet(mut st.d, int(ob) + B_X1 + k)
+        kk := tk >> (4 * k) & 15
+        xs[k] = if kk == K_BLK { bverTo(mut st, x, mut bm) } else if (kk == K_VAL || kk == K_VOPT) && x >= 0 { ilMap(mut st, x, vm) } else if kk == K_VLIST { ilList(mut st, x, vm) } else { x }
+    }
+    ilTerm(mut st, nb, t, xs[0], xs[1], xs[2], xs[3], xs[4])
+}
+
+// bverTo は行き先 to の写し（写しが無ければそのまま）
+func bverTo(st mut St, to int, bm mut []int) int {
+    if to < 0 {
+        return to
+    }
+    id := irBlkId(mut st, BlkRef(to))
+    return if id < len(bm) && bm[id] >= 0 { bm[id] } else { to }
+}

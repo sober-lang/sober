@@ -123,47 +123,44 @@ func Get(d Doc, n int, key string) int? {
 
 // GetAt は Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
 // 渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）
+// キーの比較は手で展開してある（Doc の欄を局所に取ってから回す — 旧 keyIs は Doc を値で渡す呼び出しを欄ごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0 から線形
 func GetAt(d Doc, n int, key string, hint int) int? {
-    if d.kind[n] != kObj {
+    kind := d.kind
+    if kind[n] != kObj {
         return nil
     }
-    a := d.a[n]
-    m := d.b[n]
-    kb := bytes(key)
-    if hint >= 0 && hint < m && keyIs(d, d.kids[a + hint], kb) {
-        return d.kids[a + m + hint]
-    }
-    for i <- iter.Range(0, m) {
-        if keyIs(d, d.kids[a + i], kb) {
-            return d.kids[a + m + i]
+    ka := d.a
+    kb := d.b
+    kids := d.kids
+    src := d.src
+    esc := d.esc
+    a := ka[n]
+    m := kb[n]
+    key8 := bytes(key)
+    kl := len(key8)
+    mut t := if hint >= 0 && hint < m { -1 } else { 0 }
+    while t < m {
+        i := if t < 0 { hint } else { t }
+        k := kids[a + i]
+        s := ka[k]
+        if kb[k] - s == kl {
+            mut j := 0
+            if kind[k] == kStr {
+                while j < kl && src[s + j] == key8[j] {
+                    j += 1
+                }
+            } else {
+                while j < kl && esc[s + j] == key8[j] {
+                    j += 1
+                }
+            }
+            if j == kl {
+                return kids[a + m + i]
+            }
         }
+        t += 1
     }
     return nil
-}
-
-// keyIs は文字列の節 k の中身が key か（string を作らずにバイトで比べる — 長さを先に）
-func keyIs(d Doc, k int, key []byte) bool {
-    a := d.a[k]
-    n := d.b[k] - a
-    if n != len(key) {
-        return false
-    }
-    mut i := 0
-    if d.kind[k] == kStr {
-        while i < n && d.src[a + i] == key[i] {
-            i += 1
-        }
-    } else {
-        while i < n && d.esc[a + i] == key[i] {
-            i += 1
-        }
-    }
-    return i == n
-}
-
-// keyEq は文字列の節 x と y の中身が同じか
-func keyEq(d Doc, x int, y int) bool {
-    return if d.kind[x] == kStr { keyIs(d, y, d.src[d.a[x]:d.b[x]]) } else { keyIs(d, y, d.esc[d.a[x]:d.b[x]]) }
 }
 
 // isWs は JSON の空白（space・\t・\n・\r）
@@ -618,15 +615,33 @@ func dupKey(d Doc) int {
     return best
 }
 
+// dupSmall は欄の少ないオブジェクトの総当たり: 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）。長さの等しい組は
+// 中身をバイトで比べる（Doc の欄を局所に取ってから回す — GetAt と同じ・旧 keyEq の展開）。署名（長さ + 先頭 7 バイトの 1 語）を先に作る形は、作る費用が
+// 前判定の後に残る比較より高く棄てた（jsonapi 命令 +0.14 G — report-628）
 func dupSmall(d Doc, a int, m int) int {
+    kind := d.kind
+    ka := d.a
+    kb := d.b
+    kids := d.kids
+    src := d.src
+    esc := d.esc
     for i <- iter.Range(1, m) {
-        ki := d.kids[a + i]
-        li := d.b[ki] - d.a[ki]
+        ki := kids[a + i]
+        si := ka[ki]
+        li := kb[ki] - si
+        xi := if kind[ki] == kStr { src } else { esc }
         for j <- iter.Range(0, i) {
-            kj := d.kids[a + j]
-            // 長さの違うキーは比べない（安い前判定 — 総当たりの比較の大半がここで落ちる）
-            if d.b[kj] - d.a[kj] == li && keyEq(d, kj, ki) {
-                return d.pos[d.kids[a + i]]
+            kj := kids[a + j]
+            sj := ka[kj]
+            if kb[kj] - sj == li {
+                xj := if kind[kj] == kStr { src } else { esc }
+                mut t := 0
+                while t < li && xi[si + t] == xj[sj + t] {
+                    t += 1
+                }
+                if t == li {
+                    return d.pos[ki]
+                }
             }
         }
     }

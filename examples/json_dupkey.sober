@@ -1,0 +1,34 @@
+package main
+
+// std/json の重複キーの拒否（DupKey — docs/language.md 16 節: 重複は防御の既定で拒否・位置は src で最も前の 2 つ目のキー）の位置の例:
+// 同じ長さの別のキー・エスケープのある綴りと無い綴りの同じキー・入れ子のオブジェクトをまたいだ「最も前」・欄の多いオブジェクト（16 を超える — 表の経路）
+
+import "std/iter"
+import "std/json"
+import "std/strings"
+
+func show(s string) {
+    _, err := json.Parse(bytes(s))
+    switch err {
+    case json.InvalidJson{pos, kind}: println("kind ${kind} at ${pos}")
+    case nil: println("ok")
+    }
+}
+
+func main() {
+    show("{\"a\":1,\"b\":2,\"a\":3}")
+    show("{\"ab\":1,\"ac\":2,\"ad\":3}")
+    show("{\"ab\":1,\"ac\":2,\"ab\":3}")
+    show("{\"a\":1,\"\\u0061\":2}")
+    show("{\"\\u0062\":1,\"b\":2}")
+    show("{\"\\n\":1,\"\\\\n\":2}")
+    show("{\"x\":{\"k\":1,\"k\":2},\"k\":3,\"y\":{\"m\":1,\"m\":2}}")
+    show("{\"q\":1,\"q\":{\"z\":1,\"z\":2}}")
+    show("{\"abcdefgh1\":1,\"abcdefgh2\":2,\"abcdefgh1\":3}")
+    mut big := "{"
+    for i <- iter.Range(0, 20) {
+        big = big + "\"k" + strings.FormatInt(i) + "\":" + strings.FormatInt(i) + ","
+    }
+    show(big + "\"k20\":0}")
+    show(big + "\"k7\":0}")
+}

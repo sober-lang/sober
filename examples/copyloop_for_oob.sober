@@ -1,0 +1,18 @@
+package main
+
+// 写しの for の一括化の負例（区間が範囲の外 — 元の for に落ちて、途中まで積んでから同じ点で panic: src[j] の添字が範囲外 — exit 101）
+
+import "std/iter"
+
+func main() {
+    src := bytes("hello, world")
+    mut p := mut []byte{}
+    for j <- iter.Range(2, 5) {
+        p = append(p, src[j])
+    }
+    println(string(p) catch "?")
+    for j <- iter.Range(8, 20) {
+        p = append(p, src[j])
+    }
+    println(len(p))
+}

@@ -1,0 +1,16 @@
+package main
+
+// 負例: 同一性を持つ型（par.Rx）を欄に持つ struct の部分リテラルで、その欄を省く — 省いた欄はゼロ値（language.md 15 節）なので、偽の端点を作る
+// （diag.Identity — 欄を通した推移も拒否。欄を `T?` にすればゼロ値は nil で偽物を作らない）
+
+import "std/par"
+
+type Inbox struct {
+    rx par.Rx[string]
+    seen int
+}
+
+func main() {
+    b := Inbox{seen: 0}
+    println(b.seen)
+}

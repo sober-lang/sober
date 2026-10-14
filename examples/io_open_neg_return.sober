@@ -1,0 +1,17 @@
+package main
+
+// 負例: File は開いたブロックの外へ出せない（return の後で defer が閉じる — 呼び手は閉じた fd を持つ）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+
+import "std/io"
+
+@errors(io.NotFound, io.Denied, io.Other)
+func open(p string) (io.File, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    return f, nil
+}
+
+func main() {
+    f := open("testdata/io/hello.txt") catch return
+    println(1)
+}

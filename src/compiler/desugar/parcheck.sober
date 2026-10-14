@@ -14,6 +14,9 @@ package desugar
 //       21 = mut の中身を持つ値（imm の束縛の mut の別名 `v := m` を含む）の捕獲（F-ao — 2026-10-11）
 //       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）
 //       11 = 関数型の仮引数（展開される閉包 — 子へは値しか渡せない）の捕獲・12 = 札・handle を関数の実引数 / 戻り値に（コアの paramOk / retOk が拒否する形）
+// Join の結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Par でなく loader の診断を名指す）: Join の結果は字面で T 1 つで、fallible な task の T = `(U, error?)` は
+// 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `par.Join(h) catch D` は fallible な task だけ（CatchLhs）・
+// 値 1 つの束縛 `d := par.Join(h)` は infallible な task だけ（MultiBind — report-582 2 節）
 
 import "ast"
 import "diag"
@@ -22,10 +25,14 @@ import "loader"
 import "std/iter"
 import "std/table"
 
+const PC_CATCHLHS = 101
+const PC_MULTIBIND = 102
+
 // ParCheck は p の std/par の呼び出し点の形を検査する
-@errors(diag.Par)
+@errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
 func ParCheck(p loader.Program) error? {
-    if !pcImports(p) {
+    par, file := pcImports(p)
+    if !par && !file {
         return nil
     }
     mut st := S{}
@@ -34,9 +41,14 @@ func ParCheck(p loader.Program) error? {
 }
 
 // ParCheckTyped は ParCheck を Typed 済みの st の上で（build の経路 — lower が自分の表の上で掛ける）
-@errors(diag.Par)
+@errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
 func ParCheckTyped(st mut S, p loader.Program) error? {
-    if !pcImports(p) {
+    par, file := pcImports(p)
+    if file {
+        // io.File の使い方（filecheck.sober — 同じ層・同じ表層型）
+        fileCheck(mut st)?
+    }
+    if !par {
         return nil
     }
     pcMemoInit(mut st)
@@ -45,6 +57,12 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
         if body != -1 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/par") {
             st.curPkg = fnPkg(mut st, fi)
             r := pcWalk(mut st, fi, body)
+            if r.kind == PC_CATCHLHS {
+                return diag.CatchLhs{at: posOf(mut st, r.at)}
+            }
+            if r.kind == PC_MULTIBIND {
+                return diag.MultiBind{at: posOf(mut st, r.at)}
+            }
             if r.kind != 0 {
                 return diag.Par{at: posOf(mut st, r.at), kind: r.kind}
             }
@@ -53,18 +71,23 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
     return nil
 }
 
-// pcImports は p が std/par を import するか（しなければ ParCheck は走らない）
-func pcImports(p loader.Program) bool {
+// pcImports は p が std/par を import するか（しなければ ParCheck の std/par の検査は走らない）と、`X.Open` の形の選択を書くか（std/io の外 —
+// 書かなければ io.File の値は作れないので filecheck は走らない。1 回の走査で両方を引く）
+func pcImports(p loader.Program) (bool, bool) {
+    mut par := false
+    mut file := false
     for f <- iter.Range(0, len(p.trees)) {
         t := p.trees[f]
         for i <- iter.Range(0, len(t.nodes)) {
             x := t.nodes[i]
             if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/par")) {
-                return true
+                par = true
+            } else if x.kind == ast.ESelector && x.b >= 0 && t.data[x.b] == 4 && dataIs(t.data, x.b + 1, bytes("Open")) {
+                file = true
             }
         }
     }
-    return false
+    return par, file
 }
 
 // PcHit は最初の拒否（kind 0 = 無し）
@@ -101,6 +124,12 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
         return pcNone()
     }
     x := nodeOf(mut st, n)
+    if x.kind == ast.SBind && lenL(mut st, lC(x)) == 1 {
+        h := pcJoinBind(mut st, n)
+        if h.kind != 0 {
+            return h
+        }
+    }
     if x.kind == ast.ECall {
         // 明示の型引数 `f[T](…)` は土台の名前で引く（par.NewChan[T]）
         cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
@@ -179,6 +208,42 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
     return pcNone()
 }
 
+// pcJoinBind は束縛 n（値 1 つ）の値が Join の呼び出しなら結果の数の照合（PC_CATCHLHS / PC_MULTIBIND — 上の kind の表）
+func pcJoinBind(st mut S, n NodeRef) PcHit {
+    x := nodeOf(mut st, n)
+    c := latN(mut st, lC(x), 0)
+    if kindN(mut st, c) != ast.ECall {
+        return pcNone()
+    }
+    cx := nodeOf(mut st, c)
+    cal := if kindN(mut st, nA(cx)) == ast.EIndex { nA(nodeOf(mut st, nA(cx))) } else { nA(cx) }
+    // 名前の篩い（findFn は `pkg.Fn` の名前を組むので、束縛ごとに引かない — 値札 +0.05 G → 篩いの後）
+    ck := kindN(mut st, cal)
+    if !(ck == ast.ESelector && strIs(mut st, sB(nodeOf(mut st, cal)), "Join")) && !(ck == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, cal)), "Join")) {
+        return pcNone()
+    }
+    fk := findFn(mut st, cal, -1)
+    if fk < 0 || ParKey(mut st, fk) != PAR_JOIN || lenL(mut st, lB(cx)) != 1 {
+        return pcNone()
+    }
+    fal := parTaskFallible(mut st, latN(mut st, lB(cx), 0))
+    names := lA(x)
+    // catch の写した束縛 `$ctKv, $ctKe := par.Join(h)`（loader/catchx.sober — 名前の `$` は合成の名前にだけ現れる）
+    if lenL(mut st, names) == 2 && strHasPrefix(mut st, latS(mut st, names, 0), "$ct") && !fal {
+        return PcHit{at: n, kind: PC_CATCHLHS}
+    }
+    if lenL(mut st, names) == 1 && fal {
+        return PcHit{at: n, kind: PC_MULTIBIND}
+    }
+    return pcNone()
+}
+
+// HasTry は scope の本体 n が後置 `?` を含むか（lower の par.Scope が本体の `?` の戻りの文脈を立てるかの判定 — 立てなければ IR は従来のまま。
+// return と本体の外への break / continue は ParCheck の kind 7 が先に拒否するので、ここで当たるのは `?` だけ）
+func HasTry(st mut S, n NodeRef) bool {
+    return pcEscape(mut st, n, 0, true) != -1
+}
+
 func pow8(j int) int {
     mut r := 1
     for i <- iter.Range(0, j) {
@@ -224,7 +289,8 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
             return PcHit{at: lam, kind: 3}
         }
         body := nB(nodeOf(mut st, lam))
-        esc := pcEscape(mut st, body, 0)
+        // scope の本体の `?` は scope の失敗（language.md 11 節「本体の `?`」— 脱糖は本体の戻りのラベルへの jump）。Spawn の g の中の `?` は拒否のまま
+        esc := pcEscape(mut st, body, 0, key != PAR_SCOPE)
         if esc != -1 {
             return PcHit{at: esc, kind: 7}
         }
@@ -280,14 +346,15 @@ func pcResultTy(st mut S, body NodeRef) int {
     return if kindN(mut st, s) == ast.SExpr { YTypeOf(mut st, nA(nodeOf(mut st, s))) } else { -1 }
 }
 
-// pcEscape は本体 n（囲むループの数 loops — 本体の中のもの）から外へ出る脱出の節（無ければ -1）: return・`?`・本体の中のループを囲まない break / continue
-func pcEscape(st mut S, n NodeRef, loops int) NodeRef {
+// pcEscape は本体 n（囲むループの数 loops — 本体の中のもの）から外へ出る脱出の節（無ければ -1）: return・`?`（try のときだけ — scope の本体の `?` は
+// scope の失敗）・本体の中のループを囲まない break / continue。入れ子の Spawn の g の中の `?` はその Spawn の呼び出し点の検査が拒否する
+func pcEscape(st mut S, n NodeRef, loops int, try bool) NodeRef {
     if n == -1 {
         return -1
     }
     x := nodeOf(mut st, n)
     k := x.kind
-    if k == ast.SRet || k == ast.ETry {
+    if k == ast.SRet || (k == ast.ETry && try) {
         return n
     }
     if (k == ast.SBreak || k == ast.SContinue) && loops == 0 {
@@ -299,14 +366,14 @@ func pcEscape(st mut S, n NodeRef, loops int) NodeRef {
         d := c / pow8(j) % 8
         v := pcField(x, j)
         if d == 1 && v != -1 {
-            e := pcEscape(mut st, NodeRef(v), inner)
+            e := pcEscape(mut st, NodeRef(v), inner, try)
             if e != -1 {
                 return e
             }
         } else if d == 3 && v != -1 {
             l := ListRef(v)
             for i <- iter.Range(0, lenL(mut st, l)) {
-                e := pcEscape(mut st, latN(mut st, l, i), inner)
+                e := pcEscape(mut st, latN(mut st, l, i), inner, try)
                 if e != -1 {
                     return e
                 }

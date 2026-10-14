@@ -1,0 +1,127 @@
+package main
+
+// Stream a file slot by slot (io.Chunks) and line by line (io.Lines — language.md 28 節「読みのストリーム」).
+// A chunk is a view into the stream's read slot and lives for one turn of the loop: keeping it past the turn copies it
+// (the region rule — the next slot's read cannot change what was kept). Run from the repository root.
+import "std/io"
+import "std/iter"
+
+type Bad error
+
+func count(p string) (int, int, int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut size := 0
+    mut newlines := 0
+    mut chunks := 0
+    for c <- io.Chunks(f)? {
+        b := io.Raw(c)
+        size += len(b)
+        chunks += 1
+        for x <- b {
+            if x == '\n' {
+                newlines += 1
+            }
+        }
+    }
+    return size, newlines, chunks, nil
+}
+
+// lines prints the first few lines and counts the rest (a line that straddles two slots comes whole)
+func lines(p string, show int) (int, int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut n := 0
+    mut sum := 0
+    for l <- io.Lines(f)? {
+        b := io.Raw(l)
+        if n < show {
+            println("  [${string(b) catch "?"}]")
+        }
+        n += 1
+        sum += len(b)
+    }
+    return n, sum, nil
+}
+
+// kept keeps the first slot and checks it against the whole file after the stream moved on
+func kept(p string) (bool, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut first := []byte{}
+    mut k := 0
+    for c <- io.Chunks(f)? {
+        if k == 0 {
+            first = io.Raw(c)
+        }
+        k += 1
+    }
+    all := io.ReadFile(p)?
+    mut same := k > 2 && len(first) == 65536
+    for i <- iter.Range(0, len(first)) {
+        same = same && first[i] == all[i]
+    }
+    return same, nil
+}
+
+// early leaves the stream from the middle (break, return, and a failure in the body)
+@errors(Bad, io.NotFound, io.Denied, io.Other)
+func early(p string, how int) (int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    mut k := 0
+    for c <- io.Chunks(f)? {
+        k += 1
+        if k == 2 {
+            if how == 0 {
+                break
+            }
+            if how == 1 {
+                return 100 + len(io.Raw(c)), nil
+            }
+            return 0, Bad{}
+        }
+    }
+    // the file is still open after the stream: the rest of it is still there to read
+    rest := io.ReadAll(f)?
+    return k * 1000000 + len(rest), nil
+}
+
+func main() int {
+    big := "testdata/io_par/access-4.log"
+    for p <- ([]string{big, "testdata/io/hello.txt", "testdata/io/empty.txt"}) {
+        b, nl, k, e := count(p)
+        if e != nil {
+            return 1
+        }
+        println("${p}: ${b} bytes, ${nl} newlines, ${k} chunks")
+    }
+    for p <- ([]string{"testdata/io/crlf.txt", "testdata/io/empty.txt", big}) {
+        println(p)
+        n, sum, e := lines(p, 3)
+        if e != nil {
+            return 1
+        }
+        println("  ${n} lines, ${sum} bytes")
+    }
+    println("kept the first slot: ${kept(big) catch false}")
+    for how <- iter.Range(0, 3) {
+        r, e := early(big, how)
+        if e == nil {
+            println("early ${how}: ${r}")
+        } else {
+            println(switch e {
+            case Bad{}: "early ${how}: failed in the body"
+            default: "early ${how}: ?"
+            })
+        }
+    }
+    _, _, _, miss := count("testdata/io/missing.txt")
+    if miss != nil {
+        println(switch miss {
+        case io.NotFound{}: "missing: not found"
+        default: "missing: ?"
+        })
+    }
+    return 0
+}

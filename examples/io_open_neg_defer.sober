@@ -1,0 +1,12 @@
+package main
+
+// 負例: 直後の defer が別の File を閉じている（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+
+import "std/io"
+
+func main() {
+    f := io.Open("testdata/io/hello.txt") catch return
+    defer io.Close(f)
+    g := io.Open("testdata/io/hello.txt") catch return
+    defer io.Close(f)
+}

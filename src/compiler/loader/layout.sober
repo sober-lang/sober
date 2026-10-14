@@ -243,6 +243,17 @@ func importPath(t ast.Tree, ref string) string {
     return ""
 }
 
+// importsPath はファイル t が path を import するか（しなければ importPath(t, …) は path を返さない）
+func importsPath(t ast.Tree, path string) bool {
+    imps := t.nodes[t.file].b
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        if StrIs(t, t.nodes[ast.ListAt(t, imps, k)].b, path) {
+            return true
+        }
+    }
+    return false
+}
+
 // isLayoutRef は節 x が std/layout の参照名か（ファイル t の import で）
 func isLayoutRef(t ast.Tree, x ast.Node) bool {
     return x.kind == ast.EIdent && importPath(t, Name(t, x.a)) == "std/layout"
@@ -283,6 +294,23 @@ func resolveName(t ast.Tree, pkg string, ds []LDecl, nm string) int {
 @errors(diag.Layout)
 func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, error?) {
     n0 := len(t.nodes)
+    // std/layout を import するか（しなければ isLayoutRef は常に偽 — 節ごとに名前の string と import の引きを作らない）
+    lay := importsPath(t, "std/layout")
+    // 速い道: std/layout も @layout の struct も無いファイルは書き換えない — 幅の語と composite の欄の範囲の検査だけ（節の表の写しを作らない）
+    tl0 := t.nodes[t.file].c
+    mut decl := false
+    for j <- iter.Range(0, t.data[tl0]) {
+        decl = decl || t.nodes[t.data[tl0 + 1 + j]].f != 0
+    }
+    if !lay && !decl {
+        for i <- iter.Range(0, n0) {
+            k, tok := layoutWordAt(t, pkg, ds, t.nodes[i])
+            if k > 0 {
+                return t, "", diag.Layout{at: diag.Pos{file: f, tok: tok}, kind: k}
+            }
+        }
+        return t, "", nil
+    }
     mut ns := mut []ast.Node{}
     for i <- iter.Range(0, n0) {
         ns = append(ns, t.nodes[i])
@@ -382,21 +410,11 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
         if x.kind == ast.ESelector && !done[i] && isLayoutRef(t, t.nodes[x.a]) && isLayoutOp(Name(t, x.b)) {
             return t, "", diag.Layout{at: diag.Pos{file: f, tok: x.tok}, kind: 7}
         }
-        // @layout の欄の外の幅の語
-        if x.kind == ast.TName && !done[i] {
-            n, sg, be := widthOf(Name(t, x.a))
-            if n > 0 {
-                return t, "", diag.Layout{at: diag.Pos{file: f, tok: x.tok}, kind: 4}
-            }
-        }
-        // @layout の struct の composite リテラルの欄に直に書いた整数リテラルの範囲（Y5 ② — const 名・式は実行時の検査）
-        if x.kind == ast.EComposite {
-            d := resolveName(t, pkg, ds, Name(t, x.a))
-            if d >= 0 {
-                bad := literalRange(t, x, ds[d])
-                if bad >= 0 {
-                    return t, "", diag.Layout{at: diag.Pos{file: f, tok: bad}, kind: 8}
-                }
+        // 書き換えていない幅の語・composite の欄の範囲
+        if !(x.kind == ast.TName && done[i]) {
+            k, tok := layoutWordAt(t, pkg, ds, x)
+            if k > 0 {
+                return t, "", diag.Layout{at: diag.Pos{file: f, tok: tok}, kind: k}
             }
         }
     }
@@ -406,6 +424,27 @@ func layoutFile(t ast.Tree, f int, pkg string, ds []LDecl) (ast.Tree, string, er
     us := freeze(used)
     src := if len(us) == 0 { "" } else { synthSource(t, f, pkg, ds, us) }
     return ast.Tree{nodes: freeze(ns), data: builder.Build(mut db), file: t.file}, src, nil
+}
+
+// layoutWordAt は節 x の拒否の kind と字句（無ければ kind 0）: @layout の欄の外の幅の語（4 — 名前は 2 か 5 バイト）・@layout の struct の composite リテラルの
+// 欄に直に書いた整数リテラルの範囲（8 — Y5 ② — const 名・式は実行時の検査）
+func layoutWordAt(t ast.Tree, pkg string, ds []LDecl, x ast.Node) (int, int) {
+    if x.kind == ast.TName && (t.data[x.a] == 2 || t.data[x.a] == 5) {
+        n, sg, be := widthOf(Name(t, x.a))
+        if n > 0 {
+            return 4, x.tok
+        }
+    }
+    if x.kind == ast.EComposite && len(ds) > 0 {
+        d := resolveName(t, pkg, ds, Name(t, x.a))
+        if d >= 0 {
+            bad := literalRange(t, x, ds[d])
+            if bad >= 0 {
+                return 8, bad
+            }
+        }
+    }
+    return 0, 0
 }
 
 // literalRange は @layout の struct d の composite リテラル x の欄に直に書いた整数リテラル（負号込み）が幅に収まらなければその字句（無ければ -1）

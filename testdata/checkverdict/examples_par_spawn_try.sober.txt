@@ -1,0 +1,2 @@
+sober: load error at examples/par_spawn_try.sober:17:24: return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)
+exit=1

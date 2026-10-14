@@ -797,7 +797,7 @@ func forSrcKind(st mut S, src NodeRef, eb int, ef int) int {
     if isClosureName(mut st, src, eb, ef) {
         return FClosure
     }
-    if isCallGen(mut st, src, eb) {
+    if isCallGen(mut st, GenCallOf(mut st, src, st.curPkg), eb) {
         return FCall
     }
     return if isTag(mut st, computeTy(mut st, src, eb, ef), TMp) { FMap } else { FSlice }
@@ -807,6 +807,15 @@ func forSrcKind(st mut S, src NodeRef, eb int, ef int) int {
 // 最後の仮引数が関数型。継続 k を末尾の実引数に足して呼ぶ — Go の range-over-func の鏡）。slice を返す呼び出し（`keys(m)`）は数が合うので当たらない
 func isCallGen(st mut S, src NodeRef, eb int) bool {
     return CallGenFn(mut st, src, st.curPkg) >= 0
+}
+
+// GenCallOf は生成元の呼び出しの節: 失敗しうる生成元の印 `g(a)?`（language.md 7 節 — 呼び出し形の生成元に付いた `?`）なら `?` の内側の呼び出し、
+// それ以外は src のまま（呼び出し形でない `f()?` — slice を返す呼び出しに `?` — は普通の `?` の式）。印の有無と結果の形は loader（forfallible.sober）が先に検査済み
+func GenCallOf(st mut S, src NodeRef, from int) NodeRef {
+    if kindN(mut st, src) == ast.ETry && CallGenFn(mut st, nA(nodeOf(mut st, src)), from) >= 0 {
+        return nA(nodeOf(mut st, src))
+    }
+    return src
 }
 
 // CallGenFn は呼び出し形の生成元の関数の表の添字（isCallGen の判定。当たらなければ -1）。from は呼び出しを書いた package。
@@ -838,12 +847,15 @@ func forLower(st mut S, fe NodeRef, kind int) NodeRef {
     return lambda1(mut st, int(strLit(mut st, "yield")), forGen(mut st, fe, kind), fe)
 }
 
-// ForLower / ForGen / IsForStmt / ForOut は lower の読み口（書き換えの組み立てと形の判定を共有する）
-func ForLower(st mut S, fe NodeRef, kind int) NodeRef {
+// ForLower / ForGen / IsForStmt / ForOut は lower の読み口（書き換えの組み立てと形の判定を共有する）。from = for を書いた package（lower の今の package —
+// st.curPkg は ParCheckTyped の歩きが最後の関数の package のまま残すので、生成元の名前を引く前に付け替える）
+func ForLower(st mut S, fe NodeRef, kind int, from int) NodeRef {
+    st.curPkg = from
     return forLower(mut st, fe, kind)
 }
 
-func ForGen(st mut S, fe NodeRef, kind int) NodeRef {
+func ForGen(st mut S, fe NodeRef, kind int, from int) NodeRef {
+    st.curPkg = from
     return forGen(mut st, fe, kind)
 }
 
@@ -888,7 +900,9 @@ func forGen(st mut S, fe NodeRef, kind int) NodeRef {
     if kind == FClosure {
         gen = NodeRef(rec8(mut st, ast.ECall, g, nodeOf(mut st, g).b, list1(mut st, int(kf)), 0, 0, 0, 0))
     } else if kind == FCall {
-        src := nB(nodeOf(mut st, g))
+        // 失敗しうる生成元 `for x <- g(a)? { … }` → `g(a, k)?`（継続を足した呼び出しを生成元の `?` の節〔包み替えの wrap ごと〕で包む）
+        try0 := nB(nodeOf(mut st, g))
+        src := GenCallOf(mut st, try0, st.curPkg)
         sargs := lB(nodeOf(mut st, src))
         na := lenL(mut st, sargs)
         args := listN(mut st, na + 1)
@@ -897,6 +911,9 @@ func forGen(st mut S, fe NodeRef, kind int) NodeRef {
         }
         hset(mut st, args + 1 + na, int(kf))
         gen = NodeRef(rec8(mut st, ast.ECall, g, nodeOf(mut st, src).a, args, 0, 0, 0, 0))
+        if src != try0 {
+            gen = NodeRef(rec8(mut st, ast.ETry, try0, int(gen), nodeOf(mut st, try0).b, 0, 0, 0, 0))
+        }
     } else {
         base := rec8(mut st, ast.EIdent, g, int(strLit(mut st, "iter#")), 0, 0, 0, 0, 0)
         callee := NodeRef(rec8(mut st, ast.ESelector, g, base, int(strLit(mut st, "Slice")), 0, 0, 0, 0))
@@ -1192,8 +1209,11 @@ func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     if res == -1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
-    kr := lenL(mut st, res)
-    if kr == 0 || !isErrOptTE(mut st, latN(mut st, res, kr - 1)) {
+    // `par.Join(h)?`（scope の本体の中 — language.md 11 節「本体の `?`」）: Join の結果は字面で T 1 つ — fallible な task なら T = (U, error?) の 2 つ
+    fj := findFn(mut st, callee, eb)
+    joinE := fj >= 0 && ParKey(mut st, fj) == PAR_JOIN && lenL(mut st, lB(nodeOf(mut st, tc0))) == 1 && parTaskFallible(mut st, latN(mut st, lB(nodeOf(mut st, tc0)), 0))
+    kr := if joinE { 2 } else { lenL(mut st, res) }
+    if kr == 0 || (!joinE && !isErrOptTE(mut st, latN(mut st, res, kr - 1))) {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
     if st.retTarget < 0 {

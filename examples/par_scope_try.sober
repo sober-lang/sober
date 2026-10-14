@@ -1,0 +1,110 @@
+package main
+
+// language.md 11 節「本体の `?`」（裁定 2026-10-13 — report-584 / 585）: scope の本体の `?` は scope の失敗 — 関数でなく本体を抜け、子を全部待ってから
+// scope は (ゼロ値, err)。出口の優先は 死 > 生んだ順で最初の未回収の失敗 > 本体の結果（値でも `?` でも）。兄弟はキャンセルしない
+
+import "std/iter"
+import "std/par"
+
+type Bad error {
+    code int
+}
+
+type Wrap error {}
+
+@errors(Bad)
+func get(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{code: 0 - n}
+    }
+    return n * 10, nil
+}
+
+@errors(Bad)
+func name(n int) (string, error?) {
+    if n < 0 {
+        return "", Bad{code: 0 - n}
+    }
+    return "n${n}", nil
+}
+
+func show(tag string, e error?) {
+    if e == nil {
+        println("${tag}: nil")
+        return
+    }
+    switch e {
+    case Bad{code}: println("${tag}: Bad ${code}")
+    case Wrap{cause}: println("${tag}: Wrap (cause ${if cause == nil { "nil" } else { "set" }})")
+    case par.TaskDied{cause}: println("${tag}: TaskDied")
+    default: println("${tag}: ?")
+    }
+}
+
+func main() {
+    // 1. 最初の `?` で本体を抜ける（後ろの文は走らない）・r はゼロ値
+    r1, e1 := par.Scope((s par.S) => {
+        h1 := par.Spawn(s, () => get(4))
+        h2 := par.Spawn(s, () => get(-2))
+        a := par.Join(h1)?
+        b := par.Join(h2)?
+        println("unreached")
+        a + b
+    })
+    println(r1)
+    show("1", e1)
+    // 2. 失敗しなければ値（nil）
+    r2, e2 := par.Scope((s par.S) => {
+        h := par.Spawn(s, () => get(4))
+        par.Join(h)? + 1
+    })
+    println(r2)
+    show("2", e2)
+    // 3. 優先 A: h1 と h2 が両方失敗し、本体は h1 の `?` で抜ける — err は Join しなかった h2 の未回収の失敗
+    r3, e3 := par.Scope((s par.S) => {
+        h1 := par.Spawn(s, () => get(-1))
+        h2 := par.Spawn(s, () => get(-3))
+        par.Join(h1)?
+    })
+    println(r3)
+    show("3", e3)
+    // 4. `?` で抜けても子を全部待つ: 後ろで生んだ子の値は Try で見ないが、決着してから scope が返る（子の出力が scope の後の行より先）
+    r4, e4 := par.Scope((s par.S) => {
+        h1 := par.Spawn(s, () => get(-4))
+        h2 := par.Spawn(s, () => {
+            println("child 2 ran")
+            7
+        })
+        par.Join(h1)?
+    })
+    println(r4)
+    show("4", e4)
+    // 5. 包み替え `? Wrap{}`・関数の呼び出しの `?`・r の型が string（ゼロ値 = ""）
+    r5, e5 := par.Scope((s par.S) => {
+        v := name(-5)? Wrap{}
+        "got ${v}"
+    })
+    println("[${r5}] ${len(bytes(r5))}")
+    show("5", e5)
+    // 6. 本体の中のインラインのラムダ（for の本体）の `?` も scope へ
+    r6, e6 := par.Scope((s par.S) => {
+        mut sum := 0
+        for i <- iter.Range(0, 5) {
+            sum += get(2 - i)?
+        }
+        sum
+    })
+    println(r6)
+    show("6", e6)
+    // 7. 入れ子: 内側の `?` は内側の scope だけを抜ける
+    r7, e7 := par.Scope((s par.S) => {
+        ri, ei := par.Scope((t par.S) => {
+            h := par.Spawn(t, () => get(-7))
+            par.Join(h)?
+        })
+        show("7 inner", ei)
+        ri + 100
+    })
+    println(r7)
+    show("7", e7)
+}

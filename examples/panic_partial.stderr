@@ -1,0 +1,1 @@
+panic: BadNode{node: 0, kind: "leaf", leaf: false} at panic_partial.sober:12:10

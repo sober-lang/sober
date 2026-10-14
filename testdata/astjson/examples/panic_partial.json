@@ -1,0 +1,113 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "BadNode",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "node",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "kind",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 10
+          },
+          {
+            "name": "leaf",
+            "type": {
+              "k": "name",
+              "name": "bool"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "before",
+                  "tok": 25
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "panic",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "composite",
+                  "type_name": "BadNode",
+                  "elems": [
+                    {
+                      "key": "kind",
+                      "value": {
+                        "k": "strlit",
+                        "value": "leaf",
+                        "tok": 34
+                      }
+                    }
+                  ],
+                  "tok": 30,
+                  "type_args": []
+                }
+              ],
+              "tok": 29
+            }
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 40
+      },
+      "sig_end": 22
+    }
+  ],
+  "consts": []
+}

@@ -438,6 +438,7 @@ func cmdBuild(args []string) int {
     mut noVfy := false
     mut dumpIr := false
     mut noVec := false
+    mut noSpec := false
     mut noOpt := false
     mut passes := false
     mut typer := 0
@@ -484,6 +485,10 @@ func cmdBuild(args []string) int {
             // ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
             noVec = true
             i += 1
+        } else if a == "--no-spec" {
+            // 定数引数の特化（展開便 段 1）を外す — 網の 特化 ≟ なし
+            noSpec = true
+            i += 1
         } else if a == "--dump-ir" {
             // 開発の口: --stop-after=<段> の IR テキストを出力に（rtlower の後の段も）
             dumpIr = true
@@ -523,6 +528,10 @@ func cmdBuild(args []string) int {
             // 9 = 検査点の間引きの数え口が 0 に戻らない（切れない）・10 = 間引かない（N = 1）— 検査点の間引きの網の自己検査（scripts/cutstat.sh）
             // 11 = map の string 鍵を旧表現（セル [鍵][tag][値] — compiler/lower/maprepr.sober の MR_BASE）で — 表現の差分オラクル（scripts/maprepr.sh）
             mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else { 12 }
+            i += 1
+        } else if a == "--map-stat" {
+            // 開発用: map の成長の計数（rt の変異 13 に相乗り — 終わりに `mapstat <番号> <バイト>` を stderr へ — 番号は lower/panic.sober の MS_*・SOBER_WORKERS=1 で使う — report-625 / 631）
+            mutant = 13
             i += 1
         } else if a == "--cut-stat" {
             cutStat = true
@@ -574,7 +583,7 @@ func cmdBuild(args []string) int {
         return usage()
     }
     // 開発の口（計器・変異・差分オラクル）は --emit の無い形も従来どおり（.ll / 標準出力）— 既定の切り替えは素の build（entry・-o・--no-opt・--passes・--test）だけ
-    devFlag := typer > 0 || trace || probe || cutStat || callStat || ubfStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noVfy
+    devFlag := typer > 0 || trace || probe || cutStat || callStat || ubfStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noVfy
     if !emitSet && !devFlag {
         // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
         if oi < 0 {
@@ -640,11 +649,11 @@ func cmdBuild(args []string) int {
     vm := if noVfy { lower.VfyNone } else if vEach { lower.VfyEach } else { lower.VfyLast }
     // 照合の経路（roundtrip・1 本の経路）は検証の掛け方を受け取る — gates は SOBER_VERIFY=each を立てるので、下の ElfStats へ先に分岐すると
     // 照合の経路が黙って既定の経路になっていた
-    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && buildRoundtrip() {
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && buildRoundtrip() {
         out, berr := lower.ElfPassesRoundtrip(p, vm)
         return emitExe(p, std, args, oi, out, berr)
     }
-    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !buildPar() {
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !buildPar() {
         out, berr := lower.ElfPassesSeq(p, vm)
         return emitExe(p, std, args, oi, out, berr)
     }
@@ -662,6 +671,10 @@ func cmdBuild(args []string) int {
     }
     if elfOut && noOpt {
         out, berr := lower.ElfRaw(p)
+        return emitExe(p, std, args, oi, out, berr)
+    }
+    if elfOut && passes && noSpec {
+        out, berr := lower.ElfPassesNoSpec(p)
         return emitExe(p, std, args, oi, out, berr)
     }
     if elfOut && passes && noVec {

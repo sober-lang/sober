@@ -1,0 +1,176 @@
+package lower
+
+// io_uring の probe と ring（IO 便 段 0 — .pair/io-design-draft.md 2.1・2.2 節・report-571）: M:N の rt のワーカーが自分の ring を 1 本持つ。
+// 表面は変えない（std の io の口はまだ ring を使わない — 段 1）。std/par を使わないプログラムは不変（ring を作らない）。
+// - rt.uring_init()（ワーカー 0 は mn_start の頭・1〜N-1 は worker_main の頭）: io_uring_setup(8) → 成功なら SQ / CQ の環と SQE の列を mmap して
+//   ワーカーの表の WK_RING に記録（[fd, 環, SQE の列, io_uring_params 120 B]）。失敗（ENOSYS・EPERM〔seccomp〕・ENOMEM・FEAT_SINGLE_MMAP なし・
+//   mmap の失敗）は WK_RING = 0 のまま — 今の経路（同期 syscall）。ワーカー 0 の結果を MN_IOBE に（1 = uring・2 = 今の経路）
+// - 開発の口: SOBER_IO=1 は probe しない（今の経路に固定）・SOBER_IO=2 は setup が -ENOSYS を返した形の模造（seccomp で塞がれた環境の再現）。
+//   SOBER_IO_TRACE=1 はワーカーごとに NOP を 1 往復して標準エラーへ `#io worker <k> backend=uring enter=<n> nop=<res> ud=<user_data>`
+//   （今の経路なら `#io worker <k> backend=sync probe=<-errno>`）
+import "desugar"
+import "std/iter"
+
+// 32 ビットの欄は 8 バイトの読みの下位 32 ビット（x86 は非整列の読みを許す）・書きは 4 バイトに割る（隣の欄はカーネルが書く）
+
+const MN_IOMODE = 10  // SOBER_IO（0 = 自動・1 = 今の経路に固定・2 = 塞がれた形の模造）
+const MN_IOTR = 11    // SOBER_IO_TRACE
+const MN_IOBE = 12    // ワーカー 0 の probe の結果（0 = まだ・1 = uring・2 = 今の経路）
+const WK_RING = 12    // ワーカーの ring の記録の番地（0 = 無し）
+
+const UR_PARAMS = 24  // 記録の中の io_uring_params の位置（バイト）
+const UR_ENTRIES = 8
+
+func needUringRt(st mut St) {
+    st.rtUringInit = addFunc(mut st, int(strLit(mut st, "rt.uring_init")), desugar.ListRef(list0(mut st)), -1)
+}
+
+// urAdd は x + k（k は定数）
+func urAdd(st mut St, x int, k int) int {
+    return bin(mut st, BAdd, x, iconst(mut st, k))
+}
+
+// urLd32 は番地 x + k（バイト）の 32 ビット（符号なし）
+func urLd32(st mut St, x int, k int) int {
+    return bin(mut st, BAnd, load(mut st, itop(mut st, urAdd(mut st, x, k)), 0), iconst(mut st, 4294967295))
+}
+
+// urSt32 は番地 a に v の下位 32 ビットを書く（1 バイトずつ）
+func urSt32(st mut St, a int, v int) {
+    for k <- iter.Range(0, 4) {
+        store8(mut st, itop(mut st, urAdd(mut st, a, k)), 0, bin(mut st, BAnd, bin(mut st, BSar, v, iconst(mut st, 8 * k)), iconst(mut st, 255)))
+    }
+}
+
+// urSys は syscall(nr, xs…)
+func urSys(st mut St, nr int, xs []int) int {
+    args := listN(mut st, len(xs) + 1)
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, nr))
+    for k <- iter.Range(0, len(xs)) {
+        desugar.HeapSet(mut st.d, args + 2 + k, xs[k])
+    }
+    return syscall(mut st, args)
+}
+
+// urMmap は ring の fd の off から size バイトを共有で写す（MAP_SHARED | MAP_POPULATE）。失敗（負の errno）なら bFb へ -12 で
+func urMmap(st mut St, size int, fd int, off int, bFb BlkRef) int {
+    a := urSys(mut st, 9, []int{iconst(mut st, 0), size, iconst(mut st, 3), iconst(mut st, 32769), fd, iconst(mut st, off)})
+    urBail(mut st, cmp(mut st, CUge, a, iconst(mut st, -4095)), bFb, iconst(mut st, -12), fd)
+    return a
+}
+
+// urBail は c が真なら（fd ≥ 0 なら閉じて）bFb へ e を渡し、偽の側に続ける
+func urBail(st mut St, c int, bFb BlkRef, e int, fd int) {
+    bad := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, c, bad, -1, ok, -1)
+    setCur(mut st, bad)
+    if fd >= 0 {
+        urSys(mut st, 3, []int{fd})
+    }
+    br(mut st, bFb, list1(mut st, e))
+    setCur(mut st, ok)
+}
+
+// urTrace は SOBER_IO_TRACE のとき標準エラーへ `#io worker <k> backend=<lit><v0>[<lit1><v1><lit2><v2>]` を 1 行
+func urTrace(st mut St, lits []string, vs []int) {
+    mn := globaladdr(mut st, st.mnG)
+    bT := newBlock(mut st)
+    bE := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, mn, MN_IOTR), iconst(mut st, 0)), bT, -1, bE, -1)
+    setCur(mut st, bT)
+    meta := globaladdr(mut st, st.meta)
+    fd0 := load(mut st, meta, W_FD)
+    store(mut st, meta, W_FD, iconst(mut st, 2))
+    printLit(mut st, "#io worker ")
+    call(mut st, st.rtPint, list1(mut st, load(mut st, globaladdr(mut st, st.wkG), WK_ID)))
+    for k <- iter.Range(0, len(vs)) {
+        printLit(mut st, lits[k])
+        call(mut st, st.rtPint, list1(mut st, vs[k]))
+    }
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    call(mut st, st.rtFlush, list0(mut st))
+    store(mut st, meta, W_FD, fd0)
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
+// urBe はワーカー 0 なら MN_IOBE = v
+func urBe(st mut St, w0 int, v int) {
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, w0, bY, -1, bN, -1)
+    setCur(mut st, bY)
+    store(mut st, globaladdr(mut st, st.mnG), MN_IOBE, iconst(mut st, v))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+func buildUringInit(st mut St) {
+    begin(mut st, st.rtUringInit)
+    mn := globaladdr(mut st, st.mnG)
+    wk := globaladdr(mut st, st.wkG)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    w0 := cmp(mut st, CEq, load(mut st, wk, WK_ID), zero)
+    mode := load(mut st, mn, MN_IOMODE)
+    store(mut st, wk, WK_RING, zero)
+    // 今の経路（probe の負の errno を運ぶ）
+    bFb := newBlock(mut st)
+    fbE := param(mut st, bFb, TyI64)
+    bEnd := newBlock(mut st)
+    urBail(mut st, cmp(mut st, CEq, mode, one), bFb, zero, -1)
+    rec := sysMmap(mut st, iconst(mut st, 4096))
+    pa := urAdd(mut st, rec, UR_PARAMS)
+    bSys := newBlock(mut st)
+    bGot := newBlock(mut st)
+    fd := param(mut st, bGot, TyI64)
+    condbr(mut st, cmp(mut st, CEq, mode, iconst(mut st, 2)), bGot, list1(mut st, iconst(mut st, -38)), bSys, -1)
+    setCur(mut st, bSys)
+    br(mut st, bGot, list1(mut st, urSys(mut st, 425, []int{iconst(mut st, UR_ENTRIES), pa})))
+    setCur(mut st, bGot)
+    urBail(mut st, cmp(mut st, CLt, fd, zero), bFb, fd, -1)
+    // FEAT_SINGLE_MMAP（SQ と CQ の環が 1 つの写し）が無いカーネルは今の経路（5.4 以前）
+    urBail(mut st, cmp(mut st, CEq, bin(mut st, BAnd, urLd32(mut st, pa, 20), one), zero), bFb, iconst(mut st, -95), fd)
+    sqo := urAdd(mut st, pa, 40)
+    cqo := urAdd(mut st, pa, 80)
+    nsq := urLd32(mut st, pa, 0)
+    sqsz := bin(mut st, BAdd, urLd32(mut st, sqo, 24), bin(mut st, BShl, nsq, iconst(mut st, 2)))
+    cqsz := bin(mut st, BAdd, urLd32(mut st, cqo, 20), bin(mut st, BShl, urLd32(mut st, pa, 4), iconst(mut st, 4)))
+    ring := urMmap(mut st, imax(mut st, sqsz, cqsz), fd, 0, bFb)
+    sqes := urMmap(mut st, bin(mut st, BShl, nsq, iconst(mut st, 6)), fd, 268435456, bFb)
+    rp := itop(mut st, rec)
+    store(mut st, rp, 0, fd)
+    store(mut st, rp, 1, ring)
+    store(mut st, rp, 2, sqes)
+    store(mut st, wk, WK_RING, rec)
+    urBe(mut st, w0, 1)
+    bNop := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, mn, MN_IOTR), zero), bNop, -1, bEnd, -1)
+    setCur(mut st, bNop)
+    // NOP を 1 往復（計器）: SQE を積んで tail を進め、io_uring_enter(fd, 1, 1, GETEVENTS) で完了を待ち、CQE を読んで head を進める
+    tailA := bin(mut st, BAdd, ring, urLd32(mut st, sqo, 4))
+    t := urLd32(mut st, tailA, 0)
+    idx := bin(mut st, BAnd, t, urLd32(mut st, bin(mut st, BAdd, ring, urLd32(mut st, sqo, 8)), 0))
+    sqe := itop(mut st, bin(mut st, BAdd, sqes, bin(mut st, BShl, idx, iconst(mut st, 6))))
+    for k <- iter.Range(0, 8) {
+        store(mut st, sqe, k, if k == 4 { iconst(mut st, 77) } else { zero })
+    }
+    urSt32(mut st, bin(mut st, BAdd, bin(mut st, BAdd, ring, urLd32(mut st, sqo, 24)), bin(mut st, BShl, idx, iconst(mut st, 2))), idx)
+    urSt32(mut st, tailA, urAdd(mut st, t, 1))
+    en := urSys(mut st, 426, []int{fd, one, one, one, zero, zero})
+    headA := bin(mut st, BAdd, ring, urLd32(mut st, cqo, 0))
+    h := urLd32(mut st, headA, 0)
+    cmask := urLd32(mut st, bin(mut st, BAdd, ring, urLd32(mut st, cqo, 8)), 0)
+    cqe := itop(mut st, bin(mut st, BAdd, bin(mut st, BAdd, ring, urLd32(mut st, cqo, 20)), bin(mut st, BShl, bin(mut st, BAnd, h, cmask), iconst(mut st, 4))))
+    res := bin(mut st, BSar, bin(mut st, BShl, load(mut st, cqe, 1), iconst(mut st, 32)), iconst(mut st, 32))
+    urSt32(mut st, headA, urAdd(mut st, h, 1))
+    urTrace(mut st, []string{" backend=uring enter=", " nop=", " ud="}, []int{en, res, load(mut st, cqe, 0)})
+    br(mut st, bEnd, -1)
+    setCur(mut st, bFb)
+    urBe(mut st, w0, 2)
+    urTrace(mut st, []string{" backend=sync probe="}, []int{fbE})
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+    ret(mut st, -1)
+}

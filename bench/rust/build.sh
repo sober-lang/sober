@@ -5,4 +5,4 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 cargo build --release --offline --quiet
-echo "bench/rust/build.sh: $(cd ../../out/rust/release && ls 1brc 1brc-opt binarytrees fannkuch fasta revcomp knucleotide knucleotide-opt nbody nbody-opt spectralnorm mandelbrot jsonapi routing logagg | tr '\n' ' ')"
+echo "bench/rust/build.sh: $(cd ../../out/rust/release && ls 1brc 1brc-opt binarytrees fannkuch fasta revcomp knucleotide knucleotide-opt nbody nbody-opt spectralnorm mandelbrot jsonapi routing logagg extsort | tr '\n' ' ')"

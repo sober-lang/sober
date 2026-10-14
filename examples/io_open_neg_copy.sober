@@ -1,0 +1,13 @@
+package main
+
+// 負例: File は同一性を持つ — 写しの束縛は作れない（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+
+import "std/io"
+
+func main() {
+    f := io.Open("testdata/io/hello.txt") catch return
+    defer io.Close(f)
+    g := f
+    b := io.ReadAll(g) catch return
+    println(len(b))
+}

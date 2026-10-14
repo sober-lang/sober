@@ -88,6 +88,10 @@ type Fz struct {
     // 今の package（綴りと型の引き）・指摘 [種類, 節, 付帯の節]…（Az の外に持つ — 規則は d を引数で受け、Az に写さない〔report-484 / 489〕）
     pk int
     out table.Table[int]
+    // 暗黙の freeze の点の集合（開番地法 — 鍵 = 節 + 1・imask + 1 本。freezeRules が typer の点の列から 1 回組む。desugar.IsImplicit の yGet は
+    // 型の全項と鎖を共有していて、式ごとに引くと重い — report-598）。点が無ければ imask = 0
+    iset table.Table[int]
+    imask int
 }
 
 const FZ_BUCKETS = 4096
@@ -108,6 +112,46 @@ func fzStr(d mut desugar.S, s desugar.StrRef) string {
     return r
 }
 
+// fzPoints は暗黙の freeze の点の集合 z.iset を組む（typer の点の列 — 積んだ順の重複は 1 つに）
+func fzPoints(z mut Fz, d mut desugar.S) {
+    n := desugar.ImplicitCount(mut d)
+    if n == 0 {
+        z.imask = 0
+        return
+    }
+    mut m := 64
+    while m < 4 * n {
+        m = m * 2
+    }
+    z.imask = m - 1
+    for i <- iter.Range(0, m) {
+        fzAt(mut z.iset, i, 0)
+    }
+    for i <- iter.Range(0, n) {
+        e := int(desugar.ImplicitNode(mut d, i))
+        mut h := (e * 40503) & z.imask
+        while table.Get(mut z.iset, h) != 0 && table.Get(mut z.iset, h) != e + 1 {
+            h = (h + 1) & z.imask
+        }
+        table.Set(mut z.iset, h, e + 1)
+    }
+}
+
+// fzIsPoint は節 e が暗黙の freeze の点か（desugar.IsImplicit と同じ答え — 集合は fzPoints）
+func fzIsPoint(z mut Fz, e desugar.NodeRef) bool {
+    if z.imask == 0 || e == -1 {
+        return false
+    }
+    mut h := (int(e) * 40503) & z.imask
+    while table.Get(mut z.iset, h) != 0 {
+        if table.Get(mut z.iset, h) == int(e) + 1 {
+            return true
+        }
+        h = (h + 1) & z.imask
+    }
+    return false
+}
+
 func fzReport(z mut Fz, k int, at desugar.NodeRef, x desugar.NodeRef) {
     table.Push(mut z.out, k)
     table.Push(mut z.out, int(at))
@@ -126,6 +170,7 @@ func fzAt(t mut table.Table[int], i int, v int) {
 // freezeRules は全関数に U1〜U3 を掛ける（指摘は z.out へ）。skipStd = std の package を飛ばす（build — std は stage2 を建てるときの L0 の
 // check〔Run — 飛ばさない〕で同じ規則に掛かっていて、stage2 に焼き込んだ std は変わらない）
 func freezeRules(z mut Fz, d mut desugar.S, skipStd bool) {
+    fzPoints(mut z, mut d)
     for f <- iter.Range(0, desugar.Nfile(mut d)) {
         z.pk = desugar.FilePkg(mut d, f)
         if skipStd && desugar.IsStdPkg(mut d, z.pk) {
@@ -854,11 +899,11 @@ func fzExprs(z mut Fz, d mut desugar.S, l desugar.ListRef) {
     }
 }
 
-// fzExpr は式 e を歩いて事象を積む。e が暗黙の freeze の点（desugar.IsImplicit — typer の表）なら、歩いた直後に明示の freeze(e) と同じ事象を
+// fzExpr は式 e を歩いて事象を積む。e が暗黙の freeze の点（typer の点の表を写した集合 — fzIsPoint）なら、歩いた直後に明示の freeze(e) と同じ事象を
 // 積んで印を付ける（印の式は fzValP が freeze の呼び出しの結果と同じく根を張らない）
 func fzExpr(z mut Fz, d mut desugar.S, e desugar.NodeRef) {
     fzExpr0(mut z, mut d, e)
-    if d.nimpl > 0 && desugar.IsImplicit(mut d, e) {
+    if fzIsPoint(mut z, e) {
         fzAt(mut z.imp, z.nImp, int(e))
         z.nImp += 1
         fzEvent(mut z, mut d, FvFreeze, fzRootOf(mut z, mut d, e), e)
@@ -1274,18 +1319,21 @@ func fzMessage(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.N
     case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after it was frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`)"
     case MFzAlias: "this writes through `${fzSpell(mut z, mut d, at)}`, which may hold the contents frozen by `${fzSpell(mut z, mut d, x)}` — the frozen value would change. Build the value through one binding only, or copy it before freezing"
     case MFzAliasAt: "(note) the contents are shared from here — the binding written above and the frozen one may hold the same buffer"
-    case MFzImplicitAt: "(note) `${fzSpell(mut z, mut d, at)}` is frozen here — an immutable value is expected at this point (implicit freeze)"
+    case MFzImplicitAt: "(note) `${fzSpell(mut z, mut d, at)}` is frozen here — ${if desugar.IsForSource(mut d, at) { "a for loop iterates over an immutable value" } else { "an immutable value is expected at this point" }} (implicit freeze)"
     case MFzParam: "`${fzSpell(mut z, mut d, at)}` freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or build a new value here and freeze that"
     default: "the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` must not escape the call (here: `${fzSpell(mut z, mut d, at)}`) — the caller's freeze would no longer be sound. Return a newly built value, or write into the caller's binding (`${fzParamName(mut z, mut d, x)} = …`)"
     }
 }
 
-// fzMessageImplicit は freeze の点 x が暗黙（期待型が imm の位置に置いた mut の値）のときの文面
+// fzMessageImplicit は freeze の点 x が暗黙（期待型が imm の位置に置いた mut の値）のときの文面。for の生成元の点は「渡す」でなく「for で回す」（report-581 5 節）
 func fzMessageImplicit(z mut Fz, d mut desugar.S, k int, at desugar.NodeRef, x desugar.NodeRef) string {
+    fs := desugar.IsForSource(mut d, if k == MFzParam { at } else { x })
+    by := if fs { "iterating over it in a for loop" } else { "passing it where an immutable value is expected" }
+    cp := if fs { "iterate over a copy" } else { "pass a copy" }
     return switch k {
-    case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after `${fzSpell(mut z, mut d, x)}` was frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Finish writing before passing it, or pass a copy: clone(x)"
-    case MFzAlias: "this writes through `${fzSpell(mut z, mut d, at)}`, which may hold the contents of `${fzSpell(mut z, mut d, x)}`, frozen by passing it where an immutable value is expected (implicit freeze — see the note) — the frozen value would change. Build the value through one binding only, or pass a copy: clone(x)"
-    default: "passing `${fzSpell(mut z, mut d, at)}` where an immutable value is expected freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or pass a copy: clone(x)"
+    case MFzWrite: "this writes to `${fzSpell(mut z, mut d, at)}` after `${fzSpell(mut z, mut d, x)}` was frozen by ${by} (implicit freeze — see the note) — the frozen value would change. Finish writing before ${if fs { "the loop" } else { "passing it" }}, or ${cp}: clone(x)"
+    case MFzAlias: "this writes through `${fzSpell(mut z, mut d, at)}`, which may hold the contents of `${fzSpell(mut z, mut d, x)}`, frozen by ${by} (implicit freeze — see the note) — the frozen value would change. Build the value through one binding only, or ${cp}: clone(x)"
+    default: "${if fs { "iterating over" } else { "passing" }} `${fzSpell(mut z, mut d, at)}` ${if fs { "in a for loop" } else { "where an immutable value is expected" }} freezes the contents of the mut parameter `${fzParamName(mut z, mut d, x)}` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut ${fzParamName(mut z, mut d, x)}`), or ${cp}: clone(x)"
     }
 }
 

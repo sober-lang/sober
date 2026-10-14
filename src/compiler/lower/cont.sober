@@ -350,6 +350,9 @@ func mapGrow(st mut St, h int, cellw int) (int, int) {
     tip_b := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, ptoi(mut st, regionBump(mut st, d)), end), tip_b, -1, copy_b, -1)
     setCur(mut st, tip_b)
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_TIPB, iconst(mut st, cellw * 8))
+    }
     br(mut st, join, list2(mut st, itop(mut st, bs), regionAlloc(mut st, d, iconst(mut st, cellw))))
     // 先端でなければ rt.map_grow（rtgrow.sober — 水位でその場・自分の索引が先端なら索引を先に長さちょうど・でなければ幾何成長。
     // 代入の点ごとに展開しない — 熱い関数が膨らんで IR インライナの予算を外れた）
@@ -713,17 +716,21 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // sysArgs() []int（argv の「バイト + 0」の連結）・sysReadDir(path) []int（「d_type + 名前 + 0」の連結）・sysWriteFd(fd, []int) int（errno）・
 // sysRun(argv []byte) int（子プロセスの終了コード / 負の errno — rt.run）・sysWriteMode(path, mode int) int（errno — rt.write_mode）・
 // sysMkdir(path) int（errno — rt.mkdir）・sysRename(from, to) int（errno — rt.rename）・sysEnviron() []byte（環境変数の「NAME=値 + 0」の連結 — rt.environ）・
-// sysStat(path) int（更新時刻 ns / 負の errno — rt.stat）・sysSleep(ms) int（errno — rt.sleep）・sysReadFd(fd, n) []byte（rt.read_fd — n < 0 = 全量）。
+// sysStat(path) int（更新時刻 ns / 負の errno — rt.stat）・sysSleep(ms) int（errno — rt.sleep）・sysReadFd(fd, n) []byte（rt.read_fd — n < 0 = 全量）・
+// sysOpen(path) int（fd / 負の errno — rt.open）・sysClose(fd) int（errno — rt.close。std/par のプログラムは task の登録簿に積む / 外す — rt.sober の needOpen）。
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
     }
     if lenL(mut st, args) != arity {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if k >= 19 {
+        return chunkBuiltin(mut st, k, args, at)
     }
     switch k {
     case 15:
@@ -782,6 +789,16 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
         out := newAgg(mut st, t)
         call(mut st, st.rtRfd, list3(mut st, f.v, n.v, out))
         return one1(mut st, t, out), nil
+    case 18:
+        f := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, f.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, f.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        needOpen(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtClose, list1(mut st, f.v))), nil
     case 13:
         ms := expr(mut st, latN(mut st, args, 0))?
         if isTag(mut st, ms.t, TNever) {
@@ -825,6 +842,10 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     }
     if !isString(mut st, p.t) {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    if k == 17 {
+        needOpen(mut st)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtOpen, list1(mut st, p.v))), nil
     }
     if k == 12 {
         needStat(mut st)

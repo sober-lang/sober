@@ -77,13 +77,12 @@ func loopLightModule(st mut St, dirty mut map[int]int) {
         b0 := irFnBHead(mut st, f)
         if b0 != -1 {
             mut dead := false
-            fds := llDepths(mut st, f)
             mut b := irBlkNext(mut st, b0)
             while b != -1 {
                 mut i := irBlkIHead(mut st, b)
                 while i != -1 {
                     if irInsOp(mut st, i) == OpREnter {
-                        if llAllocContinues(mut st, f, b, mut ma, fds) {
+                        if llAllocContinues(mut st, f, b, mut ma) {
                             rlNeedLoop(mut st)
                             irSetInsOp(mut st, i, OpCall)
                             irSetInsRes(mut st, i, -1)
@@ -458,12 +457,14 @@ func llMa(ma mut map[int]int, g FnRef) bool {
     return false
 }
 
-// llRtAlloc は rt の関数 g の呼び出しが呼び手の深度で確保しうるか（確保しないと分かっている rt だけ偽 — 他の rt は真）
+// llRtAlloc は rt の関数 g の呼び出しが呼び手の深度で確保しうるか（確保しないと分かっている rt だけ偽 — 他の rt は真）。
+// rt.chunk_open / chunk_next（chunk.sober）も真: 記録を今の深度に取り、切片の View の印は今の深度（反復の region — View の寿命は次の chunk_next まで）。
+// 反復の region を消すと印が外の変数の床と合流し、外への代入が写さずにスロットを指したままになる（上の前提「印 X の値は深度 X の region 以上に生きる」）
 func llRtAlloc(st mut St, g FnRef) bool {
     if g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry {
         return false
     }
-    return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtRalloc || g == st.rtGrow || g == st.rtGrow8 || g == st.rtMapGrow || g == st.rtReloc || g == st.rtReloc8 || g == st.rtExtend8 || g == st.rtArgs || g == st.rtDir || g == st.rtEnv || g == st.rtRead || g == st.rtRfd || g == st.rtRun || g == st.rtStat || g == st.rtMkdir || g == st.rtMode || g == st.rtRename || g == st.rtSleep
+    return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtRalloc || g == st.rtGrow || g == st.rtGrow8 || g == st.rtMapGrow || g == st.rtReloc || g == st.rtReloc8 || g == st.rtExtend8 || g == st.rtArgs || g == st.rtDir || g == st.rtEnv || g == st.rtRead || g == st.rtRfd || g == st.rtRun || g == st.rtStat || g == st.rtMkdir || g == st.rtMode || g == st.rtRename || g == st.rtSleep || (st.rtCh != -1 && (g == chF(mut st, CHF_OPEN) || g == chF(mut st, CHF_NEXT)))
 }
 
 // llDepths は関数 f の region.depth の結果の値の集合（今の深度の確保の目印 — 確保の深度の被演算子がこれでなければ、ヘッダの深度・
@@ -646,19 +647,33 @@ func llCallees(st mut St, f FnRef, cs mut []int) {
     }
 }
 
-// llAllocContinues はループ本体（ブロック b0 から `region.setdepth` で始まるブロックの手前まで）の確保のうち、次の反復へ戻りうるもの
+// llAllocContinues はループ本体（llLoopBody の範囲）の確保のうち、次の反復へ戻りうるもの
 // （確保のブロックから b0 へ CFG で到達できる）があるか（M5c）。戻れない経路（return・全部のループの外へ抜ける break）だけの確保は
 // 反復ごとには積もらない — 抜けた先で 1 回きり（外のループへ戻れるなら b0 にも戻れる — 外のループが内のループを再び回すので真）。
 // fannkuch の「次の順列」の `while true`（確保は return の手前の println の補間だけ）が反復ごとに軽い enter を払っていた
-func llAllocContinues(st mut St, f FnRef, b0 BlkRef, ma mut map[int]int, ds map[int]int) bool {
+// 確保と数えるのは、本体の中で読んだ深度（b0 の enter の後と内側のループのもの）への確保と、呼び手の今の深度で確保しうる呼び出しだけ。本体の外で読んだ深度
+// （本体を支配する — 外の反復・関数の深度）への確保は、enter を消しても行き先が同じ region なので数えない（report-621 P1 — logagg の語のループが
+// 行の反復の変数への写しを語ごとの確保と数え、enter と熱いループのレジスタの崩れで +5.8% を払っていた）。本体の範囲（llLoopBody）が欠けると中の深度を外と誤るので、範囲の正しさが前提
+func llAllocContinues(st mut St, f FnRef, b0 BlkRef, ma mut map[int]int) bool {
     nb := irFnNBlk(mut st, f)
     body := llLoopBody(mut st, b0, nb)
+    // 今の深度 = 本体の中で読んだ region.depth
+    mut own := mut map[int]int{}
+    for k <- iter.Range(0, len(body)) {
+        mut i := irBlkIHead(mut st, BlkRef(body[k]))
+        while i != -1 {
+            if irInsOp(mut st, i) == OpRDepth {
+                own[irInsRes(mut st, i)] = 1
+            }
+            i = irInsNext(mut st, i)
+        }
+    }
     mut allocs := mut []int{}
     for k <- iter.Range(0, len(body)) {
         mut i := irBlkIHead(mut st, BlkRef(body[k]))
         mut hit := false
         while i != -1 && !hit {
-            if llInsAllocs(mut st, i, mut ma, ds) {
+            if llInsAllocs(mut st, i, mut ma, own) {
                 hit = true
             }
             i = irInsNext(mut st, i)
@@ -707,7 +722,9 @@ func llSuccs(st mut St, b BlkRef, stack mut []int, sp0 int) int {
     return sp
 }
 
-// llLoopBody はループ本体（ブロック b0 から `region.setdepth` で始まるブロックの手前まで — b0 を含む）のブロックの列（訪問済みはブロック番号の表・積みは 1 本の slice）
+// llLoopBody はループ本体（ブロック b0 から、外の深度へ戻す `region.setdepth` で始まるブロックの手前まで — b0 を含む）のブロックの列（訪問済みはブロック番号の表・積みは 1 本の slice）。
+// 本体の中で読んだ深度へ戻す setdepth（内側のループの頭・出口）は越える — そこで止めると内側のループより後ろの確保を見落とし、外の反復の enter を誤って消す
+// （report-620 — routing の行ごとの列が関数の region に積もって RSS が行数に比例した。反復の region の約束の破れ）
 func llLoopBody(st mut St, b0 BlkRef, nb int) []int {
     mut seen := mut []bool{}
     for k <- iter.Range(0, nb + 1) {
@@ -715,15 +732,27 @@ func llLoopBody(st mut St, b0 BlkRef, nb int) []int {
     }
     mut body := mut []int{}
     mut stack := mut []int{}
+    // 本体の中で読んだ深度（b0 の enter より後の region.depth の値）— setdepth がそこへ戻すブロックは内側のループの頭・出口で、本体の続き
+    mut inner := mut map[int]int{}
     mut sp := llPush(mut stack, 0, int(b0))
     while sp > 0 {
         sp -= 1
         b := BlkRef(stack[sp])
         id := irBlkId(mut st, b)
         h := irBlkIHead(mut st, b)
-        if id >= 0 && id <= nb && !seen[id] && !(b != b0 && h != -1 && irInsOp(mut st, h) == OpRSetDepth) {
+        if id >= 0 && id <= nb && !seen[id] && !(b != b0 && h != -1 && irInsOp(mut st, h) == OpRSetDepth && inner[irInsA(mut st, h)] == nil) {
             seen[id] = true
             body = append(body, int(b))
+            mut i := h
+            mut after := b != b0
+            while i != -1 {
+                if irInsOp(mut st, i) == OpREnter {
+                    after = true
+                } else if after && irInsOp(mut st, i) == OpRDepth {
+                    inner[irInsRes(mut st, i)] = 1
+                }
+                i = irInsNext(mut st, i)
+            }
             sp = llSuccs(mut st, b, mut stack, sp)
         }
     }

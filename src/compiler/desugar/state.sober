@@ -376,6 +376,21 @@ func strIs(st mut S, a StrRef, w string) bool {
     return true
 }
 
+// strHasPrefix は文字列 a が w で始まるか
+func strHasPrefix(st mut S, a StrRef, w string) bool {
+    b := bytes(w)
+    if slen(mut st, a) < len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(b)) {
+        c := if int(a) >= LBASE { st.trees[refFile(int(a))].data[refIdx(int(a)) + 1 + i] } else { hget(mut st, int(a) + 1 + i) }
+        if c != int(b[i]) {
+            return false
+        }
+    }
+    return true
+}
+
 // strEqPart は文字列 a と、文字列 s のバイト [lo, hi) の一致
 func strEqPart(st mut S, a StrRef, s StrRef, lo int, hi int) bool {
     if slen(mut st, a) != hi - lo {
@@ -729,15 +744,9 @@ func fileImports(st mut S, f int, s StrRef, lo int, hi int) bool {
         im := nodeOf(mut st, latN(mut st, imps, i))
         r := if im.a >= 0 { sA(im) } else { sB(im) }
         n := slen(mut st, r)
-        mut b := 0
-        if im.a < 0 {
-            for j <- iter.Range(0, n) {
-                if dat(mut st, int(r) + 1 + j) == '/' {
-                    b = j + 1
-                }
-            }
-        }
-        if n - b == hi - lo {
+        // path の最後の段は末尾 hi − lo バイトの手前が '/' か先頭か（参照名は '/' を含まない — path を頭から走査しない）
+        b := n - (hi - lo)
+        if b >= 0 && (im.a >= 0 && b == 0 || im.a < 0 && (b == 0 || dat(mut st, int(r) + b) == '/')) {
             mut same := true
             for j <- iter.Range(0, hi - lo) {
                 if dat(mut st, int(r) + 1 + b + j) != dat(mut st, int(s) + 1 + lo + j) {

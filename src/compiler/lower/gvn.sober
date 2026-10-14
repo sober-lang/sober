@@ -5,7 +5,7 @@ package lower
 //   （辺の順のスコープつきの表 — 支配木を前順で辿り、ブロックを出るときに足した項を戻す）。可換な演算（add / mul / and / or / xor・eq / ne）は被演算子を番号順に並べる。
 //   div / rem も対象（支配する同じ式が先に評価されている — そこで落ちなければここでも落ちない）
 // ②load はブロックの中だけで同じ番地・同じオフセット・同じ型の先の load / store の値に付け替える（store の値の転送）。メモリを書きうる命令
-//   （store・store8・call・call.indirect・syscall・region の op）で表を空にする（store は空にしてから自分の値を入れる）
+//   （store・store8・call・call.indirect・syscall・region の op）で表を空にする（store は同じ番地の別の語の項だけを残して自分の値を入れる — 語のずれが違えば重ならない）
 // region.depth / region.bump は対象外（深度と先端は region の op で変わる）。付け替えた命令は消し（OpDead — opt.sober の aliasTo）、
 // 使われなくなった純粋な命令は P3（optDce）が消し、最後に値の番号を詰める（optRenumber — mem2reg の後と同じ形の IR）
 
@@ -13,6 +13,7 @@ import "desugar"
 import "std/iter"
 
 const GV_W = 6   // 表の項: [op, a, b, c, 値, 同じバケツの前の項]
+const GV_LKEEP = 8  // store が残す load の表の項の上限（gvnBlock）
 
 // gvnModule はモジュールの全関数に GVN を掛ける
 func gvnModule(st mut St) {
@@ -216,8 +217,12 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int) {
             irSetInsA(mut st, ins, p)
             irSetInsC(mut st, ins, v)
             ty := desugar.HeapGet(mut st.d, vt + 1 + v)
-            gvnLoadAdd(mut lt, 0, p, irInsB(mut st, ins), ty, v)
-            ln = 4
+            // 同じ番地の別の語の項は残す（語のずれが違えば重ならない — 多語のヘッダを語ごとに書いた直後の読みも転送する）。表が GV_LKEEP 項を
+            // 超えていたら従来どおり空に（大きい struct の欄を続けて書くブロックで、store ごとの詰め直しと load の線形の引きが二乗になる — 判定の仕事 +0.8 G）
+            off := irInsB(mut st, ins)
+            ln = if ln <= 4 * GV_LKEEP { gvnLoadKeep(mut lt, ln, p, off) } else { 0 }
+            gvnLoadAdd(mut lt, ln, p, off, ty, v)
+            ln += 4
         } else if gvnPure(mut st, ins) {
             mut a := irInsA(mut st, ins)
             mut b := irInsB(mut st, ins)
@@ -279,6 +284,22 @@ func gvnLoadFind(lt mut []int, ln int, p int, off int, ty int) int {
         i += 4
     }
     return -1
+}
+
+// gvnLoadKeep は load の表 lt（ln 語）を番地 p・語のずれが off でない項だけに詰め、詰めた後の語数を返す（p の off への store で他は無効）
+func gvnLoadKeep(lt mut []int, ln int, p int, off int) int {
+    mut n := 0
+    mut i := 0
+    while i < ln {
+        if lt[i] == p && lt[i + 1] != off {
+            for k <- iter.Range(0, 4) {
+                lt[n + k] = lt[i + k]
+            }
+            n += 4
+        }
+        i += 4
+    }
+    return n
 }
 
 // gvnLoadAdd は lt の at 語目から [p, off, ty, v] を置く（足りなければ伸ばす）

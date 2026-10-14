@@ -1,0 +1,91 @@
+package main
+
+// 失敗しうる生成元（language.md 7 節）: 結果が error? の呼び出し形の生成元は for に印 `?` を付けて回す — `for x <- g(a)? { … }`。
+// 脱糖 = `g(a, (x) => { … })?`。生成元が失敗を返したら、生成元の defer を走らせてから `?` で伝播する。break は成功の出口（`?` は走らない）
+
+type BadDigit error {
+    at int
+}
+
+type BadLine error {
+    line int
+}
+
+// digits は s の数字を順に k へ渡す。数字でない文字で BadDigit（走査の途中の失敗）
+@errors(BadDigit)
+func digits(s string, k func(int)) error? {
+    defer println("  (digits done)")
+    bs := bytes(s)
+    mut i := 0
+    while i < len(bs) {
+        if bs[i] < '0' || bs[i] > '9' {
+            return BadDigit{at: i}
+        }
+        k(int(bs[i]) - 48)
+        i += 1
+    }
+    return nil
+}
+
+// 全部の数字の和（失敗はそのまま伝播）
+func sum(s string) (int, error?) {
+    mut n := 0
+    for d <- digits(s)? {
+        n += d
+    }
+    return n, nil
+}
+
+// 奇数だけの和・9 で打ち切り・7 があれば 7 を返す（ガード・continue・break・非局所 return）
+func odd(s string) (int, error?) {
+    mut n := 0
+    for d <- digits(s)? if d % 2 == 1 {
+        if d == 7 {
+            return 7, nil
+        }
+        if d == 9 {
+            break
+        }
+        if d == 1 {
+            continue
+        }
+        n += d
+    }
+    return n, nil
+}
+
+// 包み替え（条件の位置の composite literal は括弧で — syntax.md）
+func lined(line int, s string) (int, error?) {
+    mut n := 0
+    for d <- (digits(s)? BadLine{line: line}) {
+        n += d
+    }
+    return n, nil
+}
+
+func show(n int, e error?) {
+    if e == nil {
+        println("ok ${n}")
+    } else {
+        println(switch e {
+        case BadDigit{at}: "bad digit at ${at}"
+        case BadLine{line}: "bad line ${line}"
+        })
+    }
+}
+
+func main() int {
+    a, ea := sum("1234")
+    show(a, ea)
+    b, eb := sum("12x4")
+    show(b, eb)
+    c, ec := odd("3195")
+    show(c, ec)
+    d, ed := odd("3579x")
+    show(d, ed)
+    f, ef := odd("35x")
+    show(f, ef)
+    g, eg := lined(4, "5y")
+    show(g, eg)
+    return 0
+}

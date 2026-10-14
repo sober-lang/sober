@@ -43,8 +43,8 @@ mkdir -p "$W/src" "$W/r"
 list=()
 if [ "$MUT" = 1 ]; then
     # 代表: 集約（slice / map / struct）・ループ・panic・error を突く例（hdr_mut2 = hdr の自分のヘッダの書き込み — 他の例は素通りした・
-    # callconv_cold = 冷たい呼び出しの退避 — report-463・opt_hloop = mut slice の仮引数へループで append — hloop / rlim・opt_cpfwd = 写しと使い道の間の書き換え — cpfwd・opt_bce_const = 小さい定数添字の後の大きい定数添字が範囲外 — bce ⑤・opt_bver = 長さがちょうど最大の定数添字 — 版分けの入口の判定・opt_slp = nbody の形の束ね — SLP のレーン・結合）
-    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold opt_hloop opt_cpfwd opt_bce_const opt_bver opt_slp; do
+    # callconv_cold = 冷たい呼び出しの退避 — report-463・opt_hloop = mut slice の仮引数へループで append — hloop / rlim・opt_cpfwd = 写しと使い道の間の書き換え — cpfwd・opt_bce_const = 小さい定数添字の後の大きい定数添字が範囲外 — bce ⑤・opt_bver = 長さがちょうど最大の定数添字 — 版分けの入口の判定・opt_slp = nbody の形の束ね — SLP のレーン・結合・opt_count = 等値の数え上げ — 畳む間隔・重なる K・opt_spec = 定数引数の特化 — 鍵の位置・定数の仮引数の位置・opt_spec_panic = 特化した複製の中の panic の点・par_scope_try = scope の本体の `?` — 戻りの文脈の出口と合流・copyloop_for / copyloop_for_oob = 写しの for の一括化 — 形の判定・区間の範囲の検査・copyloop_writer / copyloop_writer_oob = Writer への写し — 枠の空き・欄の経路の (B)・copyloop_fill / copyloop_fill_edge = 定数の詰め — (C) / (Z) の形・空と逆向きの区間・Range の評価の順・iter_region_inner / iter_region_outer_assign = 反復の region の enter の残し方 — llight の本体の範囲と外の深度への写し〔観測は iterregion.sh の形と RSS〕）
+    for n in opt_cse opt_bce opt_rlight_depth opt_divpow2 opt_vec_scan opt_vec_scan_panic map_key_slice map_index slice panic_slice errparse panic_label catch arith_edge bytes_packed for_stmt hdr_mut2 opt_promote opt_promote_panic opt_unroll opt_unroll_panic utf8_std utf8_simd map_update map_keyreloc callconv_cold opt_hloop opt_cpfwd opt_bce_const opt_bver opt_slp opt_count opt_spec opt_spec_panic par_scope_try copyloop_for copyloop_for_oob copyloop_writer copyloop_writer_oob copyloop_fill copyloop_fill_edge iter_region_inner iter_region_outer_assign; do
         [ -f "examples/$n.out" ] && list+=("exp ex_$n examples/$n.sober")
     done
 else

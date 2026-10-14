@@ -2,7 +2,7 @@ package main
 
 import "std/io"
 
-// io の書きバッファ（息継ぎ ②）: ゼロ値は標準出力へ・64 KiB をまたいで書き出す・Flush で残りを出す・println と混ぜても出る順は呼んだ順
+// io の書きバッファ（息継ぎ ②）: ゼロ値は標準出力へ・SetFile で標準エラーへ付け替え・64 KiB をまたいで書き出す・Flush で残りを出す・println と混ぜても出る順は呼んだ順
 func main() int {
     mut w := io.Writer{}
     io.WriteString(mut w, "head\n")
@@ -18,5 +18,9 @@ func main() int {
     io.WriteString(mut w, "again\n")
     e2 := io.Flush(mut w)
     println(e2 == nil)
+    io.SetFile(mut w, io.Stderr)
+    io.WriteString(mut w, "to stderr\n")
+    e3 := io.Flush(mut w)
+    println(e3 == nil)
     return 0
 }

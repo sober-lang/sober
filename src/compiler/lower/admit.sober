@@ -321,12 +321,21 @@ func buildTaskInline(st mut St) {
     d0 := regionDepth(mut st)
     dest0 := load(mut st, meta, W_DEST)
     anc0 := load(mut st, meta, W_ANCHOR)
+    // 子が開く fd・ストリームは今の task（親）の鎖に積まれる — 子が死んだら子に入る前の頭まで閉じる（task の出口の fd_drain / chunk_drain と同じ後始末）
+    fh := if st.rtFdDrain != -1 { load(mut st, me, TC_FDS) } else { zero }
+    chh := if chF(mut st, CHF_DRAIN) != -1 { load(mut st, me, TC_CHS) } else { zero }
     mut r := zero
     if st.rtMut == 8 {
         // 変異 8（網の自己検査 — parbudget）: 縮退した子の罠を張らない（子の死が親の死に化ける）
         callIndirect(mut st, 1, list1(mut st, fieldPtr(mut st, frame, FR_RES)), -1)
     } else {
         r = trapCall(mut st, 1, fieldPtr(mut st, frame, FR_RES))
+    }
+    if chF(mut st, CHF_DRAIN) != -1 {
+        call(mut st, chF(mut st, CHF_DRAIN), list2(mut st, me, chh))
+    }
+    if st.rtFdDrain != -1 {
+        call(mut st, st.rtFdDrain, list2(mut st, me, fh))
     }
     regionSetDepth(mut st, d0)
     store(mut st, meta, W_DEST, dest0)

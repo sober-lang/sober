@@ -129,6 +129,10 @@
           "path": "std/utf8"
         },
         {
+          "ref": "iter#",
+          "path": "std/iter"
+        },
+        {
           "ref": "utf8",
           "path": "std/utf8"
         }
@@ -140,6 +144,118 @@
           "mut_def": false,
           "has_try": false,
           "callees": []
+        },
+        {
+          "name": "Open",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysOpen"
+          ]
+        },
+        {
+          "name": "Close",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysClose"
+          ]
+        },
+        {
+          "name": "ReadAll",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "errOf",
+            "sysErrno",
+            "sysReadFd"
+          ]
+        },
+        {
+          "name": "Raw",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Chunks",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "chunksFrom"
+          ]
+        },
+        {
+          "name": "ChunksAt",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "chunksFrom"
+          ]
+        },
+        {
+          "name": "chunksFrom",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "chunkEnd",
+            "errOf",
+            "k",
+            "len",
+            "sysChunkNext",
+            "sysChunkOpen",
+            "sysErrno"
+          ]
+        },
+        {
+          "name": "chunkEnd",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysChunkClose"
+          ]
+        },
+        {
+          "name": "Lines",
+          "expands": true,
+          "mut_def": false,
+          "has_try": true,
+          "callees": [
+            "Chunks",
+            "append",
+            "dropCR",
+            "joined",
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "dropCR",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "joined",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "freeze"
+          ]
         },
         {
           "name": "ReadFile",
@@ -170,17 +286,6 @@
           "callees": [
             "errOf",
             "sysWriteFd"
-          ]
-        },
-        {
-          "name": "ReadFd",
-          "expands": false,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "errOf",
-            "sysErrno",
-            "sysReadFd"
           ]
         },
         {
@@ -250,7 +355,7 @@
           ]
         },
         {
-          "name": "SetFd",
+          "name": "SetFile",
           "expands": true,
           "mut_def": false,
           "has_try": false,
@@ -331,6 +436,31 @@
         }
       ],
       "consts": [
+        {
+          "name": "Stdin",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "Stdout",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "Stderr",
+          "value": null,
+          "dict": true
+        },
+        {
+          "name": "chunkSize",
+          "value": 65536,
+          "dict": false
+        },
+        {
+          "name": "chunkGens",
+          "value": 2,
+          "dict": false
+        },
         {
           "name": "writerSize",
           "value": 65536,
@@ -1132,6 +1262,60 @@
       ]
     },
     {
+      "path": "std/iter",
+      "name": "iter",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Slice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "Range",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k"
+          ]
+        },
+        {
+          "name": "Each",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Sum",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
       "path": "std/builder",
       "name": "builder",
       "imports": [],
@@ -1200,60 +1384,6 @@
           "dict": false
         }
       ]
-    },
-    {
-      "path": "std/iter",
-      "name": "iter",
-      "imports": [],
-      "funcs": [
-        {
-          "name": "Slice",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "k",
-            "len"
-          ]
-        },
-        {
-          "name": "Range",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "k"
-          ]
-        },
-        {
-          "name": "Each",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        },
-        {
-          "name": "Count",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        },
-        {
-          "name": "Sum",
-          "expands": true,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "it"
-          ]
-        }
-      ],
-      "consts": []
     },
     {
       "path": "std/par",

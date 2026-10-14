@@ -1,0 +1,115 @@
+package main
+
+// examples/par_scope_try の逐次の双子（scripts/seqpar.list — 本体の `?` = scope の失敗を、名前付き関数の `?` と出口の優先の手書きで書いたもの）
+
+import "std/iter"
+
+type Bad error {
+    code int
+}
+
+type Wrap error {}
+
+@errors(Bad)
+func get(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{code: 0 - n}
+    }
+    return n * 10, nil
+}
+
+@errors(Bad)
+func name(n int) (string, error?) {
+    if n < 0 {
+        return "", Bad{code: 0 - n}
+    }
+    return "n${n}", nil
+}
+
+func show(tag string, e error?) {
+    if e == nil {
+        println("${tag}: nil")
+        return
+    }
+    switch e {
+    case Bad{code}: println("${tag}: Bad ${code}")
+    case Wrap{cause}: println("${tag}: Wrap (cause ${if cause == nil { "nil" } else { "set" }})")
+    }
+}
+
+func case1() (int, error?) {
+    a := get(4)?
+    b := get(-2)?
+    println("unreached")
+    return a + b, nil
+}
+
+func case2() (int, error?) {
+    return get(4)? + 1, nil
+}
+
+// 優先: 本体は h1 で抜けるが、Join しなかった h2 の失敗が先
+func case3() (int, error?) {
+    _, e2 := get(-3)
+    if e2 != nil {
+        return 0, e2
+    }
+    v := get(-1)?
+    return v, nil
+}
+
+func case4() (int, error?) {
+    _, e1 := get(-4)
+    println("child 2 ran")
+    if e1 != nil {
+        return 0, e1
+    }
+    return 0, nil
+}
+
+func case5() (string, error?) {
+    v := name(-5)? Wrap{}
+    return "got ${v}", nil
+}
+
+func case6() (int, error?) {
+    mut sum := 0
+    for i <- iter.Range(0, 5) {
+        sum += get(2 - i)?
+    }
+    return sum, nil
+}
+
+func inner7() (int, error?) {
+    return get(-7)?, nil
+}
+
+func case7() (int, error?) {
+    ri, ei := inner7()
+    show("7 inner", ei)
+    return ri + 100, nil
+}
+
+func main() {
+    r1, e1 := case1()
+    println(r1)
+    show("1", e1)
+    r2, e2 := case2()
+    println(r2)
+    show("2", e2)
+    r3, e3 := case3()
+    println(r3)
+    show("3", e3)
+    r4, e4 := case4()
+    println(r4)
+    show("4", e4)
+    r5, e5 := case5()
+    println("[${r5}] ${len(bytes(r5))}")
+    show("5", e5)
+    r6, e6 := case6()
+    println(r6)
+    show("6", e6)
+    r7, e7 := case7()
+    println(r7)
+    show("7", e7)
+}

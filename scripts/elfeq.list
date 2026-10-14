@@ -1,6 +1,7 @@
 # elfeq の追加の列（観測の期待値 .out を持たない entry — 1 行 1 entry [フラグ…]。obs の列は scripts/elfeq.sh が自動で入れる）。
 # B-2（2026-10-02）: 凍結コーパス（scripts/frozen/entries.list）と testdata の entry のうち、今の stage2 が受理するもので obs の列に無いもの。
 # 受理しないもの（frozen_src の byte 段より前の言語・負例・ライブラリの部分 package）は入れない
+# 2026-10-13（report-590）: testdata/frozen_src/examples/io_readdir を外した — std の EntryKind の File → Regular（io.File と衝突）で今の stage2 が受理しない。同じ観測は examples/io_readdir（obs の列）が持つ
 examples/union.sober
 testdata/analyzer_neg/errors_cause.sober
 testdata/analyzer_neg/errors_decl.sober
@@ -13,7 +14,6 @@ testdata/errpkg/app
 testdata/errtrace/field.sober
 testdata/errtrace/param.sober
 testdata/errtrace/slice.sober
-testdata/frozen_src/examples/io_readdir.sober
 testdata/pkgdemo/app
 testdata/pool/exits.sober
 testdata/pool/nested.sober

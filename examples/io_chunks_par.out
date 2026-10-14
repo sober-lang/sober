@@ -1,0 +1,6 @@
+shard 1: 120 requests, 9 errors, 1005894 bytes, 2766 bytes read
+shard 2: 900 requests, 83 errors, 7864468 bytes, 21258 bytes read
+shard 3: 3200 requests, 275 errors, 28829213 bytes, 75810 bytes read
+shard 4: 9000 requests, 821 errors, 81337327 bytes, 213841 bytes read
+total: 13220 requests, 1188 errors, 119036902 bytes
+a log shard is missing

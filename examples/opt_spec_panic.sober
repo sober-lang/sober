@@ -1,0 +1,20 @@
+package main
+
+// 定数引数の特化（spec.sober）の網: 定数の p で特化した複製の中で添字が範囲外 — 元と同じ点で panic する（呼び手が長さを保証しない呼び出し）
+
+func pfx(b []byte, at int, p []byte) bool {
+    mut i := 0
+    while i < len(p) {
+        if b[at + i] != p[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+func main() {
+    println(pfx(bytes("abc"), 0, bytes("ab")))
+    println(pfx(bytes("abc"), 1, bytes("bc")))
+    println(pfx(bytes("ab"), 1, bytes("bc")))
+}

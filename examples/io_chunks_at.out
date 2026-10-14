@@ -1,0 +1,5 @@
+pulled 6 slots: 213841 + 75810 bytes
+big checksum matches: true
+from 100000: 113841 bytes, then ReadAll: 213841 bytes
+at the end: 0 slots
+negative offset: errno 22

@@ -1,0 +1,1 @@
+testdata/analyzer_neg/ifreeze_for_param.sober:7:14: error: iterating over `xs` in a for loop freezes the contents of the mut parameter `xs` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut xs`), or iterate over a copy: clone(x) (Analyzer)

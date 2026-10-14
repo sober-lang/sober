@@ -8,7 +8,7 @@ A map of the packages you use with `import "std/<name>"`. For the exact form of 
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/io` | Files, standard I/O, directories | `ReadFile`, `WriteFile`, `ReadStdin`, `WriteStdout`, `WriteStderr`, `ReadDir`, the buffered `Writer` (`WriteString` / `WriteByte` / `Flush`). Error labels are `NotFound`, `Denied`, `Other` |
+| `std/io` | Files, standard I/O, directories | `ReadFile`, `WriteFile`, `ReadStdin`, `WriteStdout`, `WriteStderr`, `ReadDir`, open files `Open` / `Close` (`defer io.Close(f)` right after) / `ReadAll`, reading slots without copying them `for c <- io.Chunks(f)?` (`Lines`, `ChunksAt` from a given offset, the bytes via `Raw`), the buffered `Writer` (`WriteString` / `WriteByte` / `Flush`). Error labels are `NotFound`, `Denied`, `Other` |
 | `std/os` | Processes and the environment | `Args`, `Getenv`, `Run` (child processes), `Mkdir`, `Rename`, `ModTime`, `WriteMode`, `Sleep` |
 
 ## Text
@@ -28,6 +28,7 @@ A map of the packages you use with `import "std/<name>"`. For the exact form of 
 | Package | Purpose | Main items |
 |---|---|---|
 | `std/iter` | The lazy sequence `Iter[T]` | `Range`, `Slice`, `Each`, `Count`, `Sum` (consume the result of `for … yield` through a pipe) |
+| `std/sort` | Sorting | `Order` (the indices 0..n−1 in the order of a comparison closure `less(a, b)` — stable. The caller keeps the values and how to compare them) · `OrderUnstable` (same shape; faster, but makes no promise about the order of equal items — still deterministic) |
 | `std/table` | Large tables (a sequence of fixed-size chunks — growing never copies) | `Push`, `Get`, `Set`, `Len` on a `Table[T]`, and `Freeze` into an immutable `Frozen[T]` |
 | `std/pool` | A lending pool looked up by handle | `Acquire`, `Release`, `Get`, `Set` |
 | `std/json` | Reading and writing JSON | `Parse` gives a document `Doc`, read with `Get` / `Items` / `Dec*` and write with `Put*`; mapping to and from types is `json.Decode[T]` / `json.Encode[T]` |

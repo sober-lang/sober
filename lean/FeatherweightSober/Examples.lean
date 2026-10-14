@@ -1582,6 +1582,52 @@ example : typecheck [] ∅ [] 0 0 0 [] []
 example : typecheck [] ∅ [] 0 0 0 [] [] (Expr.scope .int .int (lit 0)) = none := by native_decide
 example : exprFromJson 100 (exprToJson (Expr.scope .int .int (lit 0))) = .ok (Expr.scope .int .int (lit 0)) := rfl
 
+/-! ### 本体の `?` = scope の失敗（裁定 2026-10-13 — language.md 11 節）: 脱糖は本体をラベルで包むだけ（新しい構成子・規則なし）。
+scope の注釈 = kt t（組 (t, err?)）・本体 = `label (kt t) (pair body nil)`・`?` = `jump 0 (pair zero (some e))`。ラベルは本体の内側なので
+scope の Λ = [] は保たれ、出口の待ち（寿命結合）と優先（死 > 正準順で最初の未回収の失敗 > 本体の値）は既存の scopeK のまま -/
+
+/-- 子の失敗を Join して `?`: 本体は残りを走らせずにラベルへ抜け、scope の値は inl (pair 0 (some 9))。後ろの 2 本目の spawn は走らない -/
+def exQ1 : Expr :=
+  block (Expr.scope (kt .int) .int (label (kt .int)
+    (letE (Expr.spawn (var 0) triv (pair (lit 1) (some (lit 9))))
+      (letE (Expr.join (kt .int) (var 0))
+        (ifnil (snd (var 0))
+          (letE (Expr.spawn (var 2) triv (pair (lit 2) (nil .int))) (pair (lit 100) (nil .int)))
+          (jump 0 (kt .int) (pair (lit 0) (some (var 0)))))))))
+example : typecheck [] ∅ [] 0 0 0 [] [] exQ1 = some (sty (kt .int)) := by native_decide
+example : taskDone (runAny [] false 300 (loadT exQ1) ∅).1 = Option.some (inl (.union .unit .int) (pair (lit 0) (some (lit 9)))) := by native_decide
+example : (runAny [] false 300 (loadT exQ1) ∅).1 = (runAny [] true 300 (loadT exQ1) ∅).1 := by native_decide
+/-- `?` で抜けても出口は子を全部待つ: 先に生んだ子（失敗しない）が `?` の後に決着しても scope は inl の失敗 -/
+def exQ2 : Expr :=
+  block (Expr.scope (kt .int) .int (label (kt .int)
+    (letE (Expr.spawn (var 0) triv (pair (add (lit 40) (lit 2)) (nil .int)))
+      (letE (Expr.spawn (var 1) triv (pair (lit 1) (some (lit 9))))
+        (letE (Expr.join (kt .int) (var 0))
+          (ifnil (snd (var 0)) (pair (fst (var 0)) (nil .int)) (jump 0 (kt .int) (pair (lit 0) (some (var 0))))))))))
+example : taskDone (runAny [] false 300 (loadT exQ2) ∅).1 = Option.some (inl (.union .unit .int) (pair (lit 0) (some (lit 9)))) := by native_decide
+example : (runAny [] false 300 (loadT exQ2) ∅).1 = (runAny [] true 300 (loadT exQ2) ∅).1 := by native_decide
+/-- 優先: 本体が `?` で抜けても、Join しなかった子の未回収の失敗が先（正準順で最初 — 本体の失敗は値の腕なので出口の検査に負ける） -/
+def exQ3 : Expr :=
+  block (Expr.scope (kt .int) .int (label (kt .int)
+    (letE (Expr.spawn (var 0) triv (pair (lit 1) (some (lit 7))))
+      (letE (Expr.spawn (var 1) triv (pair (lit 2) (some (lit 9))))
+        (letE (Expr.join (kt .int) (var 0))
+          (ifnil (snd (var 0)) (pair (fst (var 0)) (nil .int)) (jump 0 (kt .int) (pair (lit 0) (some (var 0))))))))))
+example : taskDone (runAny [] false 300 (loadT exQ3) ∅).1 = Option.some (inr (kt .int) (inr .unit (lit 7))) := by native_decide
+example : (runAny [] false 300 (loadT exQ3) ∅).1 = (runAny [] true 300 (loadT exQ3) ∅).1 := by native_decide
+/-- 優先: 死んだ子がいれば `?` の失敗より死が先 -/
+def exQ4 : Expr :=
+  block (Expr.scope (kt .int) .int (label (kt .int)
+    (letE (Expr.spawn (var 0) triv (unreach (kt .int)))
+      (letE (Expr.spawn (var 1) triv (pair (lit 1) (some (lit 9))))
+        (letE (Expr.join (kt .int) (var 0))
+          (ifnil (snd (var 0)) (pair (fst (var 0)) (nil .int)) (jump 0 (kt .int) (pair (lit 0) (some (var 0))))))))))
+example : outcome (runAny [] false 300 (loadT exQ4) ∅).1 = "died" := by native_decide
+example : outcome (runAny [] true 300 (loadT exQ4) ∅).1 = "died" := by native_decide
+/-- 型の拒否: ラベルは本体の内側だけ — 本体の外のラベル（関数の戻り）へは jump できない（Λ = [] — 従来の kind 7 の根） -/
+example : typecheck [] ∅ [] 0 0 0 [] []
+    (block (label .int (case (Expr.scope .int .int (jump 0 .int (lit 1))) (var 0) (lit 0)))) = none := by native_decide
+
 /-- Def の本体の par（P3a — noNewchan の解禁）: 関数の中で scope を開き、仮引数を子へ渡して +1 を計算させる。
 2 本目は子が死ぬ（Try で nil を見ても scope の値は inr）。呼び出しは task の中（loadT）で -/
 def parDefΔ : Defs :=

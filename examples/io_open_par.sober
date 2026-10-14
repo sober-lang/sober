@@ -1,0 +1,61 @@
+package main
+
+// IO 便 段 2: task の死と開いた fd（language.md 28 節「後始末」・11 節）。死ぬ task では defer が走らないので、Open は fd を開いた task の
+// 登録簿に積み、子の出口（死・切られた子も通る）で rt が閉じる。File は give: で渡せないので、子は path を受けて自分で開く。
+// 開いている fd の数は ring・eventfd（ワーカーごと — 数は機械の CPU の数に依る）も数えるので、scope を 200 回まわした伸びで見る:
+// 死んだ子の fd が残れば 1 周 2 本ずつ（400）伸びる。リポジトリのルートを cwd にして実行する
+
+import "std/io"
+import "std/par"
+
+type Boom panic
+
+func fds() int {
+    es := io.ReadDir("/proc/self/fd") catch return -1
+    return len(es)
+}
+
+// read は p を開いて読んだ長さ。die > 0 なら開いた後に死ぬ（defer は走らない — 登録簿が閉じる）
+func read(p string, die int) int {
+    f := io.Open(p) catch return -1
+    defer io.Close(f)
+    if die > 0 {
+        panic(Boom{})
+    }
+    b := io.ReadAll(f) catch return -2
+    return len(b)
+}
+
+// round は子 3 本（ふつう 1・開いた後に死ぬ 2）の scope — 死んだ子は scope の err（TaskDied）になる
+func round(p string) error? {
+    r, err := par.Scope((s par.S) => {
+        a := par.Spawn(s, () => read(p, 0))
+        b := par.Spawn(s, () => read(p, 1))
+        c := par.Spawn(s, () => read(p, 2))
+        k := switch par.Try(b) {
+        case par.Ok{v}: v
+        case par.Failed{}: 100
+        case par.Died{cause}: 100
+        }
+        k2 := switch par.Try(c) {
+        case par.Ok{v}: v
+        case par.Failed{}: 100
+        case par.Died{cause}: 100
+        }
+        par.Join(a) + k + k2
+    })
+    return err
+}
+
+func main() {
+    p := "testdata/io/hello.txt"
+    println(if round(p) != nil { "scope failed: children died" } else { "scope ok" })
+    n0 := fds()
+    mut i := 0
+    while i < 200 {
+        _ = round(p)
+        i += 1
+    }
+    grew := fds() - n0
+    println(if grew < 200 { "dead tasks' files closed" } else { "leaked ${grew}" })
+}

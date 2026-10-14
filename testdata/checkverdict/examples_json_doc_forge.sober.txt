@@ -1,2 +1,2 @@
-sober: desugar error at examples/json_doc_forge.sober:9:10 (Malformed)
+sober: load error at examples/json_doc_forge.sober:9:10: this type is sealed (a field has a non-public type of its package): only its own package builds it with fields — write T{} for the zero value, or use the package's constructor
 exit=1

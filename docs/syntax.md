@@ -238,7 +238,11 @@ FieldPattern = identifier [ ":" Pattern ] .
 ForExpr      = "for" Generators ( "yield" OrExpr | Block ) .   (* yield の値は '|>' の手前まで — '|>' は for 式全体に掛かる（language.md 7 節）。
                                                                 文の位置のブロック形は消費（文形 for — 7 節、2026-09-28）。文法は同じで位置で読み分ける *)
 Generators   = Generator { ";" Generator } .
-Generator    = IdentifierList "<-" Expression [ "if" Expression ] .   (* 決定 4: ガードは各ジェネレータ直後 *)
+Generator    = IdentifierList "<-" Expression [ "if" Expression ] .   (* 決定 4: ガードは各ジェネレータ直後。
+                                                                呼び出し形の生成元に付いた後置 `?`（`x <- g(a)?`）は、継続を足した後の呼び出しに付く —
+                                                                失敗しうる生成元（language.md 7 節・2026-10-13）。文法は変えない: 判定は g の宣言の署名
+                                                                （仮引数が実引数より 1 つ多く最後が関数型・結果が error? 1 つ）。包み替え `? L{…}` は
+                                                                条件の位置の composite literal の規則（決定 5）どおり括弧で `x <- (g(a)? L{…})` *)
 
 ScopeExpr    = [ "parallel" ] "scope" [ "(" AnnotArgs ")" ] Block .
 SpawnExpr    = "spawn" Expression .

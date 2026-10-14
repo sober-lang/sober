@@ -1,11 +1,11 @@
 package main
 
-// 負例: 欄は名前つきで全部・1 回ずつ（language.md 27 節「panic ラベル」— loader の拒否）
+// 負例: 欄は名前つきで 1 回ずつ・宣言の欄だけ（language.md 27 節「panic ラベル」— loader の拒否。省いた欄はゼロ値 — 2026-10-13 に部分リテラルと揃えた）
 type L panic {
     a int
     b int
 }
 
 func main() {
-    panic(L{a: 1})
+    panic(L{a: 1, c: 2})
 }

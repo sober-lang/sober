@@ -9,22 +9,6 @@ package loader
 
 import "std/iter"
 import "ast"
-import "diag"
-
-// mutAliasAt は最初の重なりの位置（無ければ file = -1）
-func mutAliasAt(cx Cx) diag.Pos {
-    for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        for i <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[i]
-            at := if x.kind == ast.ECall { aliasIn(t, x.b) } else if x.kind == ast.EPipe { aliasIn(t, x.c) } else { 0 - 1 }
-            if at >= 0 {
-                return diag.Pos{file: f, tok: t.nodes[at].tok}
-            }
-        }
-    }
-    return diag.Pos{file: 0 - 1, tok: 0}
-}
 
 // aliasIn は実引数の列 l（穴は -1）で前の mut 実引数と重なる最初の mut 実引数の節（無ければ -1）
 func aliasIn(t ast.Tree, l int) int {

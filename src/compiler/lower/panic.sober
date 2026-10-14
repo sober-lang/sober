@@ -227,6 +227,22 @@ func buildPanicMem(st mut St) {
     exit(mut st, PANIC_MEM)
 }
 
+// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13 — report-625 K0 / 631: map の常駐の帰属）。meta の後ろ（META_WORDS から MS_N 語）に
+// 索引の作り直し（rt.map_find・rt.map_grow）・セル列の世代（rt.map_grow の中の rt.slice_grow — その場の深度の bump の差）・先端での 1 セル伸長の
+// 総バイトを数え、`mapstat <番号> <バイト>` と印字する（番号 = 下の MS_*）。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
+// 旗の無い build は不変。回数・最大・持ち主の付け替えの数えは自己 build の値札（+0.061 G）で落とした（report-631 — 要るときは .pair/mapstat-631-full.patch）
+const MS_IDXB = 0 // 索引の確保の総バイト（rt.map_find・rt.map_grow）
+const MS_CELLB = 1 // セル列の新しい確保（map_grow の全コピー・幾何成長）の総バイト
+const MS_TIPB = 2 // 先端での 1 セル伸長の総バイト（挿入の点の速い道）
+const MS_GIDXB = 3 // 索引の確保のうち rt.map_grow（索引を先に作る道）の総バイト
+const MS_N = 4
+
+// msAdd は計数 k に v を足す
+func msAdd(st mut St, k int, v int) {
+    g := globaladdr(mut st, st.meta)
+    store(mut st, g, META_WORDS + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + k), v))
+}
+
 // buildDepthReport は rt.depth_report の本体（宛先構築レーン M5c — 102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
 // 旗（W_DREP — 入口が SOBER_DEPTH_REPORT から置く）が立っていれば `region_depth{max: d}` を stderr へ。d = 一度でも入った最深の深度
 // （深度 d の bump は enter〔full・軽い〕でだけ初期化され、出ても 0 に戻らない — 熱い経路に計測の命令を足さずに読める）
@@ -235,6 +251,19 @@ func buildDepthReport(st mut St) {
     meta := globaladdr(mut st, st.meta)
     if st.callStat {
         callStatDump(mut st, meta)
+    }
+    if st.rtMut == 13 {
+        // map の成長の計数（--map-stat）を stderr へ（印字の fd を 1 に戻す）
+        toStderr(mut st, meta)
+        for k <- iter.Range(0, MS_N) {
+            printLit(mut st, "mapstat ")
+            call(mut st, st.rtPint, list1(mut st, iconst(mut st, k)))
+            printLit(mut st, " ")
+            call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + k)))
+            printLit(mut st, "\n")
+        }
+        call(mut st, st.rtFlush, list0(mut st))
+        store(mut st, meta, W_FD, iconst(mut st, 1))
     }
     on := newBlock(mut st)
     off := newBlock(mut st)

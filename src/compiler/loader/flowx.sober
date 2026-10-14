@@ -112,9 +112,48 @@ func fxBlock(x mut Fx, e int, tok int) int {
     return fxNode(mut x, ast.Node{ast.KBlock, tok, ast.PutList(mut x.db, []int{s}), 0, 0, 0, 0, 0})
 }
 
+// nilIn は節 n の op の連鎖（multi なら 2 項以上）に nilTestKind が want の項があるか
+func nilIn(t ast.Tree, n int, op int, want int, multi bool) bool {
+    cs := chainOf(t, n, op)
+    if multi && len(cs) < 2 {
+        return false
+    }
+    for q <- iter.Range(0, len(cs)) {
+        if nilTestKind(t, cs[q]) == want {
+            return true
+        }
+    }
+    return false
+}
+
+// flowAt は節 nd を flowRound が写すか（下の ①〜③ の条件と同じ — 写す節が 1 つも無い周は節の表とデータの写しを作らずに返す）
+func flowAt(t ast.Tree, nd ast.Node) bool {
+    if nd.kind == ast.EIf {
+        return nd.c < 0 && nilIn(t, nd.a, lexer.AmpersandAmpersand, 1, true) ||
+            diverges(t, nd.b) && ast.ListLen(t, t.nodes[nd.b].a) == 1 && nilIn(t, nd.a, lexer.PipePipe, 2, true)
+    }
+    if nd.kind == ast.KBlock || nd.kind == ast.EBlock {
+        k := ast.ListLen(t, nd.a)
+        for q <- iter.Range(0, k - 1) {
+            s := t.nodes[ast.ListAt(t, nd.a, q)]
+            if s.kind == ast.SExpr && t.nodes[s.a].kind == ast.EIf && t.nodes[s.a].c < 0 && diverges(t, t.nodes[s.a].b) && nilIn(t, t.nodes[s.a].a, lexer.PipePipe, 2, false) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
 // flowRound は木を 1 周写す（写したら changed）
 func flowRound(t ast.Tree) (ast.Tree, bool) {
     n0 := len(t.nodes)
+    mut any := false
+    for i <- iter.Range(0, n0) {
+        any = any || flowAt(t, t.nodes[i])
+    }
+    if !any {
+        return t, false
+    }
     mut ns := mut []ast.Node{}
     for i <- iter.Range(0, n0) {
         ns = append(ns, t.nodes[i])

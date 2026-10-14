@@ -1,0 +1,199 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "open",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "io.File"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "try",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 39
+                    },
+                    "field": "Open",
+                    "tok": 41
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "p",
+                      "tok": 43
+                    }
+                  ],
+                  "tok": 42
+                },
+                "wrap": null,
+                "tok": 45
+              }
+            ],
+            "tok": 37
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 48
+                },
+                "field": "Close",
+                "tok": 50
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 52
+                }
+              ],
+              "tok": 51
+            },
+            "tok": 47
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "f",
+                "tok": 56
+              },
+              {
+                "k": "nil",
+                "tok": 58
+              }
+            ],
+            "tok": 55
+          }
+        ]
+      },
+      "tok": 23,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 62
+      },
+      "sig_end": 36
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "open",
+                    "tok": 69
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io/hello.txt",
+                      "tok": 71
+                    }
+                  ],
+                  "tok": 70
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 74
+                },
+                "tok": 73
+              }
+            ],
+            "tok": 67
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 76
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 78
+                }
+              ],
+              "tok": 77
+            }
+          }
+        ]
+      },
+      "tok": 63,
+      "bodiless": false,
+      "span": {
+        "start": 62,
+        "end": 83
+      },
+      "sig_end": 66
+    }
+  ],
+  "consts": []
+}

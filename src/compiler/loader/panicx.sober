@@ -19,7 +19,7 @@ const PL_BARE = 1        // 裸の `panic()`（廃止 — 理由のラベルが�
 const PL_ARG = 2         // 実引数がラベルのリテラル 1 つでない
 const PL_NOTLABEL = 3    // リテラルの型が panic ラベルでない
 const PL_RUNTIME = 4     // RegionExceeded を書いた（ランタイム専用）
-const PL_FIELDS = 5      // 欄の書き方（名前つき・全部・1 回ずつ）
+const PL_FIELDS = 5      // 欄の書き方（名前つき・1 回ずつ・宣言の欄だけ — 省いた欄はゼロ値）
 const PL_FIELDTY = 6     // 宣言の欄の型が int / byte / bool / string でない
 const PL_BUILTIN = 7     // 組み込みのラベルと同名の宣言
 const PL_USE = 8         // panic の実引数の外でラベルを使った
@@ -141,8 +141,9 @@ func panicFile(cx Cx, pnames []string, lt []int, f int, allowBare bool) FileOut 
     for i <- iter.Range(0, n0) {
         x := t.nodes[i]
         if (x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.EComposite) && !argOf[i] {
-            n := Name(t, x.a)
-            if labelAt(cx, lt, f, n) >= 0 || (x.kind == ast.EComposite && (builtinLabel(n) || n == "RegionExceeded")) {
+            // 組み込みのラベルの名前はデータプールのまま照合（型名ごとに名前の string を作らない）・package のラベルが無ければ labelAt を引かない
+            builtin := x.kind == ast.EComposite && (StrIs(t, x.a, "Unreachable") || StrIs(t, x.a, "InvariantBroken") || StrIs(t, x.a, "RegionExceeded"))
+            if builtin || len(lt) > 0 && labelAt(cx, lt, f, Name(t, x.a)) >= 0 {
                 return FileOut{t, diag.PanicLabel{at: diag.Pos{file: f, tok: x.tok}, kind: PL_USE}}
             }
         }
@@ -229,7 +230,9 @@ func isPanicCallee(t ast.Tree, x ast.Node) bool {
 // fieldsOk は composite の欄の列 es（木 t）が宣言の欄の列 fl（木 dt）を名前つきで全部・1 回ずつ書いているか
 func fieldsOk(t ast.Tree, es int, dt ast.Tree, fl int) bool {
     n := ast.ListLen(t, es)
-    if n != ast.ListLen(dt, fl) {
+    nd := ast.ListLen(dt, fl)
+    // 一部の欄だけでよい（部分リテラル — 省いた欄はゼロ値。2026-10-13 に一般の struct リテラルと揃えた）
+    if n > nd {
         return false
     }
     for i <- iter.Range(0, n) {
@@ -239,7 +242,7 @@ func fieldsOk(t ast.Tree, es int, dt ast.Tree, fl int) bool {
         }
         k := Name(t, el.a)
         mut hit := 0
-        for j <- iter.Range(0, n) {
+        for j <- iter.Range(0, nd) {
             if Name(dt, dt.nodes[ast.ListAt(dt, fl, j)].a) == k {
                 hit += 1
             }

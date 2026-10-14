@@ -379,26 +379,76 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     toks0 := st.parToks
     st.parToks = rec4(mut st, st.parToks, int(tokName), if budgeted { 1 } else { 0 }, 0)
     body := nB(nodeOf(mut st, lam))
+    // 本体の `?` = scope の失敗（language.md 11 節「本体の `?`」）: 本体に結果 [error?] だけの戻りの文脈を立てる — `?` は err をその口へ書き、
+    // 本体の defer を走らせ深度を scope の region へ戻して qEnd へ（inlineExit — インライン展開の return と同じ）。出口の待ち・優先は値の道と共有
+    // 本体に `?` が無ければ立てない（IR は従来のまま）
+    hasQ := desugar.HasTry(mut st.d, body)
+    mut qT := -1
+    mut qSlot := -1
+    mut qFlag := -1
+    mut qEnd := BlkRef(-1)
+    if hasQ {
+        qT = optOf(mut st, errType(mut st)?)
+        qctx := recN(mut st, ICSZ)
+        qSlot = newSlotAddr(mut st, tWords(mut st, qT))
+        for w <- iter.Range(0, tWords(mut st, qT)) {
+            store(mut st, qSlot, w, zero)
+        }
+        qFlag = newSlotAddr(mut st, 1)
+        store(mut st, qFlag, 0, zero)
+        qEnd = newBlock(mut st)
+        desugar.HeapSet(mut st.d, qctx + IC_RESULTS, list1(mut st, qT))
+        desugar.HeapSet(mut st.d, qctx + IC_SLOT, qSlot)
+        desugar.HeapSet(mut st.d, qctx + IC_BASE, st.nscope - 1)
+        desugar.HeapSet(mut st.d, qctx + IC_DEPTH, sd)
+        desugar.HeapSet(mut st.d, qctx + IC_END, int(qEnd))
+        st.rets = rec4(mut st, st.rets, qctx, 0, 0)
+    }
     mut x := Val{t: -1, v: 0}
     if kindN(mut st, body) == ast.EBlock {
         x = armValue(mut st, lA(nodeOf(mut st, body)))?
     } else {
         x = expr(mut st, body)?
     }
+    if hasQ {
+        st.rets = desugar.HeapGet(mut st.d, st.rets)
+    }
     st.rnest = st.rnest - 1
     st.parToks = toks0
+    qUsed := hasQ && irBlkPreds(mut st, qEnd) > 0
     if isTag(mut st, x.t, TNever) {
+        if qUsed {
+            // 本体が `?` でしか抜けない（値の型が決まらない）— 未対応
+            return 0, diag.Unsupported{at: posOf(mut st, at)}
+        }
         st.scopeKeep = keep0
         popScope(mut st)
         return -1, nil
     }
     runDefers(mut st, st.nscope - 1)?
-    if cur(mut st) == -1 {
+    if cur(mut st) == -1 && !qUsed {
         st.scopeKeep = keep0
         popScope(mut st)
         return -1, nil
     }
     t := x.t
+    if qUsed {
+        // 値の道と `?` の道（ゼロ値・印 1）を合流させる
+        ends := endsNew(mut st, 2)
+        if cur(mut st) != -1 {
+            endsAdd(mut st, ends, cur(mut st), t, x.v)
+        }
+        setCur(mut st, qEnd)
+        store(mut st, qFlag, 0, iconst(mut st, 1))
+        za := newAgg(mut st, t)
+        for w <- iter.Range(0, tWords(mut st, t)) {
+            store(mut st, za, w, zero)
+        }
+        zeroFill(mut st, za, 0, t)
+        endsAdd(mut st, ends, cur(mut st), t, loadVal(mut st, za, 0, t))
+        _, jv := joinArms(mut st, ends, t)
+        x = Val{t: t, v: jv}
+    }
     // 出口: 子が全部終わるまで待つ（P3b — 待っている子がいれば scope を開いた task は止まる）
     waitLive(mut st, rec)
     store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SCOPE, load(mut st, rec, SR_UP))
@@ -413,6 +463,10 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     // 同じ深度で開き直した region が上書きする）
     if containsSlice(mut st, t) {
         relocateTo(mut st, v, 0, t, saved)
+    }
+    if qUsed {
+        // `?` の err（scope の region にある — inlineExit が写した）を親の最内へ（nil なら何もしない）
+        relocateTo(mut st, qSlot, 0, qT, saved)
     }
     dead := load(mut st, rec, SR_DEAD)
     // 死因 = 死んだ子のうち生んだ順で最初の子の死因（P4-2 — 到着順を捨てる。死があるときだけ全部の子の鎖〔新しい順〕を歩き、最後に見た死を取る）
@@ -478,6 +532,8 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
         // (B1): 子の預かりのスロットを返す（全部の子の鎖 — 写しは全部済んだ: Join / Try は値を scope の region へ写し、本体の値と未回収の err は上で親へ写した）
         keepRelease(mut st, rec)
     }
+    // 子が全部終わった — 手元のプールの温かい分の超過を返す（rt.slot_trim — report-574 の T1）
+    call(mut st, st.rtSlotTrim, list0(mut st))
     st.scopeKeep = keep0
     regionSetDepth(mut st, saved)
     popScope(mut st)
@@ -493,6 +549,18 @@ func parScope(st mut St, fi int, pk int, args desugar.ListRef, at desugar.NodeRe
     setCur(mut st, bLive)
     condbr(mut st, cmp(mut st, CNe, failed, zero), bFail, -1, bOk, -1)
     setCur(mut st, bOk)
+    if qUsed {
+        // 本体の `?` の失敗（未回収の失敗・死より後 — 本体の結果の腕）: (ゼロ値 — 合流で入れた, err)
+        bQ := newBlock(mut st)
+        bV := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, qFlag, 0), zero), bQ, -1, bV, -1)
+        setCur(mut st, bQ)
+        storeVal(mut st, ts, 0, t, v)
+        qe := coerce(mut st, qT, loadVal(mut st, qSlot, 0, qT), eT, at)?
+        storeVal(mut st, es, 0, eT, qe.v)
+        br(mut st, bEnd, -1)
+        setCur(mut st, bV)
+    }
     storeVal(mut st, ts, 0, t, v)
     store(mut st, es, 0, zero)
     br(mut st, bEnd, -1)

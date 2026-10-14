@@ -266,15 +266,16 @@ func scanFuncs(cx Cx) Funcs {
     mut cl := builder.Builder[bool]{}
     mut bad := -1
     ix := indexFns(cx, files, nodes, cs)
-    mut seen := mut []int{}
+    mut need := mut []bool{}
     for i <- iter.Range(0, len(files)) {
-        seen = append(seen, -1)
+        need = append(need, hm[i] && !hf[i] && !ni[i] && !nb[i])
     }
+    cyc := onCycle(cx, files, nodes, lo, hi, cs, ix, freeze(need))
     for i <- iter.Range(0, len(files)) {
         if ni[i] && (!hm[i] || hf[i]) && bad == -1 {
             bad = i
         }
-        mdef := hm[i] && !hf[i] && (ni[i] || nb[i] || reachesSelf(cx, files, nodes, lo, hi, cs, ix, mut seen, i))
+        mdef := hm[i] && !hf[i] && (ni[i] || nb[i] || cyc[i])
         builder.Push(mut ex, (hm[i] || hf[i]) && !mdef)
         builder.Push(mut md, mdef)
         builder.Push(mut cl, hm[i] && !hf[i] && !mdef)
@@ -288,14 +289,14 @@ func fnName(cx Cx, files []int, nodes []int, i int) string {
     return Name(t, t.nodes[nodes[i]].a)
 }
 
-// fnIs は関数 i の名前が name か（コピーしない — reachesSelf の鎖の比較）
+// fnIs は関数 i の名前が name か（コピーしない — onCycle の鎖の比較）
 func fnIs(cx Cx, files []int, nodes []int, i int, name string) bool {
     t := cx.trees[files[i]]
     return StrIs(t, t.nodes[nodes[i]].a, name)
 }
 
 // FnIndex は (package, 名前) → 関数の索引（開番地でなく鎖 — head[バケツ] と next[関数]、hc[呼び出し名] = 名前のハッシュ）。
-// reachesSelf が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約 4 s）のを、鎖の数本の比較にする
+// 閉路の判定（旧 reachesSelf・今は onCycle）が呼び出し名を関数へ引くたびに全関数と名前を比べていた（関数 × 到達集合 × 呼び出し名 × 全関数 — 自己適用で約 4 s）のを、鎖の数本の比較にする
 type FnIndex struct {
     head []int
     next []int
@@ -341,33 +342,105 @@ func indexFns(cx Cx, files []int, nodes []int, cs []string) FnIndex {
     return FnIndex{freeze(head), freeze(next), freeze(hc), mask}
 }
 
-// reachesSelf は関数 i の本体から、同じ package の裸の名前の呼び出しを辿って i に戻れるか（到達可能性の反復 — Zig の DFS と同じ集合）。
-// 同名の関数が同じ package に複数あれば全部を辿る（索引の鎖を最後まで見る）。seen は訪問の印（seen[h] == i なら i からの探索で印済み — 探索ごとに消さない）
-func reachesSelf(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, seen mut []int, i int) bool {
-    pk := cx.file_pkg[files[i]]
-    // i から 1 歩で届く関数を印し、印の付いた関数から届く関数を印す（増えなくなるまで）
-    mut frontier := mut []int{i}
-    mut fi := 0
-    while fi < len(frontier) {
-        g := frontier[fi]
-        mut c := lo[g]
-        while c < hi[g] {
-            mut h := ix.head[ix.hc[c]]
-            while h >= 0 {
-                if cx.file_pkg[files[h]] == pk && seen[h] != i && fnIs(cx, files, nodes, h, cs[c]) {
-                    if h == i {
-                        return true
-                    }
-                    seen[h] = i
-                    frontier = append(frontier, h)
-                }
-                h = ix.next[h]
-            }
-            c += 1
-        }
-        fi += 1
+// onCycle は関数ごとに、同じ package の裸の名前の呼び出しを辿って自分へ戻れるか（呼び出しグラフの閉路の上にあるか — 自分を直に呼ぶ辺を含む）。
+// need の関数から届く範囲だけを Tarjan の強連結成分で 1 回たどる（関数ごとの到達集合の反復は関数 × 到達集合 — 自己適用で 0.1 G 級）。
+// 辺 g → h = g の呼び出し名 c と同じ名前の、g と同じ package の関数 h（同名が複数なら全部 — 索引の鎖を最後まで見る）
+func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, ix FnIndex, need []bool) []bool {
+    n := len(files)
+    mut num := mut []int{}
+    mut low := mut []int{}
+    mut onst := mut []bool{}
+    mut cyc := mut []bool{}
+    for _ <- iter.Range(0, n) {
+        num = append(num, -1)
+        low = append(low, 0)
+        onst = append(onst, false)
+        cyc = append(cyc, false)
     }
-    return false
+    // Tarjan の積み（成分の候補）と、DFS の枠の積み（3 語ずつ: 関数・次の呼び出し名・鎖の次の候補 + 2 — 候補 -2 は呼び出し名の鎖をまだ引いていない・-1 は鎖の終わり。push が負を積まないので 2 を足して持つ）
+    mut tst := mut []int{}
+    mut ts := 0
+    mut fr := mut []int{}
+    mut sp := 0
+    mut next := 0
+    for s <- iter.Range(0, n) {
+        if need[s] && num[s] == -1 {
+            num[s] = next
+            low[s] = next
+            next += 1
+            ts = push(mut tst, ts, s)
+            onst[s] = true
+            sp = push(mut fr, sp, s)
+            sp = push(mut fr, sp, lo[s])
+            sp = push(mut fr, sp, 0)
+            while sp > 0 {
+                top := sp - 3
+                g := fr[top]
+                pk := cx.file_pkg[files[g]]
+                mut c := fr[top + 1]
+                mut h := fr[top + 2] - 2
+                mut w := -1
+                while w == -1 && c < hi[g] {
+                    if h == -2 {
+                        h = ix.head[ix.hc[c]]
+                    }
+                    if h < 0 {
+                        c += 1
+                        h = -2
+                    } else {
+                        cand := h
+                        h = ix.next[h]
+                        if cx.file_pkg[files[cand]] == pk && fnIs(cx, files, nodes, cand, cs[c]) {
+                            w = cand
+                        }
+                    }
+                }
+                fr[top + 1] = c
+                fr[top + 2] = h + 2
+                if w >= 0 {
+                    if w == g {
+                        cyc[g] = true
+                    }
+                    if num[w] == -1 {
+                        num[w] = next
+                        low[w] = next
+                        next += 1
+                        ts = push(mut tst, ts, w)
+                        onst[w] = true
+                        sp = push(mut fr, sp, w)
+                        sp = push(mut fr, sp, lo[w])
+                        sp = push(mut fr, sp, 0)
+                    } else if onst[w] && num[w] < low[g] {
+                        low[g] = num[w]
+                    }
+                } else {
+                    // g の辺が尽きた: 親の low を更新し、g が成分の根なら積みから成分を下ろす（2 つ以上なら全部が閉路の上）
+                    sp = top
+                    if top > 0 {
+                        p := fr[top - 3]
+                        if low[g] < low[p] {
+                            low[p] = low[g]
+                        }
+                    }
+                    if low[g] == num[g] {
+                        mut k := ts - 1
+                        while tst[k] != g {
+                            k -= 1
+                        }
+                        big := k < ts - 1
+                        for j <- iter.Range(k, ts) {
+                            onst[tst[j]] = false
+                            if big {
+                                cyc[tst[j]] = true
+                            }
+                        }
+                        ts = k
+                    }
+                }
+            }
+        }
+    }
+    return freeze(cyc)
 }
 
 // parHandles は std/par の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/par の口

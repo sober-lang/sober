@@ -1,0 +1,86 @@
+package main
+
+// 反復の region の約束（llight の判定 — report-621 の P1）の回帰例（logagg の形）: 外（行）の反復の変数へ、内側（語）のループの中で文字列のビューを代入する。
+// 代入は外の反復の深度への写し（relocate — 行の region へ）で、語の反復の region には何も積まない。語のループの enter は消えてよい
+// （本体の外で読んだ深度への確保を「反復ごとの確保」と数えると、語ごとに enter を払い、熱い 1 バイトの走査ループのレジスタが崩れる）。
+// 行の確保（行ごとの語の列）は行の反復の region に積もり、反復の終わりで捨てられる
+
+import "std/os"
+import "std/utf8"
+
+func reps() int {
+    args := os.Args() catch return 200
+    if len(args) != 2 {
+        return 200
+    }
+    mut n := 0
+    for c <- bytes(args[1]) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func main() int {
+    line := "ts=2026-10-14T07:00:00Z level=info svc=api user=u42 msg=\"hello world\"\n"
+    b := bytes(line)
+    v := utf8.Check(b) catch return 1
+    n := reps()
+    mut tsBytes := 0
+    mut users := 0
+    mut words := 0
+    mut r := 0
+    while r < n {
+        // 行の反復（外）
+        e := len(b) - 1
+        mut pos := 0
+        mut ts := ""
+        mut user := ""
+        mut ws := mut []int{}
+        while pos < e {
+            // 語の反復（内）— 1 バイトずつの走査
+            mut j := pos
+            mut inq := false
+            mut eq := 0 - 1
+            while j < e {
+                c := b[j]
+                if inq {
+                    if c == '"' {
+                        inq = false
+                    }
+                } else {
+                    if c == ' ' {
+                        break
+                    }
+                    if c == '"' {
+                        inq = true
+                    } else if c == '=' && eq < 0 {
+                        eq = j
+                    }
+                }
+                j += 1
+            }
+            if eq >= 0 {
+                k := utf8.Str(v, pos, eq) catch return 1
+                x := utf8.Str(v, eq + 1, j) catch return 1
+                if k == "ts" {
+                    ts = x
+                } else if k == "user" {
+                    user = x
+                }
+            }
+            pos = j + 1
+        }
+        ws = append(ws, len(bytes(ts)))
+        ws = append(ws, len(bytes(user)))
+        tsBytes += ws[0]
+        if len(bytes(user)) > 0 {
+            users += 1
+        }
+        words += len(ws)
+        r += 1
+    }
+    println(tsBytes)
+    println(users)
+    println(words)
+    return 0
+}

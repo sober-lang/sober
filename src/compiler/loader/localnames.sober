@@ -136,6 +136,50 @@ func kindOfName(ix NameIx, n string) int {
     return k
 }
 
+// ── データプールのまま引く口（ローカル束縛の検査 — 名前は識別子で ASCII だけ〔lexer〕なので Name の string とバイト列が一致する。
+// 束縛ごとに string を作って比べていた写しを省く）──
+
+// reservedAt はデータプールの名前 s が決定 16 の組み込みの名前か（reserved と同じ集合）
+func reservedAt(t ast.Tree, s int) bool {
+    n := t.data[s]
+    if n < 3 || n > 7 {
+        return false
+    }
+    return StrIs(t, s, "len") || StrIs(t, s, "shape") || StrIs(t, s, "println") || StrIs(t, s, "await") || StrIs(t, s, "freeze") ||
+        StrIs(t, s, "keys") || StrIs(t, s, "bytes") || StrIs(t, s, "true") || StrIs(t, s, "false") || StrIs(t, s, "append") || StrIs(t, s, "delete") || StrIs(t, s, "clone")
+}
+
+// kindOfNameAt は kindOfName のデータプールの名前 s 版（ハッシュは nameHash と同じ）
+func kindOfNameAt(ix NameIx, t ast.Tree, s int) int {
+    mut hv := 0
+    for i <- iter.Range(0, t.data[s]) {
+        hv = (hv * 31 + t.data[s + 1 + i]) & ix.mask
+    }
+    mut h := ix.head[hv]
+    mut k := 0
+    while h >= 0 {
+        if (k == 0 || ix.kinds[h] != NImport) && StrIs(t, s, ix.names[h]) {
+            k = ix.kinds[h]
+        }
+        h = ix.next[h]
+    }
+    return k
+}
+
+// poolEq はデータプールの名前 a と b（同じ木）が同じ綴りか
+func poolEq(t ast.Tree, a int, b int) bool {
+    n := t.data[a]
+    if t.data[b] != n {
+        return false
+    }
+    for i <- iter.Range(1, n + 1) {
+        if t.data[a + i] != t.data[b + i] {
+            return false
+        }
+    }
+    return true
+}
+
 // countName は名前 n の項の数
 func countName(ix NameIx, n string) int {
     mut h := ix.head[nameHash(n, ix.mask)]
@@ -185,12 +229,12 @@ func earlier(a NameHit, b NameHit) NameHit {
     return b
 }
 
-// bindHit はローカル束縛の名前 n の違反
-func bindHit(ix NameIx, n string, f int, tok int) NameHit {
-    if reserved(n) {
+// bindHit はローカル束縛の名前（データプールの s）の違反
+func bindHit(ix NameIx, t ast.Tree, s int, f int, tok int) NameHit {
+    if reservedAt(t, s) {
         return NameHit{f, tok, diag.LocalBuiltin{at: diag.Pos{f, tok}}}
     }
-    k := kindOfName(ix, n)
+    k := kindOfNameAt(ix, t, s)
     if k == NImport {
         return NameHit{f, tok, diag.LocalImport{at: diag.Pos{f, tok}}}
     }
@@ -239,17 +283,17 @@ func bodyHit(t ast.Tree, ix NameIx, root int, f int) NameHit {
         k := x.kind
         if k == ast.SBind || k == ast.KGen {
             for i <- iter.Range(0, ast.ListLen(t, x.a)) {
-                h = earlier(h, bindHit(ix, Name(t, ast.ListAt(t, x.a, i)), f, x.tok))
+                h = earlier(h, bindHit(ix, t, ast.ListAt(t, x.a, i), f, x.tok))
             }
         } else if k == ast.ELambda {
             // 仮引数の節は位置を持たない — ラムダの位置で報告する
             for i <- iter.Range(0, ast.ListLen(t, x.a)) {
-                h = earlier(h, bindHit(ix, Name(t, t.nodes[ast.ListAt(t, x.a, i)].a), f, x.tok))
+                h = earlier(h, bindHit(ix, t, t.nodes[ast.ListAt(t, x.a, i)].a, f, x.tok))
             }
         } else if k == ast.KPType && x.a >= 0 {
-            h = earlier(h, bindHit(ix, Name(t, x.a), f, x.tok))
+            h = earlier(h, bindHit(ix, t, x.a, f, x.tok))
         } else if k == ast.KFieldPat && x.b < 0 {
-            h = earlier(h, bindHit(ix, Name(t, x.a), f, x.tok))
+            h = earlier(h, bindHit(ix, t, x.a, f, x.tok))
         }
         sp = pushKids(mut st, sp, t, x)
     }
@@ -343,11 +387,10 @@ func namesHit(cx Cx) NameHit {
                 h = earlier(h, tparamsHit(t, ix, fd.b, f, fd.tok))
                 h = earlier(h, declHit(ix, Name(t, fd.a), false, f, fd.tok))
                 for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
-                    h = earlier(h, bindHit(ix, Name(t, t.nodes[ast.ListAt(t, fd.c, p)].a), f, fd.tok))
+                    h = earlier(h, bindHit(ix, t, t.nodes[ast.ListAt(t, fd.c, p)].a, f, fd.tok))
                 }
-                h = earlier(h, bodyHit(t, ix, fd.e, f))
                 if fd.e >= 0 {
-                    h = earlier(h, shadowHit(t, fd, f))
+                    h = earlier(h, shadowHit(t, ix, fd, f))
                 }
             }
             for i <- iter.Range(0, ast.ListLen(t, root.e)) {
@@ -373,13 +416,13 @@ const WPop = 1      // 節の欄の代わりに、戻す束縛の数を積む
 const WGen = 2      // KGen の名前を足す
 const WCase = 3     // KCase のパターンの束縛を足す
 
-// bindLocal は名前 x を束縛する（env[0:n] が見えている束縛。同名なら違反）。新しい束縛の数を返す
-func bindLocal(env mut []string, n int, x string, f int, tok int) (int, NameHit) {
-    if x == "_" {
+// bindLocal は名前 x（データプールの位置）を束縛する（env[0:n] が見えている束縛 — データプールの位置。同名なら違反）。新しい束縛の数を返す
+func bindLocal(t ast.Tree, env mut []int, n int, x int, f int, tok int) (int, NameHit) {
+    if StrIs(t, x, "_") {
         return n, noHit()
     }
     for i <- iter.Range(0, n) {
-        if env[i] == x {
+        if poolEq(t, env[i], x) {
             return n, NameHit{f, tok, diag.Shadow{at: diag.Pos{f, tok}}}
         }
     }
@@ -392,7 +435,7 @@ func bindLocal(env mut []string, n int, x string, f int, tok int) (int, NameHit)
 }
 
 // patBinds はパターン p の束縛（型パターンの束縛名・欄パターンの略記・入れ子）を足す
-func patBinds(t ast.Tree, env mut []string, n0 int, p0 int, f int) (int, NameHit) {
+func patBinds(t ast.Tree, env mut []int, n0 int, p0 int, f int) (int, NameHit) {
     mut n := n0
     mut h := noHit()
     mut st := mut []int{}
@@ -402,14 +445,14 @@ func patBinds(t ast.Tree, env mut []string, n0 int, p0 int, f int) (int, NameHit
         x := t.nodes[st[sp]]
         if x.kind == ast.KPType {
             if x.a >= 0 {
-                n1, h1 := bindLocal(mut env, n, Name(t, x.a), f, x.tok)
+                n1, h1 := bindLocal(t, mut env, n, x.a, f, x.tok)
                 n = n1
                 h = earlier(h, h1)
             }
             sp = pushList(mut st, sp, t, x.c)
         } else if x.kind == ast.KFieldPat {
             if x.b < 0 {
-                n1, h1 := bindLocal(mut env, n, Name(t, x.a), f, x.tok)
+                n1, h1 := bindLocal(t, mut env, n, x.a, f, x.tok)
                 n = n1
                 h = earlier(h, h1)
             } else {
@@ -446,17 +489,21 @@ func pushStmtsRev(st mut []int, sp0 int, t ast.Tree, l int) int {
     return sp
 }
 
-// shadowHit は関数 fd（仮引数 + 本体）のシャドーイングの違反
-func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
+// shadowHit は関数 fd（仮引数 + 本体）のシャドーイングの違反と、本体のローカル束縛の名前の違反（bodyHit — 走査を 1 本に相乗り: 束縛の点は同じ節を回る。
+// case のパターンの部分木だけはこの走査が降りないので、パターンごとに bodyHit を呼ぶ）
+func shadowHit(t ast.Tree, ix NameIx, fd ast.Node, f int) NameHit {
+    // hb = 束縛の名前の違反（旧 bodyHit）・h = シャドーイングの違反。同じ字句の違反は旧の earlier(bodyHit, shadowHit) と同じく名前の違反が勝つ
+    mut hb := noHit()
     mut h := noHit()
-    mut env := mut []string{}
+    mut env := mut []int{}
     mut en := 0
     for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
-        n1, h1 := bindLocal(mut env, en, Name(t, t.nodes[ast.ListAt(t, fd.c, p)].a), f, fd.tok)
+        n1, h1 := bindLocal(t, mut env, en, t.nodes[ast.ListAt(t, fd.c, p)].a, f, fd.tok)
         en = n1
         h = earlier(h, h1)
     }
     mut st := mut []int{}
+    mut tmp := mut []int{}
     mut sp := pushW(mut st, 0, fd.e, WVisit)
     while sp > 0 {
         sp -= 2
@@ -467,13 +514,15 @@ func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
         } else if m == WGen {
             g := t.nodes[n]
             for i <- iter.Range(0, ast.ListLen(t, g.a)) {
-                n1, h1 := bindLocal(mut env, en, Name(t, ast.ListAt(t, g.a, i)), f, g.tok)
+                hb = earlier(hb, bindHit(ix, t, ast.ListAt(t, g.a, i), f, g.tok))
+                n1, h1 := bindLocal(t, mut env, en, ast.ListAt(t, g.a, i), f, g.tok)
                 en = n1
                 h = earlier(h, h1)
             }
         } else if m == WCase {
             c := t.nodes[n]
             for i <- iter.Range(0, ast.ListLen(t, c.a)) {
+                hb = earlier(hb, bodyHit(t, ix, ast.ListAt(t, c.a, i), f))
                 n1, h1 := patBinds(t, mut env, en, ast.ListAt(t, c.a, i), f)
                 en = n1
                 h = earlier(h, h1)
@@ -486,7 +535,8 @@ func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
                 sp = pushStmtsRev(mut st, sp, t, x.a)
             } else if k == ast.SBind {
                 for i <- iter.Range(0, ast.ListLen(t, x.a)) {
-                    n1, h1 := bindLocal(mut env, en, Name(t, ast.ListAt(t, x.a, i)), f, x.tok)
+                    hb = earlier(hb, bindHit(ix, t, ast.ListAt(t, x.a, i), f, x.tok))
+                    n1, h1 := bindLocal(t, mut env, en, ast.ListAt(t, x.a, i), f, x.tok)
                     en = n1
                     h = earlier(h, h1)
                 }
@@ -496,7 +546,8 @@ func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
                 sp = pushW(mut st, sp, x.b, WVisit)
                 for i <- iter.Range(0, ast.ListLen(t, x.a)) {
                     lp := t.nodes[ast.ListAt(t, x.a, i)]
-                    n1, h1 := bindLocal(mut env, en, Name(t, lp.a), f, x.tok)
+                    hb = earlier(hb, bindHit(ix, t, lp.a, f, x.tok))
+                    n1, h1 := bindLocal(t, mut env, en, lp.a, f, x.tok)
                     en = n1
                     h = earlier(h, h1)
                 }
@@ -526,16 +577,16 @@ func shadowHit(t ast.Tree, fd ast.Node, f int) NameHit {
                 sp = pushStmtsRev(mut st, sp, t, x.b)
                 sp = pushStmtsRev(mut st, sp, t, x.a)
             } else {
-                sp = pushKidsW(mut st, sp, t, x)
+                sp = pushKidsW(mut st, sp, mut tmp, t, x)
             }
         }
     }
-    return h
+    return earlier(hb, h)
 }
 
-// pushKidsW は束縛を持たない節の子を積む（pushKids と同じ欄 — ただし束縛を持つ節は shadowHit が扱う）
-func pushKidsW(st mut []int, sp0 int, t ast.Tree, x ast.Node) int {
-    mut tmp := mut []int{}
+// pushKidsW は束縛を持たない節の子を積む（pushKids と同じ欄 — ただし束縛を持つ節は shadowHit が扱う）。tmp は子の並べ替えの作業域（呼び手が使い回す —
+// 節ごとに作ると、region 透過の走査の間ずっと積もる）
+func pushKidsW(st mut []int, sp0 int, tmp mut []int, t ast.Tree, x ast.Node) int {
     n := pushKids(mut tmp, 0, t, x)
     mut sp := sp0
     mut i := n

@@ -1,0 +1,86 @@
+package main
+
+// Summarize access logs that are split into shards — one task per shard, reading each shard line by line with io.Lines
+// (the lines are views into the stream's read slots: no copy unless a line straddles two slots).
+// The same numbers as examples/io_par (which reads each shard whole). Run from the repository root.
+import "std/io"
+import "std/iter"
+import "std/par"
+
+type Tally struct {
+    requests int
+    errors int
+    sent int
+}
+
+// a line is `METHOD PATH STATUS BYTES` — read straight from the bytes of the view
+func add(t mut Tally, b []byte) {
+    mut sp := 0
+    mut i := 0
+    mut status := byte(0)
+    mut size := 0
+    while i < len(b) {
+        if b[i] == ' ' {
+            sp += 1
+            if sp == 2 {
+                status = b[i + 1]
+            }
+        } else if sp == 3 {
+            size = size * 10 + int(b[i]) - '0'
+        }
+        i += 1
+    }
+    t.requests += 1
+    if status == '5' {
+        t.errors += 1
+    }
+    t.sent += size
+}
+
+func summarize(shard int) (Tally, error?) {
+    f := io.Open("testdata/io_par/access-${shard}.log")?
+    defer io.Close(f)
+    mut t := Tally{requests: 0, errors: 0, sent: 0}
+    for l <- io.Lines(f)? {
+        add(mut t, io.Raw(l))
+    }
+    return t, nil
+}
+
+// readBytes counts the shard's bytes slot by slot with io.Chunks
+func readBytes(shard int) (int, error?) {
+    f := io.Open("testdata/io_par/access-${shard}.log")?
+    defer io.Close(f)
+    mut n := 0
+    for c <- io.Chunks(f)? {
+        n += len(io.Raw(c))
+    }
+    return n, nil
+}
+
+func main() int {
+    shards := []int{1, 2, 3, 4}
+    ts, err := par.Map(shards, (k) => summarize(k))
+    ns, err2 := par.Map(shards, (k) => readBytes(k))
+    if err != nil || err2 != nil {
+        println("cannot summarize the logs")
+        return 1
+    }
+    mut total := Tally{requests: 0, errors: 0, sent: 0}
+    for k <- iter.Range(0, len(shards)) {
+        t := ts[k]
+        println("shard ${shards[k]}: ${t.requests} requests, ${t.errors} errors, ${t.sent} bytes, ${ns[k]} bytes read")
+        total.requests += t.requests
+        total.errors += t.errors
+        total.sent += t.sent
+    }
+    println("total: ${total.requests} requests, ${total.errors} errors, ${total.sent} bytes")
+    _, miss := par.Map([]int{1, 9}, (k) => summarize(k))
+    if miss != nil {
+        println(switch miss {
+        case io.NotFound{}: "a log shard is missing"
+        default: "?"
+        })
+    }
+    return 0
+}

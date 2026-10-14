@@ -1,0 +1,42 @@
+package main
+
+// 定数の詰めの一括化の形の外と評価の順（report-624）: Range の実引数は元の for と同じく 1 回だけ左から評価・積む値が生成元の名前や
+// 呼び出し・`字面 + 字面`（形の外 — 普通の for / while）・本体が 2 文（形の外）でも観測は同じ
+
+import "std/iter"
+
+func at(tag string, v int) int {
+    println("eval ${tag}")
+    return v
+}
+
+func main() {
+    mut xs := mut []int{}
+    for _ <- iter.Range(at("lo", 1), at("hi", 4)) {
+        xs = append(xs, 0)
+    }
+    for k <- iter.Range(0, 3) {
+        xs = append(xs, k)
+    }
+    for _ <- iter.Range(0, 2) {
+        xs = append(xs, at("v", 6))
+    }
+    for _ <- iter.Range(0, 2) {
+        xs = append(xs, 2 + 3)
+    }
+    mut n := 0
+    for _ <- iter.Range(0, 2) {
+        xs = append(xs, 0)
+        n += 1
+    }
+    mut i := 0
+    while i < at("bound", 2) {
+        xs = append(xs, 0)
+        i += 1
+    }
+    mut s := 0
+    for x <- xs {
+        s = s * 3 + x
+    }
+    println("len ${len(xs)} n ${n} i ${i} s ${s}")
+}

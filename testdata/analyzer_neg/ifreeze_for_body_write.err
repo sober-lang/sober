@@ -1,0 +1,2 @@
+testdata/analyzer_neg/ifreeze_for_body_write.sober:8:11: error: this writes to `xs[…]` after `xs` was frozen by iterating over it in a for loop (implicit freeze — see the note) — the frozen value would change. Finish writing before the loop, or iterate over a copy: clone(x) (Analyzer)
+testdata/analyzer_neg/ifreeze_for_body_write.sober:7:14: error: (note) `xs` is frozen here — a for loop iterates over an immutable value (implicit freeze) (Analyzer)

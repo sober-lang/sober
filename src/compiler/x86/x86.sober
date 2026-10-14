@@ -508,6 +508,16 @@ func PorXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0xeb, x, y)
 }
 
+// PsubbXX は psubb x, y（バイトごとの引き算 — 66 0F F8 /r）
+func PsubbXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0xf8, x, y)
+}
+
+// PsadbwXX は psadbw x, y（8 バイトずつの差の絶対値の和を 2 つの 64 ビットに — 66 0F F6 /r）
+func PsadbwXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0xf6, x, y)
+}
+
 // PunpcklqdqXX は punpcklqdq x, y — 66 0F 6C /r
 func PunpcklqdqXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0x6c, x, y)

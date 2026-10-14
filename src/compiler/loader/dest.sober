@@ -60,6 +60,8 @@ func destFunc(t ast.Tree, body int, sc []string) []int {
     mut sp := push2(mut st, 0, body, 0)
     mut rets := mut []int{}
     mut binds := mut []int{}
+    // 子の積みは節ごとに作らず使い回す（pushKids は先頭から上書きする）
+    mut tmp := mut []int{}
     while sp > 0 {
         sp -= 2
         n := st[sp]
@@ -72,7 +74,6 @@ func destFunc(t ast.Tree, body int, sc []string) []int {
             binds = append(binds, if loop == 0 { n } else { -1 - n })
         }
         inner := if x.kind == ast.SWhile || x.kind == ast.EFor || x.kind == ast.ELambda { 1 } else { loop }
-        mut tmp := mut []int{}
         m := pushKids(mut tmp, 0, t, x)
         for i <- iter.Range(0, m) {
             sp = push2(mut st, sp, tmp[i], inner)

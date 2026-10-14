@@ -1,0 +1,10 @@
+package main
+
+// 負例: Open は束縛の形の外（関数値として取り出す形）に書けない（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
+
+import "std/io"
+
+func main() {
+    op := io.Open
+    println(1)
+}

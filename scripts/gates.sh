@@ -102,16 +102,20 @@ declare -A GTAG=(
     [mapfuse]="lower"
     [partinl]="lower"
     [docsync]="docs"
+    [benchsync]="docs"
     [maprepr]="lower"
     [streq]="lower"
     [ubfstat]="lower"
+    [sortcheck]="lower backend"
+    [iterregion]="lower backend"
     [fitcheck]="lower backend"
+    [iouring]="lower backend"
     [selfpar]="check desugar load"
     [elfeq]="lex parse load desugar lower backend"
     [sobi]="lex parse fmt load desugar check"
 )
 # 長いものから（並列の詰め順）
-ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync maprepr streq ubfstat fitcheck corevec extract obs_zig hermetic_zig ir_roundtrip)
+ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat sortcheck iterregion fitcheck iouring corevec extract obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -147,13 +151,13 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/sortcheck.sh|scripts/iterregion.sh|testdata/sortcheck/*|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|scripts/iouring.sh|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check ;;
             lean/Main.lean|scripts/leanbatch.sh) echo lean ;;
             lean/FeatherweightSober/UniqFreeze.lean|scripts/uniqfreeze.sh|scripts/uniqfreeze.list) echo lean; echo analyzer ;;
             scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
-            docs/guide/*|README.md|README.ja.md|scripts/docsync.*) echo docs ;;
+            docs/guide/*|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*) echo docs ;;
             docs/*|*.md) ;;
             *) echo all ;;
         esac
@@ -274,6 +278,7 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
         ir_roundtrip) scripts/ir_roundtrip.sh $(zig_frozen | grep -v /) > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         # obs_zig は凍結コーパスの .out 持ちだけ（凍結後の例は stage1 の範囲外の言語で書かれうる — 正規バックエンド列の到達リスト化と同じ筋。決定 2026-09-29）
         obs_zig) SOBER=$STAGE1 scripts/obs.sh $(zig_frozen) > "$LOGS/$g.log" 2>&1 || ec=$? ;;
+        benchsync) scripts/benchsync.sh --check > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         *) "scripts/$g.sh" > "$LOGS/$g.log" 2>&1 || ec=$? ;;
     esac
     echo "$ec $(( $(date +%s) - s ))" > "$W/res/$g"
