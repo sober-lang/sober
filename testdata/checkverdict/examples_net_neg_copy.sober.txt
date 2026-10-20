@@ -1,0 +1,2 @@
+sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
+exit=1

@@ -1,0 +1,39 @@
+package main
+
+// struct リテラルで初期化した mut 局所のセルは束縛点の座標へ緩める（F-ba — 2026-10-17）。仮引数の slice を欄に持つ mut 局所を、
+// callM の Def に上がる関数（mut 仮引数 1 つ・他は region を持たない — E2-S）へ mut で渡す形。旧は check が呼び手の Def で def error（build は正しく走る）
+
+type W struct {
+    xs []string
+    sp int
+}
+
+func bump(w mut W) {
+    w.sp = w.sp + len(w.xs)
+}
+
+func walk(w mut W, n int) {
+    if n > 0 {
+        w.sp = w.sp + 1
+        walk(mut w, n - 1)
+    }
+}
+
+func all(xs []string) int {
+    mut w := W{xs: xs}
+    bump(mut w)
+    walk(mut w, 3)
+    return w.sp
+}
+
+func first(xs []string) string {
+    mut w := W{xs: xs, sp: 0}
+    bump(mut w)
+    return w.xs[0]
+}
+
+func main() {
+    xs := []string{"a", "b"}
+    println(all(xs))
+    println(first(xs))
+}

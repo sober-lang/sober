@@ -1,0 +1,28 @@
+package main
+
+// 借りの位置のラムダは同一性の型を捕捉してよい（(α-L0) の対の緩め — language.md 25 節「借り」・28 節 N6）: 展開される関数の匿名の関数型の仮引数で、
+// 本体が呼ぶ・借りの位置へ渡すだけのもの（each → twice の転送も）。文形 for の本体と同じく呼び出しの内側でだけ走る
+
+import "std/net"
+import "std/iter"
+
+func twice(k func(b []byte) error?) error? {
+    k(bytes("ab"))?
+    return k(bytes("cd"))
+}
+
+func each(n int, k func(b []byte) error?) error? {
+    for i <- iter.Range(0, n) { twice(k)? }
+    return nil
+}
+
+func run() error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            each(3, (b []byte) => net.Send(c, b))?
+        }
+    }
+    return nil
+}
+
+func main() { _ = run() }

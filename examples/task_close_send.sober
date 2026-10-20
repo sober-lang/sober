@@ -1,0 +1,21 @@
+package main
+
+// 段 6 P3b-4 ③: 閉じた送り端へ送ると定義された panic（send on closed channel）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 2)
+        task.Send(tx, 1)
+        task.Close(tx)
+        println("closed")
+        task.Send(tx, 2)
+        task.Recv(rx)
+        0
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

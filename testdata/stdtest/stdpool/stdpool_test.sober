@@ -1,0 +1,104 @@
+package stdpool
+
+// std/pool の Scratch の black-box テスト: Renew の後は全部 0 に見える・世代をまたいだ読み書き・値の範囲・世代の一周（2^32 回目の Renew で本当に消す）
+
+import "std/iter"
+import "std/pool"
+
+func TestScratchZero() {
+    mut s := pool.Scratch{}
+    assert(pool.Cap(mut s) == 0)
+    pool.NewScratch(mut s, 1000)
+    assert(pool.Cap(mut s) == 1000)
+    for i <- iter.Range(0, 1000) {
+        assert(pool.Load(mut s, i) == 0)
+    }
+}
+
+func TestScratchRenew() {
+    mut s := pool.Scratch{}
+    pool.NewScratch(mut s, 300)
+    // 世代ごとに違う位置へ書く: 前の世代の書きは 0 に見え、今の世代の書きだけが見える
+    for g <- iter.Range(0, 5) {
+        for i <- iter.Range(0, 300) {
+            assert(pool.Load(mut s, i) == 0)
+        }
+        for i <- iter.Range(0, 300) {
+            if i % (g + 2) == 0 {
+                pool.Store(mut s, i, i * 1000 + g)
+            }
+        }
+        for i <- iter.Range(0, 300) {
+            want := if i % (g + 2) == 0 { i * 1000 + g } else { 0 }
+            assert(pool.Load(mut s, i) == want)
+        }
+        pool.Renew(mut s)
+    }
+}
+
+func TestScratchRange() {
+    mut s := pool.Scratch{}
+    pool.NewScratch(mut s, 4)
+    // 値は 0〜2^32−1 をそのまま運ぶ（上位の世代と混ざらない）
+    top := (1 << 32) - 1
+    pool.Store(mut s, 0, top)
+    pool.Store(mut s, 1, 0)
+    pool.Store(mut s, 2, 1 << 31)
+    assert(pool.Load(mut s, 0) == top)
+    assert(pool.Load(mut s, 1) == 0)
+    assert(pool.Load(mut s, 2) == 1 << 31)
+    pool.Renew(mut s)
+    pool.Store(mut s, 3, top)
+    assert(pool.Load(mut s, 0) == 0)
+    assert(pool.Load(mut s, 2) == 0)
+    assert(pool.Load(mut s, 3) == top)
+}
+
+// 素の口（LoadRaw / StoreRaw / RenewDense — report-733）: 値は語そのまま（2^32 以上も負も）・RenewDense は先頭 n だけ 0 に書く
+func TestScratchRaw() {
+    mut s := pool.Scratch{}
+    pool.NewScratch(mut s, 8)
+    for i <- iter.Range(0, 8) {
+        assert(pool.LoadRaw(mut s, i) == 0)
+    }
+    pool.StoreRaw(mut s, 0, 1 << 40)
+    pool.StoreRaw(mut s, 1, 0 - 7)
+    pool.StoreRaw(mut s, 7, 42)
+    assert(pool.LoadRaw(mut s, 0) == 1 << 40)
+    assert(pool.LoadRaw(mut s, 1) == 0 - 7)
+    assert(pool.LoadRaw(mut s, 7) == 42)
+    pool.RenewDense(mut s, 7)
+    assert(pool.LoadRaw(mut s, 0) == 0)
+    assert(pool.LoadRaw(mut s, 1) == 0)
+    // n の外は触らない（契約: 素の読みは RenewDense の範囲か書いた添字だけ）
+    assert(pool.LoadRaw(mut s, 7) == 42)
+}
+
+// 世代の一周: 2^32 − 1 回の Renew で世代は 2^32 − 1（tag の符号ビットまで使う）・もう 1 回で 0 に戻り、そのときだけ本当に消す。
+// 消さないと一周前（世代 0）の書きが蘇る — その負例を観測で押さえる
+func TestScratchWrap() {
+    mut s := pool.Scratch{}
+    pool.NewScratch(mut s, 3)
+    pool.Store(mut s, 0, 11)
+    pool.Renew(mut s)
+    pool.Store(mut s, 1, 22)
+    mut k := 1
+    while k < (1 << 32) - 1 {
+        pool.Renew(mut s)
+        k += 1
+    }
+    // 世代 2^32 − 1: 世代 0 の 11・世代 1 の 22 はどちらも見えない
+    assert(pool.Load(mut s, 0) == 0)
+    assert(pool.Load(mut s, 1) == 0)
+    pool.Store(mut s, 2, 33)
+    assert(pool.Load(mut s, 2) == 33)
+    pool.Renew(mut s)
+    // 一周して世代 0 — 一周前の世代 0 の 11 が蘇らない（本当に消した）・世代 2^32 − 1 の 33 も見えない
+    assert(pool.Load(mut s, 0) == 0)
+    assert(pool.Load(mut s, 1) == 0)
+    assert(pool.Load(mut s, 2) == 0)
+    pool.Store(mut s, 0, 44)
+    assert(pool.Load(mut s, 0) == 44)
+    pool.Renew(mut s)
+    assert(pool.Load(mut s, 0) == 0)
+}

@@ -1,0 +1,46 @@
+package main
+
+// parbudget の wait の約束の網（language.md 11 節「wait」— 段 3 の ③）: inline.sober と同じ形の scope を wait: true で。天井に入れない直接の子は
+// 縮退せずに待つ — 網は ① 実使用（最大 RSS − `base` で走らせた最大 RSS）≤ 天井（宣言 = 本当の上限）② 待ちが起きた（#par admit waits > 0）
+// ③ 縮退が 0 ④ 出力が W 1 / 2 / 8 で一致（待ちは遅らせるだけ — Kahn）を見る
+
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// 1 つの子 = 約 14 MB の作業域（int 175 万個）を作って畳む
+func work(k int) int {
+    n := 1835008
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, (i * 7 + k) % 100)
+    }
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        s += b[i]
+    }
+    return s
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) > 1 && args[1] == "base" {
+        println(0)
+        return 0
+    }
+    mut ks := mut []int{}
+    for k <- iter.Range(0, 32) {
+        ks = append(ks, k)
+    }
+    xs := freeze(ks)
+    r, e := task.Run((s task.Scope) => {
+        ys, me := task.Map(xs, (x) => work(x), budget: 16 * task.MB)
+        mut t := 0
+        for y <- ys {
+            t += y
+        }
+        t
+    }, budget: 64 * task.MB, wait: true)
+    println(r)
+    return 0
+}

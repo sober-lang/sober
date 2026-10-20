@@ -1,0 +1,138 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Pool",
+                "elems": [],
+                "tok": 14,
+                "type_args": [
+                  {
+                    "k": "name",
+                    "name": "int"
+                  }
+                ]
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "pool",
+                    "tok": 25
+                  },
+                  "field": "Acquire",
+                  "tok": 27
+                },
+                "args": [
+                  {
+                    "k": "mut_arg",
+                    "name": "p",
+                    "tok": 30
+                  },
+                  {
+                    "k": "int",
+                    "value": 7,
+                    "tok": 32
+                  }
+                ],
+                "tok": 28
+              }
+            ],
+            "tok": 23
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 35
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 37
+                }
+              ],
+              "tok": 36
+            }
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 41
+                },
+                "field": "Release",
+                "tok": 43
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "p",
+                  "tok": 46
+                },
+                {
+                  "k": "ident",
+                  "name": "h",
+                  "tok": 48
+                }
+              ],
+              "tok": 44
+            },
+            "tok": 40
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 53
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

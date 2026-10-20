@@ -1,8 +1,8 @@
 package main
 
-// fail-fast Map の計測（段 6 P4-5 — 再取得の器: 当時の scratch と同じ形）: par.Map の 16 の子のうち子 3 が死に、
+// fail-fast Map の計測（段 6 P4-5 — 再取得の器: 当時の scratch と同じ形）: task.Map の 16 の子のうち子 3 が死に、
 // 他の子はそれぞれ 3,000 万回の剰余（idiv）のループ。純な子は死の後で切られる（--rt-mutant=3 = 検査点を置かない形では切れず全部が走る — 対照）
-import "std/par"
+import "std/task"
 
 func work(x int) int {
     if x == 3 {
@@ -20,10 +20,10 @@ func work(x int) int {
 
 func main() {
     xs := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
-    r, e := par.Map(xs, (x) => work(x))
+    r, e := task.Map(xs, (x) => work(x))
     switch e {
     case nil: println("ok ${len(r)}")
-    case par.TaskDied{cause}: println("map died, ${len(r)}")
+    case task.ChildDied{cause}: println("map died, ${len(r)}")
     default: println("other")
     }
 }

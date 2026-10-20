@@ -62,7 +62,7 @@ if [ "$force" = 0 ] && [ -x "$OUT/sober2" ] && [ -f "$STATF" ] && [ "$(stat_key)
 fi
 
 # 鎖 = bootstrap/chain.txt（畳んだ鎖 — 段のソースのスナップショット bootstrap/<段>/{compiler,std} と建て方。git の履歴に依らない — 公開準備便 ①）。
-# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 59 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
+# 段のディレクトリは不変（名前 = 段の番号 + 元のコミット）。private 側の 61 行の正史は scripts/boot.commit（scripts/bootcheck.sh が照合）
 mapfile -t CHAIN < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $1 }')
 mapfile -t FORM < <(grep -v '^#' "$ROOT/bootstrap/chain.txt" | awk 'NF { print $2 }')
 [ "${#CHAIN[@]}" -gt 0 ] || { echo "stage2.sh: bootstrap/chain.txt has no step" >&2; exit 1; }
@@ -136,11 +136,12 @@ if knows_elf_step $((${#CHAIN[@]} - 1)) && [ -z "${SOBER_O1:-}" ]; then S2VIA=el
 key() { echo "$(cd "$ROOT" && cache_key "$BOOT" src/compiler src/std) $S2OPT $S2VIA"; }
 fresh() { [ -x "$OUT/sober2" ] && [ -f "$OUT/.key" ] && [ "$(cat "$OUT/.key")" = "$1" ]; }
 
-# l0_bake <仮の stage2>: 仮の stage2（L0 は仮のファイルだけ）に std の全 package の .sobi を書かせ、木の l0/std/ に置く
+# l0_bake <仮の stage2>: 仮の stage2（L0 は仮のファイルだけ）に std の全 package（入れ子の std/hash/crc32 等も — .sober のある全ディレクトリ）の .sobi を書かせ、木の l0/std/ に置く
 # （3'' 第 2 段の 1.5 — std のプリビルド焼き込み。同じコードが計算した値を、建て直す stage2 に @embed で焼き込む）
 l0_bake() {
     local s2a=$1 e=$W/l0all.sober d
-    { echo "package main"; echo; for d in "$W/root/std"/*/; do echo "import \"std/$(basename "$d")\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
+    { echo "package main"; echo; for d in $(cd "$W/root" && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$e"
+    # std/internal/… は std の中からだけ import できる（language.md 20 節 — この合成の main は std の外）ので列挙から外す。internal の package は使う std の package を通して読まれる
     # 失敗したら check の出力（拒否の文面 — std のどこが落ちたか）と、def error の位置を引く手順を見せる（stdout を捨てていて理由が出なかった）
     SOBER_CACHE= SOBER_L0=0 "$s2a" check "$e" --split --l0-out "$W/root/l0" > "$W/l0.out" 2>&1 || {
         echo "stage2.sh: FAIL L0 bake (std check):" >&2

@@ -1,0 +1,11 @@
+package main
+
+// selfpar の検査の束の網（席 D の D-2）: 後の段（式文）の拒否を前のファイル（a）・前の段（名前）の拒否を後のファイル（b）に置く — 段の順で b の拒否が出る
+func f(n int) int {
+    n + 1
+    return n
+}
+
+func main() {
+    println(f(1) + g(2))
+}

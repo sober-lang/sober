@@ -1,0 +1,15 @@
+package main
+
+// 負例: メソッド（レシーバつきの func）は無い — 自由関数と `|>` で書く（language.md 3 節）
+
+type P struct {
+    x int
+}
+
+func (p P) get() int {
+    return p.x
+}
+
+func main() {
+    println(P{x: 1}.x)
+}

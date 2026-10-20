@@ -63,8 +63,8 @@ type St struct {
     trapUse bool
     trapG int
     trapProbe bool
-    // std/par の子の関数（段 6 P3a-2b — par.sober）: kids = 子の FnInfo の鎖（[次, FnInfo の添字]・-1 = 無し）・nkid = 名前の通し番号
-    // task の器（段 6 P3b-1 — task.sober）: taskUse = std/par を使う（task の大域と rt を持つ）
+    // std/task の子の関数（段 6 P3a-2b — task.sober）: kids = 子の FnInfo の鎖（[次, FnInfo の添字]・-1 = 無し）・nkid = 名前の通し番号
+    // task の器（段 6 P3b-1 — task.sober）: taskUse = std/task を使う（task の大域と rt を持つ）
     taskUse bool
     taskG int
     mainTcb int
@@ -125,15 +125,22 @@ type St struct {
     nsite int
     pestG int
     rtTaskInline FnRef
+    // 段 3 の rt の 2 つの FnRef を 1 語に（St の欄 1 つで自己 check の核の節が約 1.1k — report-642）: 下位 32 ビット = rt.admit_wake（③ wait の scope —
+    // `wait: true` の字面があるプログラムだけ）・上位 = rt.dl_expired（④ deadline.sober — deadline: を書くプログラムだけ）。どちらも 0 = 組まない
+    // （lower の途中 / 入口の後で足すので 0 番にはならない — 使うかの旗を兼ねる）。読みは awFn / dlFn
+    rtD3 int
     rtEstUp FnRef
     poolOn bool        // 名前つきプール（段 6 P5-4 — NewPool / SpawnIn / Ledger を使うプログラムだけ）
     poolG int
     rtTaskNewIn FnRef
     rtPoolNew FnRef
     rtLedger FnRef
-    parIn int          // par.SpawnIn の (handle?) の置き場（parSpawn の形の切り替え — -1 = Spawn）
-    parInShed BlkRef   // par.SpawnIn の shed の道のブロック（parSpawn が作る）
-    parToks int // 字面の par.Scope の札の積み（rec4 [次, 名前, budget: あり, 0] — 段 6 P5-3 parRootOnly。-1 = 空）
+    parIn int          // task.SpawnIn の (handle?) の置き場（parSpawn の形の切り替え — -1 = Spawn）
+    parInShed BlkRef   // task.SpawnIn の shed の道のブロック（parSpawn が作る）
+    parDiscard int     // handle を `_` に捨てる束縛の右辺の節（bindStmt / assignStmt が書き、parSpawn が自分の呼び出しの節と比べて読んだら戻す — -1 = 無し。report-697）
+    parToks int // 字面の task.Run の札の積み（rec4 [次, 名前, budget: あり, 0] — 段 6 P5-3 parRootOnly。-1 = 空）
+    optInB1 bool  // 設計整合パスの関数ごとの段（optFunc）を束 B1 の子の頭で掛ける（elfOutSt が optPre だけを済ませた — lParBatch。回せなければ optimizeSsa が親で掛ける）
+    chanDepth int // 字面に囲む最も外の task.Run の region の深度の値（NewChannel の記録の置き場 — parNewChan。-1 = 囲む scope なし。funcBody が戻す）
     rtMnSteal FnRef
     rtMnAnyDq FnRef
     rtMnTrace FnRef
@@ -150,6 +157,13 @@ type St struct {
     rtCutWalk FnRef
     rtCutEnd FnRef
     cutGenG int
+    // 孤児の待ち（IO 便 ⑤ — orphan.sober）: orphOn = 組む（std/task のプログラムで wait_fd を使う）・@rt.orphgen・rt.orph_*
+    orphOn bool
+    orphGenG int
+    rtOrphWalk FnRef
+    rtOrphGate FnRef
+    rtOrphReg FnRef
+    rtOrphScan FnRef
     rtTaskRerun FnRef
     cutSites int
     chanFns int
@@ -170,6 +184,7 @@ type St struct {
     // 毒の口（環境変数 SOBER_SLOT_POISON — 開発用・最適化のバックエンドの入口で零初期化しない語を 0x5a… で埋める — zeroinit.sober）
     slotPoison bool
     rtKidKeep FnRef
+    rtFrameNew FnRef   // rt.frame_new（handle を捨てた子の枠 — 使うプログラムだけ・-1 = 無し。report-697）
     plabs int  // 罠を使うモジュールの `panic(L{…})` の点 → ラベルの名前（[次, 点の番号, 名前]・-1 = 無し — panic.sober の taskDiedText）
     rtFlush FnRef
     rtPchar FnRef
@@ -228,12 +243,14 @@ type St struct {
     loop int // ループの鎖の先頭
     nloop int
     entryDepth int
-    // 戻り値の写しの床（普通は入口の深度・std/par の子は scope の region の深度 — P3b-4 の境界コピー）
+    // 戻り値の写しの床（普通は入口の深度・std/task の子は scope の region の深度 — P3b-4 の境界コピー）
     retFloor int
     // 宛先構築（loader/dest.sober の印）を使ってよい関数か — main は使わない（入口の深度 0 の region は確保の場所にならない）
     destOk bool
     // 宛先の深度（印のある確保の置き場 — 入口の深度か、呼び手がレジスタで渡したより浅い深度 — M1c）
     destDepth int
+    // ラムダの塊の本体の末尾の式の期待型 + 1（0 = 無し — F-bh）: lambdaCall が armValue の直前に置き、blockTail が入口で読んで消す（文の中の塊へは届かない）
+    tailW int
     // 宛先構築レーン M5（格納点の写し）: 字面の region の入れ子（反復の region・式ブロック）・各段の入口で退避した深度（IR の値）・
     // mut 仮引数の行き先の深度（呼び手が W_ANCHOR で渡す — 入口で読む IR の値・-1 = 無し）・今の関数が region 透過か
     rnest int
@@ -261,6 +278,10 @@ type St struct {
     floors int // break / continue が届くループの下限のスタック（[prev, 床]）
     inlining int // 展開中の inline 関数の宣言の節の列（再帰の展開の拒否 — declListHas）
     nlambda int // 持ち上げたラムダの通し番号
+    closKs int // 閉包の値形（closure.sober）: K ごとの env の形の鎖の頭 + 1（0 = 無し）
+    closFns int // 持ち上げた閉包の関数の捕捉の記録の鎖の頭 + 1（0 = 無し）
+    liftBrw int // 次の liftClosure が借りの実引数のラムダか（1 — emitCall の間接呼び出しの実引数が立て、liftClosure が入口で消費する）
+    callEnv int // 次の emitCall が隠れ第 1 引数に渡す env の番地 + 1（0 = 無し — emitCall が入口で消費する）
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
     insts int // ジェネリック関数のインスタンスの鎖（[next, キー, FnInfo]）
     inDict int // 辞書 const の展開中か（0 / 1）
@@ -298,13 +319,20 @@ type St struct {
     rtEnv FnRef
     rtStat FnRef   // rt.stat / rt.sleep（std/os の sysStat / sysSleep — sober watch の mtime ポーリング）
     rtSleep FnRef
+    vdsoG int      // rt.vdso（sleep の ring の道の時計の口 — deadline: の無い std/task のプログラムが sleep で初回に引く vDSO の番地 + 1・0 = まだ。-1 = 組まない — report-691）
+    hwFold bool    // x86 の最適化のバックエンドの ELF（crc32 の CLMUL の道 — clmul.sober。他の出力では cpuclmul = 0）
+    cpuG int       // rt.cpu（CPUID の判定 + 1・0 = まだ — clmul.sober。-1 = 組まない）
+    rtCpuProbe FnRef
     rtRfd FnRef    // rt.read_fd（std/io の sysReadFd）
-    rtOpen FnRef   // rt.open / rt.close / rt.fd_drain（std/io の sysOpen / sysClose — IO 便 段 2。fd_drain は std/par のプログラムの task の死の出口）
+    rtOpen FnRef   // rt.open / rt.close / rt.fd_drain（std/io の sysOpen / sysClose — IO 便 段 2。fd_drain は std/task のプログラムの task の死の出口）
     rtClose FnRef
     rtFdDrain FnRef
+    // ワーカー局所の lease の rt（lease.sober — lease_op を使うプログラムだけ）
+    rtLeaseOp FnRef
+    rtLeaseDrain FnRef
     rtCh int        // rt.chunk_open / next / close / submit / drain の記録（std/io の Chunks — IO 便 段 2 (c)・chunk.sober の chF。-1 = 使わない。
                     // St の欄 1 つに畳む — 欄は St を組む箇所ごとに自己 check の核の節を足す）
-    fdregG int     // rt.fdreg（開いた fd の登録簿の鎖 — fd ごとに 1 語。std/par のプログラムだけ）
+    fdregG int     // rt.fdreg（開いた fd の登録簿の鎖 — fd ごとに 1 語。std/task のプログラムだけ）
     statbuf int    // rt.statbuf（stat(2) の struct stat — 18 語）
     rtPanic FnRef     // rt.panic(点の番号) / rt.panic_mem(種類) — panic の観測性 第一便（panic.sober）
     rtPanicMem FnRef
@@ -332,6 +360,7 @@ type St struct {
     lkid bool    // 束の群の子（move.sober の lParGroup — 呼び先の戻りの型は lret から）
     lret []int   // 呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet）
     mvRound bool // 束の前ごとに全関数の本体を詰めて積み直す（move.sober の網 — SOBER_BUILD_PAR=roundtrip）
+    ls LSplit    // 席 A（split.sober）: lower の頭の関数単位化 — 子の事象の記録
 }
 
 // initScalars は状態のスカラーを「無し」（-1）にする（build が必要なものを上書きする）
@@ -389,10 +418,16 @@ func initScalars(st mut St) {
     st.rtEnv = -1
     st.rtStat = -1
     st.rtSleep = -1
+    st.vdsoG = -1
+    st.cpuG = -1
+    st.rtCpuProbe = -1
     st.rtRfd = -1
     st.rtOpen = -1
     st.rtClose = -1
     st.rtFdDrain = -1
+    st.rtLeaseOp = -1
+    st.rtLeaseDrain = -1
+    st.rtFrameNew = -1
     st.fdregG = -1
     st.rtCh = -1
     st.rtCstr = -1

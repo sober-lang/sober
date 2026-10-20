@@ -1,0 +1,2 @@
+sober: load error at examples/pkg_neg_cycle.sober:5:8: import cycle
+exit=1

@@ -1,0 +1,378 @@
+package tls
+
+// TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。
+// tls.Serve(addr, cfg, k) が net.Serve を包み、handshake が済んだ接続だけを k に渡す（handshake 中の接続を利用者に触らせない）。
+// tls.Conn は net.Conn と同じ顔の同一性の型（写せない・外へ出せない・give: で渡せない）で、tls.Recv / tls.Send が net.Recv / net.Send と同じ形。
+// net.Conn と顔が違う唯一の点: tls.Recv を break で途中で抜けると、その接続の読みは終わる（次の tls.Recv は Closed — 切片に残った record を持ち越さない）。
+// 誤りは粗い 3 ラベル（HandshakeFailed〔alert の種は欄〕・BadRecord・Closed）
+
+// 接続の状態（送りの鍵と seq・受けた KeyUpdate の要求・handshake の残りのバイト）は値の外 — 接続の task の region に 1 回作る int の列（blk）に住み、
+// Recv / Send が rt の口（lease_view / lease_op — std/pool・std/task の lease と同じ鍵）で読み書きする（net.Conn の TCP の seq がカーネルにあるのと同じ形。
+// 同一性の型の規則が隠れた可変を観測できなくする）
+
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/io"
+import "std/net"
+import "std/strings"
+import "std/internal/hs"
+import "std/tls/record"
+
+// handshake が失敗した（alert = 送った alert の番号 — RFC 9846 6）
+type HandshakeFailed error {
+    alert int
+}
+
+// 受けた record が壊れている（改竄・形の誤り・想定外のメッセージ — 相手へ alert を送って閉じた）
+type BadRecord error
+
+// 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
+type Closed error
+
+// サーバの設定（Load / Parse が作る — 証明書の鎖・葉の鍵・受ける ALPN）
+type Config struct {
+    chain [][]byte
+    key rsa.PrivateKey
+    alpn []string
+}
+
+// handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。tls.Serve の k の仮引数としてだけ生まれる）
+type Conn struct {
+    c net.Conn
+    blk []int
+    seal tlsSeal
+}
+
+// handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。language.md 14 節: 公開境界の関数型は名前つき）
+type Handler func(c Conn) error?
+
+// tlsSeal は封（非公開 — 外で値を書けない）
+type tlsSeal struct {
+}
+
+// ストレージの列の形: [旗, 残りのバイト数 L, 送りの方向 × dirW, 受けの方向 × dirW, 残りのバイト（8 バイト / 語）…]
+const fFlags = 0
+const fLeft = 1
+const fWr = 2
+const dirW = 64
+const fRd = 2 + 64
+const fBytes = 2 + 64 + 64
+
+// 旗のビット
+const bUpdate = 1   // 相手が KeyUpdate で update_requested を送った（次の Send が先に自分の KeyUpdate を送る）
+const bRead = 2     // Recv を 1 度回した（2 度目は Closed — 読みは接続の終わりまでの 1 本の流れ）
+const bDead = 4     // 閉じた（alert を送った・受けた — Send は Closed）
+
+// ── 設定 ──
+
+// PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
+@errors(pem.Bad, rsa.BadKey)
+func Parse(certPem string, keyPem string) (Config, error?) {
+    cb := pem.Parse(certPem)?
+    kb := pem.Parse(keyPem)?
+    mut chain := mut [][]byte{}
+    for b <- cb {
+        if b.label == "CERTIFICATE" {
+            chain = append(chain, b.der)
+        }
+    }
+    if len(chain) == 0 || len(kb) == 0 {
+        return emptyConfig(), pem.Bad{}
+    }
+    k := rsa.ParsePKCS8(kb[0].der)?
+    return Config{chain: freeze(chain), key: k, alpn: []string{"http/1.1"}}, nil
+}
+
+// 受ける ALPN をサーバの好みの順 alpn に替えた Config（空 = ALPN を使わない。相手の申し出と重ならなければ no_application_protocol — RFC 7301）
+func Alpn(cfg Config, alpn []string) Config {
+    return Config{chain: cfg.chain, key: cfg.key, alpn: alpn}
+}
+
+// Parse のファイル版（certPath / keyPath を読む）
+@errors(pem.Bad, rsa.BadKey, strings.InvalidUtf8, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func Load(certPath string, keyPath string) (Config, error?) {
+    c := string(io.ReadFile(certPath)?)?
+    k := string(io.ReadFile(keyPath)?)?
+    return Parse(c, k)
+}
+
+func emptyConfig() Config {
+    k, _ := rsa.ParsePKCS8([]byte{})
+    return Config{chain: [][]byte{}, key: k, alpn: []string{}}
+}
+
+// ── 待ち受け ──
+
+// addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
+// handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close_notify を送って閉じる。k が死んだときは close_notify を送らずに閉じる
+@errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+func Serve(addr string, cfg Config, k Handler) error? {
+    for l <- net.Listen(addr)? {
+        net.Serve(l, (c) => accept(c, cfg, k))?
+    }
+    return nil
+}
+
+// accept は 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）。Connected になった切片の残り（クライアントは Finished と
+// 最初の要求を同じ flight で送るのが普通）を置き場に置いてから、外の net.Recv の for の本体の中で k を呼ぶ（k の中の tls.Recv が同じ fd の続きを読む）
+func accept(nc net.Conn, cfg Config, k Handler) error? {
+    p := hs.NewParams(cfg.chain, cfg.key, cfg.alpn, []int{record.AesGcm, record.ChaCha}, []byte{})
+    mut h := hs.New()
+    mut acc := []byte{}
+    for chunk <- (net.Recv(nc)? Closed{}) {
+        acc = cat(acc, chunk)
+        mut at := 0
+        mut n := frameLen(acc, at)
+        while n > 0 {
+            o, e := hs.Feed(mut h, p, record.At(acc, at, n))
+            if e != nil {
+                d := alertOf(e)
+                _ = net.Send(nc, hs.AlertRecord(mut h, d))
+                return HandshakeFailed{alert: d}
+            }
+            if len(o.send) > 0 {
+                net.Send(nc, o.send)? Closed{}
+            }
+            at += n
+            if o.closed {
+                return Closed{}
+            }
+            if o.done {
+                c := Conn{c: nc, blk: newBlk(h, rest(acc, at)), seal: tlsSeal{}}
+                ke := k(c)
+                _ = net.Send(nc, closeRecord(c))
+                return ke
+            }
+            n = frameLen(acc, at)
+        }
+        if n < 0 {
+            _ = net.Send(nc, hs.AlertRecord(mut h, record.AlertOverflow))
+            return HandshakeFailed{alert: record.AlertOverflow}
+        }
+        acc = rest(acc, at)
+    }
+    return Closed{}
+}
+
+// frameLen は acc[at:] の先頭の record の長さ（頭込み — 0 = まだ揃わない・−1 = 本体が上限を超える）
+func frameLen(acc []byte, at int) int {
+    if len(acc) - at < record.HeadSize {
+        return 0
+    }
+    body := int(acc[at + 3]) << 8 | int(acc[at + 4])
+    if body > record.MaxCipher {
+        return 0 - 1
+    }
+    return if len(acc) - at < record.HeadSize + body { 0 } else { record.HeadSize + body }
+}
+
+// alertOf は handshake の誤りの alert の番号
+func alertOf(e error?) int {
+    return switch e {
+        case nil: record.AlertInternal
+        case record.Alert{desc}: desc
+    }
+}
+
+// newBlk は handshake の済んだ hs の置き場（送り / 受けの方向・残りのバイト）
+func newBlk(h hs.Hs, left []byte) []int {
+    rd, wr := hs.Dirs(h)
+    mut b := mut []int{}
+    b = append(b, 0)
+    b = append(b, len(left))
+    putDir(mut b, record.Pack(wr))
+    putDir(mut b, record.Pack(rd))
+    mut i := 0
+    while i < len(left) {
+        mut v := 0
+        mut j := 0
+        while j < 8 && i + j < len(left) {
+            v = v | (int(left[i + j]) << (j * 8))
+            j += 1
+        }
+        b = append(b, v)
+        i += 8
+    }
+    return freeze(b)
+}
+
+// putDir は方向の語の列を dirW 語の席に（余りは 0）
+func putDir(b mut []int, w []int) {
+    if len(w) > dirW {
+        panic(Overflow{})
+    }
+    for v <- w {
+        b = append(b, v)
+    }
+    mut i := len(w)
+    while i < dirW {
+        b = append(b, 0)
+        i += 1
+    }
+}
+
+// 方向の語の列が席に入らない（std の内部の約束違反 — panic ラベル）
+type Overflow panic
+
+// ── 受け ──
+
+// c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close_notify で nil。
+// 受けの表は hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。
+// 受けた KeyUpdate は受けの鍵を進め、update_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。
+// 1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
+@errors(BadRecord, Closed)
+func Recv(c Conn, k func([]byte)) error? {
+    fl := flags(c)
+    if (fl & (bRead | bDead)) != 0 {
+        return Closed{}
+    }
+    setFlags(c, fl | bRead)
+    mut h := hs.Resume(record.Unpack(view(c, fRd, dirW), 0))
+    left := leftBytes(c)
+    for f <- (record.Frames((k2) => pump(c.c, left, k2))? Closed{}) {
+        h2, o, e := hs.Step(h, f)
+        h = h2
+        if e != nil {
+            die(c, alertOf(e))
+            return BadRecord{}
+        }
+        if o.upd {
+            setFlags(c, flags(c) | bUpdate)
+        }
+        if len(o.app) > 0 {
+            k(o.app)
+        }
+        if o.closed {
+            setFlags(c, flags(c) | bDead)
+            return if o.peer != 0 { Closed{} } else { nil }
+        }
+    }
+    return nil
+}
+
+// pump は handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）
+func pump(nc net.Conn, left []byte, k func([]byte)) error? {
+    if len(left) > 0 {
+        k(left)
+    }
+    return net.Recv(nc, k)
+}
+
+// ── 送り ──
+
+// b を application の record にして c へ送る（空の b は送らない）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
+@errors(Closed)
+func Send(c Conn, b []byte) error? {
+    fl := flags(c)
+    if (fl & bDead) != 0 {
+        return Closed{}
+    }
+    if len(b) == 0 {
+        return nil
+    }
+    mut wr := record.Unpack(view(c, fWr, dirW), 0)
+    mut pre := []byte{}
+    if (fl & bUpdate) != 0 || record.NeedUpdate(wr) {
+        pre = record.Seal(mut wr, record.CtHandshake, []byte{24, 0, 0, 1, 0}, 0)
+        record.Update(mut wr)? Closed{}
+        setFlags(c, fl & ^bUpdate)
+        putWr(c, record.Pack(wr))
+    }
+    r := record.Seal(mut wr, record.CtApp, b, 0)
+    setSeq(c, record.Seq(wr))
+    net.Send(c.c, if len(pre) == 0 { r } else { cat(pre, r) })? Closed{}
+    return nil
+}
+
+// closeRecord は close_notify の record（送りの鍵で — Serve が k の後に送る）
+func closeRecord(c Conn) []byte {
+    mut wr := record.Unpack(view(c, fWr, dirW), 0)
+    r := record.Seal(mut wr, record.CtAlert, []byte{1, 0}, 0)
+    setSeq(c, record.Seq(wr))
+    setFlags(c, flags(c) | bDead)
+    return r
+}
+
+// die は fatal の alert desc を送って閉じる（送りの失敗は見ない — 閉じる途中）
+func die(c Conn, desc int) {
+    if (flags(c) & bDead) == 0 {
+        mut wr := record.Unpack(view(c, fWr, dirW), 0)
+        r := record.Seal(mut wr, record.CtAlert, []byte{2, byte(desc)}, 0)
+        setSeq(c, record.Seq(wr))
+        setFlags(c, flags(c) | bDead)
+        _ = net.Send(c.c, r)
+    }
+}
+
+// ── 置き場の口 ──
+
+func flags(c Conn) int {
+    return leaseOp(4, c.blk, fFlags, 0)
+}
+
+func setFlags(c Conn, v int) {
+    _ = leaseOp(5, c.blk, fFlags, v)
+}
+
+// setSeq は送りの方向の seq の語（Pack の 2 語目）だけを書き戻す
+func setSeq(c Conn, seq int) {
+    _ = leaseOp(5, c.blk, fWr + 1, seq)
+}
+
+// putWr は送りの方向の語の列を席に書き戻す（KeyUpdate の後）
+func putWr(c Conn, w []int) {
+    v := leaseView(c.blk, fWr, dirW)
+    mut i := 0
+    while i < dirW {
+        v[i] = if i < len(w) { w[i] } else { 0 }
+        i += 1
+    }
+}
+
+// view は置き場の [off, off + n) の語（写さない — 読みはこの列から）
+func view(c Conn, off int, n int) []int {
+    v := leaseView(c.blk, off, n)
+    return freeze(v)
+}
+
+// leftBytes は handshake の残りのバイト
+func leftBytes(c Conn) []byte {
+    n := leaseOp(4, c.blk, fLeft, 0)
+    mut b := mut []byte{}
+    mut i := 0
+    while i < n {
+        w := leaseOp(4, c.blk, fBytes + i / 8, 0)
+        b = append(b, byte((w >> ((i % 8) * 8)) & 0xff))
+        i += 1
+    }
+    return freeze(b)
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut o := mut []byte{}
+    for x <- a {
+        o = append(o, x)
+    }
+    for x <- b {
+        o = append(o, x)
+    }
+    return freeze(o)
+}
+
+// rest は a[at:] の写し
+func rest(a []byte, at int) []byte {
+    mut o := mut []byte{}
+    mut i := at
+    while i < len(a) {
+        o = append(o, a[i])
+        i += 1
+    }
+    return freeze(o)
+}
+
+// leaseOp / leaseView は rt の口（std/task・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+@intrinsic("lease_op")
+func leaseOp(op int, blk []int, off int, v int) int
+
+@intrinsic("lease_view")
+func leaseView(blk []int, off int, n int) mut []int

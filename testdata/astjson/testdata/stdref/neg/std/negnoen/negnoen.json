@@ -1,0 +1,21 @@
+{
+  "package": "negnoen",
+  "imports": [],
+  "types": [],
+  "funcs": [],
+  "consts": [
+    {
+      "name": "One",
+      "expr": {
+        "k": "int",
+        "value": 1,
+        "tok": 6
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 8
+      }
+    }
+  ]
+}

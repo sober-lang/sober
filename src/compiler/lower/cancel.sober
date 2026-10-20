@@ -2,7 +2,7 @@ package lower
 
 // キャンセル（段 6 P4-5・language.md 11 節「キャンセル = 印 + 決定的セーフポイント」）:
 // - 発火 = scope の子の死（task_start が scope の印 SR_CUT を「番号 i + 2」へ cas で下げる: 番号が i + 1 以上の子を切ってよい）。巻き戻った task
-//   （死んだ / 切られた）の開いている scope には印 1（全部の子 — drainScopes・par.sober）。印を立てたら打ち切りの世代 @rt.cutgen を進める
+//   （死んだ / 切られた）の開いている scope には印 1（全部の子 — drainScopes・task.sober）。印を立てたら打ち切りの世代 @rt.cutgen を進める
 // - 切ってよい子 = **純な子だけ**（子の関数から io も チャネルも 間接呼び出しも届かない — 閉世界の呼び出しグラフで build の最後に決める・cutPatch）。
 //   保守側（11 節の「端点を一度も持たなかった task」より狭い）: 切られた子は観測に何も残さない（出力なし・チャネルなし）ので、打ち切りの位置が
 //   時刻で揺れても stdout は動かない。Join / Try が切られた子の値を求めたら切らない形で走らせ直す（rt.task_rerun — 純なので観測は同じ）
@@ -26,15 +26,17 @@ import "std/iter"
 // 罠の死因の終了コードの代わりに書く印（死 = 101 / 102 — task_start が巻き戻りの理由を読み分ける）
 const CUT_CODE = 1
 
-// cutMarkChan は下ろしている関数がチャネルに触る印（NewChan / Send / Recv / Close / give: の Spawn — 純でない）
+// cutMarkChan は下ろしている関数がチャネルに触る印（NewChannel / Send / Recv / Close / give: の Spawn — 純でない）
 func cutMarkChan(st mut St) {
     st.chanFns = rec4(mut st, st.chanFns, int(st.fn), 0, 0)
+    lsEv(mut st, EV_CHAN, 0, 0, 0, 0)
 }
 
 // cutFlag は spawn の「純な子か」の定数（cutPatch が 1 に書き換える）
 func cutFlag(st mut St, kid FnRef) int {
     flag := iconst(mut st, 0)
     st.cutSites = rec4(mut st, st.cutSites, int(irBlkITail(mut st, st.cur)), int(kid), 0)
+    lsEv(mut st, EV_CUT, int(irBlkITail(mut st, st.cur)), int(kid), 0, 0)
     return flag
 }
 

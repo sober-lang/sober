@@ -1,0 +1,90 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "g",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "y"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "ident",
+                "name": "n",
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "y"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 17
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 19
+                },
+                "tok": 18
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "y",
+                "tok": 22
+              }
+            ],
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 26
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

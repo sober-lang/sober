@@ -1,0 +1,2835 @@
+{
+  "package": "stdpool",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 7
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestScratchZero",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 17,
+                "type_args": []
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 25
+                      },
+                      "field": "Cap",
+                      "tok": 27
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 30
+                      }
+                    ],
+                    "tok": 28
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 33
+                  },
+                  "tok": 32
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 36
+                },
+                "field": "NewScratch",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 41
+                },
+                {
+                  "k": "int",
+                  "value": 1000,
+                  "tok": 43
+                }
+              ],
+              "tok": 39
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 46
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 48
+                      },
+                      "field": "Cap",
+                      "tok": 50
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 53
+                      }
+                    ],
+                    "tok": 51
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 1000,
+                    "tok": 56
+                  },
+                  "tok": 55
+                }
+              ],
+              "tok": 47
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 62
+                      },
+                      "field": "Range",
+                      "tok": 64
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 66
+                      },
+                      {
+                        "k": "int",
+                        "value": 1000,
+                        "tok": 68
+                      }
+                    ],
+                    "tok": 65
+                  },
+                  "guards": [],
+                  "tok": 60
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 71
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 73
+                              },
+                              "field": "Load",
+                              "tok": 75
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "s",
+                                "tok": 78
+                              },
+                              {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 80
+                              }
+                            ],
+                            "tok": 76
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 83
+                          },
+                          "tok": 82
+                        }
+                      ],
+                      "tok": 72
+                    }
+                  }
+                ]
+              },
+              "tok": 59
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 90
+      },
+      "sig_end": 13
+    },
+    {
+      "name": "TestScratchRenew",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 98,
+                "type_args": []
+              }
+            ],
+            "tok": 95
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 104
+                },
+                "field": "NewScratch",
+                "tok": 106
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 109
+                },
+                {
+                  "k": "int",
+                  "value": 300,
+                  "tok": 111
+                }
+              ],
+              "tok": 107
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "g"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 117
+                      },
+                      "field": "Range",
+                      "tok": 119
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 121
+                      },
+                      {
+                        "k": "int",
+                        "value": 5,
+                        "tok": 123
+                      }
+                    ],
+                    "tok": 120
+                  },
+                  "guards": [],
+                  "tok": 115
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "i"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 129
+                              },
+                              "field": "Range",
+                              "tok": 131
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 133
+                              },
+                              {
+                                "k": "int",
+                                "value": 300,
+                                "tok": 135
+                              }
+                            ],
+                            "tok": 132
+                          },
+                          "guards": [],
+                          "tok": 127
+                        }
+                      ],
+                      "body": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "assert",
+                                "tok": 138
+                              },
+                              "args": [
+                                {
+                                  "k": "binary",
+                                  "op": "==",
+                                  "lhs": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "pool",
+                                        "tok": 140
+                                      },
+                                      "field": "Load",
+                                      "tok": 142
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "mut_arg",
+                                        "name": "s",
+                                        "tok": 145
+                                      },
+                                      {
+                                        "k": "ident",
+                                        "name": "i",
+                                        "tok": 147
+                                      }
+                                    ],
+                                    "tok": 143
+                                  },
+                                  "rhs": {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 150
+                                  },
+                                  "tok": 149
+                                }
+                              ],
+                              "tok": 139
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 126
+                    }
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "i"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 158
+                              },
+                              "field": "Range",
+                              "tok": 160
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 162
+                              },
+                              {
+                                "k": "int",
+                                "value": 300,
+                                "tok": 164
+                              }
+                            ],
+                            "tok": 161
+                          },
+                          "guards": [],
+                          "tok": 156
+                        }
+                      ],
+                      "body": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "if",
+                              "cond": {
+                                "k": "binary",
+                                "op": "==",
+                                "lhs": {
+                                  "k": "binary",
+                                  "op": "%",
+                                  "lhs": {
+                                    "k": "ident",
+                                    "name": "i",
+                                    "tok": 168
+                                  },
+                                  "rhs": {
+                                    "k": "binary",
+                                    "op": "+",
+                                    "lhs": {
+                                      "k": "ident",
+                                      "name": "g",
+                                      "tok": 171
+                                    },
+                                    "rhs": {
+                                      "k": "int",
+                                      "value": 2,
+                                      "tok": 173
+                                    },
+                                    "tok": 172
+                                  },
+                                  "tok": 169
+                                },
+                                "rhs": {
+                                  "k": "int",
+                                  "value": 0,
+                                  "tok": 176
+                                },
+                                "tok": 175
+                              },
+                              "then": {
+                                "stmts": [
+                                  {
+                                    "k": "expr",
+                                    "expr": {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "selector",
+                                        "base": {
+                                          "k": "ident",
+                                          "name": "pool",
+                                          "tok": 178
+                                        },
+                                        "field": "Store",
+                                        "tok": 180
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "mut_arg",
+                                          "name": "s",
+                                          "tok": 183
+                                        },
+                                        {
+                                          "k": "ident",
+                                          "name": "i",
+                                          "tok": 185
+                                        },
+                                        {
+                                          "k": "binary",
+                                          "op": "+",
+                                          "lhs": {
+                                            "k": "binary",
+                                            "op": "*",
+                                            "lhs": {
+                                              "k": "ident",
+                                              "name": "i",
+                                              "tok": 187
+                                            },
+                                            "rhs": {
+                                              "k": "int",
+                                              "value": 1000,
+                                              "tok": 189
+                                            },
+                                            "tok": 188
+                                          },
+                                          "rhs": {
+                                            "k": "ident",
+                                            "name": "g",
+                                            "tok": 191
+                                          },
+                                          "tok": 190
+                                        }
+                                      ],
+                                      "tok": 181
+                                    }
+                                  }
+                                ]
+                              },
+                              "else": null,
+                              "tok": 167
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 155
+                    }
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "for",
+                      "gens": [
+                        {
+                          "names": [
+                            "i"
+                          ],
+                          "src": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "iter",
+                                "tok": 201
+                              },
+                              "field": "Range",
+                              "tok": 203
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 205
+                              },
+                              {
+                                "k": "int",
+                                "value": 300,
+                                "tok": 207
+                              }
+                            ],
+                            "tok": 204
+                          },
+                          "guards": [],
+                          "tok": 199
+                        }
+                      ],
+                      "body": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "bind",
+                            "names": [
+                              "want"
+                            ],
+                            "mutable": false,
+                            "values": [
+                              {
+                                "k": "if",
+                                "cond": {
+                                  "k": "binary",
+                                  "op": "==",
+                                  "lhs": {
+                                    "k": "binary",
+                                    "op": "%",
+                                    "lhs": {
+                                      "k": "ident",
+                                      "name": "i",
+                                      "tok": 213
+                                    },
+                                    "rhs": {
+                                      "k": "binary",
+                                      "op": "+",
+                                      "lhs": {
+                                        "k": "ident",
+                                        "name": "g",
+                                        "tok": 216
+                                      },
+                                      "rhs": {
+                                        "k": "int",
+                                        "value": 2,
+                                        "tok": 218
+                                      },
+                                      "tok": 217
+                                    },
+                                    "tok": 214
+                                  },
+                                  "rhs": {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 221
+                                  },
+                                  "tok": 220
+                                },
+                                "then": {
+                                  "stmts": [
+                                    {
+                                      "k": "expr",
+                                      "expr": {
+                                        "k": "binary",
+                                        "op": "+",
+                                        "lhs": {
+                                          "k": "binary",
+                                          "op": "*",
+                                          "lhs": {
+                                            "k": "ident",
+                                            "name": "i",
+                                            "tok": 223
+                                          },
+                                          "rhs": {
+                                            "k": "int",
+                                            "value": 1000,
+                                            "tok": 225
+                                          },
+                                          "tok": 224
+                                        },
+                                        "rhs": {
+                                          "k": "ident",
+                                          "name": "g",
+                                          "tok": 227
+                                        },
+                                        "tok": 226
+                                      }
+                                    }
+                                  ]
+                                },
+                                "else": {
+                                  "k": "block",
+                                  "stmts": [
+                                    {
+                                      "k": "expr",
+                                      "expr": {
+                                        "k": "int",
+                                        "value": 0,
+                                        "tok": 231
+                                      }
+                                    }
+                                  ]
+                                },
+                                "tok": 212
+                              }
+                            ],
+                            "tok": 210
+                          },
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "assert",
+                                "tok": 234
+                              },
+                              "args": [
+                                {
+                                  "k": "binary",
+                                  "op": "==",
+                                  "lhs": {
+                                    "k": "call",
+                                    "callee": {
+                                      "k": "selector",
+                                      "base": {
+                                        "k": "ident",
+                                        "name": "pool",
+                                        "tok": 236
+                                      },
+                                      "field": "Load",
+                                      "tok": 238
+                                    },
+                                    "args": [
+                                      {
+                                        "k": "mut_arg",
+                                        "name": "s",
+                                        "tok": 241
+                                      },
+                                      {
+                                        "k": "ident",
+                                        "name": "i",
+                                        "tok": 243
+                                      }
+                                    ],
+                                    "tok": 239
+                                  },
+                                  "rhs": {
+                                    "k": "ident",
+                                    "name": "want",
+                                    "tok": 246
+                                  },
+                                  "tok": 245
+                                }
+                              ],
+                              "tok": 235
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 198
+                    }
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 251
+                        },
+                        "field": "Renew",
+                        "tok": 253
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "s",
+                          "tok": 256
+                        }
+                      ],
+                      "tok": 254
+                    }
+                  }
+                ]
+              },
+              "tok": 114
+            }
+          }
+        ]
+      },
+      "tok": 91,
+      "bodiless": false,
+      "span": {
+        "start": 90,
+        "end": 263
+      },
+      "sig_end": 94
+    },
+    {
+      "name": "TestScratchRange",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 271,
+                "type_args": []
+              }
+            ],
+            "tok": 268
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 277
+                },
+                "field": "NewScratch",
+                "tok": 279
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 282
+                },
+                {
+                  "k": "int",
+                  "value": 4,
+                  "tok": 284
+                }
+              ],
+              "tok": 280
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "top"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "binary",
+                  "op": "<<",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 290
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 32,
+                    "tok": 292
+                  },
+                  "tok": 291
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 295
+                },
+                "tok": 294
+              }
+            ],
+            "tok": 287
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 297
+                },
+                "field": "Store",
+                "tok": 299
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 302
+                },
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 304
+                },
+                {
+                  "k": "ident",
+                  "name": "top",
+                  "tok": 306
+                }
+              ],
+              "tok": 300
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 309
+                },
+                "field": "Store",
+                "tok": 311
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 314
+                },
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 316
+                },
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 318
+                }
+              ],
+              "tok": 312
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 321
+                },
+                "field": "Store",
+                "tok": 323
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 326
+                },
+                {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 328
+                },
+                {
+                  "k": "binary",
+                  "op": "<<",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 330
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 31,
+                    "tok": 332
+                  },
+                  "tok": 331
+                }
+              ],
+              "tok": 324
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 335
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 337
+                      },
+                      "field": "Load",
+                      "tok": 339
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 342
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 344
+                      }
+                    ],
+                    "tok": 340
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "top",
+                    "tok": 347
+                  },
+                  "tok": 346
+                }
+              ],
+              "tok": 336
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 350
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 352
+                      },
+                      "field": "Load",
+                      "tok": 354
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 357
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 359
+                      }
+                    ],
+                    "tok": 355
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 362
+                  },
+                  "tok": 361
+                }
+              ],
+              "tok": 351
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 365
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 367
+                      },
+                      "field": "Load",
+                      "tok": 369
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 372
+                      },
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 374
+                      }
+                    ],
+                    "tok": 370
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "<<",
+                    "lhs": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 377
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 31,
+                      "tok": 379
+                    },
+                    "tok": 378
+                  },
+                  "tok": 376
+                }
+              ],
+              "tok": 366
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 382
+                },
+                "field": "Renew",
+                "tok": 384
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 387
+                }
+              ],
+              "tok": 385
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 390
+                },
+                "field": "Store",
+                "tok": 392
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 395
+                },
+                {
+                  "k": "int",
+                  "value": 3,
+                  "tok": 397
+                },
+                {
+                  "k": "ident",
+                  "name": "top",
+                  "tok": 399
+                }
+              ],
+              "tok": 393
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 402
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 404
+                      },
+                      "field": "Load",
+                      "tok": 406
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 409
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 411
+                      }
+                    ],
+                    "tok": 407
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 414
+                  },
+                  "tok": 413
+                }
+              ],
+              "tok": 403
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 417
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 419
+                      },
+                      "field": "Load",
+                      "tok": 421
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 424
+                      },
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 426
+                      }
+                    ],
+                    "tok": 422
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 429
+                  },
+                  "tok": 428
+                }
+              ],
+              "tok": 418
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 432
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 434
+                      },
+                      "field": "Load",
+                      "tok": 436
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 439
+                      },
+                      {
+                        "k": "int",
+                        "value": 3,
+                        "tok": 441
+                      }
+                    ],
+                    "tok": 437
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "top",
+                    "tok": 444
+                  },
+                  "tok": 443
+                }
+              ],
+              "tok": 433
+            }
+          }
+        ]
+      },
+      "tok": 264,
+      "bodiless": false,
+      "span": {
+        "start": 263,
+        "end": 449
+      },
+      "sig_end": 267
+    },
+    {
+      "name": "TestScratchRaw",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 457,
+                "type_args": []
+              }
+            ],
+            "tok": 454
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 463
+                },
+                "field": "NewScratch",
+                "tok": 465
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 468
+                },
+                {
+                  "k": "int",
+                  "value": 8,
+                  "tok": 470
+                }
+              ],
+              "tok": 466
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 476
+                      },
+                      "field": "Range",
+                      "tok": 478
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 480
+                      },
+                      {
+                        "k": "int",
+                        "value": 8,
+                        "tok": 482
+                      }
+                    ],
+                    "tok": 479
+                  },
+                  "guards": [],
+                  "tok": 474
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 485
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 487
+                              },
+                              "field": "LoadRaw",
+                              "tok": 489
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "s",
+                                "tok": 492
+                              },
+                              {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 494
+                              }
+                            ],
+                            "tok": 490
+                          },
+                          "rhs": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 497
+                          },
+                          "tok": 496
+                        }
+                      ],
+                      "tok": 486
+                    }
+                  }
+                ]
+              },
+              "tok": 473
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 502
+                },
+                "field": "StoreRaw",
+                "tok": 504
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 507
+                },
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 509
+                },
+                {
+                  "k": "binary",
+                  "op": "<<",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 511
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 40,
+                    "tok": 513
+                  },
+                  "tok": 512
+                }
+              ],
+              "tok": 505
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 516
+                },
+                "field": "StoreRaw",
+                "tok": 518
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 521
+                },
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 523
+                },
+                {
+                  "k": "binary",
+                  "op": "-",
+                  "lhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 525
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 7,
+                    "tok": 527
+                  },
+                  "tok": 526
+                }
+              ],
+              "tok": 519
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 530
+                },
+                "field": "StoreRaw",
+                "tok": 532
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 535
+                },
+                {
+                  "k": "int",
+                  "value": 7,
+                  "tok": 537
+                },
+                {
+                  "k": "int",
+                  "value": 42,
+                  "tok": 539
+                }
+              ],
+              "tok": 533
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 542
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 544
+                      },
+                      "field": "LoadRaw",
+                      "tok": 546
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 549
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 551
+                      }
+                    ],
+                    "tok": 547
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "<<",
+                    "lhs": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 554
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 40,
+                      "tok": 556
+                    },
+                    "tok": 555
+                  },
+                  "tok": 553
+                }
+              ],
+              "tok": 543
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 559
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 561
+                      },
+                      "field": "LoadRaw",
+                      "tok": 563
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 566
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 568
+                      }
+                    ],
+                    "tok": 564
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "-",
+                    "lhs": {
+                      "k": "int",
+                      "value": 0,
+                      "tok": 571
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 7,
+                      "tok": 573
+                    },
+                    "tok": 572
+                  },
+                  "tok": 570
+                }
+              ],
+              "tok": 560
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 576
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 578
+                      },
+                      "field": "LoadRaw",
+                      "tok": 580
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 583
+                      },
+                      {
+                        "k": "int",
+                        "value": 7,
+                        "tok": 585
+                      }
+                    ],
+                    "tok": 581
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 42,
+                    "tok": 588
+                  },
+                  "tok": 587
+                }
+              ],
+              "tok": 577
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 591
+                },
+                "field": "RenewDense",
+                "tok": 593
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 596
+                },
+                {
+                  "k": "int",
+                  "value": 7,
+                  "tok": 598
+                }
+              ],
+              "tok": 594
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 601
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 603
+                      },
+                      "field": "LoadRaw",
+                      "tok": 605
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 608
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 610
+                      }
+                    ],
+                    "tok": 606
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 613
+                  },
+                  "tok": 612
+                }
+              ],
+              "tok": 602
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 616
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 618
+                      },
+                      "field": "LoadRaw",
+                      "tok": 620
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 623
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 625
+                      }
+                    ],
+                    "tok": 621
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 628
+                  },
+                  "tok": 627
+                }
+              ],
+              "tok": 617
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 631
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 633
+                      },
+                      "field": "LoadRaw",
+                      "tok": 635
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 638
+                      },
+                      {
+                        "k": "int",
+                        "value": 7,
+                        "tok": 640
+                      }
+                    ],
+                    "tok": 636
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 42,
+                    "tok": 643
+                  },
+                  "tok": 642
+                }
+              ],
+              "tok": 632
+            }
+          }
+        ]
+      },
+      "tok": 450,
+      "bodiless": false,
+      "span": {
+        "start": 449,
+        "end": 648
+      },
+      "sig_end": 453
+    },
+    {
+      "name": "TestScratchWrap",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "pool.Scratch",
+                "elems": [],
+                "tok": 656,
+                "type_args": []
+              }
+            ],
+            "tok": 653
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 662
+                },
+                "field": "NewScratch",
+                "tok": 664
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 667
+                },
+                {
+                  "k": "int",
+                  "value": 3,
+                  "tok": 669
+                }
+              ],
+              "tok": 665
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 672
+                },
+                "field": "Store",
+                "tok": 674
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 677
+                },
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 679
+                },
+                {
+                  "k": "int",
+                  "value": 11,
+                  "tok": 681
+                }
+              ],
+              "tok": 675
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 684
+                },
+                "field": "Renew",
+                "tok": 686
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 689
+                }
+              ],
+              "tok": 687
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 692
+                },
+                "field": "Store",
+                "tok": 694
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 697
+                },
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 699
+                },
+                {
+                  "k": "int",
+                  "value": 22,
+                  "tok": 701
+                }
+              ],
+              "tok": 695
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 707
+              }
+            ],
+            "tok": 704
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "k",
+                "tok": 710
+              },
+              "rhs": {
+                "k": "binary",
+                "op": "-",
+                "lhs": {
+                  "k": "binary",
+                  "op": "<<",
+                  "lhs": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 713
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 32,
+                    "tok": 715
+                  },
+                  "tok": 714
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 718
+                },
+                "tok": 717
+              },
+              "tok": 711
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "expr",
+                  "expr": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 720
+                      },
+                      "field": "Renew",
+                      "tok": 722
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 725
+                      }
+                    ],
+                    "tok": 723
+                  }
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "k",
+                      "tok": 728
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 730
+                    }
+                  ],
+                  "tok": 728
+                }
+              ]
+            },
+            "tok": 709
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 734
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 736
+                      },
+                      "field": "Load",
+                      "tok": 738
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 741
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 743
+                      }
+                    ],
+                    "tok": 739
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 746
+                  },
+                  "tok": 745
+                }
+              ],
+              "tok": 735
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 749
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 751
+                      },
+                      "field": "Load",
+                      "tok": 753
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 756
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 758
+                      }
+                    ],
+                    "tok": 754
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 761
+                  },
+                  "tok": 760
+                }
+              ],
+              "tok": 750
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 764
+                },
+                "field": "Store",
+                "tok": 766
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 769
+                },
+                {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 771
+                },
+                {
+                  "k": "int",
+                  "value": 33,
+                  "tok": 773
+                }
+              ],
+              "tok": 767
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 776
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 778
+                      },
+                      "field": "Load",
+                      "tok": 780
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 783
+                      },
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 785
+                      }
+                    ],
+                    "tok": 781
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 33,
+                    "tok": 788
+                  },
+                  "tok": 787
+                }
+              ],
+              "tok": 777
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 791
+                },
+                "field": "Renew",
+                "tok": 793
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 796
+                }
+              ],
+              "tok": 794
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 799
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 801
+                      },
+                      "field": "Load",
+                      "tok": 803
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 806
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 808
+                      }
+                    ],
+                    "tok": 804
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 811
+                  },
+                  "tok": 810
+                }
+              ],
+              "tok": 800
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 814
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 816
+                      },
+                      "field": "Load",
+                      "tok": 818
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 821
+                      },
+                      {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 823
+                      }
+                    ],
+                    "tok": 819
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 826
+                  },
+                  "tok": 825
+                }
+              ],
+              "tok": 815
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 829
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 831
+                      },
+                      "field": "Load",
+                      "tok": 833
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 836
+                      },
+                      {
+                        "k": "int",
+                        "value": 2,
+                        "tok": 838
+                      }
+                    ],
+                    "tok": 834
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 841
+                  },
+                  "tok": 840
+                }
+              ],
+              "tok": 830
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 844
+                },
+                "field": "Store",
+                "tok": 846
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 849
+                },
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 851
+                },
+                {
+                  "k": "int",
+                  "value": 44,
+                  "tok": 853
+                }
+              ],
+              "tok": 847
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 856
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 858
+                      },
+                      "field": "Load",
+                      "tok": 860
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 863
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 865
+                      }
+                    ],
+                    "tok": 861
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 44,
+                    "tok": 868
+                  },
+                  "tok": 867
+                }
+              ],
+              "tok": 857
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 871
+                },
+                "field": "Renew",
+                "tok": 873
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "s",
+                  "tok": 876
+                }
+              ],
+              "tok": 874
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 879
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 881
+                      },
+                      "field": "Load",
+                      "tok": 883
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "s",
+                        "tok": 886
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 888
+                      }
+                    ],
+                    "tok": 884
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 891
+                  },
+                  "tok": 890
+                }
+              ],
+              "tok": 880
+            }
+          }
+        ]
+      },
+      "tok": 649,
+      "bodiless": false,
+      "span": {
+        "start": 648,
+        "end": 896
+      },
+      "sig_end": 652
+    }
+  ],
+  "consts": []
+}

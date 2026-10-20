@@ -1,0 +1,184 @@
+package main
+
+// std/tls/record（TLS 便 R2 — report-811 / 827）: TLS 1.3 の record 層。
+// ① AES-128-GCM: traffic secret から鍵を作り、内容の型・長さ・0 埋めの違う record の列（2^14 を超える平文は割る・途中で KeyUpdate）を書いて
+//    バイト列の SHA-256 を Go の双子（scripts/oracles/tls_record.go — crypto/hkdf + crypto/aes の GCM で RFC 9846 5 節 / 7.1 を組んだもの）と照合
+// ② 同じ列を偽の転送路（切片の大きさ 1 / 7 / 100 / 4096 / 65536 / 3 と 40 の交互）で受けて Frames → Open で戻す（record の境界と切片の境界は独立）
+// ③ ChaCha20-Poly1305 で同じ往復（Go の std に ChaCha20-Poly1305 が無いので値は自己の黄金）
+// ④ 拒否: 改竄 = bad_record_mac・本体の長さ超過 = record_overflow・内側が全部 0 = unexpected_message・外側の型違い・半端で閉じた = decode_error・
+//    転送路の失敗 = Transport。塊の無い機械（SOBER_NOAES=1）では ① ② を飛ばして印字する
+
+import "std/crypto/aesgcm"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/iter"
+import "std/tls/record"
+
+type Cut error
+
+func gen(seed int, n int) []byte {
+    mut out := mut []byte{}
+    mut x := seed * 2654435761 + 12345
+    for j <- iter.Range(0, n) {
+        x = (x * 6364136223846793005 + 1442695040888963407)
+        out = append(out, byte((x >> 33) & 0xff))
+    }
+    return freeze(out)
+}
+
+// 送る record の列: [内容の型, 平文の長さ, 0 埋め] × 9（4 本目の後で KeyUpdate）
+func plan() []int {
+    return []int{23, 0, 0, 23, 1, 0, 23, 100, 3, 22, 333, 0, 23, 16384, 0, 23, 16385, 0, 23, 40000, 7, 21, 2, 0, 23, 50, 300}
+}
+
+const updateAfter = 4
+
+// stream は plan の列を書いた record のバイト列
+func stream(suite int, secret []byte) []byte {
+    mut w, _ := record.NewDir(suite, secret)
+    p := plan()
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(p) / 3) {
+        if i == updateAfter {
+            _ = record.Update(mut w)
+        }
+        r := record.Seal(mut w, p[3 * i], gen(100 + i, p[3 * i + 1]), p[3 * i + 2])
+        for c <- r {
+            out = append(out, c)
+        }
+    }
+    return freeze(out)
+}
+
+// feed は s を size バイトずつの切片で k へ渡す偽の受けの口（size 0 = 3 と 40 の交互 — record の頭が切片をまたぎ、続く切片で頭の残りと本体が揃う形。
+// cutAt ≥ 0 ならそのバイト数を渡した後で Cut）
+func feed(s []byte, size int, cutAt int, k func([]byte)) error? {
+    mut at := 0
+    mut idx := 0
+    while at < len(s) {
+        if cutAt >= 0 && at >= cutAt {
+            return Cut{}
+        }
+        step := if size > 0 { size } else if idx % 2 == 0 { 3 } else { 40 }
+        idx += 1
+        e := if at + step < len(s) { at + step } else { len(s) }
+        mut c := mut []byte{}
+        mut j := at
+        while j < e {
+            c = append(c, s[j])
+            j += 1
+        }
+        k(freeze(c))
+        at = e
+    }
+    return nil
+}
+
+// replay は s を受けて plan の平文と内容の型に戻ったものを数える（record の数・平文が一致した数）
+func replay(suite int, secret []byte, s []byte, size int) (int, int, error?) {
+    mut rd, _ := record.NewDir(suite, secret)
+    p := plan()
+    mut i := 0
+    mut part := 0
+    mut got := mut []byte{}
+    mut ok := 0
+    mut recs := 0
+    for f <- record.Frames((k) => feed(s, size, -1, k))? {
+        if i == updateAfter && part == 0 && len(got) == 0 {
+            record.Update(mut rd)?
+        }
+        ct, pt := record.Open(mut rd, f)?
+        recs += 1
+        if ct == p[3 * i] {
+            for c <- pt {
+                got = append(got, c)
+            }
+        }
+        part += 1
+        if len(got) == p[3 * i + 1] || p[3 * i + 1] == 0 {
+            if hex.Format(freeze(got)) == hex.Format(gen(100 + i, p[3 * i + 1])) {
+                ok += 1
+            }
+            got = mut []byte{}
+            part = 0
+            i += 1
+        }
+    }
+    return recs, ok, nil
+}
+
+func label(e error?) string {
+    if e == nil {
+        return "nil"
+    }
+    return switch e {
+        case record.Alert{desc}: "alert ${desc}"
+        case record.Transport{}: "transport"
+    }
+}
+
+func flip(b []byte, at int) []byte {
+    mut t := mut []byte{}
+    for j <- iter.Range(0, len(b)) {
+        t = append(t, if j == at { byte(int(b[j]) ^ 1) } else { b[j] })
+    }
+    return freeze(t)
+}
+
+// openAll は s を 1 切片で受けて全部 Open（最初の誤りを返す）
+func openAll(suite int, secret []byte, s []byte, size int, cutAt int) error? {
+    mut rd, _ := record.NewDir(suite, secret)
+    for f <- record.Frames((k) => feed(s, size, cutAt, k))? {
+        _, _ = record.Open(mut rd, f)?
+    }
+    return nil
+}
+
+func roundtrip(name string, suite int, secret []byte) {
+    s := stream(suite, secret)
+    println(name, "stream", len(s), hex.Format(sha256.Sum256(s)))
+    sizes := []int{1, 7, 100, 4096, 65536, 0}
+    for size <- sizes {
+        recs, ok, e := replay(suite, secret, s, size)
+        println(name, "replay", size, recs, ok, label(e))
+    }
+}
+
+func main() {
+    secret := gen(1, 32)
+    if aesgcm.Available() {
+        roundtrip("aes", record.AesGcm, secret)
+    } else {
+        println("no hardware")
+    }
+    roundtrip("chacha", record.ChaCha, secret)
+    // 拒否（ChaCha の道で — 塊の有無に依らない）
+    s := stream(record.ChaCha, secret)
+    println("tamper", label(openAll(record.ChaCha, secret, flip(s, 20), 65536, -1)))
+    println("truncated", label(openAll(record.ChaCha, secret, gen(5, 0), 65536, -1)), label(openAll(record.ChaCha, secret, firstN(s, 30), 65536, -1)))
+    println("cut", label(openAll(record.ChaCha, secret, s, 8, 8)))
+    big := []byte{23, 3, 3, byte(0x41), byte(0x01)}
+    println("overflow", label(openAll(record.ChaCha, secret, big, 65536, -1)), label(openAll(record.ChaCha, secret, big, 2, -1)))
+    // 頭が切片をまたいで揃った直後の切片に本体のバイトが続く形（揃えの段の境目 — 頭の 5 バイトで止めて上限を見る）
+    println("overflow-split", label(openAll(record.ChaCha, secret, []byte{23, 3, 3, byte(0x41), byte(0x01), 0, 0, 0}, 2, -1)), label(openAll(record.ChaCha, secret, []byte{23, 3, 3, byte(0x41), byte(0x01), 0, 0, 0}, 3, -1)))
+    println("outer", label(openAll(record.ChaCha, secret, []byte{22, 3, 3, 0, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 65536, -1)))
+    // 内側が全部 0（内容の型が無い）: 内容の型 0 + 0 埋め 9 で封じた record
+    println("zeros", label(openAll(record.ChaCha, secret, zeroInner(secret), 65536, -1)))
+    // ExpandLabel（RFC 9846 7.1 の形 — Go の双子と照合）
+    println("label", hex.Format(record.ExpandLabel(secret, "key", []byte{}, 16)), hex.Format(record.ExpandLabel(secret, "traffic upd", gen(9, 3), 32)))
+}
+
+func firstN(s []byte, n int) []byte {
+    mut t := mut []byte{}
+    for i <- iter.Range(0, n) {
+        t = append(t, s[i])
+    }
+    return freeze(t)
+}
+
+// zeroInner は内側が 0 × 10 の record（ChaCha・seq 0）
+func zeroInner(secret []byte) []byte {
+    mut d, _ := record.NewDir(record.ChaCha, secret)
+    r := record.Seal(mut d, 0, gen(3, 0), 9)
+    return r
+}

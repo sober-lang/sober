@@ -2,7 +2,7 @@ package main
 
 // analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_decl.err）: `@errors` の宣言と導出の照合（error 網羅 analyzer A4 — 裁定 M-a）。
 // 公開関数は宣言が必須・漏れ（導出 ⊄ 宣言）は拒否・公開関数の余分な宣言（宣言 ⊋ 導出）は拒否。内部関数の宣言は上界の検査だけ。
-// package をまたぐ呼び出しは呼び先の宣言を読む（io.ReadFile の宣言 = NotFound / Denied / Other）
+// package をまたぐ呼び出しは呼び先の宣言を読む（io.ReadFile の宣言 = NotFound / Denied / Other / Timeout / Expired）
 
 import "std/io"
 
@@ -40,7 +40,7 @@ func Stale(n int) (int, error?) {
 }
 
 // 公開・ちょうど（package をまたぐ呼び出しは宣言を読む）
-@errors(io.NotFound, io.Denied, io.Other, A)
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, A)
 func Exact(p string, n int) ([]int, error?) {
     m := inner(n)?
     b := io.ReadFile(p)?

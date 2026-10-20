@@ -4,7 +4,7 @@ package desugar
 // 点は表層型検査器（TypeAll）が型付けのついでに表へ積む（yNoteImplicit — 別キー 0 - IMPLKEY - 節）。analyzer（U1〜U3 の事象）・脱糖器（CFreeze）・
 // lower（mut → imm の型の付け替え）は位置を見ず、節が表にあるか（IsImplicit）だけを引く — 受理する点 ⊆ 表 = 規則が見る点が構成で決まる
 // （差し込み忘れは型の拒否に落ちるだけ。位置ごとに 3 者が判定すると、腕の合流で期待型が腕へ押し込まれる形などで点の集合がずれる — report-484 4 節）。
-// 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/par の関数 — チャネルの送信も）・関数の return・欄 / imm の場所への代入・
+// 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/task の関数 — チャネルの送信も）・関数の return・欄 / imm の場所への代入・
 // 添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素・for の slice の生成元（iter.Slice の xs — 2026-10-13）。起こさない位置 = 束縛（期待型が無い）・if / switch の腕の合流・
 // ラムダの return（typer がラムダの結果の型を持たない）・par の子の捕獲
 
@@ -16,7 +16,7 @@ import "std/table"
 
 // ImplicitFreeze は期待型 want の位置に置いた式 e で暗黙の freeze が起きるか。e は局所の束縛を根に持つ道（名前・欄・添字・括弧 — v1）に限る
 // （呼び出しの結果・if 式などは点にしない — 分岐の合流は analyzer が根を取れない）。par の handle（Task / 札）を含む型は点にしない
-// （freeze できない — kind 16。`par.Gather(hs)` の mut の handle の slice は既存の特例の道のまま）
+// （freeze できない — kind 16。`task.Gather(hs)` の mut の handle の slice は既存の特例の道のまま）
 func ImplicitFreeze(st mut S, e NodeRef, want int) bool {
     if e == -1 || want < 0 || !(yIsPath(mut st, e) || yIsClone(mut st, e)) {
         return false
@@ -73,7 +73,7 @@ func yFreezes(st mut S, have int, want int) bool {
 }
 
 // WantParam は package pk の中の呼び出しの callee の節 callee0 の k 番の仮引数の型（引けなければ -1）。関数値（局所の名前・欄）は typer が
-// callee の節に載せた関数型から、名前付き関数は宣言の型（総称は呼び出しの型引数 YTArgsOf を代入・std/par の振り分け PREDIR の後の関数）から
+// callee の節に載せた関数型から、名前付き関数は宣言の型（総称は呼び出しの型引数 YTArgsOf を代入・std/task の振り分け PREDIR の後の関数）から
 func WantParam(st mut S, pk int, callee0 NodeRef, k int) int {
     if callee0 == -1 || k < 0 {
         return -1

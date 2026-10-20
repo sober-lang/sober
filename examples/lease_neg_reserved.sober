@@ -1,0 +1,16 @@
+package main
+
+// 写し先（LocalNew / LeaseTake …）は利用者が呼べない（diag.Par kind 28）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.LocalNew(1, []int{8})
+    println(task.LeaseTake(lw, 1))
+}

@@ -22,13 +22,13 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     },
     {
       "alias": "$utf8",
-      "path": "std/utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],
@@ -1157,7 +1157,7 @@
                   "name": "builder",
                   "tok": 365
                 },
-                "field": "PushStr",
+                "field": "PushString",
                 "tok": 367
               },
               "args": [
@@ -1186,7 +1186,7 @@
                   "name": "builder",
                   "tok": 375
                 },
-                "field": "PushStr",
+                "field": "PushString",
                 "tok": 377
               },
               "args": [
@@ -1245,7 +1245,7 @@
                   "name": "builder",
                   "tok": 395
                 },
-                "field": "PushStr",
+                "field": "PushString",
                 "tok": 397
               },
               "args": [

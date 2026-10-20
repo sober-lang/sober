@@ -1,7 +1,7 @@
 package loader
 
 // 同一性を持つ型のゼロ値（language.md 28 節「資源とストリーム」・11 節 — 2026-10-13 の裁定 Qa1・report-592 / 601）: 同一性の型の値は生成の口
-// （par.Scope の札・par.Spawn の handle・par.NewChan の端点・par.NewPool・io.Open）が作った 1 個で、ゼロ値は何の資源も指さない偽物。std の外では
+// （task.Run の札・task.Spawn の handle・task.NewChannel の端点・task.NewPool・io.Open）が作った 1 個で、ゼロ値は何の資源も指さない偽物。std の外では
 // ① 同一性の型そのもののリテラル `T{}`（欄つきは封の規則 — sealx.sober — が先に拒否する）と ② 同一性の型を（欄・総称の型引数を通して推移的に）持つ欄を
 // 省いた composite（`W{}`・部分リテラル `W{a: 1}` — 省いた欄はゼロ値）を拒否する。`T?` の欄（ゼロ値 = nil）・slice / map の欄（ゼロ値 = 空）は偽物を作らない。
 // 同一性の族は名前で閉じた集合（std の型宣言に印〔@identity〕を書くと鎖の最後の boot の parser が読めないので、freeze の信頼の口・pool の H1 と同じく
@@ -14,8 +14,8 @@ import "ast"
 
 // idBase は package の path と型の名前が同一性の族か（族の番号 — 違えば 0）
 func idBase(path string, base string) int {
-    if path == "std/par" {
-        return if base == "S" { 1 } else if base == "Task" { 2 } else if base == "Tx" { 3 } else if base == "Rx" { 4 } else if base == "Pool" { 5 } else { 0 }
+    if path == "std/task" {
+        return if base == "Scope" { 1 } else if base == "Handle" { 2 } else if base == "Sender" { 3 } else if base == "Receiver" { 4 } else if base == "Pool" { 5 } else if base == "Local" { 7 } else { 0 }
     }
     if path == "std/io" && base == "File" {
         return 6

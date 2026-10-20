@@ -1,0 +1,32 @@
+package lib
+
+// refs の負例（report-883）: std/task.MarkFailed と同綴りの別物を並べる — この package の関数 MarkFailed・欄 MarkFailed・variant の欄 MarkFailed
+
+type Rec struct {
+    MarkFailed int
+    n int
+}
+
+type Shape union {
+    Bar { MarkFailed int }
+    Baz {}
+}
+
+func MarkFailed(r Rec) int {
+    return r.MarkFailed + r.n
+}
+
+func Mk(n int) Rec {
+    return Rec{MarkFailed: n, n: 1}
+}
+
+func Width(s Shape) int {
+    return switch s {
+    case Bar{}: 1
+    case Baz{}: 0
+    }
+}
+
+func Twice(r Rec) int {
+    return MarkFailed(r) * 2
+}

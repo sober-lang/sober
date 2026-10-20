@@ -1,0 +1,18 @@
+package main
+
+// 借りの関数値は束縛できない（(α-L0) — language.md 25 節「借り」: 呼ぶ・借りの位置へ渡す・借りの位置のラムダへ捕捉する、だけ）
+
+type Stream func(emit func(n int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+func main() {
+    r := Resp{stream: (emit) => {
+        g := emit
+        g(1)
+    }}
+    st := r.stream
+    if st != nil { println(st((n int) => n)) }
+}

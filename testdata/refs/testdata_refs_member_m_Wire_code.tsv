@@ -1,0 +1,19 @@
+OTHER	field-key:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	540	544	14:16	q := m.Req{code: 2, path: "/x"}
+TARGET	field-key:dir:testdata/refs/member/m.Wire	testdata/refs/member/a/main.sober	743	747	18:29	println(m.Render(m.Wire{code: r.code, inner: m.Inner{tag: "t"}}))
+OTHER	field-sel:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	751	755	18:37	println(m.Render(m.Wire{code: r.code, inner: m.Inner{tag: "t"}}))
+OTHER	bare	testdata/refs/member/a/main.sober	797	801	19:13	m.Check(code: q.code - 10)
+OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	805	809	19:21	m.Check(code: q.code - 10)
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	609	613	16:18	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Req	testdata/refs/member/a/main.sober	619	623	16:28	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+OTHER	field-sel-interp:dir:testdata/refs/member/m.Resp	testdata/refs/member/a/main.sober	678	682	16:87	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+OTHER	field-decl:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	382	386	9:5	code int
+OTHER	field-decl:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	433	437	14:5	code int
+TARGET	field-decl:dir:testdata/refs/member/m.Wire	testdata/refs/member/m/m.sober	484	488	19:5	code int
+OTHER	field-decl:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	572	576	28:5	code int
+OTHER	field-key:dir:testdata/refs/member/m.Resp	testdata/refs/member/m/m.sober	637	641	32:15	r := Resp{code: req.code * scale, body: req.path}
+OTHER	field-sel:dir:testdata/refs/member/m.Req	testdata/refs/member/m/m.sober	647	651	32:25	r := Resp{code: req.code * scale, body: req.path}
+OTHER	bare	testdata/refs/member/m/m.sober	768	772	40:12	func Check(code int) {
+OTHER	bare	testdata/refs/member/m/m.sober	787	791	41:8	if code < 0 {
+OTHER	field-key:dir:testdata/refs/member/m.Oops	testdata/refs/member/m/m.sober	817	821	42:20	panic(Oops{code: code})
+OTHER	bare	testdata/refs/member/m/m.sober	823	827	42:26	panic(Oops{code: code})
+WARN	json-wire	-	-	-	-	dir:testdata/refs/member/m.Wire は json.Encode / Decode に届く型 — 欄 code の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）

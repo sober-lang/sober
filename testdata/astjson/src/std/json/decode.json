@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/conv",
+      "path": "std/convert",
       "tok": 4
     },
     {
@@ -18,7 +18,7 @@
     },
     {
       "alias": "$float",
-      "path": "std/floatfmt",
+      "path": "std/internal/floatfmt",
       "tok": 0
     }
   ],
@@ -108,7 +108,7 @@
   ],
   "funcs": [
     {
-      "name": "Object",
+      "name": "NeedObject",
       "type_params": [],
       "params": [
         {
@@ -853,7 +853,7 @@
       "sig_end": 262
     },
     {
-      "name": "DecString",
+      "name": "ParseString",
       "type_params": [],
       "params": [
         {
@@ -1055,7 +1055,7 @@
       "sig_end": 350
     },
     {
-      "name": "DecBool",
+      "name": "ParseBool",
       "type_params": [],
       "params": [
         {
@@ -1251,7 +1251,7 @@
       "sig_end": 423
     },
     {
-      "name": "DecInt",
+      "name": "ParseInt",
       "type_params": [],
       "params": [
         {
@@ -2061,7 +2061,7 @@
       "sig_end": 495
     },
     {
-      "name": "DecFloat",
+      "name": "ParseFloat",
       "type_params": [],
       "params": [
         {
@@ -2201,7 +2201,7 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "conv",
+                    "name": "convert",
                     "tok": 780
                   },
                   "field": "ParseFloat",

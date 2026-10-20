@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_scope_result.sober:8:33: the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)
-exit=1

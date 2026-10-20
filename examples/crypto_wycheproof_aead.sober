@@ -1,0 +1,82 @@
+package main
+
+// Wycheproof（testdata/wycheproof/README.md）の AEAD を std/crypto に通す（report-793 — ChaCha20-Poly1305 325 件）。
+// valid = Seal の出力（暗号文 ‖ tag）が一致し Open が平文を返す・invalid = Open が拒否する（nonce の長さ違いは Seal も BadSize）。食い違った tcId を印字する
+
+import "std/crypto/chacha20poly1305"
+import "std/hex"
+import "std/iter"
+import "std/json"
+
+@embed("testdata/wycheproof/chacha20_poly1305_test.json")
+const Files = map[string]string{}
+
+type AeadTest struct {
+    tcId int
+    key string
+    iv string
+    aad string
+    msg string
+    ct string
+    tag string
+    result string
+}
+
+type AeadGroup struct {
+    tests []AeadTest
+}
+
+type AeadFile struct {
+    testGroups []AeadGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func file(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func main() {
+    fs := Files
+    d, err := json.Parse(bytes(file(fs, "testdata/wycheproof/chacha20_poly1305_test.json")))
+    if err != nil {
+        println("parse error")
+        return
+    }
+    f, derr := json.Decode[AeadFile](d, json.Root(d))
+    if derr != nil {
+        println("decode error")
+        return
+    }
+    mut n := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        for t <- g.tests {
+            n = n + 1
+            key := unhex(t.key)
+            iv := unhex(t.iv)
+            aad := unhex(t.aad)
+            want := t.ct + t.tag
+            sealed, se := chacha20poly1305.Seal(key, iv, aad, unhex(t.msg))
+            sealOk := se == nil && hex.Format(sealed) == want
+            pt, oe := chacha20poly1305.Open(key, iv, aad, unhex(want))
+            openOk := oe == nil && hex.Format(pt) == t.msg
+            valid := t.result == "valid"
+            ok := if valid { sealOk && openOk } else { oe != nil }
+            if !ok {
+                bad = append(bad, t.tcId)
+            }
+        }
+    }
+    println("chacha20-poly1305: ${n} tests, ${len(bad)} failed")
+    for i <- iter.Range(0, len(bad)) {
+        println("  fail tcId ${bad[i]}")
+    }
+}

@@ -3,12 +3,12 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/utf8",
+      "path": "std/strings",
       "tok": 4
     },
     {
       "alias": "$utf8",
-      "path": "std/utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],
@@ -132,7 +132,7 @@
                               {
                                 "k": "type",
                                 "bind": null,
-                                "variant": "utf8.InvalidUtf8",
+                                "variant": "strings.InvalidUtf8",
                                 "fields": [
                                   {
                                     "name": "pos",

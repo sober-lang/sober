@@ -1,6 +1,6 @@
 package stdbuilder
 
-// std/builder の black-box テスト: PushAll / PushStr は要素ごとの Push と同じ列を作る（chunk の境界を跨ぐ長さ・空・Push との混在）
+// std/builder の black-box テスト: PushAll / PushString は要素ごとの Push と同じ列を作る（chunk の境界を跨ぐ長さ・空・Push との混在）
 
 import "std/builder"
 import "std/iter"
@@ -46,10 +46,10 @@ func TestPushAllMatchesPush() {
 
 func TestPushStr() {
     mut o := builder.Builder[byte]{}
-    builder.PushStr(mut o, "héllo, ")
-    builder.PushStr(mut o, "")
+    builder.PushString(mut o, "héllo, ")
+    builder.PushString(mut o, "")
     builder.Push(mut o, 'w')
-    builder.PushStr(mut o, "orld")
+    builder.PushString(mut o, "orld")
     s, err := string(builder.Build(mut o))
     assert(err == nil)
     assert(s == "héllo, world")

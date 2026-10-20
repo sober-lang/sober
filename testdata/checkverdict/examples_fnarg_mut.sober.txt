@@ -1,0 +1,2 @@
+sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
+exit=1

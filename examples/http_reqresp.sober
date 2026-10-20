@@ -1,0 +1,77 @@
+package main
+
+// http の要求と応答の補完（report-850 5 節 / 854）: Form（application/x-www-form-urlencoded の本文）・JsonDoc（JSON の本文 → std/json の Doc → Decode）・
+// 任意ヘッダ（Response の headers）・405 の Allow・static の *rest（".." を拒んでファイルを返す — 書き込み先は out/ の下・リポジトリのルートを cwd にして実行）。
+// ネットの代わりに recv が決まった要求の列を 1 切片で渡し、send が応答を印字する（examples/http_router の形 — 行末の CR は外して印字）
+
+import "std/http"
+import "std/io"
+import "std/json"
+import "std/strings"
+
+type User struct {
+    name string
+    age int
+}
+
+func or(s string?) string {
+    return if s != nil { s } else { "-" }
+}
+
+func login(r http.Request) http.Response {
+    return http.Text("form user=${or(http.Form(r, "user"))} pass=${or(http.Form(r, "pass"))}\n")
+}
+
+func create(r http.Request) http.Response {
+    d := http.JsonDoc(r) catch return http.Status(400)
+    u := json.Decode[User](d, json.Root(d)) catch return http.Status(400)
+    return http.Response{status: 201, contentType: "application/json", body: bytes(json.Encode[User](u)), headers: http.Headers{list: []http.Field{http.Field{name: "Location", value: "/users/${u.name}"}}}}
+}
+
+func static(r http.Request) http.Response {
+    rest := or(http.Param(r, "rest"))
+    if strings.Contains(rest, "..") {
+        return http.Status(403)
+    }
+    b := io.ReadFile("out/${rest}") catch return http.Status(404)
+    return http.Response{status: 200, contentType: "text/plain", body: b, headers: http.Headers{list: []http.Field{http.Field{name: "Cache-Control", value: "max-age=60"}}}}
+}
+
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println(string(freeze(out)) catch "?")
+    return nil
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func main() {
+    we := io.WriteFile("out/http_reqresp.tmp", bytes("static body\n"))
+    if we != nil {
+        println("cannot write")
+    }
+    rs := []http.Route{
+        http.Route{method: "POST", path: "/login", handler: login},
+        http.Route{method: "POST", path: "/users", handler: create},
+        http.Route{method: "GET", path: "/static/*rest", handler: static}}
+    form := "user=kr&pass=x%21"
+    js := "{\"name\":\"ann\",\"age\":7}"
+    reqs := "POST /login HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
+        "POST /login HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: ${len(bytes(form))}\r\n\r\n${form}" +
+        "POST /users HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: ${len(bytes(js))}\r\n\r\n${js}" +
+        "POST /users HTTP/1.1\r\nContent-Length: 3\r\n\r\n{x}" +
+        "GET /static/http_reqresp.tmp HTTP/1.1\r\n\r\n" +
+        "GET /static/../secret HTTP/1.1\r\n\r\n" +
+        "GET /static/none.tmp HTTP/1.1\r\n\r\n" +
+        "DELETE /users HTTP/1.1\r\nConnection: close\r\n\r\n"
+    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    println(e == nil)
+}

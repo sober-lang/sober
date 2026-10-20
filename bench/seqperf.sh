@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # seqperf.sh（bench/README.md の逐次の表）: scripts/bench.sh が建てた逐次 9 題材 + Web コア（jsonapi・routing・logagg）の双子（out/bench/<題材>-sober / -go）を perf stat で測る。
 # 各題材 N 回（Sober → Go の交互）で、cycles:u の最小・instructions:u（決定的）・wall の最小（EPOCHREALTIME の差 — perf の起動を含む）・最大 RSS（perf → time → 本体の順なので taskset の床なし）。
+# raw の列 = 名前-実装 wall user rssKB cycles:u instructions:u loadavg task-clock(ns)。PMU の無い VM（GitHub Actions — report-921）では cycles / 命令は NA で、
+# 公式の物差しは task-clock の周ごとの比（scripts/benchsync.ts — report-922）
 # 規模は bench.sh の既定と同じ。先に scripts/bench.sh を一度走らせて実行ファイルと入力を置くこと
 #   bench/seqperf.sh [-n 回数] [-o 結果の TSV] [--cpu K] [--rust]
 # --rust: Rust の双子（bench/<題材>/rust — bench/rust/build.sh が out/rust/release/ に建てる）も Sober → Go → Rust素 の交互で測り、3 実装の表にする
@@ -40,14 +42,16 @@ RTIN=$B/routing-500000.txt
 LAIN=$B/logagg-500000.txt
 for f in "$IN" "$FIN" "$JAIN" "$RTIN" "$LAIN"; do [ -s "$f" ] || { echo "seqperf.sh: $f が無い（先に scripts/bench.sh）" >&2; exit 2; }; done
 : > "$res"
+# ev <perf の -x, の出力> <事象>: 値（<not supported> / <not counted> は NA — 中の空白で列がずれないように）
+ev() { local v; v=$(grep -m1 ",$2" "$1" | cut -d, -f1); case $v in [0-9]*) echo "$v" ;; *) echo NA ;; esac; }
 one() { # one <名前> <実行ファイル> <引数>: `名前 wall user rssKB cycles insts load` を足す
     local name=$1 exe=$2 a=$3 ld t0 t1
     ld=$(cut -d' ' -f1 /proc/loadavg)
     t0=$EPOCHREALTIME
     # 逐次の表はワーカー 1（std の内側の並列を逐次の列に混ぜない。Go 側には効かない）
-    SOBER_WORKERS=1 taskset -c "$CPU" "$PERF" stat -x, -e cycles:u,instructions:u -o "$W/p" /usr/bin/time -f "%U %M" -o "$W/t" "$exe" "$a" > "$W/out" 2> "$W/err" || { echo "seqperf.sh: FAIL $name" >&2; head -c 200 "$W/err" >&2; exit 1; }
+    SOBER_WORKERS=1 taskset -c "$CPU" "$PERF" stat -x, -e cycles:u,instructions:u,task-clock -o "$W/p" /usr/bin/time -f "%U %M" -o "$W/t" "$exe" "$a" > "$W/out" 2> "$W/err" || { echo "seqperf.sh: FAIL $name" >&2; head -c 200 "$W/err" >&2; exit 1; }
     t1=$EPOCHREALTIME
-    echo "$name $(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.4f", b - a }') $(cat "$W/t") $(grep cycles "$W/p" | cut -d, -f1) $(grep instructions "$W/p" | cut -d, -f1) $ld" >> "$res"
+    echo "$name $(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.4f", b - a }') $(cat "$W/t") $(ev "$W/p" cycles:u) $(ev "$W/p" instructions:u) $ld $(ev "$W/p" task-clock)" >> "$res"
 }
 PS="1brc binarytrees fannkuch fasta revcomp knucleotide nbody spectralnorm mandelbrot jsonapi routing logagg"
 arg() { case $1 in 1brc) echo "$IN" ;; binarytrees) echo 18 ;; fannkuch) echo 11 ;; fasta) echo 2500000 ;; revcomp|knucleotide) echo "$FIN" ;; nbody) echo 5000000 ;; spectralnorm) echo 2000 ;; mandelbrot) echo 4000 ;; jsonapi) echo "$JAIN" ;; routing) echo "$RTIN" ;; logagg) echo "$LAIN" ;; esac; }
@@ -69,23 +73,25 @@ for r in $(seq "$N"); do
 done
 if [ "$RUST" = 1 ]; then
     awk -v ps="$PS" '
+    function d(a, b) { return b ? a / b : 0 }
     { k = $1; if (!(k in c) || $5 < c[k]) c[k] = $5; if (!(k in w) || $2 < w[k]) w[k] = $2; if ($4 > m[k]) m[k] = $4; i[k] = $6 }
     END {
         printf "| 題材 | cycles:u G Sober / Go / Rust素 | Sober/Rust素 | Go/Rust素 | 命令 G Sober / Go / Rust素 | Sober/Rust素 | wall 最小 s Sober / Go / Rust素 | 最大 RSS MB Sober / Go / Rust素 | Rust慣 cycles:u G | Sober/Rust慣 |\n|---|---|---|---|---|---|---|---|---|---|\n"
         n = split(ps, p, " ")
         for (x = 1; x <= n; x++) { s = p[x] "-sober"; g = p[x] "-go"; r = p[x] "-rust"; ro = p[x] "-ropt"
-            if (ro in c) { roc = sprintf("%.3f", c[ro] / 1e9); ror = sprintf("%.2fx", c[s] / c[ro]) } else { roc = "-"; ror = "-" }
-            printf "| %s | %.3f / %.3f / %.3f | %.2fx | %.2fx | %.2f / %.2f / %.2f | %.2fx | %.3f / %.3f / %.3f | %.1f / %.1f / %.1f | %s | %s |\n", p[x], c[s] / 1e9, c[g] / 1e9, c[r] / 1e9, c[s] / c[r], c[g] / c[r], i[s] / 1e9, i[g] / 1e9, i[r] / 1e9, i[s] / i[r], w[s], w[g], w[r], m[s] / 1024, m[g] / 1024, m[r] / 1024, roc, ror }
+            if (ro in c) { roc = sprintf("%.3f", c[ro] / 1e9); ror = sprintf("%.2fx", d(c[s], c[ro])) } else { roc = "-"; ror = "-" }
+            printf "| %s | %.3f / %.3f / %.3f | %.2fx | %.2fx | %.2f / %.2f / %.2f | %.2fx | %.3f / %.3f / %.3f | %.1f / %.1f / %.1f | %s | %s |\n", p[x], c[s] / 1e9, c[g] / 1e9, c[r] / 1e9, d(c[s], c[r]), d(c[g], c[r]), i[s] / 1e9, i[g] / 1e9, i[r] / 1e9, d(i[s], i[r]), w[s], w[g], w[r], m[s] / 1024, m[g] / 1024, m[r] / 1024, roc, ror }
     }' "$res"
     echo "seqperf.sh: raw = $res" >&2
     exit 0
 fi
 awk -v ps="$PS" '
+function d(a, b) { return b ? a / b : 0 }
 { k = $1; if (!(k in c) || $5 < c[k]) c[k] = $5; if (!(k in w) || $2 < w[k]) w[k] = $2; if ($4 > m[k]) m[k] = $4; i[k] = $6 }
 END {
     printf "| 題材 | wall 最小 s Sober / Go | 比 | cycles:u G Sober / Go | 比 | 命令 G Sober / Go | 比 | 最大 RSS MB Sober / Go | 比 |\n|---|---|---|---|---|---|---|---|---|\n"
     n = split(ps, p, " ")
     for (x = 1; x <= n; x++) { s = p[x] "-sober"; g = p[x] "-go"
-        printf "| %s | %.3f / %.3f | %.2fx | %.2f / %.2f | %.2fx | %.2f / %.2f | %.2fx | %.1f / %.1f | %.2fx |\n", p[x], w[s], w[g], w[s] / w[g], c[s] / 1e9, c[g] / 1e9, c[s] / c[g], i[s] / 1e9, i[g] / 1e9, i[s] / i[g], m[s] / 1024, m[g] / 1024, m[s] / m[g] }
+        printf "| %s | %.3f / %.3f | %.2fx | %.2f / %.2f | %.2fx | %.2f / %.2f | %.2fx | %.1f / %.1f | %.2fx |\n", p[x], w[s], w[g], d(w[s], w[g]), c[s] / 1e9, c[g] / 1e9, d(c[s], c[g]), i[s] / 1e9, i[g] / 1e9, d(i[s], i[g]), m[s] / 1024, m[g] / 1024, d(m[s], m[g]) }
 }' "$res"
 echo "seqperf.sh: raw = $res" >&2

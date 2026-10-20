@@ -1,0 +1,233 @@
+package x25519
+
+// X25519（RFC 7748 5 節 — Curve25519 の Montgomery ladder）。
+//
+//     pub := x25519.Base(priv)              // 公開鍵（32 バイト）
+//     shared := x25519.Shared(priv, peer)    // 共有値（32 バイト — 全 0 の検査〔低位数の点〕は呼び手 = TLS 7.4.2 の側）
+//
+// 定数時間: 秘密（鍵のビット・体の元）に依る分岐・添字は無い — ladder の入れ替えは mask の xor（cswap）・ループは 255 段固定・逆元は p - 2 乗（指数は公開）
+
+// 体の元 = 51 bit × 5 limb（donna-c64 の位置）を、1 本の mut []int の作業域の 5 語の区画（番地 = 区画の先頭の添字 — 公開の値）に置く。ladder は
+// 作業域を 1 回作るだけで、体の演算は確保しない。
+// limb の積は 2^109 未満で 64 bit に収まらないので、乗数を 2^12 倍に置いて掛ける: 128 bit の積の上位語（組み込み mulhi — x86 の MUL 1 命令）が
+// 52 bit より上・下位語 >> 12 が下の 52 bit。列ごとに下と上を別に足し（5 項でどちらも 2^61 未満）、上は 2 倍して次の列へ（2^52 = 2 × 2^51）。
+// 前提: 積に入る limb は 2^52 未満（足し算・引き算・積の後は毎回繰り上げて 2^51 + 小に戻す — 上界の論証は fmul / carry の頭に）
+
+import "std/iter"
+
+// 組み込みの宣言（本体なし — loader/intrinsic.sober の IMulHi）
+@intrinsic("mulhi")
+func mulhi(a int, b int) int
+
+const mask51 = 0x7ffffffffffff
+const mask52 = 0xfffffffffffff
+
+// 作業域の区画（各 5 語）: ladder の変数（RFC 7748 5 節の名前）と定数 a24 = 121665
+const fX1 = 0
+const fX2 = 5
+const fZ2 = 10
+const fX3 = 15
+const fZ3 = 20
+const fA = 25
+const fAA = 30
+const fB = 35
+const fBB = 40
+const fE = 45
+const fC = 50
+const fD = 55
+const fDA = 60
+const fCB = 65
+const fT = 70
+const fK = 75
+const fR = 80
+const fWords = 85
+
+// 秘密鍵 k（32 バイト — 短ければ添字の境界の panic・長い分は読まない）の公開鍵 = k × 9
+func Base(k []byte) []byte {
+    mut nine := mut []byte{9}
+    for i <- iter.Range(1, 32) {
+        nine = append(nine, byte(0))
+    }
+    return Shared(k, freeze(nine))
+}
+
+// 秘密鍵 k（32 バイト — 内部で RFC 7748 の clamp を掛ける）と相手の u 座標（32 バイト — 最上位のビットは無視）の X25519。k・u が 32 バイトより短ければ添字の境界の panic（長い分は読まない）。u が低位数の点なら結果は全 0 — 全 0 を拒否する検査は呼び手がする（RFC 7748 6.1・TLS 1.3 は RFC 9846 7.4.2）
+func Shared(k []byte, u []byte) []byte {
+    mut s := mut []int{}
+    for i <- iter.Range(0, 32) {
+        s = append(s, int(k[i]))
+    }
+    s[0] = s[0] & 248
+    s[31] = (s[31] & 127) | 64
+    mut w := mut []int{}
+    for i <- iter.Range(0, fWords) {
+        w = append(w, 0)
+    }
+    unpack(mut w, fX1, u)
+    w[fX2] = 1
+    for i <- iter.Range(0, 5) {
+        w[fX3 + i] = w[fX1 + i]
+    }
+    w[fZ3] = 1
+    w[fK] = 121665
+    mut swap := 0
+    for i <- iter.Range(0, 255) {
+        t := 254 - i
+        kt := (s[t / 8] >> (t % 8)) & 1
+        swap = swap ^ kt
+        m := -swap
+        cswap(mut w, fX2, fX3, m)
+        cswap(mut w, fZ2, fZ3, m)
+        swap = kt
+        fadd(mut w, fA, fX2, fZ2)
+        fmul(mut w, fAA, fA, fA)
+        fsub(mut w, fB, fX2, fZ2)
+        fmul(mut w, fBB, fB, fB)
+        fsub(mut w, fE, fAA, fBB)
+        fadd(mut w, fC, fX3, fZ3)
+        fsub(mut w, fD, fX3, fZ3)
+        fmul(mut w, fDA, fD, fA)
+        fmul(mut w, fCB, fC, fB)
+        fadd(mut w, fT, fDA, fCB)
+        fmul(mut w, fX3, fT, fT)
+        fsub(mut w, fT, fDA, fCB)
+        fmul(mut w, fT, fT, fT)
+        fmul(mut w, fZ3, fX1, fT)
+        fmul(mut w, fX2, fAA, fBB)
+        fmul(mut w, fT, fK, fE)
+        fadd(mut w, fT, fAA, fT)
+        fmul(mut w, fZ2, fE, fT)
+    }
+    m := -swap
+    cswap(mut w, fX2, fX3, m)
+    cswap(mut w, fZ2, fZ3, m)
+    invert(mut w, fR, fZ2)
+    fmul(mut w, fR, fX2, fR)
+    return pack(w, fR)
+}
+
+// cswap は m = -1 なら区画 x と y を入れ替え、0 なら何もしない（mask の xor — 分岐なし）
+func cswap(w mut []int, x int, y int, m int) {
+    for i <- iter.Range(0, 5) {
+        t := (w[x + i] ^ w[y + i]) & m
+        w[x + i] = w[x + i] ^ t
+        w[y + i] = w[y + i] ^ t
+    }
+}
+
+// carry は r0〜r4（各 2^63 未満の非負）を 51 bit に繰り上げて区画 d に書く（r4 の溢れは 19 倍して r0 へ — 2^255 ≡ 19。最後に r0 → r1 をもう 1 回 —
+// 書いた limb は r1 だけ 2^51 + 2^13 未満・他は 2^51 未満）
+func carry(w mut []int, d int, r0 int, r1 int, r2 int, r3 int, r4 int) {
+    c0 := r0 >> 51
+    s1 := r1 + c0
+    c1 := s1 >> 51
+    s2 := r2 + c1
+    c2 := s2 >> 51
+    s3 := r3 + c2
+    c3 := s3 >> 51
+    s4 := r4 + c3
+    c4 := s4 >> 51
+    s0 := (r0 & mask51) + 19 * c4
+    w[d] = s0 & mask51
+    w[d + 1] = (s1 & mask51) + (s0 >> 51)
+    w[d + 2] = s2 & mask51
+    w[d + 3] = s3 & mask51
+    w[d + 4] = s4 & mask51
+}
+
+// fadd は区画 d = a + b（limb の和は 2^53 未満）
+func fadd(w mut []int, d int, a int, b int) {
+    carry(mut w, d, w[a] + w[b], w[a + 1] + w[b + 1], w[a + 2] + w[b + 2], w[a + 3] + w[b + 3], w[a + 4] + w[b + 4])
+}
+
+// fsub は区画 d = a - b（2p を足して非負に保つ — 2p の limb は 2^52 - 38 / 2^52 - 2 で、b の limb〔< 2^51 + 2^13〕より大きい）
+func fsub(w mut []int, d int, a int, b int) {
+    carry(mut w, d, w[a] + 0xfffffffffffda - w[b], w[a + 1] + 0xffffffffffffe - w[b + 1], w[a + 2] + 0xffffffffffffe - w[b + 2], w[a + 3] + 0xffffffffffffe - w[b + 3], w[a + 4] + 0xffffffffffffe - w[b + 4])
+}
+
+// fmul は区画 d = a × b mod p（d は a / b と同じでよい — 入力を全部読んでから書く）。limb < 2^52 の前提で、乗数 x = a × 2^12 < 2^64・
+// 相手 y = b か 19b < 2^57: 積 < 2^109 → 上 < 2^57。列 k の和 = l_k + h_k × 2^52（5 項 — l < 2^55・h < 2^60）。h_k × 2 を列 k + 1 へ、
+// h_4 × 2 は 19 倍して列 0 へ（2^61 × 19 は溢れるので 51 bit で割って列 0 と列 1 に分ける）。どの列の和も 2^62 未満で carry に渡せる
+func fmul(w mut []int, d int, a int, b int) {
+    x0 := w[a] << 12
+    x1 := w[a + 1] << 12
+    x2 := w[a + 2] << 12
+    x3 := w[a + 3] << 12
+    x4 := w[a + 4] << 12
+    b0 := w[b]
+    b1 := w[b + 1]
+    b2 := w[b + 2]
+    b3 := w[b + 3]
+    b4 := w[b + 4]
+    t1 := 19 * b1
+    t2 := 19 * b2
+    t3 := 19 * b3
+    t4 := 19 * b4
+    l0 := (((x0 * b0) >> 12) & mask52) + (((x1 * t4) >> 12) & mask52) + (((x2 * t3) >> 12) & mask52) + (((x3 * t2) >> 12) & mask52) + (((x4 * t1) >> 12) & mask52)
+    h0 := mulhi(x0, b0) + mulhi(x1, t4) + mulhi(x2, t3) + mulhi(x3, t2) + mulhi(x4, t1)
+    l1 := (((x0 * b1) >> 12) & mask52) + (((x1 * b0) >> 12) & mask52) + (((x2 * t4) >> 12) & mask52) + (((x3 * t3) >> 12) & mask52) + (((x4 * t2) >> 12) & mask52)
+    h1 := mulhi(x0, b1) + mulhi(x1, b0) + mulhi(x2, t4) + mulhi(x3, t3) + mulhi(x4, t2)
+    l2 := (((x0 * b2) >> 12) & mask52) + (((x1 * b1) >> 12) & mask52) + (((x2 * b0) >> 12) & mask52) + (((x3 * t4) >> 12) & mask52) + (((x4 * t3) >> 12) & mask52)
+    h2 := mulhi(x0, b2) + mulhi(x1, b1) + mulhi(x2, b0) + mulhi(x3, t4) + mulhi(x4, t3)
+    l3 := (((x0 * b3) >> 12) & mask52) + (((x1 * b2) >> 12) & mask52) + (((x2 * b1) >> 12) & mask52) + (((x3 * b0) >> 12) & mask52) + (((x4 * t4) >> 12) & mask52)
+    h3 := mulhi(x0, b3) + mulhi(x1, b2) + mulhi(x2, b1) + mulhi(x3, b0) + mulhi(x4, t4)
+    l4 := (((x0 * b4) >> 12) & mask52) + (((x1 * b3) >> 12) & mask52) + (((x2 * b2) >> 12) & mask52) + (((x3 * b1) >> 12) & mask52) + (((x4 * b0) >> 12) & mask52)
+    h4 := mulhi(x0, b4) + mulhi(x1, b3) + mulhi(x2, b2) + mulhi(x3, b1) + mulhi(x4, b0)
+    g := 2 * h4
+    carry(mut w, d, l0 + 19 * (g & mask51), l1 + 2 * h0 + 19 * (g >> 51), l2 + 2 * h1, l3 + 2 * h2, l4 + 2 * h3)
+}
+
+// invert は区画 d = z^(p-2)（p - 2 = 2^255 - 21 — 指数は公開の値なので普通の二乗と掛け算。d と z は別の区画）
+func invert(w mut []int, d int, z int) {
+    for i <- iter.Range(0, 5) {
+        w[d + i] = 0
+    }
+    w[d] = 1
+    for i <- iter.Range(0, 255) {
+        bit := 254 - i
+        fmul(mut w, d, d, d)
+        // p - 2 のビット: 254..5 は 1・4 は 0・3..0 = 1011
+        if bit >= 5 || bit == 3 || bit == 1 || bit == 0 {
+            fmul(mut w, d, d, z)
+        }
+    }
+}
+
+// unpack は 32 バイト（小さい端・最上位のビットは捨てる）の元を区画 d へ
+func unpack(w mut []int, d int, b []byte) {
+    for i <- iter.Range(0, 5) {
+        w[d + i] = 0
+    }
+    for pos <- iter.Range(0, 255) {
+        bit := (int(b[pos / 8]) >> (pos % 8)) & 1
+        w[d + pos / 51] = w[d + pos / 51] | (bit << (pos % 51))
+    }
+}
+
+// pack は区画 d を完全に mod p に縮めた 32 バイト（小さい端 — ref10 の fe_tobytes の形）。q = ⌊(h + 19) / 2^255⌋（h < 2p なので 0 か 1 —
+// 繰り上げの鎖だけで分岐なしに出る）を出して h + 19q を繰り上げ、2^255 の位を捨てると h - qp
+func pack(w []int, d int) []byte {
+    mut q := (w[d] + 19) >> 51
+    q = (w[d + 1] + q) >> 51
+    q = (w[d + 2] + q) >> 51
+    q = (w[d + 3] + q) >> 51
+    q = (w[d + 4] + q) >> 51
+    h0 := w[d] + 19 * q
+    h1 := w[d + 1] + (h0 >> 51)
+    h2 := w[d + 2] + (h1 >> 51)
+    h3 := w[d + 3] + (h2 >> 51)
+    h4 := w[d + 4] + (h3 >> 51)
+    h := []int{h0 & mask51, h1 & mask51, h2 & mask51, h3 & mask51, h4 & mask51}
+    mut out := mut []int{}
+    for i <- iter.Range(0, 32) {
+        out = append(out, 0)
+    }
+    for pos <- iter.Range(0, 255) {
+        out[pos / 8] = out[pos / 8] | (((h[pos / 51] >> (pos % 51)) & 1) << (pos % 8))
+    }
+    mut bs := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        bs = append(bs, byte(out[i]))
+    }
+    return freeze(bs)
+}

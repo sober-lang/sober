@@ -3,7 +3,7 @@ package main
 // selfpar 4（段 6 P6-2 — checkFront）: ParCheck の拒否（mut の捕獲 — diag.Par kind 4）・analyzer の指摘（公開関数の @errors なし）・
 // 検査の def error（int を返す関数が string を返す）を全部持つ。逐次の優先順では ParCheck の拒否だけが出る
 
-import "std/par"
+import "std/task"
 
 type A error
 
@@ -20,7 +20,7 @@ func bad(n int) int {
 
 func main() {
     mut c := 1
-    r, e := par.Scope((s par.S) => par.Join(par.Spawn(s, () => c + 1)))
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => c + 1)))
     println(r)
     println(bad(1))
 }

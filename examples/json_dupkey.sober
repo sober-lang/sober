@@ -1,11 +1,11 @@
 package main
 
-// std/json の重複キーの拒否（DupKey — docs/language.md 16 節: 重複は防御の既定で拒否・位置は src で最も前の 2 つ目のキー）の位置の例:
+// std/json の重複キーの拒否（DuplicateKey — docs/language.md 16 節: 重複は防御の既定で拒否・位置は src で最も前の 2 つ目のキー）の位置の例:
 // 同じ長さの別のキー・エスケープのある綴りと無い綴りの同じキー・入れ子のオブジェクトをまたいだ「最も前」・欄の多いオブジェクト（16 を超える — 表の経路）
 
+import "std/convert"
 import "std/iter"
 import "std/json"
-import "std/strings"
 
 func show(s string) {
     _, err := json.Parse(bytes(s))
@@ -27,7 +27,7 @@ func main() {
     show("{\"abcdefgh1\":1,\"abcdefgh2\":2,\"abcdefgh1\":3}")
     mut big := "{"
     for i <- iter.Range(0, 20) {
-        big = big + "\"k" + strings.FormatInt(i) + "\":" + strings.FormatInt(i) + ","
+        big = big + "\"k" + convert.FormatInt(i) + "\":" + convert.FormatInt(i) + ","
     }
     show(big + "\"k20\":0}")
     show(big + "\"k7\":0}")

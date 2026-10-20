@@ -1,0 +1,37 @@
+package main
+
+// 匿名の関数型の欄も値の位置（工程 5d — 匿名欄の反転）: 欄のラムダが捕捉できる・ジェネリック struct の欄も・η 済みの名前・欄の値の束縛。
+// env の鍵は関数型の構造（借りの位置と同じ寄せ方）
+type Ord struct {
+    less func(int, int) bool
+}
+
+type Gen[T] struct {
+    f func(T) T
+}
+
+func pick(o Ord, x int, y int) int {
+    return if o.less(x, y) { x } else { y }
+}
+
+func mk(bias int) Ord {
+    return Ord{less: (a, b) => a + bias < b}
+}
+
+func asc(a int, b int) bool {
+    return a < b
+}
+
+func main() {
+    k := 10
+    o := Ord{less: (a, b) => a * k < b}
+    println(pick(o, 1, 5), pick(o, 0, 5))
+    println(pick(mk(7), 1, 5), pick(Ord{less: asc}, 4, 2))
+    f := o.less
+    println(f(1, 20))
+    s := "ab"
+    g := Gen[int]{f: (x) => x + len(bytes(s))}
+    println(g.f(40))
+    h := Gen[string]{f: (x) => x + s}
+    println(h.f("x"))
+}

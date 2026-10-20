@@ -45,8 +45,18 @@ const OpDead = 0
 
 // optimize はモジュールの全関数に設計整合パスを掛ける
 func optimize(st mut St) {
+    optPre(mut st)
+    optFuncAll(mut st)
+}
+
+// optPre は設計整合パスのモジュールの段（region を使わない関数の不動点・P0 の展開）— 関数ごとの段（optFunc）の前
+func optPre(st mut St) {
     optRegionFree(mut st)
     optInline(mut st)
+}
+
+// optFuncAll は設計整合パスの関数ごとの段を全関数に（optFunc は関数の本体と kindsInit の表・作業域だけを読む — 束 B1 の子の頭でも掛けられる・lParBatch）
+func optFuncAll(st mut St) {
     mut f := st.fhead
     while f != -1 {
         if irFnBHead(mut st, f) != -1 {
@@ -160,7 +170,7 @@ func optRegionFree(st mut St) {
 }
 
 // rfCallees は呼ぶ関数の列 l がすべて region を使わないと分かっているか。rt.panic / rt.panic_mem は戻らないので数えない
-// （std/par を使うプログラムでは罠の巻き戻しと out_drain を持ち P0 を満たさない — それを呼ぶ添字検査つきの小関数が全部 P0 から外れていた・
+// （std/task を使うプログラムでは罠の巻き戻しと out_drain を持ち P0 を満たさない — それを呼ぶ添字検査つきの小関数が全部 P0 から外れていた・
 // 巻き戻しは罠までの関数の epilogue を飛ばすので、罠を張る側は深度を任意の値から戻す。enter を消すと巻き戻りの時の深度が浅くなるだけ）
 func rfCallees(st mut St, l int) bool {
     mut i := 0
@@ -925,7 +935,7 @@ func unmarkIns(st mut St, ins InsRef) {
     op := irInsOp(mut st, ins)
     if op == OpCall || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone {
         listUnmark(mut st, irInsB(mut st, ins))
-    } else if op == OpSyscall || op == OpScanB {
+    } else if op == OpSyscall || op == OpScanB || op == OpCrcFold {
         listUnmark(mut st, irInsA(mut st, ins))
     }
 }

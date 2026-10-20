@@ -1,0 +1,22 @@
+package main
+
+// NewLocal と違う T の窓で借りると panic(task.LocalType{})（T の同一性は指紋で照合 — task.Local は型引数を持たない）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+type Other struct {
+    m int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.head, 8))
+    println(task.Lease(lw, (w mut Work) => w.n))
+    println(task.Lease(lw, (w mut Other) => w.m))
+}

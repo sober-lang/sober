@@ -7,10 +7,10 @@ package main
 // 不正な行（閉じない引用符・= の無い語・ts 欠落・ts の値の不正・status が数でない）は種類ごとに数えて集計から外す。
 // 出力 = 件数・svc ごとの集計・ユーザーの異なり数 / 最大 / 和で畳んだ FNV・全窓の FNV-1a 64（Go / Rust の双子とバイト一致）
 
+import "std/convert"
 import "std/io"
 import "std/iter"
 import "std/os"
-import "std/strings"
 import "std/utf8"
 
 func svcs() []string {
@@ -391,7 +391,7 @@ func main() int {
             if c > umax {
                 umax = c
             }
-            uh += fnv(fnv(fnv(0 - 3750763034362895579, u), "="), strings.FormatInt(c))
+            uh += fnv(fnv(fnv(0 - 3750763034362895579, u), "="), convert.FormatInt(c))
         }
     }
     println("users ${len(keys(um))} max ${umax} hash ${uh}")

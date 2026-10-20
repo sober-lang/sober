@@ -27,7 +27,7 @@ func SysKey(st mut S, pk int, name StrRef) int {
     return 0
 }
 
-// SysResult は鍵の番号の結果の型の種類（'i' = int・'f' = float・'b' = []byte — loader.IntrinsicSig の末尾）
+// SysResult は鍵の番号の結果の型の種類（'i' = int・'f' = float・'b' = []byte・'m' = mut []int — loader.IntrinsicSig の末尾）
 func SysResult(code int) byte {
     s := bytes(loader.IntrinsicSig(code))
     return s[len(s) - 1]
@@ -43,7 +43,7 @@ func SysArity(code int) int {
     return n
 }
 
-// std/par の呼び出し点の写し（段 6 P3a — language.md 11 節）: package std/par の公開関数 4 つを名前で引く閉じた集合
+// std/task の呼び出し点の写し（段 6 P3a — language.md 11 節）: package std/task の公開関数 4 つを名前で引く閉じた集合
 // （@intrinsic の宣言形は署名がスカラーと []byte だけで総称・関数型の仮引数を持てないので、宣言は普通の総称関数のまま呼び出し点で写す）
 const PAR_SCOPE = 1
 const PAR_SPAWN = 2
@@ -54,20 +54,34 @@ const PAR_SEND = 6
 const PAR_RECV = 7
 const PAR_SPAWNGIVE = 8
 const PAR_CLOSE = 9
-const PAR_SPAWNIN = 10   // par.SpawnIn（段 6 P5-4 — 名前つきプールの天井に入れなければ (nil, Shed{})）
+const PAR_SPAWNIN = 10   // task.SpawnIn（段 6 P5-4 — 名前つきプールの天井に入れなければ (nil, Shed{})）
 
-// ParOpenErr は関数 fi の err が開いた集合か（std/par の Scope と、scope を開く Map・子の err を返す gatherE / mapE — analyzer は呼び出しの集合を
+// ParOpenErr は関数 fi の err が開いた集合か（std/task の Scope と、scope を開く Map・子の err を返す gatherE / mapE — analyzer は呼び出しの集合を
 // TOP にし、宣言の照合をしない）
 func ParOpenErr(st mut S, fi int) bool {
     n := fnName(mut st, fi)
-    return strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/par") && (strIs(mut st, n, "Scope") || strIs(mut st, n, "Map") || strIs(mut st, n, "mapE") || strIs(mut st, n, "gatherE"))
+    return strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") && (strIs(mut st, n, "Run") || strIs(mut st, n, "Map") || strIs(mut st, n, "mapE") || strIs(mut st, n, "gatherE"))
 }
 
-// ParKey は関数 fi が std/par の Scope / Spawn / Join / Try ならその番号（違えば 0）
+// ParRtUse は関数 fi が task の rt を要るか（ParKey の口か、名前つきプールの台帳の口 — NewPool / Ledger / Fail。
+// rt.pool_new / rt.ledger の本体は task の rt の大域〔rt.mn〕を読み、task の rt と一緒にしか建たない — F-bm: NewPool だけのプログラムが空の関数で x86 の ICE。
+// 公開の口で見る: 中の組み込み〔newPool / ledgerWord / poolFail — 本体なし〕は ParReach の参照の辺に現れない）
+func ParRtUse(st mut S, fi int) bool {
+    if ParKey(mut st, fi) != 0 {
+        return true
+    }
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
+        return false
+    }
+    n := fnName(mut st, fi)
+    return strIs(mut st, n, "NewPool") || strIs(mut st, n, "Ledger") || strIs(mut st, n, "MarkFailed")
+}
+
+// ParKey は関数 fi が std/task の Scope / Spawn / Join / Try ならその番号（違えば 0）
 func ParKey(st mut S, fi int) int {
-    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/par") {
+    if !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
         return 0
     }
     n := fnName(mut st, fi)
-    return if strIs(mut st, n, "Scope") { PAR_SCOPE } else if strIs(mut st, n, "Spawn") { PAR_SPAWN } else if strIs(mut st, n, "Join") { PAR_JOIN } else if strIs(mut st, n, "Try") { PAR_TRY } else if strIs(mut st, n, "NewChan") { PAR_NEWCHAN } else if strIs(mut st, n, "Send") { PAR_SEND } else if strIs(mut st, n, "Recv") { PAR_RECV } else if strIs(mut st, n, "SpawnGive") { PAR_SPAWNGIVE } else if strIs(mut st, n, "Close") { PAR_CLOSE } else if strIs(mut st, n, "SpawnIn") { PAR_SPAWNIN } else { 0 }
+    return if strIs(mut st, n, "Run") { PAR_SCOPE } else if strIs(mut st, n, "Spawn") { PAR_SPAWN } else if strIs(mut st, n, "Join") { PAR_JOIN } else if strIs(mut st, n, "Try") { PAR_TRY } else if strIs(mut st, n, "NewChannel") { PAR_NEWCHAN } else if strIs(mut st, n, "Send") { PAR_SEND } else if strIs(mut st, n, "Recv") { PAR_RECV } else if strIs(mut st, n, "SpawnGive") { PAR_SPAWNGIVE } else if strIs(mut st, n, "Close") { PAR_CLOSE } else if strIs(mut st, n, "SpawnIn") { PAR_SPAWNIN } else { 0 }
 }

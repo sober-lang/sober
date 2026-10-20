@@ -1,0 +1,55 @@
+package main
+
+// net の期限は spawn された task の中の待ちも切り、ラベルは backend に依らず io.Expired（language.md 28 節の約束）。
+// 切られた待ちの -110 が std へ届く道は 2 本: sysWaitFd の結果（waitErr が読む — net_deadline が踏む道）と、ring の中の待ち
+// （netrecv の列・SEND の完了・accept の列 — rt が errno 110 で返し、sysWaitFd を経ないので waitErr に乗らない）。
+// 後者は errOf が自分の期限を見て Expired に読む（読みが無いと ring の道だけ io.Timeout になり、backend でラベルが割れた — report-741）
+
+import "std/io"
+import "std/net"
+import "std/task"
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        addr := "127.0.0.1:${net.Port(l)}"
+        _, e := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => child(addr))
+            _ = h
+            0
+        }, deadline: 30 * task.MS)
+        out = if e == nil { "scope: ok" } else { "scope: err" }
+        break
+    }
+    return out, nil
+}
+
+// child は誰も送らない接続を Recv で待つ（期限が切る — spawn された task の待ちは ring の道では netrecv の列の待ちになる）
+func child(addr string) int {
+    e := waitRecv(addr)
+    r := switch e {
+    case nil: "done"
+    case io.Expired{}: "expired"
+    case io.Timeout{}: "timeout"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    }
+    println("recv: ${r}")
+    return 0
+}
+
+func waitRecv(addr string) error? {
+    for c <- net.Dial(addr)? {
+        for chunk <- net.Recv(c)? {
+            _ = chunk
+            break
+        }
+    }
+    return nil
+}

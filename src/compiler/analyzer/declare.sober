@@ -4,6 +4,7 @@ package analyzer
 // - 強制: error を返す公開関数（名前が大文字）は `@errors` を持つ（無ければ拒否 — 指摘に導出集合を示す = fix の代わり。30 節の前例）
 // - 漏れ: 導出 ⊄ 宣言なら拒否（導出が TOP — 関数値の呼び出し等で決まらない — も漏れ）
 // - tightness: 公開関数で宣言 ⊋ 導出なら拒否（古い宣言 — 宣言の更新が diff に出る。内部関数の宣言は上界の検査だけ）
+// - 仮引数の名前の項（展開される関数の匿名の関数型の仮引数 — language.md 13 節）は Flow と同じ 3 つ（漏れ・tightness）を自分のラベルと別に照合する
 
 import "ast"
 import "desugar"
@@ -19,6 +20,8 @@ const MSwGap = 24        // error の switch が導出集合を覆わない（�
 const MSwDeadDefault = 25 // default が到達しない — 腕が導出集合を全部覆っている（付帯 = switch の記録の添字）
 const MSwDeadArm = 26    // 腕が到達しない — subject がそのラベルを持ちえない（付帯 = 腕の記録の添字）
 const MSwDeadCase = 27   // 腕が到達しない — 前の腕と導出集合（cause 込み）で覆われている（付帯 = 腕の記録の添字）
+const MErrFlowLeak = 28  // Flow ⊄ 宣言の仮引数の名前（付帯 = 関数の添字）
+const MErrFlowStale = 29 // 宣言の仮引数の名前 ⊋ Flow（公開関数）
 
 // declaredSet は関数 fi の @errors の集合（無ければ -1。解決できない項は annot.sober が拒否するので落とす）
 func declaredSet(az mut Az, fi int) int {
@@ -39,13 +42,30 @@ func declaredSet(az mut Az, fi int) int {
     return m
 }
 
+// declaredFlow は関数 fi の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j。無ければ 0）
+func declaredFlow(az mut Az, fi int) int {
+    l := errsOf(mut az, fnDecl(mut az, fi))
+    mut m := 0
+    if l != -1 {
+        for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+            j := paramOf(mut az, fi, desugar.StrRef(desugar.LatI(mut az.d, l, i)))
+            if j != -1 && flowParam(mut az, fi, j) {
+                m = m | (1 << j)
+            }
+        }
+    }
+    return m
+}
+
 // checkErrors は error を返す関数ごとに宣言と導出を照合する（本体の無い関数は見ない）
 func checkErrors(az mut Az) {
     for fi <- iter.Range(0, az.nfn) {
         fd := fnDecl(mut az, fi)
         if table.Get(mut az.errfn, fi) != 0 && fd.e != -1 && !desugar.ParOpenErr(mut az.d, fi) {
             d := table.Get(mut az.declared, fi)
-            r := table.Get(mut az.sets, fi)
+            r := table.Get(mut az.sets, fi) & ^flowBit()
+            fl := table.Get(mut az.sets, az.flowBase + fi)
+            df := table.Get(mut az.dflow, fi)
             pub := isPublic(mut az, desugar.StrRef(fd.a))
             if d == -1 {
                 if pub {
@@ -53,8 +73,12 @@ func checkErrors(az mut Az) {
                 }
             } else if (r | d) != d {
                 reportFn(mut az, MErrLeak, fi)
+            } else if (fl | df) != df {
+                reportFn(mut az, MErrFlowLeak, fi)
             } else if pub && r != d {
                 reportFn(mut az, MErrStale, fi)
+            } else if pub && fl != df {
+                reportFn(mut az, MErrFlowStale, fi)
             }
         }
     }
@@ -77,13 +101,21 @@ func errMessage(az mut Az, k int, fi int) string {
     fd := fnDecl(mut az, fi)
     name := str(mut az, desugar.StrRef(fd.a))
     d := table.Get(mut az.declared, fi)
-    r := table.Get(mut az.sets, fi)
+    r := table.Get(mut az.sets, fi) & ^flowBit()
     pk := desugar.FnAt(mut az.d, fi).pkg
+    fl := table.Get(mut az.sets, az.flowBase + fi)
+    df := table.Get(mut az.dflow, fi)
     if k == MErrMissing {
         if (r & TOP) != 0 {
             return "public function '${name}' returns an error but has no @errors (its labels cannot be derived — a call through a function value)"
         }
-        return "public function '${name}' returns an error but has no @errors: add `@errors(${labelNames(mut az, r, pk)})`"
+        return "public function '${name}' returns an error but has no @errors: add `@errors(${declNames(mut az, r, fl, fi, pk)})`"
+    }
+    if k == MErrFlowLeak {
+        return "'${name}' may return the errors of its parameter ${paramNames(mut az, fl & ^df, fi)} not listed in its @errors"
+    }
+    if k == MErrFlowStale {
+        return "@errors of '${name}' lists the parameter ${paramNames(mut az, df & ^fl, fi)} whose errors it never returns: write `@errors(${declNames(mut az, r, fl, fi, pk)})`"
     }
     if k == MErrLeak {
         if (r & TOP) != 0 {
@@ -91,7 +123,33 @@ func errMessage(az mut Az, k int, fi int) string {
         }
         return "'${name}' may return ${labelNames(mut az, r & ^d, pk)} not listed in its @errors"
     }
-    return "@errors of '${name}' lists ${labelNames(mut az, d & ^r, pk)} which it never returns: write `@errors(${labelNames(mut az, r, pk)})`"
+    return "@errors of '${name}' lists ${labelNames(mut az, d & ^r, pk)} which it never returns: write `@errors(${declNames(mut az, r, fl, fi, pk)})`"
+}
+
+// paramNames は関数 fi の仮引数の集合 m（ビット j = 仮引数 j）の名前を並べる（`'recv', 'send'`）
+func paramNames(az mut Az, m int, fi int) string {
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    mut s := ""
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if j < NBITS && (m & (1 << j)) != 0 {
+            q := "'${str(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a))}'"
+            s = if s == "" { q } else { s + ", " + q }
+        }
+    }
+    return s
+}
+
+// declNames は宣言の項の綴り（ラベル集合 r の後に Flow fl の仮引数の名前 — fix の提示）
+func declNames(az mut Az, r int, fl int, fi int, pk int) string {
+    mut s := labelNames(mut az, r, pk)
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if j < NBITS && (fl & (1 << j)) != 0 {
+            q := str(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a))
+            s = if s == "" { q } else { s + ", " + q }
+        }
+    }
+    return s
 }
 
 // labelNames は集合 m のラベルを package pk から見た綴りで並べる（同じ package は `L`、他は最後のパスの段 + `.L`）

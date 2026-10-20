@@ -1,0 +1,2 @@
+sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
+exit=1

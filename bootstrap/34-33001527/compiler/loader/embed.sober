@@ -1,0 +1,317 @@
+package loader
+
+// `@embed("glob")`（language.md 20 節 — go:embed の意味論。src/stage1/embed.zig と src/stage1/loader.zig の embedConst の写し）。
+// パターンはルート（= cwd）相対の `/` 区切り。`**` はセグメントまるごとで 0 個以上のディレクトリ、`*` は `/` を含まない任意の列、
+// `?` は 1 バイト。最後のセグメントは通常ファイルにだけ、途中はディレクトリにだけ当たる（symlink は当たらない）。
+// 受け皿 `map[string]string{}` を「パス → 内容」の map リテラル（パスのバイト辞書順）に置き換えた木を作り直す
+
+import "std/builder"
+import "std/io"
+import "std/iter"
+import "std/utf8"
+import "ast"
+import "diag"
+
+// validPattern は src/stage1/embed.zig の validPattern と同じ拒否（空・先頭 `/`・空セグメント・`.` / `..`・セグメントの一部の `**`・`[` と `\`）
+func validPattern(p string) bool {
+    pb := bytes(p)
+    if len(pb) == 0 || pb[0] == '/' {
+        return false
+    }
+    segs := split(p)
+    for i <- iter.Range(0, len(segs)) {
+        seg := segs[i]
+        s := bytes(seg)
+        if len(s) == 0 || seg == "." || seg == ".." {
+            return false
+        }
+        for j <- iter.Range(0, len(s)) {
+            if s[j] == '[' || s[j] == '\\' {
+                return false
+            }
+            if s[j] == '*' && j + 1 < len(s) && s[j + 1] == '*' && seg != "**" {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// split は `/` で割る
+func split(p string) []string {
+    b := bytes(p)
+    mut out := mut []string{}
+    mut s := 0
+    mut i := 0
+    while i <= len(b) {
+        if i == len(b) || b[i] == '/' {
+            out = append(out, cut(p, s, i))
+            s = i + 1
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// matchSeg はセグメント 1 つの照合（pat[pi:] と name[ni:] — バイトの照合なので bytes(…) のビューで受ける）
+func matchSeg(pat []byte, pi int, name []byte, ni int) bool {
+    if pi == len(pat) {
+        return ni == len(name)
+    }
+    if pat[pi] == '*' {
+        mut k := ni
+        while k <= len(name) {
+            if matchSeg(pat, pi + 1, name, k) {
+                return true
+            }
+            k += 1
+        }
+        return false
+    }
+    if ni == len(name) {
+        return false
+    }
+    if pat[pi] != '?' && pat[pi] != name[ni] {
+        return false
+    }
+    return matchSeg(pat, pi + 1, name, ni + 1)
+}
+
+func join(dir string, name string) string {
+    if dir == "" {
+        return name
+    }
+    return dir + "/" + name
+}
+
+// orDot は dir、空なら "."（ReadDir に渡す名前）。if 式の腕に「リテラル」と「仮引数」を並べると腕の region が合わない（F-35 — 腕の合流は
+// 直さない側）ので、腕ごとに return する
+func orDot(dir string) string {
+    if dir == "" {
+        return "."
+    }
+    return dir
+}
+
+// walk は dir（ルート相対、空 = ルート）の中で segs[si:] を照合し、当たったファイルのパスを返す。開けないディレクトリは当たりなし
+func walk(dir string, segs []string, si int) []string {
+    mut out := mut []string{}
+    if si == len(segs) {
+        return freeze(out)
+    }
+    seg := segs[si]
+    star2 := seg == "**"
+    if star2 {
+        sub := walk(dir, segs, si + 1)
+        for k <- iter.Range(0, len(sub)) {
+            out = append(out, sub[k])
+        }
+    }
+    es := io.ReadDir(orDot(dir)) catch return freeze(out)
+    mut i := 0
+    while i < len(es) {
+        e := es[i]
+        nm := e.Name
+        child := join(dir, nm)
+        entDir := switch e.Kind {
+        case io.Dir{}: true
+        default: false
+        }
+        // 通常のファイル = 下の 3 つ以外（variant の名前 File → Regular〔report-590〕を書かない形 — 鎖の行を足すまで boot の焼き込みの std と今の std の両方で通る）
+        entFile := switch e.Kind {
+        case io.Dir{}: false
+        case io.Symlink{}: false
+        case io.Irregular{}: false
+        default: true
+        }
+        mut sub := []string{}
+        if star2 {
+            if entDir {
+                sub = walk(child, segs, si)
+            }
+        } else if matchSeg(bytes(seg), 0, bytes(nm), 0) {
+            if si + 1 == len(segs) {
+                if entFile {
+                    out = append(out, child)
+                }
+            } else if entDir {
+                sub = walk(child, segs, si + 1)
+            }
+        }
+        for k <- iter.Range(0, len(sub)) {
+            out = append(out, sub[k])
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// expand は pat に合うファイルのパスをバイト辞書順・重複なしで返す（pat は validPattern 済み）
+func expand(pat string) []string {
+    ps := walk("", split(pat), 0)
+    // 挿入ソート（件数はパターンの当たりの数 — std 全体で数十）
+    mut xs := mut []string{}
+    mut i := 0
+    while i < len(ps) {
+        xs = append(xs, ps[i])
+        mut m := len(xs) - 1
+        while m > 0 && ByteLess(xs[m], xs[m - 1]) {
+            t := xs[m]
+            xs[m] = xs[m - 1]
+            xs[m - 1] = t
+            m -= 1
+        }
+        i += 1
+    }
+    mut out := mut []string{}
+    i = 0
+    while i < len(xs) {
+        if i == 0 || xs[i] != xs[i - 1] {
+            out = append(out, xs[i])
+        }
+        i += 1
+    }
+    return freeze(out)
+}
+
+// isStringName は型の節 ty が `string` か
+func isStringName(t ast.Tree, ty int) bool {
+    n := t.nodes[ty]
+    return n.kind == ast.TName && StrIs(t, n.a, "string")
+}
+
+// EmbedInputs は parse した生の木 t の @embed が読む入力の列（const ごとに パターン・一致したパスと中身 — 長さの前置きで連結）。
+// キャッシュの鍵の材料（3'' 第 2 段 C1 — cache-draft 3.1: load の時点で読むファイルとパターンの一致の集合は package のソースの外の入力）。
+// 不正なパターン・読めないファイルは印だけ積む（load がどうせ拒否する — 鍵は違うだけでよい）
+func EmbedInputs(t ast.Tree) []byte {
+    mut out := mut []byte{}
+    if t.file < 0 {
+        return freeze(out)
+    }
+    cl := t.nodes[t.file].e
+    for k <- iter.Range(0, ast.ListLen(t, cl)) {
+        x := t.nodes[ast.ListAt(t, cl, k)]
+        if x.f == 1 {
+            pat, pok := NameOk(t, x.e)
+            if !pok || !validPattern(pat) {
+                lenBytes(mut out, bytes("!pattern"))
+            } else {
+                lenBytes(mut out, bytes(pat))
+                ps := expand(pat)
+                for i <- iter.Range(0, len(ps)) {
+                    lenBytes(mut out, bytes(ps[i]))
+                    b, ok := readPath(ps[i])
+                    lenBytes(mut out, if ok { b } else { bytes("!read") })
+                }
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// lenBytes は b を「10 進の長さ + ':' + b」で out に積む
+func lenBytes(out mut []byte, b []byte) {
+    n := bytes("${len(b)}:")
+    for i <- iter.Range(0, len(n)) {
+        out = append(out, n[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+// embedTree は木 t の @embed の const をすべて畳んだ木（失敗なら拒否 — diag のラベル）
+func embedTree(t0 ast.Tree, f int) (ast.Tree, error?) {
+    mut t := t0
+    cl := t.nodes[t.file].e
+    mut k := 0
+    while k < ast.ListLen(t, cl) {
+        c := ast.ListAt(t, cl, k)
+        if t.nodes[c].f == 1 {
+            nt, err := embedConst(t, c, f)
+            if err != nil {
+                return t, err
+            }
+            t = nt
+        }
+        k += 1
+    }
+    return t, nil
+}
+
+// embedConst はファイル f の const の節 c の受け皿を検査し（拒否の位置 = const の節）、パターンに合うファイルで埋めた map リテラルに差し替えた木を作る
+func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
+    x := t.nodes[c]
+    at := diag.Pos{file: f, tok: x.tok}
+    recv := t.nodes[x.b]
+    if recv.kind != ast.EMaplit || recv.d != 0 || ast.ListLen(t, recv.c) != 0 || !isStringName(t, recv.a) || !isStringName(t, recv.b) {
+        return t, diag.EmbedReceiver{at: at}
+    }
+    // パターンの UTF-8 の検査はここ（UTF-8 でないパターンは不正なパターン）
+    pat, pok := NameOk(t, x.e)
+    if !pok || !validPattern(pat) {
+        return t, diag.EmbedPattern{at: at}
+    }
+    ps := expand(pat)
+    if len(ps) == 0 {
+        return t, diag.EmbedNoMatch{at: at}
+    }
+    // 中身を先に全部読む（検査が通ってから木を組む）
+    mut bodies := mut [][]byte{}
+    for i <- iter.Range(0, len(ps)) {
+        b, ok := readPath(ps[i])
+        if !ok {
+            return t, diag.EmbedRead{at: at}
+        }
+        if !utf8.Valid(b) {
+            return t, diag.EmbedFileUtf8{at: at}
+        }
+        bodies = append(bodies, b)
+    }
+    bs := freeze(bodies)
+    n0 := len(t.nodes)
+    n := len(ps)
+    mut nb := builder.Builder[ast.Node]{}
+    mut db := builder.Builder[int]{}
+    mut j := 0
+    while j < len(t.data) {
+        builder.Push(mut db, t.data[j])
+        j += 1
+    }
+    // 足す節: ファイルごとに (キーの strlit, 値の strlit, KEntry)、最後に EMaplit
+    mut ents := mut []int{}
+    mut strs := mut []int{}
+    for i <- iter.Range(0, n) {
+        pb := bytes(ps[i])
+        strs = append(strs, ast.PutBytes(mut db, pb, 0, len(pb)))
+        strs = append(strs, ast.PutBytes(mut db, bs[i], 0, len(bs[i])))
+        ents = append(ents, n0 + 3 * i + 2)
+    }
+    el := ast.PutList(mut db, freeze(ents))
+    j = 0
+    while j < n0 {
+        if j == c {
+            builder.Push(mut nb, ast.Node{x.kind, x.tok, x.a, n0 + 3 * n, x.c, x.d, x.e, x.f})
+        } else {
+            builder.Push(mut nb, t.nodes[j])
+        }
+        j += 1
+    }
+    for i <- iter.Range(0, n) {
+        builder.Push(mut nb, ast.Node{ast.EStrlit, recv.tok, strs[2 * i], 0, 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.EStrlit, recv.tok, strs[2 * i + 1], 0, 0, 0, 0, 0})
+        builder.Push(mut nb, ast.Node{ast.KEntry, recv.tok, n0 + 3 * i, n0 + 3 * i + 1, 0, 0, 0, 0})
+    }
+    builder.Push(mut nb, ast.Node{ast.EMaplit, recv.tok, recv.a, recv.b, el, 0, 0, 0})
+    return ast.Tree{builder.Build(mut nb), builder.Build(mut db), t.file}, nil
+}
+
+// embedAll は全ファイルの @embed を畳む
+func embedAll(ts []ast.Tree) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        t := embedTree(ts[i], i)?
+        out = append(out, t)
+    }
+    return freeze(out), nil
+}

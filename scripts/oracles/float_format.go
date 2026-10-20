@@ -1,5 +1,5 @@
 // float_format.go — 浮動小数の印字の差分オラクル（float の段 — language.md 37 節）: 境界値 + 乱択のビット列（examples/float_format.in）と
-// Go の strconv.FormatFloat(f, 'g', -1, 64)（examples/float_format.out）を作る。Sober 側は examples/float_format.sober（std/floatfmt.Format）。
+// Go の strconv.FormatFloat(f, 'g', -1, 64)（examples/float_format.out）を作る。Sober 側は examples/float_format.sober（convert.FormatFloat + math.FromBits）。
 //   go run scripts/oracles/float_format.go 5000 examples/float_format.in examples/float_format.out
 package main
 

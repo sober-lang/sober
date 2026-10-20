@@ -1,0 +1,13 @@
+package hash
+
+import "std/crypto/sha256"
+
+// Sha256 は data の SHA-256 の値（32 バイト — FIPS 180-4）。content-addressed の鍵・成果物の照合用:
+//
+//     sum := hash.Sha256(bytes("abc"))
+//     println(hex.Encode(sum))   // ba7816bf…（16 進の綴りは std/hex）
+//
+// 本体は std/crypto/sha256（逐次の口 New / Write / Sum もそこ — report-792）
+func Sha256(data []byte) []byte {
+    return sha256.Sum256(data)
+}

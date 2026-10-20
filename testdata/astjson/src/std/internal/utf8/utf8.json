@@ -1,0 +1,182 @@
+{
+  "package": "utf8",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Parse",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "at"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "strings",
+                    "tok": 31
+                  },
+                  "field": "IndexInvalid",
+                  "tok": 33
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 35
+                  }
+                ],
+                "tok": 34
+              }
+            ],
+            "tok": 29
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": ">=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "at",
+                  "tok": 39
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 41
+                },
+                "tok": 40
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 44
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "strings.InvalidUtf8",
+                        "elems": [
+                          {
+                            "key": "pos",
+                            "value": {
+                              "k": "ident",
+                              "name": "at",
+                              "tok": 52
+                            }
+                          }
+                        ],
+                        "tok": 46,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 43
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 38
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "bytesToString",
+                  "tok": 59
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 61
+                  }
+                ],
+                "tok": 60
+              }
+            ],
+            "tok": 57
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 65
+              },
+              {
+                "k": "nil",
+                "tok": 67
+              }
+            ],
+            "tok": 64
+          }
+        ]
+      },
+      "tok": 15,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 71
+      },
+      "sig_end": 28
+    }
+  ],
+  "consts": []
+}

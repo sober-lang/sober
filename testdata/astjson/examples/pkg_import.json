@@ -1,0 +1,283 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/specpkg/shapes",
+      "tok": 4
+    },
+    {
+      "alias": "sh",
+      "path": "testdata/specpkg/shapes",
+      "tok": 8
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "shapes.Rect",
+                "elems": [
+                  {
+                    "key": "w",
+                    "value": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 23
+                    }
+                  },
+                  {
+                    "key": "h",
+                    "value": {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 27
+                    }
+                  }
+                ],
+                "tok": 17,
+                "type_args": []
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 30
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "shapes",
+                      "tok": 32
+                    },
+                    "field": "Area",
+                    "tok": 34
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 36
+                    }
+                  ],
+                  "tok": 35
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "sh",
+                      "tok": 39
+                    },
+                    "field": "Area",
+                    "tok": 41
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 43
+                    }
+                  ],
+                  "tok": 42
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 46
+                  },
+                  "field": "w",
+                  "tok": 48
+                },
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "shapes",
+                    "tok": 50
+                  },
+                  "field": "Unit",
+                  "tok": 52
+                }
+              ],
+              "tok": 31
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "q",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "shapes",
+                    "tok": 59
+                  },
+                  "field": "Parse",
+                  "tok": 61
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "circle",
+                    "tok": 63
+                  }
+                ],
+                "tok": 62
+              }
+            ],
+            "tok": 55
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "switch",
+              "subjects": [
+                {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 67
+                }
+              ],
+              "cases": [
+                {
+                  "patterns": [
+                    {
+                      "k": "const",
+                      "alts": [
+                        {
+                          "k": "nil",
+                          "tok": 70
+                        }
+                      ]
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "println",
+                            "tok": 72
+                          },
+                          "args": [
+                            {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "q",
+                                "tok": 74
+                              },
+                              "field": "w",
+                              "tok": 76
+                            }
+                          ],
+                          "tok": 73
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 69
+                },
+                {
+                  "patterns": [
+                    {
+                      "k": "type",
+                      "bind": null,
+                      "variant": "shapes.Unknown",
+                      "fields": [
+                        {
+                          "name": "name",
+                          "sub": null,
+                          "tok": 84
+                        }
+                      ],
+                      "tok": 80
+                    }
+                  ],
+                  "body": {
+                    "stmts": [
+                      {
+                        "k": "expr",
+                        "expr": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "println",
+                            "tok": 87
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "unknown",
+                              "tok": 89
+                            },
+                            {
+                              "k": "ident",
+                              "name": "name",
+                              "tok": 91
+                            }
+                          ],
+                          "tok": 88
+                        }
+                      }
+                    ]
+                  },
+                  "tok": 79
+                }
+              ],
+              "default": null,
+              "tok": 66
+            }
+          }
+        ]
+      },
+      "tok": 11,
+      "bodiless": false,
+      "span": {
+        "start": 10,
+        "end": 98
+      },
+      "sig_end": 14
+    }
+  ],
+  "consts": []
+}

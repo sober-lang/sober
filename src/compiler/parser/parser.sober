@@ -215,7 +215,7 @@ func hasAssert(ns []ast.Node, db mut builder.Builder[int]) bool {
 }
 
 // hasFloat は float の値が生まれうるか（float の段 — language.md 37 節）: 浮動小数のリテラルか、名前 float（型名・変換）の識別子がある。
-// float の値はどれもどこかのファイルのこの字句を経るので、このファイルに std/floatfmt（println の印字の中身）の暗黙 import を足せば
+// float の値はどれもどこかのファイルのこの字句を経るので、このファイルに std/internal/floatfmt（println の印字の中身）の暗黙 import を足せば
 // float を使うプログラムには必ず入り、使わないプログラムは不変
 func hasFloat(ns []ast.Node, db mut builder.Builder[int]) bool {
     for i <- iter.Range(0, len(ns)) {
@@ -576,8 +576,8 @@ func constDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     return q + 1
 }
 
-// implicitImports は暗黙 import（cst_to_ast の書き換え — 裁定 C1）: for → std/iter、補間 → std/strings、string(b) → std/utf8、float → std/floatfmt、
-// assert(…) → std/testing と std/strings（loader の assert のテンプレートが Fail の呼び出しと補間を組む — T5）
+// implicitImports は暗黙 import（cst_to_ast の書き換え — 裁定 C1）: for → std/iter、補間 → std/convert（FormatInt）、string(b) → std/internal/utf8（Parse）、
+// float → std/internal/floatfmt（println の印字の Format — 参照名が `$` の合成の import は internal の検問の外・20 節）、assert(…) → std/testing と std/convert（loader の assert のテンプレートが Fail の呼び出しと補間を組む — T5）、ラムダの mut 仮引数 → std/task と std/pool（lease の写し）
 func implicitImports(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], imports mut []int) {
     ns := builder.Build(mut nb)
     asserts := hasAssert(ns, mut db)
@@ -588,12 +588,27 @@ func implicitImports(nb mut builder.Builder[ast.Node], db mut builder.Builder[in
         imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$testing"), ast.PutLit(mut db, "std/testing"), 0, 0, 0, 0))
     }
     if hasKind(ns, ast.EInterp) || asserts {
-        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$strings"), ast.PutLit(mut db, "std/strings"), 0, 0, 0, 0))
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$convert"), ast.PutLit(mut db, "std/convert"), 0, 0, 0, 0))
     }
     if hasKind(ns, ast.EUtf8Ref) {
-        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$utf8"), ast.PutLit(mut db, "std/utf8"), 0, 0, 0, 0))
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$utf8"), ast.PutLit(mut db, "std/internal/utf8"), 0, 0, 0, 0))
     }
     if hasFloat(ns, mut db) {
-        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$float"), ast.PutLit(mut db, "std/floatfmt"), 0, 0, 0, 0))
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$float"), ast.PutLit(mut db, "std/internal/floatfmt"), 0, 0, 0, 0))
     }
+    // ラムダの mut 仮引数（task.Lease / task.NewLocal の窓 — loader の lease.sober が std/task と std/pool の写し先を呼ぶ形に写す）
+    if hasMutLParam(ns) {
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$task"), ast.PutLit(mut db, "std/task"), 0, 0, 0, 0))
+        imports = append(imports, node(mut nb, ast.KImport, 0, ast.PutLit(mut db, "$pool"), ast.PutLit(mut db, "std/pool"), 0, 0, 0, 0))
+    }
+}
+
+// hasMutLParam は節の列にラムダの mut 仮引数（KLParam の c）があるか
+func hasMutLParam(ns []ast.Node) bool {
+    for i <- iter.Range(0, len(ns)) {
+        if ns[i].kind == ast.KLParam && ns[i].c != 0 {
+            return true
+        }
+    }
+    return false
 }

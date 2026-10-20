@@ -1,0 +1,23 @@
+package main
+
+// vaslot ②: 宣言（budget:）の無い子の region 1 つの上限 = 子のスロットの既定（SOBER_TASK_REGION_MB — 網は 1 MiB で回す）。
+// 超えた子は RegionExceeded{cause: slot_capacity} で死ぬ（main は 4 GiB のまま — 同じ量を main で作るのは通る）
+
+import "std/task"
+
+// fill は n 個の int を積んだ列の長さ（作業域 = 8n バイト + 伸長の写し）
+func fill(n int) int {
+    mut acc := mut []int{}
+    mut i := 0
+    while i < n {
+        acc = append(acc, i)
+        i += 1
+    }
+    return len(acc)
+}
+
+func main() {
+    println(fill(1000000))
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => fill(1000000))))
+    println(r)
+}

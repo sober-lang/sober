@@ -1,0 +1,103 @@
+package chacha20poly1305
+
+// chacha20poly1305（TLS 便 — report-790 / 793）: AEAD_CHACHA20_POLY1305（RFC 8439 2.8 — 鍵 32 バイト・nonce 12 バイト・tag 16 バイト）。
+// 公開の名前と署名は仮決め（0.6.0 の API 総再審に同席）。Open は tag を crypto.Equal（定数時間）で照合し、食い違えば平文を返さない
+//
+//     ct := chacha20poly1305.Seal(key, nonce, ad, pt)?       // 暗号文 ‖ tag
+//     pt := chacha20poly1305.Open(key, nonce, ad, ct)?       // 改竄なら chacha20poly1305.Auth
+//
+// record 層の口（TLS 便 R1 — report-811 1 節 — aesgcm と同じ形）: Prepare（鍵の長さを見る）・SealTo（head ‖ 暗号文 ‖ tag）・OpenAt（b[off, off + n) を
+// 写さずに検証してから復号）。MAC は入力を繋がずに poly1305.SumAead で
+
+import "std/crypto"
+import "std/crypto/chacha20"
+import "std/crypto/poly1305"
+import "std/iter"
+
+const KeySize = 32
+const NonceSize = 12
+const Overhead = 16
+
+// BadSize は鍵・nonce の長さが違う・暗号文が tag より短い
+type BadSize error
+
+// Auth は tag が合わない（暗号文・ad・nonce・鍵のどれかが違う）
+type Auth error
+
+// Key は鍵（Prepare の結果 — ChaCha20 は鍵の展開を持たないので鍵そのもの）
+type Key struct {
+    key []byte
+}
+
+// Prepare は key の Key（鍵の長さはここで見る）
+@errors(BadSize)
+func Prepare(key []byte) (Key, error?) {
+    if len(key) != KeySize {
+        return Key{key: []byte{}}, BadSize{}
+    }
+    return Key{key: key}, nil
+}
+
+// Seal は pt を暗号化して tag を付けたもの（暗号文 ‖ tag）
+@errors(BadSize)
+func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?) {
+    k := Prepare(key)?
+    return SealTo(k, nonce, ad, pt, []byte{})
+}
+
+// Open は Seal の逆（tag を照合してから復号する）
+@errors(BadSize, Auth)
+func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
+    k := Prepare(key)?
+    return OpenAt(k, nonce, ad, sealed, 0, len(sealed))
+}
+
+// SealTo は head ‖ 暗号文 ‖ tag
+@errors(BadSize)
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+    if len(nonce) != NonceSize {
+        return []byte{}, BadSize{}
+    }
+    ct := chacha20.XorKeyStream(k.key, nonce, 1, pt)
+    tag := poly1305.SumAead(polyKey(k.key, nonce), ad, ct, 0, len(ct))
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(head) {
+        out = append(out, head[i])
+        i += 1
+    }
+    mut j := 0
+    while j < len(ct) {
+        out = append(out, ct[j])
+        j += 1
+    }
+    mut t := 0
+    while t < Overhead {
+        out = append(out, tag[t])
+        t += 1
+    }
+    return freeze(out), nil
+}
+
+// OpenAt は b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文
+@errors(BadSize, Auth)
+func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+    if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) {
+        return []byte{}, BadSize{}
+    }
+    m := n - Overhead
+    if !crypto.Equal(poly1305.SumAead(polyKey(k.key, nonce), ad, b, off, m), b[off + m:off + n]) {
+        return []byte{}, Auth{}
+    }
+    return chacha20.XorKeyStreamAt(k.key, nonce, 1, b, off, m), nil
+}
+
+// polyKey は 1 回きりの Poly1305 の鍵（ブロック 0 の鍵ストリームの先頭 32 バイト — RFC 8439 2.6）
+func polyKey(key []byte, nonce []byte) []byte {
+    b := chacha20.Block(key, nonce, 0)
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}

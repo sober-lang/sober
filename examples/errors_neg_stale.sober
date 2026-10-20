@@ -1,0 +1,21 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 公開関数の @errors が返らないラベルを含む（余分 — language.md 13 節）
+
+type Empty error
+
+type TooLong error {
+    n int
+}
+
+@errors(Empty, TooLong)
+func Parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Empty{}
+    }
+    return 1, nil
+}
+
+func main() {
+    println(Parse("x") catch -1)
+}

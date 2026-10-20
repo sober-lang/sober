@@ -1,0 +1,40 @@
+Sober
+Copyright (c) 2026 The Sober Authors. Licensed under either of MIT or Apache-2.0 (LICENSE-MIT, LICENSE-APACHE).
+
+This repository also contains the following third-party files, under their own licenses.
+They are test data only; none of them is part of the compiler, the standard library or
+the executables it produces.
+
+testdata/wycheproof/
+  Test vectors from Project Wycheproof (https://github.com/C2SP/wycheproof),
+  testvectors_v1/, commit 7a325932231bd7a724c791c8b0d65ea4d6d2f435. Unmodified.
+  Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE).
+
+testdata/jsontestsuite/
+  Test files from JSONTestSuite (https://github.com/nst/JSONTestSuite).
+  MIT License — see testdata/jsontestsuite/LICENSE.
+
+testdata/httpcheck/dataset.json
+testdata/crypto/httparena-server.crt, testdata/crypto/httparena-server.key
+  From HttpArena (https://github.com/MDA2AV/HttpArena): data/dataset.json and the
+  public test certificate in certs/ (not a secret). MIT License:
+
+  Copyright (c) 2026 Diogo Martins
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.

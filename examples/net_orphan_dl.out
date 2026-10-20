@@ -1,0 +1,14 @@
+recv: expired
+case 0: outer died=true
+accept: expired
+case 1: outer died=true
+grand recv: expired
+grand scope: err=false
+case 2: outer died=true
+retry: expired expired
+case 3: outer died=true
+send: expired
+case 4: outer died=true
+late recv: expired
+case 5: outer died=true
+done

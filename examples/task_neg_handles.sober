@@ -1,0 +1,14 @@
+package main
+
+// 段 6 P3b-5: handle を imm の slice に積む（diag.Par kind 16 — handle の slice は mut slice だけ）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := []task.Handle[int]{}
+        hs = append(hs, task.Spawn(s, () => 3))
+        task.Join(hs[0])
+    })
+    println(r)
+}

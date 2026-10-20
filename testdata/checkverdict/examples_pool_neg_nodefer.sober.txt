@@ -1,0 +1,3 @@
+examples/pool_neg_nodefer.sober:9:22: error: acquired handle 'h' must be released by the next statement: insert `defer pool.Release(mut p, h)` right after this line (Analyzer)
+examples/pool_neg_nodefer.sober:11:23: error: Release may only appear as `defer ...Release(p, h)` right after the `h := ...Acquire(...)` it releases (Analyzer)
+exit=1

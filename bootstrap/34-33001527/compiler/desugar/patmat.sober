@@ -1,0 +1,366 @@
+package desugar
+
+// パターン行列（型パターンの switch の網羅と到達 — desugar・lower・analyzer の共有層。language.md 13 節・22 節）。
+// 行 = 腕のパターンの列（-1 は全域）、列 = 値の領域。判定は Maranget の useful（行列 P に対してパターンの列 q が
+// 新しく覆う値があるか）: 網羅 = 全域の q が useful でない・腕 i に届く = 前の腕の行列に対して腕 i が useful。
+// 意味は上から順の照合（lower の逐次照合・desugar の外れたら次の腕 — どちらも最初に一致した腕）と同じ。
+// 領域: PmSum = union（構築子 = variant、欄は宣言の型で union なら入れ子の領域）・PmErr = error のラベル集合（構築子 = ラベル、
+// 欄 + `cause`。cause の領域はラベルごとの cz — 無ければ全ラベル + nil）・PmOpaque = 全域の行だけが覆う（スカラー・struct・型パラメータ）
+
+import "ast"
+import "std/iter"
+
+const PmOpaque = 0
+const PmSum = 1
+const PmErr = 2
+
+const PmTop = 4611686018427387904  // 1 << 62（ラベル集合の不明 — analyzer の TOP と同じ）
+const PmBits = 62
+
+// PmCol は列の領域: PmSum は a = union の型宣言・b = 宣言側 package、PmErr は a = ラベル集合（ビット — PmTop は不明）・b = nil がありうるか（1）
+type PmCol struct {
+    kind int
+    a int
+    b int
+}
+
+// PmList は長さ n の列（腕のパターンの列・cause の領域の表 — PmSet で埋める）
+func PmList(st mut S, n int) ListRef {
+    return ListRef(listN(mut st, n))
+}
+
+func PmSet(st mut S, l ListRef, i int, v int) {
+    lput(mut st, l, i, v)
+}
+
+// PmUseful1 は 1 列の行列（腕のパターンの列 pats の先頭 n 個 — -1 は全域）に対してパターン q（-1 は全域）が新しく覆う値があるか。
+// from = パターンの名前を解決する package、dom = subject の領域、cz = ラベル L の cause の領域（[集合, nil] × ラベル数 — -1 なら全ラベル + nil）
+func PmUseful1(st mut S, from int, pats ListRef, n int, q NodeRef, dom PmCol, cz ListRef) bool {
+    return pmUseful(mut st, from, pmRows1(mut st, pats, n, q), pmCols1(mut st, dom), cz, -1)
+}
+
+// PmGapLabels は error の switch（1 列 — 領域 dom は PmErr）で覆い切れていないラベルの集合（ラベル L の値のうち、どの腕にも一致しないものがある L）
+func PmGapLabels(st mut S, from int, pats ListRef, n int, dom PmCol, cz ListRef) int {
+    mut gap := 0
+    for L <- iter.Range(0, pmNLab(mut st)) {
+        if (dom.a & pmBit(L)) != 0 && (dom.a & PmTop) == 0 {
+            if pmUseful(mut st, from, pmRows1(mut st, pats, n, -1), pmCols1(mut st, dom), cz, L) {
+                gap = gap | pmBit(L)
+            }
+        }
+    }
+    return gap
+}
+
+// PmHeadLabel は型パターン p（error の switch の腕）の先頭のラベル（ラベルでなければ -1）
+func PmHeadLabel(st mut S, from int, p NodeRef) int {
+    if p == -1 || kindN(mut st, p) != ast.KPType {
+        return -1
+    }
+    r := ResolveVariant(mut st, from, sB(nodeOf(mut st, p)))
+    return if r.kind == TopVariant && r.idx == ERRS { r.sub } else { -1 }
+}
+
+// PmAllLabels はリンク集合の全ラベルの集合（ラベルが PmBits 以上あれば PmTop）
+func PmAllLabels(st mut S) int {
+    n := pmNLab(mut st)
+    if n >= PmBits {
+        return PmTop
+    }
+    return (1 << n) - 1
+}
+
+// pmRows1 は 1 列の行列（pats の先頭 n 個）の最後に問いの行 q を足したもの（pmUseful は問いを最後の行として運ぶ）
+func pmRows1(st mut S, pats ListRef, n int, q NodeRef) ListRef {
+    rows := ListRef(listN(mut st, n + 1))
+    for i <- iter.Range(0, n + 1) {
+        r := listN(mut st, 1)
+        hset(mut st, r + 1, if i < n { latI(mut st, pats, i) } else { int(q) })
+        lput(mut st, rows, i, r)
+    }
+    return rows
+}
+
+func pmCols1(st mut S, dom PmCol) ListRef {
+    cols := ListRef(listN(mut st, 1))
+    lput(mut st, cols, 0, pmColRec(mut st, dom))
+    return cols
+}
+
+func pmNLab(st mut S) int {
+    return NErr(mut st)
+}
+
+func pmBit(L int) int {
+    return if L >= 0 && L < PmBits { 1 << L } else { PmTop }
+}
+
+func pmColRec(st mut S, c PmCol) int {
+    r := listN(mut st, 3)
+    hset(mut st, r + 1, c.kind)
+    hset(mut st, r + 2, c.a)
+    hset(mut st, r + 3, c.b)
+    return r
+}
+
+// pmWild はパターン p が全域か（-1・`_`・裸の束縛の名前）
+func pmWild(st mut S, from int, p NodeRef) bool {
+    if p == -1 {
+        return true
+    }
+    if kindN(mut st, p) != ast.KPConst {
+        return false
+    }
+    alts := lA(nodeOf(mut st, p))
+    if hasWildcard(mut st, alts) {
+        return true
+    }
+    return lenL(mut st, alts) == 1 && kindN(mut st, latN(mut st, alts, 0)) == ast.EIdent && !HasTopName(mut st, from, sA(nodeOf(mut st, latN(mut st, alts, 0))))
+}
+
+// pmCon はパターン p（型パターン）の列 col での構築子（variant の添字 / ラベル）。-1 = この列の値に一致しない（ラベルが集合の外）、
+// -2 = 解決できない（型の違う名前 — 型の検査が別に拒否する）
+func pmCon(st mut S, from int, p NodeRef, col int) int {
+    k := hget(mut st, col + 1)
+    r := ResolveVariant(mut st, from, sB(nodeOf(mut st, p)))
+    if r.kind != TopVariant {
+        return -2
+    }
+    if k == PmSum {
+        return if r.idx == hget(mut st, col + 2) { r.sub } else { -2 }
+    }
+    if k == PmErr {
+        if r.idx != ERRS {
+            return -2
+        }
+        a := hget(mut st, col + 2)
+        return if (a & PmTop) != 0 || (a & pmBit(r.sub)) != 0 { r.sub } else { -1 }
+    }
+    return -2
+}
+
+// pmVariant は列 col の構築子 c の variant の節（union の KVariant か error ラベルの型宣言）
+func pmVariant(st mut S, col int, c int) NodeRef {
+    if hget(mut st, col + 1) == PmErr {
+        return ErrNode(mut st, c)
+    }
+    return vat(mut st, hgetN(mut st, col + 2), c)
+}
+
+// pmSubCols は列 col の構築子 c の欄の領域の列（+ error ラベルは cause）に、残りの列 rest を続けたもの
+func pmSubCols(st mut S, col int, c int, rest ListRef, cz ListRef) ListRef {
+    isErr := hget(mut st, col + 1) == PmErr
+    v := pmVariant(mut st, col, c)
+    pk := if isErr { ErrPkg(mut st, c) } else { vpkgOr(mut st, v, hget(mut st, col + 3)) }
+    fs := vfields(mut st, v)
+    nf := lenL(mut st, fs)
+    extra := if isErr { 1 } else { 0 }
+    nr := lenL(mut st, rest)
+    out := ListRef(listN(mut st, nf + extra + nr))
+    for j <- iter.Range(0, nf) {
+        lput(mut st, out, j, pmFieldCol(mut st, pk, nB(nodeOf(mut st, latN(mut st, fs, j)))))
+    }
+    if isErr {
+        cc := if cz == -1 { PmCol{kind: PmErr, a: PmAllLabels(mut st), b: 1} } else { PmCol{kind: PmErr, a: latI(mut st, cz, c * 2), b: latI(mut st, cz, c * 2 + 1)} }
+        lput(mut st, out, nf, pmColRec(mut st, cc))
+    }
+    for j <- iter.Range(0, nr) {
+        lput(mut st, out, nf + extra + j, latI(mut st, rest, j))
+    }
+    return out
+}
+
+// pmFieldCol は欄の型式 ft（package pk の文脈）の領域: union の名前（型引数つきも）なら PmSum、他は PmOpaque
+// （型パラメータの欄は宣言からは領域が決まらない — 全域の行だけが覆う）
+func pmFieldCol(st mut S, pk int, ft NodeRef) int {
+    k := kindN(mut st, ft)
+    if k == ast.TName || k == ast.TGeneric {
+        r := ResolveType(mut st, pk, sA(nodeOf(mut st, ft)))
+        if r.kind == TopType && declKind(mut st, NodeRef(r.idx)) == ast.BUnion {
+            return pmColRec(mut st, PmCol{kind: PmSum, a: r.idx, b: r.pkg})
+        }
+    }
+    return pmColRec(mut st, PmCol{kind: PmOpaque, a: 0, b: 0})
+}
+
+// pmSubPats は型パターン p（列 col の構築子 c）の欄の下位パターン（書いていない・下位パターンの無い欄は全域 -1）+ error ラベルは cause
+func pmSubPats(st mut S, p NodeRef, col int, c int, out ListRef, at int) {
+    v := pmVariant(mut st, col, c)
+    fs := vfields(mut st, v)
+    nf := lenL(mut st, fs)
+    for j <- iter.Range(0, nf) {
+        lput(mut st, out, at + j, int(pmFieldSub(mut st, p, sA(nodeOf(mut st, latN(mut st, fs, j))))))
+    }
+    if hget(mut st, col + 1) == PmErr {
+        lput(mut st, out, at + nf, int(pmFieldSubIs(mut st, p, "cause")))
+    }
+}
+
+func pmFieldSub(st mut S, p NodeRef, name StrRef) NodeRef {
+    if p == -1 {
+        return -1
+    }
+    fps := lC(nodeOf(mut st, p))
+    for i <- iter.Range(0, lenL(mut st, fps)) {
+        fp := latN(mut st, fps, i)
+        if strEq(mut st, sA(nodeOf(mut st, fp)), name) {
+            return nB(nodeOf(mut st, fp))
+        }
+    }
+    return -1
+}
+
+func pmFieldSubIs(st mut S, p NodeRef, name string) NodeRef {
+    if p == -1 {
+        return -1
+    }
+    fps := lC(nodeOf(mut st, p))
+    for i <- iter.Range(0, lenL(mut st, fps)) {
+        fp := latN(mut st, fps, i)
+        if strIs(mut st, sA(nodeOf(mut st, fp)), name) {
+            return nB(nodeOf(mut st, fp))
+        }
+    }
+    return -1
+}
+
+// pmArity は列 col の構築子 c の部分列の数（欄 + error ラベルは cause）
+func pmArity(st mut S, col int, c int) int {
+    n := lenL(mut st, vfields(mut st, pmVariant(mut st, col, c)))
+    return if hget(mut st, col + 1) == PmErr { n + 1 } else { n }
+}
+
+// pmTail は列 l の先頭を除いた残り
+func pmTail(st mut S, l ListRef) ListRef {
+    n := lenL(mut st, l)
+    out := ListRef(listN(mut st, n - 1))
+    for j <- iter.Range(1, n) {
+        lput(mut st, out, j - 1, latI(mut st, l, j))
+    }
+    return out
+}
+
+// 行の先頭の分類（pmHeads の値）: 構築子の添字（>= 0）か、以下
+const PmHWild = -3   // 全域
+const PmHConst = -4  // 定数のパターン（構築子を持たない）
+const PmHNone = -1   // この列の値に一致しない（ラベルが集合の外）
+const PmHBad = -2    // 解決できない（型の違う名前 — 型の検査が別に拒否する）
+
+// pmHeads は行列 m の各行の先頭の分類（分類の呼び出し点を 1 つに — raw の展開の太りを抑える）
+func pmHeads(st mut S, from int, m ListRef, col int) ListRef {
+    nr := lenL(mut st, m)
+    out := ListRef(listN(mut st, nr))
+    for r <- iter.Range(0, nr) {
+        p := latN(mut st, latL(mut st, m, r), 0)
+        h := if pmWild(mut st, from, p) { PmHWild } else if kindN(mut st, p) != ast.KPType { PmHConst } else { pmCon(mut st, from, p, col) }
+        lput(mut st, out, r, h)
+    }
+    return out
+}
+
+// pmSpec は行列 m の構築子 c での特殊化（先頭が c か全域の行だけ残し、先頭を欄の下位パターンに開く）。c = -1 は既定の行列（先頭が全域の行の残り）。
+// 列は行数で取って、残した数を長さに書き戻す
+func pmSpec(st mut S, from int, m ListRef, heads ListRef, col int, c int) ListRef {
+    nr := lenL(mut st, m)
+    out := ListRef(listN(mut st, nr))
+    mut k := 0
+    for r <- iter.Range(0, nr) {
+        h := latI(mut st, heads, r)
+        if h == PmHWild || (c != -1 && h == c) {
+            lput(mut st, out, k, int(pmSpecRow(mut st, from, latL(mut st, m, r), col, c, h == PmHWild)))
+            k += 1
+        }
+    }
+    hset(mut st, int(out), k)
+    return out
+}
+
+// pmSpecRow は行 row の特殊化: 先頭（全域なら w）を構築子 c の欄の下位パターン（c = -1 なら無し）に開き、残りを続ける
+func pmSpecRow(st mut S, from int, row ListRef, col int, c int, w bool) ListRef {
+    a := if c == -1 { 0 } else { pmArity(mut st, col, c) }
+    nr := lenL(mut st, row)
+    out := ListRef(listN(mut st, a + nr - 1))
+    if w {
+        for j <- iter.Range(0, a) {
+            lput(mut st, out, j, -1)
+        }
+    } else {
+        pmSubPats(mut st, latN(mut st, row, 0), col, c, out, 0)
+    }
+    for j <- iter.Range(1, nr) {
+        lput(mut st, out, a + j - 1, latI(mut st, row, j))
+    }
+    return out
+}
+
+// pmComplete は列 col の領域が行（問いの行 nq を除く）の先頭の構築子で尽くされているか（PmOpaque・不明の集合・nil がありうる error は尽くせない）
+func pmComplete(st mut S, heads ListRef, nq int, col int) bool {
+    k := hget(mut st, col + 1)
+    if k == PmOpaque {
+        return false
+    }
+    a := hget(mut st, col + 2)
+    if k == PmErr && ((a & PmTop) != 0 || hget(mut st, col + 3) != 0) {
+        return false
+    }
+    n := if k == PmSum { vcount(mut st, hgetN(mut st, col + 2)) } else { pmNLab(mut st) }
+    for c <- iter.Range(0, n) {
+        if k == PmSum || (a & pmBit(c)) != 0 {
+            mut seen := false
+            for r <- iter.Range(0, nq) {
+                if latI(mut st, heads, r) == c {
+                    seen = true
+                }
+            }
+            if !seen {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+// pmUseful は行列 m（最後の行が問い q、他が腕 — 列の領域 cols）で q が新しく覆う値があるか。force >= 0 なら先頭の列を構築子 force に
+// 限って問う（q の先頭は全域 — PmGapLabels）
+func pmUseful(st mut S, from int, m ListRef, cols ListRef, cz ListRef, force int) bool {
+    nr := lenL(mut st, m)
+    nc := lenL(mut st, cols)
+    if nc == 0 {
+        return nr == 1
+    }
+    col := latI(mut st, cols, 0)
+    k := hget(mut st, col + 1)
+    heads := pmHeads(mut st, from, m, col)
+    qc := latI(mut st, heads, nr - 1)
+    // 試す構築子の範囲 [lo, hi)（q の先頭が構築子ならそれだけ・全域で領域が尽くされていれば全部・でなければ既定の行列 = -1 だけ）
+    mut lo := -1
+    mut hi := 0
+    mut all := false
+    if qc == PmHConst || qc == PmHBad {
+        // 定数のパターン・解決できない名前: 構築子の等しさを見ない（届くと言う側 — 保守的）
+        return true
+    }
+    if qc == PmHNone {
+        return false
+    }
+    if force >= 0 {
+        lo = force
+        hi = force + 1
+    } else if qc >= 0 {
+        lo = qc
+        hi = qc + 1
+    } else if pmComplete(mut st, heads, nr - 1, col) {
+        lo = 0
+        hi = if k == PmSum { vcount(mut st, hgetN(mut st, col + 2)) } else { pmNLab(mut st) }
+        all = true
+    }
+    for c <- iter.Range(lo, hi) {
+        if !all || k == PmSum || (hget(mut st, col + 2) & pmBit(c)) != 0 {
+            rest := pmTail(mut st, cols)
+            if pmUseful(mut st, from, pmSpec(mut st, from, m, heads, col, c), if c == -1 { rest } else { pmSubCols(mut st, col, c, rest, cz) }, cz, -1) {
+                return true
+            }
+        }
+    }
+    return false
+}

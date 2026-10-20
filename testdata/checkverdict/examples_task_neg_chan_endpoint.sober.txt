@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_chan_endpoint.sober:14:37: a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+exit=1

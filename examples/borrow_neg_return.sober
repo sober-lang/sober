@@ -1,0 +1,17 @@
+package main
+
+// 借りの関数値を、それを返す関数へ渡せない（(α-L0) — 借りの位置の安全は呼び先の本体で決まる: keep は仮引数を返すので借りの位置でない）
+
+type Stream func(emit func(n int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+func keep(k func(n int) int) func(n int) int { return k }
+
+func main() {
+    r := Resp{stream: (emit) => keep(emit)(1)}
+    st := r.stream
+    if st != nil { println(st((n int) => n)) }
+}

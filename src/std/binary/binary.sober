@@ -1,0 +1,27 @@
+package binary
+
+// バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）。書きの対（Store64）は無い — 書くときは 1 バイトずつ積む
+
+// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・lower の ioBuiltin）。検査なしの読み — 境界は下の Load64 の 1 か所だけで見る
+@intrinsic("load64")
+func sysLoad64(b []byte, i int) int
+
+// b[i]〜b[i + 7] の 8 バイトを little-endian で読んだ int（b[i] が最下位のバイト）。i < 0 か i + 8 > len(b) なら panic(OutOfRange{i, len(b)})
+// （検査は 1 か所 — `i > len(b) - 8` は len(b) ≥ 0 なので桁あふれしない）
+func Load64(b []byte, i int) int {
+    if i < 0 || i > len(b) - 8 {
+        outOfRange(i, len(b))
+    }
+    return sysLoad64(b, i)
+}
+
+// outOfRange は Load64 の契約違反の panic（Load64 の本体を小さく保つ — 呼び出し点に展開される大きさに）
+func outOfRange(i int, n int) {
+    panic(OutOfRange{i: i, n: n})
+}
+
+// Load64 の読みが b の外にはみ出した（呼び手の契約違反 — panic ラベル。language.md 27 節）
+type OutOfRange panic {
+    i int
+    n int
+}

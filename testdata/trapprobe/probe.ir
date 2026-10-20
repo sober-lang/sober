@@ -23,60 +23,68 @@ global @str.15 [1] = {139141212524}
 global @str.16 [4] = {5917794109009846640, 7167555147578042213, 7017588315501389157, 138418680693}
 global @str.17 [2] = {7596551573701944676, 7629165}
 global @str.18 [2] = {8097862866615364723, 521644106593}
-global @str.19 [2] = {4208741877863948332, 32}
-global @str.20 [1] = {2685}
-global @str.21 [2] = {7957694959391481888, 2322283407174100091}
-global @str.22 [2] = {8601708606660288556, 35435399443553}
-global @str.23 [1] = {35899498962976}
-global @str.24 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
-global @str.25 [3] = {7232620951369114994, 8674334734093152357, 8250}
+global @str.19 [2] = {8458156441484616054, 1684370547}
+global @str.20 [2] = {4208741877863948332, 32}
+global @str.21 [1] = {2685}
+global @str.22 [2] = {7957694959391481888, 2322283407174100091}
+global @str.23 [2] = {8601708606660288556, 35435399443553}
+global @str.24 [1] = {35899498962976}
+global @str.25 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
+global @str.26 [3] = {7232620951369114994, 8674334734093152357, 8250}
 global @rt.psites [3] = {1688849944150023, 1688849944150023, 1688849944150023}
-global @str.26 [1] = {9071397899755888}
-global @str.27 [3] = {8462017926321696361, 7953763900396085364, 25959}
-global @str.28 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
-global @str.29 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
-global @str.30 [3] = {7311146993653867886, 6998721804137689888, 500069396333}
-global @str.31 [3] = {2338042651316874857, 7070762896912181604, 122537119457401}
-global @str.32 [2] = {8388345085396285541, 2965729659098066976}
-global @str.33 [3] = {7018969289221893749, 7306086967037750370, 7234303152485659168}
-global @str.34 [1] = {544497952}
-global @str.35 [2] = {7093014581389910381, 29285}
+global @str.27 [1] = {9071397899755888}
+global @str.28 [3] = {8462017926321696361, 7953763900396085364, 25959}
+global @str.29 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
+global @str.30 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
+global @str.31 [3] = {7311146993653867886, 6998721804137689888, 500069396333}
+global @str.32 [3] = {2338042651316874857, 7070762896912181604, 122537119457401}
+global @str.33 [2] = {8388345085396285541, 2965729659098066976}
+global @str.34 [3] = {7018969289221893749, 7306086967037750370, 7234303152485659168}
+global @str.35 [1] = {544497952}
+global @str.36 [2] = {7093014581389910381, 29285}
 
 func @rt.flush() {
 b0:
   %0 = globaladdr @rt.meta
+  %1 = load.i64 %0[1028]
   %2 = const 0
-  br b1(%2)
-b1(%1 i64):
-  %3 = load.i64 %0[1028]
-  %4 = sub %3, %1
+  %3 = eq %1, %2
+  condbr %3, b2, b1
+b1:
   %5 = const 0
-  %6 = gt %4, %5
-  condbr %6, b2, b3
+  br b3(%5)
 b2:
-  %7 = const 8248
-  %8 = add %7, %1
-  %9 = gep.byte %0, %8
-  %10 = ptoi %9
-  %11 = load.i64 %0[1026]
-  %12 = const 1
-  %13 = syscall(%12, %11, %10, %4)
-  %14 = const -4
-  %15 = eq %13, %14
-  condbr %15, b4, b5
-b3:
-  %19 = const 0
-  store %0[1028], %19
   ret
+b3(%4 i64):
+  %6 = load.i64 %0[1028]
+  %7 = sub %6, %4
+  %8 = const 0
+  %9 = gt %7, %8
+  condbr %9, b4, b5
 b4:
-  br b1(%1)
+  %10 = const 8248
+  %11 = add %10, %4
+  %12 = gep.byte %0, %11
+  %13 = ptoi %12
+  %14 = load.i64 %0[1026]
+  %15 = const 1
+  %16 = syscall(%15, %14, %13, %7)
+  %17 = const -4
+  %18 = eq %16, %17
+  condbr %18, b6, b7
 b5:
-  %16 = const 0
-  %17 = le %13, %16
-  condbr %17, b3, b6
+  %22 = const 0
+  store %0[1028], %22
+  ret
 b6:
-  %18 = add %1, %13
-  br b1(%18)
+  br b3(%4)
+b7:
+  %19 = const 0
+  %20 = le %16, %19
+  condbr %20, b5, b8
+b8:
+  %21 = add %4, %16
+  br b3(%21)
 }
 
 func @rt.print_char(%0 i64) {
@@ -453,6 +461,7 @@ func @rt.panic_mem(%0 i64) {
   slot s7 [3]
   slot s8 [3]
   slot s9 [3]
+  slot s10 [3]
 b0:
   %1 = globaladdr @rt.trap
   %2 = load.i64 %1[0]
@@ -483,31 +492,31 @@ b2:
   %14 = eq %0, %13
   condbr %14, b4, b5
 b3:
-  %27 = globaladdr @str.19
-  %28 = const 9
-  %29 = const 0
-  %30 = slotaddr s3
-  %31 = ptoi %27
-  store %30[0], %31
-  store %30[1], %28
-  store %30[2], %29
-  call @rt.print_str(%30)
-  %32 = load.i64 %6[0]
-  call @rt.print_int(%32)
-  %33 = globaladdr @str.20
-  %34 = const 2
-  %35 = const 0
-  %36 = slotaddr s4
-  %37 = ptoi %33
-  store %36[0], %37
-  store %36[1], %34
-  store %36[2], %35
-  call @rt.print_str(%36)
-  %38 = load.i64 %6[1029]
-  %39 = load.i64 %6[1030]
-  %44 = const 1
-  %45 = const 0
-  br b8(%44, %45)
+  %34 = globaladdr @str.20
+  %35 = const 9
+  %36 = const 0
+  %37 = slotaddr s4
+  %38 = ptoi %34
+  store %37[0], %38
+  store %37[1], %35
+  store %37[2], %36
+  call @rt.print_str(%37)
+  %39 = load.i64 %6[0]
+  call @rt.print_int(%39)
+  %40 = globaladdr @str.21
+  %41 = const 2
+  %42 = const 0
+  %43 = slotaddr s5
+  %44 = ptoi %40
+  store %43[0], %44
+  store %43[1], %41
+  store %43[2], %42
+  call @rt.print_str(%43)
+  %45 = load.i64 %6[1029]
+  %46 = load.i64 %6[1030]
+  %51 = const 1
+  %52 = const 0
+  br b10(%51, %52)
 b4:
   %15 = globaladdr @str.17
   %16 = const 11
@@ -535,81 +544,84 @@ b6:
   call @rt.print_str(%25)
   br b3
 b7:
+  %27 = const 3
+  %28 = eq %0, %27
+  condbr %28, b8, b9
+b8:
+  %29 = globaladdr @str.19
+  %30 = const 12
+  %31 = const 0
+  %32 = slotaddr s3
+  %33 = ptoi %29
+  store %32[0], %33
+  store %32[1], %30
+  store %32[2], %31
+  call @rt.print_str(%32)
   br b3
-b8(%40 i64, %41 i64):
-  %46 = le %40, %32
-  condbr %46, b9, b13(%41)
 b9:
-  %47 = gep.word %6, %40
-  %48 = load.i64 %47[1]
-  %49 = mul %40, %39
-  %50 = add %38, %49
-  %51 = sub %48, %50
-  %52 = const 0
-  %53 = gt %51, %52
-  condbr %53, b10, b12(%41)
-b10:
-  %54 = const 16
-  %55 = lt %41, %54
-  %56 = const 1
-  %57 = add %41, %56
-  condbr %55, b11, b12(%57)
+  br b3
+b10(%47 i64, %48 i64):
+  %53 = le %47, %39
+  condbr %53, b11, b15(%48)
 b11:
-  %58 = globaladdr @str.21
-  %59 = const 16
-  %60 = const 0
-  %61 = slotaddr s5
-  %62 = ptoi %58
-  store %61[0], %62
-  store %61[1], %59
-  store %61[2], %60
-  call @rt.print_str(%61)
-  call @rt.print_int(%40)
-  %63 = globaladdr @str.22
-  %64 = const 14
-  %65 = const 0
-  %66 = slotaddr s6
-  %67 = ptoi %63
-  store %66[0], %67
-  store %66[1], %64
-  store %66[2], %65
-  call @rt.print_str(%66)
-  call @rt.print_int(%51)
-  %68 = globaladdr @str.20
-  %69 = const 2
-  %70 = const 0
-  %71 = slotaddr s7
-  %72 = ptoi %68
-  store %71[0], %72
-  store %71[1], %69
-  store %71[2], %70
-  call @rt.print_str(%71)
-  %73 = const 1
-  %74 = add %41, %73
-  br b12(%74)
-b12(%42 i64):
-  %75 = const 1
-  %76 = add %40, %75
-  br b8(%76, %42)
-b13(%43 i64):
-  %77 = const 16
-  %78 = gt %43, %77
-  condbr %78, b14, b15
-b14:
-  %79 = globaladdr @str.23
-  %80 = const 6
-  %81 = const 0
-  %82 = slotaddr s8
-  %83 = ptoi %79
-  store %82[0], %83
-  store %82[1], %80
-  store %82[2], %81
-  call @rt.print_str(%82)
+  %54 = gep.word %6, %47
+  %55 = load.i64 %54[1]
+  %56 = mul %47, %46
+  %57 = add %45, %56
+  %58 = sub %55, %57
+  %59 = const 0
+  %60 = gt %58, %59
+  condbr %60, b12, b14(%48)
+b12:
+  %61 = const 16
+  %62 = lt %48, %61
+  %63 = const 1
+  %64 = add %48, %63
+  condbr %62, b13, b14(%64)
+b13:
+  %65 = globaladdr @str.22
+  %66 = const 16
+  %67 = const 0
+  %68 = slotaddr s6
+  %69 = ptoi %65
+  store %68[0], %69
+  store %68[1], %66
+  store %68[2], %67
+  call @rt.print_str(%68)
+  call @rt.print_int(%47)
+  %70 = globaladdr @str.23
+  %71 = const 14
+  %72 = const 0
+  %73 = slotaddr s7
+  %74 = ptoi %70
+  store %73[0], %74
+  store %73[1], %71
+  store %73[2], %72
+  call @rt.print_str(%73)
+  call @rt.print_int(%58)
+  %75 = globaladdr @str.21
+  %76 = const 2
+  %77 = const 0
+  %78 = slotaddr s8
+  %79 = ptoi %75
+  store %78[0], %79
+  store %78[1], %76
+  store %78[2], %77
+  call @rt.print_str(%78)
+  %80 = const 1
+  %81 = add %48, %80
+  br b14(%81)
+b14(%49 i64):
+  %82 = const 1
+  %83 = add %47, %82
+  br b10(%83, %49)
+b15(%50 i64):
   %84 = const 16
-  %85 = sub %43, %84
-  call @rt.print_int(%85)
+  %85 = gt %50, %84
+  condbr %85, b16, b17
+b16:
   %86 = globaladdr @str.24
-  %87 = const 34
+  %87 = const 6
   %88 = const 0
   %89 = slotaddr s9
   %90 = ptoi %86
@@ -617,8 +629,20 @@ b14:
   store %89[1], %87
   store %89[2], %88
   call @rt.print_str(%89)
-  br b15
-b15:
+  %91 = const 16
+  %92 = sub %50, %91
+  call @rt.print_int(%92)
+  %93 = globaladdr @str.25
+  %94 = const 34
+  %95 = const 0
+  %96 = slotaddr s10
+  %97 = ptoi %93
+  store %96[0], %97
+  store %96[1], %94
+  store %96[2], %95
+  call @rt.print_str(%96)
+  br b17
+b17:
   call @rt.flush()
   exit 102
 }
@@ -654,7 +678,7 @@ b5(%5 i64):
   call @rt.flush()
   %16 = const 2
   store %0[1026], %16
-  %17 = globaladdr @str.25
+  %17 = globaladdr @str.26
   %18 = const 18
   %19 = const 0
   %20 = slotaddr s0
@@ -664,7 +688,7 @@ b5(%5 i64):
   store %20[2], %19
   call @rt.print_str(%20)
   call @rt.print_int(%5)
-  %22 = globaladdr @str.20
+  %22 = globaladdr @str.21
   %23 = const 2
   %24 = const 0
   %25 = slotaddr s1
@@ -1132,9 +1156,9 @@ b0:
 b1(%5 ptr, %6 ptr):
   ret %5
 b2:
-  %61 = mul %3, %1
-  %62 = call @rt.slice_grow(%2, %3, %1, %4, %38)
-  condbr %38, b18, b19
+  %69 = mul %3, %1
+  %70 = call @rt.slice_grow(%2, %3, %1, %4, %38)
+  condbr %38, b21, b22
 b3:
   %42 = const 16
   br b11(%42)
@@ -1196,37 +1220,50 @@ b13:
   %50 = globaladdr @rt.meta
   %51 = gep.word %50, %4
   store %51[1], %22
-  %52 = region.alloc %4, %49
-  %54 = const 0
-  br b14(%54)
-b14(%53 i64):
-  %55 = lt %53, %49
-  condbr %55, b15, b16
+  %52 = const 16
+  %53 = mul %41, %52
+  %54 = const 2097152
+  %55 = add %41, %54
+  %57 = lt %53, %55
+  condbr %57, b15, b16
+b14(%56 i64):
+  %58 = const 3
+  %59 = add %56, %58
+  %60 = region.alloc %4, %59
+  %62 = const 0
+  br b17(%62)
 b15:
-  %56 = gep.word %52, %53
-  %57 = const 0
-  store %56[0], %57
-  %58 = const 1
-  %59 = add %53, %58
-  br b14(%59)
+  br b14(%53)
 b16:
-  store %52[2], %41
-  %60 = ptoi %52
-  store %0[3], %60
-  br b2
-b17:
-  %65 = load.i64 %0[3]
-  %66 = itop %65
-  %67 = ptoi %62
-  store %66[0], %67
-  br b18
+  br b14(%55)
+b17(%61 i64):
+  %63 = lt %61, %49
+  condbr %63, b18, b19
 b18:
-  %68 = gep.word %62, %61
-  br b1(%62, %68)
+  %64 = gep.word %60, %61
+  %65 = const 0
+  store %64[0], %65
+  %66 = const 1
+  %67 = add %61, %66
+  br b17(%67)
 b19:
-  %63 = const 8
-  %64 = lt %8, %63
-  condbr %64, b18, b17
+  store %60[2], %41
+  %68 = ptoi %60
+  store %0[3], %68
+  br b2
+b20:
+  %73 = load.i64 %0[3]
+  %74 = itop %73
+  %75 = ptoi %70
+  store %74[0], %75
+  br b21
+b21:
+  %76 = gep.word %70, %69
+  br b1(%70, %76)
+b22:
+  %71 = const 8
+  %72 = lt %8, %71
+  condbr %72, b21, b20
 }
 
 func @rt.grow_try(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
@@ -1755,7 +1792,7 @@ b2:
   call @rt.flush()
   %24 = const 2
   store %6[1026], %24
-  %25 = globaladdr @str.26
+  %25 = globaladdr @str.27
   %26 = const 7
   %27 = const 0
   %28 = slotaddr s0
@@ -1768,7 +1805,7 @@ b2:
   %31 = eq %11, %30
   condbr %31, b4, b5
 b3:
-  %79 = globaladdr @str.34
+  %79 = globaladdr @str.35
   %80 = const 4
   %81 = const 0
   %82 = slotaddr s8
@@ -1781,7 +1818,7 @@ b3:
   %85 = eq %15, %84
   condbr %85, b19, b20
 b4:
-  %32 = globaladdr @str.27
+  %32 = globaladdr @str.28
   %33 = const 18
   %34 = const 0
   %35 = slotaddr s1
@@ -1796,7 +1833,7 @@ b5:
   %38 = eq %11, %37
   condbr %38, b6, b7
 b6:
-  %39 = globaladdr @str.28
+  %39 = globaladdr @str.29
   %40 = const 25
   %41 = const 0
   %42 = slotaddr s2
@@ -1811,7 +1848,7 @@ b7:
   %45 = eq %11, %44
   condbr %45, b8, b9
 b8:
-  %46 = globaladdr @str.29
+  %46 = globaladdr @str.30
   %47 = const 27
   %48 = const 0
   %49 = slotaddr s3
@@ -1826,7 +1863,7 @@ b9:
   %52 = eq %11, %51
   condbr %52, b10, b11
 b10:
-  %53 = globaladdr @str.30
+  %53 = globaladdr @str.31
   %54 = const 21
   %55 = const 0
   %56 = slotaddr s4
@@ -1841,7 +1878,7 @@ b11:
   %59 = eq %11, %58
   condbr %59, b12, b13
 b12:
-  %60 = globaladdr @str.31
+  %60 = globaladdr @str.32
   %61 = const 22
   %62 = const 0
   %63 = slotaddr s5
@@ -1856,7 +1893,7 @@ b13:
   %66 = eq %11, %65
   condbr %66, b14, b15
 b14:
-  %67 = globaladdr @str.32
+  %67 = globaladdr @str.33
   %68 = const 16
   %69 = const 0
   %70 = slotaddr s6
@@ -1871,7 +1908,7 @@ b15:
   %73 = eq %11, %72
   condbr %73, b16, b17
 b16:
-  %74 = globaladdr @str.33
+  %74 = globaladdr @str.34
   %75 = const 24
   %76 = const 0
   %77 = slotaddr s7
@@ -1895,7 +1932,7 @@ b18:
   call @rt.flush()
   exit 101
 b19:
-  %86 = globaladdr @str.35
+  %86 = globaladdr @str.36
   %87 = const 10
   %88 = const 0
   %89 = slotaddr s9

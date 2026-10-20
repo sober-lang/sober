@@ -1,0 +1,25 @@
+package main
+
+// 窓の中の pool.Renew（region-domain-pool.md 4d 節）: Renew が進めた世代は置き場へ書き戻す — 次の窓は必ずまっさら（書き戻さないと次の窓の
+// LeaseAttach が同じ世代を配り、前の窓の Renew の後の書きが見えた — report-720）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    tab pool.Scratch
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 4))
+    a := task.Lease(lw, (w mut Work) => {
+        pool.Renew(mut w.tab)
+        pool.Store(mut w.tab, 0, 5)
+        pool.Renew(mut w.tab)
+        pool.Store(mut w.tab, 1, 6)
+        pool.Load(mut w.tab, 0) * 10 + pool.Load(mut w.tab, 1)
+    })
+    b := task.Lease(lw, (w mut Work) => pool.Load(mut w.tab, 0) * 10 + pool.Load(mut w.tab, 1))
+    println(a)
+    println(b)
+}

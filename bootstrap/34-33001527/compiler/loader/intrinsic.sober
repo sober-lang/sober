@@ -1,0 +1,195 @@
+package loader
+
+// std の本体なしの宣言 `@intrinsic("鍵") func 名前(仮引数) 結果`（息継ぎ ③ — sys の組み込みの署名をソースに置く。KIntrinsic・KFile の f の列）。
+// 鍵の集合は閉じる（ここの表 — ユーザーは鋳造できない）。宣言は std の中でだけ受理し、署名は鍵の実装（desugar のコアの近似・lower の rt の呼び出し）と
+// 一致しなければ拒否する。呼び出しは desugar / lower が現在の package の宣言を名前で引いて鍵の番号へ（desugar の SysKey）
+
+import "ast"
+import "diag"
+import "std/iter"
+
+// 鍵の番号（desugar / lower の鍵の実装の表の添字 — 0 = 鍵でない）
+const IFSqrt = 1
+const IFBits = 2
+const IFFromBits = 3
+const IErrno = 4
+const IArgs = 5
+const IEnviron = 6
+const IReadFile = 7
+const IReadDir = 8
+const IReadFd = 9
+const IRun = 10
+const IMkdir = 11
+const IStat = 12
+const ISleep = 13
+const IWriteFile = 14
+const IWriteFd = 15
+const IWriteMode = 16
+const IRename = 17
+const IParPool = 18     // std/par の名前つきプールの節（段 6 P5-4 — lower/admit.sober の rt.pool_new）
+const IParLedger = 19   // std/par の台帳の 1 語の読み（段 6 P5-4 — io: 読んだ値は時刻に依る）
+const IOpen = 20        // std/io の Open（IO 便 段 2 — fd / 負の errno。std/par のプログラムは task の登録簿に積む）
+const IClose = 21       // std/io の Close（errno — 登録簿から外す）
+const IChunkOpen = 22   // std/io の Chunks（IO 便 段 2 (c) — ストリームの記録 / lower/chunk.sober）: chunk_open(fd, size, gens, off)
+const IChunkNext = 23   // chunk_next(記録) — 次の切片の View（空 = 列の終わり・errno）
+const IChunkClose = 24  // chunk_close(記録) — 読みの完了を待って閉じる
+const IDeadline = 25    // std/io の io の口の頭（段 3 の ④）: 今の task の期限〔par.Scope の deadline:〕が過ぎていれば 1（io: 時刻を読む）
+const ISyscall = 26    // std 専用の生の syscall（net 段 4a — 28 節の囲い）: syscall(nr, a, b, c, d, e, f) → 結果 / 負の errno（同期・rt を通らない）
+const IAddr = 27       // バイト列の先頭の番地（sockaddr・send のバッファ — std の中で値の生存の内側だけで使う）
+const IWaitFd = 28     // fd の readiness の待ち（net 段 4a-2 — lower/netpoll.sober の rt.fdwait）: wait_fd(fd, 向き) → 0 / 負の errno（-110 = 期限が待ちを切った）
+const IFdOwn = 29      // fd を今の task の登録簿に積む（net 段 4a-3 — Serve の接続の task: 死でも出口の rt.fd_drain が閉じる）: fd_own(fd) → 0
+const INetOp = 31      // net の ring の送り / 閉じ / accept（net 段 4b-1・4b-2 — lower/netring.sober の rt.netop）: net_op(op, fd, a, b) → 結果 / 負の errno（op 1 = 送り・2 = 閉じ・3 = accept）
+const IParFail = 30    // std/par の名前つきプールの節の失敗の数を 1 足す（net 4a-4 — Serve が handler の失敗を記帳する口・admit.sober PL_FAIL）: par_fail(節) → 0
+const ILeaseOp = 32     // ワーカー局所の lease の rt の口（region-domain-pool.md 4d 節 — std/par・std/pool の写し先だけ）: lease_op(op, blk, off, v) → 結果
+                       // （op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 = 取れた・0 = 使用中〕・3 = 返す・4 = blk[off] の生の読み・5 = 生の書き）
+const ILeaseView = 33   // lease_view(blk, off, n) → blk[off:off+n] の語を指す mut []int（置き場の区画を窓の Scratch に付ける — 深度は blk のまま）
+const ICpuClmul = 35    // cpuclmul() → この機械で crcfold の道を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0。report-774）
+const IAesCpu = 37      // cpuaes() → この機械で AES-GCM の塊を使えるか（0 / 1 — AES-NI・PCLMULQDQ・SSSE3。x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0。report-796）
+const IAesKey = 38      // aeskey(key, ctx) → 0（key = 16 バイトの番地・ctx = 272 バイトの作業域の番地 — 鍵の展開と GHASH の H の冪。std/crypto/aesgcm だけ）
+const IAesCtr = 39      // aesctr(ctx, src, dst, n) → 0（n は 16 の倍数 — ctx の計数器の CTR で dst = src ^ 鍵の流れ・計数器を進める）
+const IAesGhash = 40    // aesghash(ctx, p, n) → 0（n は 16 の倍数 — ctx の GHASH の溜め Y に p[0:n] を畳む）
+const ICrcFold = 36     // crcfold(b, k, crc) → b[0:k]（k は 64 以上の 16 の倍数・検査なし — 境界は std/hash/crc32 が見る）を反転済みの crc に PCLMULQDQ で畳んだ値
+const IAddrN = 42      // addrn(b) → []int の先頭の番地（std/crypto/rsa の作業域を塊に渡す — 値の生存の内側だけで使う・report-864）
+const IMmCpu = 43      // cpumulx() → この機械で多倍長の塊（BMI2 の MULX）を使えるか（0 / 1 — x86 の最適化のバックエンドの ELF の CPUID の判定・他の出力は 0。report-864）
+const IMmMul = 44      // montmul(d, a, b, m, m0i, n) → 0（62 bit limb の Montgomery の積 — 番地 d に n + 1 語・a / b / m は n 語の番地。std/crypto/rsa の montMul だけ）
+const IMulHi = 41      // mulhi(a, b) → a × b の 128 ビットの積の上位 64 ビット（符号なし — IR の BMulHi・x86 の MUL の rdx。std/crypto の多倍長だけ・report-810）
+const ILoad64 = 34      // load64(b, i) → b[i:i+8] の 8 バイトを little-endian で読んだ int（検査なし — 境界は std/binary の Load64 が 1 か所で見る・report-723）
+
+// IntrinsicCode は鍵の綴り → 番号（閉じた集合の外は 0）
+func IntrinsicCode(key string) int {
+    return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "load64" { ILoad64 } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else { 0 }
+}
+
+// IntrinsicSig は鍵の番号の署名（仮引数の型の並び ">" 結果の型 — i = int・f = float・s = string・b = []byte・n = []int・m = mut []int）
+func IntrinsicSig(code int) string {
+    return switch code {
+    case IFSqrt: "f>f"
+    case IFBits: "f>i"
+    case IFFromBits: "i>f"
+    case IErrno: ">i"
+    case IArgs: ">b"
+    case IEnviron: ">b"
+    case IReadFile: "s>b"
+    case IReadDir: "s>b"
+    case IReadFd: "ii>b"
+    case IRun: "b>i"
+    case IMkdir: "s>i"
+    case IStat: "s>i"
+    case ISleep: "i>i"
+    case IWriteFile: "sb>i"
+    case IWriteFd: "ib>i"
+    case IWriteMode: "si>i"
+    case IRename: "ss>i"
+    case IParPool: "ii>i"
+    case IParLedger: "i>i"
+    case IParFail: "i>i"
+    case IOpen: "s>i"
+    case IClose: "i>i"
+    case IChunkOpen: "iiii>i"
+    case IChunkNext: "i>b"
+    case IChunkClose: "i>i"
+    case IDeadline: ">i"
+    case ISyscall: "iiiiiii>i"
+    case IAddr: "b>i"
+    case IWaitFd: "ii>i"
+    case IFdOwn: "i>i"
+    case INetOp: "iiii>i"
+    case ILeaseOp: "inii>i"
+    case ILeaseView: "nii>m"
+    case ILoad64: "bi>i"
+    case ICpuClmul: ">i"
+    case ICrcFold: "bii>i"
+    case IAesCpu: ">i"
+    case IAesKey: "ii>i"
+    case IAesCtr: "iiii>i"
+    case IAesGhash: "iii>i"
+    case IMulHi: "ii>i"
+    case IAddrN: "n>i"
+    case IMmCpu: ">i"
+    case IMmMul: "iiiiii>i"
+    default: "?"
+    }
+}
+
+// typeCode は型式 n の署名の 1 文字（int / float / string / []byte の外は '?'）
+func typeCode(t ast.Tree, n int) byte {
+    x := t.nodes[n]
+    if x.kind == ast.TName {
+        s := Name(t, x.a)
+        return byte(if s == "int" { 'i' } else if s == "float" { 'f' } else if s == "string" { 's' } else { '?' })
+    }
+    if x.kind == ast.TSlice && x.b == 0 && t.nodes[x.a].kind == ast.TName && Name(t, t.nodes[x.a].a) == "byte" {
+        return byte('b')
+    }
+    if x.kind == ast.TSlice && t.nodes[x.a].kind == ast.TName && Name(t, t.nodes[x.a].a) == "int" {
+        return byte(if x.b == 0 { 'n' } else { 'm' })
+    }
+    return byte('?')
+}
+
+// declSig は KIntrinsic の宣言 x の署名（IntrinsicSig と同じ書式）
+func declSig(t ast.Tree, x ast.Node) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, ast.ListLen(t, x.c)) {
+        p := t.nodes[ast.ListAt(t, x.c, i)]
+        out = append(out, if p.c != 0 { byte('?') } else { typeCode(t, p.b) })
+    }
+    out = append(out, '>')
+    if ast.ListLen(t, x.d) == 1 {
+        out = append(out, typeCode(t, ast.ListAt(t, x.d, 0)))
+    } else if ast.ListLen(t, x.d) > 1 {
+        out = append(out, '?')
+    }
+    r := string(freeze(out)) catch return "?"
+    return r
+}
+
+// intrinsicAll は全ファイルの @intrinsic の宣言を検査する（std の中だけ・閉じた鍵・署名の一致・package の中で名前が重ならない）
+@errors(diag.Intrinsic)
+func intrinsicAll(trees []ast.Tree, fpkg []string, fstd []bool) error? {
+    for f <- iter.Range(0, len(trees)) {
+        t := trees[f]
+        xs := t.nodes[t.file].f
+        if xs != 0 {
+            for i <- iter.Range(0, ast.ListLen(t, xs)) {
+                x := t.nodes[ast.ListAt(t, xs, i)]
+                at := diag.Pos{file: f, tok: x.tok}
+                // std のファイルか、std の package の .sobi（展開される関数の本体が参照する宣言 — compiler/iface。.sobi のファイルは std の印を持たない。
+                // 利用者の package は予約 prefix `std/` を名乗れないので、受理の線は同じ）
+                if !fstd[f] && !isStd(fpkg[f]) {
+                    return diag.Intrinsic{at: at, kind: 1}
+                }
+                code := IntrinsicCode(Name(t, x.b))
+                if code == 0 {
+                    return diag.Intrinsic{at: at, kind: 2}
+                }
+                if declSig(t, x) != IntrinsicSig(code) {
+                    return diag.Intrinsic{at: at, kind: 3}
+                }
+                if intrinsicDupBefore(trees, fpkg, f, i, Name(t, x.a)) {
+                    return diag.Intrinsic{at: at, kind: 4}
+                }
+            }
+        }
+    }
+    return nil
+}
+
+// intrinsicDupBefore は同じ package の手前（前のファイル・同じファイルの手前）に同じ名前の @intrinsic の宣言があるか
+func intrinsicDupBefore(trees []ast.Tree, fpkg []string, f0 int, i0 int, name string) bool {
+    for f <- iter.Range(0, f0 + 1) {
+        if fpkg[f] == fpkg[f0] {
+            t := trees[f]
+            xs := t.nodes[t.file].f
+            if xs != 0 {
+                n := if f == f0 { i0 } else { ast.ListLen(t, xs) }
+                for i <- iter.Range(0, n) {
+                    if Name(t, t.nodes[ast.ListAt(t, xs, i)].a) == name {
+                        return true
+                    }
+                }
+            }
+        }
+    }
+    return false
+}

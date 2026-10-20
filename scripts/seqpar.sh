@@ -11,15 +11,19 @@ trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
 WS=${SEQPAR_WORKERS:-1 2 4 8}
+# 実行ファイルは建てるたびに別の名前（カーネル 6.18 では M:N の実行の直後に同じパスへ書くと ETXTBSY — report-660）
+nb=0
 run() {   # run <entry> <mode> <out> [workers]
     local e=$1 m=$2 o=$3 w=${4:-1} ec=0
+    nb=$((nb + 1))
+    local b=$W/bin.$nb
     case $m in
-        passes) SOBER_VERIFY=each "$S2" build "$e" --emit=elf --passes -o "$W/bin" ;;
-        plain) "$S2" build "$e" --emit=elf -o "$W/bin" ;;
-        noopt) "$S2" build "$e" --emit=elf --no-opt -o "$W/bin" ;;
+        passes) SOBER_VERIFY=each "$S2" build "$e" --emit=elf --passes -o "$b" ;;
+        plain) "$S2" build "$e" --emit=elf -o "$b" ;;
+        noopt) "$S2" build "$e" --emit=elf --no-opt -o "$b" ;;
     esac || { echo "FAIL: build $e ($m)"; return 1; }
-    chmod +x "$W/bin"
-    SOBER_WORKERS=$w "$W/bin" > "$o" 2> /dev/null || ec=$?
+    chmod +x "$b"
+    SOBER_WORKERS=$w "$b" > "$o" 2> /dev/null || ec=$?
     # 実行できなかった（126 / 127 — 建てた物が ELF でない等）は失敗（両側の失敗が一致して素通りしないように）
     if [ "$ec" = 126 ] || [ "$ec" = 127 ]; then echo "FAIL: could not run $e ($m)"; return 1; fi
     echo "exit=$ec" >> "$o"
@@ -30,10 +34,10 @@ while read -r par seq; do
     run "$seq" plain "$W/seq.out" || { fail=$((fail + 1)); continue; }
     for w in $WS; do
         for m in passes plain noopt; do
-            run "$par" $m "$W/par.out" "$w" || { fail=$((fail + 1)); continue; }
-            if ! cmp -s "$W/seq.out" "$W/par.out"; then
+            run "$par" $m "$W/task.out" "$w" || { fail=$((fail + 1)); continue; }
+            if ! cmp -s "$W/seq.out" "$W/task.out"; then
                 echo "FAIL: $par ($m, SOBER_WORKERS=$w) differs from $seq"
-                diff "$W/seq.out" "$W/par.out" | head -6
+                diff "$W/seq.out" "$W/task.out" | head -6
                 fail=$((fail + 1))
             fi
         done

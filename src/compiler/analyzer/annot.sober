@@ -2,6 +2,7 @@ package analyzer
 
 // `@errors(...)` の注釈の検査（error 網羅 analyzer A3 — language.md 13 節・裁定 E5 = M-a: 正の列挙だけ・否定形なし）。
 // 注釈は parser が関数宣言の付加の列（6・7 番目 = ラベル名の列・`@` の字句）に持つ。ここではラベル名が解決できるかだけを見る
+// （仮引数の名前の項は、その仮引数が匿名の関数型で結果に error を持つかを見る — language.md 13 節）
 // （宣言と導出の照合・公開関数への強制は A4）
 
 import "ast"
@@ -11,6 +12,7 @@ import "std/iter"
 const MAnnUnknown = 11   // 解決できないラベル名（付帯 = 項の添字）
 const MAnnNegated = 12   // 否定形 `!L`
 const MAnnMalformed = 13 // 読めない項
+const MAnnParam = 15     // 仮引数の名前の項が Flow の対象でない（匿名の関数型で結果に error を持つ仮引数だけ — 付帯 = 項の添字）
 
 // errsOf は関数宣言 fd の `@errors` のラベル名の列（無ければ -1）
 func errsOf(az mut Az, fd ast.Node) desugar.ListRef {
@@ -38,6 +40,11 @@ func checkAnnots(az mut Az) {
                     reportAnn(mut az, MAnnNegated, fi, i)
                 } else if c == '?' {
                     reportAnn(mut az, MAnnMalformed, fi, i)
+                } else if paramOf(mut az, fi, s) != -1 {
+                    // 仮引数の名前の項（language.md 13 節 — 呼び出し点ごとに実引数のラベル）: 匿名の関数型で結果に error を持つ仮引数だけ
+                    if !flowParam(mut az, fi, paramOf(mut az, fi, s)) {
+                        reportAnn(mut az, MAnnParam, fi, i)
+                    }
                 } else if labelOf(mut az, s) == -1 {
                     reportAnn(mut az, MAnnUnknown, fi, i)
                 }
@@ -56,6 +63,9 @@ func annMessage(az mut Az, k int, fn desugar.NodeRef, i int) string {
     item := str(mut az, desugar.StrRef(desugar.LatI(mut az.d, errsOf(mut az, node(mut az, fn)), i)))
     if k == MAnnNegated {
         return "@errors lists the labels the function may return: the negated form '${item}' is not allowed"
+    }
+    if k == MAnnParam {
+        return "@errors: the parameter '${item}' is not a function whose result is an error (only an anonymous function-typed parameter returning error? can stand for the errors of its calls — a named function type carries its own @errors)"
     }
     if k == MAnnMalformed {
         return "@errors expects error label names (`L` or `pkg.L`)"

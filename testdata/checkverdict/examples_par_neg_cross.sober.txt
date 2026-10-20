@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_cross.sober:11:43: par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)
-exit=1

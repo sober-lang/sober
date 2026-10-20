@@ -2,7 +2,7 @@
 
 English | [日本語](install.ja.md)
 
-The Sober compiler is made by starting from stage1, a frozen first compiler written in Zig, and building the source snapshots in `bootstrap/` in order. There are no distributed binaries — everything builds from Zig and source alone.
+The Sober compiler is made by starting from stage1, a frozen first compiler written in Zig, and building the source snapshots in `bootstrap/` in order. Everything builds from Zig and source alone. Each [release](https://github.com/sober-lang/sober/releases) also carries a prebuilt static binary for x86-64 Linux (`sober-v<version>-x86_64-linux.tar.gz`), built by the same bootstrap in CI — unpack it and use `sober` directly, no build needed.
 
 ## Requirements
 
@@ -43,9 +43,17 @@ Main commands:
 | `sober check <file.sober>` | Run only type checking and the analyzer (no executable) |
 | `sober test <package>` | Run the tests in the package's `*_test.sober` files |
 
+## Running servers
+
+Programs that use std/net (and so std/http and std/tls) need three things from the environment:
+
+- io_uring: Docker's default seccomp profile (and gVisor) block io_uring. Sober then falls back to epoll automatically — it works, but slower. For full speed, run with a seccomp profile that allows `io_uring_setup` / `io_uring_enter` / `io_uring_register` (for example `docker run --security-opt seccomp=unconfined …`). The network path on io_uring needs Linux 6.1 or later
+- memlock: each worker owns an io_uring ring, and older kernels charge ring memory to `RLIMIT_MEMLOCK` for the whole user. When ring setup fails with ENOMEM, Sober falls back as above (slower); raise the limit (`ulimit -l unlimited`, `LimitMEMLOCK=infinity` under systemd, `--ulimit memlock=-1` under Docker). From Linux 5.12 the memory is charged to the cgroup instead and this rarely matters
+- nofile: one connection is one file descriptor. systemd and many shells default to a soft limit of 1024 — raise it to at least the number of connections you expect (`ulimit -n`, `LimitNOFILE=`, `--ulimit nofile=…`)
+
 ## For developers: running the verification net
 
-When you work on the compiler itself, `scripts/gates.sh --full` runs every check (54 of them). The net additionally needs:
+When you work on the compiler itself, `scripts/gates.sh --full` runs every check. The net additionally needs:
 [Lean 4](https://lean-lang.org/) (the version in `lean/lean-toolchain` — `cd lean && lake build`), Go (independent oracles and the benchmark twins), Rust (the benchmark twins), Node.js (some tools), `perf` (benchmarks), and GNU as (checking the instruction encoder).
 
 Next: [Your first program](first-program.md)

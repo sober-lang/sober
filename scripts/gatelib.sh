@@ -186,8 +186,10 @@ beyond_stage1() { # $1 = IR テキスト。stage1（凍結した Zig）の IR �
     # 段 6 P3b-1 で 3 度目: task の切替（`tswitch` / `tstart` — compiler/lower/task.sober）
     # 段 6 P4-3 / P4-4 で 4 度目: %fs の番地・不可分の命令・スレッドの生成（`fsaddr` / `atomic.*` / `fence` / `pause` / `clone`）— 段 6 P6-1 で
     # 5 度目（ハッシュ便 2026-10-09）: 積の上位 `mulhi`（map のハッシュ mum — string 鍵の map を使う entry は全部この語彙の外になる）
-    # compiler/ 自身が std/par を使い始めて、コンパイラ自身の IR がこの語彙を越えた（stages の cross・errtrace の自己適用が踏んだ）
-    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi) |^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone )' "$1"
+    # compiler/ 自身が std/task を使い始めて、コンパイラ自身の IR がこの語彙を越えた（stages の cross・errtrace の自己適用が踏んだ）
+    # 6 度目（TLS 便 796）: AES-GCM の塊（`aes.cpu` / `aes.key` / `aes.ctr` / `aes.ghash` — compiler/lower/aes.sober）
+    # 7 度目（RSA の続き — report-864）: 多倍長の塊（`mm.cpu` / `mm.mul` — compiler/lower/mulx.sober）
+    grep -qE '= (fadd|fsub|fmul|fdiv|fsqrt|fofint|ftoint|feq|fne|flt|fle|fgt|fge|trap|fsaddr|atomic\.[a-z]+|clone|mulhi|aes\.[a-z]+|mm\.[a-z]+) |^ *(unwind|tswitch |tstart |fence|pause|fsaddr |atomic\.|clone )' "$1"
 }
 
 neg_beyond_stage1() { # $1 = 負例の entry（testdata/loader_neg/<名前>/app）。その負例の置き場に印 beyond_stage1（中身 = 理由）があれば 0 —

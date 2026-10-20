@@ -331,7 +331,7 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
     c := irInsC(mut st, ins)
     hasRes := irInsRes(mut st, ins) >= 0
     if op == OpConst || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpFuncaddr || op == OpRDepth || op == OpRAlloc || op == OpRBump || op == OpBin || op == OpCmp ||
-        op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSyscall || op == OpScanB {
+        op == OpLoad || op == OpLoad8 || op == OpGepW || op == OpGepB || op == OpPtoi || op == OpItop || op == OpSyscall || op == OpScanB || op == OpCrcFold {
         if !hasRes {
             return "the result is missing"
         }
@@ -403,6 +403,14 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
         return if m != "" { m } else { vfyList(mut st, mut v, mut w, b, -1, "task switch operand") }
     case OpSyscall:
         n := xLen(mut st, a)
+        if b == MM_B {
+            nm := if c == MK_CPU { 0 } else if c == MK_MUL { 6 } else { -1 }
+            return if n != nm { "montmul op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "montmul") }
+        }
+        if b == AES_B {
+            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else { -1 }
+            return if n != na { "aes op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "aes") }
+        }
         if n < 1 || n > 7 {
             return "syscall with ${n} arguments"
         }
@@ -429,6 +437,19 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
             }
         }
         return ""
+    case OpCrcFold:
+        if xLen(mut st, a) != (if c == CF_PCLMUL || c == CF_CPUID7 { 0 } else { 3 }) {
+            return "crcfold with ${xLen(mut st, a)} operands"
+        }
+        if c == CF_PCLMUL || c == CF_CPUID7 {
+            return ""
+        }
+        m := vfyUse(mut st, mut v, mut w, xAt(mut st, a, 0), TyPtr, "crcfold")
+        if m != "" {
+            return m
+        }
+        m1 := vfyUse(mut st, mut v, mut w, xAt(mut st, a, 1), TyI64, "crcfold")
+        return if m1 != "" { m1 } else { vfyUse(mut st, mut v, mut w, xAt(mut st, a, 2), TyI64, "crcfold") }
     case OpAtomic:
         k := c & 7
         if hasRes != (k != AT_FENCE && k != AT_PAUSE) {

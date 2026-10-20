@@ -1,0 +1,17 @@
+package main
+
+// 段 6 P3b: 端点を give: でなく捕獲で子へ渡す（diag.Par kind 15 — check と build が同じ拒否。desugar/parcheck.sober）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        h := task.Spawn(s, () => {
+            task.Send(tx, 1)
+            1
+        })
+        task.Join(h)
+    })
+    println(r)
+}

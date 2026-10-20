@@ -3,17 +3,17 @@ package main
 // 負例: File は give: で子へ渡せない — scope の本体の defer Close は子の合流より先に走る（11 節）ので、子は閉じた fd か再利用された番号を読む。子へは path を渡して子で開く（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
 
 import "std/io"
-import "std/par"
+import "std/task"
 
 func main() {
-    r, err := par.Scope((s par.S) => {
+    r, err := task.Run((s task.Scope) => {
         f := io.Open("testdata/io/hello.txt")?
         defer io.Close(f)
-        h := par.Spawn(s, (g) => {
+        h := task.Spawn(s, (g) => {
             b, e := io.ReadAll(g)
             if e != nil { -1 } else { len(b) }
         }, give: f)
-        par.Join(h)
+        task.Join(h)
     })
     println(r)
 }

@@ -1,0 +1,16 @@
+package main
+
+// task.Local のゼロ値は何も指さない（同一性の族 — NewLocal だけが作る）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.Local{}
+    println(task.Lease(lw, (w mut Work) => w.n))
+}

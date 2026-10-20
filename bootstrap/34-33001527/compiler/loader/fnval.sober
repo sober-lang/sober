@@ -1,0 +1,1346 @@
+package loader
+
+// 値の位置の判定の一元化（クロージャの波 工程 3 — language.md 25 節 2026-10-17・report-742 4 節・report-744）:
+// 「この位置のラムダ / 関数参照は値（クロージャ）か展開か」を loader の 1 か所で決め、check の脱糖（desugar）と build（lower — 工程 5）が
+// 同じ判定を読む（check ⊂/⊃ build の割れの予防 — η 展開の前例の形）。
+//
+// 第 1 段の値の位置 = **値化可能な named fn type の struct の欄（+ その option `Fn?`）・関数の仮引数・結果**:
+// - 値化可能 = 非ジェネリックで第一階（仮引数・結果のどこにも関数型を含まない）の named fn type。ただし仮引数は第一階の匿名の関数型でもよい
+//   （借り — (α-L0) 2026-10-17・language.md 25 節「借り」: 値の呼び出しの実引数のラムダは借りの閉包〔下の値の呼び出し〕・使い方の規則は desugar/filecheck）。
+//   `Iter[T] = func(func(T))` のような高階・ジェネリックは資格外 — 従来どおり展開（仮引数の emit を間接呼び出しの先で展開できない —
+//   report-740 W1 の構造）
+// - 第一階の匿名の関数型の欄（`less func(int, int) bool`）も値の位置（工程 5d — 匿名欄の反転）: env の鍵は関数型の構造（借りと同じ寄せ方）。
+//   高階の匿名欄は従来のまま（閉じた fnref 1 語）
+// - 値化可能な named fn type の **関数の仮引数・結果**も値の位置（工程 4 B1 の同梱 — 2026-10-17）: 実引数のラムダ・名前付き関数（η）・
+//   結果がそれの関数の return のラムダ。check の脱糖はその仮引数だけが展開の理由の関数を Def にする（ValFOnly）・build は工程 5 まで展開のまま。
+//   Iter のような資格外（高階・ジェネリック）の仮引数は従来どおり展開
+//
+// このパスがやること（finish — panicLabels の後・nodeRules の前）:
+// 1. η 展開: 値の位置の欄に置いた名前付き関数をラムダに写す（eta.sober の形 — 持ち上げの入口をラムダ 1 つにする）。
+//    写せない形は diag.FnArg（1 = mut 仮引数・2 = 仮引数の数が型と違う）
+// 2. 捕捉の走査: 値の位置のラムダごとに、外側の束縛の使用（= 捕捉）を最初に使った順で数え、Program の表（cap_*）で desugar へ渡す。
+//    値になれない形は diag.FnCap（1 = mut の捕捉・2 = 非局所 return・3 = `?`・4 = ラムダを越える break / continue）
+// 限界（第 1 段 — report-745）: 値の位置のラムダの中の値の位置のラムダ（入れ子）は、外のラムダの束縛を外側スコープとして見ない
+// （捕捉に数えず desugar の既存の拒否に落ちる — 誤受理はない）。switch パターンの束縛は KPType / KFieldPat の分だけ見る
+
+import "std/builder"
+import "std/table"
+import "std/iter"
+import "ast"
+import "diag"
+
+// FnVals は fnValAll の結果: η 展開後の木と、値の位置のラムダの捕捉の表（ラムダは [ファイル, 節] で引く — 捕捉 0 本でも
+// 値の位置の印として載る）。names は [lo, hi) の切り出し
+type FnVals struct {
+    trees []ast.Tree
+    cap_file []int
+    cap_node []int
+    cap_lo []int
+    cap_hi []int
+    cap_names []string
+    cap_brw []int
+    // 展開待ちの捕捉（language.md 25 節 (α-L0) の「囲む関数の仮引数を呼ぶ」— report-833〜836）: 1 本の列に詰める（欄を増やすと受ける関数の
+    // compile が重くなる）— [名前の数 N, 名前ごとの的の番号（-1 = 普通の捕捉）× N, 行の数 R, 行ごとの流れの印 × R（1 = 的の仮引数へ流れる
+    // 実引数のラムダの行 — 持ち上げの時に捕捉を平たく積む元）, 的の数 Q, 流れる行の lo × Q, hi × Q, 流れる行…（推移 — 転送を含む）]
+    cap_pend []int
+}
+
+// ProgCx は Program から Cx を組み直す（desugar が loader の判定 — FnValDecl — を読むための口。判定の一元化）
+func ProgCx(p Program) Cx {
+    return Cx{p.trees, p.file_pkg, p.pkg_path, p.pkg_lo, p.pkg_hi, p.imp_pkg, p.imp_ref, p.imp_path, tyTab(p.trees, p.file_pkg)}
+}
+
+// tyTab は全ファイルの型宣言の索引を組む（typeDeclAt が呼び出しの実引数・仮引数・欄ごとに引く — 以前は package の型宣言を毎回総なめにし、
+// 見つからない組み込みの名前〔int / string …〕で歩き切っていた: 自己 build の loader 4.3 → 6.2 G の主犯・report-780）。
+// 形は 1 本の列（Cx の欄 1 語 — 欄を struct にすると Cx を受ける全関数の compile が重くなる・report-781）:
+// [mask, 鎖の頭 × (mask + 1), 宣言ごとに 4 語 = package・ファイル・節・鎖の次]。鎖は (ファイル, 宣言の並び) の昇順 = 線形に探したときに最初に当たる宣言が先頭
+func tyTab(ts []ast.Tree, file_pkg []int) []int {
+    mut ent := builder.Builder[int]{}
+    for f <- iter.Range(0, len(ts)) {
+        t := ts[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            builder.Push(mut ent, file_pkg[f])
+            builder.Push(mut ent, f)
+            builder.Push(mut ent, ast.ListAt(t, tys, k))
+            builder.Push(mut ent, -1)
+        }
+    }
+    es := builder.Build(mut ent)
+    n := len(es) / 4
+    mut mask := 1023
+    while mask < n * 2 {
+        mask = mask * 2 + 1
+    }
+    mut out := mut []int{}
+    out = append(out, mask)
+    for i <- iter.Range(0, mask + 1) {
+        out = append(out, -1)
+    }
+    for i <- iter.Range(0, len(es)) {
+        out = append(out, es[i])
+    }
+    // 後ろから積む — 鎖の先頭が並びの最初の宣言になる
+    eb := mask + 2
+    mut i := n - 1
+    while i >= 0 {
+        t := ts[es[4 * i + 1]]
+        b := 1 + dataHash(t, t.nodes[es[4 * i + 2]].a, mask)
+        out[eb + 4 * i + 3] = out[b]
+        out[b] = i
+        i -= 1
+    }
+    return freeze(out)
+}
+
+// typeDeclAt はファイル f から見た型の名前 n（`ref.X` か `X`）の型宣言の (ファイル, 節)（見つからなければ (-1, -1)）
+func typeDeclAt(cx Cx, f int, n string) (int, int) {
+    pk, base := idResolve(cx, f, n)
+    if pk < 0 {
+        return 0 - 1, 0 - 1
+    }
+    wb := bytes(base)
+    mask := cx.tys[0]
+    mut hb := 0
+    for i <- iter.Range(0, len(wb)) {
+        hb = (hb * 31 + int(wb[i])) & mask
+    }
+    eb := mask + 2
+    mut h := cx.tys[1 + hb]
+    while h >= 0 {
+        e := eb + 4 * h
+        if cx.tys[e] == pk {
+            t := cx.trees[cx.tys[e + 1]]
+            if StrIs(t, t.nodes[cx.tys[e + 2]].a, base) {
+                return cx.tys[e + 1], cx.tys[e + 2]
+            }
+        }
+        h = cx.tys[e + 3]
+    }
+    return 0 - 1, 0 - 1
+}
+
+// fnValFirstOrder は型式 te（ファイル df の木）が関数型を含まないか（TOpt / TSlice / TMap / TGeneric / TTuple の中も見る — 保守的）
+func fnValFirstOrder(cx Cx, df int, te int) bool {
+    t := cx.trees[df]
+    x := t.nodes[te]
+    switch x.kind {
+    case ast.TFunc: return false
+    case ast.TName: return !namedFunc(cx, df, Name(t, x.a))
+    case ast.TOpt: return fnValFirstOrder(cx, df, x.a)
+    case ast.TSlice: return fnValFirstOrder(cx, df, x.a)
+    case ast.TArray: return fnValFirstOrder(cx, df, x.b)
+    case ast.TMap: return fnValFirstOrder(cx, df, x.a) && fnValFirstOrder(cx, df, x.b)
+    case ast.TGeneric | ast.TTuple:
+        l := if x.kind == ast.TGeneric { x.b } else { x.a }
+        mut i := 0
+        while i < ast.ListLen(t, l) {
+            if !fnValFirstOrder(cx, df, ast.ListAt(t, l, i)) {
+                return false
+            }
+            i += 1
+        }
+        return true
+    default: return true
+    }
+}
+
+// FnValDecl は型宣言（ファイル df の節 td）が値化可能な named fn type か（クロージャの波 第 1 段 — 非ジェネリック・第一階）。
+// check の脱糖と build の lower が同じ判定を読む
+func FnValDecl(cx Cx, df int, td int) bool {
+    t := cx.trees[df]
+    d := t.nodes[td]
+    if d.kind != ast.KTypeDecl || ast.ListLen(t, d.b) > 0 {
+        return false
+    }
+    b := t.nodes[d.c]
+    if b.kind != ast.BFunc {
+        return false
+    }
+    for i <- iter.Range(0, ast.ListLen(t, b.a)) {
+        pe := ast.ListAt(t, b.a, i)
+        if !fnValFirstOrder(cx, df, pe) && !fnValBorrowTE(cx, df, pe) {
+            return false
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, b.b)) {
+        if !fnValFirstOrder(cx, df, ast.ListAt(t, b.b, i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// fnValBorrowTE は仮引数の型式 te が借りの関数型か（(α-L0) — 第一階の匿名の関数型 `func(…) …`・深さ 1: 仮引数・結果に関数型を含まない）
+func fnValBorrowTE(cx Cx, df int, te int) bool {
+    t := cx.trees[df]
+    x := t.nodes[te]
+    if x.kind != ast.TFunc {
+        return false
+    }
+    for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+        if !fnValFirstOrder(cx, df, ast.ListAt(t, x.a, i)) {
+            return false
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, x.b)) {
+        if !fnValFirstOrder(cx, df, ast.ListAt(t, x.b, i)) {
+            return false
+        }
+    }
+    return true
+}
+
+// fnValFieldTy は struct の欄の型式 fieldTe（宣言のファイル df）が値の位置（値化可能な named fn type かその option）なら
+// その named fn type の宣言の (ファイル, 節)。でなければ (-1, -1)
+func fnValFieldTy(cx Cx, df int, fieldTe int) (int, int) {
+    t := cx.trees[df]
+    mut te := fieldTe
+    if t.nodes[te].kind == ast.TOpt {
+        te = t.nodes[te].a
+    }
+    if t.nodes[te].kind != ast.TName {
+        return 0 - 1, 0 - 1
+    }
+    tf, tn := typeDeclAt(cx, df, Name(t, t.nodes[te].a))
+    if tf < 0 || !FnValDecl(cx, tf, tn) {
+        return 0 - 1, 0 - 1
+    }
+    return tf, tn
+}
+
+// fvHits は composite 節 n（ファイル f の木 t）の elems のうち値の位置の欄のもの: [elem 節, 型宣言ファイル, 型宣言節] の 3 語ずつ
+// （匿名の関数型の欄は [elem 節, struct の宣言のファイル, -1 - 欄の型式の節]）
+// （elem 節の昇順 — elems の並び順）。struct でない composite・解決できない形は空
+func fvHits(cx Cx, f int, t ast.Tree, n int) []int {
+    x := t.nodes[n]
+    name, nok := NameOk(t, x.a)
+    if !nok {
+        return []int{}
+    }
+    sf, sn := typeDeclAt(cx, f, name)
+    if sf < 0 {
+        return []int{}
+    }
+    st := cx.trees[sf]
+    body := st.nodes[sn].c
+    if st.nodes[body].kind != ast.BStruct {
+        return []int{}
+    }
+    fs := st.nodes[body].a
+    nf := ast.ListLen(st, fs)
+    elems := x.b
+    ne := ast.ListLen(t, elems)
+    mut out := builder.Builder[int]{}
+    mut j := 0
+    while j < ne {
+        el := ast.ListAt(t, elems, j)
+        key := t.nodes[el].a
+        mut fi := 0 - 1
+        if key < 0 {
+            fi = if ne == nf { j } else { 0 - 1 }
+        } else {
+            mut q := 0
+            while q < nf {
+                if dataEq(st, st.nodes[ast.ListAt(st, fs, q)].a, t, key) {
+                    fi = q
+                    q = nf
+                }
+                q += 1
+            }
+        }
+        if fi >= 0 {
+            fte := st.nodes[ast.ListAt(st, fs, fi)].b
+            tf, tn := fnValFieldTy(cx, sf, fte)
+            if tf >= 0 {
+                builder.Push(mut out, el)
+                builder.Push(mut out, tf)
+                builder.Push(mut out, tn)
+            } else if fnValBorrowTE(cx, sf, fte) {
+                // 匿名の関数型の欄（第一階 — 工程 5d）: 型宣言の節の代わりに -1 - 型式の節
+                builder.Push(mut out, el)
+                builder.Push(mut out, sf)
+                builder.Push(mut out, 0 - 1 - fte)
+            }
+        }
+        j += 1
+    }
+    return builder.Build(mut out)
+}
+
+// FnValAnonTE は struct の欄の型式 te（ファイル f の木）が値の位置の匿名の関数型か（第一階の `func(…) …` — 工程 5d。desugar / lower の口）
+func FnValAnonTE(cx Cx, f int, te int) bool {
+    return fnValBorrowTE(cx, f, te)
+}
+
+// FnValAnonFields は全ファイルの struct の欄のうち値の位置の匿名の関数型の欄の型式: [ファイル, 型式の節] の 2 語ずつ（desugar の口 —
+// 欄の型の読みを閉包の型にする印）
+func FnValAnonFields(cx Cx) []int {
+    mut out := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            body := t.nodes[t.nodes[ast.ListAt(t, tys, k)].c]
+            if body.kind == ast.BStruct {
+                for q <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    te := t.nodes[ast.ListAt(t, body.a, q)].b
+                    if te >= 0 && FnValAnonTE(cx, f, te) {
+                        builder.Push(mut out, f)
+                        builder.Push(mut out, te)
+                    }
+                }
+            }
+        }
+    }
+    return builder.Build(mut out)
+}
+
+// FnValTE は型式 te（ファイル f の木）が値の位置の型（値化可能な named fn type かその option）か（desugar の口）
+func FnValTE(cx Cx, f int, te int) bool {
+    tf, _ := fnValFieldTy(cx, f, te)
+    return tf >= 0
+}
+
+// ValFOnly は関数宣言（ファイル f の節 fnode）が「値の位置の型の仮引数だけが展開の理由」の関数か: mut の仮引数なし・関数型の仮引数
+// （匿名・名前付き）を 1 つ以上持ち、どれも値化可能な named fn type（`F` の形）。check の脱糖はこれを展開せず Def にする（工程 4 B1 の
+// 同梱 — named fn type の仮引数の昇格。build は工程 5 まで展開のまま）
+func ValFOnly(cx Cx, f int, fnode int) bool {
+    t := cx.trees[f]
+    if cx.pkg_path[cx.file_pkg[f]] == "std/par" {
+        return false
+    }
+    ps := t.nodes[fnode].c
+    mut any := false
+    mut i := 0
+    while i < ast.ListLen(t, ps) {
+        prm := t.nodes[ast.ListAt(t, ps, i)]
+        if ast.ParamIsMut(prm) {
+            return false
+        }
+        ty := t.nodes[prm.b]
+        if ty.kind == ast.TFunc || (ty.kind == ast.TName || ty.kind == ast.TGeneric) && namedFunc(cx, f, Name(t, ty.a)) {
+            if ty.kind != ast.TName || !FnValTE(cx, f, prm.b) {
+                return false
+            }
+            any = true
+        }
+        i += 1
+    }
+    return any
+}
+
+// callHits は呼び出し節 n（ファイル f の木 t）の実引数のうち、呼び先（名前付き関数）の仮引数の型が値の位置（値化可能な named fn type
+// かその option）のもの: [実引数の節, 型宣言ファイル, 型宣言節] の 3 語ずつ（実引数の順。工程 4 B1 の同梱 — named fn type の仮引数の昇格）
+func callHits(cx Cx, ft FnTab, f int, t ast.Tree, n int) []int {
+    gi := calleeFn(cx, ft, f, t.nodes[n].a, 0)
+    if gi < 0 || (ft.flags[gi] & FN_VALP) == 0 {
+        return []int{}
+    }
+    gt := cx.trees[ft.file[gi]]
+    gps := gt.nodes[ft.node[gi]].c
+    args := t.nodes[n].b
+    na := ast.ListLen(t, args)
+    if na != ast.ListLen(gt, gps) {
+        return []int{}
+    }
+    mut out := builder.Builder[int]{}
+    mut i := 0
+    while i < na {
+        prm := gt.nodes[ast.ListAt(gt, gps, i)]
+        if !ast.ParamIsMut(prm) {
+            tf, tn := fnValFieldTy(cx, ft.file[gi], prm.b)
+            if tf >= 0 {
+                builder.Push(mut out, ast.ListAt(t, args, i))
+                builder.Push(mut out, tf)
+                builder.Push(mut out, tn)
+            }
+        }
+        i += 1
+    }
+    return builder.Build(mut out)
+}
+
+// RetFnVal は関数宣言 fd（ファイル f の木）の結果が値の位置（結果 1 つで値化可能な named fn type かその option）か
+func RetFnVal(cx Cx, f int, fd ast.Node) bool {
+    t := cx.trees[f]
+    if fd.d < 0 || ast.ListLen(t, fd.d) != 1 {
+        return false
+    }
+    tf, _ := fnValFieldTy(cx, f, ast.ListAt(t, fd.d, 0))
+    return tf >= 0
+}
+
+// ── η 展開（値の位置の欄に置いた名前付き関数 → ラムダ。eta.sober の形） ──
+
+// fnValEtaScan は composite 節 i の値の位置の欄のうち、名前付き関数を置いたものを hits に [elem 節, 仮引数の数] の 2 語ずつ積む
+// （写せない形は kind + 字句 × 4 — eta.sober と同じ符号）
+func fnValEtaScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
+    t := cx.trees[f]
+    hs := fvHits(cx, f, t, i)
+    mut h := 0
+    while h < len(hs) {
+        el := hs[h]
+        v := t.nodes[el].b
+        vk := t.nodes[v].kind
+        gi := if vk == ast.EIdent || vk == ast.ESelector { calleeFn(cx, ft, f, v, 0) } else { 0 - 1 }
+        if gi >= 0 {
+            nt := cx.trees[hs[h + 1]]
+            want := if hs[h + 2] < 0 { ast.ListLen(nt, nt.nodes[0 - 1 - hs[h + 2]].a) } else { ast.ListLen(nt, nt.nodes[nt.nodes[hs[h + 2]].c].a) }
+            gt := cx.trees[ft.file[gi]]
+            gps := gt.nodes[ft.node[gi]].c
+            ng := ast.ListLen(gt, gps)
+            mut q := 0
+            while q < ng {
+                if ast.ParamIsMut(gt.nodes[ast.ListAt(gt, gps, q)]) {
+                    return 1 + t.nodes[v].tok * 4
+                }
+                q += 1
+            }
+            if ng != want {
+                return 2 + t.nodes[v].tok * 4
+            }
+            builder.Push(mut hits, el)
+            builder.Push(mut hits, want)
+        }
+        h += 3
+    }
+    return 0
+}
+
+// fnValEtaCallScan は呼び出し節 i の値の位置の実引数のうち、名前付き関数を置いたものを hits に [実引数の節, 仮引数の数] の 2 語ずつ積む
+// （写せない形は kind + 字句 × 4 — fnValEtaScan と同じ符号）
+func fnValEtaCallScan(cx Cx, ft FnTab, f int, i int, hits mut builder.Builder[int]) int {
+    t := cx.trees[f]
+    hs := callHits(cx, ft, f, t, i)
+    mut h := 0
+    while h < len(hs) {
+        v := hs[h]
+        vk := t.nodes[v].kind
+        gi := if vk == ast.EIdent || vk == ast.ESelector { calleeFn(cx, ft, f, v, 0) } else { 0 - 1 }
+        if gi >= 0 {
+            nt := cx.trees[hs[h + 1]]
+            want := if hs[h + 2] < 0 { ast.ListLen(nt, nt.nodes[0 - 1 - hs[h + 2]].a) } else { ast.ListLen(nt, nt.nodes[nt.nodes[hs[h + 2]].c].a) }
+            gt := cx.trees[ft.file[gi]]
+            gps := gt.nodes[ft.node[gi]].c
+            ng := ast.ListLen(gt, gps)
+            mut q := 0
+            while q < ng {
+                if ast.ParamIsMut(gt.nodes[ast.ListAt(gt, gps, q)]) {
+                    return 1 + t.nodes[v].tok * 4
+                }
+                q += 1
+            }
+            if ng != want {
+                return 2 + t.nodes[v].tok * 4
+            }
+            builder.Push(mut hits, v)
+            builder.Push(mut hits, want)
+        }
+        h += 3
+    }
+    return 0
+}
+
+// fnValEtaArgRewrite は hits（[実引数の節, 仮引数の数]）の実引数を `($f<節>_0, …) => F($f<節>_0, …)` に写した木（実引数の節をその場で
+// ラムダに差し替える — 元の関数参照は新しい節へ写す）
+func fnValEtaArgRewrite(t ast.Tree, hs []int) ast.Tree {
+    mut ns := mut []ast.Node{}
+    for x <- t.nodes {
+        ns = append(ns, x)
+    }
+    mut db := builder.Builder[int]{}
+    for w <- t.data {
+        builder.Push(mut db, w)
+    }
+    mut h := 0
+    while h < len(hs) {
+        v := hs[h]
+        np := hs[h + 1]
+        tok := ns[v].tok
+        fref := len(ns)
+        ns = append(ns, ns[v])
+        mut lps := mut []int{}
+        mut cas := mut []int{}
+        mut q := 0
+        while q < np {
+            nm := ast.PutLit(mut db, "$f${v}_${q}")
+            lps = append(lps, len(ns))
+            ns = append(ns, ast.Node{ast.KLParam, tok, nm, -1, 0, 0, 0, 0})
+            cas = append(cas, len(ns))
+            ns = append(ns, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+            q += 1
+        }
+        call := len(ns)
+        ns = append(ns, ast.Node{ast.ECall, tok, fref, ast.PutList(mut db, freeze(cas)), 0, 0, 0, 0})
+        ns[v] = ast.Node{ast.ELambda, tok, ast.PutList(mut db, freeze(lps)), call, 0, 0, 0, 0}
+        h += 2
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+// fnValEtaRewrite は hits（[elem 節, 仮引数の数]）の欄の値を `($f<節>_0, …) => F($f<節>_0, …)` に写した木
+func fnValEtaRewrite(t ast.Tree, hs []int) ast.Tree {
+    mut ns := mut []ast.Node{}
+    for x <- t.nodes {
+        ns = append(ns, x)
+    }
+    mut db := builder.Builder[int]{}
+    for w <- t.data {
+        builder.Push(mut db, w)
+    }
+    mut h := 0
+    while h < len(hs) {
+        el := hs[h]
+        np := hs[h + 1]
+        v := ns[el].b
+        tok := ns[v].tok
+        mut lps := mut []int{}
+        mut cas := mut []int{}
+        mut q := 0
+        while q < np {
+            nm := ast.PutLit(mut db, "$f${el}_${q}")
+            lps = append(lps, len(ns))
+            ns = append(ns, ast.Node{ast.KLParam, tok, nm, -1, 0, 0, 0, 0})
+            cas = append(cas, len(ns))
+            ns = append(ns, ast.Node{ast.EIdent, tok, nm, 0, 0, 0, 0, 0})
+            q += 1
+        }
+        call := len(ns)
+        ns = append(ns, ast.Node{ast.ECall, tok, v, ast.PutList(mut db, freeze(cas)), 0, 0, 0, 0})
+        lam := len(ns)
+        ns = append(ns, ast.Node{ast.ELambda, tok, ast.PutList(mut db, freeze(lps)), call, 0, 0, 0, 0})
+        e := ns[el]
+        ns[el] = ast.Node{e.kind, e.tok, e.a, lam, e.c, e.d, e.e, e.f}
+        h += 2
+    }
+    return ast.Tree{freeze(ns), builder.Build(mut db), t.file}
+}
+
+@errors(diag.FnArg)
+func fnValEtaAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
+    mut out := mut []ast.Tree{}
+    mut f := 0
+    while f < len(cx.trees) {
+        t := cx.trees[f]
+        mut hits := builder.Builder[int]{}
+        mut chits := builder.Builder[int]{}
+        mut bad := 0
+        mut i := 0
+        while i < len(t.nodes) {
+            if t.nodes[i].kind == ast.EComposite && bad == 0 {
+                bad = fnValEtaScan(cx, ft, f, i, mut hits)
+            }
+            if t.nodes[i].kind == ast.ECall && bad == 0 {
+                bad = fnValEtaCallScan(cx, ft, f, i, mut chits)
+            }
+            i += 1
+        }
+        if bad != 0 {
+            return []ast.Tree{}, diag.FnArg{at: diag.Pos{file: f, tok: bad / 4}, kind: bad % 4}
+        }
+        hs := builder.Build(mut hits)
+        t1 := if len(hs) == 0 { t } else { fnValEtaRewrite(t, hs) }
+        chs := builder.Build(mut chits)
+        out = append(out, if len(chs) == 0 { t1 } else { fnValEtaArgRewrite(t1, chs) })
+        f += 1
+    }
+    return freeze(out), nil
+}
+
+// ── 捕捉の走査 ──
+
+// FvW は走査の状態（1 つの mut にまとめる — 見えている束縛のスタック・ラムダごとの捕捉の一時列・入れ子の積み・結果の表）
+type FvW struct {
+    f int
+    // 見えている束縛（sp が頂上 — pop は sp を戻すだけ）
+    sc table.Table[string]
+    scm table.Table[bool]
+    // 束縛が値になりうるか（局所の束縛・値化可能な named fn type の仮引数 — 呼び出しの callee なら値の呼び出し。関数の仮引数・ラムダの仮引数は false）
+    scv table.Table[bool]
+    sp int
+    // いま数えているラムダの捕捉（最初に使った順・重複なし）
+    tmp table.Table[string]
+    tn int
+    // 値の位置のラムダの中で見つけた入れ子の値の位置のラムダ（スコープを動かさず後で数える）
+    pend table.Table[int]
+    pmask table.Table[int]
+    pn int
+    // 結果の表
+    cfile builder.Builder[int]
+    cnode builder.Builder[int]
+    clo builder.Builder[int]
+    chi builder.Builder[int]
+    cnames builder.Builder[string]
+    cbrw builder.Builder[int]
+    // 最初の拒否（kind + 字句 × 8。0 = なし）
+    bad int
+    // いまの関数の結果が値の位置か（return のラムダを値として数える — RetFnVal）
+    retF bool
+    // いまの関数の結果の named fn type の借りの仮引数のビット（return のラムダ）
+    retMask int
+    // いま数えているラムダの借りの仮引数の名前（[0, bnn)）と、借りの値を展開の関数型の仮引数へ渡す実引数の η の的（このファイル —
+    // [呼び出しの節, 実引数の位置, 仮引数の数] の 3 語ずつ・etaRewrite が写す）
+    bn table.Table[string]
+    bnn int
+    eh builder.Builder[int]
+    // 展開待ちの捕捉: 束縛ごとの「囲む関数の匿名の関数型の仮引数の位置」（-1 = それ以外）・捕捉ごとの的の番号・いまの関数の節
+    scp table.Table[int]
+    tmpk table.Table[int]
+    cpk builder.Builder[int]
+    cflow builder.Builder[int]
+    nrow int
+    fdn int
+    // いまの関数の匿名の関数型の仮引数の数（0 なら展開待ちの捕捉・転送を見ない — 名前引きの値札を払わない）
+    npf int
+    // 的の表（[ファイル, 関数の節, 仮引数の位置] × qc）・転送の辺（[呼び先のファイル, 節, 位置, 呼び手のファイル, 節, 位置] — 1 回目の走査で積む）・
+    // 流れる行（[的, 行]）・2 回目の走査（flow — 的 [qlo, qhi) へ流れる実引数のラムダを数える）
+    qf table.Table[int]
+    qd table.Table[int]
+    qi table.Table[int]
+    qc int
+    edges builder.Builder[int]
+    frow builder.Builder[int]
+    flow bool
+    qlo int
+    qhi int
+}
+
+func fvPush(w mut FvW, name string, m bool) {
+    fvPushV(mut w, name, m, true)
+}
+
+func fvPushV(w mut FvW, name string, m bool, v bool) {
+    if w.sp < table.Len(mut w.sc) {
+        table.Set(mut w.sc, w.sp, name)
+        table.Set(mut w.scm, w.sp, m)
+        table.Set(mut w.scv, w.sp, v)
+        table.Set(mut w.scp, w.sp, 0 - 1)
+    } else {
+        table.Push(mut w.sc, name)
+        table.Push(mut w.scm, m)
+        table.Push(mut w.scv, v)
+        table.Push(mut w.scp, 0 - 1)
+    }
+    w.sp = w.sp + 1
+}
+
+// fvValueCallee は呼び出しの callee（節 c）が値の呼び出しか（構文の判定 — 名前付き関数でない・局所の束縛か値化可能な仮引数の名前か欄の読み。
+// 関数の匿名の関数型の仮引数・ラムダの仮引数の呼び出しは展開なので数えない）。実引数のラムダは借りの閉包（(α-L0)）
+func fvValueCallee(w mut FvW, cx Cx, ft FnTab, c int) bool {
+    t := cx.trees[w.f]
+    x := t.nodes[c]
+    if calleeFn(cx, ft, w.f, c, 0) >= 0 {
+        return false
+    }
+    if x.kind == ast.EIdent {
+        b := fvLook(mut w, t, x.a)
+        return b >= 0 && table.Get(mut w.scv, b)
+    }
+    if x.kind == ast.ESelector {
+        if t.nodes[x.a].kind == ast.EIdent && fvLook(mut w, t, t.nodes[x.a].a) < 0 {
+            return false
+        }
+        return true
+    }
+    return false
+}
+
+// fvLook は名前（木 t のデータ文字列 s）が見えている束縛にあるか（頂上から — 無ければ -1）
+func fvLook(w mut FvW, t ast.Tree, s int) int {
+    mut i := w.sp - 1
+    while i >= 0 {
+        if StrIs(t, s, table.Get(mut w.sc, i)) {
+            return i
+        }
+        i -= 1
+    }
+    return 0 - 1
+}
+
+// fvCapture は捕捉を tmp に積む（最初に使った順・重複なし）。k = 展開待ちの的の番号（-1 = 普通の捕捉）— 同じ名前を呼ぶ以外にも使う形は
+// 値になれない（展開待ちの仮引数は呼ぶだけ — kind 5）
+func fvCapture(w mut FvW, name string, k int, tok int) {
+    mut i := 0
+    while i < w.tn {
+        if table.Get(mut w.tmp, i) == name {
+            if table.Get(mut w.tmpk, i) != k {
+                w.bad = 5 + tok * 8
+            }
+            return
+        }
+        i += 1
+    }
+    if w.tn < table.Len(mut w.tmp) {
+        table.Set(mut w.tmp, w.tn, name)
+        table.Set(mut w.tmpk, w.tn, k)
+    } else {
+        table.Push(mut w.tmp, name)
+        table.Push(mut w.tmpk, k)
+    }
+    w.tn = w.tn + 1
+}
+
+// fvQ は展開待ちの的（ファイル f の関数の節 fd の仮引数の位置 i）の番号（無ければ足す）
+func fvQ(w mut FvW, f int, fd int, i int) int {
+    q := fvQFind(mut w, f, fd, i)
+    if q >= 0 {
+        return q
+    }
+    table.Push(mut w.qf, f)
+    table.Push(mut w.qd, fd)
+    table.Push(mut w.qi, i)
+    w.qc = w.qc + 1
+    return w.qc - 1
+}
+
+func fvQFind(w mut FvW, f int, fd int, i int) int {
+    for q <- iter.Range(0, w.qc) {
+        if table.Get(mut w.qf, q) == f && table.Get(mut w.qd, q) == fd && table.Get(mut w.qi, q) == i {
+            return q
+        }
+    }
+    return 0 - 1
+}
+
+// fvPendCallee は callee の節 c が、いまの関数の匿名の関数型の仮引数の名前なら仮引数の位置（でなければ -1）
+func fvPendCallee(w mut FvW, t ast.Tree, c int) int {
+    if t.nodes[c].kind != ast.EIdent {
+        return 0 - 1
+    }
+    b := fvLook(mut w, t, t.nodes[c].a)
+    return if b >= 0 { table.Get(mut w.scp, b) } else { 0 - 1 }
+}
+
+// fvCallFlow は展開の呼び出し n（値の位置のラムダの外）の実引数を見る: 囲む関数の展開待ちになりうる仮引数をそのまま渡す形は転送の辺に積み
+// （1 回目）、的の仮引数へ渡すラムダは流れる行として数える（2 回目 — 実引数のラムダの捕捉の資格は値の位置のラムダと同じ検査）
+func fvCallFlow(w mut FvW, cx Cx, ft FnTab, n int) {
+    if !w.flow && w.npf == 0 {
+        return
+    }
+    t := cx.trees[w.f]
+    x := t.nodes[n]
+    mut cand := false
+    for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+        a := ast.ListAt(t, x.b, j)
+        if a >= 0 {
+            k := t.nodes[a].kind
+            cand = cand || (if w.flow { k == ast.ELambda } else { k == ast.EIdent && fvPendCallee(mut w, t, a) >= 0 })
+        }
+    }
+    if !cand {
+        return
+    }
+    fi := calleeFn(cx, ft, w.f, x.a, 0)
+    if fi < 0 {
+        return
+    }
+    for j <- iter.Range(0, ast.ListLen(t, x.b)) {
+        a := ast.ListAt(t, x.b, j)
+        if a >= 0 && !w.flow && t.nodes[a].kind == ast.EIdent && fvPendCallee(mut w, t, a) >= 0 {
+            builder.Push(mut w.edges, ft.file[fi])
+            builder.Push(mut w.edges, ft.node[fi])
+            builder.Push(mut w.edges, j)
+            builder.Push(mut w.edges, w.f)
+            builder.Push(mut w.edges, w.fdn)
+            builder.Push(mut w.edges, fvPendCallee(mut w, t, a))
+        }
+        if a >= 0 && w.flow && t.nodes[a].kind == ast.ELambda {
+            q := fvQFind(mut w, ft.file[fi], ft.node[fi], j)
+            if q >= w.qlo && q < w.qhi {
+                r := w.nrow
+                fvOneLam(mut w, cx, ft, a, 0, 1)
+                if w.bad == 0 {
+                    builder.Push(mut w.frow, q)
+                    builder.Push(mut w.frow, r)
+                }
+            }
+        }
+    }
+}
+
+// fvGen は for の生成子 KGen（src を見てから names を積む）
+func fvGen(w mut FvW, cx Cx, ft FnTab, g int, vp bool, ld int) {
+    t := cx.trees[w.f]
+    x := t.nodes[g]
+    fvN(mut w, cx, ft, x.b, vp, ld)
+    if !vp {
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            fvPush(mut w, Name(t, ast.ListAt(t, x.a, i)), false)
+        }
+    }
+    fvL(mut w, cx, ft, x.c, vp, ld)
+}
+
+func fvL(w mut FvW, cx Cx, ft FnTab, l int, vp bool, ld int) {
+    t := cx.trees[w.f]
+    mut i := 0
+    while w.bad == 0 && i < ast.ListLen(t, l) {
+        x := ast.ListAt(t, l, i)
+        if x >= 0 {
+            fvN(mut w, cx, ft, x, vp, ld)
+        }
+        i += 1
+    }
+}
+
+// fvN は節の走査。vp = 値の位置のラムダの中（捕捉を数える・値になれない形を拒否する）、ld = ラムダ（または関数）の中の loop の深さ
+func fvN(w mut FvW, cx Cx, ft FnTab, n int, vp bool, ld int) {
+    if w.bad != 0 || n < 0 {
+        return
+    }
+    t := cx.trees[w.f]
+    x := t.nodes[n]
+    switch x.kind {
+    case ast.EIdent:
+        if vp {
+            b := fvLook(mut w, t, x.a)
+            if b >= 0 {
+                if table.Get(mut w.scm, b) {
+                    w.bad = 1 + x.tok * 8
+                } else {
+                    fvCapture(mut w, Name(t, x.a), 0 - 1, x.tok)
+                }
+            }
+        }
+    case ast.EMutArg:
+        if vp && fvLook(mut w, t, x.a) >= 0 {
+            w.bad = 1 + x.tok * 8
+        }
+    case ast.SRet:
+        if vp {
+            w.bad = 2 + x.tok * 8
+        } else if w.retF && ast.ListLen(t, x.a) == 1 && t.nodes[ast.ListAt(t, x.a, 0)].kind == ast.ELambda {
+            fvValueLam(mut w, cx, ft, ast.ListAt(t, x.a, 0), w.retMask)
+        } else {
+            fvL(mut w, cx, ft, x.a, vp, ld)
+        }
+    case ast.ETry:
+        if vp {
+            w.bad = 3 + x.tok * 8
+        } else {
+            fvN(mut w, cx, ft, x.a, vp, ld)
+            fvN(mut w, cx, ft, x.b, vp, ld)
+        }
+    case ast.SBreak | ast.SContinue:
+        if vp && ld == 0 {
+            w.bad = 4 + x.tok * 8
+        }
+    case ast.EComposite:
+        hs := fvHits(cx, w.f, t, n)
+        elems := x.b
+        mut h := 0
+        mut j := 0
+        while j < ast.ListLen(t, elems) {
+            el := ast.ListAt(t, elems, j)
+            v := t.nodes[el].b
+            hit := h < len(hs) && hs[h] == el
+            mask := if hit && hs[h + 2] >= 0 { fnValBrwMask(cx, hs[h + 1], hs[h + 2]) } else { 0 }
+            if hit {
+                h += 3
+            }
+            if hit && t.nodes[v].kind == ast.ELambda {
+                fvValLamAt(mut w, cx, ft, v, vp, mask)
+            } else {
+                fvN(mut w, cx, ft, v, vp, ld)
+            }
+            j += 1
+        }
+    case ast.ELambda:
+        if vp {
+            fvN(mut w, cx, ft, x.b, vp, ld)
+        } else {
+            sp0 := w.sp
+            for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                p := t.nodes[ast.ListAt(t, x.a, i)]
+                fvPushV(mut w, Name(t, p.a), p.c != 0, false)
+            }
+            fvN(mut w, cx, ft, x.b, vp, ld)
+            w.sp = sp0
+        }
+    case ast.SBind:
+        fvL(mut w, cx, ft, x.c, vp, ld)
+        if !vp {
+            // 右辺がラムダ・for 式の束縛は展開の閉包（Iter）で値でない — その名前の呼び出しは値の呼び出しに数えない
+            nv := ast.ListLen(t, x.c)
+            for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+                rk := if i < nv && ast.ListAt(t, x.c, i) >= 0 { t.nodes[ast.ListAt(t, x.c, i)].kind } else { 0 }
+                fvPushV(mut w, Name(t, ast.ListAt(t, x.a, i)), x.b != 0, rk != ast.ELambda && rk != ast.EFor)
+            }
+        }
+    case ast.SAssign:
+        fvL(mut w, cx, ft, x.a, vp, ld)
+        fvL(mut w, cx, ft, x.c, vp, ld)
+    case ast.EBlock | ast.KBlock:
+        sp0 := w.sp
+        fvL(mut w, cx, ft, x.a, vp, ld)
+        w.sp = sp0
+    case ast.EFor:
+        sp0 := w.sp
+        for i <- iter.Range(0, ast.ListLen(t, x.a)) {
+            fvGen(mut w, cx, ft, ast.ListAt(t, x.a, i), vp, ld)
+        }
+        if x.b == 0 {
+            fvN(mut w, cx, ft, x.c, vp, ld)
+        } else {
+            fvL(mut w, cx, ft, x.c, vp, ld + 1)
+        }
+        w.sp = sp0
+    case ast.SWhile:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        sp0 := w.sp
+        fvN(mut w, cx, ft, x.b, vp, ld + 1)
+        w.sp = sp0
+    case ast.EIf:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+        fvN(mut w, cx, ft, x.c, vp, ld)
+    case ast.ESwitch:
+        fvL(mut w, cx, ft, x.a, vp, ld)
+        fvL(mut w, cx, ft, x.b, vp, ld)
+        fvN(mut w, cx, ft, x.c, vp, ld)
+    case ast.KCase:
+        sp0 := w.sp
+        fvL(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+        w.sp = sp0
+    case ast.KPType:
+        if x.a >= 0 && !vp {
+            fvPush(mut w, Name(t, x.a), false)
+        }
+        fvL(mut w, cx, ft, x.c, vp, ld)
+    case ast.KFieldPat:
+        if x.b >= 0 {
+            fvN(mut w, cx, ft, x.b, vp, ld)
+        } else if !vp {
+            fvPush(mut w, Name(t, x.a), false)
+        }
+    case ast.KPConst:
+        fvL(mut w, cx, ft, x.a, vp, ld)
+    case ast.KEntry:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+    case ast.KElem:
+        fvN(mut w, cx, ft, x.b, vp, ld)
+    case ast.EBinary:
+        fvN(mut w, cx, ft, x.b, vp, ld)
+        fvN(mut w, cx, ft, x.c, vp, ld)
+    case ast.ESlice3:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+        fvN(mut w, cx, ft, x.c, vp, ld)
+    case ast.EUnary:
+        fvN(mut w, cx, ft, x.b, vp, ld)
+    case ast.EPipe:
+        if vp && w.bnn > 0 {
+            fvBrwEta(mut w, cx, ft, n)
+        }
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+        fvL(mut w, cx, ft, x.c, vp, ld)
+    case ast.EIndex:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+        fvN(mut w, cx, ft, x.b, vp, ld)
+    case ast.ECall:
+        if vp && w.bnn > 0 {
+            fvBrwEta(mut w, cx, ft, n)
+        }
+        if !vp {
+            fvCallFlow(mut w, cx, ft, n)
+        }
+        // 値の位置のラムダの中で囲む関数の匿名の関数型の仮引数を呼ぶ形は展開待ちの捕捉（持ち上げで実引数のラムダの捕捉を平たく積む）
+        pc := if vp && w.npf > 0 { fvPendCallee(mut w, t, x.a) } else { 0 - 1 }
+        if pc >= 0 {
+            fvCapture(mut w, Name(t, t.nodes[x.a].a), fvQ(mut w, w.f, w.fdn, pc), t.nodes[x.a].tok)
+        } else {
+            fvN(mut w, cx, ft, x.a, vp, ld)
+        }
+        hs := callHits(cx, ft, w.f, t, n)
+        vc := fvValueCallee(mut w, cx, ft, x.a)
+        mut h := 0
+        mut j := 0
+        while j < ast.ListLen(t, x.b) {
+            v := ast.ListAt(t, x.b, j)
+            hit := h < len(hs) && hs[h] == v
+            mask := if hit && hs[h + 2] >= 0 { fnValBrwMask(cx, hs[h + 1], hs[h + 2]) } else { 0 }
+            if hit {
+                h += 3
+            }
+            if (hit || vc) && v >= 0 && t.nodes[v].kind == ast.ELambda {
+                fvValLamAt(mut w, cx, ft, v, vp, mask)
+            } else {
+                fvN(mut w, cx, ft, v, vp, ld)
+            }
+            j += 1
+        }
+    case ast.EInterp:
+        fvL(mut w, cx, ft, x.b, vp, ld)
+    case ast.ESlicelit:
+        fvL(mut w, cx, ft, x.b, vp, ld)
+    case ast.EMaplit:
+        fvL(mut w, cx, ft, x.c, vp, ld)
+    case ast.ESelector | ast.EParen | ast.SExpr | ast.SDefer | ast.SYield:
+        fvN(mut w, cx, ft, x.a, vp, ld)
+    default: {}
+    }
+}
+
+// fvValLamAt は値の位置のラムダ v を数える（値の位置のラムダの中なら入れ子として積んで後で — fvValueLam）
+func fvValLamAt(w mut FvW, cx Cx, ft FnTab, v int, vp bool, mask int) {
+    if w.flow {
+        return
+    }
+    if vp {
+        if w.pn < table.Len(mut w.pend) {
+            table.Set(mut w.pend, w.pn, v)
+            table.Set(mut w.pmask, w.pn, mask)
+        } else {
+            table.Push(mut w.pend, v)
+            table.Push(mut w.pmask, mask)
+        }
+        w.pn = w.pn + 1
+    } else {
+        fvValueLam(mut w, cx, ft, v, mask)
+    }
+}
+
+// fvOneLam は値の位置のラムダ 1 つの捕捉を数えて表に積む（本体だけを見る — ラムダの仮引数・中の束縛は外のスコープと衝突しない
+// 〔影の禁止 — localnames〕ので、外のスコープに当たった名前だけが捕捉）
+func fvOneLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int, flow int) {
+    t := cx.trees[w.f]
+    w.tn = 0
+    w.bnn = 0
+    ps := t.nodes[lam].a
+    for i <- iter.Range(0, ast.ListLen(t, ps)) {
+        if i < 62 && (mask & (1 << i)) != 0 {
+            nm := Name(t, t.nodes[ast.ListAt(t, ps, i)].a)
+            if w.bnn < table.Len(mut w.bn) {
+                table.Set(mut w.bn, w.bnn, nm)
+            } else {
+                table.Push(mut w.bn, nm)
+            }
+            w.bnn = w.bnn + 1
+        }
+    }
+    fvN(mut w, cx, ft, t.nodes[lam].b, true, 0)
+    w.bnn = 0
+    if w.bad != 0 {
+        return
+    }
+    builder.Push(mut w.cfile, w.f)
+    builder.Push(mut w.cnode, lam)
+    builder.Push(mut w.cbrw, mask)
+    builder.Push(mut w.cflow, flow)
+    w.nrow = w.nrow + 1
+    mut names := mut []string{}
+    mut i := 0
+    while i < w.tn {
+        names = append(names, table.Get(mut w.tmp, i))
+        builder.Push(mut w.cpk, table.Get(mut w.tmpk, i))
+        i += 1
+    }
+    ns := freeze(names)
+    builder.Push(mut w.clo, 0)
+    builder.Push(mut w.chi, len(ns))
+    mut k := 0
+    while k < len(ns) {
+        builder.Push(mut w.cnames, ns[k])
+        k += 1
+    }
+}
+
+// fvValueLam は値の位置のラムダを数え、走査中に見つけた入れ子の値の位置のラムダも（同じスコープで）数える
+func fvValueLam(w mut FvW, cx Cx, ft FnTab, lam int, mask int) {
+    p0 := w.pn
+    fvOneLam(mut w, cx, ft, lam, mask, 0)
+    mut i := p0
+    while w.bad == 0 && i < w.pn {
+        fvOneLam(mut w, cx, ft, table.Get(mut w.pend, i), table.Get(mut w.pmask, i), 0)
+        i += 1
+    }
+    w.pn = p0
+}
+
+// fnValAll は η 展開 + 捕捉の走査（finish — panicLabels の後）。写せない形・値になれない形は拒否
+@errors(diag.FnArg, diag.FnCap)
+func fnValAll(cx Cx, ft FnTab) (FnVals, error?) {
+    ts, eerr := fnValEtaAll(cx, ft)
+    if eerr != nil {
+        return FnVals{}, eerr
+    }
+    cx2 := Cx{ts, cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}
+    mut w := FvW{}
+    mut ts2 := mut []ast.Tree{}
+    mut f := 0
+    while f < len(ts) {
+        t := ts[f]
+        w.eh = builder.Builder[int]{}
+        fvWalkFile(mut w, cx2, ft, f)
+        if w.bad != 0 {
+            return FnVals{}, diag.FnCap{at: diag.Pos{file: f, tok: w.bad / 8}, kind: w.bad % 8}
+        }
+        // 借りの値の転送の η（このファイルの的 — etaRewrite で写す）
+        eh := fvEhNorm(builder.Build(mut w.eh))
+        ts2 = append(ts2, if len(eh) == 0 { t } else { etaRewrite(t, eh) })
+        f += 1
+    }
+    // 展開待ちの捕捉の的があれば: 転送で的を閉じ、的の仮引数へ流れる実引数のラムダを数える（数えた中に新しい的が出れば繰り返す）。
+    // 的が無ければ何もしない（2 回目の走査は払わない）
+    es := builder.Build(mut w.edges)
+    w.flow = true
+    mut rounds := 0
+    while w.qlo < w.qc && rounds < 8 {
+        fvQClose(mut w, es)
+        w.qhi = w.qc
+        f = 0
+        while f < len(ts) {
+            fvWalkFile(mut w, cx2, ft, f)
+            if w.bad != 0 {
+                return FnVals{}, diag.FnCap{at: diag.Pos{file: f, tok: w.bad / 8}, kind: w.bad % 8}
+            }
+            f += 1
+        }
+        w.qlo = w.qhi
+        rounds += 1
+    }
+    pl, ph, pr := fvPendRows(mut w, es, builder.Build(mut w.frow))
+    // lo/hi を通しの添字に直す（fvOneLam はラムダごとの [0, n) を積んでいる — names は積んだ順なので前からの累計）
+    los := builder.Build(mut w.clo)
+    his := builder.Build(mut w.chi)
+    mut lo2 := mut []int{}
+    mut hi2 := mut []int{}
+    mut acc := 0
+    mut i := 0
+    while i < len(los) {
+        lo2 = append(lo2, acc)
+        acc += his[i]
+        hi2 = append(hi2, acc)
+        i += 1
+    }
+    return FnVals{freeze(ts2), builder.Build(mut w.cfile), builder.Build(mut w.cnode), freeze(lo2), freeze(hi2), builder.Build(mut w.cnames), builder.Build(mut w.cbrw),
+        fvPendPack(builder.Build(mut w.cpk), builder.Build(mut w.cflow), pl, ph, pr)}, nil
+}
+
+// fvPendPack は展開待ちの捕捉の表を 1 本の列に詰める（FnVals.cap_pend の形）
+func fvPendPack(pk []int, fl []int, lo []int, hi []int, rows []int) []int {
+    mut out := mut []int{}
+    out = append(out, len(pk))
+    for i <- iter.Range(0, len(pk)) {
+        out = append(out, pk[i])
+    }
+    out = append(out, len(fl))
+    for i <- iter.Range(0, len(fl)) {
+        out = append(out, fl[i])
+    }
+    out = append(out, len(lo))
+    for i <- iter.Range(0, len(lo)) {
+        out = append(out, lo[i])
+    }
+    for i <- iter.Range(0, len(hi)) {
+        out = append(out, hi[i])
+    }
+    for i <- iter.Range(0, len(rows)) {
+        out = append(out, rows[i])
+    }
+    return freeze(out)
+}
+
+// fvWalkFile はファイル f の関数と定数を歩く
+func fvWalkFile(w mut FvW, cx Cx, ft FnTab, f int) {
+    t := cx.trees[f]
+    w.f = f
+    fns := t.nodes[t.file].d
+    mut k := 0
+    while k < ast.ListLen(t, fns) {
+        w.fdn = ast.ListAt(t, fns, k)
+        fd := t.nodes[w.fdn]
+        w.sp = 0
+        w.npf = 0
+        w.retF = !w.flow && RetFnVal(cx, f, fd)
+        w.retMask = if w.retF { retBrwMask(cx, f, fd) } else { 0 }
+        for i <- iter.Range(0, ast.ListLen(t, fd.c)) {
+            p := t.nodes[ast.ListAt(t, fd.c, i)]
+            fvPushV(mut w, Name(t, p.a), ast.ParamIsMut(p), p.b >= 0 && FnValTE(cx, f, p.b))
+            if p.b >= 0 && t.nodes[p.b].kind == ast.TFunc && !ast.ParamIsMut(p) {
+                table.Set(mut w.scp, w.sp - 1, i)
+                w.npf = w.npf + 1
+            }
+        }
+        if fd.e >= 0 {
+            fvN(mut w, cx, ft, fd.e, false, 0)
+        }
+        k += 1
+    }
+    w.fdn = 0 - 1
+    w.npf = 0
+    cs := t.nodes[t.file].e
+    k = 0
+    while k < ast.ListLen(t, cs) {
+        w.sp = 0
+        w.retF = false
+        fvN(mut w, cx, ft, t.nodes[ast.ListAt(t, cs, k)].b, false, 0)
+        k += 1
+    }
+}
+
+// fvQClose は転送の辺 es で的を閉じる（呼び先の的の仮引数へ自分の仮引数をそのまま渡す関数の、その仮引数も的）
+func fvQClose(w mut FvW, es []int) {
+    mut grew := true
+    while grew {
+        grew = false
+        for e <- iter.Range(0, len(es) / 6) {
+            if fvQFind(mut w, es[e * 6], es[e * 6 + 1], es[e * 6 + 2]) >= 0 && fvQFind(mut w, es[e * 6 + 3], es[e * 6 + 4], es[e * 6 + 5]) < 0 {
+                _ = fvQ(mut w, es[e * 6 + 3], es[e * 6 + 4], es[e * 6 + 5])
+                grew = true
+            }
+        }
+    }
+}
+
+// fvPendRows は的ごとの流れる行（転送の元の的へ流れる行も含む — 推移）を [lo, hi) の列にする
+func fvPendRows(w mut FvW, es []int, fr []int) ([]int, []int, []int) {
+    mut qs := mut []int{}
+    mut rs := mut []int{}
+    for i <- iter.Range(0, len(fr) / 2) {
+        qs = append(qs, fr[i * 2])
+        rs = append(rs, fr[i * 2 + 1])
+    }
+    mut grew := true
+    while grew {
+        grew = false
+        for e <- iter.Range(0, len(es) / 6) {
+            qt := fvQFind(mut w, es[e * 6], es[e * 6 + 1], es[e * 6 + 2])
+            qf := fvQFind(mut w, es[e * 6 + 3], es[e * 6 + 4], es[e * 6 + 5])
+            if qt >= 0 && qf >= 0 {
+                for i <- iter.Range(0, len(qs)) {
+                    if qs[i] == qf {
+                        mut seen := false
+                        for j <- iter.Range(0, len(qs)) {
+                            seen = seen || qs[j] == qt && rs[j] == rs[i]
+                        }
+                        if !seen {
+                            qs = append(qs, qt)
+                            rs = append(rs, rs[i])
+                            grew = true
+                        }
+                    }
+                }
+            }
+        }
+    }
+    mut lo := mut []int{}
+    mut hi := mut []int{}
+    mut out := mut []int{}
+    for q <- iter.Range(0, w.qc) {
+        lo = append(lo, len(out))
+        for i <- iter.Range(0, len(qs)) {
+            if qs[i] == q {
+                out = append(out, rs[i])
+            }
+        }
+        hi = append(hi, len(out))
+    }
+    return freeze(lo), freeze(hi), freeze(out)
+}
+
+// fnValBrwMask は値化可能な named fn type の宣言（ファイル df の節 td）の借りの仮引数のビット（i 番目が匿名の関数型なら 1 << i — (α-L0)）
+func fnValBrwMask(cx Cx, df int, td int) int {
+    t := cx.trees[df]
+    b := t.nodes[t.nodes[td].c]
+    mut m := 0
+    mut bit := 1
+    for i <- iter.Range(0, ast.ListLen(t, b.a)) {
+        if t.nodes[ast.ListAt(t, b.a, i)].kind == ast.TFunc {
+            m += bit
+        }
+        bit *= 2
+    }
+    return m
+}
+
+// retBrwMask は関数宣言 fd（結果が値の位置）の結果の named fn type の借りの仮引数のビット
+func retBrwMask(cx Cx, f int, fd ast.Node) int {
+    tf, tn := fnValFieldTy(cx, f, ast.ListAt(cx.trees[f], fd.d, 0))
+    return if tf < 0 { 0 } else { fnValBrwMask(cx, tf, tn) }
+}
+
+// fvBrwEta は値の位置のラムダの本体の呼び出しの節 i で、借りの仮引数の名前（w.bn）を func 宣言の関数型リテラルの仮引数（展開の位置）へ
+// 渡す実引数を η の的に積む（(α-L0) の借りの値の転送 — language.md 25 節。`f(k)` → `f(($e…) => k($e…))` の展開のラムダが借りを捕捉して呼ぶ。
+// 名前付き関数の η〔eta.sober〕と同じ写し・check と build が写した後の木を読む — 以前は desugar の closureArg が脱糖の中で写していた）
+func fvBrwEta(w mut FvW, cx Cx, ft FnTab, i int) {
+    t := cx.trees[w.f]
+    x := t.nodes[i]
+    pipe := x.kind == ast.EPipe
+    args := if pipe { x.c } else { x.b }
+    na := ast.ListLen(t, args)
+    mut cand := false
+    mut holes := false
+    mut k := 0
+    while k < na {
+        a := ast.ListAt(t, args, k)
+        holes = holes || a < 0
+        cand = cand || (a >= 0 && t.nodes[a].kind == ast.EIdent && fvIsBrw(mut w, Name(t, t.nodes[a].a)))
+        k += 1
+    }
+    fi := if cand { calleeFn(cx, ft, w.f, if pipe { x.b } else { x.a }, FN_FPARAM) } else { 0 - 1 }
+    if fi < 0 {
+        return
+    }
+    dt := cx.trees[ft.file[fi]]
+    ps := dt.nodes[ft.node[fi]].c
+    off := if pipe && !holes { 1 } else { 0 }
+    k = 0
+    while k < na && k + off < ast.ListLen(dt, ps) {
+        a := ast.ListAt(t, args, k)
+        pty := dt.nodes[ast.ListAt(dt, ps, k + off)].b
+        if a >= 0 && pty >= 0 && dt.nodes[pty].kind == ast.TFunc && t.nodes[a].kind == ast.EIdent && fvIsBrw(mut w, Name(t, t.nodes[a].a)) {
+            builder.Push(mut w.eh, i)
+            builder.Push(mut w.eh, k)
+            builder.Push(mut w.eh, ast.ListLen(dt, dt.nodes[pty].a))
+        }
+        k += 1
+    }
+}
+
+// fvIsBrw は名前がいま数えているラムダの借りの仮引数か
+func fvIsBrw(w mut FvW, name string) bool {
+    for j <- iter.Range(0, w.bnn) {
+        if table.Get(mut w.bn, j) == name {
+            return true
+        }
+    }
+    return false
+}
+
+// fvEhNorm は η の的の 4 語組のうちファイル f のものを (呼び出しの節, 実引数の位置) で整列して重複を除いた 3 語組（同じ本体が 2 回歩かれうる —
+// etaRewrite は呼び出しごとに連続を要る）
+func fvEhNorm(xs []int) []int {
+    mut idx := mut []int{}
+    for i <- iter.Range(0, len(xs) / 3) {
+        idx = append(idx, i * 3)
+    }
+    n := len(idx)
+    // 挿入整列（的は少ない）
+    mut i := 1
+    while i < n {
+        mut j := i
+        while j > 0 && (xs[idx[j - 1]] > xs[idx[j]] || xs[idx[j - 1]] == xs[idx[j]] && xs[idx[j - 1] + 1] > xs[idx[j] + 1]) {
+            tmp := idx[j]
+            idx[j] = idx[j - 1]
+            idx[j - 1] = tmp
+            j -= 1
+        }
+        i += 1
+    }
+    mut out := mut []int{}
+    for q <- iter.Range(0, n) {
+        a := idx[q]
+        if q > 0 && xs[idx[q - 1]] == xs[a] && xs[idx[q - 1] + 1] == xs[a + 1] {
+            continue
+        }
+        out = append(out, xs[a])
+        out = append(out, xs[a + 1])
+        out = append(out, xs[a + 2])
+    }
+    return freeze(out)
+}

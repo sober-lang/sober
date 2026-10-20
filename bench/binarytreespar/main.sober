@@ -1,12 +1,12 @@
 package main
 
-// binary-trees の並列版（段 6 総取り — 逐次の bench/binarytrees と同じ木・同じ出力）: 深さごとに 1 つの子（par.Map — benchmarks game の
+// binary-trees の並列版（段 6 総取り — 逐次の bench/binarytrees と同じ木・同じ出力）: 深さごとに 1 つの子（task.Map — benchmarks game の
 // 並列の定番と同じ切り方）。子は自分の深さの木を iters 本、作って数えて捨てる（木ごとに one の region が捨てる — 子の間に確保の共有点なし）。
 // 素直縛り — ワーカーの数は書かない。Go の双子（go/）は深さごとに goroutine（ポインタの木と GC）
 
 import "std/iter"
 import "std/os"
-import "std/par"
+import "std/task"
 
 // bottomUp は深さ d の木を a に積み、根の番号を返す
 func bottomUp(a mut []int, d int) int {
@@ -70,7 +70,7 @@ func main() int {
         ds = append(ds, d)
         d += 2
     }
-    cs, e := par.Map(ds, (x) => depth(x, 1 << (maxDepth - x + minDepth)))
+    cs, e := task.Map(ds, (x) => depth(x, 1 << (maxDepth - x + minDepth)))
     if e != nil {
         return 1
     }

@@ -105,7 +105,7 @@ func intrinsicDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int]
 
 // parameters <- '(' (parameter_decl (',' parameter_decl)* ','?)? ')'。
 // mode 0 = 宣言（名前つき必須、KParam の列）/ 1 = 関数型（型の列 — 名前つきなら名前の数だけ型を並べる）/
-// 2 = lambda（KLParam の列 — 型だけの parameter_decl は名前として読む）
+// 2 = lambda（KLParam の列 — 型だけの parameter_decl は名前として読む・c = mut 引数の印）
 func parameters(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int, mode int) (int, int) {
     l, _, q := parametersN(mut nb, mut db, cx, p0, mode)
     return l, q
@@ -140,9 +140,9 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
         }
         mut done := false
         if len(names) > 0 {
-            // 宣言の仮引数の先頭の mut は mut 引数の印
-            pm := mode == 0 && tg(cx, q) == lexer.KwMut
-            ty, r := typeOf(mut nb, mut db, cx, q, mode == 0)
+            // 宣言・ラムダの仮引数の先頭の mut は mut 引数の印（ラムダの mut 仮引数は task.Lease / task.NewLocal の窓の位置だけ — loader が柵。region-domain-pool.md 4d 節）
+            pm := mode != 1 && tg(cx, q) == lexer.KwMut
+            ty, r := typeOf(mut nb, mut db, cx, q, mode != 1)
             if ty >= 0 {
                 mut k := 0
                 while k < len(names) {
@@ -152,7 +152,7 @@ func parametersN(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], 
                         out = append(out, ty)
                         pnames = append(pnames, name(mut db, cx, names[k]))
                     } else {
-                        out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, names[k]), ty, 0, 0, 0, 0))
+                        out = append(out, node(mut nb, ast.KLParam, 0, name(mut db, cx, names[k]), ty, if pm { 1 } else { 0 }, 0, 0, 0))
                     }
                     k += 1
                 }
@@ -290,7 +290,7 @@ func typeArgs(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     return ast.PutList(mut db, freeze(out)), p + 1
 }
 
-// typeArg: type_arg <- '(' type (',' type)+ ')' / type。括弧の組は多値の型（P3b 残穴1 — 型引数の位置にだけ書ける: `par.Task[(T, error?)]`）
+// typeArg: type_arg <- '(' type (',' type)+ ')' / type。括弧の組は多値の型（P3b 残穴1 — 型引数の位置にだけ書ける: `task.Handle[(T, error?)]`）
 func typeArg(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p0 int) (int, int) {
     if tg(cx, p0) != lexer.LParen {
         return typeOf(mut nb, mut db, cx, p0, false)

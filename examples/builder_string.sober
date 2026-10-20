@@ -5,6 +5,7 @@ package main
 // 深いブロックで作った string は strings.Clone で Builder と同じ region へ置き直す
 
 import "std/builder"
+import "std/convert"
 import "std/strings"
 
 func main() {
@@ -13,7 +14,7 @@ func main() {
     mut i := 0
     while i < 12 {
         w := {
-            s := "w" + strings.FormatInt(i)
+            s := "w" + convert.FormatInt(i)
             strings.Clone(mut a, s + "!")
         }
         builder.Push(mut b, w)

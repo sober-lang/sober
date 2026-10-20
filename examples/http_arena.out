@@ -1,0 +1,71 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 2
+Connection: close
+
+55
+--
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 2
+Connection: close
+
+75
+--
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 2
+Connection: close
+
+10
+--
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+Connection: close
+
+123
+--
+pipelined ok: 16
+--
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 1
+
+2HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 2
+Connection: close
+
+
+--
+HTTP/1.1 400 Bad Request
+Content-Length: 0
+Connection: close
+
+
+--
+HTTP/1.1 505 HTTP Version Not Supported
+Content-Length: 0
+Connection: close
+
+
+--
+HTTP/1.1 431 Request Header Fields Too Large
+Content-Length: 0
+Connection: close
+
+
+--
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 2
+Connection: close
+
+30
+--
+HTTP/1.1 404 Not Found
+Content-Length: 0
+Connection: close
+
+

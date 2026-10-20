@@ -332,6 +332,7 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
     mut x := st.insts
     while x >= 0 {
         if strEq(mut st, hgetS(mut st, x + 1), k) {
+            lsEv(mut st, EV_INST, int(infoAt(mut st, desugar.HeapGet(mut st.d, x + 2)).ir), 0, 0, 0)
             return desugar.HeapGet(mut st.d, x + 2), nil
         }
         x = desugar.HeapGet(mut st.d, x)
@@ -343,6 +344,7 @@ func instFunc(st mut St, fidx int, targs desugar.ListRef) (int, error?) {
         markTransp(mut st, fi)
     }
     st.insts = rec4(mut st, st.insts, int(k), fi, 0)
+    lsEv(mut st, EV_INST, int(infoAt(mut st, fi).ir), 0, 0, 0)
     return fi, nil
 }
 

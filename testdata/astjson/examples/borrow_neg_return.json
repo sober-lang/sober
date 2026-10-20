@@ -1,0 +1,309 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Stream",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "param_names": [
+              "n"
+            ]
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "emit"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 17
+      }
+    },
+    {
+      "name": "Resp",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "stream",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Stream"
+              }
+            },
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 18,
+      "span": {
+        "start": 17,
+        "end": 27
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "keep",
+      "type_params": [],
+      "params": [
+        {
+          "name": "k",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "param_names": [
+              "n"
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "func",
+          "params": [
+            {
+              "k": "name",
+              "name": "int"
+            }
+          ],
+          "results": [
+            {
+              "k": "name",
+              "name": "int"
+            }
+          ],
+          "param_names": [
+            "n"
+          ]
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "k",
+                "tok": 46
+              }
+            ],
+            "tok": 45
+          }
+        ]
+      },
+      "tok": 28,
+      "bodiless": false,
+      "span": {
+        "start": 27,
+        "end": 49
+      },
+      "sig_end": 44
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Resp",
+                "elems": [
+                  {
+                    "key": "stream",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "emit",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "call",
+                        "callee": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "keep",
+                            "tok": 64
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "emit",
+                              "tok": 66
+                            }
+                          ],
+                          "tok": 65
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 69
+                          }
+                        ],
+                        "tok": 68
+                      },
+                      "tok": 63
+                    }
+                  }
+                ],
+                "tok": 56,
+                "type_args": []
+              }
+            ],
+            "tok": 54
+          },
+          {
+            "k": "bind",
+            "names": [
+              "st"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 75
+                },
+                "field": "stream",
+                "tok": 77
+              }
+            ],
+            "tok": 73
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "st",
+                  "tok": 80
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 82
+                },
+                "tok": 81
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 84
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "st",
+                            "tok": 86
+                          },
+                          "args": [
+                            {
+                              "k": "lambda",
+                              "params": [
+                                {
+                                  "name": "n",
+                                  "type": {
+                                    "k": "name",
+                                    "name": "int"
+                                  }
+                                }
+                              ],
+                              "body": {
+                                "k": "ident",
+                                "name": "n",
+                                "tok": 93
+                              },
+                              "tok": 92
+                            }
+                          ],
+                          "tok": 87
+                        }
+                      ],
+                      "tok": 85
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 79
+            }
+          }
+        ]
+      },
+      "tok": 50,
+      "bodiless": false,
+      "span": {
+        "start": 49,
+        "end": 100
+      },
+      "sig_end": 53
+    }
+  ],
+  "consts": []
+}

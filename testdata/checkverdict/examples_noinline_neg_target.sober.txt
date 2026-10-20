@@ -1,0 +1,2 @@
+sober: load error at examples/noinline_neg_target.sober:6:6: @noinline applies to a function with mut parameters and no function-typed parameters
+exit=1

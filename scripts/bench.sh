@@ -110,6 +110,9 @@ done
 "$B/spectralnorm-sober" 100 | cmp -s - bench/spectralnorm/expect-100.txt || { echo "bench: FAIL spectralnorm: official output" >&2; exit 1; }
 "$B/mandelbrot-sober" 200 | cmp -s - bench/mandelbrot/expect-200.pbm || { echo "bench: FAIL mandelbrot: official output" >&2; exit 1; }
 
+# BENCH_PREP=1: 入力・双子・公式の期待出力の照合まで済ませて止まる（公式計測の準備 — .github/workflows/bench-official.yml）
+[ "${BENCH_PREP:-0}" = 1 ] && { echo "bench: BENCH_PREP=1 — prepared" >&2; exit 0; }
+
 # ── 題材: 1 周ごとに Sober → Go の交互 ──
 # quiet: loadavg が上限を超えていれば警告（--wait-quiet なら 10 秒おきに見て最大 10 分待つ）
 quiet() {
@@ -212,6 +215,8 @@ while read -r item col lim ref; do
     case "$item" in ''|'#'*) continue ;; esac
     # size（stage3 の ELF の大きさ）は scripts/stages.sh が照合する
     [ "$col" = size ] && continue
+    # self/build3（stage3 の自己 build の命令数）も scripts/stages.sh が照合する — bench.sh の命令数は out/stage2 の物差し
+    [ "$item" = self/build3 ] && continue
     if [ "$col" = nodes ]; then
         v=$NODES
     elif [ "$col" = inst ]; then

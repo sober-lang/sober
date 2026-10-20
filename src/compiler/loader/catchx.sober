@@ -161,7 +161,7 @@ func catchExprs(t ast.Tree) ast.Tree {
 
 // catchLhsBad はファイル f の catchExprs の写した束縛 x（`$ctKv, $ctKe := f()`）の左辺が func 宣言の直接呼び出しで、その結果が `(T, error?)` でないか
 // （noderules.sober の走査から — 写した後の束縛の数の照合より先に名指す）。func 宣言を引けない呼び出し（関数型の値を通した呼び出し等）は
-// 後段の束縛の数の照合に任せる。std/par の Join（結果は字面で型パラメータ 1 つ — fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）は
+// 後段の束縛の数の照合に任せる。std/task の Join（結果は字面で型パラメータ 1 つ — fallible な task の T = `(U, error?)` は呼び出し点の型引数で決まる）は
 // 判定を保留し、表層型の後の desugar.ParCheckTyped が同じ CatchLhs を名指す（check と build が同じ層 — report-582 2 節）
 func catchLhsBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     t := cx.trees[f]
@@ -169,14 +169,14 @@ func catchLhsBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     if c.kind != ast.ECall {
         return false
     }
-    fi := calleeFn(cx, ft, f, c.a, false)
+    fi := calleeFn(cx, ft, f, c.a, 0)
     return fi >= 0 && !parJoin(cx, ft, fi) && !fallibleResults(cx.trees[ft.file[fi]], ft.node[fi])
 }
 
-// parJoin は関数表の fi が std/par の Join か
+// parJoin は関数表の fi が std/task の Join か
 func parJoin(cx Cx, ft FnTab, fi int) bool {
     dt := cx.trees[ft.file[fi]]
-    return cx.pkg_path[ft.pkg[fi]] == "std/par" && Name(dt, dt.nodes[ft.node[fi]].a) == "Join"
+    return cx.pkg_path[ft.pkg[fi]] == "std/task" && Name(dt, dt.nodes[ft.node[fi]].a) == "Join"
 }
 
 // isCatchBind は節 i が catchExprs の写した束縛（名前の先頭が `$ct`）か
@@ -211,6 +211,6 @@ func multiBindBad(cx Cx, ft FnTab, f int, x ast.Node) bool {
     if c.kind != ast.ECall {
         return false
     }
-    fi := calleeFn(cx, ft, f, c.a, false)
+    fi := calleeFn(cx, ft, f, c.a, 0)
     return fi >= 0 && ast.ListLen(cx.trees[ft.file[fi]], cx.trees[ft.file[fi]].nodes[ft.node[fi]].d) >= 2
 }

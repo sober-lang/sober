@@ -1,6 +1,17 @@
 examples/annot.sober: examples/annot.sober:12:1: error: annotation (Unsupported)
+examples/annot_neg_unknown.sober: sober: load error: source does not match the grammar
 examples/assert_outside.sober: sober: load error at examples/assert_outside.sober:5:5: assert is only available in _test.sober files
 examples/bind.sober: examples/bind.sober:3:1: error: top-level declaration kind (Unsupported)
+examples/bind_neg_assign.sober: sober: lower error at examples/bind_neg_assign.sober:7:5 (Mismatch)
+examples/borrow_neg_bind.sober: sober: load error at examples/borrow_neg_bind.sober:13:14: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+examples/borrow_neg_return.sober: sober: load error at examples/borrow_neg_return.sober:14:38: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+examples/borrow_neg_spawn.sober: sober: load error at examples/borrow_neg_spawn.sober:14:38: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+examples/borrow_neg_spawn_callee.sober: sober: load error at examples/borrow_neg_spawn_callee.sober:11:51: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope and a lambda passed straight to a call may capture it)
+examples/borrow_neg_store.sober: sober: load error at examples/borrow_neg_store.sober:16:50: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+examples/borrow_neg_valcap.sober: sober: load error at examples/borrow_neg_valcap.sober:17:58: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+examples/borrow_pend_mut.sober: sober: load error at examples/borrow_pend_mut.sober:13:30: a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation
+examples/borrow_pend_value.sober: sober: lower error at examples/borrow_pend_value.sober:12:28 (Unsupported)
+examples/borrow_pkg_neg.sober: sober: load error at examples/borrow_pkg_neg.sober:15:33: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope and a lambda passed straight to a call may capture it)
 examples/builtin_decl.sober: sober: load error at examples/builtin_decl.sober:5:6: a top-level declaration cannot reuse a builtin name
 examples/builtin_rebind.sober: sober: load error at examples/builtin_rebind.sober:6:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false)
 examples/builtin_rebind_append.sober: sober: load error at examples/builtin_rebind_append.sober:11:5: a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)
@@ -18,34 +29,57 @@ examples/byte_range.sober: sober: lower error at examples/byte_range.sober:9:14 
 examples/byte_range_conv.sober: sober: lower error at examples/byte_range_conv.sober:5:14 (Mismatch)
 examples/byte_setidx_range.sober: sober: lower error at examples/byte_setidx_range.sober:6:6 (Mismatch)
 examples/byte_unary.sober: sober: lower error at examples/byte_unary.sober:6:13 (Mismatch)
+examples/call_arity.sober: sober: lower error at examples/call_arity.sober:11:16 (Mismatch)
 examples/catch_infallible.sober: sober: load error at examples/catch_infallible.sober:9:17: the left of catch must be a call that returns (T, error?)
 examples/catch_infallible_pkg.sober: sober: load error at examples/catch_infallible_pkg.sober:7:39: the left of catch must be a call that returns (T, error?)
 examples/char_lit_nonascii.sober: sober: load error at examples/char_lit_nonascii.sober:5:12: source does not match the grammar
 examples/clone_neg_scalar.sober: sober: lower error at examples/clone_neg_scalar.sober:5:15 (Mismatch)
 examples/clone_neg_string.sober: sober: lower error at examples/clone_neg_string.sober:5:15 (Mismatch)
+examples/closure_anon_field_bound.sober: sober: lower error at examples/closure_anon_field_bound.sober:14:20 (Mismatch)
+examples/closure_bound_named_fn.sober: sober: lower error at examples/closure_bound_named_fn.sober:19:15 (Mismatch)
+examples/closure_bound_named_fn_nocap.sober: sober: lower error at examples/closure_bound_named_fn_nocap.sober:16:15 (Mismatch)
+examples/closure_field_cap_identity.sober: sober: lower error at examples/closure_field_cap_identity.sober:17:14 (UndefinedType)
+examples/closure_field_cap_mut.sober: sober: load error at examples/closure_field_cap_mut.sober:14:30: a lambda in a value position (a named function type field) cannot capture a mut binding — captures are immutable copies taken at creation
+examples/closure_field_return.sober: sober: load error at examples/closure_field_return.sober:12:42: a lambda in a value position (a named function type field) cannot use return — its body is an expression; return would escape the enclosing function
 examples/composite_dup.sober: sober: lower error at examples/composite_dup.sober:11:10 (Mismatch)
 examples/composite_field_ty.sober: sober: lower error at examples/composite_field_ty.sober:12:15 (Mismatch)
 examples/composite_mixed.sober: sober: lower error at examples/composite_mixed.sober:11:10 (Unsupported)
 examples/composite_slice_elem_ty.sober: sober: lower error at examples/composite_slice_elem_ty.sober:10:15 (Mismatch)
+examples/const_neg_call.sober: sober: load error at examples/const_neg_call.sober:9:7: const expression
+examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
+examples/errors_neg_try_dest.sober: sober: lower error at examples/errors_neg_try_dest.sober:16:18 (Mismatch)
 examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)
 examples/float_neg_mapkey.sober: sober: lower error at examples/float_neg_mapkey.sober:6:18 (Unsupported)
 examples/float_neg_mix.sober: sober: lower error at examples/float_neg_mix.sober:6:14 (Mismatch)
+examples/fnarg_arity.sober: sober: load error at examples/fnarg_arity.sober:14:13: this function takes a different number of parameters than the function type expects
+examples/fnarg_mut.sober: sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
 examples/for.sober: examples/for.sober:7:6: error: Iter (UndefinedType)
+examples/for_closure_gen_named.sober: sober: load error at examples/for_closure_gen_named.sober:18:20: only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)
+examples/for_closure_gen_result.sober: sober: load error at examples/for_closure_gen_result.sober:14:20: `?` on a generator needs a generator that returns error? only
+examples/for_closure_gen_unmarked.sober: sober: load error at examples/for_closure_gen_unmarked.sober:15:18: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
 examples/for_fallible_result.sober: sober: load error at examples/for_fallible_result.sober:8:30: `?` on a generator needs a generator that returns error? only
 examples/for_fallible_unmarked.sober: sober: load error at examples/for_fallible_unmarked.sober:24:20: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
 examples/for_fallible_yield.sober: sober: load error at examples/for_fallible_yield.sober:24:29: a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression
+examples/for_neg_yield_outside.sober: sober: lower error at examples/for_neg_yield_outside.sober:8:9 (UndefinedFunction)
+examples/freeze_neg_alias.sober: examples/freeze_neg_alias.sober:9:7: error: this writes through `ys[…]`, which may hold the contents frozen by `freeze(xs)` — the frozen value would change. Build the value through one binding only, or copy it before freezing (Analyzer)
+examples/freeze_neg_write.sober: examples/freeze_neg_write.sober:8:7: error: this writes to `xs[…]` after it was frozen by `freeze(xs)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)
+examples/func_neg_method.sober: sober: load error at examples/func_neg_method.sober:7:1: source does not match the grammar
+examples/func_neg_noreturn.sober: sober: lower error at examples/func_neg_noreturn.sober:5:6 (Missing)
+examples/func_neg_recursive_fnparam.sober: sober: lower error at examples/func_neg_recursive_fnparam.sober:6:43 (Unsupported)
 examples/generic_union_arity.sober: sober: lower error at examples/generic_union_arity.sober:11:10 (Mismatch)
 examples/generic_union_noargs.sober: sober: lower error at examples/generic_union_noargs.sober:18:17 (Undefined)
 examples/identity_neg_field.sober: sober: load error at examples/identity_neg_field.sober:14:10: this literal leaves a field at its zero value that holds a `par.Rx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
 examples/identity_neg_generic.sober: sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `par.Tx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
 examples/identity_neg_nested.sober: sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `par.Pool`, which has identity: only par.NewPool makes one — set the field, or declare it `T?`
 examples/identity_neg_tx.sober: sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
+examples/if_neg_noelse_value.sober: sober: lower error at examples/if_neg_noelse_value.sober:6:5 (Mismatch)
 examples/imm_write.sober: sober: error at examples/imm_write.sober:8:9 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
 examples/inline_unknown_fnparam.sober: sober: lower error at examples/inline_unknown_fnparam.sober:6:24 (Undefined)
 examples/inline_unknown_mutparam.sober: sober: lower error at examples/inline_unknown_mutparam.sober:6:12 (Undefined)
 examples/inline_unknown_param.sober: sober: lower error at examples/inline_unknown_param.sober:6:12 (Undefined)
 examples/inline_unknown_result.sober: sober: lower error at examples/inline_unknown_result.sober:6:27 (Undefined)
 examples/inline_unknown_results.sober: sober: lower error at examples/inline_unknown_results.sober:6:33 (Undefined)
+examples/internal_import_neg.sober: sober: load error at examples/internal_import_neg.sober:6:8: std/internal/... is an implementation detail of std — it can be imported only from inside std
 examples/interp_tparam_named.sober: sober: lower error at examples/interp_tparam_named.sober:9:12 (Mismatch)
 examples/io_open_neg_capture.sober: sober: load error at examples/io_open_neg_capture.sober:12:48: a closure cannot capture an io.File — pass it as an argument
 examples/io_open_neg_close.sober: sober: load error at examples/io_open_neg_close.sober:10:13: io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes
@@ -68,6 +102,12 @@ examples/layout_neg_literal.sober: sober: load error at examples/layout_neg_lite
 examples/layout_neg_target.sober: sober: load error at examples/layout_neg_target.sober:12:24: the type argument of layout.Decode / DecodeAt / Encode / Size must be a @layout struct
 examples/layout_neg_union.sober: sober: load error at examples/layout_neg_union.sober:6:6: @layout applies only to a struct type declaration
 examples/layout_neg_width.sober: sober: load error at examples/layout_neg_width.sober:6:13: width types (u8, u16le, …) are only allowed as @layout struct field types
+examples/lease_neg_form.sober: sober: load error at examples/lease_neg_form.sober:15:36: par.Lease / par.NewLocal take a window: a lambda with one mut parameter of a written struct type — (w mut T) => …
+examples/lease_neg_mutlam.sober: sober: load error at examples/lease_neg_mutlam.sober:18:32: a mut lambda parameter is written only as the window of par.Lease / par.NewLocal
+examples/lease_neg_prep.sober: sober: load error at examples/lease_neg_prep.sober:15:55: the setup of par.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else
+examples/lease_neg_reserved.sober: sober: load error at examples/lease_neg_reserved.sober:14:15: LocalNew / LeaseTake / LeaseGive / LeaseBlk / LeaseAttach are what par.NewLocal / par.Lease are rewritten into — call par.NewLocal / par.Lease instead
+examples/lease_neg_shape.sober: sober: load error at examples/lease_neg_shape.sober:19:36: a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters
+examples/lease_neg_zero.sober: sober: load error at examples/lease_neg_zero.sober:14:11: `par.Local` has identity: only par.NewLocal makes one — a zero value would refer to nothing
 examples/len_string.sober: sober: lower error at examples/len_string.sober:6:15 (Mismatch)
 examples/lit_leading_zero.sober: sober: load error at examples/lit_leading_zero.sober:6:13: a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros
 examples/localname_const.sober: sober: load error at examples/localname_const.sober:8:5: a local binding cannot reuse a top-level name (const, func or type)
@@ -76,6 +116,10 @@ examples/localname_named.sober: sober: load error at examples/localname_named.so
 examples/localname_tparam.sober: sober: load error at examples/localname_tparam.sober:9:6: a type parameter cannot reuse a top-level type name
 examples/multibind.sober: sober: load error at examples/multibind.sober:9:5: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
 examples/mutarg_decl_mismatch.sober: sober: lower error 3 at token 63
+examples/mutarg_neg_alias.sober: sober: load error at examples/mutarg_neg_alias.sober:13:21: mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call
+examples/mutarg_neg_const.sober: sober: lower error at examples/mutarg_neg_const.sober:11:14 (Mismatch)
+examples/mutarg_neg_escape.sober: examples/mutarg_neg_escape.sober:7:12: error: passing `xs` where an immutable value is expected freezes the contents of the mut parameter `xs` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut xs`), or pass a copy: clone(x) (Analyzer)
+examples/mutarg_neg_mark.sober: sober: lower error at examples/mutarg_neg_mark.sober:11:9 (Mismatch)
 examples/named_args_missing.sober: sober: load error at examples/named_args_missing.sober:14:17: a parameter that is not optional (T?) is missing — only T? parameters can be left out
 examples/named_args_nonfunc.sober: sober: load error at examples/named_args_nonfunc.sober:15:15: named arguments can only be passed in a direct call of a func declaration
 examples/named_args_order.sober: sober: load error at examples/named_args_order.sober:14:37: named arguments must follow the order of the parameters
@@ -96,12 +140,16 @@ examples/named_scalar_order.sober: sober: lower error at examples/named_scalar_o
 examples/named_scalar_targ.sober: sober: lower error at examples/named_scalar_targ.sober:16:16 (Mismatch)
 examples/named_scalar_targ_union.sober: sober: lower error at examples/named_scalar_targ_union.sober:24:19 (Mismatch)
 examples/named_scalar_under.sober: sober: lower error at examples/named_scalar_under.sober:8:14 (Mismatch)
+examples/net_neg_capture.sober: sober: load error at examples/net_neg_capture.sober:16:46: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope may capture it)
+examples/net_neg_copy.sober: sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
 examples/nil_untyped.sober: sober: lower error at examples/nil_untyped.sober:7:10 (Mismatch)
 examples/no_main.sober: sober: lower error at examples/no_main.sober:1:1 (Missing)
+examples/noinline_neg_target.sober: sober: load error at examples/noinline_neg_target.sober:6:6: @noinline applies to a function with mut parameters and no function-typed parameters
 examples/nominal_fn.sober: sober: lower error at examples/nominal_fn.sober:13:15 (Mismatch)
 examples/nominal_struct_arg.sober: sober: lower error at examples/nominal_struct_arg.sober:14:14 (Mismatch)
 examples/nominal_struct_eq.sober: sober: lower error at examples/nominal_struct_eq.sober:10:15 (Mismatch)
 examples/nominal_struct_slice.sober: sober: lower error at examples/nominal_struct_slice.sober:20:16 (Mismatch)
+examples/opt_compare.sober: sober: lower error at examples/opt_compare.sober:7:26 (Mismatch)
 examples/panic_neg_arg.sober: sober: load error at examples/panic_neg_arg.sober:5:10: the argument of panic is a single panic label literal L{…}
 examples/panic_neg_bare.sober: sober: load error at examples/panic_neg_bare.sober:5:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
 examples/panic_neg_builtin.sober: sober: load error at examples/panic_neg_builtin.sober:4:6: Unreachable, InvariantBroken and RegionExceeded are built-in panic labels
@@ -110,39 +158,22 @@ examples/panic_neg_fieldty.sober: sober: load error at examples/panic_neg_fieldt
 examples/panic_neg_notlabel.sober: sober: load error at examples/panic_neg_notlabel.sober:9:11: not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)
 examples/panic_neg_runtime.sober: sober: load error at examples/panic_neg_runtime.sober:5:11: RegionExceeded is raised by the runtime only
 examples/panic_neg_use.sober: sober: load error at examples/panic_neg_use.sober:8:13: a panic label is only used as the argument of panic(L{…})
-examples/par_join_catch_infallible.sober: sober: load error at examples/par_join_catch_infallible.sober:11:21: the left of catch must be a call that returns (T, error?)
-examples/par_join_multibind.sober: sober: load error at examples/par_join_multibind.sober:17:9: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
-examples/par_neg_budget.sober: sober: load error at examples/par_neg_budget.sober:12:79: budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only
-examples/par_neg_cap.sober: sober: load error at examples/par_neg_cap.sober:10:35: par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)
-examples/par_neg_chan_endpoint.sober: sober: load error at examples/par_neg_chan_endpoint.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
-examples/par_neg_chan_handle.sober: sober: load error at examples/par_neg_chan_handle.sober:14:33: a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
-examples/par_neg_cross.sober: sober: load error at examples/par_neg_cross.sober:10:43: par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)
-examples/par_neg_endpoint.sober: sober: load error at examples/par_neg_endpoint.sober:11:22: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
-examples/par_neg_escape.sober: sober: load error at examples/par_neg_escape.sober:10:13: return, ? and break / continue cannot leave a par.Scope / par.Spawn body (the scope waits for its children at its end)
-examples/par_neg_fnparam.sober: sober: load error at examples/par_neg_fnparam.sober:7:64: a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)
-examples/par_neg_handle.sober: sober: load error at examples/par_neg_handle.sober:10:46: a spawned task cannot capture a task handle (par.Task) — join it in the scope body
-examples/par_neg_handles.sober: sober: load error at examples/par_neg_handles.sober:9:19: handles (par.Task) go in a mut slice: mut hs := mut []par.Task[T]{} (an imm slice copies its elements, and a handle is not copied)
-examples/par_neg_handles_err.sober: sober: load error at examples/par_neg_handles_err.sober:15:34: an error-returning task's handle cannot go in a handle slice (par.Task[(T, error?)] cannot be written) — Join or Try it directly
-examples/par_neg_lambda.sober: sober: load error at examples/par_neg_lambda.sober:9:58: par.Scope / par.Spawn take a lambda literal written at the call ((s) => … for Scope, () => … for Spawn)
-examples/par_neg_mut.sober: sober: load error at examples/par_neg_mut.sober:9:64: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
-examples/par_neg_mutalias.sober: sober: load error at examples/par_neg_mutalias.sober:12:33: a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))
-examples/par_neg_result.sober: sober: load error at examples/par_neg_result.sober:8:71: the result of a spawned task must be loc-free (int, bool, byte, float, or structs / options of them — not string, slice, map, function, error, par.S or par.Task)
-examples/par_neg_scope_result.sober: sober: load error at examples/par_neg_scope_result.sober:8:33: the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)
-examples/par_neg_spawnin.sober: sober: load error at examples/par_neg_spawnin.sober:11:52: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
-examples/par_neg_token.sober: sober: load error at examples/par_neg_token.sober:8:83: a spawned task cannot capture the scope token (par.S) — spawn from the scope body
-examples/par_neg_tuple.sober: sober: load error at examples/par_neg_tuple.sober:10:21: a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)
-examples/par_neg_tuple_shape.sober: sober: load error at examples/par_neg_tuple_shape.sober:9:34: a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)
-examples/par_neg_wrap_endpoint.sober: sober: load error at examples/par_neg_wrap_endpoint.sober:16:27: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
-examples/par_neg_wrap_handle.sober: sober: load error at examples/par_neg_wrap_handle.sober:19:42: a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body
-examples/par_neg_wrap_token.sober: sober: load error at examples/par_neg_wrap_token.sober:14:52: a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body
-examples/par_spawn_try.sober: sober: load error at examples/par_spawn_try.sober:17:24: return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)
 examples/partial_lit_nozero.sober: sober: lower error 3 at token 38
 examples/pipe.sober: examples/pipe.sober:13:21: error: load (UndefinedFunction)
+examples/pipe_neg_nested_hole.sober: sober: lower error at examples/pipe_neg_nested_hole.sober:14:15 (Mismatch)
+examples/pkg_neg_cycle.sober: sober: load error at examples/pkg_neg_cycle.sober:5:8: import cycle
+examples/pkg_neg_field_write.sober: examples/pkg_neg_field_write.sober:9:7: error: cannot write field `w` of `Rect` outside package testdata/specpkg/shapes — a type's fields are written only in the package that declares it (build a new value with the package's functions) (Analyzer)
+examples/pkg_neg_missing.sober: sober: load error at examples/pkg_neg_missing.sober:5:8: cannot open package directory
+examples/pkg_neg_name.sober: sober: load error at testdata/specpkg/badname/badname.sober:1:9: package name must match the directory name
+examples/pkg_neg_private.sober: sober: lower error at examples/pkg_neg_private.sober:8:25 (UndefinedFunction)
+examples/pkg_neg_unimported.sober: sober: lower error at examples/pkg_neg_unimported.sober:6:13 (UndefinedName)
 examples/println_opt.sober: sober: lower error at examples/println_opt.sober:8:12 (Unsupported)
 examples/scope.sober: examples/scope.sober:10:13: error: primary expression kind (Unsupported)
 examples/shadow_block.sober: sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
 examples/shadow_lambda.sober: sober: load error at examples/shadow_lambda.sober:7:14: a local binding cannot shadow or redeclare another local binding
 examples/shadow_pattern.sober: sober: load error at examples/shadow_pattern.sober:13:12: a local binding cannot shadow or redeclare another local binding
+examples/slice_neg_sub_write.sober: sober: lower error at examples/slice_neg_sub_write.sober:7:11 (Mismatch)
+examples/string_neg_slice.sober: sober: lower error at examples/string_neg_slice.sober:7:11 (Mismatch)
 examples/struct.sober: examples/struct.sober:15:9: error: type other than struct, union, error, or a function type (Unsupported)
 examples/switch_multi_nil_cover.sober: sober: load error at examples/switch_multi_nil_cover.sober:16:5: case _, e also matches a nil error: the nil cases must cover every value (case v, nil:)
 examples/switch_multi_nil_default.sober: sober: load error at examples/switch_multi_nil_default.sober:14:13: a default here would be needed for both a nil and a non-nil error: cover every value in the nil cases (case v, nil:)
@@ -155,6 +186,36 @@ examples/switch_nil_catchall.sober: sober: load error at examples/switch_nil_cat
 examples/switch_nil_only.sober: sober: load error at examples/switch_nil_only.sober:10:5: a switch with case nil needs another case or a default
 examples/switch_nil_twice.sober: sober: load error at examples/switch_nil_twice.sober:13:5: case nil appears more than once in the switch
 examples/switch_nonexh_union.sober: sober: error at examples/switch_nonexh_union.sober:13:5 (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default (missing: A)
+examples/switch_string.sober: sober: lower error at examples/switch_string.sober:8:10 (Mismatch)
+examples/task_join_catch_infallible.sober: sober: lower error at examples/task_join_catch_infallible.sober:11:22 (Mismatch)
+examples/task_join_multibind.sober: sober: lower error at examples/task_join_multibind.sober:17:23 (Mismatch)
+examples/task_neg_budget.sober: sober: load error at examples/task_neg_budget.sober:12:85: budget: is a size written without calls or division (a literal, a name, task.MB, + - *) — it is read for the admission only
+examples/task_neg_cap.sober: sober: load error at examples/task_neg_cap.sober:10:39: task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)
+examples/task_neg_chan_endpoint.sober: sober: load error at examples/task_neg_chan_endpoint.sober:14:37: a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+examples/task_neg_chan_handle.sober: sober: load error at examples/task_neg_chan_handle.sober:14:37: a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them
+examples/task_neg_cross.sober: sober: load error at examples/task_neg_cross.sober:11:47: task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)
+examples/task_neg_deadline.sober: sober: load error at examples/task_neg_deadline.sober:13:57: deadline: is a relative time written without calls or division (a literal, a name, task.MS, + - *)
+examples/task_neg_endpoint.sober: sober: load error at examples/task_neg_endpoint.sober:11:23: a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)
+examples/task_neg_escape.sober: sober: lower error at examples/task_neg_escape.sober:10:13 (Mismatch)
+examples/task_neg_fnparam.sober: sober: load error at examples/task_neg_fnparam.sober:8:70: a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)
+examples/task_neg_handle.sober: sober: load error at examples/task_neg_handle.sober:10:49: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
+examples/task_neg_handles.sober: sober: load error at examples/task_neg_handles.sober:9:19: handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)
+examples/task_neg_handles_err.sober: sober: load error at examples/task_neg_handles_err.sober:15:35: an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)
+examples/task_neg_lambda.sober: sober: lower error at examples/task_neg_lambda.sober:8:13 (Unsupported)
+examples/task_neg_mut.sober: sober: load error at examples/task_neg_mut.sober:9:67: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
+examples/task_neg_mutalias.sober: sober: load error at examples/task_neg_mutalias.sober:12:34: a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))
+examples/task_neg_result.sober: sober: lower error at examples/task_neg_result.sober:19:21 (Unsupported)
+examples/task_neg_scope_result.sober: sober: load error at examples/task_neg_scope_result.sober:8:37: the result of task.Run cannot hold a task.Scope or task.Handle (it would outlive the scope)
+examples/task_neg_spawnin.sober: sober: load error at examples/task_neg_spawnin.sober:11:54: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
+examples/task_neg_token.sober: sober: load error at examples/task_neg_token.sober:8:91: a spawned task cannot capture the scope token (task.Scope), also inside a struct field or T? — spawn from the scope body
+examples/task_neg_tuple.sober: sober: load error at examples/task_neg_tuple.sober:10:21: a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)
+examples/task_neg_tuple_shape.sober: sober: load error at examples/task_neg_tuple_shape.sober:9:37: a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)
+examples/task_neg_wrap_endpoint.sober: sober: load error at examples/task_neg_wrap_endpoint.sober:16:28: a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)
+examples/task_neg_wrap_handle.sober: sober: load error at examples/task_neg_wrap_handle.sober:19:44: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
+examples/task_neg_wrap_token.sober: sober: load error at examples/task_neg_wrap_token.sober:14:55: a spawned task cannot capture the scope token (task.Scope), also inside a struct field or T? — spawn from the scope body
+examples/task_spawn_try.sober: sober: lower error at examples/task_spawn_try.sober:17:24 (Mismatch)
+examples/tls_neg_copy.sober: sober: load error at examples/tls_neg_copy.sober:8:10: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
+examples/tls_neg_field.sober: sober: load error at examples/tls_neg_field.sober:14:10: an io.File, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
 examples/top_dup.sober: sober: load error at examples/top_dup.sober:6:6: a top-level name is declared more than once in the package
 examples/top_dup_kinds.sober: sober: load error at examples/top_dup_kinds.sober:7:6: a top-level name is declared more than once in the package
 examples/try.sober: examples/try.sober:7:6: error: Path (UndefinedType)

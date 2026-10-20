@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 4
     }
   ],
@@ -199,10 +199,10 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 71
                   },
-                  "field": "Scope",
+                  "field": "Run",
                   "tok": 73
                 },
                 "args": [
@@ -213,7 +213,7 @@
                         "name": "s",
                         "type": {
                           "k": "name",
-                          "name": "par.S"
+                          "name": "task.Scope"
                         }
                       }
                     ],
@@ -223,7 +223,7 @@
                         "k": "selector",
                         "base": {
                           "k": "ident",
-                          "name": "par",
+                          "name": "task",
                           "tok": 82
                         },
                         "field": "Join",
@@ -236,7 +236,7 @@
                             "k": "selector",
                             "base": {
                               "k": "ident",
-                              "name": "par",
+                              "name": "task",
                               "tok": 86
                             },
                             "field": "Spawn",

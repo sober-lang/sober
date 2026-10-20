@@ -1,0 +1,97 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "xs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "elems": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 14
+                  },
+                  {
+                    "k": "int",
+                    "value": 2,
+                    "tok": 16
+                  }
+                ],
+                "mut": false,
+                "tok": 10
+              }
+            ],
+            "tok": 8
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "x"
+                  ],
+                  "src": {
+                    "k": "ident",
+                    "name": "xs",
+                    "tok": 22
+                  },
+                  "guards": [],
+                  "tok": 20
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "yield",
+                    "expr": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 25
+                    },
+                    "tok": 24
+                  }
+                ]
+              },
+              "tok": 19
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 31
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,591 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/builder",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "In",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "s",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "int"
+              },
+              "mut": true
+            },
+            "tok": 10
+          },
+          {
+            "name": "tag",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 21
+      }
+    },
+    {
+      "name": "W",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "in",
+            "type": {
+              "k": "name",
+              "name": "In"
+            },
+            "tok": 25
+          },
+          {
+            "name": "eh",
+            "type": {
+              "k": "generic",
+              "name": "builder.Builder",
+              "args": [
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ]
+            },
+            "tok": 28
+          },
+          {
+            "name": "sp",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 36
+          }
+        ]
+      },
+      "tok": 22,
+      "span": {
+        "start": 21,
+        "end": 41
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "run",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "name",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "w"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "W",
+                "elems": [],
+                "tok": 55,
+                "type_args": []
+              }
+            ],
+            "tok": 52
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 62
+              }
+            ],
+            "tok": 59
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "i",
+                "tok": 65
+              },
+              "rhs": {
+                "k": "ident",
+                "name": "n",
+                "tok": 67
+              },
+              "tok": 66
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "w",
+                        "tok": 69
+                      },
+                      "field": "eh",
+                      "tok": 71
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "composite",
+                      "type_name": "builder.Builder",
+                      "elems": [],
+                      "tok": 73,
+                      "type_args": [
+                        {
+                          "k": "name",
+                          "name": "int"
+                        }
+                      ]
+                    }
+                  ],
+                  "tok": 69
+                },
+                {
+                  "k": "expr",
+                  "expr": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "builder",
+                        "tok": 82
+                      },
+                      "field": "Push",
+                      "tok": 84
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "w.eh",
+                        "tok": 87
+                      },
+                      {
+                        "k": "ident",
+                        "name": "i",
+                        "tok": 91
+                      }
+                    ],
+                    "tok": 85
+                  }
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "w",
+                        "tok": 94
+                      },
+                      "field": "in",
+                      "tok": 96
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "composite",
+                      "type_name": "In",
+                      "elems": [
+                        {
+                          "key": "tag",
+                          "value": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "ident",
+                              "name": "name",
+                              "tok": 102
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "!",
+                              "tok": 104
+                            },
+                            "tok": 103
+                          }
+                        }
+                      ],
+                      "tok": 98,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 94
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "selector",
+                      "base": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "w",
+                          "tok": 107
+                        },
+                        "field": "in",
+                        "tok": 109
+                      },
+                      "field": "s",
+                      "tok": 111
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "append",
+                        "tok": 113
+                      },
+                      "args": [
+                        {
+                          "k": "selector",
+                          "base": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "w",
+                              "tok": 115
+                            },
+                            "field": "in",
+                            "tok": 117
+                          },
+                          "field": "s",
+                          "tok": 119
+                        },
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 121
+                        }
+                      ],
+                      "tok": 114
+                    }
+                  ],
+                  "tok": 107
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "w",
+                      "tok": 124
+                    }
+                  ],
+                  "op": "=",
+                  "values": [
+                    {
+                      "k": "composite",
+                      "type_name": "W",
+                      "elems": [
+                        {
+                          "key": "in",
+                          "value": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "w",
+                              "tok": 130
+                            },
+                            "field": "in",
+                            "tok": 132
+                          }
+                        },
+                        {
+                          "key": "eh",
+                          "value": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "w",
+                              "tok": 136
+                            },
+                            "field": "eh",
+                            "tok": 138
+                          }
+                        },
+                        {
+                          "key": "sp",
+                          "value": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "w",
+                                "tok": 142
+                              },
+                              "field": "sp",
+                              "tok": 144
+                            },
+                            "rhs": {
+                              "k": "int",
+                              "value": 1,
+                              "tok": 146
+                            },
+                            "tok": 145
+                          }
+                        }
+                      ],
+                      "tok": 126,
+                      "type_args": []
+                    }
+                  ],
+                  "tok": 124
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 149
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 151
+                    }
+                  ],
+                  "tok": 149
+                }
+              ]
+            },
+            "tok": 64
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 155
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "w",
+                      "tok": 157
+                    },
+                    "field": "in",
+                    "tok": 159
+                  },
+                  "field": "tag",
+                  "tok": 161
+                }
+              ],
+              "tok": 156
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "w",
+                      "tok": 165
+                    },
+                    "field": "sp",
+                    "tok": 167
+                  },
+                  "rhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "len",
+                      "tok": 169
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "w",
+                            "tok": 171
+                          },
+                          "field": "in",
+                          "tok": 173
+                        },
+                        "field": "s",
+                        "tok": 175
+                      }
+                    ],
+                    "tok": 170
+                  },
+                  "tok": 168
+                },
+                "rhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "builder",
+                      "tok": 178
+                    },
+                    "field": "Len",
+                    "tok": 180
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "w.eh",
+                      "tok": 183
+                    }
+                  ],
+                  "tok": 181
+                },
+                "tok": 177
+              }
+            ],
+            "tok": 164
+          }
+        ]
+      },
+      "tok": 42,
+      "bodiless": false,
+      "span": {
+        "start": 41,
+        "end": 190
+      },
+      "sig_end": 51
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 195
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "run",
+                    "tok": 197
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 199
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 201
+                    }
+                  ],
+                  "tok": 198
+                }
+              ],
+              "tok": 196
+            }
+          }
+        ]
+      },
+      "tok": 191,
+      "bodiless": false,
+      "span": {
+        "start": 190,
+        "end": 207
+      },
+      "sig_end": 194
+    }
+  ],
+  "consts": []
+}

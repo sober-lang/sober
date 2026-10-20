@@ -1,0 +1,29 @@
+package main
+
+// 反復の region（while の本体）からの `return if c { nil } else { L{} }`（F-bi — 2026-10-19）。ラベルの値は cause の鎖が最内の region に、
+// nil は戻り型で作られるので、ite の両腕の型が食い違っていた — return の写し（copyTo / ann）は if の腕ごとに掛ける（check ≡ build）
+
+type Closed error
+
+type Bad error
+
+@errors(Closed, Bad)
+func scan(xs []int) error? {
+    mut i := 0
+    while i < len(xs) {
+        if xs[i] < 0 {
+            return if xs[i] == -1 { nil } else { Closed{} }
+        }
+        if xs[i] > 100 {
+            return Bad{}
+        }
+        i += 1
+    }
+    return nil
+}
+
+func main() {
+    println(scan([]int{1, 2, -1}) == nil)
+    println(scan([]int{1, -2}) == nil)
+    println(scan([]int{200}) == nil)
+}

@@ -1,0 +1,9 @@
+package main
+
+// 負例: 他 package の非公開（小文字で始まる）名前は参照できない（language.md 20 節）
+
+import "testdata/specpkg/shapes"
+
+func main() {
+    println(shapes.scale(2))
+}

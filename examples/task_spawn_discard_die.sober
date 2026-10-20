@@ -1,0 +1,42 @@
+package main
+
+// handle を捨てた子の死は枠を残さない（language.md 11 節 — report-704 B / 705）の回帰例: 返らない scope（net.Serve の accept のループの形）の中で
+// handle を `_` に捨てた子が死に続けても、scope の記録に残るのは (生んだ順の番号の最小, その死因) の 2 語だけで、死んだ子の枠は子の終わりで返る。
+// n 本（既定 20000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る。壊れると 1 死 ≈ 256 B の塊で 20000 → 200000 回で +45 MB）
+
+import "std/convert"
+import "std/os"
+import "std/task"
+
+// 純な子は最初の死の後に切られて（段 6 P4-5）死なないので、os.Sleep(0) で純でなくする（Serve の handler の形 — 接続の io）
+func die(k int) int {
+    os.Sleep(0)
+    xs := []int{1, 2}
+    return xs[k + 2]
+}
+
+func main() {
+    args := os.Args() catch return
+    mut n := 20000
+    if len(args) == 2 {
+        v, _ := convert.ParseInt(args[1])
+        n = v
+    }
+    mut i := 0
+    _, e := task.Run((s task.Scope) => {
+        while i < n {
+            k := i
+            _ = task.Spawn(s, () => die(k))
+            i += 1
+        }
+        i
+    })
+    if e == nil {
+        println("no death")
+        return
+    }
+    switch e {
+    case task.ChildDied{cause}: println("died after ${i}")
+    default: println("?")
+    }
+}

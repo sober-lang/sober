@@ -1,0 +1,21 @@
+package main
+
+// 値の位置の閉包（language.md 25 節 クロージャの波 第 1 段）: 値化可能な named fn type の欄に置いたラムダは、外の imm の束縛を
+// 作成点の写しとして捕捉する（コアでは持ち上げた Def + 環境の組 — desugar/closure.sober）。build は lower の閉包の struct〔code + env〕— lower/closure.sober
+
+type Score func(x int, y int) int
+
+type Rule struct {
+    name string
+    score Score
+}
+
+func main() {
+    base := 100
+    tag := "abc"
+    r := Rule{name: "r1", score: (x int, y int) => base + x * 10 + y + len(bytes(tag))}
+    println(r.name)
+    println(r.score(2, 3))
+    f := r.score
+    println(f(4, 5))
+}

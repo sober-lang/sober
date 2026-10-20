@@ -5,7 +5,7 @@ package lower
 // 深度の region に置く（Chunks の出口で region と一緒に消える — 出口の chunk_close が先に読みの完了を待つ）。
 // 1 回の chunk_next が 1 つのスロットをプログラムへ貸し（View = ヘッダの ptr がスロット・depth は呼んだ時点の深度 — 外へは境界の写しでだけ出る）、
 // 前に貸したスロットを空きへ戻し、空いたスロットへ次の読みを先に出す（世代の回転 = 反復の境目）。
-// - スロットの置き場: std/par のプログラムでワーカーに ring があれば、ワーカーのアリーナ（AR_N 個 × 64 KiB — そのワーカーの最初の chunk_open で mmap し、
+// - スロットの置き場: std/task のプログラムでワーカーに ring があれば、ワーカーのアリーナ（AR_N 個 × 64 KiB — そのワーカーの最初の chunk_open で mmap し、
 //   ring に 1 本の固定バッファとして REGISTER_BUFFERS で 1 回だけ登録する）から gens 個を取り、READ_FIXED（buf_index 0）で読む。アリーナが尽きた・
 //   登録できない・大きさが違うときは記録と同じ region に取り、READ で読む。ストリームごとに登録しない理由: 5.15 は登録を外した分の memlock の戻りが
 //   遅延 work なので、短いストリームが続くと BUFFERS_UPDATE が ENOMEM で落ちる（実測 — report-608）
@@ -30,7 +30,7 @@ const CH_HELD = 5    // プログラムへ貸しているスロット（-1 = 無
 const CH_NEXT = 6    // 次に渡すスロット
 const CH_SUBM = 7    // 次に読みを出すスロット
 const CH_DONE = 8    // 1 = 列の終わり（EOF か失敗を渡した）
-const CH_LINK = 9    // task の鎖の次の記録（std/par）
+const CH_LINK = 9    // task の鎖の次の記録（std/task）
 const CH_WAIT = 10   // 完了を待っている task（0 = 無し）
 const CH_INFL = 11   // ring に出して完了を取り込んでいない読みの数
 const CH_ERR = 12    // 列の終わりの errno（0 = EOF）
@@ -45,19 +45,27 @@ const UR_FREE = 25   // 空きのスロットのビット（AR_N 個）
 const UR_IOV = 26    // REGISTER_BUFFERS の iovec（2 語）
 const AR_N = 16
 const AR_SLOT = 65536
-// 開いた fd の鎖の次の語（task.sober の TC_FDS の次 — Chunks を使うプログラムでだけ main の記録を伸ばす）
+// 開いた fd の鎖の次の語（task.sober の TC_FDS の次 — 記録の先頭の頁）
 const TC_CHS = TC_WORDS + 1
+
+// ioRec は rt の io の関数の記録（Chunks の 5 本 + net の 2 本 — 使わない欄は 0〔chF は -1 で返す〕。St の欄は rtCh 1 つ）
+func ioRec(st mut St) int {
+    if st.rtCh == -1 {
+        st.rtCh = listN(mut st, NETF_RECV + 1)
+    }
+    return st.rtCh
+}
 
 // needChunk は rt.chunk_* を（初出なら）宣言する — std/io の Chunks を使うプログラムでだけ足す
 func needChunk(st mut St) {
-    if st.rtCh == -1 {
-        r := listN(mut st, 5)
+    lsNeed(mut st, NEED_CHUNK, 0)
+    if chF(mut st, CHF_OPEN) == -1 {
+        r := ioRec(mut st)
         desugar.HeapSet(mut st.d, r + 1 + CHF_OPEN, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_open")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)))
         desugar.HeapSet(mut st.d, r + 1 + CHF_NEXT, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_next")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), -1)))
         desugar.HeapSet(mut st.d, r + 1 + CHF_CLOSE, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_close")), desugar.ListRef(list1(mut st, TyI64)), TyI64)))
         desugar.HeapSet(mut st.d, r + 1 + CHF_SUBMIT, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_submit")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)))
         desugar.HeapSet(mut st.d, r + 1 + CHF_DRAIN, if st.taskUse { int(addFunc(mut st, int(strLit(mut st, "rt.chunk_drain")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)) } else { -1 })
-        st.rtCh = r
     }
 }
 
@@ -70,10 +78,11 @@ const CHF_DRAIN = 4
 
 // chF は rt.chunk_* の k 番（使わないプログラム・drain の逐次は -1）
 func chF(st mut St, k int) FnRef {
-    return if st.rtCh == -1 { FnRef(-1) } else { FnRef(desugar.HeapGet(mut st.d, st.rtCh + 1 + k)) }
+    x := if st.rtCh == -1 { 0 } else { desugar.HeapGet(mut st.d, st.rtCh + 1 + k) }
+    return FnRef(if x == 0 { -1 } else { x })
 }
 
-// chDrainCall は子の入口の出口で task の鎖に残ったストリームを閉じる（fdDrainCall の前 — Chunks を使う std/par のプログラムだけ）
+// chDrainCall は子の入口の出口で task の鎖に残ったストリームを閉じる（fdDrainCall の前 — Chunks を使う std/task のプログラムだけ）
 func chDrainCall(st mut St) {
     if chF(mut st, CHF_DRAIN) != -1 {
         call(mut st, chF(mut st, CHF_DRAIN), list2(mut st, 0, iconst(mut st, 0)))
@@ -158,7 +167,7 @@ func buildChunkSubmit(st mut St) {
 }
 
 // buildChunkOpen は chunk_open(fd, size, gens, off) → 記録の番地: 今の深度の region に記録を取り、スロットを決めて（アリーナか region）最初のスロットへ
-// 読みを出す。std/par のプログラムは task の鎖に積む
+// 読みを出す。std/task のプログラムは task の鎖に積む
 func buildChunkOpen(st mut St) {
     begin(mut st, chF(mut st, CHF_OPEN))
     fd := 0
@@ -462,7 +471,7 @@ func chReap(st mut St, ud int, res int, tk int) {
 }
 
 func buildChunkRt(st mut St) {
-    if st.rtCh == -1 {
+    if chF(mut st, CHF_OPEN) == -1 {
         return
     }
     buildChunkOpen(mut st)

@@ -1,0 +1,18 @@
+package main
+
+// 値の位置のラムダの本体で return は書けない（囲む関数から抜ける非局所脱出 — loader が FnCap kind 2 で拒否）
+
+type Pick func(n int) int
+
+type R struct {
+    pick Pick
+}
+
+func run() int {
+    r := R{pick: (n int) => { if n > 0 { return 1 }; n }}
+    return r.pick(1)
+}
+
+func main() {
+    println(run())
+}

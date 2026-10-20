@@ -1,0 +1,25 @@
+{
+  "display_name": "sober",
+  "language": "Sober",
+  "type": "emerging",
+  "mode": "standard",
+  "completeness": {
+    "routing": true,
+    "middleware": true,
+    "request": true,
+    "response": true
+  },
+  "engine": "std/http",
+  "description": "Sober's standard library HTTP/1.1 (std/http on std/net): one task per connection via net.Serve, io_uring with an acceptor per worker and multishot recv into provided buffers (epoll fallback), routes are a plain table ([]http.Route with Mount / Merge / Dispatch and before / after middleware). Static ELF with no libc, FROM scratch.",
+  "repo": "https://github.com/sober-lang/sober",
+  "enabled": true,
+  "tests": [
+    "baseline",
+    "pipelined",
+    "limited-conn",
+    "latency-1m",
+    "latency-10k",
+    "async"
+  ],
+  "maintainers": []
+}

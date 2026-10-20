@@ -1,6 +1,8 @@
 package rand
 
-// Rand はシードを明示する決定的な擬似乱数（xoshiro128** — Blackman / Vigna。状態 128 bit・出力 32 bit）。
+// シードを明示する決定的な擬似乱数 Rand（暗号用途には使わない — 鍵は crypto.Rand）
+
+// シードを明示する決定的な擬似乱数（`xoshiro128**` — Blackman / Vigna。状態 128 bit・出力 32 bit）。
 // グローバルな乱数の状態は持たない — 乱数が要る関数は Rand を mut 引数で受ける（非決定は入力のシードに外出し: 同じシードなら同じ列。
 // 失敗の再現はシード 1 つで足りる — PBT・差分ファジングの第一顧客）。
 //
@@ -9,14 +11,14 @@ package rand
 //
 // 算術は全部 32 bit の値の上で閉じる（各語は [0, 2^32)・積は小さい定数か 16 bit の桁どうし）— int の 64 bit の溢れに触れない
 // （溢れの意味論は Lean の約束〔値が 64 bit に収まる限り一致 — formal.md〕の外なので、64 bit の積を使う SplitMix64 / PCG は採らない）。
-// シードの拡散は SplitMix32（Murmur3 の fmix32 の定数 — 積は 16 bit の桁に割る mul32）。暗号用途には使わない（OS の乱数は io の面の口 — 未実装）
+// シードの拡散は SplitMix32（Murmur3 の fmix32 の定数 — 積は 16 bit の桁に割る mul32）。暗号用途には使わない
 type Rand struct {
     s0, s1, s2, s3 int
 }
 
 const mask32 = 0xffffffff
 
-// New はシード seed（任意の int — 負でもよい）の Rand。状態の 4 語を SplitMix32 で埋める（下位 32 bit を数え上げ、上位 32 bit を 2 語目と 4 語目に混ぜる —
+// シード seed（任意の int — 負でもよい）の Rand。状態の 4 語を SplitMix32 で埋める（下位 32 bit を数え上げ、上位 32 bit を 2 語目と 4 語目に混ぜる —
 // 違うシードは違う状態になる。全部 0 にはしない）
 func New(seed int) Rand {
     lo := seed & mask32
@@ -28,7 +30,7 @@ func New(seed int) Rand {
     return if a | b | c | d == 0 { Rand{1, 0, 0, 0} } else { Rand{a, b, c, d} }
 }
 
-// Next は次の 32 bit の値（[0, 2^32)）
+// 次の 32 bit の値（[0, 2^32)）
 func Next(r mut Rand) int {
     out := mul32(rotl32(mul32(r.s1, 5), 7), 9)
     t := (r.s1 << 9) & mask32
@@ -41,19 +43,19 @@ func Next(r mut Rand) int {
     return out
 }
 
-// Int62 は [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
+// [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
 func Int62(r mut Rand) int {
     hi := Next(mut r) >> 2
     lo := Next(mut r)
     return (hi << 32) | lo
 }
 
-// NonPositiveBound は Intn の上限 n が 1 未満（呼び手の契約違反 — panic ラベル。language.md 27 節）
+// Intn の上限 n が 1 未満（呼び手の契約違反 — panic ラベル。language.md 27 節）
 type NonPositiveBound panic {
     n int
 }
 
-// Intn は [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。偏りなし（棄却法: n の倍数に収まる範囲の値だけ使う）
+// [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。偏りなし（棄却法: n の倍数に収まる範囲の値だけ使う）
 func Intn(r mut Rand, n int) int {
     if n <= 0 {
         return panic(NonPositiveBound{n: n})
@@ -66,12 +68,12 @@ func Intn(r mut Rand, n int) int {
     return v % n
 }
 
-// Bool は真偽を 1 つ
+// 真偽を 1 つ
 func Bool(r mut Rand) bool {
     return Next(mut r) & 1 == 1
 }
 
-// Split は r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+// r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
 func Split(r mut Rand) Rand {
     return New((Next(mut r) << 30) ^ Next(mut r))
 }

@@ -1,0 +1,9 @@
+package main
+
+// 負例: package 名はディレクトリ名と同じでなければならない（language.md 20 節 — testdata/specpkg/badname は package other）
+
+import "testdata/specpkg/badname"
+
+func main() {
+    println(badname.F())
+}

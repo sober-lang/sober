@@ -3,7 +3,7 @@ package main
 // shape[T] の最小形（language.md 16 節 2）: json.Decode[T](d, n) が struct T（欄 = int・float・bool・string・入れ子の struct・[]T・T?）へ写す。
 // 欠けた欄は json.Missing・T? の欄だけ欠けと null が nil・余った欄は無視・型の合わない節は json.WrongType・int に収まらない数は json.IntRange
 
-import "std/conv"
+import "std/convert"
 import "std/io"
 import "std/iter"
 import "std/json"
@@ -24,7 +24,7 @@ type Shape struct {
 }
 
 func show(s Shape) {
-    println("${s.name} closed=${if s.closed { "yes" } else { "no" }} scale=${conv.FormatFloat(s.scale)} points=${len(s.points)} tags=${len(s.tags)}")
+    println("${s.name} closed=${if s.closed { "yes" } else { "no" }} scale=${convert.FormatFloat(s.scale)} points=${len(s.points)} tags=${len(s.tags)}")
     for i <- iter.Range(0, len(s.points)) {
         println("  (${s.points[i].x}, ${s.points[i].y})")
     }
@@ -54,7 +54,7 @@ func main() {
         return
     }
     xs := switch json.At(d, json.Root(d)) {
-    case json.Arr{items}: items
+    case json.Array{items}: items
     default: []int{}
     }
     for i <- iter.Range(0, len(xs)) {

@@ -1,0 +1,24 @@
+package main
+
+// 段 6 P5-2 入口: struct の欄に包んだ兄弟の handle の捕獲（kind 6 — 弟が縮退すると親の続きを待って詰む形） — check と build が同じ名指しで拒否（desugar/parcheck.sober）。縮退の前提「縮退した子が待てるのは自分の子孫だけ」の柵
+
+import "std/task"
+
+type W struct {
+    h task.Handle[int]
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        h0 := task.Spawn(s, (q) => {
+            v := task.Recv(q)
+            if v != nil { v } else { 0 }
+        }, give: rx)
+        w := W{h: h0}
+        h := task.Spawn(s, () => task.Join(w.h) + 1)
+        task.Send(tx, 3)
+        task.Join(h)
+    })
+    println(r)
+}

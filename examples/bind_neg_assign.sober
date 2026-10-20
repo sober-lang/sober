@@ -1,0 +1,9 @@
+package main
+
+// 負例: 束縛は既定で不変 — `x := e` に再代入できない。再代入するなら `mut x := e`（language.md 6 節）
+
+func main() {
+    x := 1
+    x = 2
+    println(x)
+}

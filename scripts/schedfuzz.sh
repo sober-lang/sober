@@ -15,10 +15,10 @@ W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
-obs() {   # obs <bin> <out> [env…]
+obs() {   # obs <bin> <out> [env…]（-k 5 = SIGTERM で落ちない止まり〔終了処理中に pipe の書きで回る変異 6 — report-785〕は 5 秒後に SIGKILL）
     local b=$1 o=$2 ec=0
     shift 2
-    env "$@" timeout 60 "$b" > "$o" 2> "$o.err" || ec=$?
+    env "$@" timeout -k 5 60 "$b" > "$o" 2> "$o.err" || ec=$?
     echo "exit=$ec" >> "$o"
     grep -v '^#sched ' "$o.err" >> "$o"
 }
@@ -26,19 +26,20 @@ obs() {   # obs <bin> <out> [env…]
 deathobs() {
     sed -n '/^exit=/,$p' "$1"
 }
+# 実行ファイルは建てるたびに別の名前（カーネル 6.18 では M:N の実行の直後に同じパスへ書くと ETXTBSY — report-660）
 while read -r e mark; do
     case "$e" in ''|'#'*) continue ;; esac
     n=$((n + 1))
-    "$S2" build "$e" --emit=elf -o "$W/bin" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
-    chmod +x "$W/bin"
-    obs "$W/bin" "$W/base" SOBER_WORKERS=1
+    "$S2" build "$e" --emit=elf -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/bin.$n"
+    obs "$W/bin.$n" "$W/base" SOBER_WORKERS=1
     deathobs "$W/base" > "$W/base.d"
     dies=0
     grep -qx 'exit=0' "$W/base" || dies=1
     split=0
     for w in $WS; do
         for s in $(seq 1 "$K"); do
-            obs "$W/bin" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
+            obs "$W/bin.$n" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
             if [ $dies = 1 ] && [ "$w" != 1 ]; then
                 deathobs "$W/run" > "$W/run.d"
                 same=0; cmp -s "$W/base.d" "$W/run.d" && same=1
@@ -60,16 +61,17 @@ while read -r e mark; do
 done < scripts/schedfuzz.list
 # 変異の自己検査（段 6 P4-4）: M:N の rt に変異を入れたビルド（--rt-mutant=N）で、網が割れを捕まえること（1 件で足りる —
 # 最初の割れで打ち切り）。1 = 未回収の失敗を到着順で選ぶ（正準順の破れ）・2 = 待ち手を素の store で置いて見直さない（起こし損ね → デッドロックの死）・
-# 6 = 盗み手が被害者の鍵を取らない（盗み手どうしが同じ子を取る — 子が 2 回走る。Skynet 回収 (a)）
-for m in "1 examples/par_fail_order.sober" "2 examples/par_join_race.sober" "6 examples/par_steal.sober"; do
+# 6 = 盗み手が被害者の鍵を取らない（盗み手どうしが同じ子を取る — 子が 2 回走る。Skynet 回収 (a)）・15 = lease の使用中の印を見ない
+# （窓の中で譲った task の置き場を同じワーカーの別の窓が共有する — region-domain-pool.md 4d 節の倒れの証人。ワーカー 1 で 2 つの窓が必ず重なる）
+for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6 examples/task_steal.sober" "15 examples/lease_yield.sober"; do
     set -- $m
-    "$S2" build "$2" --emit=elf -o "$W/bin" > /dev/null 2>&1 && "$S2" build "$2" --emit=elf --rt-mutant=$1 -o "$W/mut" > /dev/null 2>&1 || { echo "FAIL: build mutant $1 $2"; fail=$((fail + 1)); continue; }
-    chmod +x "$W/bin" "$W/mut"
-    obs "$W/bin" "$W/base" SOBER_WORKERS=1
+    "$S2" build "$2" --emit=elf -o "$W/bin.m$1" > /dev/null 2>&1 && "$S2" build "$2" --emit=elf --rt-mutant=$1 -o "$W/mut.$1" > /dev/null 2>&1 || { echo "FAIL: build mutant $1 $2"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/bin.m$1" "$W/mut.$1"
+    obs "$W/bin.m$1" "$W/base" SOBER_WORKERS=1
     caught=0
-    for w in 2 4; do
+    for w in 1 2 4; do
         for s in $(seq 1 "$K"); do
-            obs "$W/mut" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
+            obs "$W/mut.$1" "$W/run" SOBER_SCHED_SEED=$s SOBER_WORKERS=$w
             if ! cmp -s "$W/base" "$W/run"; then caught=1; break 2; fi
         done
     done
@@ -78,5 +80,5 @@ for m in "1 examples/par_fail_order.sober" "2 examples/par_join_race.sober" "6 e
         fail=$((fail + 1))
     fi
 done
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 3 mutants, fail=$fail"
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants, fail=$fail"
 [ $fail = 0 ]

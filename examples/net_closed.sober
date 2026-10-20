@@ -1,0 +1,57 @@
+package main
+
+// net 段 4a-2（N9 — 相手がもういない = io.Closed 1 本）: 誰も listen していない port への Dial（ECONNREFUSED — 非ブロックの connect は
+// 書けるようになってから SO_ERROR で読む）・読まずに閉じた相手からの RST（ECONNRESET）・その後の送信（EPIPE — MSG_NOSIGNAL でプロセスは落ちない）
+
+import "std/io"
+import "std/net"
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Timeout{}: "timeout"
+    case io.Expired{}: "expired"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    }
+}
+
+func main() {
+    println("dial: ${show(dialGone())}")
+    println(run() catch "listen failed")
+}
+
+// dialGone は listen を閉じた後の port へ Dial する
+func dialGone() error? {
+    mut port := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        port = net.Port(l)
+    }
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        break
+    }
+    return nil
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            net.Send(c, bytes("unread"))?
+            // 受けてすぐ閉じる（届いた 6 バイトを読まずに — カーネルは RST を返す）
+            for sc <- net.Accept(l)? {
+                break
+            }
+            out = "recv: ${show(drain(c))}, send: ${show(net.Send(c, bytes("more")))}"
+        }
+    }
+    return out, nil
+}
+
+func drain(c net.Conn) error? {
+    for chunk <- net.Recv(c)? {
+    }
+    return nil
+}

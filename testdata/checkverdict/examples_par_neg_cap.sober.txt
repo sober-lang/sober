@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_cap.sober:10:35: par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)
-exit=1

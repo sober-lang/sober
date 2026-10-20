@@ -1,0 +1,2 @@
+examples/errors_neg_leak.sober:11:1: error: 'Parse' may return TooLong not listed in its @errors (Analyzer)
+exit=1

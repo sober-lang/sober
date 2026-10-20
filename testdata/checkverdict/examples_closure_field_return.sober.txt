@@ -1,0 +1,2 @@
+sober: load error at examples/closure_field_return.sober:12:42: a lambda in a value position (a function-typed field) cannot use return — its body is an expression; return would escape the enclosing function
+exit=1

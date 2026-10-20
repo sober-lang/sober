@@ -1,0 +1,61 @@
+package main
+
+// 段 6 P3b-4 ③: Close と `T?` の nil と for-Recv。生産者の子は語を送って閉じ、消費者の子は for-Recv で閉じるまで受ける（continue つき）。
+// 親 → 子の向きも同じ（親が送って閉じ、子は for-Recv の途中で break）。閉じた後の受けは何度でも nil
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[string](cap: 2)
+        ux, uy := task.NewChannel[int](cap: 1)
+        zx, zy := task.NewChannel[int](cap: 1)
+        a := task.Spawn(s, (out) => {
+            mut i := 0
+            while i < 5 {
+                task.Send(out, "w${i}")
+                i += 1
+            }
+            task.Close(out)
+            i
+        }, give: tx)
+        b := task.Spawn(s, (inp) => {
+            mut acc := ""
+            for w <- task.Recv(inp) {
+                if w == "w2" {
+                    continue
+                }
+                acc = acc + w
+            }
+            acc
+        }, give: rx)
+        c := task.Spawn(s, (inp) => {
+            mut sum := 0
+            for v <- task.Recv(inp) {
+                if v > 30 {
+                    break
+                }
+                sum += v
+            }
+            sum
+        }, give: uy)
+        mut k := 1
+        while k <= 4 {
+            task.Send(ux, k * 10)
+            k += 1
+        }
+        task.Close(ux)
+        task.Send(zx, 7)
+        task.Close(zx)
+        first := task.Recv(zy)
+        last := task.Recv(zy)
+        again := task.Recv(zy)
+        f := if first != nil { first } else { 0 }
+        tail := if last == nil && again == nil { "nil nil" } else { "?" }
+        "${task.Join(a)} ${task.Join(b)} ${task.Join(c)} ${f} ${tail}"
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

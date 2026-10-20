@@ -22,8 +22,8 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -234,7 +234,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Num",
+                      "variant": "json.Number",
                       "fields": [
                         {
                           "name": "lit",
@@ -293,7 +293,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Str",
+                      "variant": "json.String",
                       "fields": [
                         {
                           "name": "v",
@@ -380,7 +380,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Arr",
+                      "variant": "json.Array",
                       "fields": [
                         {
                           "name": "items",
@@ -572,7 +572,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Obj",
+                      "variant": "json.Object",
                       "fields": [
                         {
                           "name": "names",

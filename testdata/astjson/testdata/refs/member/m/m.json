@@ -1,0 +1,403 @@
+{
+  "package": "m",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/json",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Req",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "code",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          },
+          {
+            "name": "path",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 18
+      }
+    },
+    {
+      "name": "Resp",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "code",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 22
+          },
+          {
+            "name": "body",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 25
+          }
+        ]
+      },
+      "tok": 19,
+      "span": {
+        "start": 18,
+        "end": 30
+      }
+    },
+    {
+      "name": "Wire",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "code",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 34
+          },
+          {
+            "name": "inner",
+            "type": {
+              "k": "name",
+              "name": "Inner"
+            },
+            "tok": 37
+          }
+        ]
+      },
+      "tok": 31,
+      "span": {
+        "start": 30,
+        "end": 42
+      }
+    },
+    {
+      "name": "Inner",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "tag",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 46
+          }
+        ]
+      },
+      "tok": 43,
+      "span": {
+        "start": 42,
+        "end": 51
+      }
+    },
+    {
+      "name": "Oops",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "code",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 55
+          }
+        ]
+      },
+      "tok": 52,
+      "span": {
+        "start": 51,
+        "end": 60
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Handle",
+      "type_params": [],
+      "params": [
+        {
+          "name": "req",
+          "type": {
+            "k": "name",
+            "name": "Req"
+          },
+          "mutable": false
+        },
+        {
+          "name": "scale",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Resp"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Resp",
+                "elems": [
+                  {
+                    "key": "code",
+                    "value": {
+                      "k": "binary",
+                      "op": "*",
+                      "lhs": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "req",
+                          "tok": 77
+                        },
+                        "field": "code",
+                        "tok": 79
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "scale",
+                        "tok": 81
+                      },
+                      "tok": 80
+                    }
+                  },
+                  {
+                    "key": "body",
+                    "value": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "req",
+                        "tok": 85
+                      },
+                      "field": "path",
+                      "tok": 87
+                    }
+                  }
+                ],
+                "tok": 73,
+                "type_args": []
+              }
+            ],
+            "tok": 71
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "r",
+                "tok": 91
+              }
+            ],
+            "tok": 90
+          }
+        ]
+      },
+      "tok": 61,
+      "bodiless": false,
+      "span": {
+        "start": 60,
+        "end": 95
+      },
+      "sig_end": 70
+    },
+    {
+      "name": "Render",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Wire"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "index",
+                  "base": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "json",
+                      "tok": 104
+                    },
+                    "field": "Encode",
+                    "tok": 106
+                  },
+                  "idx": {
+                    "k": "ident",
+                    "name": "Wire",
+                    "tok": 108
+                  },
+                  "tok": 107
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 111
+                  }
+                ],
+                "tok": 110
+              }
+            ],
+            "tok": 103
+          }
+        ]
+      },
+      "tok": 96,
+      "bodiless": false,
+      "span": {
+        "start": 95,
+        "end": 116
+      },
+      "sig_end": 102
+    },
+    {
+      "name": "Check",
+      "type_params": [],
+      "params": [
+        {
+          "name": "code",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "<",
+                "lhs": {
+                  "k": "ident",
+                  "name": "code",
+                  "tok": 124
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 126
+                },
+                "tok": 125
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "panic",
+                        "tok": 128
+                      },
+                      "args": [
+                        {
+                          "k": "composite",
+                          "type_name": "Oops",
+                          "elems": [
+                            {
+                              "key": "code",
+                              "value": {
+                                "k": "ident",
+                                "name": "code",
+                                "tok": 134
+                              }
+                            }
+                          ],
+                          "tok": 130,
+                          "type_args": []
+                        }
+                      ],
+                      "tok": 129
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 123
+            }
+          }
+        ]
+      },
+      "tok": 117,
+      "bodiless": false,
+      "span": {
+        "start": 116,
+        "end": 142
+      },
+      "sig_end": 122
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,2 @@
+examples/errors_neg_unreach.sober:23:14: error: case TooLong is unreachable: the subject never carries it (it may carry: Empty) — remove the case (Analyzer)
+exit=1

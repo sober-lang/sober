@@ -16,7 +16,7 @@ const UR_TMAX = 16
 // 展開の時点の IR での予算（2 × CUT_K — 決定 2026-10-09）: 展開の時点の IR は後段（bce・rtlower・併合・巻き上げ）で縮む
 // （nbody の advance で 1,500 → 844 — 約 0.56 倍）ので、最終の直線が K 前後になる見積もり。近似が外れたら urCheckRuns が最終 IR で鳴る
 const UR_BUDGET = 2048
-// 呼び出しの重み: B1 の呼び出しは後段（rtlower の展開・インライン）で伸びる — 1 と数えると最終の直線が K を超えた（examples/par_chan_hold の
+// 呼び出しの重み: B1 の呼び出しは後段（rtlower の展開・インライン）で伸びる — 1 と数えると最終の直線が K を超えた（examples/task_chan_hold の
 // 15 回の Recv / Send のループ — 最終 1,213 IR 命令。検証器の網が鳴った実例）
 const UR_CALLW = 32
 

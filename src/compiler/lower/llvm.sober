@@ -45,7 +45,7 @@ func mkInst(st mut St, res int, op int, a int, b int, c int) InsRef {
 // metaAddr は globaladdr @rt.meta の命令を b へ足して値を返す
 func metaAddr(st mut St, f FnRef, b BlkRef) int {
     v := newValueIn(mut st, f)
-    // std/par を使うプログラムではワーカーの表（段 6 P4-3 の fsaddr — P4-4 で見つけた穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
+    // std/task を使うプログラムではワーカーの表（段 6 P4-3 の fsaddr — P4-4 で見つけた穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
     // ワーカー 0 の表を読み書きしていた。ワーカー 1 では表 = 大域なので観測に出なかった）
     linkInst(mut st, b, mkInst(mut st, v, if st.taskUse && desugar.HeapGet(mut st.d, st.meta + G_WSLOT) >= 0 { OpFsAddr } else { OpGlobal }, st.meta, 0, 0))
     return v
@@ -363,8 +363,19 @@ func llFunc(st mut St, out mut []byte, f FnRef) {
     inc := irFnLLInc(mut st, f)
     cs := irFnLLCs(mut st, f)
     llSig(mut st, mut out, f)
-    mut lc := LlCur{fresh: 0, ctag: LbNone, ck: 0}
+    mut lc := LlCur{fresh: 0, ctag: LbNone, ck: 0, gb: listN(mut st, irFnNVal(mut st, f))}
     mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut gi := irBlkIHead(mut st, b)
+        while gi != -1 {
+            if irInsOp(mut st, gi) == OpGepB && irInsRes(mut st, gi) >= 0 {
+                desugar.HeapSet(mut st.d, lc.gb + 1 + irInsRes(mut st, gi), 1)
+            }
+            gi = irInsNext(mut st, gi)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
     while b != -1 {
         bi := irBlkId(mut st, b)
         llLabel(mut out, bi, LbNone, 0)
@@ -392,6 +403,8 @@ type LlCur struct {
     fresh int
     ctag int
     ck int
+    // gb = 値の列（heap — listN）: 1 = gep.byte の結果（その番地からの語の load は揃っていない — std/binary.Load64・report-724 で `align 1`）
+    gb int
 }
 
 // llSig は define の行（名前・結果の型・仮引数）
@@ -592,7 +605,8 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         llTy(mut out, if ic == 1 { TyPtr } else { TyI64 })
         obuf.Lit(mut out, ", ptr ")
         vreg(mut out, r)
-        obuf.Lit(mut out, ".p\n")
+        // gep.byte の番地からの語の load（std/binary.Load64 — 揃いを問わない）は align 1（既定は i64 の ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        obuf.Lit(mut out, if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 { ".p, align 1\n" } else { ".p\n" })
     case OpStore:
         n := lc.fresh
         lc.fresh += 1
@@ -608,6 +622,10 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         vreg(mut out, ic)
         obuf.Lit(mut out, ", ptr %st")
         num(mut out, n)
+        // gep.byte の番地への語の store（copyloop の形 D — 731）は align 1（load の対・724。既定は ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 {
+            obuf.Lit(mut out, ", align 1")
+        }
         out = append(out, '\n')
     case OpLoad8:
         obuf.Lit(mut out, "  ")
@@ -736,7 +754,79 @@ func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, 
         num(mut out, n)
         out = append(out, '(')
         llArgs(mut st, mut out, vt, list1(mut st, xAt(mut st, ib, 2)))
+    case OpAtomic:
+        // 原子の op（段 6 P4-4）: LLVM の原子の命令で（.ll の経路は 1 本道だが、値を定義しないと使う側が undefined value になる — report-879）
+        k := ic & 7
+        if k == AT_FENCE {
+            obuf.Lit(mut out, "  fence seq_cst\n")
+            return
+        }
+        if k == AT_PAUSE {
+            return
+        }
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p = getelementptr i64, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ic >> 3)
+        obuf.Lit(mut out, "\n  ")
+        vreg(mut out, r)
+        if k == AT_CAS {
+            obuf.Lit(mut out, ".x = cmpxchg ptr ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".p, i64 ")
+            vreg(mut out, xAt(mut st, ib, 0))
+            obuf.Lit(mut out, ", i64 ")
+            vreg(mut out, xAt(mut st, ib, 1))
+            obuf.Lit(mut out, " seq_cst seq_cst\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = extractvalue { i64, i1 } ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".x, 0\n")
+            return
+        }
+        obuf.Lit(mut out, if k == AT_XADD { " = atomicrmw add ptr " } else { " = atomicrmw xchg ptr " })
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p, i64 ")
+        vreg(mut out, xAt(mut st, ib, 0))
+        obuf.Lit(mut out, " seq_cst\n")
+    case OpClone:
+        // .ll の経路はスレッドを持たない（task の切替も無い 1 本道）: clone は失敗（-ENOSYS）— ワーカーを増やして走らせたら rt が黙らずに落ちる
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = add i64 0, -38\n")
     case OpSyscall:
+        if ib == AES_B || ib == MM_B {
+            // AES-GCM の塊（aes.sober）は .ll では持たない — cpuaes の印は 0 で、std の分岐が塊を呼ばない（残りの種類も 0 を返すだけ）
+            obuf.Lit(mut out, "  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = add i64 0, 0\n")
+            return
+        }
+        if ib == 1 {
+            // vDSO の関数（頭 = 番地）を C の規約で: %vf<r> = inttoptr i64 <番地> to ptr・%r = call i64 %vf<r>(i64 …)
+            obuf.Lit(mut out, "  %vf")
+            num(mut out, r)
+            obuf.Lit(mut out, " = inttoptr i64 ")
+            vreg(mut out, desugar.HeapGet(mut st.d, ia + 1))
+            obuf.Lit(mut out, " to ptr\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = call i64 %vf")
+            num(mut out, r)
+            out = append(out, '(')
+            mut k := 1
+            while k < desugar.HeapGet(mut st.d, ia) {
+                if k > 1 {
+                    obuf.Lit(mut out, ", ")
+                }
+                obuf.Lit(mut out, "i64 ")
+                vreg(mut out, desugar.HeapGet(mut st.d, ia + 1 + k))
+                k += 1
+            }
+            obuf.Lit(mut out, ")\n")
+            return
+        }
         obuf.Lit(mut out, "  ")
         vreg(mut out, r)
         obuf.Lit(mut out, " = call i64 asm sideeffect \"syscall\", \"={rax}")

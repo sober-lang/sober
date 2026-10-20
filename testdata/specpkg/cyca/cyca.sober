@@ -1,0 +1,9 @@
+package cyca
+
+// docs/spec 8 章の負例 examples/pkg_neg_cycle が import する package（cycb と互いに import する — 循環）
+
+import "testdata/specpkg/cycb"
+
+func A() int {
+    return cycb.B() + 1
+}

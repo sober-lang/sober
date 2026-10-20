@@ -1,0 +1,2 @@
+sober: load error at examples/const_neg_call.sober:9:7: const expression
+exit=1

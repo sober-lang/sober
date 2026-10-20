@@ -308,6 +308,10 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
     } else if k == KLParam {
         kStr(mut out, t, e, true, "name", x.a)
         kNode(mut out, t, e, false, "type", x.b)
+        // mut 仮引数の印は立っているときだけ（窓のラムダ — 既存の黄金を動かさない）
+        if x.c != 0 {
+            kBool(mut out, e, "mutable", x.c)
+        }
     } else if k == KGen {
         strs(mut out, t, e, true, "names", x.a)
         kNode(mut out, t, e, false, "src", x.b)

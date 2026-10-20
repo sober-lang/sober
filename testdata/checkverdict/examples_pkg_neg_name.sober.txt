@@ -1,0 +1,2 @@
+sober: load error at testdata/specpkg/badname/badname.sober:1:9: package name must match the directory name
+exit=1

@@ -1,0 +1,2 @@
+sober: desugar error at examples/call_arity.sober:11:16 (Malformed): the number of arguments does not match the function's parameters
+exit=1

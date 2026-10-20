@@ -8,7 +8,7 @@
     },
     {
       "alias": "$utf8",
-      "path": "std/utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],

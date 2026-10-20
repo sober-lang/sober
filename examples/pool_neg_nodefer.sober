@@ -1,0 +1,12 @@
+package main
+
+// 負例: pool.Acquire の直後の文は同じ pool と handle の `defer pool.Release(p, h)`（language.md 30 節 規則 R-a — analyzer）
+
+import "std/pool"
+
+func main() {
+    mut p := pool.Pool[int]{}
+    h := pool.Acquire(mut p, 7)
+    println(1)
+    defer pool.Release(mut p, h)
+}

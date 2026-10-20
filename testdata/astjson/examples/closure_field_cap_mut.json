@@ -1,0 +1,193 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Adder",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "n"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "R",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "f",
+            "type": {
+              "k": "name",
+              "name": "Adder"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 10,
+                "tok": 29
+              }
+            ],
+            "tok": 26
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "k",
+                "tok": 31
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "int",
+                "value": 11,
+                "tok": 33
+              }
+            ],
+            "tok": 31
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "R",
+                "elems": [
+                  {
+                    "key": "f",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "n",
+                          "type": {
+                            "k": "name",
+                            "name": "int"
+                          }
+                        }
+                      ],
+                      "body": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 46
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 48
+                        },
+                        "tok": 47
+                      },
+                      "tok": 45
+                    }
+                  }
+                ],
+                "tok": 37,
+                "type_args": []
+              }
+            ],
+            "tok": 35
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 51
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 53
+                    },
+                    "field": "f",
+                    "tok": 55
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 57
+                    }
+                  ],
+                  "tok": 56
+                }
+              ],
+              "tok": 52
+            }
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 63
+      },
+      "sig_end": 25
+    }
+  ],
+  "consts": []
+}

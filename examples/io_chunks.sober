@@ -65,7 +65,7 @@ func kept(p string) (bool, error?) {
 }
 
 // early leaves the stream from the middle (break, return, and a failure in the body)
-@errors(Bad, io.NotFound, io.Denied, io.Other)
+@errors(Bad, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func early(p string, how int) (int, error?) {
     f := io.Open(p)?
     defer io.Close(f)

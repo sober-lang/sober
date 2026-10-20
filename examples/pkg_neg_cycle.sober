@@ -1,0 +1,9 @@
+package main
+
+// 負例: import の循環は拒否（language.md 20 節 — cyca と cycb が互いに import する）
+
+import "testdata/specpkg/cyca"
+
+func main() {
+    println(cyca.A())
+}

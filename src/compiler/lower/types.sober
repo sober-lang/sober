@@ -19,7 +19,7 @@ const TOpt = 7     // a = 中身, b = 語数
 const TSlice = 8   // a = 要素, b = mut, c = string の印
 const TMap = 9     // a = キー, b = 値, c = mut
 const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
-const TFnv = 11    // a = FnType（関数値）
+const TFnv = 11    // a = FnType（関数値）・b = 値の位置の印（匿名の関数型の欄 — 工程 5d）・c = 名前付き関数型（型宣言 + 1）
 const TNamed = 12  // named scalar（language.md 32 節）: a = 下地の型（int / bool）, b = 型宣言の節。表現は下地と同じ 1 語
 const TFloat = 14  // float（language.md 37 節）: 1 語に IEEE 754 binary64 のビット列（演算の瞬間だけ xmm へ — x86.sober の xFloat*）
 const TByte = 13   // byte（language.md 33 節）: 語の中の 0〜255（[]byte のセルは段 B まで語のまま）。型なしの整数定数を受ける・比較 6 種・算術なし
@@ -299,6 +299,21 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
             }
             return nt, nil
         }
+        if kindN(mut st, nC(nodeOf(mut st, td))) == ast.BFunc {
+            // 値の位置に残った named fn type（欄・Def の仮引数 / 結果 — desugar の valFTE）= 関数値（クロージャの波 工程 5）
+            ft := resolveType(mut st, pk, desugar.NamedFnTE(mut st.d, pk, te), false)?
+            if !isTag(mut st, ft, TFunc) {
+                return 0, diag.Unsupported{at: posOf(mut st, at)}
+            }
+            // 匿名の関数型の仮引数は借り（(α-L0)）— 値の呼び出しで渡すので関数値か閉包の型
+            closBorrowFt(mut st, desugar.HeapGet(mut st.d, ft + 1))
+            // 捕捉のあるラムダを値の位置に持つ K は閉包の struct（closure.sober）
+            ct := closType(mut st, int(td), desugar.HeapGet(mut st.d, ft + 1), desugar.HeapGet(mut st.d, ft + 3))
+            if ct >= 0 {
+                return ct, nil
+            }
+            return rec4(mut st, TFnv, desugar.HeapGet(mut st.d, ft + 1), 0, desugar.HeapGet(mut st.d, ft + 3)), nil
+        }
         info := infoOf(mut st, int(td))
         if info < 0 {
             return 0, diag.Unsupported{at: posOf(mut st, at)}
@@ -308,7 +323,7 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
         }
         return desugar.HeapGet(mut st.d, info + SI_TY), nil
     case ast.TTuple:
-        // 多値の型は std/par の Task の型引数にだけ（loader の検査 — P3b 残穴1）: lower の handle の型は Task[T]（T = 1 つ目 — Spawn の結果と同じ。
+        // 多値の型は std/task の Task の型引数にだけ（loader の検査 — P3b 残穴1）: lower の handle の型は Task[T]（T = 1 つ目 — Spawn の結果と同じ。
         // error を返すかは表層型で読む — parSpawnTy / ParTaskTupleY）
         return resolveType(mut st, pk, latN(mut st, lA(nodeOf(mut st, te)), 0), inc)
     case ast.TGeneric:
@@ -352,6 +367,16 @@ func resolveType(st mut St, pk int, te desugar.NodeRef, inc bool) (int, error?) 
     return 0, diag.Unsupported{at: posOf(mut st, at)}
 }
 
+// fieldFnv は匿名の関数型の欄（型式 te・関数型 ft）の値の型: 値の位置の欄（工程 5d — desugar.AnonFieldTE）は構造の鍵に捕捉のある形があれば
+// 閉包の struct、なければ値の位置の印（b 欄 = 1）つきの関数値 1 語。高階の欄は従来どおり印なしの関数値
+func fieldFnv(st mut St, te desugar.NodeRef, ft int) int {
+    if !desugar.AnonFieldTE(mut st.d, te) {
+        return rec4(mut st, TFnv, ft, 0, 0)
+    }
+    ct := closType(mut st, -1, ft, 0)
+    return if ct >= 0 { ct } else { rec4(mut st, TFnv, ft, 1, 0) }
+}
+
 // layoutFields はフィールドの列（KField の列）を語オフセットつきで並べる（型は pk の文脈）。(フィールドの列, 語数)
 func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
     n := lenL(mut st, dfs)
@@ -367,7 +392,7 @@ func layoutFields(st mut St, pk int, dfs desugar.ListRef) (Layout, error?) {
             j += 1
         }
         rt := resolveType(mut st, pk, nB(nodeOf(mut st, df)), false)?
-        t := if isTag(mut st, rt, TFunc) { rec4(mut st, TFnv, desugar.HeapGet(mut st.d, rt + 1), 0, 0) } else { rt }
+        t := if isTag(mut st, rt, TFunc) { fieldFnv(mut st, nB(nodeOf(mut st, df)), desugar.HeapGet(mut st.d, rt + 1)) } else { rt }
         fr := rec4(mut st, nodeOf(mut st, df).a, t, off, 0)
         desugar.HeapSet(mut st.d, out + 1 + i, fr)
         off += tWords(mut st, t)

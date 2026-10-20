@@ -1,7 +1,6 @@
 package main
 
 import "std/iter"
-import "std/utf8"
 
 // 短い等値の速い道の網（report-450 / 451）: 長さ 0〜20 の文字列を、同じ長さで 1 バイトだけ違う相手（位置 0〜n−1 × 違いのビット 0x01 / 0x40）・
 // 長さだけ違う相手・同じ中身の別のセル列と == / != で比べて、外れた数を出す。リテラルとの比較（呼び出し点で閉じる道 — 長さ 0〜9 のリテラル）も同じ表で。
@@ -13,7 +12,7 @@ func mk(n int, at int, bit int) string {
         c := 97 + i % 26
         b = append(b, byte(if i == at { c ^ bit } else { c }))
     }
-    return utf8.Parse(b) catch ""
+    return string(freeze(b)) catch ""
 }
 
 // lit は長さ n のリテラル（mk(n, -1, 0) と同じ中身）

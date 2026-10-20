@@ -194,7 +194,7 @@ const OpGlobal = 13   // a = グローバルの記録
 const OpCall = 14     // a = 関数の記録, b = 引数
 const OpFuncaddr = 15 // a = 関数の記録
 const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 / TyPtr）
-const OpSyscall = 17  // a = 引数
+const OpSyscall = 17  // a = 引数・b = 1 なら vDSO の呼び出し（a の頭 = 関数の番地・残り = 引数 — C の呼び出し規約。vdsoCall）・b = 2 なら AES-GCM の塊（c = 種類 — aes.sober）
 const OpREnter = 18
 const OpRDepth = 19
 const OpRSetDepth = 20 // a = 値
@@ -209,7 +209,7 @@ const OpTSwitch = 27   // a = 退避先（語の番地）, b = [復元元（語�
                       // *b の rsp へ切り替えて相手を再開する。誰かが *a へ切り替えて戻すと続く（段 6 P3b — 戻ってくる不透明な呼び出し）
 const OpTStart = 28   // a = 退避先, b = [新しい rsp, 関数値, 引数]: OpTSwitch と同じく今の文脈を *a に積み、rsp を新しいスタックへ付け替えて関数(引数)を呼ぶ
                       // （関数は戻らない — 終わりは別の task への OpTSwitch）
-// ワーカーの記録（段 6 P4-3 — docs/ir.md 4.7）: std/par を使うプログラムの rt の表（@rt.meta 等）の番地を今のワーカーの記録から引く。値は
+// ワーカーの記録（段 6 P4-3 — docs/ir.md 4.7）: std/task を使うプログラムの rt の表（@rt.meta 等）の番地を今のワーカーの記録から引く。値は
 // スレッドの中で変わらない（task はワーカーに固定）— 最適化器からは globaladdr と同じ純粋な値。凍結以来 4 度目の語彙拡張（beyond_stage1）
 const OpFsAddr = 29    // a = グローバルの記録（G_WSLOT >= 0）: 今のワーカーのその表の番地（x86 = mov r, fs:[8 × G_WSLOT]）
 // 原子の op（段 6 P4-4 — docs/ir.md 4.8）: rt の中だけで使う（ユーザーの式からは生成しない）。凍結以来 5 度目の語彙拡張（beyond_stage1 — .ll の経路は持たない）。
@@ -232,6 +232,9 @@ const AT_XCHG = 1
 const AT_CAS = 2
 const AT_FENCE = 3
 const AT_PAUSE = 4  // pause（スピンの待ちの 1 回 — 段 6 P4-6。fence と同じく番地・値・結果を持たない）
+// CRC-32 の折り畳み（report-774 — clmul.sober）: x86 の最適化のバックエンドの ELF の経路だけ（IR テキスト・.ll・写しのバックエンドには出ない — stage1 の語彙の外）。
+// c = CF_FOLD: a = [p, k, crc] → 畳んだ crc（p[0:k] を読む — 最適化器からは syscall と同じ不透明な読み）・c = CF_PCLMUL: a = [] → CPUID の PCLMULQDQ の bit（rt.cpu_probe）
+const OpCrcFold = 34
 const OpUnwind = 26    // 罠が張られていれば最内の罠へ巻き戻る（戻らない）。張られていなければ何もしない（続く exit 101 / 102 がプロセスを終える）
 
 // ── 欄の種別の表: op ごとの [A, B, C]・終端ごとの [X1〜X5] が何を持つか。被演算子の走査（opt の insOperands /
@@ -265,7 +268,7 @@ func opRow(op int) int {
     case OpFuncaddr: K_FN
     case OpCallI | OpAtomic: K_VAL | K_VLIST << 4 | K_OPAQ << 8
     case OpTrapI | OpTSwitch | OpTStart | OpClone: K_VAL | K_VLIST << 4
-    case OpSyscall: K_VLIST
+    case OpSyscall | OpCrcFold: K_VLIST
     case OpScanB: K_VLIST | K_OLIST << 4
     default: K_NONE // OpDead・OpREnter・OpRDepth・OpUnwind
     }
@@ -282,7 +285,7 @@ func termRow(t int) int {
     }
 }
 
-const OP_N = 34 // op の番号の上限（OpDead = 0〜OpPArith = 33）
+const OP_N = 35 // op の番号の上限（OpDead = 0〜OpCrcFold = 34）
 
 // kindsInit は St の表（op ごとの行・終端ごとの行）を opRow / termRow から組む（St を組む側で 1 回 — initScalars・x86 の群の子。
 // 読み口で遅延して組む形は、確保しうる呼び出しが展開で各パスのループに入り反復ごとの region の enter を呼んだ）
@@ -627,7 +630,7 @@ func globaladdrRaw(st mut St, g int) int {
     return push(mut st, true, OpGlobal, g, 0, 0)
 }
 
-// addWorkerGlobal はワーカーごとの rt の表（std/par を使うプログラムではワーカーの記録の表に番号を振る — 段 6 P4-3。使わなければ普通の大域）
+// addWorkerGlobal はワーカーごとの rt の表（std/task を使うプログラムではワーカーの記録の表に番号を振る — 段 6 P4-3。使わなければ普通の大域）
 func addWorkerGlobal(st mut St, name int, words int) int {
     g := addGlobalInit(mut st, name, words, -1)
     if st.taskUse {
@@ -702,6 +705,12 @@ func unwind(st mut St) {
 
 func syscall(st mut St, args int) int {
     return push(mut st, true, OpSyscall, args, 0, 0)
+}
+
+// vdsoCall は vDSO の関数（args の頭 = 番地・残り ≤ 6 個 = 引数）を C の呼び出し規約で呼ぶ（syscall の兄弟 — OS への口。効果の扱いは syscall と同じ・
+// 壊すのは C の caller-saved〔x86 の xVcall が生きている値を退避〕。vDSO の関数は SSE を使わない — Linux の vDSO は -mno-sse で建つ・report-656）
+func vdsoCall(st mut St, args int) int {
+    return push(mut st, true, OpSyscall, args, 1, 0)
 }
 
 func regionEnter(st mut St) {
@@ -1026,12 +1035,31 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         out = append(out, ')')
         return
     case OpSyscall:
-        obuf.Lit(mut out, "syscall(")
+        if b == MM_B {
+            obuf.Lit(mut out, mmName(c))
+            out = append(out, '(')
+            vals(mut st, mut out, a)
+            out = append(out, ')')
+            return
+        }
+        if b == AES_B {
+            obuf.Lit(mut out, aesName(c))
+            out = append(out, '(')
+            vals(mut st, mut out, a)
+            out = append(out, ')')
+            return
+        }
+        obuf.Lit(mut out, if b == 1 { "vcall(" } else { "syscall(" })
         vals(mut st, mut out, a)
         out = append(out, ')')
         return
     case OpScanB:
         obuf.Lit(mut out, "scanb(")
+        vals(mut st, mut out, a)
+        out = append(out, ')')
+        return
+    case OpCrcFold:
+        obuf.Lit(mut out, if c == CF_PCLMUL { "cpuclmul(" } else if c == CF_CPUID7 { "cpuid7(" } else { "crcfold(" })
         vals(mut st, mut out, a)
         out = append(out, ')')
         return

@@ -1,0 +1,23 @@
+package main
+
+// 値の位置のラムダは同一性を持つ値（task.Scope・task.Handle・端点・net.Conn …）を捕捉できない — 閉包は作成点の写しを運ぶが、同一性の値は写せない
+// （desugar が FnCap kind 5 で拒否。io.File は loader の FileUse が先に拒否する）
+
+import "std/task"
+
+type Adder func(n int) int
+
+type R struct {
+    f Adder
+}
+
+func main() {
+    v, e := task.Run((s) => {
+        t := task.Spawn(s, () => 5)
+        r := R{f: (n int) => { _ = t; n }}
+        r.f(1)
+    })
+    if e == nil {
+        println(v)
+    }
+}

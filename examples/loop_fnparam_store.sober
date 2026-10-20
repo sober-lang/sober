@@ -1,0 +1,43 @@
+package main
+
+// 関数型の仮引数（展開されるラムダ）の呼び出しの結果を、ループの中から外の mut 束縛へ代入する（F-bc — 2026-10-17）。結果は展開点の最内
+// （反復の region）に作られ、代入で外の region へ写される（境界コピー — language.md 21 節「ループ本体はスコープ」）。
+// 旧は check が結果の型を読めず写しを付けないまま type error（build は写して正しく走っていた）
+
+type Show func(k int) int
+
+type R struct {
+    n int
+    s string
+    show Show?
+}
+
+func lastOf(xs []string, route func(string) R) R {
+    mut sr := R{}
+    mut i := 0
+    while i < len(xs) {
+        sr = route(xs[i])
+        i += 1
+    }
+    return sr
+}
+
+func lastStr(xs []string, f func(string) string) string {
+    mut out := ""
+    for x <- xs {
+        r := f(x)
+        out = r
+    }
+    return out
+}
+
+func main() {
+    xs := []string{"a", "bcd", "efgh"}
+    r := lastOf(xs, (s) => R{n: len(bytes(s)), s: "<" + s + ">", show: (k) => k + len(bytes(s))})
+    println(r.s)
+    sh := r.show
+    if sh != nil {
+        println(sh(r.n))
+    }
+    println(lastStr(xs, (s) => s + "!"))
+}

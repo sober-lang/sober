@@ -1,0 +1,19 @@
+package main
+
+// ラムダの mut 仮引数は task.Lease / task.NewLocal の窓の位置だけ（diag.Par kind 25）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func apply(f func(Work) int) int {
+    return f(Work{})
+}
+
+func main() {
+    println(apply((w mut Work) => w.n))
+}

@@ -1,4 +1,4 @@
-// float_fixed.go — 浮動小数の固定桁の印字の差分オラクル（float の段 — conv.FormatFixed / std/floatfmt.FormatFixed）: 境界値 + 乱択のビット列と桁数
+// float_fixed.go — 浮動小数の固定桁の印字の差分オラクル（float の段 — convert.FormatFixed）: 境界値 + 乱択のビット列と桁数
 // （examples/float_fixed.in）と Go の strconv.FormatFloat(f, 'f', prec, 64)（examples/float_fixed.out）を作る
 //   go run scripts/oracles/float_fixed.go 3000 examples/float_fixed.in examples/float_fixed.out
 package main

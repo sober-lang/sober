@@ -1,0 +1,9 @@
+package main
+
+// refs の負例（report-883）: 参照名 task が std/task でなく testdata/refs/neg/lib を指す — task.MarkFailed は std/task.MarkFailed でない
+
+import task "testdata/refs/neg/lib"
+
+func main() {
+    println(task.MarkFailed(task.Mk(2)))
+}

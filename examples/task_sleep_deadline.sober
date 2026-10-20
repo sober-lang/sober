@@ -1,0 +1,41 @@
+package main
+
+// os.Sleep の載せ替え（net 4a — ユーザー裁定 2026-10-14 (a)・language.md 28 節「デッドライン」）: std/task のプログラムの Sleep は rt の期限つき待ち
+// （timerfd を rt.fdwait で待つ — 眠る間はワーカーを譲る）。期限つきの scope の中の Sleep は期限が来たらエラーなしで早く返り（SleepExpired = true）、
+// 期限より短い Sleep・期限の無い Sleep は満了まで眠る（false）。眠る子が 8 本でもワーカー 1 本で並んで眠る（旧 nanosleep はワーカーごと塞いだ）。
+// W1（協調形）でも W8 でも同じ出力
+
+import "std/os"
+import "std/task"
+
+func main() {
+    // 期限 50 ms の scope で 10 秒の Sleep — 期限で早く起きる（10 秒は待たない）
+    c, _ := task.Run((s task.Scope) => os.SleepExpired(10000), deadline: 50 * task.MS)
+    println("cut by deadline: ${c}")
+    // 期限より短い Sleep は満了まで（切られない）
+    d, _ := task.Run((s task.Scope) => os.SleepExpired(10), deadline: 5000 * task.MS)
+    println("short sleep cut: ${d}")
+    // 期限の無い Sleep
+    println("no deadline cut: ${os.SleepExpired(20)}")
+    // 子 8 本が期限 100 ms の scope の中でそれぞれ 1 時間眠る — 全部が期限で起きる（子は期限を継ぐ）
+    n, _ := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[bool]{}
+        mut i := 0
+        while i < 8 {
+            hs = append(hs, task.Spawn(s, () => os.SleepExpired(3600000)))
+            i += 1
+        }
+        mut k := 0
+        for v <- task.Gather(hs) {
+            if v {
+                k += 1
+            }
+        }
+        k
+    }, deadline: 100 * task.MS)
+    println("children cut: ${n}")
+    // 期限の外の Sleep(0) と負の値は待たない
+    os.Sleep(0)
+    os.Sleep(-5)
+    println("done")
+}

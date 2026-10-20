@@ -1,0 +1,26 @@
+package main
+
+// 値化可能な named fn type の仮引数は値の位置（language.md 25 節 — 工程 4 B1 の同梱）: ラムダ（捕捉つき）・名前付き関数（η 展開）・
+// 欄に入れた閉包を同じ仮引数へ渡す。関数は展開されず Def のまま閉包を受ける
+
+type Gen func(n int) int
+
+type Resp struct {
+    gen Gen
+}
+
+func apply(g Gen, x int) int {
+    return g(x)
+}
+
+func dbl(n int) int {
+    return n * 2
+}
+
+func main() {
+    tag := "abc"
+    r := Resp{gen: (n int) => n + 100}
+    println(apply((n int) => n + len(bytes(tag)), 1))
+    println(apply(dbl, 1))
+    println(apply(r.gen, 1))
+}

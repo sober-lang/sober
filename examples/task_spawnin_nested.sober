@@ -1,0 +1,32 @@
+package main
+
+// task.SpawnIn の実引数の式の中の task.Spawn（report-692）: pool の式が展開される関数（関数型の仮引数）の呼び出しで、渡したラムダの中で
+// task.Spawn する形。SpawnIn の形の印（lower の st.parIn）が pool の式を下ろす間も立ったままだと、入れ子の Spawn が SpawnIn の形
+// （実引数 4 つ）と取り違えられて build だけが拒否していた（check は受理 — check ⊃ build の食い違い）
+
+import "std/task"
+
+// pick は関数型の仮引数を持つので呼び出し点に展開される
+func pick(p task.Pool, f func() int) task.Pool {
+    _ = f()
+    return p
+}
+
+func main() {
+    pool := task.NewPool(1 * task.GB, nil)
+    r, e := task.Run((s task.Scope) => {
+        h, err := task.SpawnIn(s, pick(pool, () => { t := task.Spawn(s, () => 7); task.Join(t) }), () => 3)
+        mut v := 0
+        if err != nil {
+            v = -1
+        } else if h != nil {
+            v = task.Join(h)
+        }
+        v
+    })
+    if e != nil {
+        println(-1)
+    } else {
+        println(r)
+    }
+}

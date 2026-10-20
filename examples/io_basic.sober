@@ -4,14 +4,16 @@ package main
 // リポジトリのルートを cwd にして実行する（gate・codegen.test と同じ）。書き込み先は out/ の下
 
 import "std/io"
-import "std/utf8"
+import "std/strings"
 
 func why(p string, e error) string {
     return switch e {
     case io.NotFound{}: "${p}: not found"
     case io.Denied{}: "${p}: denied"
+    case io.Timeout{}: "${p}: timed out"
+    case io.Expired{}: "${p}: expired"
     case io.Other{errno}: "${p}: errno ${errno}"
-    case utf8.InvalidUtf8{pos}: "${p}: invalid utf-8 at ${pos}"
+    case strings.InvalidUtf8{pos}: "${p}: invalid utf-8 at ${pos}"
     }
 }
 

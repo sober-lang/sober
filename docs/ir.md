@@ -47,12 +47,12 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - 機械語（src/compiler/lower/x86.sober の xTrap / xUnwind）: 記録は機械のスタックに [前の罠, 再開番地, xmm2〜15, 呼び手の callee-saved 11 本 = rbp + 割り当ての 10 本]。
   @rt.trap[0] = 最内の記録の番地。巻き戻し = rsp を記録へ戻して前の罠を戻し、再開番地へ ret（callee-saved は記録から戻す — 子の epilogue は飛ばされる）
 - 巻き戻しは region の深度・宛先 / anchor のレジスタ・rtgrow の水位・madvise の高水位を戻さない（罠を張る側の後始末）。
-  罠を張る側 = std/par の Spawn（src/compiler/lower/par.sober — P3a-2b）: 罠の前に読んだ深度・W_DEST・W_ANCHOR を罠の後で書き戻す。rtgrow の水位と madvise の高水位は
+  罠を張る側 = std/task の Spawn（src/compiler/lower/task.sober — P3a-2b）: 罠の前に読んだ深度・W_DEST・W_ANCHOR を罠の後で書き戻す。rtgrow の水位と madvise の高水位は
   書き戻さない — どちらも enter の側で無効化される（世代 rt.rgen・前の命の高水位）ので、深度を戻せば普通の leave と同じ状態（P3a-2c の確認）。
-  最適化器は trap を「深度を変えない呼び出し」として扱わない（depth.sober / opt.sober の深度の流れ — 罠の後の setdepth を消すと 102 の子の後の子が全部死ぬ。網 = examples/par_depth）。
+  最適化器は trap を「深度を変えない呼び出し」として扱わない（depth.sober / opt.sober の深度の流れ — 罠の後の setdepth を消すと 102 の子の後の子が全部死ぬ。網 = examples/task_depth）。
   `panic(L{…})` は点で `panic: L{…}` を印字してから rt.panic を呼ぶが、罠が張られていれば印字を飛ばす（印字すると fd が標準エラーへ切り替わったまま巻き戻る）
-- 使い手 = std/par の即時形（src/compiler/lower/par.sober）: Spawn = 子の本体を持ち上げた関数 kid#N（実引数 = scope の region に置いた handle の枠の結果の置き場・
-  捕獲は枠の結果の後ろ）を trap で呼ぶ。Join の死 = 呼び手の死（PK_TASKDIED）・Try = Outcome・Scope = 死んだ子がいれば (ゼロ値, TaskDied)
+- 使い手 = std/task の即時形（src/compiler/lower/task.sober）: Spawn = 子の本体を持ち上げた関数 kid#N（実引数 = scope の region に置いた handle の枠の結果の置き場・
+  捕獲は枠の結果の後ろ）を trap で呼ぶ。Join の死 = 呼び手の死（PK_TASKDIED）・Try = Outcome・Scope = 死んだ子がいれば (ゼロ値, ChildDied)
 - stage1（凍結した Zig）の語彙の外: IR テキストに trap / unwind を含む entry は stage1 との照合を飛ばす（scripts/gatelib.sh の beyond_stage1 — float の段の前例どおり）。
   .ll の経路（--via=ll）は罠を持たない（trap = ただの呼び出しで結果 0・unwind = 何もしない — 罠のモジュールは .ll の照合をしない）
 - 網 = scripts/trapprobe.sh（`sober build --trap-probe` — 入口が trap.probe を呼ぶ単体の例: 戻る / 101 / 102 / ゼロ除算 / 入れ子 / 深い再帰の中の死 /
@@ -66,7 +66,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
   （trap と同じ扱い + 深度は不明 — depth.sober / opt.sober。結果は無い）
 - `tstart %save(%sp, %fn, %arg)`（OpTStart）: tswitch と同じく今の文脈を `*save` に積み、rsp を `%sp`（新しいスタックの頂上）へ付け替えて fn(arg) を呼ぶ（fn は戻らない）
 - 機械語 = xTrap の積み方の写し（src/compiler/lower/x86.sober の xTSave / xTRestore）。.ll の経路は切替を持たない（tstart = fn(arg) をそのまま呼ぶ・tswitch = 何もしない — 子を先に走らせる既定の 1 本道だけが動く）。stage1 の語彙の外（beyond_stage1）
-- 使い手 = std/par の task の器（src/compiler/lower/task.sober）: 子は自前の機械スタック（[TCB の頁 | ガードページ | 1 MiB] の塊 — NORESERVE・プールで再利用）で走る。
+- 使い手 = std/task の task の器（src/compiler/lower/task.sober）: 子は自前の機械スタック（[ガードページ | 1 MiB | 頁: スタックの頂上 + TCB | TC_SAVE の続き] の塊 — NORESERVE・プールで再利用・TCB は頁の途中で、スタックはその直下から下へ）で走る。
   切替（rt.task_switch / rt.task_go）は今の task の深度・W_DEST・W_ANCHOR・最内の罠を TCB へ退避し、相手のを戻す。ガードページに触れた SIGSEGV は代替スタックの rt.segv が受け、
   罠へ巻き戻る（死因 = 102・種類 3 — `StackExceeded{}`）。スタックは 1 MiB（region の深度 1023 まで再帰しても溢れない — 102 の境目を P3a と同じに保つ）
 
@@ -75,7 +75,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - `atomic.xadd %p[off], %v` → 旧値・`atomic.cas %p[off], %old, %new` → 旧値（一致したら書く）・`atomic.xchg %p[off], %v` → 旧値・`fence`（全順序の障壁）: x86 では `lock xadd` / `lock cmpxchg` / `xchg` / `mfence`。
   x86-TSO の上なので公開（release）と取得（acquire）は素の store / load で足り、原子の op は数え上げ・待ち手の置き場・受け箱・pull 列・プールの補充だけに使う（6 節の表）
 - `fsaddr @表` → 今のワーカーのその rt の表の番地。ワーカーの記録 = 表の番地の列で、表 k の番地は `fs:[8k]`（機械語は 0x64 のセグメント接頭辞つきの load 1 つ — `globaladdr` の `mov r, imm32` と同じ 1 命令）。記録は入口（ワーカーのスレッドの最初）で arch_prctl(ARCH_SET_FS) が置く（ワーカー 0 = main のスレッド — `rt.worker_init` が各表の大域の番地を並べる。P4-4 のワーカーは自分の表を確保して同じ形の記録を作る）。
-  std/par を使うプログラムの rt の表（@rt.meta・@rt.trap・@rt.task・@rt.slots・@rt.sched・@rt.iobuf / iobuf2 / statbuf・@rt.rgen / gcache / btip）は `globaladdr` の代わりに `fsaddr` で引く。std/par を使わないプログラムの IR は不変（taskUse の前例）。値はスレッドの中で変わらない（task はワーカーに固定）ので、最適化器からは `globaladdr` と同じ純粋な値（CSE・巻き上げ可）。
+  std/task を使うプログラムの rt の表（@rt.meta・@rt.trap・@rt.task・@rt.slots・@rt.sched・@rt.iobuf / iobuf2 / statbuf・@rt.rgen / gcache / btip）は `globaladdr` の代わりに `fsaddr` で引く。std/task を使わないプログラムの IR は不変（taskUse の前例）。値はスレッドの中で変わらない（task はワーカーに固定）ので、最適化器からは `globaladdr` と同じ純粋な値（CSE・巻き上げ可）。
   棄てた案: `fsaddr off` = %fs の基底 + off（記録に表を連続で置く — 基底の読み + 加算の 2 命令。spawn のラチェットの余裕が 3 命令しか無く、表ごとに 1 命令増えると越える — P4-3 の実測）
 - rt の中だけで使う（ユーザーの式からは生成しない — 表層に原子の型は入れない。DRF は imm / mut + chan の型規則で立つ）。最適化器・割り当て器からは任意のメモリに触れうる不透明な呼び出し（trap / tswitch と同じ行 — 棚卸しの表に足す。前後へ load / store を動かさない・CSE しない・消さない）
 - .ll の経路は持たない（罠・切替と同じ — 原子の op を持つモジュールは .ll の照合をしない）。stage1 の語彙の外（beyond_stage1 — float・罠・tswitch に続く凍結以来 4 度目の語彙拡張）
@@ -85,7 +85,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - `clone %sp(%fn, %arg, %tls)` → 子の tid（P4-4 — `OpClone`。ワーカーのスレッドを起こす口・rt の中だけ）: CLONE_VM | FS | FILES | SIGHAND | THREAD | SYSVSEM | SETTLS の clone(2)。
   子のスタックの頂上の下に [fn, arg] を置き、子の道は syscall の直後に fn を pop して call する（引数はスタック — tstart と同じ自前の規約）。IR の中の syscall + 分岐では書けないので op にした:
   生の clone の子は親と同じ命令列を別の rsp で続けるため、割り当て器の退避の読み戻し（rbp 相対）が親のスタックを読む。fn は戻らない（戻ったらスレッドだけ exit 60）。棄てた案: syscall の op の後ろに子の道を IR で書く（上の理由）・tstart の変種（切替の文脈を新しいスレッドで再開 — 同じ理由で syscall の直後の短い道が要る）
-- std/par を使うプログラムのプロセスの終わりは exit_group（231 — 全ワーカーを終える）。罠の表（xTrap / xUnwind）も fs:[8k] で引く（P4-3 の残り — x86 の罠の生成だけ大域の番地のままだった・rtlower の meta の番地も同じ — P4-4 で直した）
+- std/task を使うプログラムのプロセスの終わりは exit_group（231 — 全ワーカーを終える）。罠の表（xTrap / xUnwind）も fs:[8k] で引く（P4-3 の残り — x86 の罠の生成だけ大域の番地のままだった・rtlower の meta の番地も同じ — P4-4 で直した）
 
 ## 4. 全域で定義された意味 — IR に UB を持ち込まない
 
@@ -155,6 +155,7 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - 深度の計測口（2026-10-05、宛先構築レーン M5c）: 環境変数 `SOBER_DEPTH_REPORT`（1 以上の 10 進）が立っていれば、main の正常終了で `rt.depth_report` が `region_depth{max: d}` を stderr へ書く（d = 一度でも入った最深の深度 — 深度ごとの bump は enter〔full・軽い〕でだけ初期化され出ても 0 に戻らないので、熱い経路に計測の命令を足さずに読める）。旗はメタ領域の末尾の W_DREP（入口が置く）。panic（101 / 102）の経路は書かない（102 は死亡ダンプが深度を出す）。用途 = 深度の契約（language.md 27 節 — 1023 段）の消費の実測
 - 入口の引数: `_start` は初期 rsp（argc の位置 — `[argc, argv…, 0, envp…, 0]`）を sober_entry の引数 0 として渡す（ir_x86: `mov rax, rsp; and rsp, -16; sub rsp, 8; push rax; call`、LLVM: `movq %rsp, %rdi` の後に整列して call）。環境変数を読むのと、argv の置き場としてメタ領域の W_ARGV（末尾に足した 1 語 — 既存の語の番地は動かさない）に保存するのに使う（rt.read_args が読む）。引数を宣言しない sober_entry（テストの IR テキスト）は読まないだけで動く
 - 終了コード（2026-09-28）: `func main() int` なら入口が戻り値を受け、0〜255 の外は exit 101、内なら `syscall(231, code)`（exit_group）。後ろは到達しない定数の exit 0 — IR の exit 終端子は定数 code のままで、op は増やしていない（language.md 27 節）
+- errno の語はワーカーごと（2026-10-14 — net 4b・fc93eee5）: rt の中で task が待つ関数（ring の読み・net の受け等）は、待ちの後で errno の語を置き直す — 待つ間に同じワーカーの他の task が書く
 - ランタイムは Zig 版と Sober 版（src/compiler/lower/rt.sober — ir_rt / ir_rt_io の写し。同じ命令列を同じ順で組む）の二重化。IR テキスト / .ll 黄金とのバイト一致が見張る（selfhost_lower / selfhost_ll）
 - 棄てた案: .ll の手書きプレリュード（LLVM 専用になる）、Zig 製オブジェクトのリンク（実装言語が増える）
 

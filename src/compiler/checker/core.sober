@@ -11,7 +11,7 @@ package checker
 
 import "desugar"
 import "std/iter"
-import "std/par"
+import "std/task"
 import "std/table"
 
 // 写しの作業領域の大きさ（枠 = [脱糖器の式, 段]、値 = [記録, 入れ子の深さ]）。超えたら R_DEEP
@@ -464,7 +464,7 @@ func failsOf(st mut S) []int {
 // ── Def の区間の並列（段 6 P6-1）──
 // 検査は Def ごとに独立（判定は Def ごとの成否の合流 + 根の式の型）なので、Def を写しの訪問の数でおよそ等しい連続区間に割り、区間ごとに子 task が
 // 自前の S を作って「全 Def の署名 + 自分の区間の Def の本体」だけを写して検査する（区間の外の Def は部分検査の視点の外と同じ形 — 本体なし・mask 0）。
-// 合流は par.Map の添字の順（= Def の順）で親が畳む: 深すぎ（写しの溢れ）はどこかの区間で起きれば全体が too deep・失敗の Def は区間の順に連結
+// 合流は task.Map の添字の順（= Def の順）で親が畳む: 深すぎ（写しの溢れ）はどこかの区間で起きれば全体が too deep・失敗の Def は区間の順に連結
 // （collect なら全部で、最後の失敗が def — 逐次の st.defFail の上書きと同じ / でなければ最初の失敗）・失敗が無ければ根の式だけを親が検査する。
 // 出力は区間の切り方・ワーカー数・スケジュールに依らず逐次の形とバイト一致（区間の切り方は訪問の数だけで決まる — ワーカー数を読まない）
 
@@ -598,11 +598,11 @@ func checkCoreX(c desugar.Core, idx bool, collect bool) CkOut {
     return rt
 }
 
-// checkRanges は区間ごとに子 task で検査した結果（区間の順 — par.Map の添字の順）。子の死（逐次なら同じ死 — 写しの溢れは死でなく too deep の値）は
-// Map の err（TaskDied）で来るので、親の死にする。Scope + Gather で書かないのは、Def の本体の par.Gather を check の検査器が def error にするため
+// checkRanges は区間ごとに子 task で検査した結果（区間の順 — task.Map の添字の順）。子の死（逐次なら同じ死 — 写しの溢れは死でなく too deep の値）は
+// Map の err（ChildDied）で来るので、親の死にする。Scope + Gather で書かないのは、Def の本体の task.Gather を check の検査器が def error にするため
 // （main の本体と build は受理 — F 台帳候補）
 func checkRanges(c desugar.Core, srcs []int, collect bool, rs []DefRange, bud int) []CkOut {
-    outs, serr := par.Map(rs, (r) => checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size), budget: bud)
+    outs, serr := task.Map(rs, (r) => checkCoreR(c, srcs, true, collect, r.lo, r.hi, false, r.size), budget: bud)
     if serr != nil {
         return panic(InvariantBroken{})
     }

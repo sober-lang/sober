@@ -196,7 +196,7 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
                 v0e := latN(mut st, vals, 0)
                 v0 := expr(mut st, v0e, eb, ef, depth)?
                 cr := calleeRes(mut st, v0e, eb)
-                // `r, err := par.Scope(…)`: 総称の多値なので結果の型式からは読めない — 呼び出しの型（parTy の組 (T, error?)）を成分に割る（infer の bindsOf と同じ）
+                // `r, err := task.Run(…)`: 総称の多値なので結果の型式からは読めない — 呼び出しの型（parTy の組 (T, error?)）を成分に割る（infer の bindsOf と同じ）
                 whole := if nn == 2 && isParScope(mut st, v0e, eb) { computeTy(mut st, v0e, eb, ef) } else { TyRef(-1) }
                 rtys := cr.rtys
                 rpk := cr.pk
@@ -247,7 +247,7 @@ func stmts(st mut S, l ListRef, eb0 int, ef int, depth0 int, ra bool, dis bool, 
                 ve := latN(mut st, vals, j)
                 // 後で外の mut 束縛へ出ていく mut のリテラルは行き先に作る（M4 — mutDestAhead）
                 vk := kindN(mut st, ve)
-                if mutable && ((vk == ast.ESlicelit && nodeOf(mut st, ve).c != 0) || (vk == ast.EMaplit && nodeOf(mut st, ve).d != 0)) {
+                if mutable && ((vk == ast.ESlicelit && nodeOf(mut st, ve).c != 0) || (vk == ast.EMaplit && nodeOf(mut st, ve).d != 0) || vk == ast.EComposite) {
                     dr := mutDestAhead(mut st, s, latS(mut st, names, j), env0)
                     if dr >= 0 {
                         st.mutDest = dr + 1
@@ -434,7 +434,7 @@ func calleeRes(st mut S, v0e NodeRef, eb int) CalleeRes {
 }
 
 // genericResTy は総称の多値の呼び出し v0e の j 番目の結果のコアの型（呼び出しの型引数の束縛のもとで結果の型式を読む — 分からなければ -1。
-// 総称の多値の戻り F-d の束縛側の手当て — 段 6 P3b-5 の `ys, err := par.Map(…)`）
+// 総称の多値の戻り F-d の束縛側の手当て — 段 6 P3b-5 の `ys, err := task.Map(…)`）
 func genericResTy(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef) TyRef {
     vk := kindN(mut st, v0e)
     if vk != ast.ECall && vk != ast.EPipe {
@@ -455,7 +455,7 @@ func genericResTy(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef) TyRe
     return if err != nil { TyRef(-1) } else { callResultTop(mut st, rt) }
 }
 
-// scopeValue は `par.Scope((s) => 本体)` の呼び出し v の本体の値の式（ブロックなら末尾の式 — Scope の値の宣言を引く: `r, e := par.Scope(…)` の
+// scopeValue は `task.Run((s) => 本体)` の呼び出し v の本体の値の式（ブロックなら末尾の式 — Scope の値の宣言を引く: `r, e := task.Run(…)` の
 // `r.vs`。Scope でなければ -1）
 func scopeValue(st mut S, v NodeRef, eb int) NodeRef {
     if kindN(mut st, v) != ast.ECall {
@@ -464,14 +464,14 @@ func scopeValue(st mut S, v NodeRef, eb int) NodeRef {
     c := nA(nodeOf(mut st, v))
     fi := findFn(mut st, if kindN(mut st, c) == ast.EIndex { nA(nodeOf(mut st, c)) } else { c }, eb)
     args := lB(nodeOf(mut st, v))
-    if fi < 0 || ParKey(mut st, fi) != PAR_SCOPE || lenL(mut st, args) != 2 || kindN(mut st, latN(mut st, args, 0)) != ast.ELambda {
+    if fi < 0 || ParKey(mut st, fi) != PAR_SCOPE || lenL(mut st, args) != 4 || kindN(mut st, latN(mut st, args, 0)) != ast.ELambda {
         return -1
     }
     return lamTail(mut st, latN(mut st, args, 0))
 }
 
 // genericResDecl は総称の多値の呼び出し v0e の j 番目の結果の型宣言（elem なら要素の宣言）を、呼び出しの型引数の束縛（callEnv — 型引数の
-// struct 宣言込み）で読む（genericResTy の宣言版 — `rs, e := par.Map(xs, (v) => Row{…})` の `rs[1].key`）
+// struct 宣言込み）で読む（genericResTy の宣言版 — `rs, e := task.Map(xs, (v) => Row{…})` の `rs[1].key`）
 func genericResDecl(st mut S, v0e NodeRef, eb int, ef int, j int, at NodeRef, elem bool) int {
     vk := kindN(mut st, v0e)
     if vk != ast.ECall && vk != ast.EPipe {

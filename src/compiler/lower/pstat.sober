@@ -29,6 +29,7 @@ const PB_WORDS = 1024
 const PCAP_SLACK = 67108864 // 根の天井の余白（64 MiB — rt と main の分。比率でなく定数 — p5-draft 揉みどころ 5）
 
 func needPstatRt(st mut St) {
+    lsNeed(mut st, NEED_PSTAT, 0)
     st.pstatG = addGlobalInit(mut st, int(strLit(mut st, "rt.pstat")), PS_SITE + 2, -1)
     st.pbufG = addGlobalInit(mut st, int(strLit(mut st, "rt.pbuf")), PB_WORDS, -1)
     st.rtPstatSpawn = addFunc(mut st, int(strLit(mut st, "rt.pstat_spawn")), desugar.ListRef(list0(mut st)), -1)
@@ -170,7 +171,7 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "bytes_max", load(mut st, ps, PS_MAXB))
     pfield(mut st, "bytes_sum", load(mut st, ps, PS_SUMB))
     pfield(mut st, "va_slots", load(mut st, ps, PS_VA))
-    pfield(mut st, "slot_bytes", load(mut st, meta, W_SLOT_SIZE))
+    pfield(mut st, "slot_bytes", load(mut st, meta, W_SLOT_DEF))
     pfield(mut st, "tcb_mmaps", load(mut st, ps, PS_TCBMAP))
     call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
     // 入場の台帳（段 6 P5-2）: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
@@ -180,6 +181,10 @@ func buildPstatDump(st mut St) {
     pfield(mut st, "decl_over", load(mut st, mn, MN_LDOVER))
     pfield(mut st, "peak_bytes", load(mut st, mn, MN_LPEAKB))
     pfield(mut st, "peak_tasks", load(mut st, mn, MN_LPEAKT))
+    // 天井を超えた計上（give:・縮退の記帳）込みの高水位（段 3 の ② — 計上 ≥ 実使用の網）
+    pfield(mut st, "peak_all", load(mut st, mn, MN_LPEAKA))
+    // wait の scope で入場を待った回数（段 3 の ③）
+    pfield(mut st, "waits", load(mut st, mn, MN_LWAIT))
     pfield(mut st, "tcap", load(mut st, mn, MN_TCAP))
     // 終わりの計上（全部返っていれば 0 — 変異 7 の網）
     ledE := load(mut st, mn, MN_LED)
@@ -402,7 +407,7 @@ func buildPcapInit(st mut St) {
     store(mut st, mn, MN_CAP, cv)
     store(mut st, mn, MN_CAPSRC, cs)
     // task の数の天井（VA の上界 — 段 6 P5-2 admit.sober）: VA_BUDGET ÷ スロットの大きさ ÷ 2（1 task が 2 本のスロットを持つ見込み）・下限 16
-    ss := imax(mut st, load(mut st, globaladdr(mut st, st.meta), W_SLOT_SIZE), iconst(mut st, 1))
+    ss := imax(mut st, load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF), iconst(mut st, 1))
     tcap := imax(mut st, bin(mut st, BDiv, bin(mut st, BDiv, iconst(mut st, VA_BUDGET), ss), iconst(mut st, 2)), iconst(mut st, 16))
     store(mut st, mn, MN_TCAP, tcap)
     ledInit(mut st, cv, tcap)

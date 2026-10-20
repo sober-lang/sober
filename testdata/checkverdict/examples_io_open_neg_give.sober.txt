@@ -1,2 +1,2 @@
-sober: load error at examples/io_open_neg_give.sober:15:18: an io.File cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child
+sober: load error at examples/io_open_neg_give.sober:15:18: an io.File, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child
 exit=1

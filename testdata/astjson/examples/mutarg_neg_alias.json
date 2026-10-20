@@ -1,0 +1,170 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "swap",
+      "type_params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": true
+        },
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "ident",
+                "name": "a",
+                "tok": 17
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "a",
+                "tok": 19
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "b",
+                "tok": 21
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "b",
+                "tok": 23
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "t",
+                "tok": 25
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 29
+      },
+      "sig_end": 14
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 37
+              }
+            ],
+            "tok": 34
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "swap",
+                "tok": 39
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "x",
+                  "tok": 42
+                },
+                {
+                  "k": "mut_arg",
+                  "name": "x",
+                  "tok": 45
+                }
+              ],
+              "tok": 40
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 48
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 50
+                }
+              ],
+              "tok": 49
+            }
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 55
+      },
+      "sig_end": 33
+    }
+  ],
+  "consts": []
+}

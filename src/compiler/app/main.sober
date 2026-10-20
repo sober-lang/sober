@@ -24,7 +24,7 @@ import "std/hash"
 import "std/iter"
 import "std/os"
 import "std/strings"
-import "std/par"
+import "std/task"
 import "lexer"
 import "parser"
 import "ast"
@@ -235,20 +235,8 @@ func hasBytes(src []byte, w []byte) bool {
     return false
 }
 
-// analyze は analyzer 層（受理の定義に含む — language.md 30 節）の指摘を Zig 版と同じ形 `<位置>: error: <本文> (Analyzer)` で
-// 標準エラーへ全部出す（指摘があれば 1 — 判定 JSON は出さない）。--core-json と開発用のフラグでは走らせない（Zig 版と同じ）
-func analyze(p loader.Program, std map[string]string) int {
-    ls := analyzeLines(p, std)
-    for i <- iter.Range(0, len(ls)) {
-        if io.WriteStderr(bytes("${ls[i]}\n")) != nil {
-            return 1
-        }
-    }
-    return if len(ls) > 0 { 1 } else { 0 }
-}
-
 // lowerFail は lower の拒否を出して 1（健全性の規則の拒否〔diag.Frozen — lower の build が表層型の表の上で掛ける〕は analyzer.Freeze で
-// 行を引き直して analyze と同じ形で全部・他は errDiag の 1 行）
+// 行を引き直して analyzeAll と同じ形で全部・他は errDiag の 1 行）
 func lowerFail(p loader.Program, std map[string]string, err error?) int {
     return if diag.IsFrozen(err) { frozenLines(p, std) } else { fail(errDiag(p, std, err)) }
 }
@@ -264,14 +252,36 @@ func frozenLines(p loader.Program, std map[string]string) int {
     return 1
 }
 
-// analyzeLines は analyzer の指摘の行（analyze と watch が共有）
-func analyzeLines(p loader.Program, std map[string]string) []string {
+// AzLines は analyzer の指摘の行を拒否（errs）と警告（warns — 性能の lint。受理は変えない）に分けたもの
+type AzLines struct {
+    errs []string
+    warns []string
+}
+
+// analyzeAll は analyzer 層（受理の定義に含む — language.md 30 節）の指摘の行: 拒否は Zig 版と同じ形 `<位置>: error: <本文> (Analyzer)`（あれば判定 JSON は出さない）、
+// 警告は `<位置>: warning: …`（受理した check だけが判定の前に stderr へ出す）。--core-json と開発用のフラグでは走らせない（Zig 版と同じ）
+func analyzeAll(p loader.Program, std map[string]string) AzLines {
     fs := analyzer.Run(p)
-    mut out := mut []string{}
+    mut es := mut []string{}
+    mut ws := mut []string{}
     for i <- iter.Range(0, len(fs)) {
-        out = append(out, "${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)")
+        if fs[i].warn {
+            ws = append(ws, "${where(p, std, fs[i].at)}: warning: ${fs[i].what} (Analyzer)")
+        } else {
+            es = append(es, "${where(p, std, fs[i].at)}: error: ${fs[i].what} (Analyzer)")
+        }
     }
-    return freeze(out)
+    return AzLines{freeze(es), freeze(ws)}
+}
+
+// stderrLines は行を stderr へ（0 = 書けた）
+func stderrLines(ws []string) int {
+    for i <- iter.Range(0, len(ws)) {
+        if io.WriteStderr(bytes("${ws[i]}\n")) != nil {
+            return 1
+        }
+    }
+    return 0
 }
 
 // defFail は p の検査の def error の Def の添字（[j] — 無ければ [-1]。region を分けるため関数に割る — check と同じ）
@@ -369,13 +379,27 @@ func emit(p loader.Program, std map[string]string, args []string, oi int, out []
     return writeFile(args[oi], out)
 }
 
-// emitExe は emit の実行ファイル版: ファイルへ書いたら実行の bit（0o755）を付ける（標準出力へは付けない）
+// emitExe は emit の実行ファイル版: 一時ファイル（<path>.tmp）に書いて実行の bit（0o755）を付け、Rename で path へ公開する（標準出力へは付けない）。
+// 直に開いて書かない理由: カーネル 6.18 では、スレッドを複数の CPU で走らせたプロセスの実行ファイルが回収の後もしばらく（数十 ms）書き込みで開けない
+// （ETXTBSY — 素の C の pthread でも出る・rt では直せない — report-663）。rename は常に通る。一時ファイルを書けない置き場（/dev 等）は今までどおり直に書く。
+// 帰結: path の inode は毎回新しくなる（ハードリンクは切れる・既存の所有者とモードは引き継がない — go build -o と同じ）
 func emitExe(p loader.Program, std map[string]string, args []string, oi int, out []byte, err error?) int {
-    r := emit(p, std, args, oi, out, err)
-    if r != 0 || oi < 0 {
+    if err != nil || oi < 0 {
+        return emit(p, std, args, oi, out, err)
+    }
+    path := args[oi]
+    tmp := path + ".tmp"
+    if io.WriteFile(tmp, out) == nil {
+        if os.WriteMode(tmp, 493) != nil || os.Rename(tmp, path) != nil {
+            return fail("cannot write ${path}")
+        }
+        return 0
+    }
+    r := writeFile(path, out)
+    if r != 0 {
         return r
     }
-    return if os.WriteMode(args[oi], 493) != nil { fail("cannot set the mode of ${args[oi]}") } else { 0 }
+    return if os.WriteMode(path, 493) != nil { fail("cannot set the mode of ${path}") } else { 0 }
 }
 
 // loadEntry は build の entry を読む（test なら package のテストのビルド — loader.LoadTestFs）。名前付き関数型を通した呼び出しの名前付き実引数は
@@ -388,7 +412,7 @@ func loadEntry(entry string, test bool, std map[string]string) (loader.Program, 
     return surface(p)
 }
 
-// loadNamed は lower へ渡す entry を読む（名前付き実引数の写しまで — std/par の呼び出し点の形の検査〔ParCheck〕は lower の build が自分の表の上で掛ける。
+// loadNamed は lower へ渡す entry を読む（名前付き実引数の写しまで — std/task の呼び出し点の形の検査〔ParCheck〕は lower の build が自分の表の上で掛ける。
 // TypeAll は 1 回が重い — 自己 build で 1.9 G 命令）
 func loadNamed(entry string, test bool, std map[string]string) (loader.Program, error?) {
     p, lerr := loadRaw(entry, test, std)
@@ -398,7 +422,7 @@ func loadNamed(entry string, test bool, std map[string]string) (loader.Program, 
     return desugar.NamedValueArgs(p)
 }
 
-// surface は読んだ木を check・build・analyzer が共有する形へ（名前付き関数型を通した名前付き実引数の写し・std/par の呼び出し点の形の検査 —
+// surface は読んだ木を check・build・analyzer が共有する形へ（名前付き関数型を通した名前付き実引数の写し・std/task の呼び出し点の形の検査 —
 // 両方とも型を知る層。check と build が同じ拒否をする）
 func surface(p0 loader.Program) (loader.Program, error?) {
     p, nerr := desugar.NamedValueArgs(p0)
@@ -520,18 +544,23 @@ func cmdBuild(args []string) int {
             // テストのビルド（`sober test` — entry は package のディレクトリ。loader.LoadTestFs が合成の main を足す）
             test = true
             i += 1
-        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" || a == "--rt-mutant=12" {
+        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" || a == "--rt-mutant=12" || a == "--rt-mutant=15" {
             // 開発用: M:N の rt の変異（段 6 P4-4 — schedfuzz の自己検査: 1 = 未回収の失敗を到着順で選ぶ・2 = 待ちの登録と起こしを素の store / load に。
             // 3 = キャンセルの検査点を置かない — 段 6 P4-6 の税率の計測）
             // 4 = 計測の数え口（rt.mn_stat）・5 = スロットを返すときの MADV_DONTNEED を省く・6 = 盗み手が被害者の鍵を取らない
             // 7 = task の終わりで入場の台帳へ返さない・8 = 縮退した子の罠を張らない（段 6 P5-2 — parbudget の自己検査）
             // 9 = 検査点の間引きの数え口が 0 に戻らない（切れない）・10 = 間引かない（N = 1）— 検査点の間引きの網の自己検査（scripts/cutstat.sh）
             // 11 = map の string 鍵を旧表現（セル [鍵][tag][値] — compiler/lower/maprepr.sober の MR_BASE）で — 表現の差分オラクル（scripts/maprepr.sh）
-            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else { 12 }
+            // 15 = lease の使用中の印を見ない（窓の中で譲った task の置き場を別の窓が共有する — lower/lease.sober・schedfuzz の自己検査）
+            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else if a == "--rt-mutant=15" { 15 } else { 12 }
             i += 1
         } else if a == "--map-stat" {
             // 開発用: map の成長の計数（rt の変異 13 に相乗り — 終わりに `mapstat <番号> <バイト>` を stderr へ — 番号は lower/panic.sober の MS_*・SOBER_WORKERS=1 で使う — report-625 / 631）
             mutant = 13
+            i += 1
+        } else if a == "--death-trace" {
+            // 開発用: task の死を吸収せず印字して終了（rt の変異 14 — lower/trap.sober の trapDie・report-653）
+            mutant = 14
             i += 1
         } else if a == "--cut-stat" {
             cutStat = true
@@ -807,7 +836,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
         }
         if lk.hit && !verify {
             if path == "main" {
-                return CheckRes{0, lk.val, []string{}, fs}
+                return CheckRes{0, lk.val, pl.msgs, fs}
             }
             sobis = append(sobis, loader.MakeSobi(path, lk.val))
         } else {
@@ -837,7 +866,7 @@ func checkSplitR(entry string, trace bool, l0out string, self []byte) CheckRes {
                 }
             }
             if r.code == 0 {
-                return CheckRes{0, val, []string{}, fs}
+                return CheckRes{0, val, pl.msgs, fs}
             }
             sobis = append(sobis, loader.MakeSobi(path, val))
         }
@@ -874,6 +903,7 @@ func lookup(use bool, dir string, self []byte, path string, pl SplitPlan, i int,
 }
 
 // SplitPlan は小分けの順（依存が先）の package のパスと各々の視点のリンク集合。code >= 0 なら load / analyzer で終わった（その終了コード — 診断は msgs）。
+// code < 0 の msgs は analyzer の警告（受理したときだけ判定の前に出す）。
 // files = 読んだ利用者のファイル（std を除く — watch が見張る。load の拒否でも読めたところまで）
 type SplitPlan struct {
     code int
@@ -891,9 +921,9 @@ func splitPlan(entry string, std map[string]string, trace bool) SplitPlan {
     if lerr != nil {
         return SplitPlan{1, []string{}, [][]string{}, [][]byte{}, []string{"sober: ${loadDiag(p, std, lerr)}"}, fs}
     }
-    am := analyzeLines(p, std)
-    if len(am) > 0 {
-        return SplitPlan{1, []string{}, [][]string{}, [][]byte{}, am, fs}
+    am := analyzeAll(p, std)
+    if len(am.errs) > 0 {
+        return SplitPlan{1, []string{}, [][]string{}, [][]byte{}, am.errs, fs}
     }
     ks := loader.SplitOrder(p)
     mut order := mut []string{}
@@ -908,7 +938,7 @@ func splitPlan(entry string, std map[string]string, trace bool) SplitPlan {
             digests = append(digests, pkgDigest(p, ks[i], std))
         }
     }
-    return SplitPlan{0 - 1, freeze(order), freeze(links), freeze(digests), []string{}, fs}
+    return SplitPlan{0 - 1, freeze(order), freeze(links), freeze(digests), am.warns, fs}
 }
 
 // userFiles は p の利用者のファイル（std を除く）のパス
@@ -1119,7 +1149,9 @@ func cmdCheck(args []string) int {
     if stop == 1 {
         return 0
     }
-    if analyze(p, std) != 0 {
+    az := analyzeAll(p, std)
+    if len(az.errs) > 0 {
+        _ = stderrLines(az.errs)
         return 1
     }
     if stop == 2 {
@@ -1136,13 +1168,13 @@ func cmdCheck(args []string) int {
     if cerr != nil {
         return fail(errDiag(p, std, cerr))
     }
-    if writeStdout(out) != 0 {
+    if stderrLines(az.warns) != 0 || writeStdout(out) != 0 {
         return 1
     }
     return if verdictOk(out) { 0 } else { 1 }
 }
 
-// FrontRes は checkFront の並走の合流（kind 0 = 判定 out を出す・1 = 診断 msgs〔`sober: ` を付ける〕で 1・2 = analyzer の指摘 msgs〔前置きなし〕で 1）
+// FrontRes は checkFront の並走の合流（kind 0 = 判定 out を出す〔msgs = analyzer の警告 — stderr へ先に〕・1 = 診断 msgs〔`sober: ` を付ける〕で 1・2 = analyzer の指摘 msgs〔前置きなし〕で 1）
 type FrontRes struct {
     kind int
     msgs []string
@@ -1156,7 +1188,7 @@ type CkMsg struct {
 }
 
 // checkFront は `sober check <entry>` の既定の形（段 6 P6-2 — p6-draft 揉みどころ 15）: 読んで名前付き実引数を写した後、
-// ParCheck（std/par の呼び出し点の形 — load の拒否の層）・analyzer・check（脱糖 + 検査）を 3 つの子で並走させ、親が逐次の優先順で畳む:
+// ParCheck（std/task の呼び出し点の形 — load の拒否の層）・analyzer・check（脱糖 + 検査）を 3 つの子で並走させ、親が逐次の優先順で畳む:
 // ParCheck の拒否 > analyzer の指摘 > check の結果（逐次では前の層が拒否すれば後ろの層は走らない — 後ろの子の結果は捨てるだけで値は同じ）。
 // 子は印字しない（診断の行の文字列を返す — ソースの読み直しは読みの io だけ）。どれかの子が死んだら（前の層が拒否した入力で後ろの層が死ぬ形を含む）
 // 結果を全部捨てて逐次の経路で走らせ直す（死の順・死因も逐次と同じ — P6-3 の拒否の走らせ直しと同じ形）。
@@ -1173,27 +1205,27 @@ func checkFront(entry string, tst bool, std map[string]string) int {
         return fail(loadDiag(p, std, nerr))
     }
     n := nodeCount(p)
-    bpc := n * 64 + 4 * par.MB
-    ban := n * 80 + 4 * par.MB
-    bck := n * 768 + 16 * par.MB
-    r, serr := par.Scope((s par.S) => {
-        hp := par.Spawn(s, () => pcMsg(p, std), budget: bpc)
-        ha := par.Spawn(s, () => analyzeLines(p, std), budget: ban)
-        hc := par.Spawn(s, () => ckMsg(p, std), budget: bck)
-        pm := switch par.Try(hp) {
-        case par.Ok{v}: v
-        case par.Failed{}: ""
-        case par.Died{cause}: ""
+    bpc := n * 64 + 4 * task.MB
+    ban := n * 80 + 4 * task.MB
+    bck := n * 768 + 16 * task.MB
+    r, serr := task.Run((s task.Scope) => {
+        hp := task.Spawn(s, () => pcMsg(p, std), budget: bpc)
+        ha := task.Spawn(s, () => analyzeAll(p, std), budget: ban)
+        hc := task.Spawn(s, () => ckMsg(p, std), budget: bck)
+        pm := switch task.Try(hp) {
+        case task.Ok{v}: v
+        case task.Failed{}: ""
+        case task.Died{cause}: ""
         }
-        al := switch par.Try(ha) {
-        case par.Ok{v}: v
-        case par.Failed{}: []string{}
-        case par.Died{cause}: []string{}
+        al := switch task.Try(ha) {
+        case task.Ok{v}: v
+        case task.Failed{}: AzLines{[]string{}, []string{}}
+        case task.Died{cause}: AzLines{[]string{}, []string{}}
         }
-        ck := switch par.Try(hc) {
-        case par.Ok{v}: v
-        case par.Failed{}: CkMsg{[]byte{}, ""}
-        case par.Died{cause}: CkMsg{[]byte{}, ""}
+        ck := switch task.Try(hc) {
+        case task.Ok{v}: v
+        case task.Failed{}: CkMsg{[]byte{}, ""}
+        case task.Died{cause}: CkMsg{[]byte{}, ""}
         }
         frontMerge(pm, al, ck)
     })
@@ -1204,7 +1236,8 @@ func checkFront(entry string, tst bool, std map[string]string) int {
 }
 
 // frontMerge は 3 つの子の結果を逐次の優先順で 1 つに
-func frontMerge(pm string, al []string, ck CkMsg) FrontRes {
+func frontMerge(pm string, az AzLines, ck CkMsg) FrontRes {
+    al := az.errs
     if pm != "" {
         return FrontRes{1, []string{pm}, []byte{}}
     }
@@ -1214,7 +1247,7 @@ func frontMerge(pm string, al []string, ck CkMsg) FrontRes {
     if ck.msg != "" {
         return FrontRes{1, []string{ck.msg}, []byte{}}
     }
-    return FrontRes{0, []string{}, ck.out}
+    return FrontRes{0, az.warns, ck.out}
 }
 
 // frontEmit は FrontRes を逐次の cmdCheck と同じ形で出す
@@ -1230,7 +1263,7 @@ func frontEmit(r FrontRes) int {
         }
         return 1
     }
-    if writeStdout(r.out) != 0 {
+    if stderrLines(r.msgs) != 0 || writeStdout(r.out) != 0 {
         return 1
     }
     return if verdictOk(r.out) { 0 } else { 1 }
@@ -1242,14 +1275,16 @@ func checkSeq(p loader.Program, std map[string]string) int {
     if perr != nil {
         return fail(loadDiag(p, std, perr))
     }
-    if analyze(p, std) != 0 {
+    az := analyzeAll(p, std)
+    if len(az.errs) > 0 {
+        _ = stderrLines(az.errs)
         return 1
     }
     out, cerr := check(p)
     if cerr != nil {
         return fail(errDiag(p, std, cerr))
     }
-    if writeStdout(out) != 0 {
+    if stderrLines(az.warns) != 0 || writeStdout(out) != 0 {
         return 1
     }
     return if verdictOk(out) { 0 } else { 1 }
@@ -1623,7 +1658,7 @@ func cmdRun(args []string) int {
         lenPut(mut kb, bytes(p.pkg_path[k]))
         lenPut(mut kb, pkgDigest(p, k, std))
     }
-    key := hex.Encode(hash.Sha256(freeze(kb)))
+    key := hex.Format(hash.Sha256(freeze(kb)))
     cd := cacheDir()
     dir := if cd == "" { "/tmp/sober-run" } else { cd + "/sober-run" }
     exe := "${dir}/${key}"
@@ -1680,7 +1715,7 @@ func selfKey() []byte {
         }
     }
     b := io.ReadFile("/proc/self/exe") catch return []byte{}
-    return bytes(hex.Encode(hash.Sha256(b)))
+    return bytes(hex.Format(hash.Sha256(b)))
 }
 
 // pkgDigest は package k の入力の要約（ソースのファイルの列と @embed の入力 — 全体の Program p から。ファイルの順は load の順 = パスの順）
@@ -1731,7 +1766,7 @@ func pkgKey(self []byte, path string, digest []byte, link []string, sobis []load
             lenPut(mut out, hash.Sha256(sobiOf(sobis, link[i])))
         }
     }
-    return hex.Encode(hash.Sha256(freeze(out)))
+    return hex.Format(hash.Sha256(freeze(out)))
 }
 
 // sobiOf は sobis の中の package path の .sobi（無ければ空 — 依存の順に回すので起きない）
@@ -1784,7 +1819,7 @@ func cacheGet(dir string, key string) CacheVal {
         return CacheVal{false, []byte{}}
     }
     v := b[q + 66:len(b)]
-    want := bytes(hex.Encode(hash.Sha256(v)))
+    want := bytes(hex.Format(hash.Sha256(v)))
     for k <- iter.Range(0, 64) {
         if b[q + 1 + k] != want[k] {
             return CacheVal{false, []byte{}}
@@ -1799,7 +1834,7 @@ func cachePut(dir string, key string, val []byte) {
     p := cachePath(dir, key)
     mkdirs(parentOf(p))
     mut out := mut []byte{}
-    appendBytes(mut out, bytes("sobercache 1 ${key} ${len(val)} ${hex.Encode(hash.Sha256(val))}\n"))
+    appendBytes(mut out, bytes("sobercache 1 ${key} ${len(val)} ${hex.Format(hash.Sha256(val))}\n"))
     appendBytes(mut out, val)
     tmp := p + ".tmp"
     if io.WriteFile(tmp, freeze(out)) != nil {

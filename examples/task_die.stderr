@@ -1,0 +1,2 @@
+panic: ChildDied{cause: ChildDied} at task_die.sober:59:18
+  cause at task_die.sober:55:59

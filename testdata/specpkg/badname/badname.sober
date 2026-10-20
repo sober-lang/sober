@@ -1,0 +1,7 @@
+package other
+
+// docs/spec 8 章の負例 examples/pkg_neg_name が import する package: package 名がディレクトリ名と違う
+
+func F() int {
+    return 1
+}

@@ -153,7 +153,7 @@ ParameterDecl = [ IdentifierList ] [ "..." ] Type .
 ```ebnf
 Type         = TypeName [ TypeArgs ] [ "?" ] | TypeLit [ "?" ] | "(" Type ")" .
 TypeArgs     = "[" TypeArg { "," TypeArg } "]" .
-TypeArg      = Type | "(" Type "," Type { "," Type } ")" .   (* 多値の型は型引数の位置にだけ — `par.Task[(T, error?)]`（P3b 残穴1）。std/par の Task の型引数の外は loader が拒否 — 一般の匿名タプル型は入れない（決定 4 の線のまま） *)
+TypeArg      = Type | "(" Type "," Type { "," Type } ")" .   (* 多値の型は型引数の位置にだけ — `task.Handle[(T, error?)]`（P3b 残穴1）。std/task の Task の型引数の外は loader が拒否 — 一般の匿名タプル型は入れない（決定 4 の線のまま） *)
 TypeLit      = ArrayType | SliceType | MapType | FuncType | PinnedType .
 PinnedType   = "*" Type .                                 (* acquire / get の戻りにのみ現れる *)
 FuncType     = "func" Signature .   (* 仮引数名は全部付けるか全部付けないか — Go と同じ。名前は型の同一性に入らず、名前付き関数型を通した名前付き引数〔決定 7〕だけが読む *)
@@ -201,7 +201,7 @@ AnnotatedBlock = Annotation Block .                         (* @noblock { ... } 
 ```ebnf
 Expression   = Lambda | PipeExpr .
 Lambda       = LambdaParams "=>" ( Expression | Block ) .   (* Block は式位置。中の return は囲みの名前付き関数から戻る（決定 10） *)
-LambdaParams = identifier | "(" [ ParameterList ] ")" .   (* 型は省略可。双方向推論 *)
+LambdaParams = identifier | "(" [ ParameterList ] ")" .   (* 型は省略可。双方向推論。型の前の `mut`（mut 仮引数）は task.Lease / task.NewLocal の窓だけ — loader の柵（2026-10-16） *)
 
 PipeExpr     = OrExpr { "|>" PipeStage } .
 PipeStage    = PostfixExpr [ "?" [ CompositeLit ] ] .      (* 穴 _ は PipeStage の呼び出し直下引数のみ。? は段の結果に掛かる *)

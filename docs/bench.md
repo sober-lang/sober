@@ -27,6 +27,14 @@ Go の双子は言語比較のためでなく追跡の物差し（同じアル�
 - 規模: 既定 = 1BRC 10M 行（138 MB）・binary-trees 18・fannkuch 11 / `--quick` = 1M・16・10（数秒 — 変更の当たりを付ける用）/ `--heavy` = 100M（1.4 GB）・21・12。
   1BRC の 10 億行: 逐次は 2026-10-13 に `io.Chunks`（切片ずつ・写さない — RSS は入力の大きさに依らない）の形へ差し替えたので測れる（1B の規模の足し込みは積み）。並列版は全体を `io.ReadFile` で読む形のまま（区間を指して読む口が無い — 積み）
 
+## 公式の数字の取り方（2026-10-20〜 — GitHub Actions・report-920〜923）
+
+- 正は bench/data/official.tsv。README{,.ja}.md・bench/README.md の数字の行・表・グラフは `scripts/benchsync.sh` の生成物（gates の benchsync が照合）
+- 計測 = `.github/workflows/bench-official.yml`（workflow_dispatch・linux-x64-16vcpu）: 版を固定（Go 1.26.1・Rust 1.89.0・zig 0.15.2）→ bootstrap → `BENCH_PREP=1 scripts/bench.sh -n 1`（入力と双子）→ loadavg が 1.5 を割るまで待つ → `bench/seqperf.sh -n 5 --rust` → `bench/extsort.sh` → raw と bench-env.txt（CPU の型番・カーネル・各版）を artifact に
+- 物差し = task-clock（カーネルの時間を含む CPU 時間）。この VM はハードウェアのカウンタを出さない（cycles / 命令は NA — report-921）。比は同じ周の対（Sober の周 i / 相手の周 i）の比の全周の中央（周ごとに全実装に乗る箱の揺れを打ち消す — 同じ箱で 3 run の幅は最大 3.7%・report-922）。絶対値は run ごとに 2〜9% 動くので比だけで読む
+- 取り込み = 手元で `scripts/benchfetch.sh <run-id>`: 型番の照合（基線の `# env:` の cpu と違えば拒否 — 同じラベルでも 9V45 / 9V74 が来る）→ raw を bench/data/raw/<日付>-<run>/ へ写し → `benchsync --import` → 文書の生成 → gates の docs 範囲 → コミット（push はユーザー同席）。下見は `--dry`（out/bench/gha-<run>/ に作るだけ）・run 同士の再現性は `scripts/benchrepro.ts <official.tsv>...`（線 = 比の幅 ±3% 以内・±5% の勝敗の分類が一致）
+- 手元（WSL2）の cycles の計測は開発中の素振り・切り分けの道具として残る（本ファイルの以下の基準値と bench.sh の規律）。並列（bench/par/）と自己 build の表は手元の数字のまま — bench/README.md の各節に計測環境の印がある
+
 ## 基準値（初回 — 2026-10-03・f49f7db の木 + bench の追加）
 
 機械: AMD Ryzen AI Max PRO 390（24 スレッド）・31 GB・WSL2（5.15.167.4）・Go 1.26.1。`scripts/bench.sh -n 3`（既定の規模）の中央値。

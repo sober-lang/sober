@@ -1,0 +1,17 @@
+package main
+
+// 整えは Scratch の欄ごとに定数の容量で 1 回だけ（diag.Par kind 27 — 容量が実行時の値）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func main() {
+    n := 8
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.head, n))
+    println(task.Lease(lw, (w mut Work) => w.n))
+}

@@ -1,0 +1,72 @@
+package main
+
+// net 段 4a-2（N5 — 期限が net の待ちを切る）: socket の待ちは相手次第で終わらないので、task.Run の deadline: は待ちに入った task も起こす
+// （その口は io.Expired）。網は時刻に依らない両端だけ: 誰も来ない Accept・何も届かない Recv は 30 ms で切れ、1 時間の期限の Recv は届いた分を受ける。
+// 切れた後も接続はそのまま使える（待ちの登録は外れている — 次の Recv が続きを受ける）
+
+import "std/io"
+import "std/net"
+import "std/task"
+import "std/strings"
+
+const hour = 3600000 * task.MS
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Timeout{}: "timeout"
+    case io.Expired{}: "expired"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case strings.InvalidUtf8{}: "invalid utf8"
+    }
+}
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        // 誰も来ない accept の待ち
+        a, _ := task.Run((s task.Scope) => show(acceptOne(l)), deadline: 30 * task.MS)
+        out = "accept: ${a}"
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            for sc <- net.Accept(l)? {
+                net.Send(sc, bytes("ping"))?
+                x, _ := task.Run((s task.Scope) => recvOne(c), deadline: hour)
+                y, _ := task.Run((s task.Scope) => recvOne(c), deadline: 30 * task.MS)
+                z, _ := task.Run((s task.Scope) => recvOne(c), deadline: 0)
+                net.Send(sc, bytes("pong"))?
+                w := recvOne(c)
+                out = "${out}\nrecv: ${x} / ${y} / ${z} / ${w}"
+                break
+            }
+        }
+    }
+    return out, nil
+}
+
+func acceptOne(l net.Listener) error? {
+    for c <- net.Accept(l)? {
+        break
+    }
+    return nil
+}
+
+// recvOne は 1 回分の切片を文字列で（失敗はラベル）
+func recvOne(c net.Conn) string {
+    v, e := recv1(c)
+    return if e == nil { v } else { show(e) }
+}
+
+func recv1(c net.Conn) (string, error?) {
+    mut got := ""
+    for chunk <- net.Recv(c)? {
+        got = string(chunk)?
+        break
+    }
+    return got, nil
+}

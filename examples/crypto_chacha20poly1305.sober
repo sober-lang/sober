@@ -1,0 +1,147 @@
+package main
+
+// std/crypto の chacha20・poly1305・chacha20poly1305（report-793）: RFC 8439 の 2.3.2（ブロック関数）・2.4.2（暗号化）・2.5.2（Poly1305）・
+// 2.8.2（AEAD）の例の値と、Seal → Open の往復・1 ビットの改竄が Auth で落ちること。期待値は RFC 8439 の本文の値（.out のコメントでなく
+// 下の want で照合 — 食い違えば "MISMATCH"）。record 層の口（TLS 便 R1 — report-811）: 2.8.2 を SealTo（頭 5 バイトつき）で・前後に屑を挟んだ
+// 受けの切片からの OpenAt・切片の中の改竄は Auth で外は効かない・Key の使い回しで Seal と同じ値・長さの検査
+
+import "std/crypto/chacha20"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/poly1305"
+import "std/hex"
+import "std/iter"
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func seq(from int, to int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(from, to + 1) {
+        out = append(out, byte(i))
+    }
+    return freeze(out)
+}
+
+func check(name string, got string, want string) {
+    println(name, got, if got == want { "ok" } else { "MISMATCH" })
+}
+
+func main() {
+    key := seq(0, 31)
+    // 2.3.2: ブロック番号 1・nonce 000000090000004a00000000
+    check("block", hex.Format(chacha20.Block(key, unhex("000000090000004a00000000"), 1)), "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e")
+    // 2.4.2: 「Ladies and Gentlemen …」
+    pt := bytes("Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
+    ct := chacha20.XorKeyStream(key, unhex("000000000000004a00000000"), 1, pt)
+    check("encrypt", hex.Format(ct), "6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d")
+    println("decrypt", hex.Format(chacha20.XorKeyStream(key, unhex("000000000000004a00000000"), 1, ct)) == hex.Format(pt))
+    // 2.5.2
+    check("poly1305", hex.Format(poly1305.Sum(unhex("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b"), bytes("Cryptographic Forum Research Group"))), "a8061dc1305136c6c22b8baf0c0127a9")
+    // 2.8.2
+    k2 := seq(0x80, 0x9f)
+    n2 := unhex("070000004041424344454647")
+    ad := unhex("50515253c0c1c2c3c4c5c6c7")
+    sealed, e := chacha20poly1305.Seal(k2, n2, ad, pt)
+    println("seal err", e == nil)
+    check("aead", hex.Format(sealed), "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691")
+    back, oe := chacha20poly1305.Open(k2, n2, ad, sealed)
+    println("open", oe == nil, hex.Format(back) == hex.Format(pt))
+    // 1 ビットの改竄（全位置）は全部 Auth
+    mut rejected := 0
+    for i <- iter.Range(0, len(sealed)) {
+        mut t := mut []byte{}
+        for j <- iter.Range(0, len(sealed)) {
+            t = append(t, if j == i { byte(int(sealed[j]) ^ 1) } else { sealed[j] })
+        }
+        _, te := chacha20poly1305.Open(k2, n2, ad, freeze(t))
+        if te != nil {
+            rejected = rejected + 1
+        }
+    }
+    println("tamper", len(sealed), rejected)
+    _, ae := chacha20poly1305.Open(k2, n2, unhex("50515253c0c1c2c3c4c5c6c8"), sealed)
+    println("ad tamper", ae != nil)
+    _, be := chacha20poly1305.Seal(k2, unhex("0700000040414243444546"), ad, pt)
+    println("bad nonce", be != nil)
+    // 長さ 0〜130 の往復
+    mut rt := 0
+    for n <- iter.Range(0, 131) {
+        p := seq(0, n - 1)
+        s, _ := chacha20poly1305.Seal(k2, n2, ad, p)
+        o, _ := chacha20poly1305.Open(k2, n2, ad, s)
+        if len(s) == n + 16 && hex.Format(o) == hex.Format(p) {
+            rt = rt + 1
+        }
+    }
+    println("roundtrip", rt)
+    record(k2, n2, ad, pt)
+}
+
+func wrap(b []byte, pre int) []byte {
+    mut w := mut []byte{}
+    for i <- iter.Range(0, pre) {
+        w = append(w, byte(0xa5))
+    }
+    for i <- iter.Range(0, len(b)) {
+        w = append(w, b[i])
+    }
+    for i <- iter.Range(0, 3) {
+        w = append(w, byte(0x5a))
+    }
+    return freeze(w)
+}
+
+func flip(b []byte, at int) []byte {
+    mut t := mut []byte{}
+    for j <- iter.Range(0, len(b)) {
+        t = append(t, if j == at { byte(int(b[j]) ^ 1) } else { b[j] })
+    }
+    return freeze(t)
+}
+
+func record(k2 []byte, n2 []byte, ad []byte, pt []byte) {
+    k, _ := chacha20poly1305.Prepare(k2)
+    hd := unhex("1703030092")
+    rec, _ := chacha20poly1305.SealTo(k, n2, ad, pt, hd)
+    want := "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691"
+    check("sealto", hex.Format(rec), "1703030092" + want)
+    sealed := unhex(want)
+    w := wrap(sealed, 4)
+    o, oe := chacha20poly1305.OpenAt(k, n2, ad, w, 4, len(sealed))
+    println("openat", oe == nil, hex.Format(o) == hex.Format(pt))
+    mut rej := 0
+    for i <- iter.Range(0, len(sealed)) {
+        _, te := chacha20poly1305.OpenAt(k, n2, ad, flip(w, 4 + i), 4, len(sealed))
+        if te != nil {
+            rej = rej + 1
+        }
+    }
+    _, e0 := chacha20poly1305.OpenAt(k, n2, ad, flip(w, 0), 4, len(sealed))
+    _, e1 := chacha20poly1305.OpenAt(k, n2, ad, flip(w, len(w) - 1), 4, len(sealed))
+    println("openat tamper", len(sealed), rej, e0 == nil, e1 == nil)
+    // Key の使い回し: 長さ 0〜130 × 頭の長さ 0〜4 で SealTo ≡ 頭 ‖ Seal・OpenAt で戻る
+    mut same := 0
+    mut rt := 0
+    for n <- iter.Range(0, 131) {
+        p := seq(0, n - 1)
+        h := seq(200, 200 + n % 5 - 1)
+        r, _ := chacha20poly1305.SealTo(k, n2, ad, p, h)
+        s, _ := chacha20poly1305.Seal(k2, n2, ad, p)
+        if hex.Format(r) == hex.Format(h) + hex.Format(s) {
+            same = same + 1
+        }
+        b, be := chacha20poly1305.OpenAt(k, n2, ad, wrap(s, n % 3), n % 3, len(s))
+        if be == nil && hex.Format(b) == hex.Format(p) {
+            rt = rt + 1
+        }
+    }
+    println("record", same, rt)
+    _, b0 := chacha20poly1305.OpenAt(k, n2, ad, w, 8, len(sealed))
+    _, b1 := chacha20poly1305.OpenAt(k, n2, ad, w, 4, 15)
+    _, b2 := chacha20poly1305.OpenAt(k, n2, ad, w, -1, len(sealed))
+    _, b3 := chacha20poly1305.SealTo(k, unhex("0700000040414243444546"), ad, pt, hd)
+    _, b4 := chacha20poly1305.Prepare(seq(0, 30))
+    println("record badsize", b0 != nil, b1 != nil, b2 != nil, b3 != nil, b4 != nil)
+}

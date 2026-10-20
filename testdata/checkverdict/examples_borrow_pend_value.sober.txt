@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_pend_value.sober:12:28: a lambda in a value position (a function-typed field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container
+exit=1

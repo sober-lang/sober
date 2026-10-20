@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_cross.sober:11:47: task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)
+exit=1

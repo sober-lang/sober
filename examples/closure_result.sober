@@ -1,0 +1,28 @@
+package main
+
+// named fn type を Def の結果に置く（language.md 25 節 — 工程 4 B1 の同梱）: 返したラムダは値の位置（捕捉は作成点の写し）
+
+type Gen func(n int) int
+
+type Resp struct {
+    gen Gen
+}
+
+func adder(k int, tag string) Gen {
+    return (n int) => n + k + len(bytes(tag))
+}
+
+func genOf(r Resp) Gen {
+    return r.gen
+}
+
+func wrap(g Gen) Resp {
+    return Resp{gen: g}
+}
+
+func main() {
+    g := adder(10, "xy")
+    println(g(1))
+    h := genOf(wrap(g))
+    println(h(2))
+}

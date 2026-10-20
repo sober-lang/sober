@@ -1,0 +1,15 @@
+package main
+
+// 展開待ちの捕捉の資格は実引数のラムダの捕捉に掛かる: 実引数のラムダが mut を捕捉すると拒否（持ち上げた本体で走る — 捕捉は作成点の写し）
+
+type Sink func(emit func([]byte) error?) error?
+
+func run(send func(b []byte) error?, st Sink) error? {
+    return st((p []byte) => send(p))
+}
+
+func main() {
+    mut n := 0
+    e := run((b []byte) => { n += len(b); nil }, (emit) => emit(bytes("abc")))
+    println(e == nil)
+}

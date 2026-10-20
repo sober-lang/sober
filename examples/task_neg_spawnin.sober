@@ -1,0 +1,15 @@
+package main
+
+// 段 6 P5-4: task.SpawnIn の子の捕獲は task.Spawn と同じ柵（handle を捕獲できない — kind 6）。check と build が同じ名指しで拒否（desugar/parcheck.sober）
+
+import "std/task"
+
+func main() {
+    p := task.NewPool(1 * task.MB, nil)
+    r, e := task.Run((s task.Scope) => {
+        h0 := task.Spawn(s, () => 1)
+        h, err := task.SpawnIn(s, p, () => task.Join(h0) + 1)
+        if h != nil { task.Join(h) } else { 0 }
+    })
+    println(r)
+}

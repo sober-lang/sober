@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_result.sober:18:30: the result of a spawned task must be copyable to the scope (data — not a function value, par.S, par.Task or a channel endpoint)
-exit=1

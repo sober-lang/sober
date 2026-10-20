@@ -1,0 +1,22 @@
+package main
+
+// 負例（check が拒否）: `?` は行き先の関数の最後の結果が error? のときだけ使える（language.md 13 節）。
+// error を上へ返せない関数では catch か switch で受ける
+
+type Empty error
+
+func parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Empty{}
+    }
+    return 1, nil
+}
+
+func twice(s string) int {
+    n := parse(s)?
+    return n * 2
+}
+
+func main() {
+    println(twice("x"))
+}

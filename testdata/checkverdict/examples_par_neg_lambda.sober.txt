@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_lambda.sober:9:58: par.Scope / par.Spawn take a lambda literal written at the call ((s) => … for Scope, () => … for Spawn)
-exit=1

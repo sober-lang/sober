@@ -156,6 +156,8 @@ func why(e error) string {
     case BadLine{line}: "bad line ${line}"
     case io.NotFound{}: "not found"
     case io.Denied{}: "denied"
+    case io.Timeout{}: "timed out"
+    case io.Expired{}: "expired"
     case io.Other{errno}: "errno ${errno}"
     }
 }

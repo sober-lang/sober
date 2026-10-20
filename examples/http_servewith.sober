@@ -1,0 +1,30 @@
+package main
+
+// http.ServeWith（TLS 便 R5 — report-811 3 節）: 転送路の受けの口 recv と送りの口 send を渡す形。ここではネットの代わりに、recv は決まった
+// 要求の列を 1 切片で渡す偽の転送路・send は送られた応答のバイト列を印字する（net の接続なら ServeConn = `ServeWith((k) => net.Recv(c, k), (b) => net.Send(c, b), …)`・
+// TLS なら `(k) => tls.Recv(c, k)` / `(b) => tls.Send(c, b)`）。stream の応答の emit も send を通る（展開待ちの捕捉 — language.md 25 節 (α-L0)）
+
+import "std/http"
+
+func route(r http.Request) http.Response {
+    if r.path == "/stream" {
+        return http.Response{status: 200, contentType: "text/plain", length: 6, stream: (emit) => emit(bytes("chunk\n"))}
+    }
+    return http.Text("hello\n")
+}
+
+func show(b []byte) error? {
+    println("[${len(b)} bytes]")
+    return nil
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func main() {
+    reqs := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET /stream HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), route)
+    println(e == nil)
+}

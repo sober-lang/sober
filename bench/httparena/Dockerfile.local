@@ -1,0 +1,7 @@
+# Dockerfile.local — 手元・自前の fork の計測用（公開リリース不要の形 — report-671）: 先に手元の stage2 で静的 ELF を建てて
+# このディレクトリに置く（bench/httparena/local.sh build が bench/httparena/server に書く）。Sober の出力は libc に依存しない静的 ELF なので FROM scratch
+#   bin/sober build bench/httparena/main.sober -o bench/httparena/server && docker build -f bench/httparena/Dockerfile.local -t httparena-sober bench/httparena
+FROM scratch
+COPY server /server
+EXPOSE 8080
+CMD ["/server"]

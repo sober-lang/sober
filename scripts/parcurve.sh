@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # parcurve（段 6 P5-5 —「劣化曲線」・language.md 11 節「予算と admission」）: 天井を振ったときの劣化の形を Sober と Go の双子で。
 # Sober = 根の天井 SOBER_BUDGET_MB（入場できない子は逐次へ縮退 — 値は不変・並列が細る）・Go = GOMEMLIMIT（ソフトな上限 — 届くと GC が回り続ける）。
-# 題材 = 1BRC 並列（bench/1brcpar — 64 区間 × par.Map）と Skynet（bench/skynet — 100 万の葉）。ワーカー数は固定（既定 8）。
+# 題材 = 1BRC 並列（bench/1brcpar — 64 区間 × task.Map）と Skynet（bench/skynet — 100 万の葉）。ワーカー数は固定（既定 8）。
 # 各点で wall・user・最大 RSS（/usr/bin/time）と Sober の `#par admit` の縮退の数（SOBER_PAR_STATS=1 の 1 回）を、Sober → Go の交互で N 回・最小を表に。
 #   scripts/parcurve.sh [-n 回数] [-w ワーカー数] [--rows N] [--sky N] [-o 結果の TSV] [--load-max L]
 # 規律（bench.sh / parbench.sh と同じ）: 同じ 8 コアに固定（物理コアごとに 1 論理 CPU）・loadavg の警告・出力の一致を毎回・bench と gates を同時に回さない

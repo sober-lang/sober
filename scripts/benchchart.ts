@@ -1,5 +1,5 @@
 // benchchart: README のグラフ（SVG）を作る。依存なし（自前の SVG の組み立て — 将来の Sober 化の候補）。
-// 速度・RSS の 4 枚の正は bench/data/official.tsv（seqperf の行）で、scripts/benchsync.sh が生成と --check（gates）をする（seqCharts をここから読む）。
+// 速度・RSS の 4 枚の正は bench/data/official.tsv（seqperf の行）で、scripts/benchsync.sh が生成と --check（gates）をする（seqChartsFrom をここから読む）。
 //   node --experimental-strip-types scripts/benchchart.ts [--seq <seqperf の raw TSV>] [--budget <budget の時系列 TSV>] [-o docs/assets]
 //   （--seq は旧来の口 — 公式の図は benchsync.sh で。budget の図は official.tsv に無いデータなので benchsync の網の外）
 // 出力（各ライト / ダークの 2 枚 — README は <picture> で出し分ける）:
@@ -40,24 +40,12 @@ function readSeq(path: string): Map<string, { cyc: number; rss: number }> {
   return m;
 }
 
-// official.tsv（benchsync.ts の正）の seqperf の行 → 同じ形（名前-実装 → cycles 最小・RSS 最大 MB）
-function readOfficial(path: string): Map<string, { cyc: number; rss: number }> {
-  const ls = readFileSync(path, "utf8").split("\n").filter((l) => l.trim() !== "" && !l.startsWith("#"));
-  const h = ls[0].split("\t");
-  const m = new Map<string, { cyc: number; rss: number }>();
-  for (const l of ls.slice(1)) {
-    const r = Object.fromEntries(h.map((k, i) => [k, l.split("\t")[i]]));
-    if (r.run === "seqperf") m.set(`${r.bench}-${r.impl}`, { cyc: Number(r.cycles_min), rss: Number(r.rss_kb) / 1024 });
-  }
-  return m;
-}
-
-// seqCharts は速度・RSS の 4 枚（ファイル名 → 中身）— benchsync.ts が生成と照合に使う
-export function seqCharts(official: string, dir = "docs/assets"): Record<string, string> {
-  const m = readOfficial(official);
+// seqChartsFrom は速度・RSS の 4 枚（ファイル名 → 中身）— benchsync.ts が official.tsv から比を作って渡し、生成と照合に使う。
+// m = 題材-実装 → { cyc: 対 Rust の比〔rust = 1〕・rss: MB }（比の取り方 — cycles の最小 / task-clock の周の対 — は benchsync が決める）・axis = 速度の図の軸の文
+export function seqChartsFrom(m: Map<string, { cyc: number; rss: number }>, axis: string, dir = "docs/assets"): Record<string, string> {
   const o: Record<string, string> = {};
   for (const t of THEMES) {
-    o[`${dir}/bench-speed-${t.name}.svg`] = speed(t, m);
+    o[`${dir}/bench-speed-${t.name}.svg`] = speed(t, m, axis);
     o[`${dir}/bench-rss-${t.name}.svg`] = rss(t, m);
   }
   return o;
@@ -103,13 +91,13 @@ function hbars(t: Theme, title: string, axis: string, series: Series[], scale: (
   return o.join("\n") + "\n";
 }
 
-function speed(t: Theme, m: Map<string, { cyc: number; rss: number }>): string {
+function speed(t: Theme, m: Map<string, { cyc: number; rss: number }>, axis = "CPU cycles relative to the straightforward Rust twin (same algorithm)"): string {
   const get = (p: string, k: string) => { const v = m.get(`${p}-${k}`); if (!v) throw new Error(`missing ${p}-${k}`); return v; };
   const rel = (k: string) => SUBJECTS.map(([p]) => get(p, k).cyc / get(p, "rust").cyc);
   const s: Series[] = [{ label: "Sober", color: (t) => t.sober, values: rel("sober") }, { label: "Go", color: (t) => t.go, values: rel("go") }];
   const mx = Math.ceil(Math.max(...s.flatMap((x) => x.values)) * 2) / 2;
   const ticks: [number, string][] = []; for (let v = 0; v <= mx + 1e-9; v += 0.5) ticks.push([v, v.toFixed(1)]);
-  return hbars(t, "Relative CPU time — Rust = 1.0 (lower is faster)", "CPU cycles relative to the straightforward Rust twin (same algorithm)", s, (v) => v / mx, ticks,
+  return hbars(t, "Relative CPU time — Rust = 1.0 (lower is faster)", axis, s, (v) => v / mx, ticks,
     (v) => `${v.toFixed(2)}×`, [[1, "Rust = 1.0"]]);
 }
 

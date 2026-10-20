@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/strings",
+      "path": "std/convert",
       "tok": 4
     }
   ],
@@ -94,7 +94,7 @@
                     "k": "selector",
                     "base": {
                       "k": "ident",
-                      "name": "strings",
+                      "name": "convert",
                       "tok": 35
                     },
                     "field": "FormatInt",

@@ -1,0 +1,22 @@
+package main
+
+// 負例: 子 task の閉包は Listener を捕獲できない（for の本体を抜けると std が閉じる — 子が閉じた fd か再利用された番号を見る）。
+// task.Run の本体の lambda への捕獲は許す（N6）が、その中の Spawn の g は今どおり拒否（diag.FileUse — desugar/filecheck・language.md 28 節の net）
+
+import "std/net"
+import "std/task"
+
+func main() {
+    _ = run()
+}
+
+func run() error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        r, err := task.Run((s task.Scope) => {
+            h := task.Spawn(s, () => net.Port(l))
+            task.Join(h)
+        })
+        println(r)
+    }
+    return nil
+}

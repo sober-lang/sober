@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 4
     }
   ],
@@ -25,7 +25,7 @@
             "values": [
               {
                 "k": "composite",
-                "type_name": "par.Tx",
+                "type_name": "task.Sender",
                 "elems": [],
                 "tok": 13,
                 "type_args": [
@@ -46,7 +46,7 @@
                 "k": "selector",
                 "base": {
                   "k": "ident",
-                  "name": "par",
+                  "name": "task",
                   "tok": 22
                 },
                 "field": "Send",

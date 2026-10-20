@@ -25,14 +25,16 @@ const PK_EXPLICIT = 6  // 裸の `panic()`（廃止 — loader が拒否する�
 const PK_UNREACH = 7   // 到達しないはずの点（覆っていない switch の外れ）
 const PK_FTOINT = 9   // float → int の変換で NaN・±Inf・int の範囲外（language.md 37 節）
 const PK_LABEL = 8     // `panic(L{…})` — `panic: L{…}` までは点で印字済み（rt.panic は ` at …` だけ）
-const PK_TASKDIED = 10 // par.Join の子が死んでいた（この子の死は私の死 — lower/par.sober）
+const PK_TASKDIED = 10 // task.Join の子が死んでいた（この子の死は私の死 — lower/task.sober）
 const PK_STALE = 11    // 失効したチャネルの端点（give: で子へ移した後の親の別名）を使った
 const PK_SENDCLOSED = 12 // 閉じたチャネルへの送り（P3b-4 ③）
 const PK_CLOSE2 = 13   // 閉じたチャネルをもう一度閉じた（P3b-4 ③）
+const PK_BUDGET = 14   // wait の scope の子の宣言（budget:）が天井を超える — 待っても入れない（段 3 の ③ — language.md 11 節「wait」）
 
 // region の超過の種類（rt.panic_mem）
 const PM_DEPTH = 1     // region の入れ子が深度の上限を超えた
 const PM_SLOT = 2      // 1 つの region がスロットの容量を超えた
+const PM_VA = 3        // スロット・task の塊の VA の予約（mmap）が尽きた（4 = PM_STACK — task.sober）
 
 // panicSite は点 at（種類 kind）の panic: 今のブロックを rt.panic(番号) → exit 101 で閉じる（呼び手は cur を次のブロックに置き直す）
 func panicSite(st mut St, kind int, at desugar.NodeRef) {
@@ -42,7 +44,9 @@ func panicSite(st mut St, kind int, at desugar.NodeRef) {
     table.Push(mut st.psites, kind)
     table.Push(mut st.psites, pos.file)
     table.Push(mut st.psites, pos.tok)
-    call(mut st, st.rtPanic, list1(mut st, iconst(mut st, id)))
+    pc := iconst(mut st, id)
+    lsEv(mut st, EV_PSITE, int(irBlkITail(mut st, st.cur)), kind, pos.file, pos.tok)
+    call(mut st, st.rtPanic, list1(mut st, pc))
     exit(mut st, PANIC)
 }
 
@@ -65,7 +69,7 @@ func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
     }
-    // 罠の中（std/par の子 — lower/par.sober）の死は印字しない: 死を受けるのは罠を張った側（印字すると fd が標準エラーに切り替わったまま巻き戻る）
+    // 罠の中（std/task の子 — lower/task.sober）の死は印字しない: 死を受けるのは罠を張った側（印字すると fd が標準エラーに切り替わったまま巻き戻る）
     mut bSkip := BlkRef(-1)
     if st.trapUse {
         bSkip = newBlock(mut st)
@@ -104,12 +108,14 @@ func panicCall(st mut St, args desugar.ListRef, at desugar.NodeRef) (int, error?
         setCur(mut st, bSkip)
         // 子の死因として名前を出す表（taskDiedText — 点の番号 → ラベルの名前）
         st.plabs = rec4(mut st, st.plabs, table.Len(mut st.psites) / 3, int(sA(nodeOf(mut st, latN(mut st, args, 0)))), 0)
+        lsEv(mut st, EV_PLAB, int(sA(nodeOf(mut st, latN(mut st, args, 0)))), 0, 0, 0)
     }
     panicSite(mut st, PK_LABEL, at)
     return -1, nil
 }
 
 func needQstr(st mut St) {
+    lsNeed(mut st, NEED_QSTR, 0)
     if st.rtPqstr == -1 {
         st.rtPqstr = addFunc(mut st, int(strLit(mut st, "rt.print_qstr")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     }
@@ -156,6 +162,7 @@ func buildPrintQstr(st mut St) {
 }
 
 func needPanic(st mut St) {
+    lsNeed(mut st, NEED_PANIC, 0)
     if st.rtPanic == -1 {
         st.rtPanic = addFunc(mut st, int(strLit(mut st, "rt.panic")), desugar.ListRef(list1(mut st, TyI64)), -1)
     }
@@ -176,9 +183,9 @@ func buildPanicMem(st mut St) {
     meta := globaladdr(mut st, st.meta)
     toStderr(mut st, meta)
     // 綴りは将来の panic のラベル（第二便 — panic(RegionExceeded{…}) の表層）の欄に揃える:
-    // `panic: RegionExceeded{cause: <depth_limit | slot_capacity>, depth: <今の深度>}` + region ごとに `  region{depth: d, high_water: バイト}`
+    // `panic: RegionExceeded{cause: <depth_limit | slot_capacity | va_exhausted>, depth: <今の深度>}` + region ごとに `  region{depth: d, high_water: バイト}`
     printLit(mut st, "panic: RegionExceeded{cause: ")
-    choose(mut st, kind, []string{"depth_limit", "slot_capacity"}, 1)
+    choose(mut st, kind, []string{"depth_limit", "slot_capacity", "va_exhausted"}, 1)
     printLit(mut st, ", depth: ")
     depth := load(mut st, meta, W_DEPTH)
     call(mut st, st.rtPint, list1(mut st, depth))
@@ -227,7 +234,7 @@ func buildPanicMem(st mut St) {
     exit(mut st, PANIC_MEM)
 }
 
-// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13 — report-625 K0 / 631: map の常駐の帰属）。meta の後ろ（META_WORDS から MS_N 語）に
+// map の成長の計器（開発用 `sober build --map-stat` = rt の変異 13 — report-625 K0 / 631: map の常駐の帰属）。meta の後ろ（META_WORDS + 2 から MS_N 語 — META_WORDS / + 1 は W_SLOT_DEF / W_VDSO）に
 // 索引の作り直し（rt.map_find・rt.map_grow）・セル列の世代（rt.map_grow の中の rt.slice_grow — その場の深度の bump の差）・先端での 1 セル伸長の
 // 総バイトを数え、`mapstat <番号> <バイト>` と印字する（番号 = 下の MS_*）。数え口は普通の load / store（並列の task では数えこぼす — SOBER_WORKERS=1 で使う）。
 // 旗の無い build は不変。回数・最大・持ち主の付け替えの数えは自己 build の値札（+0.061 G）で落とした（report-631 — 要るときは .pair/mapstat-631-full.patch）
@@ -240,7 +247,7 @@ const MS_N = 4
 // msAdd は計数 k に v を足す
 func msAdd(st mut St, k int, v int) {
     g := globaladdr(mut st, st.meta)
-    store(mut st, g, META_WORDS + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + k), v))
+    store(mut st, g, META_WORDS + 2 + k, bin(mut st, BAdd, load(mut st, g, META_WORDS + 2 + k), v))
 }
 
 // buildDepthReport は rt.depth_report の本体（宛先構築レーン M5c — 102 の深度の契約〔27 節〕の消費の計測口・死亡ダンプ以外の口）:
@@ -259,7 +266,7 @@ func buildDepthReport(st mut St) {
             printLit(mut st, "mapstat ")
             call(mut st, st.rtPint, list1(mut st, iconst(mut st, k)))
             printLit(mut st, " ")
-            call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + k)))
+            call(mut st, st.rtPint, list1(mut st, load(mut st, meta, META_WORDS + 2 + k)))
             printLit(mut st, "\n")
         }
         call(mut st, st.rtFlush, list0(mut st))
@@ -345,7 +352,7 @@ func buildPanic(st mut St, p loader.Program) {
     for k <- iter.Range(0, len(fs)) {
         paths = append(paths, sitePath(p, fs[k]))
     }
-    // par.Join の死（PK_TASKDIED）: 子の死因（@rt.trap の [1] 終了コード・[2] 点 — Join が書いた）つきの 2 行（language.md 11 節 F）。分岐は Join の点のある
+    // task.Join の死（PK_TASKDIED）: 子の死因（@rt.trap の [1] 終了コード・[2] 点 — Join が書いた）つきの 2 行（language.md 11 節 F）。分岐は Join の点のある
     // プログラムにだけ出す（無いプログラムの IR は不変）
     mut tdied0 := false
     for i <- iter.Range(0, n) {
@@ -370,7 +377,7 @@ func buildPanic(st mut St, p loader.Program) {
     mut tdied := false
     for i <- iter.Range(0, n) {
         ftoi = ftoi || table.Get(mut st.psites, i * 3) == PK_FTOINT
-        tdied = tdied || table.Get(mut st.psites, i * 3) == PK_TASKDIED || table.Get(mut st.psites, i * 3) == PK_STALE || table.Get(mut st.psites, i * 3) == PK_SENDCLOSED || table.Get(mut st.psites, i * 3) == PK_CLOSE2
+        tdied = tdied || table.Get(mut st.psites, i * 3) == PK_TASKDIED || table.Get(mut st.psites, i * 3) == PK_STALE || table.Get(mut st.psites, i * 3) == PK_SENDCLOSED || table.Get(mut st.psites, i * 3) == PK_CLOSE2 || table.Get(mut st.psites, i * 3) == PK_BUDGET
     }
     if labels {
         head := newBlock(mut st)
@@ -396,12 +403,12 @@ func buildPanic(st mut St, p loader.Program) {
     exit(mut st, PANIC)
 }
 
-// taskDiedText は rt.panic の par.Join の死の枝（点の語の位置 fsl / line / col・ファイルの綴り paths）:
-// `panic: TaskDied{cause: <子の死因>} at <Join の位置>` + 子の死因に位置があれば `  cause at <位置>` の 2 行目 → exit 101。
+// taskDiedText は rt.panic の task.Join の死の枝（点の語の位置 fsl / line / col・ファイルの綴り paths）:
+// `panic: ChildDied{cause: <子の死因>} at <Join の位置>` + 子の死因に位置があれば `  cause at <位置>` の 2 行目 → exit 101。
 // 子の死因 = @rt.trap の [1] 終了コード（101 / 102）・[2] 点（rt.panic の点の番号 / rt.panic_mem の種類・ゼロ除算は -1）
 func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths []string) {
     toStderr(mut st, meta)
-    printLit(mut st, "panic: TaskDied{cause: ")
+    printLit(mut st, "panic: ChildDied{cause: ")
     tg := globaladdr(mut st, st.trapG)
     code := load(mut st, tg, TW_CODE)
     site := load(mut st, tg, TW_SITE)
@@ -420,7 +427,7 @@ func taskDiedText(st mut St, g int, meta int, fsl int, line int, col int, paths 
     br(mut st, bHead, -1)
     setCur(mut st, bReg)
     printLit(mut st, "RegionExceeded{cause: ")
-    choose(mut st, site, []string{"depth_limit", "slot_capacity"}, 1)
+    choose(mut st, site, []string{"depth_limit", "slot_capacity", "va_exhausted"}, 1)
     printLit(mut st, "}")
     br(mut st, bHead, -1)
     setCur(mut st, b2)
@@ -489,10 +496,10 @@ func panicTexts() []string {
     return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached"}
 }
 
-// panicTextsFor は文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで・par.Join の点があれば 10 番まで）
+// panicTextsFor は文面の表（float → int の点があれば PK_LABEL の空きを挟んで 9 番まで・task.Join の点があれば 10 番まで）
 func panicTextsFor(ftoi bool, tdied bool) []string {
     if tdied {
-        return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int", "TaskDied", "stale channel endpoint (it was given to a child)", "send on closed channel", "close of closed channel"}
+        return []string{"index out of range", "slice bounds out of range", "value out of range for byte", "negative shift amount", "integer divide by zero", "explicit panic()", "unreachable code reached", "", "float value out of range for int", "ChildDied", "stale channel endpoint (it was given to a child)", "send on closed channel", "close of closed channel", "budget: is larger than the ceiling of the wait: scope (the child can never be admitted)"}
     }
     if !ftoi {
         return panicTexts()
@@ -503,7 +510,7 @@ func panicTextsFor(ftoi bool, tdied bool) []string {
 // toStderr は行バッファを今の fd（標準出力）へ吐いてから、以降の印字の fd を 2 にする
 func toStderr(st mut St, meta int) {
     call(mut st, st.rtFlush, list0(mut st))
-    // std/par を使うプログラム: 溜めた区間を先行順で全部出す（toStderr を通るのは終わりの前だけ — 段 6 P4-2 (O1)）
+    // std/task を使うプログラム: 溜めた区間を先行順で全部出す（toStderr を通るのは終わりの前だけ — 段 6 P4-2 (O1)）
     if st.taskUse {
         call(mut st, st.rtOutDrain, list0(mut st))
     }

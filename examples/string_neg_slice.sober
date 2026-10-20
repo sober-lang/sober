@@ -1,0 +1,9 @@
+package main
+
+// 負例: string は部分列を持たない — バイトの見方を名指して `bytes(s)[a:b]` と書く（language.md 24 節）
+
+func main() {
+    s := "hello"
+    t := s[0:2]
+    println(t)
+}

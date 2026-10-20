@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 4
     }
   ],
@@ -18,7 +18,7 @@
             "name": "pool",
             "type": {
               "k": "name",
-              "name": "par.Pool"
+              "name": "task.Pool"
             },
             "tok": 10
           }

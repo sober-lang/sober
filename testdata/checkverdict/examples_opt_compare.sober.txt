@@ -1,0 +1,2 @@
+sober: desugar error at examples/opt_compare.sober:7:26 (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, or switch with case nil); `x == nil || …` narrows x only in an if whose then exits
+exit=1

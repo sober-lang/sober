@@ -54,6 +54,9 @@ for f in "${files[@]}"; do
     # 綴りの正規化（決定 16 の α 改名と同じ「同一入力の照合を保つ」扱い）: `string(b)` の合成名は 2026-10-02 に utf8.FromBytes → utf8.Parse
     # （裁定 N1）。凍結した Zig 版は旧名を合成するので、比べる前に Zig 側の出力を新名へ揃える
     sed -i 's/"field": "FromBytes"/"field": "Parse"/g' "$g"
+    # 合成の暗黙 import の行き先（2026-10-20 — 総再審 便 3 の第 2 相）: 補間は $strings std/strings → $convert std/convert・`string(b)` は
+    # std/utf8 → std/internal/utf8。凍結した Zig 版は旧い行き先を合成するので、同じく Zig 側の出力を新しい行き先へ揃える
+    perl -0pi -e 's/"alias": "\$strings",(\s*)"path": "std\/strings"/"alias": "\$convert",$1"path": "std\/convert"/g; s/"alias": "\$utf8",(\s*)"path": "std\/utf8"/"alias": "\$utf8",$1"path": "std\/internal\/utf8"/g' "$g"
     if ! timeout 20 "$tmp/parsedump" < "$f" > "$tmp/out.json" 2> "$tmp/err"; then
         echo "FAIL: $f: parsedump failed or timed out"
         fail=$((fail + 1))

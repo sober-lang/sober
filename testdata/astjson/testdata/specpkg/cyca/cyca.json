@@ -1,0 +1,67 @@
+{
+  "package": "cyca",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/specpkg/cycb",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "A",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "cycb",
+                      "tok": 13
+                    },
+                    "field": "B",
+                    "tok": 15
+                  },
+                  "args": [],
+                  "tok": 16
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 19
+                },
+                "tok": 18
+              }
+            ],
+            "tok": 12
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 23
+      },
+      "sig_end": 11
+    }
+  ],
+  "consts": []
+}

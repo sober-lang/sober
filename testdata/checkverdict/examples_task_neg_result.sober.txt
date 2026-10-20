@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_result.sober:18:31: the result of a spawned task must be copyable to the scope (data — not a function value, task.Scope, task.Handle or a channel endpoint)
+exit=1

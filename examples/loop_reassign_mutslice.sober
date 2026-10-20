@@ -1,0 +1,22 @@
+package main
+
+// ループの外の mut slice へ反復ごとに新しいリテラルを作り直して積む（F-bd — 2026-10-17）。新しい mut のリテラルは行き先（ループの外の束縛の region）に
+// 作られ、反復の region は空のまま消える。最適化の経路で、関数の入口の region.enter を「自分の深度に確保しない」と読み違えて消し、
+// 行き先の確保が初期化されない bump に書いていた（SEGV）
+
+func last(n int) int {
+    mut s := mut []int{}
+    mut i := 0
+    while i < n {
+        s = mut []int{}
+        s = append(s, i)
+        i += 1
+    }
+    return if len(s) == 0 { -1 } else { s[0] * 10 + len(s) }
+}
+
+func main() {
+    println(last(0))
+    println(last(1))
+    println(last(5))
+}

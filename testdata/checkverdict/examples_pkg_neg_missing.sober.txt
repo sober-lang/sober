@@ -1,0 +1,2 @@
+sober: load error at examples/pkg_neg_missing.sober:5:8: cannot open package directory
+exit=1

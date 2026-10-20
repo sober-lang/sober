@@ -1,0 +1,34 @@
+package math
+
+// float の数学（language.md 37 節）: 基本演算で書けないものだけを組み込みで（sqrtsd・ビット列の読み替え）。超越関数（Sin・Exp・Log 等）は入れない —
+// libm は実装・環境で最後のビットが割れる（決定性）。要るときは std で自前に書き、オラクルとの差分で守る
+
+// 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
+@intrinsic("fsqrt")
+func sysFSqrt(x float) float
+
+@intrinsic("fbits")
+func sysFBits(x float) int
+
+@intrinsic("ffrombits")
+func sysFFromBits(b int) float
+
+// Sqrt は x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 は -0）
+func Sqrt(x float) float {
+    return sysFSqrt(x)
+}
+
+// Abs は x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
+func Abs(x float) float {
+    return FromBits(Bits(x) & 9223372036854775807)
+}
+
+// Bits は x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+func Bits(x float) int {
+    return sysFBits(x)
+}
+
+// FromBits はビット列 b の float（±Inf・NaN もこれで作る）
+func FromBits(b int) float {
+    return sysFFromBits(b)
+}

@@ -52,6 +52,21 @@ func initState(st mut S, p loader.Program) {
     // 表層 AST（astref.sober）: loader の木を imm のまま持ち、写さない（節 = ABASE + ファイル × FW + 添字）
     checkTrees(p.trees)
     st.trees = p.trees
+    // 値の位置の判定の口と捕捉の表（closure.sober — クロージャの波 工程 3b）
+    st.fvcx = loader.ProgCx(p)
+    st.capFile = p.cap_file
+    afs := loader.FnValAnonFields(st.fvcx)
+    mut aft := mut []int{}
+    for i <- iter.Range(0, len(afs) / 2) {
+        aft = append(aft, ABASE + afs[i * 2] * FW + afs[i * 2 + 1])
+    }
+    st.anonFT = freeze(aft)
+    st.capNode = p.cap_node
+    st.capLo = p.cap_lo
+    st.capHi = p.cap_hi
+    st.capNames = p.cap_names
+    st.capBrw = p.cap_brw
+    st.capPend = p.cap_pend
     // ハッシュ表の頭の数（型の intern・表層型の表）は木の大きさから（3'' 第 2 段 (c) — 以前は脱糖のたびに 65536 × 2 語を 0 埋め。
     // 鎖の頭の数は引き当ての速さだけを変え、記録の順・出力は変えない）
     st.hbuckets = bucketsFor(p.trees)
@@ -124,11 +139,13 @@ func initState(st mut S, p loader.Program) {
         node := NodeRef(ABASE + fl * FW + p.fn_node[k])
         pk := p.file_pkg[fl]
         mut def := -1
-        if !(p.fn_expands[k] || (pk == st.mainPkg && strIs(mut st, sA(nodeOf(mut st, node)), "main"))) {
+        // 値化可能な named fn type の仮引数だけが展開の理由の関数は Def（値の位置 — 工程 4 B1 の同梱・build も工程 5 から同じ）
+        exp := p.fn_expands[k] && !loader.ValFOnly(st.fvcx, fl, p.fn_node[k])
+        if !(exp || (pk == st.mainPkg && strIs(mut st, sA(nodeOf(mut st, node)), "main"))) {
             def = ndef
             ndef += 1
         }
-        table.Push(mut st.fns, FnInfo{node: node, pkg: pk, expands: p.fn_expands[k], mutDef: p.fn_mut_def[k], closed: p.fn_closed[k], hasTry: p.fn_has_try[k], def: def})
+        table.Push(mut st.fns, FnInfo{node: node, pkg: pk, expands: exp, mutDef: p.fn_mut_def[k], closed: p.fn_closed[k], hasTry: p.fn_has_try[k], def: def})
         k += 1
     }
     st.ndef = ndef
@@ -157,6 +174,9 @@ func initState(st mut S, p loader.Program) {
         expandFileTypes(mut st, f)
         f += 1
     }
+    // 型の索引は expandFunc の途中（仮引数の型の展開の LookupTypeDecl）に展開前の根から組まれうる — 展開後の型宣言の節へ差し替える
+    // （lower の型表は展開後の根から組むので、古い節のままだと infoOf が引けない — 14 節の UndefinedType の不整合の正体・report-757）
+    refreshTypeIndex(mut st)
     // 組み込み error の variant: [n, (型宣言, package)…]（ロード順 × ファイル順 × 宣言順 — 型宣言は展開後の節）
     mut ne := 0
     f = 0
@@ -227,7 +247,7 @@ func expandFunc(st mut S, k int) {
     mut changed := false
     for i <- iter.Range(0, np) {
         prm := latN(mut st, ps, i)
-        t := expandTE(mut st, pk, nB(nodeOf(mut st, prm)), EXPANDFUEL)
+        t := if valFTE(mut st, pk, nB(nodeOf(mut st, prm))) { nB(nodeOf(mut st, prm)) } else { expandTE(mut st, pk, nB(nodeOf(mut st, prm)), EXPANDFUEL) }
         mut q := prm
         if t != nB(nodeOf(mut st, prm)) {
             x := ast.WithB(nodeOf(mut st, prm), int(t))
@@ -237,7 +257,7 @@ func expandFunc(st mut S, k int) {
         hset(mut st, nps + 1 + i, int(q))
     }
     rs := fnResults(mut st, k)
-    nrs := expandList(mut st, pk, rs, EXPANDFUEL)
+    nrs := if lenL(mut st, rs) == 1 && valFTE(mut st, pk, latN(mut st, rs, 0)) { rs } else { expandList(mut st, pk, rs, EXPANDFUEL) }
     if !changed && nrs == rs {
         return
     }
@@ -251,14 +271,27 @@ func expandFunc(st mut S, k int) {
     table.Set(mut st.fns, k, fi)
 }
 
-// expandFieldList は欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）
-func expandFieldList(st mut S, pk int, fs ListRef) ListRef {
+// valFTE は型式 te（package pk）が値化可能な named fn type かその option か — 展開せず値の位置に残す（check の脱糖と lower が同じ形を読む）
+func valFTE(st mut S, pk int, te NodeRef) bool {
+    if te == -1 {
+        return false
+    }
+    n := if kindN(mut st, te) == ast.TOpt { nA(nodeOf(mut st, te)) } else { te }
+    if kindN(mut st, n) != ast.TName {
+        return false
+    }
+    return fnValDeclNode(mut st, LookupTypeDecl(mut st, pk, sA(nodeOf(mut st, n))))
+}
+
+// expandFieldList は欄の列 fs の型式を展開する（変わらなければ fs、変われば作り直した KField の列）。val = struct の欄（値化可能な
+// named fn type とその option は値の位置なので展開しない）
+func expandFieldList(st mut S, pk int, fs ListRef, val bool) ListRef {
     n := lenL(mut st, fs)
     out := ListRef(listN(mut st, n))
     mut changed := false
     for i <- iter.Range(0, n) {
         fd := latN(mut st, fs, i)
-        t := expandTE(mut st, pk, nB(nodeOf(mut st, fd)), EXPANDFUEL)
+        t := if val && valFTE(mut st, pk, nB(nodeOf(mut st, fd))) { nB(nodeOf(mut st, fd)) } else { expandTE(mut st, pk, nB(nodeOf(mut st, fd)), EXPANDFUEL) }
         mut q := fd
         if t != nB(nodeOf(mut st, fd)) {
             x := ast.WithB(nodeOf(mut st, fd), int(t))
@@ -275,7 +308,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
     bk := kindN(mut st, body)
     if bk == ast.BStruct || bk == ast.BError {
         fs := lA(nodeOf(mut st, body))
-        nfs := expandFieldList(mut st, pk, fs)
+        nfs := expandFieldList(mut st, pk, fs, bk == ast.BStruct)
         if nfs == fs {
             return body
         }
@@ -290,7 +323,7 @@ func expandBody(st mut S, pk int, body NodeRef) NodeRef {
         for v <- iter.Range(0, n) {
             vr := latN(mut st, vs, v)
             fs := lB(nodeOf(mut st, vr))
-            nfs := expandFieldList(mut st, pk, fs)
+            nfs := expandFieldList(mut st, pk, fs, false)
             mut q := vr
             if nfs != fs {
                 x := ast.WithB(nodeOf(mut st, vr), int(nfs))
@@ -339,6 +372,11 @@ func expandFileTypes(st mut S, f int) {
 // LookupTypeDecl は型式の名前（文字列 — "N" か "ref.N"）の型宣言（無ければ -1。修飾参照は公開の検査つき — ResolveType）
 func LookupTypeDecl(st mut S, pk int, name StrRef) NodeRef {
     return NodeRef(ResolveType(mut st, pk, name).idx)
+}
+
+// NamedFnTE は値の位置に残した named fn type の型式 te（package pk）を関数型の節へ展開する（lower が関数値の型を読む口 — 工程 5）
+func NamedFnTE(st mut S, pk int, te NodeRef) NodeRef {
+    return expandTE(mut st, pk, te, EXPANDFUEL)
 }
 
 // EXPANDFUEL は名前付き関数型の展開（expandTE / expandList）の燃料 = 入れ子の深さの上限

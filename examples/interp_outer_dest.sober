@@ -1,0 +1,32 @@
+package main
+
+// 外の束縛への補間の代入（F-bf・report-856）: 宣言より深い region（展開されたラムダの本体 = while の反復）から外の string へ補間を代入すると、
+// 補間は行き先の深度に直に作る（M5b — 格納点の写しを省く relocFree の前提）。--passes なしの lower は補間を `+` の連鎖に組み直し、
+// 穴 1 つの補間は穴の値そのものを返していたので、どちらも反復の region に置き去りになり、後の確保に上書きされていた（tls_trace の log）
+
+func each(s []byte, k func([]byte)) {
+    mut at := 0
+    while at < len(s) {
+        k(s)
+        at += 1
+    }
+}
+
+func main() int {
+    s := []byte{65, 66}
+    mut log := ""
+    mut last := ""
+    each(s, (f) => {
+        t, _ := string(f)
+        log = "${log}app ${t}\n"
+        u := "${t}${t}"
+        last = "${u}"
+    })
+    mut j := 0
+    while j < 3 {
+        println("${j}zzzzzzzzzzzzzzzz${j}")
+        j += 1
+    }
+    println("${log}last ${last}")
+    return 0
+}

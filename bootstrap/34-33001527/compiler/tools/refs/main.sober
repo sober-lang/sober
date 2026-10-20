@@ -1,0 +1,2266 @@
+package main
+
+// refs: リネーム道具の参照検索（読むだけ — report-882 / 883）。対象 = package のトップレベル名（関数・const・型・variant・error ラベル）。
+// 標準入力のファイル一覧（1 行 1 つ・リポジトリルート相対）の .sober を 1 本ずつ字句 + parse し、名前の綴りが一致する字句を全数
+// 「対象 TARGET / 別物 OTHER（理由つき）/ 未分類 UNCLASSIFIED」に振り分けて TSV で書く（国勢調査 — fail-closed: 未分類が 1 つでもあれば終了コード 2）。
+// 振り分けは 2 系統の突き合わせ: (A) 構文木の名前の欄（tok の字句と綴りを照合）と (B) 字句だけの証明
+// （裸の名前は自分の package のトップレベル名しか指さない・`ref.名前` は import の参照名 ref の package — シャドーイング禁止と
+// 「局所名はトップレベル名・import の参照名と同名不可」〔loader/localnames.sober〕が根拠）。食い違いは未分類。
+// コメント・文字列リテラルの中の綴りは TEXT として候補に出す（書き換えの対象外 — 手で見る）。compiler/ の文字列リテラルは
+// COMPILER-LIT（コンパイラが名前で知っている候補 — 鎖の罠の手掛かり）。
+// loadcheck: entry を loader で読み、各ファイルの import の参照名の表（この道具の規則）≡ loader の表を照合する（道具の解決の網）。
+// 構文木は compiler/ の parser で読む（コンパイラと同じ文法）。補間の穴の字句列は parser の lexHoles と同じ規則の写し（allTokens —
+// parser に輸出を足すと自己 build の命令の線に乗るので写した。乖離すると tok の字句の照合が崩れて未分類に出る）
+
+import "std/io"
+import "std/os"
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "std/convert"
+import "lexer"
+import "parser"
+import "ast"
+import "loader"
+import "desugar"
+
+const Target = 1
+const Other = 2
+
+// Toks は 1 ファイルの字句列（穴の字句を末尾に足した列 — AST の tok の番号）と、穴の字句の囲む文字列リテラル（本文の字句の番号・本文の字句は -1）
+type Toks struct {
+    ts []lexer.Token
+    host []int
+}
+
+// Hit は構文木の名前の欄の 1 つ（tok = 名前の字句・穴の中なら囲む文字列の字句）
+type Hit struct {
+    tok int
+    cls int
+    kind string
+}
+
+type File struct {
+    path string
+    src []byte
+    pkg string
+    refs []string
+    paths []string
+}
+
+func lexeme(src []byte, t lexer.Token) string {
+    r := string(src[t.start:t.end]) catch return "?"
+    return r
+}
+
+// tokens は字句のビルダーの写し（`builder.Build` の結果の欄を直に読むと check が CoreFragment で拒否する — FLEDGER F-d の族。
+// 型つきの包みで回避 — parser の tokens と同じ形）
+func tokens(b mut builder.Builder[lexer.Token]) []lexer.Token {
+    return builder.Build(mut b)
+}
+
+// allTokens は parser の lexHoles と同じ規則で補間の穴の字句を末尾に足した列（入れ子の穴の host は一番外の本文の文字列リテラル）
+func allTokens(src []byte, ts []lexer.Token) Toks {
+    mut all := builder.Builder[lexer.Token]{}
+    mut host := builder.Builder[int]{}
+    for k <- iter.Range(0, len(ts)) {
+        builder.Push(mut all, ts[k])
+        builder.Push(mut host, 0 - 1)
+    }
+    mut i := 0
+    while i < builder.Len(mut all) {
+        snap := tokens(mut all)
+        while i < len(snap) {
+            t := snap[i]
+            if t.tag == lexer.StringLiteral {
+                hv := builder.Get(mut host, i)
+                h := if hv >= 0 { hv } else { i }
+                s := t.start
+                n := t.end - t.start
+                mut j := 1
+                while j + 1 < n {
+                    c := src[s + j]
+                    if c == '\\' && j + 2 < n {
+                        j += 1
+                    } else if c == '$' && src[s + j + 1] == '{' {
+                        end := lexer.InterpEnd(src, s + j + 1)
+                        if end < 0 {
+                            j = n
+                        } else {
+                            a := s + j + 2
+                            sub := lexer.Lex(src[a:end - 1])
+                            for m <- iter.Range(0, len(sub)) {
+                                u := sub[m]
+                                builder.Push(mut all, lexer.Token{u.tag, u.start + a, u.end + a})
+                                builder.Push(mut host, h)
+                            }
+                            j = end - s - 1
+                        }
+                    }
+                    j += 1
+                }
+            }
+            i += 1
+        }
+    }
+    return Toks{tokens(mut all), builder.Build(mut host)}
+}
+
+// pkgOf はファイルのパス（ルート相対）の package: std は `std/<dir>`・それ以外は `dir:<dir>`
+func pkgOf(path string) string {
+    if strings.HasPrefix(path, "src/std/") {
+        d, _, _ := strings.CutLast(strings.TrimPrefix(path, "src/"), "/")
+        return d
+    }
+    d, _, ok := strings.CutLast(path, "/")
+    return if ok { "dir:" + d } else { "dir:." }
+}
+
+// impPkg は from（import を書いたファイル）の import のパスの package（pkgOf と同じ綴り）。std 以外は cwd 相対（loader の LoadFs）—
+// cwd は src/compiler の下なら src/compiler（stage2 の建て方・tools）、それ以外はリポジトリのルート（examples・bench・testdata の entry — loaderjson.list の規約）
+func impPkg(from string, path string) string {
+    if strings.HasPrefix(path, "std/") {
+        return path
+    }
+    return if strings.HasPrefix(from, "src/compiler/") { "dir:src/compiler/" + path } else { "dir:" + path }
+}
+
+// lastSeg はパスの最後の区切りの後
+func lastSeg(path string) string {
+    _, b, ok := strings.CutLast(path, "/")
+    return if ok { b } else { path }
+}
+
+func refPkg(f File, ref string) string {
+    for i <- iter.Range(0, len(f.refs)) {
+        if f.refs[i] == ref {
+            return impPkg(f.path, f.paths[i])
+        }
+    }
+    return ""
+}
+
+// importsOf は木の import 宣言の参照名とパス（alias なしは package 名 = パスの最後 — loader の PkgName の規則。`iter#` 等の合成の import は除く）
+func importsOf(t ast.Tree) ([]string, []string) {
+    mut rs := mut []string{}
+    mut ps := mut []string{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.KImport {
+            p := loader.Name(t, x.b)
+            r := if x.a >= 0 { loader.Name(t, x.a) } else { lastSeg(p) }
+            if !strings.HasSuffix(r, "#") {
+                rs = append(rs, r)
+                ps = append(ps, p)
+            }
+        }
+    }
+    return freeze(rs), freeze(ps)
+}
+
+// importsLex は parse できないファイルの import を字句だけで（`import "p"` / `import a "p"`）
+func importsLex(src []byte, ts []lexer.Token) ([]string, []string) {
+    mut rs := mut []string{}
+    mut ps := mut []string{}
+    for k <- iter.Range(0, len(ts)) {
+        if ts[k].tag == lexer.KwImport && k + 1 < len(ts) {
+            mut q := k + 1
+            mut alias := ""
+            if ts[q].tag == lexer.Identifier && q + 1 < len(ts) {
+                alias = lexeme(src, ts[q])
+                q += 1
+            }
+            if ts[q].tag == lexer.StringLiteral {
+                raw := bytes(lexeme(src, ts[q]))
+                p := string(raw[1:len(raw) - 1]) catch ""
+                rs = append(rs, if alias != "" { alias } else { lastSeg(p) })
+                ps = append(ps, p)
+            }
+        }
+    }
+    return freeze(rs), freeze(ps)
+}
+
+func importsAny(ok bool, t ast.Tree, src []byte, ts []lexer.Token) ([]string, []string) {
+    if ok {
+        return importsOf(t)
+    }
+    return importsLex(src, ts)
+}
+
+func isName(src []byte, ts []lexer.Token, k int, name string) bool {
+    return k >= 0 && k < len(ts) && ts[k].tag == lexer.Identifier && lexeme(src, ts[k]) == name
+}
+
+// qualified は名前の欄の文字列 s（`N` か `R.N`）が tok から書かれている形の名前の字句の番号と参照名（裸なら ""・形が合わなければ -1）
+func qualified(f File, ts []lexer.Token, tok0 int, s string, name string) (int, string) {
+    // `mut T` の型式の節の tok は `mut` の字句
+    tok := if tok0 >= 0 && tok0 + 1 < len(ts) && ts[tok0].tag == lexer.KwMut { tok0 + 1 } else { tok0 }
+    r, n, dot := strings.CutLast(s, ".")
+    if !dot {
+        return if isName(f.src, ts, tok, name) { tok } else { 0 - 1 }, ""
+    }
+    if n != name || !isName(f.src, ts, tok, r) || tok + 2 >= len(ts) || ts[tok + 1].tag != lexer.Dot || !isName(f.src, ts, tok + 2, name) {
+        return 0 - 1, r
+    }
+    return tok + 2, r
+}
+
+func bareCls(f File, q string) int {
+    return if f.pkg == q { Target } else { Other }
+}
+
+func refCls(f File, ref string, q string) int {
+    return if refPkg(f, ref) == q { Target } else { Other }
+}
+
+// desc は節の種類ごとの欄の中身（desugar/init.sober の desc の写し + 脱糖器が見ない種類 — 1 = 節・2 = 文字列・3 = 節の列・4 = 文字列の列・
+// 0 = 値か無し）。到達できる節だけを辿るのに使う: parser の試し読みの残骸（composite の欄キーを先に式として読んだ EIdent 等）は表に残るが
+// 木から辿れない。表が古くて欄を見落とすと、その下の名前は構文木の欄に出ず字句の証明だけになる（対象の package では未分類 — fail-closed）
+func desc(k int, b int) int {
+    return switch k {
+    case ast.EIdent | ast.EStrlit | ast.EMutArg | ast.TName: d6(2, 0, 0, 0, 0, 0)
+    case ast.EFloat: d6(0, 2, 0, 0, 0, 0)
+    case ast.EBinary: d6(0, 1, 1, 0, 0, 0)
+    case ast.EUnary: d6(0, 1, 0, 0, 0, 0)
+    case ast.ECall: d6(1, 3, 0, 0, 0, 0)
+    case ast.EPipe: d6(1, 1, 3, 0, 0, 0)
+    case ast.EIndex | ast.ETry | ast.SWhile | ast.KEntry | ast.TMap | ast.ECatch: d6(1, 1, 0, 0, 0, 0)
+    case ast.ESlice3 | ast.EIf: d6(1, 1, 1, 0, 0, 0)
+    case ast.EInterp: d6(4, 3, 0, 0, 0, 0)
+    case ast.ESlicelit: d6(1, 3, 0, 0, 0, 0)
+    case ast.EMaplit: d6(1, 1, 3, 0, 0, 0)
+    case ast.EComposite: d6(2, 3, 3, 0, 0, 0)
+    case ast.ESelector: d6(1, 2, 0, 0, 0, 0)
+    case ast.ELambda | ast.KCase: d6(3, 1, 0, 0, 0, 0)
+    case ast.ESwitch: d6(3, 3, 1, 0, 0, 0)
+    case ast.EBlock | ast.SRet | ast.KBlock | ast.BStruct | ast.BUnion | ast.BError | ast.BPanic | ast.KPConst | ast.TTuple: d6(3, 0, 0, 0, 0, 0)
+    case ast.EFor: if b == 1 { d6(3, 0, 3, 0, 0, 0) } else { d6(3, 0, 1, 0, 0, 0) }
+    case ast.SBind: d6(4, 0, 3, 0, 0, 0)
+    case ast.SAssign: d6(3, 0, 3, 0, 0, 0)
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined: d6(1, 0, 0, 0, 0, 0)
+    case ast.TArray: d6(0, 1, 0, 0, 0, 0)
+    case ast.TFunc | ast.BFunc: d6(3, 3, 4, 0, 0, 0)
+    case ast.TGeneric | ast.KVariant: d6(2, 3, 0, 0, 0, 0)
+    case ast.KFile: d6(2, 3, 3, 3, 3, 3)
+    case ast.KImport: d6(2, 2, 0, 0, 0, 0)
+    case ast.KPType: d6(2, 2, 3, 0, 0, 0)
+    case ast.KTypeDecl: d6(2, 4, 1, 0, 0, 0)
+    case ast.KField | ast.KParam | ast.KConst | ast.KElem | ast.KLParam | ast.KFieldPat | ast.KNamedArg: d6(2, 1, 0, 0, 0, 0)
+    case ast.KFuncDecl: d6(2, 4, 3, 3, 1, 0)
+    case ast.KIntrinsic: d6(2, 2, 3, 3, 0, 0)
+    case ast.KGen: d6(4, 1, 3, 0, 0, 0)
+    default: 0
+    }
+}
+
+func d6(a int, b int, c int, d int, e int, f int) int {
+    return a + b * 8 + c * 64 + d * 512 + e * 4096 + f * 32768
+}
+
+func push(st mut []int, sp int, v int) int {
+    if sp < len(st) {
+        st[sp] = v
+    } else {
+        st = append(st, v)
+    }
+    return sp + 1
+}
+
+// reach は根（KFile）から辿れる節の印
+func reach(t ast.Tree) []bool {
+    n := len(t.nodes)
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    // 明示のスタック（木の深さに依らない）: stack[0:sp] が積んだ分
+    mut stack := mut []int{}
+    mut sp := 0
+    for i <- iter.Range(0, n) {
+        if t.nodes[i].kind == ast.KFile {
+            sp = push(mut stack, sp, i)
+        }
+    }
+    while sp > 0 {
+        sp -= 1
+        i := stack[sp]
+        if i < 0 || i >= n || seen[i] {
+            continue
+        }
+        seen[i] = true
+        x := t.nodes[i]
+        vs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+        mut cc := desc(x.kind, x.b)
+        for j <- iter.Range(0, 6) {
+            m := cc % 8
+            cc = cc / 8
+            v := vs[j]
+            if v >= 0 && m == 1 {
+                sp = push(mut stack, sp, v)
+            } else if v >= 0 && m == 3 {
+                for e <- iter.Range(0, ast.ListLen(t, v)) {
+                    sp = push(mut stack, sp, ast.ListAt(t, v, e))
+                }
+            }
+        }
+    }
+    return freeze(seen)
+}
+
+// astHits は構文木の名前の欄のうち綴りが name のもの（tok の字句と照合済み — 合わないものは synth に数える）
+func astHits(f File, tt Toks, t ast.Tree, q string, name string) ([]Hit, int) {
+    ts := tt.ts
+    mut hs := mut []Hit{}
+    mut synth := 0
+    live := reach(t)
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if !live[i] {
+            continue
+        }
+        k := x.kind
+        mut slot := 0 - 1
+        if k == ast.EIdent || k == ast.EComposite || k == ast.TName || k == ast.TGeneric || k == ast.KFuncDecl || k == ast.KTypeDecl ||
+            k == ast.KConst || k == ast.KVariant || k == ast.KIntrinsic || k == ast.KField || k == ast.KFieldPat || k == ast.KNamedArg {
+            slot = x.a
+        } else if k == ast.ESelector || k == ast.KPType {
+            slot = x.b
+        }
+        if slot >= 0 {
+            s := loader.Name(t, slot)
+            if s == name || strings.HasSuffix(s, "." + name) {
+                inHole := x.tok >= 0 && x.tok < len(ts) && ts[x.tok].tag == lexer.StringLiteral && k != ast.KFieldPat
+                if k == ast.ESelector {
+                    b := t.nodes[x.a]
+                    // `string(b)` の書き換え先 `$utf8.Parse(b)`（parser の合成 — 基底 EUtf8Ref は std/utf8）
+                    utf := b.kind == ast.EUtf8Ref
+                    cls := if utf { if q == "std/utf8" { Target } else { Other } } else if b.kind == ast.EIdent && refPkg(f, loader.Name(t, b.a)) != "" { refCls(f, loader.Name(t, b.a), q) } else { Other }
+                    kd := if cls == Target { "ref" } else { "field-sel" }
+                    if !utf && (inHole || isName(f.src, ts, x.tok, name)) {
+                        hs = append(hs, Hit{x.tok, cls, kd})
+                    } else if cls == Target {
+                        synth += 1
+                    }
+                } else if k == ast.EIdent {
+                    if inHole || isName(f.src, ts, x.tok, name) {
+                        hs = append(hs, Hit{x.tok, bareCls(f, q), "ref"})
+                    } else if bareCls(f, q) == Target {
+                        synth += 1
+                    }
+                } else if k == ast.EComposite || k == ast.TName || k == ast.TGeneric || k == ast.KPType {
+                    kd := if k == ast.EComposite { "composite" } else if k == ast.KPType { "pattern" } else { "type" }
+                    if inHole {
+                        _, r := qualified(f, ts, 0 - 1, s, name)
+                        hs = append(hs, Hit{x.tok, if r == "" { bareCls(f, q) } else { refCls(f, r, q) }, kd})
+                    } else {
+                        at, r := qualified(f, ts, x.tok, s, name)
+                        if at < 0 {
+                            synth += 1
+                        } else {
+                            hs = append(hs, Hit{at, if r == "" { bareCls(f, q) } else { refCls(f, r, q) }, kd})
+                        }
+                    }
+                } else if isName(f.src, ts, x.tok, name) {
+                    cls := if k == ast.KField || k == ast.KFieldPat || k == ast.KNamedArg { Other } else { bareCls(f, q) }
+                    kd := switch k {
+                    case ast.KFuncDecl: "decl-func"
+                    case ast.KTypeDecl: "decl-type"
+                    case ast.KConst: "decl-const"
+                    case ast.KVariant: "decl-variant"
+                    case ast.KIntrinsic: "decl-intrinsic"
+                    case ast.KField: "field-decl"
+                    case ast.KFieldPat: "field-pat"
+                    default: "named-arg"
+                    }
+                    hs = append(hs, Hit{x.tok, cls, kd})
+                } else {
+                    synth += 1
+                }
+            }
+        }
+    }
+    return freeze(hs), synth
+}
+
+// annotHits は `@errors(…)` の列の名前（構文木はラベルの字句を持たない — 字句から読む）
+func annotHits(f File, ts []lexer.Token, q string, name string) []Hit {
+    mut hs := mut []Hit{}
+    for k <- iter.Range(0, len(ts)) {
+        if ts[k].tag == lexer.At && isName(f.src, ts, k + 1, "errors") && k + 2 < len(ts) && ts[k + 2].tag == lexer.LParen {
+            mut p := k + 3
+            while p < len(ts) && ts[p].tag != lexer.RParen {
+                if isName(f.src, ts, p, name) {
+                    dotted := p >= 2 && ts[p - 1].tag == lexer.Dot && ts[p - 2].tag == lexer.Identifier
+                    cls := if dotted { refCls(f, lexeme(f.src, ts[p - 2]), q) } else { bareCls(f, q) }
+                    hs = append(hs, Hit{p, cls, "errors-annot"})
+                }
+                p += 1
+            }
+        }
+    }
+    return freeze(hs)
+}
+
+// lexCls は字句だけの証明（字句 k は綴り name の識別子）: Target = 対象でありうる（裸で自分の package が対象 / 対象の package の参照名の欄）・
+// Other = 対象でないことが字句で決まる。理由を添える
+func lexCls(f File, tt Toks, k int, q string) (int, string) {
+    ts := tt.ts
+    same := k >= 2 && tt.host[k - 1] == tt.host[k] && tt.host[k - 2] == tt.host[k]
+    if same && ts[k - 1].tag == lexer.Dot {
+        if ts[k - 2].tag == lexer.Identifier {
+            r := lexeme(f.src, ts[k - 2])
+            p := refPkg(f, r)
+            if p != "" {
+                return if p == q { Target } else { Other }, "other-pkg:" + p
+            }
+        }
+        return Other, "field-sel"
+    }
+    return if f.pkg == q { Target } else { Other }, "bare-in:" + f.pkg
+}
+
+func lineCol(src []byte, at int) (int, int) {
+    mut line := 1
+    mut col := 1
+    for i <- iter.Range(0, at) {
+        if src[i] == '\n' {
+            line += 1
+            col = 1
+        } else {
+            col += 1
+        }
+    }
+    return line, col
+}
+
+func context(src []byte, at int) string {
+    mut a := at
+    while a > 0 && src[a - 1] != '\n' {
+        a -= 1
+    }
+    mut b := at
+    while b < len(src) && src[b] != '\n' {
+        b += 1
+    }
+    while a < b && (src[a] == ' ' || src[a] == '\t') {
+        a += 1
+    }
+    mut e := b
+    if e - a > 160 {
+        e = a + 160
+    }
+    // 160 バイトで切ると UTF-8 の途中になりうる — 失敗なら行全体
+    r := string(src[a:e]) catch (string(src[a:b]) catch "?")
+    return r
+}
+
+type Count struct {
+    neg int
+    mutdone int
+    decl int
+    target int
+    other int
+    uncl int
+    text int
+    lit int
+    synth int
+    files int
+    noparse int
+}
+
+func row(b mut builder.Builder[byte], f File, cls string, kind string, s int, e int) {
+    l, c := lineCol(f.src, s)
+    builder.PushString(mut b, "${cls}\t${kind}\t${f.path}\t${s}\t${e}\t${l}:${c}\t${context(f.src, s)}\n")
+}
+
+func isIdentByte(c byte) bool {
+    return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// textRows は字句でない場所（コメント・文字列リテラル）の綴りの出現（語の境界つき）
+func textRows(b mut builder.Builder[byte], f File, tt Toks, name string, cnt mut Count) {
+    w := bytes(name)
+    src := f.src
+    mut covered := mut []bool{}
+    for i <- iter.Range(0, len(src)) {
+        covered = append(covered, false)
+    }
+    mut strlit := mut []bool{}
+    for i <- iter.Range(0, len(src)) {
+        strlit = append(strlit, false)
+    }
+    for k <- iter.Range(0, len(tt.ts)) {
+        t := tt.ts[k]
+        if t.tag == lexer.Identifier {
+            covered[t.start] = true
+        } else if (t.tag == lexer.StringLiteral || t.tag == lexer.RawStringLiteral) && tt.host[k] < 0 {
+            for i <- iter.Range(t.start, t.end) {
+                strlit[i] = true
+            }
+        }
+    }
+    comp := strings.HasPrefix(f.path, "src/compiler/")
+    mut i := 0
+    while i + len(w) <= len(src) {
+        mut m := (i == 0 || !isIdentByte(src[i - 1])) && (i + len(w) == len(src) || !isIdentByte(src[i + len(w)]))
+        mut j := 0
+        while m && j < len(w) {
+            if src[i + j] != w[j] {
+                m = false
+            }
+            j += 1
+        }
+        if m && !covered[i] {
+            if strlit[i] {
+                cnt.lit += 1
+                row(mut b, f, if comp { "COMPILER-LIT" } else { "TEXT" }, "strlit", i, i + len(w))
+            } else {
+                cnt.text += 1
+                row(mut b, f, "TEXT", "comment", i, i + len(w))
+            }
+        }
+        i += 1
+    }
+}
+
+func hitAt(hs []Hit, k int) int {
+    for i <- iter.Range(0, len(hs)) {
+        if hs[i].tok == k {
+            return i
+        }
+    }
+    return 0 - 1
+}
+
+// scanTop はトップレベル名の 1 ファイルの国勢調査（行を b へ）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
+func scanTop(b mut builder.Builder[byte], path string, q string, name string, cnt mut Count, tg mut []int, ot mut []int) {
+    src := io.ReadFile(path) catch {
+        cnt.uncl += 1
+        builder.PushString(mut b, "UNCLASSIFIED\tunreadable\t${path}\t0\t0\t0:0\t\n")
+        return
+    }
+    if !strings.Contains(string(src) catch "", name) {
+        return
+    }
+    cnt.files += 1
+    base := lexer.Lex(src)
+    tt := allTokens(src, base)
+    ts := tt.ts
+    t, ok := parser.Parse(src, base)
+    rs, ps := importsAny(ok, t, src, base)
+    f := File{path, src, pkgOf(path), rs, ps}
+    mut hs := mut []Hit{}
+    if ok {
+        ah, synth := astHits(f, tt, t, q, name)
+        for i <- iter.Range(0, len(ah)) {
+            hs = append(hs, ah[i])
+        }
+        cnt.synth += synth
+        if synth > 0 {
+            builder.PushString(mut b, "SYNTH\tunlocated\t${path}\t0\t0\t0:0\t${synth} 節が対象を指すが字句に無い（parser の合成 — コンパイラが名前で知る参照: 鎖の罠の候補）\n")
+        }
+    } else {
+        cnt.noparse += 1
+    }
+    an := annotHits(f, ts, q, name)
+    for i <- iter.Range(0, len(an)) {
+        hs = append(hs, an[i])
+    }
+    hits := freeze(hs)
+    // 穴の中: 囲む文字列ごとに構文木の Target の数と字句の Target の数が一致するときだけ Target
+    for k <- iter.Range(0, len(ts)) {
+        if !isName(src, ts, k, name) {
+            continue
+        }
+        lc, why := lexCls(f, tt, k, q)
+        mut cls := ""
+        mut kind := why
+        if !ok {
+            cls = if lc == Target { "UNCLASSIFIED" } else { "OTHER" }
+            kind = if lc == Target { "no-parse" } else { why }
+        } else if tt.host[k] >= 0 {
+            h := tt.host[k]
+            mut na := 0
+            for i <- iter.Range(0, len(hits)) {
+                if hits[i].tok == h && hits[i].cls == Target {
+                    na += 1
+                }
+            }
+            mut nl := 0
+            for m <- iter.Range(0, len(ts)) {
+                if tt.host[m] == h && isName(src, ts, m, name) {
+                    l2, _ := lexCls(f, tt, m, q)
+                    if l2 == Target {
+                        nl += 1
+                    }
+                }
+            }
+            if lc == Other {
+                cls = "OTHER"
+            } else if na == nl {
+                cls = "TARGET"
+                kind = "ref-in-interp"
+            } else {
+                cls = "UNCLASSIFIED"
+                kind = "interp-count ast=${na} lex=${nl}"
+            }
+        } else {
+            hi := hitAt(hits, k)
+            if hi >= 0 {
+                h := hits[hi]
+                kind = h.kind
+                if h.cls == Target && lc == Target {
+                    cls = "TARGET"
+                } else if h.cls == Other && lc == Other {
+                    cls = "OTHER"
+                } else if h.cls == Other && lc == Target && (h.kind == "field-decl" || h.kind == "field-pat" || h.kind == "named-arg") {
+                    cls = "OTHER"
+                } else {
+                    cls = "UNCLASSIFIED"
+                    kind = "conflict ast=${h.kind} lex=${why}"
+                }
+            } else if lc == Other {
+                cls = "OTHER"
+            } else if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon {
+                // `名前: 値`（composite の欄キー KElem — 構文木は tok を持たない）
+                cls = "OTHER"
+                kind = "field-key"
+            } else {
+                cls = "UNCLASSIFIED"
+                kind = "unmapped " + why
+            }
+        }
+        cls = negOr(f, cls)
+        if cls == "NEGATIVE" {
+            cnt.neg += 1
+        } else if cls == "TARGET" {
+            cnt.target += 1
+            if strings.HasPrefix(kind, "decl-") {
+                cnt.decl += 1
+            }
+            tg = append(tg, ts[k].start)
+        } else if cls == "OTHER" {
+            cnt.other += 1
+            ot = append(ot, ts[k].start)
+        } else {
+            cnt.uncl += 1
+        }
+        row(mut b, f, cls, kind, ts[k].start, ts[k].end)
+    }
+    textRows(mut b, f, tt, name, mut cnt)
+}
+
+func cmdRefs(sym string, typedPath string) int {
+    sy, ok := parseSym(sym)
+    if !ok {
+        _ = io.WriteStderr(bytes("refs: symbol must be <pkg>.<Name> / <pkg>.<Type>.<field> / <pkg>.<Func>(<param>) (e.g. std/par.Fail)\n"))
+        return 1
+    }
+    th, js, tok := loadTyped(typedPath)
+    files, rok := readList()
+    if !tok || !rok {
+        return 1
+    }
+    if sy.mode == ModeMember && typedPath == "" {
+        _ = io.WriteStderr(bytes("refs: 欄の対象は表層型検査器の印（--typed — scripts/refs.sh が作る）が要る\n"))
+        return 1
+    }
+    mut b := builder.Builder[byte]{}
+    mut cnt := Count{}
+    for i <- iter.Range(0, len(files)) {
+        mut tg := mut []int{}
+        mut ot := mut []int{}
+        scanFile(mut b, files[i], sy, th, mut cnt, mut tg, mut ot)
+    }
+    // json の wire 警告: 欄の持ち主が `$json/` の合成（json.Encode / Decode の写し）に現れる — 欄名が JSON のキー
+    if sy.mode == ModeMember && has(js, sy.owner) {
+        builder.PushString(mut b, "WARN	json-wire	-	-	-	-	${sy.owner} は json.Encode / Decode に届く型 — 欄 ${sy.name} の改名は JSON のキーを変える（EncodeWith / DecodeWith の辞書の鍵の文字列も手で）\n")
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    _ = io.WriteStderr(bytes("refs ${sym}: files=${cnt.files} target=${cnt.target} decl=${cnt.decl} other=${cnt.other} unclassified=${cnt.uncl} negative=${cnt.neg} text=${cnt.text} strlit=${cnt.lit} synth=${cnt.synth} noparse=${cnt.noparse}\n"))
+    // 2 = 未分類あり（書き換え不可）・3 = 合成の参照あり（コンパイラが名前を知る — 書き換えは compiler の変更込み）
+    return if cnt.uncl > 0 { 2 } else if cnt.synth > 0 { 3 } else { 0 }
+}
+
+// ── 欄・仮引数（R3 — report-885）──
+
+const ModeTop = 1
+const ModeMember = 2
+const ModeParam = 3
+
+// NoTok は字句の番号の無し（`catch 0 - 1` は `(… catch 0) - 1` と読まれる — 定数で）
+const NoTok = -1
+
+// Sym は対象: トップレベル名 `<pkg>.<Name>`・欄 `<pkg>.<型か variant>.<欄>`・仮引数 `<pkg>.<関数>(<仮引数>)`。
+// q = package（内部の綴り）・name = 字句で探す綴り（名前 / 欄 / 仮引数）・owner = 欄の持ち主（`<q>.<型か variant>`）・fn = 仮引数の関数
+type Sym struct {
+    mode int
+    q string
+    name string
+    owner string
+    fn string
+}
+
+// THit は表層型検査器の印（tools の `typed` が出す — 欄の selector の基底の型宣言・`$json/` の合成ファイルが参照する型）
+type THit struct {
+    path string
+    tok int
+    owner string
+    ord int
+}
+
+func pkgNorm(q0 string) string {
+    return if strings.HasPrefix(q0, "std/") { q0 } else { "dir:" + q0 }
+}
+
+func parseSym(sym string) (Sym, bool) {
+    if strings.HasSuffix(sym, ")") {
+        l, r, ok := strings.CutLast(sym, "(")
+        p, _, _ := strings.Cut(r, ")")
+        q0, fn, ok2 := strings.CutLast(l, ".")
+        return Sym{ModeParam, pkgNorm(q0), p, "", fn}, ok && ok2 && p != ""
+    }
+    // パッケージのパスは '.' を含まない — 最後の '/' の後の '.' の数で類型を分ける
+    d, b0, slash := strings.CutLast(sym, "/")
+    // '/' が無ければ全体が base（CutLast は見つからないとき (s, "", false)）
+    base := if slash { b0 } else { d }
+    pre := if slash { d + "/" } else { "" }
+    a, rest, ok := strings.Cut(base, ".")
+    if !ok {
+        return Sym{}, false
+    }
+    o, f, two := strings.Cut(rest, ".")
+    if two {
+        q := pkgNorm(pre + a)
+        return Sym{ModeMember, q, f, q + "." + o, ""}, f != ""
+    }
+    return Sym{ModeTop, pkgNorm(pre + a), rest, "", ""}, rest != ""
+}
+
+func symWith(sy Sym, nn string) Sym {
+    return Sym{sy.mode, sy.q, nn, sy.owner, sy.fn}
+}
+
+// loadTyped は `typed` の出力（`SEL\t<path>\t<tok>\t<owner>` / `JSON\t<owner>`）
+func loadTyped(path string) ([]THit, []string, bool) {
+    if path == "" {
+        return []THit{}, []string{}, true
+    }
+    b := io.ReadFile(path) catch return []THit{}, []string{}, false
+    text := string(b) catch return []THit{}, []string{}, false
+    mut hs := mut []THit{}
+    mut js := mut []string{}
+    mut rest := text
+    mut more := true
+    while more {
+        line, r, found := strings.Cut(rest, "\n")
+        rest = r
+        more = found
+        k, a, ok := strings.Cut(line, "\t")
+        if ok && k == "SEL" {
+            pth, r2, _ := strings.Cut(a, "\t")
+            tk, r3, _ := strings.Cut(r2, "\t")
+            own, od, _ := strings.Cut(r3, "\t")
+            n := convert.ParseInt(tk) catch NoTok
+            o := convert.ParseInt(od) catch NoTok
+            hs = append(hs, THit{pth, n, own, o})
+        } else if ok && k == "JSON" {
+            js = append(js, a)
+        }
+    }
+    return freeze(hs), freeze(js), true
+}
+
+func has(xs []string, x string) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// typeOwner は型の名前の欄の文字列 s（`X` か `R.X`）の持ち主（`<package>.X` — 解決できなければ ""）
+func typeOwner(f File, s string) string {
+    r, x, dot := strings.CutLast(s, ".")
+    if !dot {
+        return f.pkg + "." + s
+    }
+    p := refPkg(f, r)
+    return if p == "" { "" } else { p + "." + x }
+}
+
+// matchClose は開き括弧の字句 k に対応する閉じの字句（同じ host の中 — 見つからなければ -1）
+func matchClose(tt Toks, k int) int {
+    ts := tt.ts
+    mut d := 0
+    mut i := k
+    while i < len(ts) && tt.host[i] == tt.host[k] {
+        g := ts[i].tag
+        if g == lexer.LParen || g == lexer.LBracket || g == lexer.LBrace {
+            d += 1
+        } else if g == lexer.RParen || g == lexer.RBracket || g == lexer.RBrace {
+            d -= 1
+            if d == 0 {
+                return i
+            }
+        }
+        i += 1
+    }
+    return 0 - 1
+}
+
+// MHit は欄の持ち主つきの位置（構文木から — 欄の宣言・欄パターン・composite の欄キー）
+type MHit struct {
+    tok int
+    owner string
+    kind string
+}
+
+// memberHits は欄の綴り name の位置と持ち主（到達できる節だけ）
+func memberHits(f File, tt Toks, t ast.Tree, name string) []MHit {
+    ts := tt.ts
+    live := reach(t)
+    mut hs := mut []MHit{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if !live[i] {
+            continue
+        }
+        if x.kind == ast.KTypeDecl && x.c >= 0 {
+            tn := loader.Name(t, x.a)
+            body := t.nodes[x.c]
+            if body.kind == ast.BStruct || body.kind == ast.BError || body.kind == ast.BPanic {
+                for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    fd := t.nodes[ast.ListAt(t, body.a, j)]
+                    if loader.Name(t, fd.a) == name && isName(f.src, ts, fd.tok, name) {
+                        hs = append(hs, MHit{fd.tok, f.pkg + "." + tn, "field-decl"})
+                    }
+                }
+            } else if body.kind == ast.BUnion {
+                for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    v := t.nodes[ast.ListAt(t, body.a, j)]
+                    vn := loader.Name(t, v.a)
+                    for m <- iter.Range(0, ast.ListLen(t, v.b)) {
+                        fd := t.nodes[ast.ListAt(t, v.b, m)]
+                        if loader.Name(t, fd.a) == name && isName(f.src, ts, fd.tok, name) {
+                            hs = append(hs, MHit{fd.tok, f.pkg + "." + vn, "field-decl"})
+                        }
+                    }
+                }
+            }
+        } else if x.kind == ast.KPType && x.c >= 0 {
+            own := typeOwner(f, loader.Name(t, x.b))
+            for j <- iter.Range(0, ast.ListLen(t, x.c)) {
+                fp := t.nodes[ast.ListAt(t, x.c, j)]
+                if loader.Name(t, fp.a) == name && isName(f.src, ts, fp.tok, name) {
+                    hs = append(hs, MHit{fp.tok, own, "field-pat"})
+                }
+            }
+        } else if x.kind == ast.EComposite && x.tok >= 0 && x.tok < len(ts) && tt.host[x.tok] < 0 {
+            // 欄キー（KElem は tok を持たない）: 型の名前（と型引数）の後の `{` から対応の `}` まで、深さ 1 の `名前 :`
+            own := typeOwner(f, loader.Name(t, x.a))
+            mut k := x.tok
+            while k < len(ts) && ts[k].tag != lexer.LBrace {
+                if ts[k].tag == lexer.LBracket {
+                    k = matchClose(tt, k)
+                    if k < 0 {
+                        break
+                    }
+                }
+                k += 1
+            }
+            end := if k >= 0 && k < len(ts) { matchClose(tt, k) } else { 0 - 1 }
+            mut d := 0
+            mut m := k
+            while end > 0 && m < end {
+                g := ts[m].tag
+                if g == lexer.LParen || g == lexer.LBracket || g == lexer.LBrace {
+                    d += 1
+                } else if g == lexer.RParen || g == lexer.RBracket || g == lexer.RBrace {
+                    d -= 1
+                } else if d == 1 && isName(f.src, ts, m, name) && ts[m + 1].tag == lexer.Colon && (ts[m - 1].tag == lexer.LBrace || ts[m - 1].tag == lexer.Comma) {
+                    hs = append(hs, MHit{m, own, "field-key"})
+                }
+                m += 1
+            }
+        }
+    }
+    return freeze(hs)
+}
+
+func mhitAt(hs []MHit, k int) int {
+    for i <- iter.Range(0, len(hs)) {
+        if hs[i].tok == k {
+            return i
+        }
+    }
+    return 0 - 1
+}
+
+// typedCls は欄の selector の字句 k（穴の中なら host）の、表層型検査器の印の持ち主の集合からの判定（"" = 印なし・"*" = 食い違い）
+func typedOwner(th []THit, path string, k int) string {
+    mut o := ""
+    for i <- iter.Range(0, len(th)) {
+        if th[i].path == path && th[i].tok == k {
+            if o == "" {
+                o = th[i].owner
+            } else if o != th[i].owner {
+                return "*"
+            }
+        }
+    }
+    return o
+}
+
+// holeOwner は穴の中の idx 番目（全 n 個）の `.欄` の持ち主: 印の通し番号がちょうど 0..n-1 で揃い、同じ番号の持ち主が entry をまたいで一致するときだけ
+func holeOwner(th []THit, path string, h int, idx int, n int) string {
+    if idx < 0 {
+        return ""
+    }
+    mut maxOrd := 0 - 1
+    mut o := ""
+    for i <- iter.Range(0, len(th)) {
+        x := th[i]
+        if x.path == path && x.tok == h {
+            if x.ord > maxOrd {
+                maxOrd = x.ord
+            }
+            if x.ord == idx {
+                if o == "" {
+                    o = x.owner
+                } else if o != x.owner {
+                    return "*"
+                }
+            }
+        }
+    }
+    return if maxOrd + 1 == n { o } else { "*" }
+}
+
+// isNegPath は意図した負例のファイルか（パスの要素が `_neg` を含むか `neg` で終わる — examples/*_neg*・testdata/loader_neg・analyzer_neg・checkneg）。
+// 負例は loader が拒否するので型も付かない — 未分類の代わりに NEGATIVE（書き換えず一覧を出す — 手の追従用）。負例の形でない読めないファイルは未分類のまま
+func isNegPath(path string) bool {
+    mut rest := path
+    mut more := true
+    while more {
+        c0, r, m := strings.Cut(rest, "/")
+        c, _, _ := strings.Cut(c0, ".")
+        if strings.Contains(c, "_neg") || strings.HasSuffix(c, "neg") {
+            return true
+        }
+        rest = r
+        more = m
+    }
+    return false
+}
+
+// negOr は未分類の印を、負例のファイルなら NEGATIVE に
+func negOr(f File, cls string) string {
+    return if cls == "UNCLASSIFIED" && isNegPath(f.path) { "NEGATIVE" } else { cls }
+}
+
+func clsCount(cnt mut Count, cls string) {
+    if cls == "TARGET" {
+        cnt.target += 1
+    } else if cls == "NEGATIVE" {
+        cnt.neg += 1
+    } else if cls == "OTHER" {
+        cnt.other += 1
+    } else {
+        cnt.uncl += 1
+    }
+}
+
+// scanMember は欄の 1 ファイルの国勢調査: 欄の宣言・欄パターン・欄キーは構文木の持ち主、`x.欄` は表層型検査器の印（th）、
+// 裸の名前は欄でない（局所・トップレベル・仮引数）。`ref.欄` の形で ref が import の参照名なら package の名前で欄でない
+func scanMember(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, th []THit, cnt mut Count, tg mut []int, ot mut []int) {
+    ts := tt.ts
+    mh := if ok { memberHits(f, tt, t, sy.name) } else { []MHit{} }
+    for k <- iter.Range(0, len(ts)) {
+        if !isName(f.src, ts, k, sy.name) {
+            continue
+        }
+        same := k >= 2 && tt.host[k - 1] == tt.host[k] && tt.host[k - 2] == tt.host[k]
+        dotted := k >= 1 && tt.host[k - 1] == tt.host[k] && ts[k - 1].tag == lexer.Dot
+        mut cls := ""
+        mut kind := ""
+        hi := mhitAt(mh, k)
+        if hi >= 0 {
+            kind = mh[hi].kind + ":" + mh[hi].owner
+            cls = if mh[hi].owner == sy.owner { "TARGET" } else { "OTHER" }
+            if mh[hi].kind == "field-decl" && cls == "TARGET" {
+                cnt.decl += 1
+            }
+        } else if dotted && same && ts[k - 2].tag == lexer.Identifier && refPkg(f, lexeme(f.src, ts[k - 2])) != "" {
+            cls = "OTHER"
+            kind = "pkg-member"
+        } else if dotted && tt.host[k] >= 0 {
+            // 穴の中: 囲む文字列の中の `.欄` の字句（参照名の package を除く）の何番目かを、印の通し番号と突き合わせる（数が合わなければ未分類）
+            h := tt.host[k]
+            mut idx := 0 - 1
+            mut n := 0
+            for m <- iter.Range(0, len(ts)) {
+                if tt.host[m] == h && isName(f.src, ts, m, sy.name) && m >= 2 && tt.host[m - 1] == h && ts[m - 1].tag == lexer.Dot &&
+                    !(tt.host[m - 2] == h && ts[m - 2].tag == lexer.Identifier && refPkg(f, lexeme(f.src, ts[m - 2])) != "") {
+                    if m == k {
+                        idx = n
+                    }
+                    n += 1
+                }
+            }
+            o := holeOwner(th, f.path, h, idx, n)
+            if o == "" || o == "*" || o == "?" {
+                cls = "UNCLASSIFIED"
+                kind = if o == "*" { "typed-conflict" } else { "untyped-selector" }
+            } else {
+                cls = if o == sy.owner { "TARGET" } else { "OTHER" }
+                kind = "field-sel-interp:" + o
+            }
+        } else if dotted {
+            key := k
+            o := typedOwner(th, f.path, key)
+            if o == "" || o == "*" || o == "?" {
+                cls = "UNCLASSIFIED"
+                kind = if o == "*" { "typed-conflict" } else { "untyped-selector" }
+            } else {
+                cls = if o == sy.owner { "TARGET" } else { "OTHER" }
+                kind = "field-sel:" + o
+            }
+        } else if !ok {
+            cls = if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon { "UNCLASSIFIED" } else { "OTHER" }
+            kind = "no-parse"
+        } else if tt.host[k] < 0 && k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon && (ts[k - 1].tag == lexer.LBrace || ts[k - 1].tag == lexer.Comma) && !isNamedArgAt(t, k) {
+            // `名前:` で構文木の欄キーに無い（穴の中の composite 等）— 持ち主が分からない
+            cls = "UNCLASSIFIED"
+            kind = "unmapped-key"
+        } else {
+            cls = "OTHER"
+            kind = "bare"
+        }
+        cls = negOr(f, cls)
+        // 変異 5（道具の網の検査 — 欄の別 struct 誤爆）: 最初の別の持ち主の欄を対象に数える
+        if cls == "OTHER" && strings.HasPrefix(kind, "field-") && cnt.mutdone == 0 && getenv("REFS_MUTANT") == "5" {
+            cls = "TARGET"
+            cnt.mutdone = 1
+        }
+        clsCount(mut cnt, cls)
+        if cls == "TARGET" {
+            tg = append(tg, ts[k].start)
+        } else if cls == "OTHER" {
+            ot = append(ot, ts[k].start)
+        }
+        row(mut b, f, cls, kind, ts[k].start, ts[k].end)
+    }
+}
+
+func isNamedArgAt(t ast.Tree, k int) bool {
+    for i <- iter.Range(0, len(t.nodes)) {
+        if t.nodes[i].kind == ast.KNamedArg && t.nodes[i].tok == k {
+            return true
+        }
+    }
+    return false
+}
+
+// calleeIs は呼び出しの callee の節 c が package q の関数 fn か（裸の名前は自分の package・`ref.fn` は参照名の package）
+func calleeIs(f File, t ast.Tree, c0 int, q string, fn string) bool {
+    c := unparen(t, c0)
+    if c < 0 {
+        return false
+    }
+    x := t.nodes[c]
+    if x.kind == ast.EIdent {
+        return f.pkg == q && loader.Name(t, x.a) == fn
+    }
+    if x.kind == ast.ESelector {
+        bn := unparen(t, x.a)
+        return bn >= 0 && t.nodes[bn].kind == ast.EIdent && refPkg(f, loader.Name(t, t.nodes[bn].a)) == q && loader.Name(t, x.b) == fn
+    }
+    return false
+}
+
+// scanParam は仮引数の 1 ファイルの国勢調査: 関数 fn（package q）の仮引数の宣言・本体の裸の名前（シャドーイング禁止で全部その仮引数）・
+// fn を callee とする呼び出しの名前つき実引数が TARGET。他の関数の名前つき実引数・欄・他の場所の裸の名前は OTHER
+func scanParam(b mut builder.Builder[byte], f File, tt Toks, t ast.Tree, ok bool, sy Sym, cnt mut Count, tg mut []int, ot mut []int) {
+    ts := tt.ts
+    // 関数 fn の字句の範囲と仮引数の宣言の字句
+    mut lo := 0 - 1
+    mut hi := 0 - 1
+    mut decl := 0 - 1
+    mut namedT := mut []int{}
+    mut namedO := mut []int{}
+    // 名前つき実引数の節の順の列（tok と対象か — 補間の穴の中の節は囲む文字列の tok を共有するので、穴の中は出現の順で字句と突き合わせる）
+    mut namedSeqTok := mut []int{}
+    mut namedSeqT := mut []bool{}
+    mut idents := mut []int{}
+    if ok {
+        live := reach(t)
+        for i <- iter.Range(0, len(t.nodes)) {
+            x := t.nodes[i]
+            if !live[i] {
+                continue
+            }
+            if x.kind == ast.KFuncDecl && f.pkg == sy.q && loader.Name(t, x.a) == sy.fn {
+                lo = ast.ListAt(t, x.f, 1)
+                hi = ast.ListAt(t, x.f, 2)
+                mut k := x.tok + 1
+                if k < len(ts) && ts[k].tag == lexer.LBracket {
+                    k = matchClose(tt, k) + 1
+                }
+                end := matchClose(tt, k)
+                mut d := 0
+                mut m := k
+                while end > 0 && m < end {
+                    g := ts[m].tag
+                    if g == lexer.LParen || g == lexer.LBracket || g == lexer.LBrace {
+                        d += 1
+                    } else if g == lexer.RParen || g == lexer.RBracket || g == lexer.RBrace {
+                        d -= 1
+                    } else if d == 1 && isName(f.src, ts, m, sy.name) && (ts[m - 1].tag == lexer.LParen || ts[m - 1].tag == lexer.Comma) {
+                        decl = m
+                    }
+                    m += 1
+                }
+            } else if (x.kind == ast.ECall || x.kind == ast.EPipe) {
+                callee := if x.kind == ast.ECall { x.a } else { x.b }
+                args := if x.kind == ast.ECall { x.b } else { x.c }
+                target := calleeIs(f, t, callee, sy.q, sy.fn)
+                for j <- iter.Range(0, if args >= 0 { ast.ListLen(t, args) } else { 0 }) {
+                    a := ast.ListAt(t, args, j)
+                    if a >= 0 && t.nodes[a].kind == ast.KNamedArg && loader.Name(t, t.nodes[a].a) == sy.name {
+                        namedSeqTok = append(namedSeqTok, t.nodes[a].tok)
+                        namedSeqT = append(namedSeqT, target)
+                        if target {
+                            namedT = append(namedT, t.nodes[a].tok)
+                        } else {
+                            namedO = append(namedO, t.nodes[a].tok)
+                        }
+                    }
+                }
+            } else if x.kind == ast.EIdent && loader.Name(t, x.a) == sy.name {
+                idents = append(idents, x.tok)
+            }
+        }
+    }
+    nt := freeze(namedT)
+    no := freeze(namedO)
+    ids := freeze(idents)
+    sqTok := freeze(namedSeqTok)
+    sqT := freeze(namedSeqT)
+    for k <- iter.Range(0, len(ts)) {
+        if !isName(f.src, ts, k, sy.name) {
+            continue
+        }
+        dotted := k >= 1 && tt.host[k - 1] == tt.host[k] && ts[k - 1].tag == lexer.Dot
+        // 字句の位置（穴の中は囲む文字列の位置）が fn の範囲の中か
+        at := if tt.host[k] >= 0 { tt.host[k] } else { k }
+        inside := lo >= 0 && at >= lo && at <= hi
+        mut cls := ""
+        mut kind := ""
+        if !ok {
+            cls = if f.pkg == sy.q || (k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon) { "UNCLASSIFIED" } else { "OTHER" }
+            kind = "no-parse"
+        } else if k == decl {
+            cls = "TARGET"
+            kind = "param-decl"
+            cnt.decl += 1
+        } else if hasInt(nt, k) {
+            cls = "TARGET"
+            kind = "named-arg"
+        } else if hasInt(no, k) {
+            // 変異 4（道具の網の検査 — 名前つき実引数の callee 取り違え）: 別の関数への名前つき実引数も対象に数える
+            cls = if getenv("REFS_MUTANT") == "4" { "TARGET" } else { "OTHER" }
+            kind = "named-arg-other"
+        } else if dotted {
+            cls = "OTHER"
+            kind = "field-sel"
+        } else if tt.host[k] >= 0 && k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon && (ts[k - 1].tag == lexer.LParen || ts[k - 1].tag == lexer.Comma) {
+            // 穴の中の `名前:`（名前つき実引数の形）: 囲む文字列の中の同じ形の字句の何番目かを、節の順の名前つき実引数と突き合わせる（数が合わなければ未分類）
+            h := tt.host[k]
+            mut idx := 0 - 1
+            mut n := 0
+            for m <- iter.Range(0, len(ts)) {
+                if tt.host[m] == h && isName(f.src, ts, m, sy.name) && m + 1 < len(ts) && ts[m + 1].tag == lexer.Colon && (ts[m - 1].tag == lexer.LParen || ts[m - 1].tag == lexer.Comma) {
+                    if m == k {
+                        idx = n
+                    }
+                    n += 1
+                }
+            }
+            mut seen := 0
+            mut res := ""
+            for j <- iter.Range(0, len(sqTok)) {
+                if sqTok[j] == h {
+                    if seen == idx {
+                        res = if sqT[j] { "TARGET" } else { "OTHER" }
+                    }
+                    seen += 1
+                }
+            }
+            cls = if seen == n && res != "" { res } else { "UNCLASSIFIED" }
+            kind = if cls == "UNCLASSIFIED" { "interp-named-arg ast=${seen} lex=${n}" } else { "named-arg-in-interp" }
+        } else if inside && tt.host[k] >= 0 {
+            cls = "TARGET"
+            kind = "ref-in-interp"
+        } else if inside && hasInt(ids, k) {
+            cls = "TARGET"
+            kind = "ref"
+        } else if inside {
+            // fn の中で裸の名前の節に無い（欄キー `名前:` か宣言の字句の取りこぼし）
+            cls = if k + 1 < len(ts) && ts[k + 1].tag == lexer.Colon { "OTHER" } else { "UNCLASSIFIED" }
+            kind = if cls == "OTHER" { "field-key" } else { "unmapped-in-fn" }
+        } else {
+            cls = "OTHER"
+            kind = "outside-fn"
+        }
+        cls = negOr(f, cls)
+        clsCount(mut cnt, cls)
+        if cls == "TARGET" {
+            tg = append(tg, ts[k].start)
+        } else if cls == "OTHER" {
+            ot = append(ot, ts[k].start)
+        }
+        row(mut b, f, cls, kind, ts[k].start, ts[k].end)
+    }
+}
+
+func hasInt(xs []int, x int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// scanFile は 1 ファイルの国勢調査（類型で振り分け）。tg / ot には TARGET / OTHER の字句の開始バイトを積む（rename が使う）
+func scanFile(b mut builder.Builder[byte], path string, sy Sym, th []THit, cnt mut Count, tg mut []int, ot mut []int) {
+    if sy.mode == ModeTop {
+        scanTop(mut b, path, sy.q, sy.name, mut cnt, mut tg, mut ot)
+        return
+    }
+    src := io.ReadFile(path) catch {
+        cnt.uncl += 1
+        builder.PushString(mut b, "UNCLASSIFIED\tunreadable\t${path}\t0\t0\t0:0\t\n")
+        return
+    }
+    if !strings.Contains(string(src) catch "", sy.name) {
+        return
+    }
+    cnt.files += 1
+    base := lexer.Lex(src)
+    tt := allTokens(src, base)
+    t, ok := parser.Parse(src, base)
+    rs, ps := importsAny(ok, t, src, base)
+    f := File{path, src, pkgOf(path), rs, ps}
+    if !ok {
+        cnt.noparse += 1
+    }
+    if sy.mode == ModeMember {
+        scanMember(mut b, f, tt, t, ok, sy, th, mut cnt, mut tg, mut ot)
+    } else {
+        scanParam(mut b, f, tt, t, ok, sy, mut cnt, mut tg, mut ot)
+    }
+    textRows(mut b, f, tt, sy.name, mut cnt)
+}
+
+// cmdTyped は entry ごとに表層型検査器を回し、欄 name の selector の基底の型宣言（`SEL\t<path>\t<tok>\t<持ち主>` — 不明は `?`）と、
+// `$json/` の合成ファイル（std/json の写し — json.Encode / Decode に届く型の閉包）が参照する型（`JSON\t<持ち主>`）を出す。
+// prefix = cwd のルート相対（"" か "src/compiler/"）— パスと持ち主をルート相対に揃える
+func cmdTyped(stdDir string, prefix string, name string, entries []string) int {
+    mut sm := mut map[string]string{}
+    if !stdMap(stdDir, "std", mut sm) {
+        return 1
+    }
+    mut b := builder.Builder[byte]{}
+    for ei <- iter.Range(0, len(entries)) {
+        p, lerr := loadAny(entries[ei], sm)
+        if lerr != nil {
+            continue
+        }
+        mut st := desugar.S{}
+        desugar.Typed(mut st, p)
+        for f <- iter.Range(0, len(p.trees)) {
+            t := p.trees[f]
+            json := strings.HasPrefix(p.file_path[f], "$json/")
+            synth := strings.HasPrefix(p.file_path[f], "$")
+            path := normPath(prefix, p.file_path[f])
+            // 同じ tok の selector の通し番号（補間の穴の中の節は囲む文字列の tok を共有する — 節の順 = 出現の順で字句と突き合わせる）
+            mut seen := mut []int{}
+            for i <- iter.Range(0, len(t.nodes)) {
+                x := t.nodes[i]
+                if json && (x.kind == ast.EComposite || x.kind == ast.ESelector) {
+                    n := if x.kind == ast.EComposite { i } else { unparen(t, x.a) }
+                    o := ownerOf(p, prefix, mut st, desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + f * desugar.FW + n)))
+                    if o != "" {
+                        builder.PushString(mut b, "JSON\t${o}\n")
+                    }
+                }
+                if !synth && x.kind == ast.EMutArg && strings.Contains(loader.Name(t, x.a), "." + name) {
+                    mutArgSel(mut b, p, sm, prefix, mut st, f, i, name)
+                }
+                if !synth && x.kind == ast.ESelector && loader.Name(t, x.b) == name {
+                    bn := unparen(t, x.a)
+                    if bn >= 0 && t.nodes[bn].kind == ast.EIdent && isImportRef(p, f, loader.Name(t, t.nodes[bn].a)) {
+                        continue
+                    }
+                    o := ownerOf(p, prefix, mut st, desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + f * desugar.FW + bn)))
+                    mut ord := 0
+                    for j <- iter.Range(0, len(seen)) {
+                        if seen[j] == x.tok {
+                            ord += 1
+                        }
+                    }
+                    seen = append(seen, x.tok)
+                    builder.PushString(mut b, "SEL\t${path}\t${x.tok}\t${if o == "" { "?" } else { o }}\t${ord}\n")
+                }
+            }
+        }
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    return 0
+}
+
+// mutArgSel は `mut x.欄`（EMutArg — 名前は "x.欄" の 1 語・型検査器は途中の型を記録しない）の欄の字句の印を出す。基底 x の型 =
+// 同じ関数の中の同名の裸の名前の表層型（シャドーイング禁止で一意）か、無ければ仮引数の型の名前。対象は x の直下の欄だけ（`mut x.a.欄` は持ち主 "?" — 未分類）
+func mutArgSel(b mut builder.Builder[byte], p loader.Program, sm map[string]string, prefix string, st mut desugar.S, f int, i int, name string) {
+    t := p.trees[f]
+    x := t.nodes[i]
+    whole := loader.Name(t, x.a)
+    base, rest, _ := strings.Cut(whole, ".")
+    src, ok := loader.SourceFs(p, f, sm)
+    if !ok {
+        return
+    }
+    ts := allTokens(src, lexer.Lex(src)).ts
+    t0 := if x.tok >= 0 && x.tok < len(ts) && ts[x.tok].tag == lexer.KwMut { x.tok + 1 } else { x.tok }
+    if !isName(src, ts, t0, base) {
+        return
+    }
+    // 欄の並びの何番目が name か（1 番目 = x の直下）
+    mut idx := 1
+    mut r := rest
+    mut found := 0 - 1
+    mut more := true
+    while more {
+        part, r2, m := strings.Cut(r, ".")
+        if part == name && found < 0 {
+            found = idx
+        }
+        r = r2
+        more = m
+        idx += 1
+    }
+    at := t0 + 2 * found
+    if found < 0 || !isName(src, ts, at, name) || ts[at - 1].tag != lexer.Dot {
+        return
+    }
+    mut owner := "?"
+    if found == 1 {
+        owner = baseOwner(p, prefix, mut st, f, i, x.tok, base)
+        if owner == "" {
+            owner = "?"
+        }
+    }
+    builder.PushString(mut b, "SEL\t${normPath(prefix, p.file_path[f])}\t${at}\t${owner}\t0\n")
+}
+
+// baseOwner は木 f の字句 tok を含む関数の中の局所 base の型の持ち主（裸の名前の表層型 → 仮引数の型の名前の順）
+func baseOwner(p loader.Program, prefix string, st mut desugar.S, f int, mi int, tok int, base string) string {
+    t := p.trees[f]
+    mut lo := 0 - 1
+    mut hi := 0 - 1
+    mut fd := 0 - 1
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.KFuncDecl && x.f >= 0 && ast.ListLen(t, x.f) >= 3 {
+            a := ast.ListAt(t, x.f, 1)
+            z := ast.ListAt(t, x.f, 2)
+            if tok >= a && tok <= z && (fd < 0 || a >= lo) {
+                lo = a
+                hi = z
+                fd = i
+            }
+        }
+    }
+    if fd < 0 {
+        return ""
+    }
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.EIdent && x.tok >= lo && x.tok <= hi && loader.Name(t, x.a) == base {
+            o := ownerOf(p, prefix, mut st, desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + f * desugar.FW + i)))
+            if o != "" {
+                return o
+            }
+        }
+    }
+    // 束縛 `x := 値` / `mut x := 値` の右辺の表層型（名前と値が 1 対 1 の形）
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.SBind && x.tok >= lo && x.tok <= hi && ast.ListLen(t, x.a) == ast.ListLen(t, x.c) {
+            for j <- iter.Range(0, ast.ListLen(t, x.a)) {
+                if loader.Name(t, ast.ListAt(t, x.a, j)) == base {
+                    v := unparen(t, ast.ListAt(t, x.c, j))
+                    o := ownerOf(p, prefix, mut st, desugar.YTypeOf(mut st, desugar.NodeRef(desugar.ABASE + f * desugar.FW + v)))
+                    if o != "" {
+                        return o
+                    }
+                }
+            }
+        }
+    }
+    // ラムダの仮引数（EMutArg を含む一番内側のラムダ — 兄弟のラムダは同名の仮引数を別の型で持ちうる）
+    mut best := 0 - 1
+    mut bestN := 0
+    for i <- iter.Range(0, len(t.nodes)) {
+        if t.nodes[i].kind == ast.ELambda {
+            under := reachFrom(t, i)
+            if under[mi] {
+                mut n := 0
+                for k <- iter.Range(0, len(under)) {
+                    if under[k] {
+                        n += 1
+                    }
+                }
+                if best < 0 || n < bestN {
+                    best = i
+                    bestN = n
+                }
+            }
+        }
+    }
+    if best >= 0 {
+        lp := t.nodes[best].a
+        for j <- iter.Range(0, if lp >= 0 { ast.ListLen(t, lp) } else { 0 }) {
+            pn := t.nodes[ast.ListAt(t, lp, j)]
+            if loader.Name(t, pn.a) == base && pn.b >= 0 {
+                o := typeNameOwner(p, prefix, f, t.nodes[pn.b])
+                if o != "" {
+                    return o
+                }
+            }
+        }
+    }
+    // 仮引数の型の名前（`T` / `mut T` / `q.T`）
+    ps := t.nodes[fd].c
+    for j <- iter.Range(0, if ps >= 0 { ast.ListLen(t, ps) } else { 0 }) {
+        pn := t.nodes[ast.ListAt(t, ps, j)]
+        if loader.Name(t, pn.a) == base && pn.b >= 0 {
+            return typeNameOwner(p, prefix, f, t.nodes[pn.b])
+        }
+    }
+    return ""
+}
+
+// typeNameOwner は型の式の節 ty（`T` / `q.T` / `T[…]`）の持ち主（それ以外の形は ""）
+func typeNameOwner(p loader.Program, prefix string, f int, ty ast.Node) string {
+    if ty.kind != ast.TName && ty.kind != ast.TGeneric {
+        return ""
+    }
+    t := p.trees[f]
+    tn := loader.Name(t, ty.a)
+    q, n, dot := strings.CutLast(tn, ".")
+    if !dot {
+        return pkgOf(normPath(prefix, p.file_path[f])) + "." + tn
+    }
+    pk := p.file_pkg[f]
+    for k <- iter.Range(0, len(p.imp_pkg)) {
+        if p.imp_pkg[k] == pk && p.imp_ref[k] == q {
+            ip := p.imp_path[k]
+            return (if strings.HasPrefix(ip, "std/") { ip } else { "dir:" + prefix + ip }) + "." + n
+        }
+    }
+    return ""
+}
+
+// reachFrom は節 r から辿れる節の印（reach の根を r にした形）
+func reachFrom(t ast.Tree, r int) []bool {
+    n := len(t.nodes)
+    mut seen := mut []bool{}
+    for i <- iter.Range(0, n) {
+        seen = append(seen, false)
+    }
+    mut stack := mut []int{}
+    mut sp := push(mut stack, 0, r)
+    while sp > 0 {
+        sp -= 1
+        i := stack[sp]
+        if i < 0 || i >= n || seen[i] {
+            continue
+        }
+        seen[i] = true
+        x := t.nodes[i]
+        vs := []int{x.a, x.b, x.c, x.d, x.e, x.f}
+        mut cc := desc(x.kind, x.b)
+        for j <- iter.Range(0, 6) {
+            m := cc % 8
+            cc = cc / 8
+            v := vs[j]
+            if v >= 0 && m == 1 {
+                sp = push(mut stack, sp, v)
+            } else if v >= 0 && m == 3 {
+                for e <- iter.Range(0, ast.ListLen(t, v)) {
+                    sp = push(mut stack, sp, ast.ListAt(t, v, e))
+                }
+            }
+        }
+    }
+    return freeze(seen)
+}
+
+func isImportRef(p loader.Program, f int, ref string) bool {
+    pk := p.file_pkg[f]
+    for j <- iter.Range(0, len(p.imp_pkg)) {
+        if p.imp_pkg[j] == pk && p.imp_ref[j] == ref {
+            return true
+        }
+    }
+    return false
+}
+
+// normPath は loader のファイルのパス（cwd 相対・std は `std/…`）をルート相対に
+func normPath(prefix string, path string) string {
+    return if strings.HasPrefix(path, "std/") { "src/" + path } else { prefix + path }
+}
+
+// ownerOf は表層型 y の型宣言の持ち主（`<package>.<型名>` — T? は中身・不明は ""）
+func ownerOf(p loader.Program, prefix string, st mut desugar.S, y0 int) string {
+    mut y := y0
+    while y >= 0 && desugar.YAt(mut st, y).k == desugar.YOpt {
+        y = desugar.YAt(mut st, y).a
+    }
+    if y < 0 || desugar.YAt(mut st, y).k != desugar.YDecl {
+        return ""
+    }
+    r := desugar.YAt(mut st, y).a
+    if r < desugar.ABASE || r >= 2 * desugar.ABASE {
+        return ""
+    }
+    f := (r % desugar.LK) / desugar.FW
+    i := r % desugar.FW
+    t := p.trees[f]
+    return pkgOf(normPath(prefix, p.file_path[f])) + "." + loader.Name(t, t.nodes[i].a)
+}
+
+// readList は標準入力のファイル一覧（1 行 1 つ）
+func readList() ([]string, bool) {
+    list := io.ReadStdin() catch return []string{}, false
+    text := string(list) catch return []string{}, false
+    mut out := mut []string{}
+    mut rest := text
+    mut more := true
+    while more {
+        line, r, found := strings.Cut(rest, "\n")
+        if line != "" {
+            out = append(out, line)
+        }
+        rest = r
+        more = found
+    }
+    return freeze(out), true
+}
+
+// symOf は `<pkg>.<Name>` を内部の package の綴りと名前に（std/par → std/par・それ以外 → dir:<ディレクトリ>）
+func symOf(sym string) (string, string, bool) {
+    q0, name, ok := strings.CutLast(sym, ".")
+    return if strings.HasPrefix(q0, "std/") { q0 } else { "dir:" + q0 }, name, ok
+}
+
+// census は files 全部の国勢調査の数だけ（行は捨てる）
+func census(files []string, sy Sym, th []THit) Count {
+    mut b := builder.Builder[byte]{}
+    mut cnt := Count{}
+    for i <- iter.Range(0, len(files)) {
+        mut tg := mut []int{}
+        mut ot := mut []int{}
+        scanFile(mut b, files[i], sy, th, mut cnt, mut tg, mut ot)
+    }
+    return cnt
+}
+
+// validName は n が 1 つの識別子の字句か（キーワード・組み込みの綴りでない — 字句の種類で見る）
+func validName(n string) bool {
+    b := bytes(n)
+    if len(b) == 0 || !(b[0] == '_' || (b[0] >= 'a' && b[0] <= 'z') || (b[0] >= 'A' && b[0] <= 'Z')) {
+        return false
+    }
+    ts := lexer.Lex(b)
+    return len(ts) >= 1 && ts[0].tag == lexer.Identifier && ts[0].start == 0 && ts[0].end == len(b)
+}
+
+func isUpper(n string) bool {
+    b := bytes(n)
+    return len(b) > 0 && b[0] >= 'A' && b[0] <= 'Z'
+}
+
+// sortInts は昇順（挿入ソート — 1 ファイルの書き換えの数なので素朴でよい）
+func sortInts(xs []int) []int {
+    mut ys := mut []int{}
+    for i <- iter.Range(0, len(xs)) {
+        ys = append(ys, xs[i])
+    }
+    mut k := 1
+    while k < len(ys) {
+        x := ys[k]
+        mut m := k
+        while m > 0 && ys[m - 1] > x {
+            ys[m] = ys[m - 1]
+            m -= 1
+        }
+        ys[m] = x
+        k += 1
+    }
+    return freeze(ys)
+}
+
+// splice は src[lo:hi] の、ed（昇順・開始バイト）のうち範囲に入る位置の oldLen バイトを rep に差し替えた列（alt 番目の書き換えだけ altRep — 変異の口）
+func splice(src []byte, lo int, hi int, ed []int, oldLen int, rep []byte, alt int, altRep []byte) []byte {
+    mut out := mut []byte{}
+    mut j := 0
+    while j < len(ed) && ed[j] < lo {
+        j += 1
+    }
+    mut i := lo
+    while i < hi {
+        if j < len(ed) && ed[j] == i {
+            r := if j == alt { altRep } else { rep }
+            for c <- iter.Range(0, len(r)) {
+                out = append(out, r[c])
+            }
+            i += oldLen
+            j += 1
+        } else {
+            out = append(out, src[i])
+            i += 1
+        }
+    }
+    return freeze(out)
+}
+
+func bytesEq(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+// tokensEq は書き換えの前後の字句列が「書き換えた位置だけ old → new」で一致するか（字句の数・種類が同じ・各字句の綴りは
+// 旧の綴りに範囲内の書き換えを当てたものと一致 — 補間の穴の書き換えは囲む文字列リテラルの綴りにも当たる）+ 字句の外（コメント・空白）は不変
+func tokensEq(a []byte, b []byte, ed []int, oldLen int, rep []byte) bool {
+    ta := allTokens(a, lexer.Lex(a)).ts
+    tb := allTokens(b, lexer.Lex(b)).ts
+    if len(ta) != len(tb) {
+        return false
+    }
+    for i <- iter.Range(0, len(ta)) {
+        if ta[i].tag != tb[i].tag {
+            return false
+        }
+        if !bytesEq(splice(a, ta[i].start, ta[i].end, ed, oldLen, rep, 0 - 1, rep), b[tb[i].start:tb[i].end]) {
+            return false
+        }
+    }
+    return bytesEq(splice(a, 0, len(a), ed, oldLen, rep, 0 - 1, rep), b)
+}
+
+func getenv(k string) string {
+    v, err := os.Getenv(k)
+    if err != nil || v == nil {
+        return ""
+    }
+    return v
+}
+
+// cmdRename は sym を new へ書き換える（標準入力 = コーパスのファイル一覧）。終了コード: 0 = 済 / 2 = 未分類あり / 3 = 合成の参照あり /
+// 4 = 拒否（新しい名前が識別子でない・頭の大小が変わる・新しい名前が既に対象の package に在る）/ 5 = 書き換えの後の検査が赤 / 1 = 入出力。
+// dry なら書かずに計画（file・位置）だけ出す。開発の口 REFS_MUTANT（道具の網の検査 — 1 = 多い〔書き換えるファイルの最初の OTHER も書く〕/
+// 2 = 少ない〔最後の TARGET を書かない〕/ 3 = 綴り違い〔最初の書き換えを new + "x"〕/ 4 = 名前つき実引数の callee 取り違え〔別の関数への名前つき実引数も対象〕/ 5 = 欄の別 struct 誤爆〔最初の別の持ち主の欄も対象〕）・REFS_NOPOSTCHECK=1（書き換えの後の検査を飛ばす — 変異を alphacheck へ通す）
+func cmdRename(sym string, nn string, dry bool, typedPath string) int {
+    sy, ok := parseSym(sym)
+    q := sy.q
+    name := sy.name
+    files, rok := readList()
+    th, js, tok := loadTyped(typedPath)
+    if !ok || !rok || !tok || sy.mode == ModeMember && typedPath == "" {
+        return usage()
+    }
+    if !validName(nn) || nn == name || isUpper(nn) != isUpper(name) {
+        _ = io.WriteStderr(bytes("rename: ${nn} は識別子でないか、旧名と同じか、頭の大小（公開 / 非公開）が変わる\n"))
+        return 4
+    }
+    // 衝突: トップレベル名は新名の国勢調査に対象が在れば（package に既に在る）。欄は持ち主に同名の欄の宣言が在れば（selector は新名の印が無いので数えない）。
+    // 仮引数は関数の中の同名（仮引数・局所）か package のトップレベル名に在れば（局所名はトップレベル名と同名不可）
+    cn := census(files, symWith(sy, nn), th)
+    ctop := census(files, Sym{ModeTop, q, nn, "", ""}, []THit{})
+    clash := if sy.mode == ModeTop { cn.target > 0 || cn.uncl > 0 || cn.synth > 0 } else if sy.mode == ModeMember { cn.decl > 0 } else { cn.target > 0 || ctop.target > 0 }
+    if clash {
+        _ = io.WriteStderr(bytes("rename: ${nn} は既に在る（target=${cn.target} decl=${cn.decl} unclassified=${cn.uncl} synth=${cn.synth} top=${ctop.target}）— scripts/refs.sh で確かめる\n"))
+        return 4
+    }
+    if sy.mode == ModeMember && has(js, sy.owner) {
+        _ = io.WriteStderr(bytes("rename: 警告 — ${sy.owner} は json.Encode / Decode に届く型（欄名 = JSON のキー）。改名は wire の互換を変える（EncodeWith / DecodeWith の辞書の鍵の文字列は書き換えない — 手で）\n"))
+    }
+    mutant := getenv("REFS_MUTANT")
+    post := getenv("REFS_NOPOSTCHECK") != "1"
+    rep := bytes(nn)
+    oldLen := len(bytes(name))
+    mut cnt := Count{}
+    mut b := builder.Builder[byte]{}
+    mut fs := mut []string{}
+    mut srcs := mut [][]byte{}
+    mut outs := mut [][]byte{}
+    mut eds := mut [][]int{}
+    mut usedMore := false
+    mut lastFile := 0 - 1
+    for i <- iter.Range(0, len(files)) {
+        mut tg := mut []int{}
+        mut ot := mut []int{}
+        scanFile(mut b, files[i], sy, th, mut cnt, mut tg, mut ot)
+        if mutant == "1" && !usedMore && len(ot) > 0 && len(tg) > 0 {
+            tg = append(tg, ot[0])
+            usedMore = true
+        }
+        if len(tg) > 0 {
+            src := io.ReadFile(files[i]) catch return 1
+            fs = append(fs, files[i])
+            srcs = append(srcs, src)
+            eds = append(eds, sortInts(freeze(tg)))
+            lastFile = len(fs) - 1
+        }
+    }
+    if cnt.uncl > 0 {
+        _ = io.WriteStderr(bytes("rename: 未分類 ${cnt.uncl} — 書き換えない（scripts/refs.sh ${sym} で一覧）\n"))
+        return 2
+    }
+    if cnt.neg > 0 {
+        // 負例の中の型の付かない参照は書き換えない — 一覧を出す（手で追従）
+        rows := string(builder.Build(mut b)) catch ""
+        mut negs := builder.Builder[byte]{}
+        mut rest := rows
+        mut more := true
+        while more {
+            line, r, m := strings.Cut(rest, "\n")
+            if strings.HasPrefix(line, "NEGATIVE\t") {
+                builder.PushString(mut negs, "  " + line + "\n")
+            }
+            rest = r
+            more = m
+        }
+        _ = io.WriteStderr(bytes("rename: 負例の中の型の付かない参照 ${cnt.neg} か所は書き換えない（NEGATIVE — 手で追従）:\n"))
+        _ = io.WriteStderr(builder.Build(mut negs))
+    }
+    if cnt.synth > 0 {
+        _ = io.WriteStderr(bytes("rename: parser の合成の参照 ${cnt.synth} — コンパイラが名前を知る（compiler の変更込みの便）\n"))
+        return 3
+    }
+    // 宣言はちょうど 1 つ（0 = 対象が無い・2 以上 = 持ち主の取り違え — examples/ のような単一ファイルの main の同居は 1 つの package に見える）
+    if cnt.decl != 1 {
+        _ = io.WriteStderr(bytes("rename: 対象の宣言が ${cnt.decl} 個（1 つでない — 対象の綴りか、同じディレクトリに同居する別の main の取り違え）— 書き換えない\n"))
+        return 4
+    }
+    mut total := 0
+    mut bad := 0
+    mut plan := builder.Builder[byte]{}
+    for i <- iter.Range(0, len(fs)) {
+        src := srcs[i]
+        mut ed := eds[i]
+        if mutant == "2" && i == lastFile {
+            ed = ed[0:len(ed) - 1]
+        }
+        for j <- iter.Range(0, len(ed)) {
+            if ed[j] + oldLen > len(src) || lexeme(src, lexer.Token{lexer.Identifier, ed[j], ed[j] + oldLen}) != name {
+                _ = io.WriteStderr(bytes("rename: ${fs[i]}:${ed[j]} の綴りが ${name} でない — 中止\n"))
+                return 5
+            }
+            l, c := lineCol(src, ed[j])
+            builder.PushString(mut plan, "${fs[i]}\t${ed[j]}\t${l}:${c}\n")
+        }
+        alt := if mutant == "3" && i == 0 { 0 } else { 0 - 1 }
+        out := splice(src, 0, len(src), ed, oldLen, rep, alt, bytes(nn + "x"))
+        if post && !tokensEq(src, out, ed, oldLen, rep) {
+            builder.PushString(mut plan, "POSTCHECK-FAIL\t${fs[i]}\n")
+            bad += 1
+        }
+        total += len(ed)
+        outs = append(outs, out)
+    }
+    _ = io.WriteStdout(builder.Build(mut plan))
+    if bad > 0 {
+        _ = io.WriteStderr(bytes("rename: 字句列の照合が赤（${bad} ファイル）— 書かない\n"))
+        return 5
+    }
+    if dry {
+        _ = io.WriteStderr(bytes("rename ${sym} → ${nn}: dry-run — ${len(fs)} ファイル・${total} か所\n"))
+        return 0
+    }
+    for i <- iter.Range(0, len(fs)) {
+        werr := io.WriteFile(fs[i], outs[i])
+        if werr != nil {
+            _ = io.WriteStderr(bytes("rename: cannot write ${fs[i]}\n"))
+            return 1
+        }
+    }
+    _ = io.WriteStderr(bytes("rename ${sym} → ${nn}: ${len(fs)} ファイル・${total} か所を書いた\n"))
+    if !post {
+        return 0
+    }
+    // 欄・仮引数の書いた後の国勢調査は scripts/refs.sh（新名の表層型検査器の印を作り直してから — 道具の中では作れない）
+    if sy.mode != ModeTop {
+        _ = io.WriteStderr(bytes("rename: PRE target=${cnt.target} other=${cnt.other} newother=${cn.other}\n"))
+        return 0
+    }
+    // 書いた後の国勢調査: 新しい名前の対象の数 = 書き換えた数・旧名の対象 0・未分類 0
+    cn2 := census(files, symWith(sy, nn), th)
+    co2 := census(files, sy, th)
+    // 別物の数も変わらない: 旧名の OTHER は書き換えの前と同数（別物を書いていない）・新名の OTHER も書き換えの前の新名の OTHER と同数
+    if cn2.target != cnt.target || co2.target != 0 || cn2.uncl != 0 || co2.uncl != 0 || co2.other != cnt.other || cn2.other != cn.other {
+        _ = io.WriteStderr(bytes("rename: 書いた後の国勢調査が合わない（新名 target=${cn2.target} / 期待 ${cnt.target}・旧名 target=${co2.target}・未分類 ${cn2.uncl}/${co2.uncl}・旧名 other=${co2.other} / 期待 ${cnt.other}・新名 other=${cn2.other} / 期待 ${cn.other}）\n"))
+        return 5
+    }
+    _ = io.WriteStderr(bytes("rename: 書いた後の国勢調査 ok（新名 target=${cn2.target}・旧名 target=0）\n"))
+    return 0
+}
+
+// stdMap は置き場 dir（…/src/std）の .sober を `std/<相対>` の鍵で読む（LoadFs の焼き込みの表の代役）
+func stdMap(dir string, rel string, m mut map[string]string) bool {
+    es := io.ReadDir(dir) catch return false
+    for i <- iter.Range(0, len(es)) {
+        e := es[i]
+        full := dir + "/" + e.Name
+        key := rel + "/" + e.Name
+        switch e.Kind {
+        case io.Dir{}:
+            if !stdMap(full, key, mut m) {
+                return false
+            }
+        case io.Regular{}:
+            if strings.HasSuffix(e.Name, ".sober") && !strings.HasSuffix(e.Name, "_test.sober") {
+                src := io.ReadFile(full) catch return false
+                m[key] = string(src) catch return false
+            }
+        default:
+        }
+    }
+    return true
+}
+
+// cmdLoadcheck は entry を loader で読み、読んだ非 std のファイルの import の表（この道具の規則）≡ loader の package の import の表を照合する
+func cmdLoadcheck(stdDir string, entries []string) int {
+    mut sm := mut map[string]string{}
+    if !stdMap(stdDir, "std", mut sm) {
+        _ = io.WriteStderr(bytes("refs: cannot read ${stdDir}\n"))
+        return 1
+    }
+    mut bad := 0
+    mut files := 0
+    mut b := builder.Builder[byte]{}
+    for ei <- iter.Range(0, len(entries)) {
+        p, lerr := loadAny(entries[ei], sm)
+        if lerr != nil {
+            builder.PushString(mut b, "LOADFAIL\t${entries[ei]}\n")
+            continue
+        }
+        for fi <- iter.Range(0, len(p.trees)) {
+            files += 1
+            pk := p.file_pkg[fi]
+            rs, ps := importsOf(p.trees[fi])
+            for i <- iter.Range(0, len(rs)) {
+                mut hit := false
+                for j <- iter.Range(0, len(p.imp_pkg)) {
+                    if p.imp_pkg[j] == pk && p.imp_ref[j] == rs[i] && p.imp_path[j] == ps[i] {
+                        hit = true
+                    }
+                }
+                if !hit {
+                    bad += 1
+                    builder.PushString(mut b, "MISMATCH\t${entries[ei]}\t${p.file_path[fi]}\t${rs[i]}=${ps[i]}\n")
+                }
+            }
+            if p.file_std[fi] && pkgOf("src/" + p.file_path[fi]) != p.pkg_path[pk] {
+                bad += 1
+                builder.PushString(mut b, "PKG\t${entries[ei]}\t${p.file_path[fi]}\t${p.pkg_path[pk]}\n")
+            }
+        }
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    _ = io.WriteStderr(bytes("loadcheck: entries=${len(entries)} files=${files} mismatch=${bad}\n"))
+    return if bad > 0 { 2 } else { 0 }
+}
+
+// cmdFiles は各 entry が loader で読むファイルのパス（`<entry>\t<path>` — std は `std/…`・読めない entry は `<entry>\t!LOADFAIL`）。
+// alphacheck が書き換えたファイルを読む entry を選ぶのに使う
+// ── 鎖の罠の手掛かりと package 改名（R4 — report-886）──
+
+func readFile(path string) ([]byte, bool) {
+    b := io.ReadFile(path) catch return []byte{}, false
+    return b, true
+}
+
+// strBody は文字列リテラルの字句の中身（引用符を外す — エスケープは解かない: 名前の照合には足りる）
+func strBody(src []byte, t lexer.Token) string {
+    if t.end - t.start < 2 {
+        return ""
+    }
+    r := string(src[t.start + 1:t.end - 1]) catch ""
+    return r
+}
+
+// qualOf は文字列 c の中の `q.name`（直後が識別子の文字でない形）の修飾子 q（`$jb` 等の合成の参照名も — 無い修飾子は ""）と、その形が在るか
+func qualOf(c string, name string) (string, bool) {
+    b := bytes(c)
+    w := bytes("." + name)
+    mut i := 0
+    while i + len(w) <= len(b) {
+        mut m := true
+        for j <- iter.Range(0, len(w)) {
+            if b[i + j] != w[j] {
+                m = false
+                break
+            }
+        }
+        if m && (i + len(w) == len(b) || !isIdentByte(b[i + len(w)])) {
+            mut a := i
+            while a > 0 && (isIdentByte(b[a - 1]) || b[a - 1] == '$') {
+                a -= 1
+            }
+            r := string(b[a:i]) catch ""
+            return r, true
+        }
+        i += 1
+    }
+    return "", false
+}
+
+func qualHit(c string, name string, ref string, ctx bool) bool {
+    q, ok := qualOf(c, name)
+    return ok && (q == ref || (ctx && q != ""))
+}
+
+// cmdLits は compiler/ の文字列リテラルのうち名前 name を含むもの（`LIT\t<種類>\t<文脈>\t<path>\t<行:列>\t<リテラル>`）:
+// 種類 = EXACT（name か `x.name`）/ QUAL（文字列の中の `ref.name` か文脈ありの `x.name` — 合成コード・文面）/ SUBSTR（部分一致）/ CONCAT（name の 3 文字以上の断片で `+` に隣る — 連結で組む形）。
+// 文脈 = pkg（同じファイルに package pkg のパスか参照名の文字列・import がある）/ -（無い — 同綴りの別物の見込み）。判定は手
+func cmdLits(name string, pkg string) int {
+    files, ok := readList()
+    if !ok {
+        return 1
+    }
+    ref := lastSeg(pkg)
+    mut b := builder.Builder[byte]{}
+    for i <- iter.Range(0, len(files)) {
+        src, rok := readFile(files[i])
+        if !rok {
+            continue
+        }
+        ts := allTokens(src, lexer.Lex(src)).ts
+        mut ctx := false
+        for k <- iter.Range(0, len(ts)) {
+            if ts[k].tag == lexer.StringLiteral || ts[k].tag == lexer.RawStringLiteral {
+                c := strBody(src, ts[k])
+                if c == pkg || c == ref {
+                    ctx = true
+                }
+            }
+        }
+        f := File{files[i], src, pkgOf(files[i]), []string{}, []string{}}
+        for k <- iter.Range(0, len(ts)) {
+            if ts[k].tag != lexer.StringLiteral && ts[k].tag != lexer.RawStringLiteral {
+                continue
+            }
+            c := strBody(src, ts[k])
+            mut kind := ""
+            if c == name || strings.HasSuffix(c, "." + name) {
+                kind = "EXACT"
+            } else if qualHit(c, name, ref, ctx) {
+                // 文字列の中の `ref.名前`（修飾子が対象の package の参照名 — 診断の文面）か、package の文脈があるファイルの `x.名前`（loader が合成するコードの呼び出し）
+                // — 同じコミットで直す強い候補（report-895）。修飾子も文脈も違えば同綴りの別物（`layout.Decode`・LLVM の `.h`）で SUBSTR に落とす
+                kind = "QUAL"
+            } else if c != "" && strings.Contains(c, name) {
+                kind = "SUBSTR"
+            } else if len(bytes(c)) >= 3 && strings.Contains(name, c) && ((k + 1 < len(ts) && ts[k + 1].tag == lexer.Plus) || (k >= 1 && ts[k - 1].tag == lexer.Plus)) {
+                kind = "CONCAT"
+            }
+            if kind != "" {
+                l, col := lineCol(src, ts[k].start)
+                builder.PushString(mut b, "LIT\t${kind}\t${if ctx { "pkg" } else { "-" }}\t${f.path}\t${l}:${col}\t${context(src, ts[k].start)}\n")
+            }
+        }
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    return 0
+}
+
+// Edit は 1 か所の書き換え（バイト [s, e) を rep に）
+type Edit struct {
+    s int
+    e int
+    rep string
+}
+
+// applyEdits は src の [lo, hi) に、範囲に入る書き換え（s の昇順）を当てた列
+func applyEdits(src []byte, lo int, hi int, eds []Edit) []byte {
+    mut out := mut []byte{}
+    mut i := lo
+    mut j := 0
+    while j < len(eds) && eds[j].s < lo {
+        j += 1
+    }
+    while i < hi {
+        if j < len(eds) && eds[j].s == i && eds[j].e <= hi {
+            r := bytes(eds[j].rep)
+            for c <- iter.Range(0, len(r)) {
+                out = append(out, r[c])
+            }
+            i = eds[j].e
+            j += 1
+        } else {
+            out = append(out, src[i])
+            i += 1
+        }
+    }
+    return freeze(out)
+}
+
+func sortEdits(xs []Edit) []Edit {
+    mut ys := mut []Edit{}
+    for i <- iter.Range(0, len(xs)) {
+        ys = append(ys, xs[i])
+    }
+    mut k := 1
+    while k < len(ys) {
+        x := ys[k]
+        mut m := k
+        while m > 0 && ys[m - 1].s > x.s {
+            ys[m] = ys[m - 1]
+            m -= 1
+        }
+        ys[m] = x
+        k += 1
+    }
+    return freeze(ys)
+}
+
+// editsEq は書き換えの前後の字句列が「書き換えた範囲だけ違う」で一致するか（字句の数・種類が同じ・各字句の綴り = 旧の綴りに範囲内の書き換え・全体も同じ）
+func editsEq(a []byte, b []byte, eds []Edit) bool {
+    ta := allTokens(a, lexer.Lex(a)).ts
+    tb := allTokens(b, lexer.Lex(b)).ts
+    if len(ta) != len(tb) {
+        return false
+    }
+    for i <- iter.Range(0, len(ta)) {
+        if ta[i].tag != tb[i].tag || !bytesEq(applyEdits(a, ta[i].start, ta[i].end, eds), b[tb[i].start:tb[i].end]) {
+            return false
+        }
+    }
+    return bytesEq(applyEdits(a, 0, len(a), eds), b)
+}
+
+// cmdPkgRename は package の改名（パス old → new — std のパスかルート相対のディレクトリ。src/compiler の package は対象外）の字句の書き換え:
+// import のパスの文字列（参照の書き手から解決して old に当たるもの）・alias なしの import の参照名 `ref.`（参照名が変わるとき）・package の中のファイルの
+// `package 名前`（最後の要素が変わるとき）。ディレクトリの移動は scripts/refs.sh。alias つきの import の参照名は変えない。
+// 新しい参照名が書き換えるファイルに識別子として既に在れば拒否（4）。開発の口 REFS_MUTANT=6（参照名を書かない — import のパスだけ）
+func cmdPkgRename(old string, nw string, dry bool) int {
+    files, ok := readList()
+    if !ok || old == nw || strings.HasPrefix(old, "src/") || strings.HasPrefix(nw, "src/") || strings.HasPrefix(old, "std/") != strings.HasPrefix(nw, "std/") {
+        _ = io.WriteStderr(bytes("pkgrename: パスは std/… 同士かルート相対のディレクトリ同士（src/compiler の package は対象外）\n"))
+        return 4
+    }
+    qo := pkgNorm(old)
+    oref := lastSeg(old)
+    nref := lastSeg(nw)
+    if !validName(nref) {
+        return 4
+    }
+    mutant := getenv("REFS_MUTANT")
+    mut plan := builder.Builder[byte]{}
+    mut fs := mut []string{}
+    mut outs := mut [][]byte{}
+    mut total := 0
+    mut bad := 0
+    for fi <- iter.Range(0, len(files)) {
+        path := files[fi]
+        src, rok := readFile(path)
+        if !rok {
+            continue
+        }
+        if !strings.Contains(string(src) catch "", oref) {
+            continue
+        }
+        tt := allTokens(src, lexer.Lex(src))
+        ts := tt.ts
+        mut eds := mut []Edit{}
+        mut refEdit := false
+        // import の行（字句で — parse できないファイルも）
+        for k <- iter.Range(0, len(ts)) {
+            if ts[k].tag == lexer.KwImport && k + 1 < len(ts) {
+                mut q := k + 1
+                mut alias := false
+                if ts[q].tag == lexer.Identifier && q + 1 < len(ts) {
+                    alias = true
+                    q += 1
+                }
+                if ts[q].tag == lexer.StringLiteral && impPkg(path, strBody(src, ts[q])) == qo {
+                    eds = append(eds, Edit{ts[q].start, ts[q].end, "\"" + nw + "\""})
+                    if !alias && oref != nref {
+                        refEdit = true
+                    }
+                }
+            }
+        }
+        // 参照名 `ref.`（alias なしで import しているファイル — 局所名は import の参照名と同名不可なので裸の ref の後に `.` は参照名だけ）
+        if refEdit && mutant != "6" {
+            for k <- iter.Range(0, len(ts)) {
+                if ts[k].tag == lexer.Identifier && isName(src, ts, k, nref) {
+                    _ = io.WriteStderr(bytes("pkgrename: ${path} に識別子 ${nref} が既に在る — 参照名の衝突（書き換えない）\n"))
+                    return 4
+                }
+            }
+            for k <- iter.Range(0, len(ts)) {
+                if isName(src, ts, k, oref) && k + 1 < len(ts) && tt.host[k + 1] == tt.host[k] && ts[k + 1].tag == lexer.Dot && !(k >= 1 && tt.host[k - 1] == tt.host[k] && ts[k - 1].tag == lexer.Dot) {
+                    eds = append(eds, Edit{ts[k].start, ts[k].end, nref})
+                }
+            }
+        }
+        // package の中のファイルの `package 名前`
+        if pkgOf(path) == qo && oref != nref {
+            for k <- iter.Range(0, len(ts)) {
+                if ts[k].tag == lexer.KwPackage && isName(src, ts, k + 1, oref) {
+                    eds = append(eds, Edit{ts[k + 1].start, ts[k + 1].end, nref})
+                }
+            }
+        }
+        if len(eds) == 0 {
+            continue
+        }
+        ed := sortEdits(freeze(eds))
+        out := applyEdits(src, 0, len(src), ed)
+        // 参照名を変えたファイルに旧い参照名の `ref.` が残っていない（import のパスだけ書いて参照名を書き漏らす形 — 変異 6 — は loader が受理してしまう）
+        if refEdit && getenv("REFS_NOPOSTCHECK") != "1" {
+            to := allTokens(out, lexer.Lex(out))
+            for k <- iter.Range(0, len(to.ts)) {
+                if isName(out, to.ts, k, oref) && k + 1 < len(to.ts) && to.host[k + 1] == to.host[k] && to.ts[k + 1].tag == lexer.Dot && !(k >= 1 && to.host[k - 1] == to.host[k] && to.ts[k - 1].tag == lexer.Dot) {
+                    builder.PushString(mut plan, "POSTCHECK-FAIL\t${path}\t旧い参照名 ${oref}. が残る\n")
+                    bad += 1
+                    break
+                }
+            }
+        }
+        if !editsEq(src, out, ed) {
+            builder.PushString(mut plan, "POSTCHECK-FAIL\t${path}\n")
+            bad += 1
+        }
+        for j <- iter.Range(0, len(ed)) {
+            l, c := lineCol(src, ed[j].s)
+            builder.PushString(mut plan, "${path}\t${ed[j].s}\t${l}:${c}\t${lexeme(src, lexer.Token{0, ed[j].s, ed[j].e})} → ${ed[j].rep}\n")
+        }
+        total += len(ed)
+        fs = append(fs, path)
+        outs = append(outs, out)
+    }
+    _ = io.WriteStdout(builder.Build(mut plan))
+    if bad > 0 {
+        _ = io.WriteStderr(bytes("pkgrename: 字句列の照合が赤（${bad} ファイル）— 書かない\n"))
+        return 5
+    }
+    if dry {
+        _ = io.WriteStderr(bytes("pkgrename ${old} → ${nw}: dry-run — ${len(fs)} ファイル・${total} か所（ディレクトリの移動は別）\n"))
+        return 0
+    }
+    for i <- iter.Range(0, len(fs)) {
+        werr := io.WriteFile(fs[i], outs[i])
+        if werr != nil {
+            return 1
+        }
+    }
+    _ = io.WriteStderr(bytes("pkgrename ${old} → ${nw}: ${len(fs)} ファイル・${total} か所を書いた（ディレクトリの移動は scripts/refs.sh）\n"))
+    return 0
+}
+
+// loadAny は entry を読む（`test:<package のディレクトリ>` はテストのビルド — loader.LoadTestFs。合成の main は `$test/…`）
+func loadAny(entry string, sm map[string]string) (loader.Program, error?) {
+    if strings.HasPrefix(entry, "test:") {
+        return loader.LoadTestFs(strings.TrimPrefix(entry, "test:"), sm)
+    }
+    return loader.LoadFs(entry, sm)
+}
+
+func cmdFiles(stdDir string, entries []string) int {
+    mut sm := mut map[string]string{}
+    if !stdMap(stdDir, "std", mut sm) {
+        _ = io.WriteStderr(bytes("refs: cannot read ${stdDir}\n"))
+        return 1
+    }
+    mut b := builder.Builder[byte]{}
+    for ei <- iter.Range(0, len(entries)) {
+        p, lerr := loadAny(entries[ei], sm)
+        if lerr != nil {
+            builder.PushString(mut b, "${entries[ei]}\t!LOADFAIL\n")
+            continue
+        }
+        for fi <- iter.Range(0, len(p.file_path)) {
+            builder.PushString(mut b, "${entries[ei]}\t${p.file_path[fi]}\n")
+        }
+    }
+    _ = io.WriteStdout(builder.Build(mut b))
+    return 0
+}
+
+func unparen(t ast.Tree, n0 int) int {
+    mut n := n0
+    while n >= 0 && t.nodes[n].kind == ast.EParen {
+        n = t.nodes[n].a
+    }
+    return n
+}
+
+func usage() int {
+    _ = io.WriteStderr(bytes("usage: refs refs <sym> [--typed <f>] < files   |   refs rename <sym> <new> [--dry-run] [--typed <f>] < files   |   refs typed <std-dir> <prefix|.> <name> <entry>...   |   refs lits <name> <pkg> < files   |   refs pkgrename <old> <new> [--dry-run] < files   |   refs files|loadcheck <std-dir> <entry>...   (<sym> = <pkg>.<Name> / <pkg>.<Type>.<field> / <pkg>.<Func>(<param>))\n"))
+    return 1
+}
+
+func main() int {
+    args0 := os.Args() catch return 1
+    // `--typed <file>`（欄の対象 — scripts/refs.sh が `typed` で作る）を抜いた残り
+    mut typedPath := ""
+    mut rest := mut []string{}
+    mut i := 0
+    while i < len(args0) {
+        if args0[i] == "--typed" && i + 1 < len(args0) {
+            typedPath = args0[i + 1]
+            i += 2
+        } else {
+            rest = append(rest, args0[i])
+            i += 1
+        }
+    }
+    args := freeze(rest)
+    if len(args) == 3 && args[1] == "refs" {
+        return cmdRefs(args[2], typedPath)
+    }
+    if (len(args) == 4 || len(args) == 5 && args[4] == "--dry-run") && args[1] == "rename" {
+        return cmdRename(args[2], args[3], len(args) == 5, typedPath)
+    }
+    if len(args) >= 6 && args[1] == "typed" {
+        return cmdTyped(args[2], if args[3] == "." { "" } else { args[3] }, args[4], args[5:len(args)])
+    }
+    if len(args) == 4 && args[1] == "lits" {
+        return cmdLits(args[2], args[3])
+    }
+    if (len(args) == 4 || len(args) == 5 && args[4] == "--dry-run") && args[1] == "pkgrename" {
+        return cmdPkgRename(args[2], args[3], len(args) == 5)
+    }
+    if len(args) >= 4 && args[1] == "files" {
+        return cmdFiles(args[2], args[3:len(args)])
+    }
+    if len(args) >= 4 && args[1] == "loadcheck" {
+        return cmdLoadcheck(args[2], args[3:len(args)])
+    }
+    return usage()
+}

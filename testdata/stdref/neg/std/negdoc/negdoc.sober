@@ -1,0 +1,112 @@
+package negdoc
+
+// stdref の負例（lint の各条を 1 本ずつ破る — scripts/stdref.sh --selftest）。
+
+// lint に掛からない宣言（対照）
+// 例: examples/annot.sober
+func Good() int {
+    return 1
+}
+
+func NoDoc() int {
+    return 2
+}
+
+// BadName は名前で始まる 1 文目（鳴る）
+func BadName() int {
+    return 3
+}
+
+// report-12 の符丁を含む
+func Report() int {
+    return 4
+}
+
+// TLS 便の符丁を含む
+func Bin() int {
+    return 5
+}
+
+// 段 6 の符丁を含む
+func Dan() int {
+    return 6
+}
+
+// 2026-10-20 の日付を含む
+func Date() int {
+    return 7
+}
+
+// language.md 999 節を指す（実在しない節）
+func Section() int {
+    return 8
+}
+
+// language.md 34 節を指す（実在する節）
+func SectionOk() int {
+    return 9
+}
+
+// 無い例を指す
+// 例: examples/no_such_example.sober
+func Example() int {
+    return 10
+}
+
+// **強調** を含む
+func Bold() int {
+    return 11
+}
+
+// 訳表の hash が古い
+func Stale() int {
+    return 12
+}
+
+// 対の注記を持つ（対の Unpair は実需まで足さない — 34 節 2 の注記）
+@errors(Fail)
+func Pair() error? {
+    return Fail{}
+}
+
+// 失敗のラベル
+type Fail error
+
+// 欄の doc の形
+type Rec struct {
+    // a は直前の行の doc（欄 — 鳴る）
+    a int
+    b int // 行末の doc
+    c int
+}
+
+// P3b の符丁を含む
+func Phase() int {
+    return 13
+}
+
+// `x**` をコードの区間の中に書く（太字にならない — 鳴らない）
+func CodeStar() int {
+    return 14
+}
+
+// 群の doc（名前で始まらない — 鳴らない）
+const GroupA = 1
+const GroupB = 2 // 行末の doc
+
+// GroupC は群の先頭の名前で始まる群の doc（群の全員が鳴る）
+const GroupC = 3
+const GroupD = 4
+
+// 裸の 7 節を指す（language.md の付かない節の参照 — 鳴る）
+func Bare() int {
+    return 15
+}
+
+// RFC 8439 2 節・region-domain-pool.md 2・4 節・language.md 7 節を指す（鳴らない）
+func NotBare() int {
+    return 16
+}
+
+// 合成: func Synth() int
+// Synth は loader が合成する口の doc（名前で始まる — 鳴る）

@@ -1,0 +1,2 @@
+sober: desugar error at examples/for_neg_yield_outside.sober:8:9 (CoreFragment)
+exit=1

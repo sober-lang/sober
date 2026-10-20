@@ -9,6 +9,7 @@ package main
 import "std/io"
 import "std/iter"
 import "std/os"
+import "std/strings"
 import "std/utf8"
 
 func main() int {
@@ -81,14 +82,14 @@ func tally(path string, ix mut map[string]int, names mut []string, st mut []int)
                 carry = append(carry, b[j])
             }
             if !scan(freeze(carry), mut ix, mut names, mut st) {
-                return utf8.InvalidUtf8{pos: 0}
+                return strings.InvalidUtf8{pos: 0}
             }
             carry = mut []byte{}
             s = h + 1
         }
         if s <= e {
             if !scan(b[s:e + 1], mut ix, mut names, mut st) {
-                return utf8.InvalidUtf8{pos: 0}
+                return strings.InvalidUtf8{pos: 0}
             }
         }
         for j <- iter.Range(e + 1, len(b)) {
@@ -97,7 +98,7 @@ func tally(path string, ix mut map[string]int, names mut []string, st mut []int)
     }
     if len(carry) > 0 {
         // 最後の行に改行が無い入力は 1BRC の形の外（旧の実装も読まない — 終わりの改行が要る）
-        return utf8.InvalidUtf8{pos: 0}
+        return strings.InvalidUtf8{pos: 0}
     }
     return nil
 }

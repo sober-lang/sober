@@ -1,0 +1,328 @@
+{
+  "package": "shapes",
+  "imports": [],
+  "types": [
+    {
+      "name": "Rect",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "w",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "h",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "Unknown",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 19
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 24
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Area",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "Rect"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "scale",
+                  "tok": 38
+                },
+                "args": [
+                  {
+                    "k": "binary",
+                    "op": "*",
+                    "lhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 40
+                      },
+                      "field": "w",
+                      "tok": 42
+                    },
+                    "rhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 44
+                      },
+                      "field": "h",
+                      "tok": 46
+                    },
+                    "tok": 43
+                  }
+                ],
+                "tok": 39
+              }
+            ],
+            "tok": 37
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 51
+      },
+      "sig_end": 36
+    },
+    {
+      "name": "Parse",
+      "type_params": [],
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Rect"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "name",
+                  "tok": 71
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "square",
+                  "tok": 73
+                },
+                "tok": 72
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "Rect",
+                        "elems": [
+                          {
+                            "key": "w",
+                            "value": {
+                              "k": "ident",
+                              "name": "Unit",
+                              "tok": 80
+                            }
+                          },
+                          {
+                            "key": "h",
+                            "value": {
+                              "k": "ident",
+                              "name": "Unit",
+                              "tok": 84
+                            }
+                          }
+                        ],
+                        "tok": 76,
+                        "type_args": []
+                      },
+                      {
+                        "k": "nil",
+                        "tok": 87
+                      }
+                    ],
+                    "tok": 75
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 70
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Rect",
+                "elems": [],
+                "tok": 92,
+                "type_args": []
+              },
+              {
+                "k": "composite",
+                "type_name": "Unknown",
+                "elems": [
+                  {
+                    "key": "name",
+                    "value": {
+                      "k": "ident",
+                      "name": "name",
+                      "tok": 100
+                    }
+                  }
+                ],
+                "tok": 96,
+                "type_args": []
+              }
+            ],
+            "tok": 91
+          }
+        ]
+      },
+      "tok": 58,
+      "bodiless": false,
+      "span": {
+        "start": 51,
+        "end": 105
+      },
+      "sig_end": 69
+    },
+    {
+      "name": "scale",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 114
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "Unit",
+                  "tok": 116
+                },
+                "tok": 115
+              }
+            ],
+            "tok": 113
+          }
+        ]
+      },
+      "tok": 106,
+      "bodiless": false,
+      "span": {
+        "start": 105,
+        "end": 120
+      },
+      "sig_end": 112
+    }
+  ],
+  "consts": [
+    {
+      "name": "Unit",
+      "expr": {
+        "k": "int",
+        "value": 1,
+        "tok": 27
+      },
+      "tok": 25,
+      "span": {
+        "start": 24,
+        "end": 29
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_lambda.sober:9:64: task.Run / task.Spawn take a lambda literal written at the call ((s) => … for Run, () => … for Spawn)
+exit=1

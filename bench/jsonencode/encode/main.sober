@@ -3,7 +3,7 @@ package main
 // シリアライザの参考列 (c) json.Encode[T]（shape の写しの関数 — mut builder 形の合成）。(a) / (b) と同じ木・同じ綴り
 
 import "std/json"
-import "std/conv"
+import "std/convert"
 import "std/iter"
 import "std/os"
 import "std/strings"

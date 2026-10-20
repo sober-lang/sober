@@ -1,0 +1,19 @@
+package main
+
+// 借りの関数値は値の位置のラムダに捕捉させられない（(α-L0) — 値の閉包は格納されて借りの呼び出しより長く生きうる）
+
+type Stream func(emit func(n int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+func run(r Resp) int {
+    st := r.stream
+    return if st != nil { st((n int) => n) } else { 0 }
+}
+
+func main() {
+    r := Resp{stream: (emit) => run(Resp{stream: (e2) => emit(2)})}
+    println(run(r))
+}

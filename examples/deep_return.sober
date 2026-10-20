@@ -4,14 +4,14 @@ package main
 // （中身もフレームで作ったもの）を返す。戻りの境界コピーが中身ごと呼び手の region へ写す。
 // 実行の照合は IR 経路（深い relocate の lower）が入ってから — 期待値は deep_return.out.expected
 
-import "std/strings"
+import "std/convert"
 
 // words は "w0" .. "w{n-1}" を callee のフレームで作って返す（[]string — 中身の string もフレーム）
 func words(n int) []string {
     mut out := mut []string{}
     mut i := 0
     while i < n {
-        out = append(out, "w" + strings.FormatInt(i))
+        out = append(out, "w" + convert.FormatInt(i))
         i += 1
     }
     return out

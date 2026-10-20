@@ -283,7 +283,7 @@ func spInfo(st mut St, g FnRef) int {
         return -1
     }
     nm := desugar.StrRef(irFnName(mut st, g))
-    if (slen(mut st, nm) > 3 && sat(mut st, nm, 0) == 114 && sat(mut st, nm, 1) == 116 && sat(mut st, nm, 2) == 46) || strIs(mut st, nm, "std/utf8.validPrefix") || strIs(mut st, nm, "std/utf8.Check") || strIs(mut st, nm, "std/utf8.boundary") {
+    if (slen(mut st, nm) > 3 && sat(mut st, nm, 0) == 114 && sat(mut st, nm, 1) == 116 && sat(mut st, nm, 2) == 46) || strIs(mut st, nm, "std/strings.validPrefix") || strIs(mut st, nm, "std/utf8.Check") || strIs(mut st, nm, "std/utf8.boundary") {
         return -1
     }
     np := lenL(mut st, desugar.ListRef(irFnPtys(mut st, g)))
@@ -300,7 +300,7 @@ func spInfo(st mut St, g FnRef) int {
                     return -1
                 }
             }
-            if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpScanB || op == OpPMem || op == OpPArith || op == OpCallI {
+            if op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone || op == OpUnwind || op == OpScanB || op == OpCrcFold || op == OpPMem || op == OpPArith || op == OpCallI {
                 return -1
             }
             if op == OpCmp || op == OpBin {

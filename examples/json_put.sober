@@ -1,0 +1,36 @@
+package main
+
+// Building JSON by hand with std/json's Put* functions: push pieces onto a Builder[byte] and take the string with Done.
+// Useful when the shape is not a struct (a computed list, a streaming response). PutKey writes the ',' before every key but the first.
+// A parsed Doc is an immutable value, so a child task can read it directly.
+
+import "std/builder"
+import "std/json"
+import "std/task"
+
+func main() int {
+    mut o := builder.Builder[byte]{}
+    json.Put(mut o, "{")
+    json.PutKey(mut o, "name", true)
+    json.PutString(mut o, "tea \"green\"")
+    json.PutKey(mut o, "price", false)
+    json.PutInt(mut o, 300)
+    json.PutKey(mut o, "hot", false)
+    json.PutBool(mut o, true)
+    json.PutKey(mut o, "weight", false)
+    json.PutFloat(mut o, 0.25, "weight")
+    json.Put(mut o, "}")
+    s := json.Done(mut o)
+    println(s)
+
+    d := json.Parse(bytes(s)) catch {
+        println("parse failed")
+        return 1
+    }
+    n := task.Run((sc) => {
+        h := task.Spawn(sc, () => if json.Get(d, json.Root(d), "price") != nil { 1 } else { 0 })
+        task.Join(h)
+    }) catch 0
+    println(n)
+    return 0
+}

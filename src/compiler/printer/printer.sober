@@ -772,6 +772,11 @@ func lambda(out mut []byte, t ast.Tree, x ast.Node, d int, flat bool) {
             raw(mut out, t, p.a)
             if p.b >= 0 {
                 out = append(out, ' ')
+                // mut 仮引数の印（宣言の仮引数と同じ — コンテナは型の mut と共有）
+                ty := t.nodes[p.b].kind
+                if p.c != 0 && ty != ast.TSlice && ty != ast.TMap {
+                    obuf.Lit(mut out, "mut ")
+                }
                 typeExpr(mut out, t, p.b)
             }
         }

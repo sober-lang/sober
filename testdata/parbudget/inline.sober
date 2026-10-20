@@ -1,0 +1,46 @@
+package main
+
+// parbudget の inline の約束の網（language.md 11 節「縮退分の記帳と約束の段」）: Scope の天井 64 MB に、宣言 16 MB・実使用 約 14 MB の子を 32 個。
+// 天井が埋まると子は親の上で縮退する（記帳したまま）。実使用の高水位は天井を縮退した子 1 本分まで超えうる — 網は
+// ① 台帳の計上の高水位（#par admit peak_all）≥ 実使用（最大 RSS − `base` で走らせた最大 RSS）② 実使用 ≤ 天井 + 子の宣言 を見る
+
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// 1 つの子 = 約 14 MB の作業域（int 175 万個）を作って畳む
+func work(k int) int {
+    n := 1835008
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, (i * 7 + k) % 100)
+    }
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        s += b[i]
+    }
+    return s
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) > 1 && args[1] == "base" {
+        println(0)
+        return 0
+    }
+    mut ks := mut []int{}
+    for k <- iter.Range(0, 32) {
+        ks = append(ks, k)
+    }
+    xs := freeze(ks)
+    r, e := task.Run((s task.Scope) => {
+        ys, me := task.Map(xs, (x) => work(x), budget: 16 * task.MB)
+        mut t := 0
+        for y <- ys {
+            t += y
+        }
+        t
+    }, budget: 64 * task.MB)
+    println(r)
+    return 0
+}

@@ -1,0 +1,33 @@
+package main
+
+// 段 6 P4-2 (O1): 死の時点の溜め — 子 a が chan で待ったまま親が死ぬ（Join した子 b の死 = 親の死）。終わりの前に溜めた区間を先行順で全部出す
+// （b の行・親の行は a の区間の後ろに溜まっていた）
+
+import "std/task"
+
+func boom(xs []int, i int) int {
+    println("b runs")
+    return xs[i]
+}
+
+func main() {
+    println("start")
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        a := task.Spawn(s, (inp) => {
+            println("a waits")
+            v := task.Recv(inp)
+            mut got := 0
+            if v != nil {
+                got = v
+            }
+            got
+        }, give: rx)
+        b := task.Spawn(s, () => boom([]int{1}, 3))
+        println("parent joins b")
+        x := task.Join(b)
+        task.Send(tx, 1)
+        x + task.Join(a)
+    })
+    println(r)
+}

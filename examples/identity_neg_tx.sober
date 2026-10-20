@@ -1,13 +1,13 @@
 package main
 
-// 負例: チャネルの端点 par.Tx は同一性を持つ型 — par.NewChan だけが作る。ゼロ値 `par.Tx[int]{}` は何のチャネルも指さない偽物
+// 負例: チャネルの端点 task.Sender は同一性を持つ型 — task.NewChannel だけが作る。ゼロ値 `task.Sender[int]{}` は何のチャネルも指さない偽物
 // （std の外では拒否 — diag.Identity・language.md 28 節 / 11 節。2026-10-13 まで check は名指しなしの type error・build は受理して Send が
 // 実行時に StackExceeded で落ちていた — report-592 0 節の食い違い）
 
-import "std/par"
+import "std/task"
 
 func main() {
-    tx := par.Tx[int]{}
-    par.Send(tx, 1)
+    tx := task.Sender[int]{}
+    task.Send(tx, 1)
     println(1)
 }

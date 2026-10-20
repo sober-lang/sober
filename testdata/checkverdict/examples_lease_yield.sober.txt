@@ -1,0 +1,3 @@
+examples/lease_yield.sober:45:29: warning: this lease window may block ('std/task.Recv' can wait): another task on the same worker may take the Local meanwhile, and its lease then falls back to a fresh allocation (same result, slower) — keep waits out of the window (Analyzer)
+{"ok":true,"ty":{"k":"unit"}}
+exit=0

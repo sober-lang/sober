@@ -1,0 +1,57 @@
+package main
+
+// 段 6 P3b: 中断を跨いで region の値を持つ子（容量 1 — 送るたびに待つ）と、その間に同じ深さで確保し続ける親。子の値は親の確保に
+// 壊されない（中断した task のスロットに他の task が入らない — R1' の付け替えの網。schedvec の対象）
+
+import "std/task"
+
+func build(n int, b int) []int {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i * b)
+        i += 1
+    }
+    return xs
+}
+
+func total(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    return s
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        h := task.Spawn(s, (out) => {
+            mut acc := 0
+            mut k := 0
+            while k < 5 {
+                ys := build(k + 3, 3)
+                task.Send(out, 1)
+                zs := build(k + 20, 5)
+                task.Send(out, 2)
+                task.Send(out, 3)
+                acc += total(ys) + total(zs)
+                k += 1
+            }
+            acc
+        }, give: tx)
+        mut got := 0
+        mut j := 0
+        while j < 15 {
+            ws := build(j + 40, 11)
+            v := task.Recv(rx)
+            vs := build(j + 30, 13)
+            if v != nil {
+                got += v + total(ws) - total(vs)
+            }
+            j += 1
+        }
+        got * 1000000 + task.Join(h)
+    })
+    println(r)
+}

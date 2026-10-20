@@ -1,0 +1,42 @@
+package main
+
+// 窓の値が slice の lease（region-domain-pool.md 4d 節）: 窓の本体が mut 実引数の関数の呼び出しで、その結果（窓の region に作られた列）を窓の値として
+// 外へ出す素直な形。check も build も受理し、値は窓の出口で外の region へ写る（F-ay の回帰例 — 展開される関数の結果を署名の座標で読んで写しを付けず、
+// check だけが type error だった・report-721）。束縛してから返す形・ブロックの値の形も同じ
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    tab pool.Scratch
+}
+
+// enc は b の各バイトに tab の世代の数え（窓のたびに 0 から）を足した列
+func enc(w mut Work, b []byte) []byte {
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(b) {
+        pool.Store(mut w.tab, 0, pool.Load(mut w.tab, 0) + 1)
+        out = append(out, byte(int(b[i]) + pool.Load(mut w.tab, 0)))
+        i += 1
+    }
+    return freeze(out)
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 1))
+    b := bytes("abc")
+    z := task.Lease(lw, (w mut Work) => enc(mut w, b))
+    y := task.Lease(lw, (w mut Work) => {
+        r := enc(mut w, b)
+        r
+    })
+    x := {
+        mut w := Work{}
+        pool.NewScratch(mut w.tab, 1)
+        enc(mut w, b)
+    }
+    println(string(z) catch "?")
+    println(string(y) catch "?")
+    println(string(x) catch "?")
+}

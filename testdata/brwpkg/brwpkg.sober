@@ -1,0 +1,19 @@
+package brwpkg
+
+// 借りの位置の判定は callee の本体の名前を callee の package で引く（report-841 / 842）の負例の相手: Pass は send を同じ package の stash へ渡し、
+// stash は send を net.Serve の接続ごとの子 task から呼ぶ（借りの位置でない — 本当に外へ渡す形）。利用者の package に同じ名前の
+// 借りとして安全な stash があっても、Pass の中の stash はこちら
+
+import "std/net"
+
+// Pass は send を stash へ渡す
+func Pass(send func(b []byte) error?) {
+    _ = stash(send)
+}
+
+func stash(send func(b []byte) error?) error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        net.Serve(l, (d net.Conn) => send([]byte{}))?
+    }
+    return nil
+}

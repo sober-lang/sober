@@ -6,6 +6,7 @@ package main
 // 「ハンドラ」が名前で引く。出力 = ルートごとの件数・404 / 405・数のパラメータの合計・文字列のパラメータのバイト数・page の合計・FNV-1a 64
 // （Go / Rust の双子とバイト一致）
 
+import "std/convert"
 import "std/io"
 import "std/iter"
 import "std/os"
@@ -181,7 +182,7 @@ func main() int {
             }
         } else {
             hits[found] = hits[found] + 1
-            h = fnv(h, strings.FormatInt(found))
+            h = fnv(h, convert.FormatInt(found))
             // ハンドラ: パラメータを名前で引く（パターンの順）
             for p <- routes[found].segs {
                 if strings.HasPrefix(p, ":") || strings.HasPrefix(p, "*") {

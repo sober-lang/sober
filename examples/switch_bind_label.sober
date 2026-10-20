@@ -1,0 +1,41 @@
+package main
+
+// 期待型の無い束縛の switch の腕の値がパターンで束ねた欄（`d := switch e { case L{desc}: desc }` — F-bg・2026-10-19）。
+// 閉じた世界にラベルが 2 つ以上あると、覆っていないラベルの腕は到達しない項になる。その型は switch の結果型で、腕の欄の束縛を
+// 見て推す（見ないと unit に落ちて関数の Def が型の不一致で拒否されていた — check ≡ build）
+
+type Alert error {
+    desc int
+}
+
+type Gone error
+
+@errors(Alert)
+func chk(n int) (int, error?) {
+    if n > 3 {
+        return 0, Alert{desc: n * 10}
+    }
+    return 1, nil
+}
+
+@errors(Gone)
+func other(n int) error? {
+    return if n > 100 { Gone{} } else { nil }
+}
+
+func code(n int) int {
+    _, e := chk(n)
+    if e != nil {
+        d := switch e {
+            case Alert{desc}: desc
+        }
+        return d + 1
+    }
+    return 0
+}
+
+func main() {
+    println(code(2))
+    println(code(5))
+    println(other(1) == nil)
+}

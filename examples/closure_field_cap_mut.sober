@@ -1,0 +1,16 @@
+package main
+
+// 値の位置のラムダは mut の束縛を捕捉できない（捕捉は作成点の写し — loader が FnCap kind 1 で拒否）
+
+type Adder func(n int) int
+
+type R struct {
+    f Adder
+}
+
+func main() {
+    mut k := 10
+    k = 11
+    r := R{f: (n int) => n + k}
+    println(r.f(1))
+}

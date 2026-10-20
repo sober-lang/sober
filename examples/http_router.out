@@ -1,0 +1,145 @@
+GET /users/:id mw=2
+GET /users/me mw=2
+POST /users/ mw=2
+GET /static/*rest mw=1
+GET /static/:name mw=1
+GET /health mw=1
+  log before GET /users/42
+  auth before /users/:id
+  auth after
+  log after
+  log before GET /users/me
+  auth before /users/me
+  auth after
+  log after
+  log before GET /users/7
+  auth before /users/:id
+  log after
+  log before POST /users/
+  auth before /users/
+  auth after
+  log after
+  log before GET /static/css/a.css
+  log after
+  log before GET /static
+  log after
+  log before GET /static/a.css
+  log after
+  log before HEAD /health
+  log after
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 8
+
+user 42
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+
+me
+HTTP/1.1 401 Unauthorized
+Content-Length: 0
+
+HTTP/1.1 201 Created
+Content-Type: text/plain
+Content-Length: 3
+
+abcHTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 17
+
+file [css/a.css]
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 8
+
+file []
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 10
+
+top a.css
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+
+HTTP/1.1 405 Method Not Allowed
+Allow: GET, HEAD
+Content-Length: 0
+
+HTTP/1.1 404 Not Found
+Content-Length: 0
+Connection: close
+
+
+true
+-- reversed
+  log before GET /users/42
+  auth before /users/:id
+  auth after
+  log after
+  log before GET /users/me
+  auth before /users/me
+  auth after
+  log after
+  log before GET /users/7
+  auth before /users/:id
+  log after
+  log before POST /users/
+  auth before /users/
+  auth after
+  log after
+  log before GET /static/css/a.css
+  log after
+  log before GET /static
+  log after
+  log before GET /static/a.css
+  log after
+  log before HEAD /health
+  log after
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 8
+
+user 42
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+
+me
+HTTP/1.1 401 Unauthorized
+Content-Length: 0
+
+HTTP/1.1 201 Created
+Content-Type: text/plain
+Content-Length: 3
+
+abcHTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 17
+
+file [css/a.css]
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 8
+
+file []
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 10
+
+top a.css
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+
+HTTP/1.1 405 Method Not Allowed
+Allow: GET, HEAD
+Content-Length: 0
+
+HTTP/1.1 404 Not Found
+Content-Length: 0
+Connection: close
+
+
+true

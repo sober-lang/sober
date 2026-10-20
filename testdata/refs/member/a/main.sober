@@ -1,0 +1,20 @@
+package main
+
+// refs の欄・仮引数の負例（report-885）: m.Handle の仮引数 scale を名前つきで渡す呼び出しと、同名の仮引数を持つ別の関数 other への名前つき実引数
+// （補間の穴の中と外の両方）。
+// 最後の m.Check は panic ラベル m.Oops を印字して終わる（ラベルの改名で ELF が変わり alphacheck V3 が実行の写像まで降りる形）
+
+import "testdata/refs/member/m"
+
+func other(scale int) int {
+    return scale + 1
+}
+
+func main() {
+    q := m.Req{code: 2, path: "/x"}
+    r := m.Handle(q, scale: 3)
+    println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+    println(other(scale: 4))
+    println(m.Render(m.Wire{code: r.code, inner: m.Inner{tag: "t"}}))
+    m.Check(code: q.code - 10)
+}

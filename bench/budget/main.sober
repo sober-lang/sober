@@ -6,7 +6,7 @@ package main
 
 import "std/iter"
 import "std/os"
-import "std/par"
+import "std/task"
 
 // 1 つの task = 32 MB の作業域（int 400 万個）を作って畳む
 func work(k int) int {
@@ -30,7 +30,7 @@ func main() int {
     }
     xs := freeze(ks)
     if len(args) > 1 && args[1] == "nobudget" {
-        ys, me := par.Map(xs, (x) => work(x))
+        ys, me := task.Map(xs, (x) => work(x))
         mut t := 0
         for y <- ys {
             t += y
@@ -38,14 +38,14 @@ func main() int {
         println(t)
         return 0
     }
-    r, e := par.Scope((s par.S) => {
-        ys, me := par.Map(xs, (x) => work(x), budget: 40 * par.MB)
+    r, e := task.Run((s task.Scope) => {
+        ys, me := task.Map(xs, (x) => work(x), budget: 40 * task.MB)
         mut t := 0
         for y <- ys {
             t += y
         }
         t
-    }, budget: 128 * par.MB)
+    }, budget: 128 * task.MB)
     println(r)
     return 0
 }

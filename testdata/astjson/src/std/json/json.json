@@ -13,7 +13,7 @@
     },
     {
       "alias": null,
-      "path": "std/utf8",
+      "path": "std/strings",
       "tok": 10
     },
     {
@@ -198,7 +198,7 @@
             "tok": 147
           },
           {
-            "name": "Num",
+            "name": "Number",
             "fields": [
               {
                 "name": "lit",
@@ -212,7 +212,7 @@
             "tok": 153
           },
           {
-            "name": "Str",
+            "name": "String",
             "fields": [
               {
                 "name": "v",
@@ -226,7 +226,7 @@
             "tok": 159
           },
           {
-            "name": "Arr",
+            "name": "Array",
             "fields": [
               {
                 "name": "items",
@@ -244,7 +244,7 @@
             "tok": 165
           },
           {
-            "name": "Obj",
+            "name": "Object",
             "fields": [
               {
                 "name": "names",
@@ -647,7 +647,7 @@
                     "values": [
                       {
                         "k": "composite",
-                        "type_name": "Obj",
+                        "type_name": "Object",
                         "elems": [
                           {
                             "key": "names",
@@ -885,7 +885,7 @@
                           "k": "expr",
                           "expr": {
                             "k": "composite",
-                            "type_name": "Num",
+                            "type_name": "Number",
                             "elems": [
                               {
                                 "key": "lit",
@@ -953,7 +953,7 @@
                           "k": "expr",
                           "expr": {
                             "k": "composite",
-                            "type_name": "Str",
+                            "type_name": "String",
                             "elems": [
                               {
                                 "key": "v",
@@ -1021,7 +1021,7 @@
                           "k": "expr",
                           "expr": {
                             "k": "composite",
-                            "type_name": "Str",
+                            "type_name": "String",
                             "elems": [
                               {
                                 "key": "v",
@@ -1077,7 +1077,7 @@
                       "k": "expr",
                       "expr": {
                         "k": "composite",
-                        "type_name": "Arr",
+                        "type_name": "Array",
                         "elems": [
                           {
                             "key": "items",
@@ -8192,7 +8192,7 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "utf8",
+                    "name": "strings",
                     "tok": 2470
                   },
                   "field": "IndexInvalid",
@@ -11751,7 +11751,7 @@
                             "key": "kind",
                             "value": {
                               "k": "ident",
-                              "name": "DupKey",
+                              "name": "DuplicateKey",
                               "tok": 3625
                             }
                           }
@@ -16329,7 +16329,7 @@
                   "name": "builder",
                   "tok": 5036
                 },
-                "field": "PushStr",
+                "field": "PushString",
                 "tok": 5038
               },
               "args": [
@@ -17839,7 +17839,7 @@
       }
     },
     {
-      "name": "DupKey",
+      "name": "DuplicateKey",
       "expr": {
         "k": "int",
         "value": 4,

@@ -1,0 +1,381 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/net",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/tls",
+      "tok": 10
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "route",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "http.Request"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "http.Response"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "http",
+                    "tok": 25
+                  },
+                  "field": "Text",
+                  "tok": 27
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "ok",
+                    "tok": 29
+                  }
+                ],
+                "tok": 28
+              }
+            ],
+            "tok": 24
+          }
+        ]
+      },
+      "tok": 13,
+      "bodiless": false,
+      "span": {
+        "start": 12,
+        "end": 34
+      },
+      "sig_end": 23
+    },
+    {
+      "name": "plain",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "net.Conn"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "http",
+                    "tok": 46
+                  },
+                  "field": "ServeWith",
+                  "tok": 48
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "k",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "net",
+                          "tok": 54
+                        },
+                        "field": "Recv",
+                        "tok": 56
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 58
+                        },
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 60
+                        }
+                      ],
+                      "tok": 57
+                    },
+                    "tok": 53
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "b",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "net",
+                          "tok": 67
+                        },
+                        "field": "Send",
+                        "tok": 69
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 71
+                        },
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 73
+                        }
+                      ],
+                      "tok": 70
+                    },
+                    "tok": 66
+                  },
+                  {
+                    "k": "ident",
+                    "name": "route",
+                    "tok": 76
+                  }
+                ],
+                "tok": 49
+              }
+            ],
+            "tok": 45
+          }
+        ]
+      },
+      "tok": 35,
+      "bodiless": false,
+      "span": {
+        "start": 34,
+        "end": 81
+      },
+      "sig_end": 44
+    },
+    {
+      "name": "secure",
+      "type_params": [],
+      "params": [
+        {
+          "name": "c",
+          "type": {
+            "k": "name",
+            "name": "tls.Conn"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "http",
+                    "tok": 93
+                  },
+                  "field": "ServeWith",
+                  "tok": 95
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "k",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "tls",
+                          "tok": 101
+                        },
+                        "field": "Recv",
+                        "tok": 103
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 105
+                        },
+                        {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 107
+                        }
+                      ],
+                      "tok": 104
+                    },
+                    "tok": 100
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "b",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "tls",
+                          "tok": 114
+                        },
+                        "field": "Send",
+                        "tok": 116
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "c",
+                          "tok": 118
+                        },
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 120
+                        }
+                      ],
+                      "tok": 117
+                    },
+                    "tok": 113
+                  },
+                  {
+                    "k": "ident",
+                    "name": "route",
+                    "tok": 123
+                  }
+                ],
+                "tok": 96
+              }
+            ],
+            "tok": 92
+          }
+        ]
+      },
+      "tok": 82,
+      "bodiless": false,
+      "span": {
+        "start": 81,
+        "end": 128
+      },
+      "sig_end": 91
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 135
+              }
+            ],
+            "tok": 134
+          }
+        ]
+      },
+      "tok": 129,
+      "bodiless": false,
+      "span": {
+        "start": 128,
+        "end": 139
+      },
+      "sig_end": 133
+    }
+  ],
+  "consts": []
+}

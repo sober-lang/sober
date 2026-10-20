@@ -1,0 +1,25 @@
+package main
+
+// 負例（check が拒否 — analyzer）: @errors に無いラベルを返しうる（漏れ — language.md 13 節）
+
+type Empty error
+
+type TooLong error {
+    n int
+}
+
+@errors(Empty)
+func Parse(s string) (int, error?) {
+    n := len(bytes(s))
+    if n == 0 {
+        return 0, Empty{}
+    }
+    if n > 8 {
+        return 0, TooLong{n: n}
+    }
+    return n, nil
+}
+
+func main() {
+    println(Parse("x") catch -1)
+}

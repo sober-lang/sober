@@ -1,0 +1,2 @@
+examples/errors_neg_stale.sober:11:1: error: @errors of 'Parse' lists TooLong which it never returns: write `@errors(Empty)` (Analyzer)
+exit=1

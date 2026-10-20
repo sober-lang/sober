@@ -1,0 +1,7 @@
+package main
+
+// 負例: 修飾名の参照名は、そのファイル自身が import していなければならない（language.md 20 節 — import はファイルごと）
+
+func main() {
+    println(shapes.Unit)
+}

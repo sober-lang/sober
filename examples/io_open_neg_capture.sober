@@ -3,14 +3,14 @@ package main
 // 負例: 子 task の閉包は File を捕獲できない（親の defer が子の終わりより先に閉じうる）（diag.FileUse — desugar/filecheck・language.md 28 節「資源とストリーム」— IO 便 段 2）
 
 import "std/io"
-import "std/par"
+import "std/task"
 
 func main() {
     f := io.Open("testdata/io/hello.txt") catch return
     defer io.Close(f)
-    r, err := par.Scope((s par.S) => {
-        h := par.Spawn(s, () => len(io.ReadAll(f) catch []byte{}))
-        par.Join(h)
+    r, err := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => len(io.ReadAll(f) catch []byte{}))
+        task.Join(h)
     })
     println(r)
 }

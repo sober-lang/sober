@@ -9,61 +9,68 @@ global @str.2 [0] = {}
 global @str.3 [4] = {5917794109009846640, 7167555147578042213, 7017588315501389157, 138418680693}
 global @str.4 [2] = {7596551573701944676, 7629165}
 global @str.5 [2] = {8097862866615364723, 521644106593}
-global @str.6 [2] = {4208741877863948332, 32}
-global @str.7 [1] = {2685}
-global @str.8 [2] = {7957694959391481888, 2322283407174100091}
-global @str.9 [2] = {8601708606660288556, 35435399443553}
-global @str.10 [1] = {35899498962976}
-global @str.11 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
-global @str.12 [3] = {7232620951369114994, 8674334734093152357, 8250}
-global @rt.psites [9] = {2533274958168071, 8444250140180737, 5348025530581249, 16607024615784705, 19984724403421441, 28428973704741121, 4222125019758849, 8725724563243265, 14073749120745729}
-global @str.13 [1] = {9071397899755888}
-global @str.14 [3] = {8462017926321696361, 7953763900396085364, 25959}
-global @str.15 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
-global @str.16 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
-global @str.17 [3] = {7311146993653867886, 6998721804137689888, 500069396333}
-global @str.18 [3] = {2338042651316874857, 7070762896912181604, 122537119457401}
-global @str.19 [2] = {8388345085396285541, 2965729659098066976}
-global @str.20 [3] = {7018969289221893749, 7306086967037750370, 7234303152485659168}
-global @str.21 [1] = {544497952}
-global @str.22 [2] = {7238537353896555637, 125779768734510}
-global @str.23 [3] = {4064063760403559539, 8030813380303680815, 7497058}
+global @str.6 [2] = {8458156441484616054, 1684370547}
+global @str.7 [2] = {4208741877863948332, 32}
+global @str.8 [1] = {2685}
+global @str.9 [2] = {7957694959391481888, 2322283407174100091}
+global @str.10 [2] = {8601708606660288556, 35435399443553}
+global @str.11 [1] = {35899498962976}
+global @str.12 [5] = {7309940765259427104, 7599578576357124455, 6874858533597243508, 2323330133470241143, 2608}
+global @str.13 [3] = {7232620951369114994, 8674334734093152357, 8250}
+global @rt.psites [8] = {8444253344628737, 5348028735029249, 16607027820232705, 19984727607869441, 28428976909189121, 4222128224206849, 8725727767691265, 14073752325193729}
+global @str.14 [1] = {9071397899755888}
+global @str.15 [3] = {8462017926321696361, 7953763900396085364, 25959}
+global @str.16 [4] = {8026013105759284339, 8391735665840385653, 7453001576142499616, 101}
+global @str.17 [4] = {8462017844986274166, 7953763900396085364, 7070777237752014183, 6648953}
+global @str.18 [3] = {7311146993653867886, 6998721804137689888, 500069396333}
+global @str.19 [3] = {2338042651316874857, 7070762896912181604, 122537119457401}
+global @str.20 [2] = {8388345085396285541, 2965729659098066976}
+global @str.21 [3] = {7018969289221893749, 7306086967037750370, 7234303152485659168}
+global @str.22 [1] = {544497952}
+global @str.23 [4] = {7598263559392621683, 7598263559393601390, 7305524086039603054, 114}
 
 func @rt.flush() {
 b0:
   %0 = globaladdr @rt.meta
+  %1 = load.i64 %0[1028]
   %2 = const 0
-  br b1(%2)
-b1(%1 i64):
-  %3 = load.i64 %0[1028]
-  %4 = sub %3, %1
+  %3 = eq %1, %2
+  condbr %3, b2, b1
+b1:
   %5 = const 0
-  %6 = gt %4, %5
-  condbr %6, b2, b3
+  br b3(%5)
 b2:
-  %7 = const 8248
-  %8 = add %7, %1
-  %9 = gep.byte %0, %8
-  %10 = ptoi %9
-  %11 = load.i64 %0[1026]
-  %12 = const 1
-  %13 = syscall(%12, %11, %10, %4)
-  %14 = const -4
-  %15 = eq %13, %14
-  condbr %15, b4, b5
-b3:
-  %19 = const 0
-  store %0[1028], %19
   ret
+b3(%4 i64):
+  %6 = load.i64 %0[1028]
+  %7 = sub %6, %4
+  %8 = const 0
+  %9 = gt %7, %8
+  condbr %9, b4, b5
 b4:
-  br b1(%1)
+  %10 = const 8248
+  %11 = add %10, %4
+  %12 = gep.byte %0, %11
+  %13 = ptoi %12
+  %14 = load.i64 %0[1026]
+  %15 = const 1
+  %16 = syscall(%15, %14, %13, %7)
+  %17 = const -4
+  %18 = eq %16, %17
+  condbr %18, b6, b7
 b5:
-  %16 = const 0
-  %17 = le %13, %16
-  condbr %17, b3, b6
+  %22 = const 0
+  store %0[1028], %22
+  ret
 b6:
-  %18 = add %1, %13
-  br b1(%18)
+  br b3(%4)
+b7:
+  %19 = const 0
+  %20 = le %16, %19
+  condbr %20, b5, b8
+b8:
+  %21 = add %4, %16
+  br b3(%21)
 }
 
 func @rt.print_char(%0 i64) {
@@ -440,6 +447,7 @@ func @rt.panic_mem(%0 i64) {
   slot s7 [3]
   slot s8 [3]
   slot s9 [3]
+  slot s10 [3]
 b0:
   %1 = globaladdr @rt.meta
   call @rt.flush()
@@ -458,31 +466,31 @@ b0:
   %9 = eq %0, %8
   condbr %9, b2, b3
 b1:
-  %22 = globaladdr @str.6
-  %23 = const 9
-  %24 = const 0
-  %25 = slotaddr s3
-  %26 = ptoi %22
-  store %25[0], %26
-  store %25[1], %23
-  store %25[2], %24
-  call @rt.print_str(%25)
-  %27 = load.i64 %1[0]
-  call @rt.print_int(%27)
-  %28 = globaladdr @str.7
-  %29 = const 2
-  %30 = const 0
-  %31 = slotaddr s4
-  %32 = ptoi %28
-  store %31[0], %32
-  store %31[1], %29
-  store %31[2], %30
-  call @rt.print_str(%31)
-  %33 = load.i64 %1[1029]
-  %34 = load.i64 %1[1030]
-  %39 = const 1
-  %40 = const 0
-  br b6(%39, %40)
+  %29 = globaladdr @str.7
+  %30 = const 9
+  %31 = const 0
+  %32 = slotaddr s4
+  %33 = ptoi %29
+  store %32[0], %33
+  store %32[1], %30
+  store %32[2], %31
+  call @rt.print_str(%32)
+  %34 = load.i64 %1[0]
+  call @rt.print_int(%34)
+  %35 = globaladdr @str.8
+  %36 = const 2
+  %37 = const 0
+  %38 = slotaddr s5
+  %39 = ptoi %35
+  store %38[0], %39
+  store %38[1], %36
+  store %38[2], %37
+  call @rt.print_str(%38)
+  %40 = load.i64 %1[1029]
+  %41 = load.i64 %1[1030]
+  %46 = const 1
+  %47 = const 0
+  br b8(%46, %47)
 b2:
   %10 = globaladdr @str.4
   %11 = const 11
@@ -510,81 +518,84 @@ b4:
   call @rt.print_str(%20)
   br b1
 b5:
+  %22 = const 3
+  %23 = eq %0, %22
+  condbr %23, b6, b7
+b6:
+  %24 = globaladdr @str.6
+  %25 = const 12
+  %26 = const 0
+  %27 = slotaddr s3
+  %28 = ptoi %24
+  store %27[0], %28
+  store %27[1], %25
+  store %27[2], %26
+  call @rt.print_str(%27)
   br b1
-b6(%35 i64, %36 i64):
-  %41 = le %35, %27
-  condbr %41, b7, b11(%36)
 b7:
-  %42 = gep.word %1, %35
-  %43 = load.i64 %42[1]
-  %44 = mul %35, %34
-  %45 = add %33, %44
-  %46 = sub %43, %45
-  %47 = const 0
-  %48 = gt %46, %47
-  condbr %48, b8, b10(%36)
-b8:
-  %49 = const 16
-  %50 = lt %36, %49
-  %51 = const 1
-  %52 = add %36, %51
-  condbr %50, b9, b10(%52)
+  br b1
+b8(%42 i64, %43 i64):
+  %48 = le %42, %34
+  condbr %48, b9, b13(%43)
 b9:
-  %53 = globaladdr @str.8
-  %54 = const 16
-  %55 = const 0
-  %56 = slotaddr s5
-  %57 = ptoi %53
-  store %56[0], %57
-  store %56[1], %54
-  store %56[2], %55
-  call @rt.print_str(%56)
-  call @rt.print_int(%35)
-  %58 = globaladdr @str.9
-  %59 = const 14
-  %60 = const 0
-  %61 = slotaddr s6
-  %62 = ptoi %58
-  store %61[0], %62
-  store %61[1], %59
-  store %61[2], %60
-  call @rt.print_str(%61)
-  call @rt.print_int(%46)
-  %63 = globaladdr @str.7
-  %64 = const 2
-  %65 = const 0
-  %66 = slotaddr s7
-  %67 = ptoi %63
-  store %66[0], %67
-  store %66[1], %64
-  store %66[2], %65
-  call @rt.print_str(%66)
-  %68 = const 1
-  %69 = add %36, %68
-  br b10(%69)
-b10(%37 i64):
-  %70 = const 1
-  %71 = add %35, %70
-  br b6(%71, %37)
-b11(%38 i64):
-  %72 = const 16
-  %73 = gt %38, %72
-  condbr %73, b12, b13
-b12:
-  %74 = globaladdr @str.10
-  %75 = const 6
-  %76 = const 0
-  %77 = slotaddr s8
-  %78 = ptoi %74
-  store %77[0], %78
-  store %77[1], %75
-  store %77[2], %76
-  call @rt.print_str(%77)
+  %49 = gep.word %1, %42
+  %50 = load.i64 %49[1]
+  %51 = mul %42, %41
+  %52 = add %40, %51
+  %53 = sub %50, %52
+  %54 = const 0
+  %55 = gt %53, %54
+  condbr %55, b10, b12(%43)
+b10:
+  %56 = const 16
+  %57 = lt %43, %56
+  %58 = const 1
+  %59 = add %43, %58
+  condbr %57, b11, b12(%59)
+b11:
+  %60 = globaladdr @str.9
+  %61 = const 16
+  %62 = const 0
+  %63 = slotaddr s6
+  %64 = ptoi %60
+  store %63[0], %64
+  store %63[1], %61
+  store %63[2], %62
+  call @rt.print_str(%63)
+  call @rt.print_int(%42)
+  %65 = globaladdr @str.10
+  %66 = const 14
+  %67 = const 0
+  %68 = slotaddr s7
+  %69 = ptoi %65
+  store %68[0], %69
+  store %68[1], %66
+  store %68[2], %67
+  call @rt.print_str(%68)
+  call @rt.print_int(%53)
+  %70 = globaladdr @str.8
+  %71 = const 2
+  %72 = const 0
+  %73 = slotaddr s8
+  %74 = ptoi %70
+  store %73[0], %74
+  store %73[1], %71
+  store %73[2], %72
+  call @rt.print_str(%73)
+  %75 = const 1
+  %76 = add %43, %75
+  br b12(%76)
+b12(%44 i64):
+  %77 = const 1
+  %78 = add %42, %77
+  br b8(%78, %44)
+b13(%45 i64):
   %79 = const 16
-  %80 = sub %38, %79
-  call @rt.print_int(%80)
+  %80 = gt %45, %79
+  condbr %80, b14, b15
+b14:
   %81 = globaladdr @str.11
-  %82 = const 34
+  %82 = const 6
   %83 = const 0
   %84 = slotaddr s9
   %85 = ptoi %81
@@ -592,8 +603,20 @@ b12:
   store %84[1], %82
   store %84[2], %83
   call @rt.print_str(%84)
-  br b13
-b13:
+  %86 = const 16
+  %87 = sub %45, %86
+  call @rt.print_int(%87)
+  %88 = globaladdr @str.12
+  %89 = const 34
+  %90 = const 0
+  %91 = slotaddr s10
+  %92 = ptoi %88
+  store %91[0], %92
+  store %91[1], %89
+  store %91[2], %90
+  call @rt.print_str(%91)
+  br b15
+b15:
   call @rt.flush()
   exit 102
 }
@@ -629,7 +652,7 @@ b5(%5 i64):
   call @rt.flush()
   %16 = const 2
   store %0[1026], %16
-  %17 = globaladdr @str.12
+  %17 = globaladdr @str.13
   %18 = const 18
   %19 = const 0
   %20 = slotaddr s0
@@ -639,7 +662,7 @@ b5(%5 i64):
   store %20[2], %19
   call @rt.print_str(%20)
   call @rt.print_int(%5)
-  %22 = globaladdr @str.7
+  %22 = globaladdr @str.8
   %23 = const 2
   %24 = const 0
   %25 = slotaddr s1
@@ -1107,9 +1130,9 @@ b0:
 b1(%5 ptr, %6 ptr):
   ret %5
 b2:
-  %61 = mul %3, %1
-  %62 = call @rt.slice_grow(%2, %3, %1, %4, %38)
-  condbr %38, b18, b19
+  %69 = mul %3, %1
+  %70 = call @rt.slice_grow(%2, %3, %1, %4, %38)
+  condbr %38, b21, b22
 b3:
   %42 = const 16
   br b11(%42)
@@ -1171,37 +1194,50 @@ b13:
   %50 = globaladdr @rt.meta
   %51 = gep.word %50, %4
   store %51[1], %22
-  %52 = region.alloc %4, %49
-  %54 = const 0
-  br b14(%54)
-b14(%53 i64):
-  %55 = lt %53, %49
-  condbr %55, b15, b16
+  %52 = const 16
+  %53 = mul %41, %52
+  %54 = const 2097152
+  %55 = add %41, %54
+  %57 = lt %53, %55
+  condbr %57, b15, b16
+b14(%56 i64):
+  %58 = const 3
+  %59 = add %56, %58
+  %60 = region.alloc %4, %59
+  %62 = const 0
+  br b17(%62)
 b15:
-  %56 = gep.word %52, %53
-  %57 = const 0
-  store %56[0], %57
-  %58 = const 1
-  %59 = add %53, %58
-  br b14(%59)
+  br b14(%53)
 b16:
-  store %52[2], %41
-  %60 = ptoi %52
-  store %0[3], %60
-  br b2
-b17:
-  %65 = load.i64 %0[3]
-  %66 = itop %65
-  %67 = ptoi %62
-  store %66[0], %67
-  br b18
+  br b14(%55)
+b17(%61 i64):
+  %63 = lt %61, %49
+  condbr %63, b18, b19
 b18:
-  %68 = gep.word %62, %61
-  br b1(%62, %68)
+  %64 = gep.word %60, %61
+  %65 = const 0
+  store %64[0], %65
+  %66 = const 1
+  %67 = add %61, %66
+  br b17(%67)
 b19:
-  %63 = const 8
-  %64 = lt %8, %63
-  condbr %64, b18, b17
+  store %60[2], %41
+  %68 = ptoi %60
+  store %0[3], %68
+  br b2
+b20:
+  %73 = load.i64 %0[3]
+  %74 = itop %73
+  %75 = ptoi %70
+  store %74[0], %75
+  br b21
+b21:
+  %76 = gep.word %70, %69
+  br b1(%70, %76)
+b22:
+  %71 = const 8
+  %72 = lt %8, %71
+  condbr %72, b21, b20
 }
 
 func @rt.grow_try(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
@@ -1695,7 +1731,7 @@ b0:
   %7 = load.i64 %5[0]
   %8 = load.i64 %5[1]
   %9 = load.i64 %5[2]
-  %10 = call @std/utf8.IndexInvalid(%7, %8, %9)
+  %10 = call @std/strings.IndexInvalid(%7, %8, %9)
   %11 = region.depth
   %12 = const 0
   %13 = call @rt.region_alloc8(%11, %12)
@@ -1708,7 +1744,7 @@ b0:
   %17 = load.i64 %15[0]
   %18 = load.i64 %15[1]
   %19 = load.i64 %15[2]
-  %20 = call @std/utf8.Valid(%17, %18, %19)
+  %20 = call @std/strings.Valid(%17, %18, %19)
   call @rt.print_int(%10)
   %21 = const 32
   call @rt.print_char(%21)
@@ -1771,7 +1807,7 @@ b3:
   %53 = load.i64 %51[0]
   %54 = load.i64 %51[1]
   %55 = load.i64 %51[2]
-  %56 = call @std/utf8.IndexInvalid(%53, %54, %55)
+  %56 = call @std/strings.IndexInvalid(%53, %54, %55)
   %57 = const 104
   %58 = const 105
   %59 = region.depth
@@ -1792,7 +1828,7 @@ b3:
   %69 = load.i64 %67[0]
   %70 = load.i64 %67[1]
   %71 = load.i64 %67[2]
-  %72 = call @std/utf8.Valid(%69, %70, %71)
+  %72 = call @std/strings.Valid(%69, %70, %71)
   call @rt.print_int(%56)
   %73 = const 32
   call @rt.print_char(%73)
@@ -1859,7 +1895,7 @@ b6:
   %108 = load.i64 %106[0]
   %109 = load.i64 %106[1]
   %110 = load.i64 %106[2]
-  %111 = call @std/utf8.IndexInvalid(%108, %109, %110)
+  %111 = call @std/strings.IndexInvalid(%108, %109, %110)
   %112 = const 0
   %113 = region.depth
   %114 = const 1
@@ -1876,7 +1912,7 @@ b6:
   %121 = load.i64 %119[0]
   %122 = load.i64 %119[1]
   %123 = load.i64 %119[2]
-  %124 = call @std/utf8.Valid(%121, %122, %123)
+  %124 = call @std/strings.Valid(%121, %122, %123)
   call @rt.print_int(%111)
   %125 = const 32
   call @rt.print_char(%125)
@@ -1939,7 +1975,7 @@ b9:
   %157 = load.i64 %155[0]
   %158 = load.i64 %155[1]
   %159 = load.i64 %155[2]
-  %160 = call @std/utf8.IndexInvalid(%157, %158, %159)
+  %160 = call @std/strings.IndexInvalid(%157, %158, %159)
   %161 = const 127
   %162 = region.depth
   %163 = const 1
@@ -1956,7 +1992,7 @@ b9:
   %170 = load.i64 %168[0]
   %171 = load.i64 %168[1]
   %172 = load.i64 %168[2]
-  %173 = call @std/utf8.Valid(%170, %171, %172)
+  %173 = call @std/strings.Valid(%170, %171, %172)
   call @rt.print_int(%160)
   %174 = const 32
   call @rt.print_char(%174)
@@ -2023,7 +2059,7 @@ b12:
   %209 = load.i64 %207[0]
   %210 = load.i64 %207[1]
   %211 = load.i64 %207[2]
-  %212 = call @std/utf8.IndexInvalid(%209, %210, %211)
+  %212 = call @std/strings.IndexInvalid(%209, %210, %211)
   %213 = const 195
   %214 = const 169
   %215 = region.depth
@@ -2044,7 +2080,7 @@ b12:
   %225 = load.i64 %223[0]
   %226 = load.i64 %223[1]
   %227 = load.i64 %223[2]
-  %228 = call @std/utf8.Valid(%225, %226, %227)
+  %228 = call @std/strings.Valid(%225, %226, %227)
   call @rt.print_int(%212)
   %229 = const 32
   call @rt.print_char(%229)
@@ -2115,7 +2151,7 @@ b15:
   %267 = load.i64 %265[0]
   %268 = load.i64 %265[1]
   %269 = load.i64 %265[2]
-  %270 = call @std/utf8.IndexInvalid(%267, %268, %269)
+  %270 = call @std/strings.IndexInvalid(%267, %268, %269)
   %271 = const 194
   %272 = const 128
   %273 = region.depth
@@ -2136,7 +2172,7 @@ b15:
   %283 = load.i64 %281[0]
   %284 = load.i64 %281[1]
   %285 = load.i64 %281[2]
-  %286 = call @std/utf8.Valid(%283, %284, %285)
+  %286 = call @std/strings.Valid(%283, %284, %285)
   call @rt.print_int(%270)
   %287 = const 32
   call @rt.print_char(%287)
@@ -2207,7 +2243,7 @@ b18:
   %325 = load.i64 %323[0]
   %326 = load.i64 %323[1]
   %327 = load.i64 %323[2]
-  %328 = call @std/utf8.IndexInvalid(%325, %326, %327)
+  %328 = call @std/strings.IndexInvalid(%325, %326, %327)
   %329 = const 223
   %330 = const 191
   %331 = region.depth
@@ -2228,7 +2264,7 @@ b18:
   %341 = load.i64 %339[0]
   %342 = load.i64 %339[1]
   %343 = load.i64 %339[2]
-  %344 = call @std/utf8.Valid(%341, %342, %343)
+  %344 = call @std/strings.Valid(%341, %342, %343)
   call @rt.print_int(%328)
   %345 = const 32
   call @rt.print_char(%345)
@@ -2299,7 +2335,7 @@ b21:
   %383 = load.i64 %381[0]
   %384 = load.i64 %381[1]
   %385 = load.i64 %381[2]
-  %386 = call @std/utf8.IndexInvalid(%383, %384, %385)
+  %386 = call @std/strings.IndexInvalid(%383, %384, %385)
   %387 = const 192
   %388 = const 128
   %389 = region.depth
@@ -2320,7 +2356,7 @@ b21:
   %399 = load.i64 %397[0]
   %400 = load.i64 %397[1]
   %401 = load.i64 %397[2]
-  %402 = call @std/utf8.Valid(%399, %400, %401)
+  %402 = call @std/strings.Valid(%399, %400, %401)
   call @rt.print_int(%386)
   %403 = const 32
   call @rt.print_char(%403)
@@ -2391,7 +2427,7 @@ b24:
   %441 = load.i64 %439[0]
   %442 = load.i64 %439[1]
   %443 = load.i64 %439[2]
-  %444 = call @std/utf8.IndexInvalid(%441, %442, %443)
+  %444 = call @std/strings.IndexInvalid(%441, %442, %443)
   %445 = const 193
   %446 = const 191
   %447 = region.depth
@@ -2412,7 +2448,7 @@ b24:
   %457 = load.i64 %455[0]
   %458 = load.i64 %455[1]
   %459 = load.i64 %455[2]
-  %460 = call @std/utf8.Valid(%457, %458, %459)
+  %460 = call @std/strings.Valid(%457, %458, %459)
   call @rt.print_int(%444)
   %461 = const 32
   call @rt.print_char(%461)
@@ -2479,7 +2515,7 @@ b27:
   %496 = load.i64 %494[0]
   %497 = load.i64 %494[1]
   %498 = load.i64 %494[2]
-  %499 = call @std/utf8.IndexInvalid(%496, %497, %498)
+  %499 = call @std/strings.IndexInvalid(%496, %497, %498)
   %500 = const 194
   %501 = region.depth
   %502 = const 1
@@ -2496,7 +2532,7 @@ b27:
   %509 = load.i64 %507[0]
   %510 = load.i64 %507[1]
   %511 = load.i64 %507[2]
-  %512 = call @std/utf8.Valid(%509, %510, %511)
+  %512 = call @std/strings.Valid(%509, %510, %511)
   call @rt.print_int(%499)
   %513 = const 32
   call @rt.print_char(%513)
@@ -2563,7 +2599,7 @@ b30:
   %548 = load.i64 %546[0]
   %549 = load.i64 %546[1]
   %550 = load.i64 %546[2]
-  %551 = call @std/utf8.IndexInvalid(%548, %549, %550)
+  %551 = call @std/strings.IndexInvalid(%548, %549, %550)
   %552 = const 194
   %553 = const 65
   %554 = region.depth
@@ -2584,7 +2620,7 @@ b30:
   %564 = load.i64 %562[0]
   %565 = load.i64 %562[1]
   %566 = load.i64 %562[2]
-  %567 = call @std/utf8.Valid(%564, %565, %566)
+  %567 = call @std/strings.Valid(%564, %565, %566)
   call @rt.print_int(%551)
   %568 = const 32
   call @rt.print_char(%568)
@@ -2659,7 +2695,7 @@ b33:
   %609 = load.i64 %607[0]
   %610 = load.i64 %607[1]
   %611 = load.i64 %607[2]
-  %612 = call @std/utf8.IndexInvalid(%609, %610, %611)
+  %612 = call @std/strings.IndexInvalid(%609, %610, %611)
   %613 = const 224
   %614 = const 160
   %615 = const 128
@@ -2684,7 +2720,7 @@ b33:
   %628 = load.i64 %626[0]
   %629 = load.i64 %626[1]
   %630 = load.i64 %626[2]
-  %631 = call @std/utf8.Valid(%628, %629, %630)
+  %631 = call @std/strings.Valid(%628, %629, %630)
   call @rt.print_int(%612)
   %632 = const 32
   call @rt.print_char(%632)
@@ -2763,7 +2799,7 @@ b36:
   %676 = load.i64 %674[0]
   %677 = load.i64 %674[1]
   %678 = load.i64 %674[2]
-  %679 = call @std/utf8.IndexInvalid(%676, %677, %678)
+  %679 = call @std/strings.IndexInvalid(%676, %677, %678)
   %680 = const 224
   %681 = const 159
   %682 = const 191
@@ -2788,7 +2824,7 @@ b36:
   %695 = load.i64 %693[0]
   %696 = load.i64 %693[1]
   %697 = load.i64 %693[2]
-  %698 = call @std/utf8.Valid(%695, %696, %697)
+  %698 = call @std/strings.Valid(%695, %696, %697)
   call @rt.print_int(%679)
   %699 = const 32
   call @rt.print_char(%699)
@@ -2867,7 +2903,7 @@ b39:
   %743 = load.i64 %741[0]
   %744 = load.i64 %741[1]
   %745 = load.i64 %741[2]
-  %746 = call @std/utf8.IndexInvalid(%743, %744, %745)
+  %746 = call @std/strings.IndexInvalid(%743, %744, %745)
   %747 = const 227
   %748 = const 129
   %749 = const 130
@@ -2892,7 +2928,7 @@ b39:
   %762 = load.i64 %760[0]
   %763 = load.i64 %760[1]
   %764 = load.i64 %760[2]
-  %765 = call @std/utf8.Valid(%762, %763, %764)
+  %765 = call @std/strings.Valid(%762, %763, %764)
   call @rt.print_int(%746)
   %766 = const 32
   call @rt.print_char(%766)
@@ -2971,7 +3007,7 @@ b42:
   %810 = load.i64 %808[0]
   %811 = load.i64 %808[1]
   %812 = load.i64 %808[2]
-  %813 = call @std/utf8.IndexInvalid(%810, %811, %812)
+  %813 = call @std/strings.IndexInvalid(%810, %811, %812)
   %814 = const 237
   %815 = const 159
   %816 = const 191
@@ -2996,7 +3032,7 @@ b42:
   %829 = load.i64 %827[0]
   %830 = load.i64 %827[1]
   %831 = load.i64 %827[2]
-  %832 = call @std/utf8.Valid(%829, %830, %831)
+  %832 = call @std/strings.Valid(%829, %830, %831)
   call @rt.print_int(%813)
   %833 = const 32
   call @rt.print_char(%833)
@@ -3075,7 +3111,7 @@ b45:
   %877 = load.i64 %875[0]
   %878 = load.i64 %875[1]
   %879 = load.i64 %875[2]
-  %880 = call @std/utf8.IndexInvalid(%877, %878, %879)
+  %880 = call @std/strings.IndexInvalid(%877, %878, %879)
   %881 = const 237
   %882 = const 160
   %883 = const 128
@@ -3100,7 +3136,7 @@ b45:
   %896 = load.i64 %894[0]
   %897 = load.i64 %894[1]
   %898 = load.i64 %894[2]
-  %899 = call @std/utf8.Valid(%896, %897, %898)
+  %899 = call @std/strings.Valid(%896, %897, %898)
   call @rt.print_int(%880)
   %900 = const 32
   call @rt.print_char(%900)
@@ -3179,7 +3215,7 @@ b48:
   %944 = load.i64 %942[0]
   %945 = load.i64 %942[1]
   %946 = load.i64 %942[2]
-  %947 = call @std/utf8.IndexInvalid(%944, %945, %946)
+  %947 = call @std/strings.IndexInvalid(%944, %945, %946)
   %948 = const 238
   %949 = const 128
   %950 = const 128
@@ -3204,7 +3240,7 @@ b48:
   %963 = load.i64 %961[0]
   %964 = load.i64 %961[1]
   %965 = load.i64 %961[2]
-  %966 = call @std/utf8.Valid(%963, %964, %965)
+  %966 = call @std/strings.Valid(%963, %964, %965)
   call @rt.print_int(%947)
   %967 = const 32
   call @rt.print_char(%967)
@@ -3283,7 +3319,7 @@ b51:
   %1011 = load.i64 %1009[0]
   %1012 = load.i64 %1009[1]
   %1013 = load.i64 %1009[2]
-  %1014 = call @std/utf8.IndexInvalid(%1011, %1012, %1013)
+  %1014 = call @std/strings.IndexInvalid(%1011, %1012, %1013)
   %1015 = const 239
   %1016 = const 191
   %1017 = const 191
@@ -3308,7 +3344,7 @@ b51:
   %1030 = load.i64 %1028[0]
   %1031 = load.i64 %1028[1]
   %1032 = load.i64 %1028[2]
-  %1033 = call @std/utf8.Valid(%1030, %1031, %1032)
+  %1033 = call @std/strings.Valid(%1030, %1031, %1032)
   call @rt.print_int(%1014)
   %1034 = const 32
   call @rt.print_char(%1034)
@@ -3387,7 +3423,7 @@ b54:
   %1078 = load.i64 %1076[0]
   %1079 = load.i64 %1076[1]
   %1080 = load.i64 %1076[2]
-  %1081 = call @std/utf8.IndexInvalid(%1078, %1079, %1080)
+  %1081 = call @std/strings.IndexInvalid(%1078, %1079, %1080)
   %1082 = const 239
   %1083 = const 191
   %1084 = const 189
@@ -3412,7 +3448,7 @@ b54:
   %1097 = load.i64 %1095[0]
   %1098 = load.i64 %1095[1]
   %1099 = load.i64 %1095[2]
-  %1100 = call @std/utf8.Valid(%1097, %1098, %1099)
+  %1100 = call @std/strings.Valid(%1097, %1098, %1099)
   call @rt.print_int(%1081)
   %1101 = const 32
   call @rt.print_char(%1101)
@@ -3487,7 +3523,7 @@ b57:
   %1142 = load.i64 %1140[0]
   %1143 = load.i64 %1140[1]
   %1144 = load.i64 %1140[2]
-  %1145 = call @std/utf8.IndexInvalid(%1142, %1143, %1144)
+  %1145 = call @std/strings.IndexInvalid(%1142, %1143, %1144)
   %1146 = const 227
   %1147 = const 129
   %1148 = region.depth
@@ -3508,7 +3544,7 @@ b57:
   %1158 = load.i64 %1156[0]
   %1159 = load.i64 %1156[1]
   %1160 = load.i64 %1156[2]
-  %1161 = call @std/utf8.Valid(%1158, %1159, %1160)
+  %1161 = call @std/strings.Valid(%1158, %1159, %1160)
   call @rt.print_int(%1145)
   %1162 = const 32
   call @rt.print_char(%1162)
@@ -3587,7 +3623,7 @@ b60:
   %1206 = load.i64 %1204[0]
   %1207 = load.i64 %1204[1]
   %1208 = load.i64 %1204[2]
-  %1209 = call @std/utf8.IndexInvalid(%1206, %1207, %1208)
+  %1209 = call @std/strings.IndexInvalid(%1206, %1207, %1208)
   %1210 = const 65
   %1211 = const 227
   %1212 = const 129
@@ -3616,7 +3652,7 @@ b60:
   %1228 = load.i64 %1226[0]
   %1229 = load.i64 %1226[1]
   %1230 = load.i64 %1226[2]
-  %1231 = call @std/utf8.Valid(%1228, %1229, %1230)
+  %1231 = call @std/strings.Valid(%1228, %1229, %1230)
   call @rt.print_int(%1209)
   %1232 = const 32
   call @rt.print_char(%1232)
@@ -3703,7 +3739,7 @@ b63:
   %1282 = load.i64 %1280[0]
   %1283 = load.i64 %1280[1]
   %1284 = load.i64 %1280[2]
-  %1285 = call @std/utf8.IndexInvalid(%1282, %1283, %1284)
+  %1285 = call @std/strings.IndexInvalid(%1282, %1283, %1284)
   %1286 = const 240
   %1287 = const 144
   %1288 = const 128
@@ -3732,7 +3768,7 @@ b63:
   %1304 = load.i64 %1302[0]
   %1305 = load.i64 %1302[1]
   %1306 = load.i64 %1302[2]
-  %1307 = call @std/utf8.Valid(%1304, %1305, %1306)
+  %1307 = call @std/strings.Valid(%1304, %1305, %1306)
   call @rt.print_int(%1285)
   %1308 = const 32
   call @rt.print_char(%1308)
@@ -3819,7 +3855,7 @@ b66:
   %1358 = load.i64 %1356[0]
   %1359 = load.i64 %1356[1]
   %1360 = load.i64 %1356[2]
-  %1361 = call @std/utf8.IndexInvalid(%1358, %1359, %1360)
+  %1361 = call @std/strings.IndexInvalid(%1358, %1359, %1360)
   %1362 = const 240
   %1363 = const 143
   %1364 = const 191
@@ -3848,7 +3884,7 @@ b66:
   %1380 = load.i64 %1378[0]
   %1381 = load.i64 %1378[1]
   %1382 = load.i64 %1378[2]
-  %1383 = call @std/utf8.Valid(%1380, %1381, %1382)
+  %1383 = call @std/strings.Valid(%1380, %1381, %1382)
   call @rt.print_int(%1361)
   %1384 = const 32
   call @rt.print_char(%1384)
@@ -3935,7 +3971,7 @@ b69:
   %1434 = load.i64 %1432[0]
   %1435 = load.i64 %1432[1]
   %1436 = load.i64 %1432[2]
-  %1437 = call @std/utf8.IndexInvalid(%1434, %1435, %1436)
+  %1437 = call @std/strings.IndexInvalid(%1434, %1435, %1436)
   %1438 = const 240
   %1439 = const 159
   %1440 = const 152
@@ -3964,7 +4000,7 @@ b69:
   %1456 = load.i64 %1454[0]
   %1457 = load.i64 %1454[1]
   %1458 = load.i64 %1454[2]
-  %1459 = call @std/utf8.Valid(%1456, %1457, %1458)
+  %1459 = call @std/strings.Valid(%1456, %1457, %1458)
   call @rt.print_int(%1437)
   %1460 = const 32
   call @rt.print_char(%1460)
@@ -4051,7 +4087,7 @@ b72:
   %1510 = load.i64 %1508[0]
   %1511 = load.i64 %1508[1]
   %1512 = load.i64 %1508[2]
-  %1513 = call @std/utf8.IndexInvalid(%1510, %1511, %1512)
+  %1513 = call @std/strings.IndexInvalid(%1510, %1511, %1512)
   %1514 = const 244
   %1515 = const 143
   %1516 = const 191
@@ -4080,7 +4116,7 @@ b72:
   %1532 = load.i64 %1530[0]
   %1533 = load.i64 %1530[1]
   %1534 = load.i64 %1530[2]
-  %1535 = call @std/utf8.Valid(%1532, %1533, %1534)
+  %1535 = call @std/strings.Valid(%1532, %1533, %1534)
   call @rt.print_int(%1513)
   %1536 = const 32
   call @rt.print_char(%1536)
@@ -4167,7 +4203,7 @@ b75:
   %1586 = load.i64 %1584[0]
   %1587 = load.i64 %1584[1]
   %1588 = load.i64 %1584[2]
-  %1589 = call @std/utf8.IndexInvalid(%1586, %1587, %1588)
+  %1589 = call @std/strings.IndexInvalid(%1586, %1587, %1588)
   %1590 = const 244
   %1591 = const 144
   %1592 = const 128
@@ -4196,7 +4232,7 @@ b75:
   %1608 = load.i64 %1606[0]
   %1609 = load.i64 %1606[1]
   %1610 = load.i64 %1606[2]
-  %1611 = call @std/utf8.Valid(%1608, %1609, %1610)
+  %1611 = call @std/strings.Valid(%1608, %1609, %1610)
   call @rt.print_int(%1589)
   %1612 = const 32
   call @rt.print_char(%1612)
@@ -4283,7 +4319,7 @@ b78:
   %1662 = load.i64 %1660[0]
   %1663 = load.i64 %1660[1]
   %1664 = load.i64 %1660[2]
-  %1665 = call @std/utf8.IndexInvalid(%1662, %1663, %1664)
+  %1665 = call @std/strings.IndexInvalid(%1662, %1663, %1664)
   %1666 = const 245
   %1667 = const 128
   %1668 = const 128
@@ -4312,7 +4348,7 @@ b78:
   %1684 = load.i64 %1682[0]
   %1685 = load.i64 %1682[1]
   %1686 = load.i64 %1682[2]
-  %1687 = call @std/utf8.Valid(%1684, %1685, %1686)
+  %1687 = call @std/strings.Valid(%1684, %1685, %1686)
   call @rt.print_int(%1665)
   %1688 = const 32
   call @rt.print_char(%1688)
@@ -4395,7 +4431,7 @@ b81:
   %1735 = load.i64 %1733[0]
   %1736 = load.i64 %1733[1]
   %1737 = load.i64 %1733[2]
-  %1738 = call @std/utf8.IndexInvalid(%1735, %1736, %1737)
+  %1738 = call @std/strings.IndexInvalid(%1735, %1736, %1737)
   %1739 = const 240
   %1740 = const 159
   %1741 = const 152
@@ -4420,7 +4456,7 @@ b81:
   %1754 = load.i64 %1752[0]
   %1755 = load.i64 %1752[1]
   %1756 = load.i64 %1752[2]
-  %1757 = call @std/utf8.Valid(%1754, %1755, %1756)
+  %1757 = call @std/strings.Valid(%1754, %1755, %1756)
   call @rt.print_int(%1738)
   %1758 = const 32
   call @rt.print_char(%1758)
@@ -4491,7 +4527,7 @@ b84:
   %1796 = load.i64 %1794[0]
   %1797 = load.i64 %1794[1]
   %1798 = load.i64 %1794[2]
-  %1799 = call @std/utf8.IndexInvalid(%1796, %1797, %1798)
+  %1799 = call @std/strings.IndexInvalid(%1796, %1797, %1798)
   %1800 = const 255
   %1801 = region.depth
   %1802 = const 1
@@ -4508,7 +4544,7 @@ b84:
   %1809 = load.i64 %1807[0]
   %1810 = load.i64 %1807[1]
   %1811 = load.i64 %1807[2]
-  %1812 = call @std/utf8.Valid(%1809, %1810, %1811)
+  %1812 = call @std/strings.Valid(%1809, %1810, %1811)
   call @rt.print_int(%1799)
   %1813 = const 32
   call @rt.print_char(%1813)
@@ -4571,7 +4607,7 @@ b87:
   %1845 = load.i64 %1843[0]
   %1846 = load.i64 %1843[1]
   %1847 = load.i64 %1843[2]
-  %1848 = call @std/utf8.IndexInvalid(%1845, %1846, %1847)
+  %1848 = call @std/strings.IndexInvalid(%1845, %1846, %1847)
   %1849 = const 254
   %1850 = region.depth
   %1851 = const 1
@@ -4588,7 +4624,7 @@ b87:
   %1858 = load.i64 %1856[0]
   %1859 = load.i64 %1856[1]
   %1860 = load.i64 %1856[2]
-  %1861 = call @std/utf8.Valid(%1858, %1859, %1860)
+  %1861 = call @std/strings.Valid(%1858, %1859, %1860)
   call @rt.print_int(%1848)
   %1862 = const 32
   call @rt.print_char(%1862)
@@ -4651,7 +4687,7 @@ b90:
   %1894 = load.i64 %1892[0]
   %1895 = load.i64 %1892[1]
   %1896 = load.i64 %1892[2]
-  %1897 = call @std/utf8.IndexInvalid(%1894, %1895, %1896)
+  %1897 = call @std/strings.IndexInvalid(%1894, %1895, %1896)
   %1898 = const 128
   %1899 = region.depth
   %1900 = const 1
@@ -4668,7 +4704,7 @@ b90:
   %1907 = load.i64 %1905[0]
   %1908 = load.i64 %1905[1]
   %1909 = load.i64 %1905[2]
-  %1910 = call @std/utf8.Valid(%1907, %1908, %1909)
+  %1910 = call @std/strings.Valid(%1907, %1908, %1909)
   call @rt.print_int(%1897)
   %1911 = const 32
   call @rt.print_char(%1911)
@@ -4731,7 +4767,7 @@ b93:
   %1943 = load.i64 %1941[0]
   %1944 = load.i64 %1941[1]
   %1945 = load.i64 %1941[2]
-  %1946 = call @std/utf8.IndexInvalid(%1943, %1944, %1945)
+  %1946 = call @std/strings.IndexInvalid(%1943, %1944, %1945)
   %1947 = const 191
   %1948 = region.depth
   %1949 = const 1
@@ -4748,7 +4784,7 @@ b93:
   %1956 = load.i64 %1954[0]
   %1957 = load.i64 %1954[1]
   %1958 = load.i64 %1954[2]
-  %1959 = call @std/utf8.Valid(%1956, %1957, %1958)
+  %1959 = call @std/strings.Valid(%1956, %1957, %1958)
   call @rt.print_int(%1946)
   %1960 = const 32
   call @rt.print_char(%1960)
@@ -4847,7 +4883,7 @@ b96:
   %2019 = load.i64 %2017[0]
   %2020 = load.i64 %2017[1]
   %2021 = load.i64 %2017[2]
-  %2022 = call @std/utf8.IndexInvalid(%2019, %2020, %2021)
+  %2022 = call @std/strings.IndexInvalid(%2019, %2020, %2021)
   %2023 = const 97
   %2024 = const 195
   %2025 = const 169
@@ -4900,7 +4936,7 @@ b96:
   %2059 = load.i64 %2057[0]
   %2060 = load.i64 %2057[1]
   %2061 = load.i64 %2057[2]
-  %2062 = call @std/utf8.Valid(%2059, %2060, %2061)
+  %2062 = call @std/strings.Valid(%2059, %2060, %2061)
   call @rt.print_int(%2022)
   %2063 = const 32
   call @rt.print_char(%2063)
@@ -5011,7 +5047,7 @@ b99:
   %2131 = load.i64 %2129[0]
   %2132 = load.i64 %2129[1]
   %2133 = load.i64 %2129[2]
-  %2134 = call @std/utf8.IndexInvalid(%2131, %2132, %2133)
+  %2134 = call @std/strings.IndexInvalid(%2131, %2132, %2133)
   %2135 = const 97
   %2136 = const 98
   %2137 = const 128
@@ -5040,7 +5076,7 @@ b99:
   %2153 = load.i64 %2151[0]
   %2154 = load.i64 %2151[1]
   %2155 = load.i64 %2151[2]
-  %2156 = call @std/utf8.Valid(%2153, %2154, %2155)
+  %2156 = call @std/strings.Valid(%2153, %2154, %2155)
   call @rt.print_int(%2134)
   %2157 = const 32
   call @rt.print_char(%2157)
@@ -5271,7 +5307,7 @@ b102:
   %2315 = load.i64 %2313[0]
   %2316 = load.i64 %2313[1]
   %2317 = load.i64 %2313[2]
-  %2318 = call @std/utf8.IndexInvalid(%2315, %2316, %2317)
+  %2318 = call @std/strings.IndexInvalid(%2315, %2316, %2317)
   %2319 = const 97
   %2320 = const 97
   %2321 = const 97
@@ -5444,7 +5480,7 @@ b102:
   %2445 = load.i64 %2443[0]
   %2446 = load.i64 %2443[1]
   %2447 = load.i64 %2443[2]
-  %2448 = call @std/utf8.Valid(%2445, %2446, %2447)
+  %2448 = call @std/strings.Valid(%2445, %2446, %2447)
   call @rt.print_int(%2318)
   %2449 = const 32
   call @rt.print_char(%2449)
@@ -5819,7 +5855,7 @@ b105:
   %2715 = load.i64 %2713[0]
   %2716 = load.i64 %2713[1]
   %2717 = load.i64 %2713[2]
-  %2718 = call @std/utf8.IndexInvalid(%2715, %2716, %2717)
+  %2718 = call @std/strings.IndexInvalid(%2715, %2716, %2717)
   %2719 = const 97
   %2720 = const 97
   %2721 = const 97
@@ -5992,7 +6028,7 @@ b105:
   %2845 = load.i64 %2843[0]
   %2846 = load.i64 %2843[1]
   %2847 = load.i64 %2843[2]
-  %2848 = call @std/utf8.Valid(%2845, %2846, %2847)
+  %2848 = call @std/strings.Valid(%2845, %2846, %2847)
   call @rt.print_int(%2718)
   %2849 = const 32
   call @rt.print_char(%2849)
@@ -6367,7 +6403,7 @@ b108:
   %3115 = load.i64 %3113[0]
   %3116 = load.i64 %3113[1]
   %3117 = load.i64 %3113[2]
-  %3118 = call @std/utf8.IndexInvalid(%3115, %3116, %3117)
+  %3118 = call @std/strings.IndexInvalid(%3115, %3116, %3117)
   %3119 = const 97
   %3120 = const 97
   %3121 = const 97
@@ -6540,7 +6576,7 @@ b108:
   %3245 = load.i64 %3243[0]
   %3246 = load.i64 %3243[1]
   %3247 = load.i64 %3243[2]
-  %3248 = call @std/utf8.Valid(%3245, %3246, %3247)
+  %3248 = call @std/strings.Valid(%3245, %3246, %3247)
   call @rt.print_int(%3118)
   %3249 = const 32
   call @rt.print_char(%3249)
@@ -6915,7 +6951,7 @@ b111:
   %3515 = load.i64 %3513[0]
   %3516 = load.i64 %3513[1]
   %3517 = load.i64 %3513[2]
-  %3518 = call @std/utf8.IndexInvalid(%3515, %3516, %3517)
+  %3518 = call @std/strings.IndexInvalid(%3515, %3516, %3517)
   %3519 = const 97
   %3520 = const 97
   %3521 = const 97
@@ -7088,7 +7124,7 @@ b111:
   %3645 = load.i64 %3643[0]
   %3646 = load.i64 %3643[1]
   %3647 = load.i64 %3643[2]
-  %3648 = call @std/utf8.Valid(%3645, %3646, %3647)
+  %3648 = call @std/strings.Valid(%3645, %3646, %3647)
   call @rt.print_int(%3518)
   %3649 = const 32
   call @rt.print_char(%3649)
@@ -7463,7 +7499,7 @@ b114:
   %3915 = load.i64 %3913[0]
   %3916 = load.i64 %3913[1]
   %3917 = load.i64 %3913[2]
-  %3918 = call @std/utf8.IndexInvalid(%3915, %3916, %3917)
+  %3918 = call @std/strings.IndexInvalid(%3915, %3916, %3917)
   %3919 = const 97
   %3920 = const 97
   %3921 = const 97
@@ -7636,7 +7672,7 @@ b114:
   %4045 = load.i64 %4043[0]
   %4046 = load.i64 %4043[1]
   %4047 = load.i64 %4043[2]
-  %4048 = call @std/utf8.Valid(%4045, %4046, %4047)
+  %4048 = call @std/strings.Valid(%4045, %4046, %4047)
   call @rt.print_int(%3918)
   %4049 = const 32
   call @rt.print_char(%4049)
@@ -8011,7 +8047,7 @@ b117:
   %4315 = load.i64 %4313[0]
   %4316 = load.i64 %4313[1]
   %4317 = load.i64 %4313[2]
-  %4318 = call @std/utf8.IndexInvalid(%4315, %4316, %4317)
+  %4318 = call @std/strings.IndexInvalid(%4315, %4316, %4317)
   %4319 = const 97
   %4320 = const 97
   %4321 = const 97
@@ -8184,7 +8220,7 @@ b117:
   %4445 = load.i64 %4443[0]
   %4446 = load.i64 %4443[1]
   %4447 = load.i64 %4443[2]
-  %4448 = call @std/utf8.Valid(%4445, %4446, %4447)
+  %4448 = call @std/strings.Valid(%4445, %4446, %4447)
   call @rt.print_int(%4318)
   %4449 = const 32
   call @rt.print_char(%4449)
@@ -8559,7 +8595,7 @@ b120:
   %4715 = load.i64 %4713[0]
   %4716 = load.i64 %4713[1]
   %4717 = load.i64 %4713[2]
-  %4718 = call @std/utf8.IndexInvalid(%4715, %4716, %4717)
+  %4718 = call @std/strings.IndexInvalid(%4715, %4716, %4717)
   %4719 = const 97
   %4720 = const 97
   %4721 = const 97
@@ -8732,7 +8768,7 @@ b120:
   %4845 = load.i64 %4843[0]
   %4846 = load.i64 %4843[1]
   %4847 = load.i64 %4843[2]
-  %4848 = call @std/utf8.Valid(%4845, %4846, %4847)
+  %4848 = call @std/strings.Valid(%4845, %4846, %4847)
   call @rt.print_int(%4718)
   %4849 = const 32
   call @rt.print_char(%4849)
@@ -9107,7 +9143,7 @@ b123:
   %5115 = load.i64 %5113[0]
   %5116 = load.i64 %5113[1]
   %5117 = load.i64 %5113[2]
-  %5118 = call @std/utf8.IndexInvalid(%5115, %5116, %5117)
+  %5118 = call @std/strings.IndexInvalid(%5115, %5116, %5117)
   %5119 = const 97
   %5120 = const 97
   %5121 = const 97
@@ -9280,7 +9316,7 @@ b123:
   %5245 = load.i64 %5243[0]
   %5246 = load.i64 %5243[1]
   %5247 = load.i64 %5243[2]
-  %5248 = call @std/utf8.Valid(%5245, %5246, %5247)
+  %5248 = call @std/strings.Valid(%5245, %5246, %5247)
   call @rt.print_int(%5118)
   %5249 = const 32
   call @rt.print_char(%5249)
@@ -9655,7 +9691,7 @@ b126:
   %5515 = load.i64 %5513[0]
   %5516 = load.i64 %5513[1]
   %5517 = load.i64 %5513[2]
-  %5518 = call @std/utf8.IndexInvalid(%5515, %5516, %5517)
+  %5518 = call @std/strings.IndexInvalid(%5515, %5516, %5517)
   %5519 = const 97
   %5520 = const 97
   %5521 = const 97
@@ -9828,7 +9864,7 @@ b126:
   %5645 = load.i64 %5643[0]
   %5646 = load.i64 %5643[1]
   %5647 = load.i64 %5643[2]
-  %5648 = call @std/utf8.Valid(%5645, %5646, %5647)
+  %5648 = call @std/strings.Valid(%5645, %5646, %5647)
   call @rt.print_int(%5518)
   %5649 = const 32
   call @rt.print_char(%5649)
@@ -10203,7 +10239,7 @@ b129:
   %5915 = load.i64 %5913[0]
   %5916 = load.i64 %5913[1]
   %5917 = load.i64 %5913[2]
-  %5918 = call @std/utf8.IndexInvalid(%5915, %5916, %5917)
+  %5918 = call @std/strings.IndexInvalid(%5915, %5916, %5917)
   %5919 = const 97
   %5920 = const 97
   %5921 = const 97
@@ -10376,7 +10412,7 @@ b129:
   %6045 = load.i64 %6043[0]
   %6046 = load.i64 %6043[1]
   %6047 = load.i64 %6043[2]
-  %6048 = call @std/utf8.Valid(%6045, %6046, %6047)
+  %6048 = call @std/strings.Valid(%6045, %6046, %6047)
   call @rt.print_int(%5918)
   %6049 = const 32
   call @rt.print_char(%6049)
@@ -10751,7 +10787,7 @@ b132:
   %6315 = load.i64 %6313[0]
   %6316 = load.i64 %6313[1]
   %6317 = load.i64 %6313[2]
-  %6318 = call @std/utf8.IndexInvalid(%6315, %6316, %6317)
+  %6318 = call @std/strings.IndexInvalid(%6315, %6316, %6317)
   %6319 = const 97
   %6320 = const 97
   %6321 = const 97
@@ -10924,7 +10960,7 @@ b132:
   %6445 = load.i64 %6443[0]
   %6446 = load.i64 %6443[1]
   %6447 = load.i64 %6443[2]
-  %6448 = call @std/utf8.Valid(%6445, %6446, %6447)
+  %6448 = call @std/strings.Valid(%6445, %6446, %6447)
   call @rt.print_int(%6318)
   %6449 = const 32
   call @rt.print_char(%6449)
@@ -11299,7 +11335,7 @@ b135:
   %6715 = load.i64 %6713[0]
   %6716 = load.i64 %6713[1]
   %6717 = load.i64 %6713[2]
-  %6718 = call @std/utf8.IndexInvalid(%6715, %6716, %6717)
+  %6718 = call @std/strings.IndexInvalid(%6715, %6716, %6717)
   %6719 = const 97
   %6720 = const 97
   %6721 = const 97
@@ -11472,7 +11508,7 @@ b135:
   %6845 = load.i64 %6843[0]
   %6846 = load.i64 %6843[1]
   %6847 = load.i64 %6843[2]
-  %6848 = call @std/utf8.Valid(%6845, %6846, %6847)
+  %6848 = call @std/strings.Valid(%6845, %6846, %6847)
   call @rt.print_int(%6718)
   %6849 = const 32
   call @rt.print_char(%6849)
@@ -11847,7 +11883,7 @@ b138:
   %7115 = load.i64 %7113[0]
   %7116 = load.i64 %7113[1]
   %7117 = load.i64 %7113[2]
-  %7118 = call @std/utf8.IndexInvalid(%7115, %7116, %7117)
+  %7118 = call @std/strings.IndexInvalid(%7115, %7116, %7117)
   %7119 = const 97
   %7120 = const 97
   %7121 = const 97
@@ -12020,7 +12056,7 @@ b138:
   %7245 = load.i64 %7243[0]
   %7246 = load.i64 %7243[1]
   %7247 = load.i64 %7243[2]
-  %7248 = call @std/utf8.Valid(%7245, %7246, %7247)
+  %7248 = call @std/strings.Valid(%7245, %7246, %7247)
   call @rt.print_int(%7118)
   %7249 = const 32
   call @rt.print_char(%7249)
@@ -12395,7 +12431,7 @@ b141:
   %7515 = load.i64 %7513[0]
   %7516 = load.i64 %7513[1]
   %7517 = load.i64 %7513[2]
-  %7518 = call @std/utf8.IndexInvalid(%7515, %7516, %7517)
+  %7518 = call @std/strings.IndexInvalid(%7515, %7516, %7517)
   %7519 = const 97
   %7520 = const 97
   %7521 = const 97
@@ -12568,7 +12604,7 @@ b141:
   %7645 = load.i64 %7643[0]
   %7646 = load.i64 %7643[1]
   %7647 = load.i64 %7643[2]
-  %7648 = call @std/utf8.Valid(%7645, %7646, %7647)
+  %7648 = call @std/strings.Valid(%7645, %7646, %7647)
   call @rt.print_int(%7518)
   %7649 = const 32
   call @rt.print_char(%7649)
@@ -12943,7 +12979,7 @@ b144:
   %7915 = load.i64 %7913[0]
   %7916 = load.i64 %7913[1]
   %7917 = load.i64 %7913[2]
-  %7918 = call @std/utf8.IndexInvalid(%7915, %7916, %7917)
+  %7918 = call @std/strings.IndexInvalid(%7915, %7916, %7917)
   %7919 = const 97
   %7920 = const 97
   %7921 = const 97
@@ -13116,7 +13152,7 @@ b144:
   %8045 = load.i64 %8043[0]
   %8046 = load.i64 %8043[1]
   %8047 = load.i64 %8043[2]
-  %8048 = call @std/utf8.Valid(%8045, %8046, %8047)
+  %8048 = call @std/strings.Valid(%8045, %8046, %8047)
   call @rt.print_int(%7918)
   %8049 = const 32
   call @rt.print_char(%8049)
@@ -13491,7 +13527,7 @@ b147:
   %8315 = load.i64 %8313[0]
   %8316 = load.i64 %8313[1]
   %8317 = load.i64 %8313[2]
-  %8318 = call @std/utf8.IndexInvalid(%8315, %8316, %8317)
+  %8318 = call @std/strings.IndexInvalid(%8315, %8316, %8317)
   %8319 = const 97
   %8320 = const 97
   %8321 = const 97
@@ -13664,7 +13700,7 @@ b147:
   %8445 = load.i64 %8443[0]
   %8446 = load.i64 %8443[1]
   %8447 = load.i64 %8443[2]
-  %8448 = call @std/utf8.Valid(%8445, %8446, %8447)
+  %8448 = call @std/strings.Valid(%8445, %8446, %8447)
   call @rt.print_int(%8318)
   %8449 = const 32
   call @rt.print_char(%8449)
@@ -14039,7 +14075,7 @@ b150:
   %8715 = load.i64 %8713[0]
   %8716 = load.i64 %8713[1]
   %8717 = load.i64 %8713[2]
-  %8718 = call @std/utf8.IndexInvalid(%8715, %8716, %8717)
+  %8718 = call @std/strings.IndexInvalid(%8715, %8716, %8717)
   %8719 = const 97
   %8720 = const 97
   %8721 = const 97
@@ -14212,7 +14248,7 @@ b150:
   %8845 = load.i64 %8843[0]
   %8846 = load.i64 %8843[1]
   %8847 = load.i64 %8843[2]
-  %8848 = call @std/utf8.Valid(%8845, %8846, %8847)
+  %8848 = call @std/strings.Valid(%8845, %8846, %8847)
   call @rt.print_int(%8718)
   %8849 = const 32
   call @rt.print_char(%8849)
@@ -14587,7 +14623,7 @@ b153:
   %9115 = load.i64 %9113[0]
   %9116 = load.i64 %9113[1]
   %9117 = load.i64 %9113[2]
-  %9118 = call @std/utf8.IndexInvalid(%9115, %9116, %9117)
+  %9118 = call @std/strings.IndexInvalid(%9115, %9116, %9117)
   %9119 = const 97
   %9120 = const 97
   %9121 = const 97
@@ -14760,7 +14796,7 @@ b153:
   %9245 = load.i64 %9243[0]
   %9246 = load.i64 %9243[1]
   %9247 = load.i64 %9243[2]
-  %9248 = call @std/utf8.Valid(%9245, %9246, %9247)
+  %9248 = call @std/strings.Valid(%9245, %9246, %9247)
   call @rt.print_int(%9118)
   %9249 = const 32
   call @rt.print_char(%9249)
@@ -15135,7 +15171,7 @@ b156:
   %9515 = load.i64 %9513[0]
   %9516 = load.i64 %9513[1]
   %9517 = load.i64 %9513[2]
-  %9518 = call @std/utf8.IndexInvalid(%9515, %9516, %9517)
+  %9518 = call @std/strings.IndexInvalid(%9515, %9516, %9517)
   %9519 = const 97
   %9520 = const 97
   %9521 = const 97
@@ -15308,7 +15344,7 @@ b156:
   %9645 = load.i64 %9643[0]
   %9646 = load.i64 %9643[1]
   %9647 = load.i64 %9643[2]
-  %9648 = call @std/utf8.Valid(%9645, %9646, %9647)
+  %9648 = call @std/strings.Valid(%9645, %9646, %9647)
   call @rt.print_int(%9518)
   %9649 = const 32
   call @rt.print_char(%9649)
@@ -15683,7 +15719,7 @@ b159:
   %9915 = load.i64 %9913[0]
   %9916 = load.i64 %9913[1]
   %9917 = load.i64 %9913[2]
-  %9918 = call @std/utf8.IndexInvalid(%9915, %9916, %9917)
+  %9918 = call @std/strings.IndexInvalid(%9915, %9916, %9917)
   %9919 = const 97
   %9920 = const 97
   %9921 = const 97
@@ -15856,7 +15892,7 @@ b159:
   %10045 = load.i64 %10043[0]
   %10046 = load.i64 %10043[1]
   %10047 = load.i64 %10043[2]
-  %10048 = call @std/utf8.Valid(%10045, %10046, %10047)
+  %10048 = call @std/strings.Valid(%10045, %10046, %10047)
   call @rt.print_int(%9918)
   %10049 = const 32
   call @rt.print_char(%10049)
@@ -16231,7 +16267,7 @@ b162:
   %10315 = load.i64 %10313[0]
   %10316 = load.i64 %10313[1]
   %10317 = load.i64 %10313[2]
-  %10318 = call @std/utf8.IndexInvalid(%10315, %10316, %10317)
+  %10318 = call @std/strings.IndexInvalid(%10315, %10316, %10317)
   %10319 = const 97
   %10320 = const 97
   %10321 = const 97
@@ -16404,7 +16440,7 @@ b162:
   %10445 = load.i64 %10443[0]
   %10446 = load.i64 %10443[1]
   %10447 = load.i64 %10443[2]
-  %10448 = call @std/utf8.Valid(%10445, %10446, %10447)
+  %10448 = call @std/strings.Valid(%10445, %10446, %10447)
   call @rt.print_int(%10318)
   %10449 = const 32
   call @rt.print_char(%10449)
@@ -16779,7 +16815,7 @@ b165:
   %10715 = load.i64 %10713[0]
   %10716 = load.i64 %10713[1]
   %10717 = load.i64 %10713[2]
-  %10718 = call @std/utf8.IndexInvalid(%10715, %10716, %10717)
+  %10718 = call @std/strings.IndexInvalid(%10715, %10716, %10717)
   %10719 = const 97
   %10720 = const 97
   %10721 = const 97
@@ -16952,7 +16988,7 @@ b165:
   %10845 = load.i64 %10843[0]
   %10846 = load.i64 %10843[1]
   %10847 = load.i64 %10843[2]
-  %10848 = call @std/utf8.Valid(%10845, %10846, %10847)
+  %10848 = call @std/strings.Valid(%10845, %10846, %10847)
   call @rt.print_int(%10718)
   %10849 = const 32
   call @rt.print_char(%10849)
@@ -17327,7 +17363,7 @@ b168:
   %11115 = load.i64 %11113[0]
   %11116 = load.i64 %11113[1]
   %11117 = load.i64 %11113[2]
-  %11118 = call @std/utf8.IndexInvalid(%11115, %11116, %11117)
+  %11118 = call @std/strings.IndexInvalid(%11115, %11116, %11117)
   %11119 = const 97
   %11120 = const 97
   %11121 = const 97
@@ -17500,7 +17536,7 @@ b168:
   %11245 = load.i64 %11243[0]
   %11246 = load.i64 %11243[1]
   %11247 = load.i64 %11243[2]
-  %11248 = call @std/utf8.Valid(%11245, %11246, %11247)
+  %11248 = call @std/strings.Valid(%11245, %11246, %11247)
   call @rt.print_int(%11118)
   %11249 = const 32
   call @rt.print_char(%11249)
@@ -17875,7 +17911,7 @@ b171:
   %11515 = load.i64 %11513[0]
   %11516 = load.i64 %11513[1]
   %11517 = load.i64 %11513[2]
-  %11518 = call @std/utf8.IndexInvalid(%11515, %11516, %11517)
+  %11518 = call @std/strings.IndexInvalid(%11515, %11516, %11517)
   %11519 = const 97
   %11520 = const 97
   %11521 = const 97
@@ -18048,7 +18084,7 @@ b171:
   %11645 = load.i64 %11643[0]
   %11646 = load.i64 %11643[1]
   %11647 = load.i64 %11643[2]
-  %11648 = call @std/utf8.Valid(%11645, %11646, %11647)
+  %11648 = call @std/strings.Valid(%11645, %11646, %11647)
   call @rt.print_int(%11518)
   %11649 = const 32
   call @rt.print_char(%11649)
@@ -18423,7 +18459,7 @@ b174:
   %11915 = load.i64 %11913[0]
   %11916 = load.i64 %11913[1]
   %11917 = load.i64 %11913[2]
-  %11918 = call @std/utf8.IndexInvalid(%11915, %11916, %11917)
+  %11918 = call @std/strings.IndexInvalid(%11915, %11916, %11917)
   %11919 = const 97
   %11920 = const 97
   %11921 = const 97
@@ -18596,7 +18632,7 @@ b174:
   %12045 = load.i64 %12043[0]
   %12046 = load.i64 %12043[1]
   %12047 = load.i64 %12043[2]
-  %12048 = call @std/utf8.Valid(%12045, %12046, %12047)
+  %12048 = call @std/strings.Valid(%12045, %12046, %12047)
   call @rt.print_int(%11918)
   %12049 = const 32
   call @rt.print_char(%12049)
@@ -18971,7 +19007,7 @@ b177:
   %12315 = load.i64 %12313[0]
   %12316 = load.i64 %12313[1]
   %12317 = load.i64 %12313[2]
-  %12318 = call @std/utf8.IndexInvalid(%12315, %12316, %12317)
+  %12318 = call @std/strings.IndexInvalid(%12315, %12316, %12317)
   %12319 = const 97
   %12320 = const 97
   %12321 = const 97
@@ -19144,7 +19180,7 @@ b177:
   %12445 = load.i64 %12443[0]
   %12446 = load.i64 %12443[1]
   %12447 = load.i64 %12443[2]
-  %12448 = call @std/utf8.Valid(%12445, %12446, %12447)
+  %12448 = call @std/strings.Valid(%12445, %12446, %12447)
   call @rt.print_int(%12318)
   %12449 = const 32
   call @rt.print_char(%12449)
@@ -19519,7 +19555,7 @@ b180:
   %12715 = load.i64 %12713[0]
   %12716 = load.i64 %12713[1]
   %12717 = load.i64 %12713[2]
-  %12718 = call @std/utf8.IndexInvalid(%12715, %12716, %12717)
+  %12718 = call @std/strings.IndexInvalid(%12715, %12716, %12717)
   %12719 = const 97
   %12720 = const 97
   %12721 = const 97
@@ -19692,7 +19728,7 @@ b180:
   %12845 = load.i64 %12843[0]
   %12846 = load.i64 %12843[1]
   %12847 = load.i64 %12843[2]
-  %12848 = call @std/utf8.Valid(%12845, %12846, %12847)
+  %12848 = call @std/strings.Valid(%12845, %12846, %12847)
   call @rt.print_int(%12718)
   %12849 = const 32
   call @rt.print_char(%12849)
@@ -20067,7 +20103,7 @@ b183:
   %13115 = load.i64 %13113[0]
   %13116 = load.i64 %13113[1]
   %13117 = load.i64 %13113[2]
-  %13118 = call @std/utf8.IndexInvalid(%13115, %13116, %13117)
+  %13118 = call @std/strings.IndexInvalid(%13115, %13116, %13117)
   %13119 = const 97
   %13120 = const 97
   %13121 = const 97
@@ -20240,7 +20276,7 @@ b183:
   %13245 = load.i64 %13243[0]
   %13246 = load.i64 %13243[1]
   %13247 = load.i64 %13243[2]
-  %13248 = call @std/utf8.Valid(%13245, %13246, %13247)
+  %13248 = call @std/strings.Valid(%13245, %13246, %13247)
   call @rt.print_int(%13118)
   %13249 = const 32
   call @rt.print_char(%13249)
@@ -20615,7 +20651,7 @@ b186:
   %13515 = load.i64 %13513[0]
   %13516 = load.i64 %13513[1]
   %13517 = load.i64 %13513[2]
-  %13518 = call @std/utf8.IndexInvalid(%13515, %13516, %13517)
+  %13518 = call @std/strings.IndexInvalid(%13515, %13516, %13517)
   %13519 = const 97
   %13520 = const 97
   %13521 = const 97
@@ -20788,7 +20824,7 @@ b186:
   %13645 = load.i64 %13643[0]
   %13646 = load.i64 %13643[1]
   %13647 = load.i64 %13643[2]
-  %13648 = call @std/utf8.Valid(%13645, %13646, %13647)
+  %13648 = call @std/strings.Valid(%13645, %13646, %13647)
   call @rt.print_int(%13518)
   %13649 = const 32
   call @rt.print_char(%13649)
@@ -21163,7 +21199,7 @@ b189:
   %13915 = load.i64 %13913[0]
   %13916 = load.i64 %13913[1]
   %13917 = load.i64 %13913[2]
-  %13918 = call @std/utf8.IndexInvalid(%13915, %13916, %13917)
+  %13918 = call @std/strings.IndexInvalid(%13915, %13916, %13917)
   %13919 = const 97
   %13920 = const 97
   %13921 = const 97
@@ -21336,7 +21372,7 @@ b189:
   %14045 = load.i64 %14043[0]
   %14046 = load.i64 %14043[1]
   %14047 = load.i64 %14043[2]
-  %14048 = call @std/utf8.Valid(%14045, %14046, %14047)
+  %14048 = call @std/strings.Valid(%14045, %14046, %14047)
   call @rt.print_int(%13918)
   %14049 = const 32
   call @rt.print_char(%14049)
@@ -21711,7 +21747,7 @@ b192:
   %14315 = load.i64 %14313[0]
   %14316 = load.i64 %14313[1]
   %14317 = load.i64 %14313[2]
-  %14318 = call @std/utf8.IndexInvalid(%14315, %14316, %14317)
+  %14318 = call @std/strings.IndexInvalid(%14315, %14316, %14317)
   %14319 = const 97
   %14320 = const 97
   %14321 = const 97
@@ -21884,7 +21920,7 @@ b192:
   %14445 = load.i64 %14443[0]
   %14446 = load.i64 %14443[1]
   %14447 = load.i64 %14443[2]
-  %14448 = call @std/utf8.Valid(%14445, %14446, %14447)
+  %14448 = call @std/strings.Valid(%14445, %14446, %14447)
   call @rt.print_int(%14318)
   %14449 = const 32
   call @rt.print_char(%14449)
@@ -22259,7 +22295,7 @@ b195:
   %14715 = load.i64 %14713[0]
   %14716 = load.i64 %14713[1]
   %14717 = load.i64 %14713[2]
-  %14718 = call @std/utf8.IndexInvalid(%14715, %14716, %14717)
+  %14718 = call @std/strings.IndexInvalid(%14715, %14716, %14717)
   %14719 = const 97
   %14720 = const 97
   %14721 = const 97
@@ -22432,7 +22468,7 @@ b195:
   %14845 = load.i64 %14843[0]
   %14846 = load.i64 %14843[1]
   %14847 = load.i64 %14843[2]
-  %14848 = call @std/utf8.Valid(%14845, %14846, %14847)
+  %14848 = call @std/strings.Valid(%14845, %14846, %14847)
   call @rt.print_int(%14718)
   %14849 = const 32
   call @rt.print_char(%14849)
@@ -22807,7 +22843,7 @@ b198:
   %15115 = load.i64 %15113[0]
   %15116 = load.i64 %15113[1]
   %15117 = load.i64 %15113[2]
-  %15118 = call @std/utf8.IndexInvalid(%15115, %15116, %15117)
+  %15118 = call @std/strings.IndexInvalid(%15115, %15116, %15117)
   %15119 = const 97
   %15120 = const 97
   %15121 = const 97
@@ -22980,7 +23016,7 @@ b198:
   %15245 = load.i64 %15243[0]
   %15246 = load.i64 %15243[1]
   %15247 = load.i64 %15243[2]
-  %15248 = call @std/utf8.Valid(%15245, %15246, %15247)
+  %15248 = call @std/strings.Valid(%15245, %15246, %15247)
   call @rt.print_int(%15118)
   %15249 = const 32
   call @rt.print_char(%15249)
@@ -23355,7 +23391,7 @@ b201:
   %15515 = load.i64 %15513[0]
   %15516 = load.i64 %15513[1]
   %15517 = load.i64 %15513[2]
-  %15518 = call @std/utf8.IndexInvalid(%15515, %15516, %15517)
+  %15518 = call @std/strings.IndexInvalid(%15515, %15516, %15517)
   %15519 = const 97
   %15520 = const 97
   %15521 = const 97
@@ -23528,7 +23564,7 @@ b201:
   %15645 = load.i64 %15643[0]
   %15646 = load.i64 %15643[1]
   %15647 = load.i64 %15643[2]
-  %15648 = call @std/utf8.Valid(%15645, %15646, %15647)
+  %15648 = call @std/strings.Valid(%15645, %15646, %15647)
   call @rt.print_int(%15518)
   %15649 = const 32
   call @rt.print_char(%15649)
@@ -23903,7 +23939,7 @@ b204:
   %15915 = load.i64 %15913[0]
   %15916 = load.i64 %15913[1]
   %15917 = load.i64 %15913[2]
-  %15918 = call @std/utf8.IndexInvalid(%15915, %15916, %15917)
+  %15918 = call @std/strings.IndexInvalid(%15915, %15916, %15917)
   %15919 = const 97
   %15920 = const 97
   %15921 = const 97
@@ -24076,7 +24112,7 @@ b204:
   %16045 = load.i64 %16043[0]
   %16046 = load.i64 %16043[1]
   %16047 = load.i64 %16043[2]
-  %16048 = call @std/utf8.Valid(%16045, %16046, %16047)
+  %16048 = call @std/strings.Valid(%16045, %16046, %16047)
   call @rt.print_int(%15918)
   %16049 = const 32
   call @rt.print_char(%16049)
@@ -24451,7 +24487,7 @@ b207:
   %16315 = load.i64 %16313[0]
   %16316 = load.i64 %16313[1]
   %16317 = load.i64 %16313[2]
-  %16318 = call @std/utf8.IndexInvalid(%16315, %16316, %16317)
+  %16318 = call @std/strings.IndexInvalid(%16315, %16316, %16317)
   %16319 = const 97
   %16320 = const 97
   %16321 = const 97
@@ -24624,7 +24660,7 @@ b207:
   %16445 = load.i64 %16443[0]
   %16446 = load.i64 %16443[1]
   %16447 = load.i64 %16443[2]
-  %16448 = call @std/utf8.Valid(%16445, %16446, %16447)
+  %16448 = call @std/strings.Valid(%16445, %16446, %16447)
   call @rt.print_int(%16318)
   %16449 = const 32
   call @rt.print_char(%16449)
@@ -24999,7 +25035,7 @@ b210:
   %16715 = load.i64 %16713[0]
   %16716 = load.i64 %16713[1]
   %16717 = load.i64 %16713[2]
-  %16718 = call @std/utf8.IndexInvalid(%16715, %16716, %16717)
+  %16718 = call @std/strings.IndexInvalid(%16715, %16716, %16717)
   %16719 = const 97
   %16720 = const 97
   %16721 = const 97
@@ -25172,7 +25208,7 @@ b210:
   %16845 = load.i64 %16843[0]
   %16846 = load.i64 %16843[1]
   %16847 = load.i64 %16843[2]
-  %16848 = call @std/utf8.Valid(%16845, %16846, %16847)
+  %16848 = call @std/strings.Valid(%16845, %16846, %16847)
   call @rt.print_int(%16718)
   %16849 = const 32
   call @rt.print_char(%16849)
@@ -25547,7 +25583,7 @@ b213:
   %17115 = load.i64 %17113[0]
   %17116 = load.i64 %17113[1]
   %17117 = load.i64 %17113[2]
-  %17118 = call @std/utf8.IndexInvalid(%17115, %17116, %17117)
+  %17118 = call @std/strings.IndexInvalid(%17115, %17116, %17117)
   %17119 = const 97
   %17120 = const 97
   %17121 = const 97
@@ -25720,7 +25756,7 @@ b213:
   %17245 = load.i64 %17243[0]
   %17246 = load.i64 %17243[1]
   %17247 = load.i64 %17243[2]
-  %17248 = call @std/utf8.Valid(%17245, %17246, %17247)
+  %17248 = call @std/strings.Valid(%17245, %17246, %17247)
   call @rt.print_int(%17118)
   %17249 = const 32
   call @rt.print_char(%17249)
@@ -26095,7 +26131,7 @@ b216:
   %17515 = load.i64 %17513[0]
   %17516 = load.i64 %17513[1]
   %17517 = load.i64 %17513[2]
-  %17518 = call @std/utf8.IndexInvalid(%17515, %17516, %17517)
+  %17518 = call @std/strings.IndexInvalid(%17515, %17516, %17517)
   %17519 = const 97
   %17520 = const 97
   %17521 = const 97
@@ -26268,7 +26304,7 @@ b216:
   %17645 = load.i64 %17643[0]
   %17646 = load.i64 %17643[1]
   %17647 = load.i64 %17643[2]
-  %17648 = call @std/utf8.Valid(%17645, %17646, %17647)
+  %17648 = call @std/strings.Valid(%17645, %17646, %17647)
   call @rt.print_int(%17518)
   %17649 = const 32
   call @rt.print_char(%17649)
@@ -26643,7 +26679,7 @@ b219:
   %17915 = load.i64 %17913[0]
   %17916 = load.i64 %17913[1]
   %17917 = load.i64 %17913[2]
-  %17918 = call @std/utf8.IndexInvalid(%17915, %17916, %17917)
+  %17918 = call @std/strings.IndexInvalid(%17915, %17916, %17917)
   %17919 = const 97
   %17920 = const 97
   %17921 = const 97
@@ -26816,7 +26852,7 @@ b219:
   %18045 = load.i64 %18043[0]
   %18046 = load.i64 %18043[1]
   %18047 = load.i64 %18043[2]
-  %18048 = call @std/utf8.Valid(%18045, %18046, %18047)
+  %18048 = call @std/strings.Valid(%18045, %18046, %18047)
   call @rt.print_int(%17918)
   %18049 = const 32
   call @rt.print_char(%18049)
@@ -27191,7 +27227,7 @@ b222:
   %18315 = load.i64 %18313[0]
   %18316 = load.i64 %18313[1]
   %18317 = load.i64 %18313[2]
-  %18318 = call @std/utf8.IndexInvalid(%18315, %18316, %18317)
+  %18318 = call @std/strings.IndexInvalid(%18315, %18316, %18317)
   %18319 = const 97
   %18320 = const 97
   %18321 = const 97
@@ -27364,7 +27400,7 @@ b222:
   %18445 = load.i64 %18443[0]
   %18446 = load.i64 %18443[1]
   %18447 = load.i64 %18443[2]
-  %18448 = call @std/utf8.Valid(%18445, %18446, %18447)
+  %18448 = call @std/strings.Valid(%18445, %18446, %18447)
   call @rt.print_int(%18318)
   %18449 = const 32
   call @rt.print_char(%18449)
@@ -27739,7 +27775,7 @@ b225:
   %18715 = load.i64 %18713[0]
   %18716 = load.i64 %18713[1]
   %18717 = load.i64 %18713[2]
-  %18718 = call @std/utf8.IndexInvalid(%18715, %18716, %18717)
+  %18718 = call @std/strings.IndexInvalid(%18715, %18716, %18717)
   %18719 = const 97
   %18720 = const 97
   %18721 = const 97
@@ -27912,7 +27948,7 @@ b225:
   %18845 = load.i64 %18843[0]
   %18846 = load.i64 %18843[1]
   %18847 = load.i64 %18843[2]
-  %18848 = call @std/utf8.Valid(%18845, %18846, %18847)
+  %18848 = call @std/strings.Valid(%18845, %18846, %18847)
   call @rt.print_int(%18718)
   %18849 = const 32
   call @rt.print_char(%18849)
@@ -28287,7 +28323,7 @@ b228:
   %19115 = load.i64 %19113[0]
   %19116 = load.i64 %19113[1]
   %19117 = load.i64 %19113[2]
-  %19118 = call @std/utf8.IndexInvalid(%19115, %19116, %19117)
+  %19118 = call @std/strings.IndexInvalid(%19115, %19116, %19117)
   %19119 = const 97
   %19120 = const 97
   %19121 = const 97
@@ -28460,7 +28496,7 @@ b228:
   %19245 = load.i64 %19243[0]
   %19246 = load.i64 %19243[1]
   %19247 = load.i64 %19243[2]
-  %19248 = call @std/utf8.Valid(%19245, %19246, %19247)
+  %19248 = call @std/strings.Valid(%19245, %19246, %19247)
   call @rt.print_int(%19118)
   %19249 = const 32
   call @rt.print_char(%19249)
@@ -28835,7 +28871,7 @@ b231:
   %19515 = load.i64 %19513[0]
   %19516 = load.i64 %19513[1]
   %19517 = load.i64 %19513[2]
-  %19518 = call @std/utf8.IndexInvalid(%19515, %19516, %19517)
+  %19518 = call @std/strings.IndexInvalid(%19515, %19516, %19517)
   %19519 = const 97
   %19520 = const 97
   %19521 = const 97
@@ -29008,7 +29044,7 @@ b231:
   %19645 = load.i64 %19643[0]
   %19646 = load.i64 %19643[1]
   %19647 = load.i64 %19643[2]
-  %19648 = call @std/utf8.Valid(%19645, %19646, %19647)
+  %19648 = call @std/strings.Valid(%19645, %19646, %19647)
   call @rt.print_int(%19518)
   %19649 = const 32
   call @rt.print_char(%19649)
@@ -29383,7 +29419,7 @@ b234:
   %19915 = load.i64 %19913[0]
   %19916 = load.i64 %19913[1]
   %19917 = load.i64 %19913[2]
-  %19918 = call @std/utf8.IndexInvalid(%19915, %19916, %19917)
+  %19918 = call @std/strings.IndexInvalid(%19915, %19916, %19917)
   %19919 = const 97
   %19920 = const 97
   %19921 = const 97
@@ -29556,7 +29592,7 @@ b234:
   %20045 = load.i64 %20043[0]
   %20046 = load.i64 %20043[1]
   %20047 = load.i64 %20043[2]
-  %20048 = call @std/utf8.Valid(%20045, %20046, %20047)
+  %20048 = call @std/strings.Valid(%20045, %20046, %20047)
   call @rt.print_int(%19918)
   %20049 = const 32
   call @rt.print_char(%20049)
@@ -29931,7 +29967,7 @@ b237:
   %20315 = load.i64 %20313[0]
   %20316 = load.i64 %20313[1]
   %20317 = load.i64 %20313[2]
-  %20318 = call @std/utf8.IndexInvalid(%20315, %20316, %20317)
+  %20318 = call @std/strings.IndexInvalid(%20315, %20316, %20317)
   %20319 = const 97
   %20320 = const 97
   %20321 = const 97
@@ -30104,7 +30140,7 @@ b237:
   %20445 = load.i64 %20443[0]
   %20446 = load.i64 %20443[1]
   %20447 = load.i64 %20443[2]
-  %20448 = call @std/utf8.Valid(%20445, %20446, %20447)
+  %20448 = call @std/strings.Valid(%20445, %20446, %20447)
   call @rt.print_int(%20318)
   %20449 = const 32
   call @rt.print_char(%20449)
@@ -30479,7 +30515,7 @@ b240:
   %20715 = load.i64 %20713[0]
   %20716 = load.i64 %20713[1]
   %20717 = load.i64 %20713[2]
-  %20718 = call @std/utf8.IndexInvalid(%20715, %20716, %20717)
+  %20718 = call @std/strings.IndexInvalid(%20715, %20716, %20717)
   %20719 = const 97
   %20720 = const 97
   %20721 = const 97
@@ -30652,7 +30688,7 @@ b240:
   %20845 = load.i64 %20843[0]
   %20846 = load.i64 %20843[1]
   %20847 = load.i64 %20843[2]
-  %20848 = call @std/utf8.Valid(%20845, %20846, %20847)
+  %20848 = call @std/strings.Valid(%20845, %20846, %20847)
   call @rt.print_int(%20718)
   %20849 = const 32
   call @rt.print_char(%20849)
@@ -31027,7 +31063,7 @@ b243:
   %21115 = load.i64 %21113[0]
   %21116 = load.i64 %21113[1]
   %21117 = load.i64 %21113[2]
-  %21118 = call @std/utf8.IndexInvalid(%21115, %21116, %21117)
+  %21118 = call @std/strings.IndexInvalid(%21115, %21116, %21117)
   %21119 = const 97
   %21120 = const 97
   %21121 = const 97
@@ -31200,7 +31236,7 @@ b243:
   %21245 = load.i64 %21243[0]
   %21246 = load.i64 %21243[1]
   %21247 = load.i64 %21243[2]
-  %21248 = call @std/utf8.Valid(%21245, %21246, %21247)
+  %21248 = call @std/strings.Valid(%21245, %21246, %21247)
   call @rt.print_int(%21118)
   %21249 = const 32
   call @rt.print_char(%21249)
@@ -31575,7 +31611,7 @@ b246:
   %21515 = load.i64 %21513[0]
   %21516 = load.i64 %21513[1]
   %21517 = load.i64 %21513[2]
-  %21518 = call @std/utf8.IndexInvalid(%21515, %21516, %21517)
+  %21518 = call @std/strings.IndexInvalid(%21515, %21516, %21517)
   %21519 = const 97
   %21520 = const 97
   %21521 = const 97
@@ -31748,7 +31784,7 @@ b246:
   %21645 = load.i64 %21643[0]
   %21646 = load.i64 %21643[1]
   %21647 = load.i64 %21643[2]
-  %21648 = call @std/utf8.Valid(%21645, %21646, %21647)
+  %21648 = call @std/strings.Valid(%21645, %21646, %21647)
   call @rt.print_int(%21518)
   %21649 = const 32
   call @rt.print_char(%21649)
@@ -32123,7 +32159,7 @@ b249:
   %21915 = load.i64 %21913[0]
   %21916 = load.i64 %21913[1]
   %21917 = load.i64 %21913[2]
-  %21918 = call @std/utf8.IndexInvalid(%21915, %21916, %21917)
+  %21918 = call @std/strings.IndexInvalid(%21915, %21916, %21917)
   %21919 = const 97
   %21920 = const 97
   %21921 = const 97
@@ -32296,7 +32332,7 @@ b249:
   %22045 = load.i64 %22043[0]
   %22046 = load.i64 %22043[1]
   %22047 = load.i64 %22043[2]
-  %22048 = call @std/utf8.Valid(%22045, %22046, %22047)
+  %22048 = call @std/strings.Valid(%22045, %22046, %22047)
   call @rt.print_int(%21918)
   %22049 = const 32
   call @rt.print_char(%22049)
@@ -32671,7 +32707,7 @@ b252:
   %22315 = load.i64 %22313[0]
   %22316 = load.i64 %22313[1]
   %22317 = load.i64 %22313[2]
-  %22318 = call @std/utf8.IndexInvalid(%22315, %22316, %22317)
+  %22318 = call @std/strings.IndexInvalid(%22315, %22316, %22317)
   %22319 = const 97
   %22320 = const 97
   %22321 = const 97
@@ -32844,7 +32880,7 @@ b252:
   %22445 = load.i64 %22443[0]
   %22446 = load.i64 %22443[1]
   %22447 = load.i64 %22443[2]
-  %22448 = call @std/utf8.Valid(%22445, %22446, %22447)
+  %22448 = call @std/strings.Valid(%22445, %22446, %22447)
   call @rt.print_int(%22318)
   %22449 = const 32
   call @rt.print_char(%22449)
@@ -33219,7 +33255,7 @@ b255:
   %22715 = load.i64 %22713[0]
   %22716 = load.i64 %22713[1]
   %22717 = load.i64 %22713[2]
-  %22718 = call @std/utf8.IndexInvalid(%22715, %22716, %22717)
+  %22718 = call @std/strings.IndexInvalid(%22715, %22716, %22717)
   %22719 = const 97
   %22720 = const 97
   %22721 = const 97
@@ -33392,7 +33428,7 @@ b255:
   %22845 = load.i64 %22843[0]
   %22846 = load.i64 %22843[1]
   %22847 = load.i64 %22843[2]
-  %22848 = call @std/utf8.Valid(%22845, %22846, %22847)
+  %22848 = call @std/strings.Valid(%22845, %22846, %22847)
   call @rt.print_int(%22718)
   %22849 = const 32
   call @rt.print_char(%22849)
@@ -33767,7 +33803,7 @@ b258:
   %23115 = load.i64 %23113[0]
   %23116 = load.i64 %23113[1]
   %23117 = load.i64 %23113[2]
-  %23118 = call @std/utf8.IndexInvalid(%23115, %23116, %23117)
+  %23118 = call @std/strings.IndexInvalid(%23115, %23116, %23117)
   %23119 = const 97
   %23120 = const 97
   %23121 = const 97
@@ -33940,7 +33976,7 @@ b258:
   %23245 = load.i64 %23243[0]
   %23246 = load.i64 %23243[1]
   %23247 = load.i64 %23243[2]
-  %23248 = call @std/utf8.Valid(%23245, %23246, %23247)
+  %23248 = call @std/strings.Valid(%23245, %23246, %23247)
   call @rt.print_int(%23118)
   %23249 = const 32
   call @rt.print_char(%23249)
@@ -34315,7 +34351,7 @@ b261:
   %23515 = load.i64 %23513[0]
   %23516 = load.i64 %23513[1]
   %23517 = load.i64 %23513[2]
-  %23518 = call @std/utf8.IndexInvalid(%23515, %23516, %23517)
+  %23518 = call @std/strings.IndexInvalid(%23515, %23516, %23517)
   %23519 = const 97
   %23520 = const 97
   %23521 = const 97
@@ -34488,7 +34524,7 @@ b261:
   %23645 = load.i64 %23643[0]
   %23646 = load.i64 %23643[1]
   %23647 = load.i64 %23643[2]
-  %23648 = call @std/utf8.Valid(%23645, %23646, %23647)
+  %23648 = call @std/strings.Valid(%23645, %23646, %23647)
   call @rt.print_int(%23518)
   %23649 = const 32
   call @rt.print_char(%23649)
@@ -34863,7 +34899,7 @@ b264:
   %23915 = load.i64 %23913[0]
   %23916 = load.i64 %23913[1]
   %23917 = load.i64 %23913[2]
-  %23918 = call @std/utf8.IndexInvalid(%23915, %23916, %23917)
+  %23918 = call @std/strings.IndexInvalid(%23915, %23916, %23917)
   %23919 = const 97
   %23920 = const 97
   %23921 = const 97
@@ -35036,7 +35072,7 @@ b264:
   %24045 = load.i64 %24043[0]
   %24046 = load.i64 %24043[1]
   %24047 = load.i64 %24043[2]
-  %24048 = call @std/utf8.Valid(%24045, %24046, %24047)
+  %24048 = call @std/strings.Valid(%24045, %24046, %24047)
   call @rt.print_int(%23918)
   %24049 = const 32
   call @rt.print_char(%24049)
@@ -35411,7 +35447,7 @@ b267:
   %24315 = load.i64 %24313[0]
   %24316 = load.i64 %24313[1]
   %24317 = load.i64 %24313[2]
-  %24318 = call @std/utf8.IndexInvalid(%24315, %24316, %24317)
+  %24318 = call @std/strings.IndexInvalid(%24315, %24316, %24317)
   %24319 = const 97
   %24320 = const 97
   %24321 = const 97
@@ -35584,7 +35620,7 @@ b267:
   %24445 = load.i64 %24443[0]
   %24446 = load.i64 %24443[1]
   %24447 = load.i64 %24443[2]
-  %24448 = call @std/utf8.Valid(%24445, %24446, %24447)
+  %24448 = call @std/strings.Valid(%24445, %24446, %24447)
   call @rt.print_int(%24318)
   %24449 = const 32
   call @rt.print_char(%24449)
@@ -35959,7 +35995,7 @@ b270:
   %24715 = load.i64 %24713[0]
   %24716 = load.i64 %24713[1]
   %24717 = load.i64 %24713[2]
-  %24718 = call @std/utf8.IndexInvalid(%24715, %24716, %24717)
+  %24718 = call @std/strings.IndexInvalid(%24715, %24716, %24717)
   %24719 = const 97
   %24720 = const 97
   %24721 = const 97
@@ -36132,7 +36168,7 @@ b270:
   %24845 = load.i64 %24843[0]
   %24846 = load.i64 %24843[1]
   %24847 = load.i64 %24843[2]
-  %24848 = call @std/utf8.Valid(%24845, %24846, %24847)
+  %24848 = call @std/strings.Valid(%24845, %24846, %24847)
   call @rt.print_int(%24718)
   %24849 = const 32
   call @rt.print_char(%24849)
@@ -36507,7 +36543,7 @@ b273:
   %25115 = load.i64 %25113[0]
   %25116 = load.i64 %25113[1]
   %25117 = load.i64 %25113[2]
-  %25118 = call @std/utf8.IndexInvalid(%25115, %25116, %25117)
+  %25118 = call @std/strings.IndexInvalid(%25115, %25116, %25117)
   %25119 = const 97
   %25120 = const 97
   %25121 = const 97
@@ -36680,7 +36716,7 @@ b273:
   %25245 = load.i64 %25243[0]
   %25246 = load.i64 %25243[1]
   %25247 = load.i64 %25243[2]
-  %25248 = call @std/utf8.Valid(%25245, %25246, %25247)
+  %25248 = call @std/strings.Valid(%25245, %25246, %25247)
   call @rt.print_int(%25118)
   %25249 = const 32
   call @rt.print_char(%25249)
@@ -37055,7 +37091,7 @@ b276:
   %25515 = load.i64 %25513[0]
   %25516 = load.i64 %25513[1]
   %25517 = load.i64 %25513[2]
-  %25518 = call @std/utf8.IndexInvalid(%25515, %25516, %25517)
+  %25518 = call @std/strings.IndexInvalid(%25515, %25516, %25517)
   %25519 = const 97
   %25520 = const 97
   %25521 = const 97
@@ -37228,7 +37264,7 @@ b276:
   %25645 = load.i64 %25643[0]
   %25646 = load.i64 %25643[1]
   %25647 = load.i64 %25643[2]
-  %25648 = call @std/utf8.Valid(%25645, %25646, %25647)
+  %25648 = call @std/strings.Valid(%25645, %25646, %25647)
   call @rt.print_int(%25518)
   %25649 = const 32
   call @rt.print_char(%25649)
@@ -37603,7 +37639,7 @@ b279:
   %25915 = load.i64 %25913[0]
   %25916 = load.i64 %25913[1]
   %25917 = load.i64 %25913[2]
-  %25918 = call @std/utf8.IndexInvalid(%25915, %25916, %25917)
+  %25918 = call @std/strings.IndexInvalid(%25915, %25916, %25917)
   %25919 = const 97
   %25920 = const 97
   %25921 = const 97
@@ -37776,7 +37812,7 @@ b279:
   %26045 = load.i64 %26043[0]
   %26046 = load.i64 %26043[1]
   %26047 = load.i64 %26043[2]
-  %26048 = call @std/utf8.Valid(%26045, %26046, %26047)
+  %26048 = call @std/strings.Valid(%26045, %26046, %26047)
   call @rt.print_int(%25918)
   %26049 = const 32
   call @rt.print_char(%26049)
@@ -38151,7 +38187,7 @@ b282:
   %26315 = load.i64 %26313[0]
   %26316 = load.i64 %26313[1]
   %26317 = load.i64 %26313[2]
-  %26318 = call @std/utf8.IndexInvalid(%26315, %26316, %26317)
+  %26318 = call @std/strings.IndexInvalid(%26315, %26316, %26317)
   %26319 = const 97
   %26320 = const 97
   %26321 = const 97
@@ -38324,7 +38360,7 @@ b282:
   %26445 = load.i64 %26443[0]
   %26446 = load.i64 %26443[1]
   %26447 = load.i64 %26443[2]
-  %26448 = call @std/utf8.Valid(%26445, %26446, %26447)
+  %26448 = call @std/strings.Valid(%26445, %26446, %26447)
   call @rt.print_int(%26318)
   %26449 = const 32
   call @rt.print_char(%26449)
@@ -38699,7 +38735,7 @@ b285:
   %26715 = load.i64 %26713[0]
   %26716 = load.i64 %26713[1]
   %26717 = load.i64 %26713[2]
-  %26718 = call @std/utf8.IndexInvalid(%26715, %26716, %26717)
+  %26718 = call @std/strings.IndexInvalid(%26715, %26716, %26717)
   %26719 = const 97
   %26720 = const 97
   %26721 = const 97
@@ -38872,7 +38908,7 @@ b285:
   %26845 = load.i64 %26843[0]
   %26846 = load.i64 %26843[1]
   %26847 = load.i64 %26843[2]
-  %26848 = call @std/utf8.Valid(%26845, %26846, %26847)
+  %26848 = call @std/strings.Valid(%26845, %26846, %26847)
   call @rt.print_int(%26718)
   %26849 = const 32
   call @rt.print_char(%26849)
@@ -39247,7 +39283,7 @@ b288:
   %27115 = load.i64 %27113[0]
   %27116 = load.i64 %27113[1]
   %27117 = load.i64 %27113[2]
-  %27118 = call @std/utf8.IndexInvalid(%27115, %27116, %27117)
+  %27118 = call @std/strings.IndexInvalid(%27115, %27116, %27117)
   %27119 = const 97
   %27120 = const 97
   %27121 = const 97
@@ -39420,7 +39456,7 @@ b288:
   %27245 = load.i64 %27243[0]
   %27246 = load.i64 %27243[1]
   %27247 = load.i64 %27243[2]
-  %27248 = call @std/utf8.Valid(%27245, %27246, %27247)
+  %27248 = call @std/strings.Valid(%27245, %27246, %27247)
   call @rt.print_int(%27118)
   %27249 = const 32
   call @rt.print_char(%27249)
@@ -39795,7 +39831,7 @@ b291:
   %27515 = load.i64 %27513[0]
   %27516 = load.i64 %27513[1]
   %27517 = load.i64 %27513[2]
-  %27518 = call @std/utf8.IndexInvalid(%27515, %27516, %27517)
+  %27518 = call @std/strings.IndexInvalid(%27515, %27516, %27517)
   %27519 = const 97
   %27520 = const 97
   %27521 = const 97
@@ -39968,7 +40004,7 @@ b291:
   %27645 = load.i64 %27643[0]
   %27646 = load.i64 %27643[1]
   %27647 = load.i64 %27643[2]
-  %27648 = call @std/utf8.Valid(%27645, %27646, %27647)
+  %27648 = call @std/strings.Valid(%27645, %27646, %27647)
   call @rt.print_int(%27518)
   %27649 = const 32
   call @rt.print_char(%27649)
@@ -40343,7 +40379,7 @@ b294:
   %27915 = load.i64 %27913[0]
   %27916 = load.i64 %27913[1]
   %27917 = load.i64 %27913[2]
-  %27918 = call @std/utf8.IndexInvalid(%27915, %27916, %27917)
+  %27918 = call @std/strings.IndexInvalid(%27915, %27916, %27917)
   %27919 = const 97
   %27920 = const 97
   %27921 = const 97
@@ -40516,7 +40552,7 @@ b294:
   %28045 = load.i64 %28043[0]
   %28046 = load.i64 %28043[1]
   %28047 = load.i64 %28043[2]
-  %28048 = call @std/utf8.Valid(%28045, %28046, %28047)
+  %28048 = call @std/strings.Valid(%28045, %28046, %28047)
   call @rt.print_int(%27918)
   %28049 = const 32
   call @rt.print_char(%28049)
@@ -40891,7 +40927,7 @@ b297:
   %28315 = load.i64 %28313[0]
   %28316 = load.i64 %28313[1]
   %28317 = load.i64 %28313[2]
-  %28318 = call @std/utf8.IndexInvalid(%28315, %28316, %28317)
+  %28318 = call @std/strings.IndexInvalid(%28315, %28316, %28317)
   %28319 = const 97
   %28320 = const 97
   %28321 = const 97
@@ -41064,7 +41100,7 @@ b297:
   %28445 = load.i64 %28443[0]
   %28446 = load.i64 %28443[1]
   %28447 = load.i64 %28443[2]
-  %28448 = call @std/utf8.Valid(%28445, %28446, %28447)
+  %28448 = call @std/strings.Valid(%28445, %28446, %28447)
   call @rt.print_int(%28318)
   %28449 = const 32
   call @rt.print_char(%28449)
@@ -41439,7 +41475,7 @@ b300:
   %28715 = load.i64 %28713[0]
   %28716 = load.i64 %28713[1]
   %28717 = load.i64 %28713[2]
-  %28718 = call @std/utf8.IndexInvalid(%28715, %28716, %28717)
+  %28718 = call @std/strings.IndexInvalid(%28715, %28716, %28717)
   %28719 = const 97
   %28720 = const 97
   %28721 = const 97
@@ -41612,7 +41648,7 @@ b300:
   %28845 = load.i64 %28843[0]
   %28846 = load.i64 %28843[1]
   %28847 = load.i64 %28843[2]
-  %28848 = call @std/utf8.Valid(%28845, %28846, %28847)
+  %28848 = call @std/strings.Valid(%28845, %28846, %28847)
   call @rt.print_int(%28718)
   %28849 = const 32
   call @rt.print_char(%28849)
@@ -41987,7 +42023,7 @@ b303:
   %29115 = load.i64 %29113[0]
   %29116 = load.i64 %29113[1]
   %29117 = load.i64 %29113[2]
-  %29118 = call @std/utf8.IndexInvalid(%29115, %29116, %29117)
+  %29118 = call @std/strings.IndexInvalid(%29115, %29116, %29117)
   %29119 = const 97
   %29120 = const 97
   %29121 = const 97
@@ -42160,7 +42196,7 @@ b303:
   %29245 = load.i64 %29243[0]
   %29246 = load.i64 %29243[1]
   %29247 = load.i64 %29243[2]
-  %29248 = call @std/utf8.Valid(%29245, %29246, %29247)
+  %29248 = call @std/strings.Valid(%29245, %29246, %29247)
   call @rt.print_int(%29118)
   %29249 = const 32
   call @rt.print_char(%29249)
@@ -42535,7 +42571,7 @@ b306:
   %29515 = load.i64 %29513[0]
   %29516 = load.i64 %29513[1]
   %29517 = load.i64 %29513[2]
-  %29518 = call @std/utf8.IndexInvalid(%29515, %29516, %29517)
+  %29518 = call @std/strings.IndexInvalid(%29515, %29516, %29517)
   %29519 = const 97
   %29520 = const 97
   %29521 = const 97
@@ -42708,7 +42744,7 @@ b306:
   %29645 = load.i64 %29643[0]
   %29646 = load.i64 %29643[1]
   %29647 = load.i64 %29643[2]
-  %29648 = call @std/utf8.Valid(%29645, %29646, %29647)
+  %29648 = call @std/strings.Valid(%29645, %29646, %29647)
   call @rt.print_int(%29518)
   %29649 = const 32
   call @rt.print_char(%29649)
@@ -43083,7 +43119,7 @@ b309:
   %29915 = load.i64 %29913[0]
   %29916 = load.i64 %29913[1]
   %29917 = load.i64 %29913[2]
-  %29918 = call @std/utf8.IndexInvalid(%29915, %29916, %29917)
+  %29918 = call @std/strings.IndexInvalid(%29915, %29916, %29917)
   %29919 = const 97
   %29920 = const 97
   %29921 = const 97
@@ -43256,7 +43292,7 @@ b309:
   %30045 = load.i64 %30043[0]
   %30046 = load.i64 %30043[1]
   %30047 = load.i64 %30043[2]
-  %30048 = call @std/utf8.Valid(%30045, %30046, %30047)
+  %30048 = call @std/strings.Valid(%30045, %30046, %30047)
   call @rt.print_int(%29918)
   %30049 = const 32
   call @rt.print_char(%30049)
@@ -43631,7 +43667,7 @@ b312:
   %30315 = load.i64 %30313[0]
   %30316 = load.i64 %30313[1]
   %30317 = load.i64 %30313[2]
-  %30318 = call @std/utf8.IndexInvalid(%30315, %30316, %30317)
+  %30318 = call @std/strings.IndexInvalid(%30315, %30316, %30317)
   %30319 = const 97
   %30320 = const 97
   %30321 = const 97
@@ -43804,7 +43840,7 @@ b312:
   %30445 = load.i64 %30443[0]
   %30446 = load.i64 %30443[1]
   %30447 = load.i64 %30443[2]
-  %30448 = call @std/utf8.Valid(%30445, %30446, %30447)
+  %30448 = call @std/strings.Valid(%30445, %30446, %30447)
   call @rt.print_int(%30318)
   %30449 = const 32
   call @rt.print_char(%30449)
@@ -44179,7 +44215,7 @@ b315:
   %30715 = load.i64 %30713[0]
   %30716 = load.i64 %30713[1]
   %30717 = load.i64 %30713[2]
-  %30718 = call @std/utf8.IndexInvalid(%30715, %30716, %30717)
+  %30718 = call @std/strings.IndexInvalid(%30715, %30716, %30717)
   %30719 = const 97
   %30720 = const 97
   %30721 = const 97
@@ -44352,7 +44388,7 @@ b315:
   %30845 = load.i64 %30843[0]
   %30846 = load.i64 %30843[1]
   %30847 = load.i64 %30843[2]
-  %30848 = call @std/utf8.Valid(%30845, %30846, %30847)
+  %30848 = call @std/strings.Valid(%30845, %30846, %30847)
   call @rt.print_int(%30718)
   %30849 = const 32
   call @rt.print_char(%30849)
@@ -44727,7 +44763,7 @@ b318:
   %31115 = load.i64 %31113[0]
   %31116 = load.i64 %31113[1]
   %31117 = load.i64 %31113[2]
-  %31118 = call @std/utf8.IndexInvalid(%31115, %31116, %31117)
+  %31118 = call @std/strings.IndexInvalid(%31115, %31116, %31117)
   %31119 = const 97
   %31120 = const 97
   %31121 = const 97
@@ -44900,7 +44936,7 @@ b318:
   %31245 = load.i64 %31243[0]
   %31246 = load.i64 %31243[1]
   %31247 = load.i64 %31243[2]
-  %31248 = call @std/utf8.Valid(%31245, %31246, %31247)
+  %31248 = call @std/strings.Valid(%31245, %31246, %31247)
   call @rt.print_int(%31118)
   %31249 = const 32
   call @rt.print_char(%31249)
@@ -45275,7 +45311,7 @@ b321:
   %31515 = load.i64 %31513[0]
   %31516 = load.i64 %31513[1]
   %31517 = load.i64 %31513[2]
-  %31518 = call @std/utf8.IndexInvalid(%31515, %31516, %31517)
+  %31518 = call @std/strings.IndexInvalid(%31515, %31516, %31517)
   %31519 = const 97
   %31520 = const 97
   %31521 = const 97
@@ -45448,7 +45484,7 @@ b321:
   %31645 = load.i64 %31643[0]
   %31646 = load.i64 %31643[1]
   %31647 = load.i64 %31643[2]
-  %31648 = call @std/utf8.Valid(%31645, %31646, %31647)
+  %31648 = call @std/strings.Valid(%31645, %31646, %31647)
   call @rt.print_int(%31518)
   %31649 = const 32
   call @rt.print_char(%31649)
@@ -45823,7 +45859,7 @@ b324:
   %31915 = load.i64 %31913[0]
   %31916 = load.i64 %31913[1]
   %31917 = load.i64 %31913[2]
-  %31918 = call @std/utf8.IndexInvalid(%31915, %31916, %31917)
+  %31918 = call @std/strings.IndexInvalid(%31915, %31916, %31917)
   %31919 = const 97
   %31920 = const 97
   %31921 = const 97
@@ -45996,7 +46032,7 @@ b324:
   %32045 = load.i64 %32043[0]
   %32046 = load.i64 %32043[1]
   %32047 = load.i64 %32043[2]
-  %32048 = call @std/utf8.Valid(%32045, %32046, %32047)
+  %32048 = call @std/strings.Valid(%32045, %32046, %32047)
   call @rt.print_int(%31918)
   %32049 = const 32
   call @rt.print_char(%32049)
@@ -46371,7 +46407,7 @@ b327:
   %32315 = load.i64 %32313[0]
   %32316 = load.i64 %32313[1]
   %32317 = load.i64 %32313[2]
-  %32318 = call @std/utf8.IndexInvalid(%32315, %32316, %32317)
+  %32318 = call @std/strings.IndexInvalid(%32315, %32316, %32317)
   %32319 = const 97
   %32320 = const 97
   %32321 = const 97
@@ -46544,7 +46580,7 @@ b327:
   %32445 = load.i64 %32443[0]
   %32446 = load.i64 %32443[1]
   %32447 = load.i64 %32443[2]
-  %32448 = call @std/utf8.Valid(%32445, %32446, %32447)
+  %32448 = call @std/strings.Valid(%32445, %32446, %32447)
   call @rt.print_int(%32318)
   %32449 = const 32
   call @rt.print_char(%32449)
@@ -46919,7 +46955,7 @@ b330:
   %32715 = load.i64 %32713[0]
   %32716 = load.i64 %32713[1]
   %32717 = load.i64 %32713[2]
-  %32718 = call @std/utf8.IndexInvalid(%32715, %32716, %32717)
+  %32718 = call @std/strings.IndexInvalid(%32715, %32716, %32717)
   %32719 = const 97
   %32720 = const 97
   %32721 = const 97
@@ -47092,7 +47128,7 @@ b330:
   %32845 = load.i64 %32843[0]
   %32846 = load.i64 %32843[1]
   %32847 = load.i64 %32843[2]
-  %32848 = call @std/utf8.Valid(%32845, %32846, %32847)
+  %32848 = call @std/strings.Valid(%32845, %32846, %32847)
   call @rt.print_int(%32718)
   %32849 = const 32
   call @rt.print_char(%32849)
@@ -47467,7 +47503,7 @@ b333:
   %33115 = load.i64 %33113[0]
   %33116 = load.i64 %33113[1]
   %33117 = load.i64 %33113[2]
-  %33118 = call @std/utf8.IndexInvalid(%33115, %33116, %33117)
+  %33118 = call @std/strings.IndexInvalid(%33115, %33116, %33117)
   %33119 = const 97
   %33120 = const 97
   %33121 = const 97
@@ -47640,7 +47676,7 @@ b333:
   %33245 = load.i64 %33243[0]
   %33246 = load.i64 %33243[1]
   %33247 = load.i64 %33243[2]
-  %33248 = call @std/utf8.Valid(%33245, %33246, %33247)
+  %33248 = call @std/strings.Valid(%33245, %33246, %33247)
   call @rt.print_int(%33118)
   %33249 = const 32
   call @rt.print_char(%33249)
@@ -48015,7 +48051,7 @@ b336:
   %33515 = load.i64 %33513[0]
   %33516 = load.i64 %33513[1]
   %33517 = load.i64 %33513[2]
-  %33518 = call @std/utf8.IndexInvalid(%33515, %33516, %33517)
+  %33518 = call @std/strings.IndexInvalid(%33515, %33516, %33517)
   %33519 = const 97
   %33520 = const 97
   %33521 = const 97
@@ -48188,7 +48224,7 @@ b336:
   %33645 = load.i64 %33643[0]
   %33646 = load.i64 %33643[1]
   %33647 = load.i64 %33643[2]
-  %33648 = call @std/utf8.Valid(%33645, %33646, %33647)
+  %33648 = call @std/strings.Valid(%33645, %33646, %33647)
   call @rt.print_int(%33518)
   %33649 = const 32
   call @rt.print_char(%33649)
@@ -48563,7 +48599,7 @@ b339:
   %33915 = load.i64 %33913[0]
   %33916 = load.i64 %33913[1]
   %33917 = load.i64 %33913[2]
-  %33918 = call @std/utf8.IndexInvalid(%33915, %33916, %33917)
+  %33918 = call @std/strings.IndexInvalid(%33915, %33916, %33917)
   %33919 = const 97
   %33920 = const 97
   %33921 = const 97
@@ -48736,7 +48772,7 @@ b339:
   %34045 = load.i64 %34043[0]
   %34046 = load.i64 %34043[1]
   %34047 = load.i64 %34043[2]
-  %34048 = call @std/utf8.Valid(%34045, %34046, %34047)
+  %34048 = call @std/strings.Valid(%34045, %34046, %34047)
   call @rt.print_int(%33918)
   %34049 = const 32
   call @rt.print_char(%34049)
@@ -49111,7 +49147,7 @@ b342:
   %34315 = load.i64 %34313[0]
   %34316 = load.i64 %34313[1]
   %34317 = load.i64 %34313[2]
-  %34318 = call @std/utf8.IndexInvalid(%34315, %34316, %34317)
+  %34318 = call @std/strings.IndexInvalid(%34315, %34316, %34317)
   %34319 = const 97
   %34320 = const 97
   %34321 = const 97
@@ -49284,7 +49320,7 @@ b342:
   %34445 = load.i64 %34443[0]
   %34446 = load.i64 %34443[1]
   %34447 = load.i64 %34443[2]
-  %34448 = call @std/utf8.Valid(%34445, %34446, %34447)
+  %34448 = call @std/strings.Valid(%34445, %34446, %34447)
   call @rt.print_int(%34318)
   %34449 = const 32
   call @rt.print_char(%34449)
@@ -49659,7 +49695,7 @@ b345:
   %34715 = load.i64 %34713[0]
   %34716 = load.i64 %34713[1]
   %34717 = load.i64 %34713[2]
-  %34718 = call @std/utf8.IndexInvalid(%34715, %34716, %34717)
+  %34718 = call @std/strings.IndexInvalid(%34715, %34716, %34717)
   %34719 = const 97
   %34720 = const 97
   %34721 = const 97
@@ -49832,7 +49868,7 @@ b345:
   %34845 = load.i64 %34843[0]
   %34846 = load.i64 %34843[1]
   %34847 = load.i64 %34843[2]
-  %34848 = call @std/utf8.Valid(%34845, %34846, %34847)
+  %34848 = call @std/strings.Valid(%34845, %34846, %34847)
   call @rt.print_int(%34718)
   %34849 = const 32
   call @rt.print_char(%34849)
@@ -50207,7 +50243,7 @@ b348:
   %35115 = load.i64 %35113[0]
   %35116 = load.i64 %35113[1]
   %35117 = load.i64 %35113[2]
-  %35118 = call @std/utf8.IndexInvalid(%35115, %35116, %35117)
+  %35118 = call @std/strings.IndexInvalid(%35115, %35116, %35117)
   %35119 = const 97
   %35120 = const 97
   %35121 = const 97
@@ -50380,7 +50416,7 @@ b348:
   %35245 = load.i64 %35243[0]
   %35246 = load.i64 %35243[1]
   %35247 = load.i64 %35243[2]
-  %35248 = call @std/utf8.Valid(%35245, %35246, %35247)
+  %35248 = call @std/strings.Valid(%35245, %35246, %35247)
   call @rt.print_int(%35118)
   %35249 = const 32
   call @rt.print_char(%35249)
@@ -50755,7 +50791,7 @@ b351:
   %35515 = load.i64 %35513[0]
   %35516 = load.i64 %35513[1]
   %35517 = load.i64 %35513[2]
-  %35518 = call @std/utf8.IndexInvalid(%35515, %35516, %35517)
+  %35518 = call @std/strings.IndexInvalid(%35515, %35516, %35517)
   %35519 = const 97
   %35520 = const 97
   %35521 = const 97
@@ -50928,7 +50964,7 @@ b351:
   %35645 = load.i64 %35643[0]
   %35646 = load.i64 %35643[1]
   %35647 = load.i64 %35643[2]
-  %35648 = call @std/utf8.Valid(%35645, %35646, %35647)
+  %35648 = call @std/strings.Valid(%35645, %35646, %35647)
   call @rt.print_int(%35518)
   %35649 = const 32
   call @rt.print_char(%35649)
@@ -51303,7 +51339,7 @@ b354:
   %35915 = load.i64 %35913[0]
   %35916 = load.i64 %35913[1]
   %35917 = load.i64 %35913[2]
-  %35918 = call @std/utf8.IndexInvalid(%35915, %35916, %35917)
+  %35918 = call @std/strings.IndexInvalid(%35915, %35916, %35917)
   %35919 = const 97
   %35920 = const 97
   %35921 = const 97
@@ -51476,7 +51512,7 @@ b354:
   %36045 = load.i64 %36043[0]
   %36046 = load.i64 %36043[1]
   %36047 = load.i64 %36043[2]
-  %36048 = call @std/utf8.Valid(%36045, %36046, %36047)
+  %36048 = call @std/strings.Valid(%36045, %36046, %36047)
   call @rt.print_int(%35918)
   %36049 = const 32
   call @rt.print_char(%36049)
@@ -51851,7 +51887,7 @@ b357:
   %36315 = load.i64 %36313[0]
   %36316 = load.i64 %36313[1]
   %36317 = load.i64 %36313[2]
-  %36318 = call @std/utf8.IndexInvalid(%36315, %36316, %36317)
+  %36318 = call @std/strings.IndexInvalid(%36315, %36316, %36317)
   %36319 = const 97
   %36320 = const 97
   %36321 = const 97
@@ -52024,7 +52060,7 @@ b357:
   %36445 = load.i64 %36443[0]
   %36446 = load.i64 %36443[1]
   %36447 = load.i64 %36443[2]
-  %36448 = call @std/utf8.Valid(%36445, %36446, %36447)
+  %36448 = call @std/strings.Valid(%36445, %36446, %36447)
   call @rt.print_int(%36318)
   %36449 = const 32
   call @rt.print_char(%36449)
@@ -52399,7 +52435,7 @@ b360:
   %36715 = load.i64 %36713[0]
   %36716 = load.i64 %36713[1]
   %36717 = load.i64 %36713[2]
-  %36718 = call @std/utf8.IndexInvalid(%36715, %36716, %36717)
+  %36718 = call @std/strings.IndexInvalid(%36715, %36716, %36717)
   %36719 = const 97
   %36720 = const 97
   %36721 = const 97
@@ -52572,7 +52608,7 @@ b360:
   %36845 = load.i64 %36843[0]
   %36846 = load.i64 %36843[1]
   %36847 = load.i64 %36843[2]
-  %36848 = call @std/utf8.Valid(%36845, %36846, %36847)
+  %36848 = call @std/strings.Valid(%36845, %36846, %36847)
   call @rt.print_int(%36718)
   %36849 = const 32
   call @rt.print_char(%36849)
@@ -52947,7 +52983,7 @@ b363:
   %37115 = load.i64 %37113[0]
   %37116 = load.i64 %37113[1]
   %37117 = load.i64 %37113[2]
-  %37118 = call @std/utf8.IndexInvalid(%37115, %37116, %37117)
+  %37118 = call @std/strings.IndexInvalid(%37115, %37116, %37117)
   %37119 = const 97
   %37120 = const 97
   %37121 = const 97
@@ -53120,7 +53156,7 @@ b363:
   %37245 = load.i64 %37243[0]
   %37246 = load.i64 %37243[1]
   %37247 = load.i64 %37243[2]
-  %37248 = call @std/utf8.Valid(%37245, %37246, %37247)
+  %37248 = call @std/strings.Valid(%37245, %37246, %37247)
   call @rt.print_int(%37118)
   %37249 = const 32
   call @rt.print_char(%37249)
@@ -53495,7 +53531,7 @@ b366:
   %37515 = load.i64 %37513[0]
   %37516 = load.i64 %37513[1]
   %37517 = load.i64 %37513[2]
-  %37518 = call @std/utf8.IndexInvalid(%37515, %37516, %37517)
+  %37518 = call @std/strings.IndexInvalid(%37515, %37516, %37517)
   %37519 = const 97
   %37520 = const 97
   %37521 = const 97
@@ -53668,7 +53704,7 @@ b366:
   %37645 = load.i64 %37643[0]
   %37646 = load.i64 %37643[1]
   %37647 = load.i64 %37643[2]
-  %37648 = call @std/utf8.Valid(%37645, %37646, %37647)
+  %37648 = call @std/strings.Valid(%37645, %37646, %37647)
   call @rt.print_int(%37518)
   %37649 = const 32
   call @rt.print_char(%37649)
@@ -54043,7 +54079,7 @@ b369:
   %37915 = load.i64 %37913[0]
   %37916 = load.i64 %37913[1]
   %37917 = load.i64 %37913[2]
-  %37918 = call @std/utf8.IndexInvalid(%37915, %37916, %37917)
+  %37918 = call @std/strings.IndexInvalid(%37915, %37916, %37917)
   %37919 = const 97
   %37920 = const 97
   %37921 = const 97
@@ -54216,7 +54252,7 @@ b369:
   %38045 = load.i64 %38043[0]
   %38046 = load.i64 %38043[1]
   %38047 = load.i64 %38043[2]
-  %38048 = call @std/utf8.Valid(%38045, %38046, %38047)
+  %38048 = call @std/strings.Valid(%38045, %38046, %38047)
   call @rt.print_int(%37918)
   %38049 = const 32
   call @rt.print_char(%38049)
@@ -54591,7 +54627,7 @@ b372:
   %38315 = load.i64 %38313[0]
   %38316 = load.i64 %38313[1]
   %38317 = load.i64 %38313[2]
-  %38318 = call @std/utf8.IndexInvalid(%38315, %38316, %38317)
+  %38318 = call @std/strings.IndexInvalid(%38315, %38316, %38317)
   %38319 = const 97
   %38320 = const 97
   %38321 = const 97
@@ -54764,7 +54800,7 @@ b372:
   %38445 = load.i64 %38443[0]
   %38446 = load.i64 %38443[1]
   %38447 = load.i64 %38443[2]
-  %38448 = call @std/utf8.Valid(%38445, %38446, %38447)
+  %38448 = call @std/strings.Valid(%38445, %38446, %38447)
   call @rt.print_int(%38318)
   %38449 = const 32
   call @rt.print_char(%38449)
@@ -55139,7 +55175,7 @@ b375:
   %38715 = load.i64 %38713[0]
   %38716 = load.i64 %38713[1]
   %38717 = load.i64 %38713[2]
-  %38718 = call @std/utf8.IndexInvalid(%38715, %38716, %38717)
+  %38718 = call @std/strings.IndexInvalid(%38715, %38716, %38717)
   %38719 = const 97
   %38720 = const 97
   %38721 = const 97
@@ -55312,7 +55348,7 @@ b375:
   %38845 = load.i64 %38843[0]
   %38846 = load.i64 %38843[1]
   %38847 = load.i64 %38843[2]
-  %38848 = call @std/utf8.Valid(%38845, %38846, %38847)
+  %38848 = call @std/strings.Valid(%38845, %38846, %38847)
   call @rt.print_int(%38718)
   %38849 = const 32
   call @rt.print_char(%38849)
@@ -55687,7 +55723,7 @@ b378:
   %39115 = load.i64 %39113[0]
   %39116 = load.i64 %39113[1]
   %39117 = load.i64 %39113[2]
-  %39118 = call @std/utf8.IndexInvalid(%39115, %39116, %39117)
+  %39118 = call @std/strings.IndexInvalid(%39115, %39116, %39117)
   %39119 = const 97
   %39120 = const 97
   %39121 = const 97
@@ -55860,7 +55896,7 @@ b378:
   %39245 = load.i64 %39243[0]
   %39246 = load.i64 %39243[1]
   %39247 = load.i64 %39243[2]
-  %39248 = call @std/utf8.Valid(%39245, %39246, %39247)
+  %39248 = call @std/strings.Valid(%39245, %39246, %39247)
   call @rt.print_int(%39118)
   %39249 = const 32
   call @rt.print_char(%39249)
@@ -56235,7 +56271,7 @@ b381:
   %39515 = load.i64 %39513[0]
   %39516 = load.i64 %39513[1]
   %39517 = load.i64 %39513[2]
-  %39518 = call @std/utf8.IndexInvalid(%39515, %39516, %39517)
+  %39518 = call @std/strings.IndexInvalid(%39515, %39516, %39517)
   %39519 = const 97
   %39520 = const 97
   %39521 = const 97
@@ -56408,7 +56444,7 @@ b381:
   %39645 = load.i64 %39643[0]
   %39646 = load.i64 %39643[1]
   %39647 = load.i64 %39643[2]
-  %39648 = call @std/utf8.Valid(%39645, %39646, %39647)
+  %39648 = call @std/strings.Valid(%39645, %39646, %39647)
   call @rt.print_int(%39518)
   %39649 = const 32
   call @rt.print_char(%39649)
@@ -56783,7 +56819,7 @@ b384:
   %39915 = load.i64 %39913[0]
   %39916 = load.i64 %39913[1]
   %39917 = load.i64 %39913[2]
-  %39918 = call @std/utf8.IndexInvalid(%39915, %39916, %39917)
+  %39918 = call @std/strings.IndexInvalid(%39915, %39916, %39917)
   %39919 = const 97
   %39920 = const 97
   %39921 = const 97
@@ -56956,7 +56992,7 @@ b384:
   %40045 = load.i64 %40043[0]
   %40046 = load.i64 %40043[1]
   %40047 = load.i64 %40043[2]
-  %40048 = call @std/utf8.Valid(%40045, %40046, %40047)
+  %40048 = call @std/strings.Valid(%40045, %40046, %40047)
   call @rt.print_int(%39918)
   %40049 = const 32
   call @rt.print_char(%40049)
@@ -57331,7 +57367,7 @@ b387:
   %40315 = load.i64 %40313[0]
   %40316 = load.i64 %40313[1]
   %40317 = load.i64 %40313[2]
-  %40318 = call @std/utf8.IndexInvalid(%40315, %40316, %40317)
+  %40318 = call @std/strings.IndexInvalid(%40315, %40316, %40317)
   %40319 = const 97
   %40320 = const 97
   %40321 = const 97
@@ -57504,7 +57540,7 @@ b387:
   %40445 = load.i64 %40443[0]
   %40446 = load.i64 %40443[1]
   %40447 = load.i64 %40443[2]
-  %40448 = call @std/utf8.Valid(%40445, %40446, %40447)
+  %40448 = call @std/strings.Valid(%40445, %40446, %40447)
   call @rt.print_int(%40318)
   %40449 = const 32
   call @rt.print_char(%40449)
@@ -57879,7 +57915,7 @@ b390:
   %40715 = load.i64 %40713[0]
   %40716 = load.i64 %40713[1]
   %40717 = load.i64 %40713[2]
-  %40718 = call @std/utf8.IndexInvalid(%40715, %40716, %40717)
+  %40718 = call @std/strings.IndexInvalid(%40715, %40716, %40717)
   %40719 = const 97
   %40720 = const 97
   %40721 = const 97
@@ -58052,7 +58088,7 @@ b390:
   %40845 = load.i64 %40843[0]
   %40846 = load.i64 %40843[1]
   %40847 = load.i64 %40843[2]
-  %40848 = call @std/utf8.Valid(%40845, %40846, %40847)
+  %40848 = call @std/strings.Valid(%40845, %40846, %40847)
   call @rt.print_int(%40718)
   %40849 = const 32
   call @rt.print_char(%40849)
@@ -58427,7 +58463,7 @@ b393:
   %41115 = load.i64 %41113[0]
   %41116 = load.i64 %41113[1]
   %41117 = load.i64 %41113[2]
-  %41118 = call @std/utf8.IndexInvalid(%41115, %41116, %41117)
+  %41118 = call @std/strings.IndexInvalid(%41115, %41116, %41117)
   %41119 = const 97
   %41120 = const 97
   %41121 = const 97
@@ -58600,7 +58636,7 @@ b393:
   %41245 = load.i64 %41243[0]
   %41246 = load.i64 %41243[1]
   %41247 = load.i64 %41243[2]
-  %41248 = call @std/utf8.Valid(%41245, %41246, %41247)
+  %41248 = call @std/strings.Valid(%41245, %41246, %41247)
   call @rt.print_int(%41118)
   %41249 = const 32
   call @rt.print_char(%41249)
@@ -58975,7 +59011,7 @@ b396:
   %41515 = load.i64 %41513[0]
   %41516 = load.i64 %41513[1]
   %41517 = load.i64 %41513[2]
-  %41518 = call @std/utf8.IndexInvalid(%41515, %41516, %41517)
+  %41518 = call @std/strings.IndexInvalid(%41515, %41516, %41517)
   %41519 = const 97
   %41520 = const 97
   %41521 = const 97
@@ -59148,7 +59184,7 @@ b396:
   %41645 = load.i64 %41643[0]
   %41646 = load.i64 %41643[1]
   %41647 = load.i64 %41643[2]
-  %41648 = call @std/utf8.Valid(%41645, %41646, %41647)
+  %41648 = call @std/strings.Valid(%41645, %41646, %41647)
   call @rt.print_int(%41518)
   %41649 = const 32
   call @rt.print_char(%41649)
@@ -59523,7 +59559,7 @@ b399:
   %41915 = load.i64 %41913[0]
   %41916 = load.i64 %41913[1]
   %41917 = load.i64 %41913[2]
-  %41918 = call @std/utf8.IndexInvalid(%41915, %41916, %41917)
+  %41918 = call @std/strings.IndexInvalid(%41915, %41916, %41917)
   %41919 = const 97
   %41920 = const 97
   %41921 = const 97
@@ -59696,7 +59732,7 @@ b399:
   %42045 = load.i64 %42043[0]
   %42046 = load.i64 %42043[1]
   %42047 = load.i64 %42043[2]
-  %42048 = call @std/utf8.Valid(%42045, %42046, %42047)
+  %42048 = call @std/strings.Valid(%42045, %42046, %42047)
   call @rt.print_int(%41918)
   %42049 = const 32
   call @rt.print_char(%42049)
@@ -60071,7 +60107,7 @@ b402:
   %42315 = load.i64 %42313[0]
   %42316 = load.i64 %42313[1]
   %42317 = load.i64 %42313[2]
-  %42318 = call @std/utf8.IndexInvalid(%42315, %42316, %42317)
+  %42318 = call @std/strings.IndexInvalid(%42315, %42316, %42317)
   %42319 = const 97
   %42320 = const 97
   %42321 = const 97
@@ -60244,7 +60280,7 @@ b402:
   %42445 = load.i64 %42443[0]
   %42446 = load.i64 %42443[1]
   %42447 = load.i64 %42443[2]
-  %42448 = call @std/utf8.Valid(%42445, %42446, %42447)
+  %42448 = call @std/strings.Valid(%42445, %42446, %42447)
   call @rt.print_int(%42318)
   %42449 = const 32
   call @rt.print_char(%42449)
@@ -60619,7 +60655,7 @@ b405:
   %42715 = load.i64 %42713[0]
   %42716 = load.i64 %42713[1]
   %42717 = load.i64 %42713[2]
-  %42718 = call @std/utf8.IndexInvalid(%42715, %42716, %42717)
+  %42718 = call @std/strings.IndexInvalid(%42715, %42716, %42717)
   %42719 = const 97
   %42720 = const 97
   %42721 = const 97
@@ -60792,7 +60828,7 @@ b405:
   %42845 = load.i64 %42843[0]
   %42846 = load.i64 %42843[1]
   %42847 = load.i64 %42843[2]
-  %42848 = call @std/utf8.Valid(%42845, %42846, %42847)
+  %42848 = call @std/strings.Valid(%42845, %42846, %42847)
   call @rt.print_int(%42718)
   %42849 = const 32
   call @rt.print_char(%42849)
@@ -61167,7 +61203,7 @@ b408:
   %43115 = load.i64 %43113[0]
   %43116 = load.i64 %43113[1]
   %43117 = load.i64 %43113[2]
-  %43118 = call @std/utf8.IndexInvalid(%43115, %43116, %43117)
+  %43118 = call @std/strings.IndexInvalid(%43115, %43116, %43117)
   %43119 = const 97
   %43120 = const 97
   %43121 = const 97
@@ -61340,7 +61376,7 @@ b408:
   %43245 = load.i64 %43243[0]
   %43246 = load.i64 %43243[1]
   %43247 = load.i64 %43243[2]
-  %43248 = call @std/utf8.Valid(%43245, %43246, %43247)
+  %43248 = call @std/strings.Valid(%43245, %43246, %43247)
   call @rt.print_int(%43118)
   %43249 = const 32
   call @rt.print_char(%43249)
@@ -61715,7 +61751,7 @@ b411:
   %43515 = load.i64 %43513[0]
   %43516 = load.i64 %43513[1]
   %43517 = load.i64 %43513[2]
-  %43518 = call @std/utf8.IndexInvalid(%43515, %43516, %43517)
+  %43518 = call @std/strings.IndexInvalid(%43515, %43516, %43517)
   %43519 = const 97
   %43520 = const 97
   %43521 = const 97
@@ -61888,7 +61924,7 @@ b411:
   %43645 = load.i64 %43643[0]
   %43646 = load.i64 %43643[1]
   %43647 = load.i64 %43643[2]
-  %43648 = call @std/utf8.Valid(%43645, %43646, %43647)
+  %43648 = call @std/strings.Valid(%43645, %43646, %43647)
   call @rt.print_int(%43518)
   %43649 = const 32
   call @rt.print_char(%43649)
@@ -62263,7 +62299,7 @@ b414:
   %43915 = load.i64 %43913[0]
   %43916 = load.i64 %43913[1]
   %43917 = load.i64 %43913[2]
-  %43918 = call @std/utf8.IndexInvalid(%43915, %43916, %43917)
+  %43918 = call @std/strings.IndexInvalid(%43915, %43916, %43917)
   %43919 = const 97
   %43920 = const 97
   %43921 = const 97
@@ -62436,7 +62472,7 @@ b414:
   %44045 = load.i64 %44043[0]
   %44046 = load.i64 %44043[1]
   %44047 = load.i64 %44043[2]
-  %44048 = call @std/utf8.Valid(%44045, %44046, %44047)
+  %44048 = call @std/strings.Valid(%44045, %44046, %44047)
   call @rt.print_int(%43918)
   %44049 = const 32
   call @rt.print_char(%44049)
@@ -62811,7 +62847,7 @@ b417:
   %44315 = load.i64 %44313[0]
   %44316 = load.i64 %44313[1]
   %44317 = load.i64 %44313[2]
-  %44318 = call @std/utf8.IndexInvalid(%44315, %44316, %44317)
+  %44318 = call @std/strings.IndexInvalid(%44315, %44316, %44317)
   %44319 = const 97
   %44320 = const 97
   %44321 = const 97
@@ -62984,7 +63020,7 @@ b417:
   %44445 = load.i64 %44443[0]
   %44446 = load.i64 %44443[1]
   %44447 = load.i64 %44443[2]
-  %44448 = call @std/utf8.Valid(%44445, %44446, %44447)
+  %44448 = call @std/strings.Valid(%44445, %44446, %44447)
   call @rt.print_int(%44318)
   %44449 = const 32
   call @rt.print_char(%44449)
@@ -63359,7 +63395,7 @@ b420:
   %44715 = load.i64 %44713[0]
   %44716 = load.i64 %44713[1]
   %44717 = load.i64 %44713[2]
-  %44718 = call @std/utf8.IndexInvalid(%44715, %44716, %44717)
+  %44718 = call @std/strings.IndexInvalid(%44715, %44716, %44717)
   %44719 = const 97
   %44720 = const 97
   %44721 = const 97
@@ -63532,7 +63568,7 @@ b420:
   %44845 = load.i64 %44843[0]
   %44846 = load.i64 %44843[1]
   %44847 = load.i64 %44843[2]
-  %44848 = call @std/utf8.Valid(%44845, %44846, %44847)
+  %44848 = call @std/strings.Valid(%44845, %44846, %44847)
   call @rt.print_int(%44718)
   %44849 = const 32
   call @rt.print_char(%44849)
@@ -63907,7 +63943,7 @@ b423:
   %45115 = load.i64 %45113[0]
   %45116 = load.i64 %45113[1]
   %45117 = load.i64 %45113[2]
-  %45118 = call @std/utf8.IndexInvalid(%45115, %45116, %45117)
+  %45118 = call @std/strings.IndexInvalid(%45115, %45116, %45117)
   %45119 = const 97
   %45120 = const 97
   %45121 = const 97
@@ -64080,7 +64116,7 @@ b423:
   %45245 = load.i64 %45243[0]
   %45246 = load.i64 %45243[1]
   %45247 = load.i64 %45243[2]
-  %45248 = call @std/utf8.Valid(%45245, %45246, %45247)
+  %45248 = call @std/strings.Valid(%45245, %45246, %45247)
   call @rt.print_int(%45118)
   %45249 = const 32
   call @rt.print_char(%45249)
@@ -64455,7 +64491,7 @@ b426:
   %45515 = load.i64 %45513[0]
   %45516 = load.i64 %45513[1]
   %45517 = load.i64 %45513[2]
-  %45518 = call @std/utf8.IndexInvalid(%45515, %45516, %45517)
+  %45518 = call @std/strings.IndexInvalid(%45515, %45516, %45517)
   %45519 = const 97
   %45520 = const 97
   %45521 = const 97
@@ -64628,7 +64664,7 @@ b426:
   %45645 = load.i64 %45643[0]
   %45646 = load.i64 %45643[1]
   %45647 = load.i64 %45643[2]
-  %45648 = call @std/utf8.Valid(%45645, %45646, %45647)
+  %45648 = call @std/strings.Valid(%45645, %45646, %45647)
   call @rt.print_int(%45518)
   %45649 = const 32
   call @rt.print_char(%45649)
@@ -65003,7 +65039,7 @@ b429:
   %45915 = load.i64 %45913[0]
   %45916 = load.i64 %45913[1]
   %45917 = load.i64 %45913[2]
-  %45918 = call @std/utf8.IndexInvalid(%45915, %45916, %45917)
+  %45918 = call @std/strings.IndexInvalid(%45915, %45916, %45917)
   %45919 = const 97
   %45920 = const 97
   %45921 = const 97
@@ -65176,7 +65212,7 @@ b429:
   %46045 = load.i64 %46043[0]
   %46046 = load.i64 %46043[1]
   %46047 = load.i64 %46043[2]
-  %46048 = call @std/utf8.Valid(%46045, %46046, %46047)
+  %46048 = call @std/strings.Valid(%46045, %46046, %46047)
   call @rt.print_int(%45918)
   %46049 = const 32
   call @rt.print_char(%46049)
@@ -65551,7 +65587,7 @@ b432:
   %46315 = load.i64 %46313[0]
   %46316 = load.i64 %46313[1]
   %46317 = load.i64 %46313[2]
-  %46318 = call @std/utf8.IndexInvalid(%46315, %46316, %46317)
+  %46318 = call @std/strings.IndexInvalid(%46315, %46316, %46317)
   %46319 = const 97
   %46320 = const 97
   %46321 = const 97
@@ -65724,7 +65760,7 @@ b432:
   %46445 = load.i64 %46443[0]
   %46446 = load.i64 %46443[1]
   %46447 = load.i64 %46443[2]
-  %46448 = call @std/utf8.Valid(%46445, %46446, %46447)
+  %46448 = call @std/strings.Valid(%46445, %46446, %46447)
   call @rt.print_int(%46318)
   %46449 = const 32
   call @rt.print_char(%46449)
@@ -66099,7 +66135,7 @@ b435:
   %46715 = load.i64 %46713[0]
   %46716 = load.i64 %46713[1]
   %46717 = load.i64 %46713[2]
-  %46718 = call @std/utf8.IndexInvalid(%46715, %46716, %46717)
+  %46718 = call @std/strings.IndexInvalid(%46715, %46716, %46717)
   %46719 = const 97
   %46720 = const 97
   %46721 = const 97
@@ -66272,7 +66308,7 @@ b435:
   %46845 = load.i64 %46843[0]
   %46846 = load.i64 %46843[1]
   %46847 = load.i64 %46843[2]
-  %46848 = call @std/utf8.Valid(%46845, %46846, %46847)
+  %46848 = call @std/strings.Valid(%46845, %46846, %46847)
   call @rt.print_int(%46718)
   %46849 = const 32
   call @rt.print_char(%46849)
@@ -66647,7 +66683,7 @@ b438:
   %47115 = load.i64 %47113[0]
   %47116 = load.i64 %47113[1]
   %47117 = load.i64 %47113[2]
-  %47118 = call @std/utf8.IndexInvalid(%47115, %47116, %47117)
+  %47118 = call @std/strings.IndexInvalid(%47115, %47116, %47117)
   %47119 = const 97
   %47120 = const 97
   %47121 = const 97
@@ -66820,7 +66856,7 @@ b438:
   %47245 = load.i64 %47243[0]
   %47246 = load.i64 %47243[1]
   %47247 = load.i64 %47243[2]
-  %47248 = call @std/utf8.Valid(%47245, %47246, %47247)
+  %47248 = call @std/strings.Valid(%47245, %47246, %47247)
   call @rt.print_int(%47118)
   %47249 = const 32
   call @rt.print_char(%47249)
@@ -67195,7 +67231,7 @@ b441:
   %47515 = load.i64 %47513[0]
   %47516 = load.i64 %47513[1]
   %47517 = load.i64 %47513[2]
-  %47518 = call @std/utf8.IndexInvalid(%47515, %47516, %47517)
+  %47518 = call @std/strings.IndexInvalid(%47515, %47516, %47517)
   %47519 = const 97
   %47520 = const 97
   %47521 = const 97
@@ -67368,7 +67404,7 @@ b441:
   %47645 = load.i64 %47643[0]
   %47646 = load.i64 %47643[1]
   %47647 = load.i64 %47643[2]
-  %47648 = call @std/utf8.Valid(%47645, %47646, %47647)
+  %47648 = call @std/strings.Valid(%47645, %47646, %47647)
   call @rt.print_int(%47518)
   %47649 = const 32
   call @rt.print_char(%47649)
@@ -67743,7 +67779,7 @@ b444:
   %47915 = load.i64 %47913[0]
   %47916 = load.i64 %47913[1]
   %47917 = load.i64 %47913[2]
-  %47918 = call @std/utf8.IndexInvalid(%47915, %47916, %47917)
+  %47918 = call @std/strings.IndexInvalid(%47915, %47916, %47917)
   %47919 = const 97
   %47920 = const 97
   %47921 = const 97
@@ -67916,7 +67952,7 @@ b444:
   %48045 = load.i64 %48043[0]
   %48046 = load.i64 %48043[1]
   %48047 = load.i64 %48043[2]
-  %48048 = call @std/utf8.Valid(%48045, %48046, %48047)
+  %48048 = call @std/strings.Valid(%48045, %48046, %48047)
   call @rt.print_int(%47918)
   %48049 = const 32
   call @rt.print_char(%48049)
@@ -68291,7 +68327,7 @@ b447:
   %48315 = load.i64 %48313[0]
   %48316 = load.i64 %48313[1]
   %48317 = load.i64 %48313[2]
-  %48318 = call @std/utf8.IndexInvalid(%48315, %48316, %48317)
+  %48318 = call @std/strings.IndexInvalid(%48315, %48316, %48317)
   %48319 = const 97
   %48320 = const 97
   %48321 = const 97
@@ -68464,7 +68500,7 @@ b447:
   %48445 = load.i64 %48443[0]
   %48446 = load.i64 %48443[1]
   %48447 = load.i64 %48443[2]
-  %48448 = call @std/utf8.Valid(%48445, %48446, %48447)
+  %48448 = call @std/strings.Valid(%48445, %48446, %48447)
   call @rt.print_int(%48318)
   %48449 = const 32
   call @rt.print_char(%48449)
@@ -68839,7 +68875,7 @@ b450:
   %48715 = load.i64 %48713[0]
   %48716 = load.i64 %48713[1]
   %48717 = load.i64 %48713[2]
-  %48718 = call @std/utf8.IndexInvalid(%48715, %48716, %48717)
+  %48718 = call @std/strings.IndexInvalid(%48715, %48716, %48717)
   %48719 = const 97
   %48720 = const 97
   %48721 = const 97
@@ -69012,7 +69048,7 @@ b450:
   %48845 = load.i64 %48843[0]
   %48846 = load.i64 %48843[1]
   %48847 = load.i64 %48843[2]
-  %48848 = call @std/utf8.Valid(%48845, %48846, %48847)
+  %48848 = call @std/strings.Valid(%48845, %48846, %48847)
   call @rt.print_int(%48718)
   %48849 = const 32
   call @rt.print_char(%48849)
@@ -69387,7 +69423,7 @@ b453:
   %49115 = load.i64 %49113[0]
   %49116 = load.i64 %49113[1]
   %49117 = load.i64 %49113[2]
-  %49118 = call @std/utf8.IndexInvalid(%49115, %49116, %49117)
+  %49118 = call @std/strings.IndexInvalid(%49115, %49116, %49117)
   %49119 = const 97
   %49120 = const 97
   %49121 = const 97
@@ -69560,7 +69596,7 @@ b453:
   %49245 = load.i64 %49243[0]
   %49246 = load.i64 %49243[1]
   %49247 = load.i64 %49243[2]
-  %49248 = call @std/utf8.Valid(%49245, %49246, %49247)
+  %49248 = call @std/strings.Valid(%49245, %49246, %49247)
   call @rt.print_int(%49118)
   %49249 = const 32
   call @rt.print_char(%49249)
@@ -69935,7 +69971,7 @@ b456:
   %49515 = load.i64 %49513[0]
   %49516 = load.i64 %49513[1]
   %49517 = load.i64 %49513[2]
-  %49518 = call @std/utf8.IndexInvalid(%49515, %49516, %49517)
+  %49518 = call @std/strings.IndexInvalid(%49515, %49516, %49517)
   %49519 = const 97
   %49520 = const 97
   %49521 = const 97
@@ -70108,7 +70144,7 @@ b456:
   %49645 = load.i64 %49643[0]
   %49646 = load.i64 %49643[1]
   %49647 = load.i64 %49643[2]
-  %49648 = call @std/utf8.Valid(%49645, %49646, %49647)
+  %49648 = call @std/strings.Valid(%49645, %49646, %49647)
   call @rt.print_int(%49518)
   %49649 = const 32
   call @rt.print_char(%49649)
@@ -70483,7 +70519,7 @@ b459:
   %49915 = load.i64 %49913[0]
   %49916 = load.i64 %49913[1]
   %49917 = load.i64 %49913[2]
-  %49918 = call @std/utf8.IndexInvalid(%49915, %49916, %49917)
+  %49918 = call @std/strings.IndexInvalid(%49915, %49916, %49917)
   %49919 = const 97
   %49920 = const 97
   %49921 = const 97
@@ -70656,7 +70692,7 @@ b459:
   %50045 = load.i64 %50043[0]
   %50046 = load.i64 %50043[1]
   %50047 = load.i64 %50043[2]
-  %50048 = call @std/utf8.Valid(%50045, %50046, %50047)
+  %50048 = call @std/strings.Valid(%50045, %50046, %50047)
   call @rt.print_int(%49918)
   %50049 = const 32
   call @rt.print_char(%50049)
@@ -71031,7 +71067,7 @@ b462:
   %50315 = load.i64 %50313[0]
   %50316 = load.i64 %50313[1]
   %50317 = load.i64 %50313[2]
-  %50318 = call @std/utf8.IndexInvalid(%50315, %50316, %50317)
+  %50318 = call @std/strings.IndexInvalid(%50315, %50316, %50317)
   %50319 = const 97
   %50320 = const 97
   %50321 = const 97
@@ -71204,7 +71240,7 @@ b462:
   %50445 = load.i64 %50443[0]
   %50446 = load.i64 %50443[1]
   %50447 = load.i64 %50443[2]
-  %50448 = call @std/utf8.Valid(%50445, %50446, %50447)
+  %50448 = call @std/strings.Valid(%50445, %50446, %50447)
   call @rt.print_int(%50318)
   %50449 = const 32
   call @rt.print_char(%50449)
@@ -71579,7 +71615,7 @@ b465:
   %50715 = load.i64 %50713[0]
   %50716 = load.i64 %50713[1]
   %50717 = load.i64 %50713[2]
-  %50718 = call @std/utf8.IndexInvalid(%50715, %50716, %50717)
+  %50718 = call @std/strings.IndexInvalid(%50715, %50716, %50717)
   %50719 = const 97
   %50720 = const 97
   %50721 = const 97
@@ -71752,7 +71788,7 @@ b465:
   %50845 = load.i64 %50843[0]
   %50846 = load.i64 %50843[1]
   %50847 = load.i64 %50843[2]
-  %50848 = call @std/utf8.Valid(%50845, %50846, %50847)
+  %50848 = call @std/strings.Valid(%50845, %50846, %50847)
   call @rt.print_int(%50718)
   %50849 = const 32
   call @rt.print_char(%50849)
@@ -72127,7 +72163,7 @@ b468:
   %51115 = load.i64 %51113[0]
   %51116 = load.i64 %51113[1]
   %51117 = load.i64 %51113[2]
-  %51118 = call @std/utf8.IndexInvalid(%51115, %51116, %51117)
+  %51118 = call @std/strings.IndexInvalid(%51115, %51116, %51117)
   %51119 = const 97
   %51120 = const 97
   %51121 = const 97
@@ -72300,7 +72336,7 @@ b468:
   %51245 = load.i64 %51243[0]
   %51246 = load.i64 %51243[1]
   %51247 = load.i64 %51243[2]
-  %51248 = call @std/utf8.Valid(%51245, %51246, %51247)
+  %51248 = call @std/strings.Valid(%51245, %51246, %51247)
   call @rt.print_int(%51118)
   %51249 = const 32
   call @rt.print_char(%51249)
@@ -72675,7 +72711,7 @@ b471:
   %51515 = load.i64 %51513[0]
   %51516 = load.i64 %51513[1]
   %51517 = load.i64 %51513[2]
-  %51518 = call @std/utf8.IndexInvalid(%51515, %51516, %51517)
+  %51518 = call @std/strings.IndexInvalid(%51515, %51516, %51517)
   %51519 = const 97
   %51520 = const 97
   %51521 = const 97
@@ -72848,7 +72884,7 @@ b471:
   %51645 = load.i64 %51643[0]
   %51646 = load.i64 %51643[1]
   %51647 = load.i64 %51643[2]
-  %51648 = call @std/utf8.Valid(%51645, %51646, %51647)
+  %51648 = call @std/strings.Valid(%51645, %51646, %51647)
   call @rt.print_int(%51518)
   %51649 = const 32
   call @rt.print_char(%51649)
@@ -73223,7 +73259,7 @@ b474:
   %51915 = load.i64 %51913[0]
   %51916 = load.i64 %51913[1]
   %51917 = load.i64 %51913[2]
-  %51918 = call @std/utf8.IndexInvalid(%51915, %51916, %51917)
+  %51918 = call @std/strings.IndexInvalid(%51915, %51916, %51917)
   %51919 = const 97
   %51920 = const 97
   %51921 = const 97
@@ -73396,7 +73432,7 @@ b474:
   %52045 = load.i64 %52043[0]
   %52046 = load.i64 %52043[1]
   %52047 = load.i64 %52043[2]
-  %52048 = call @std/utf8.Valid(%52045, %52046, %52047)
+  %52048 = call @std/strings.Valid(%52045, %52046, %52047)
   call @rt.print_int(%51918)
   %52049 = const 32
   call @rt.print_char(%52049)
@@ -73771,7 +73807,7 @@ b477:
   %52315 = load.i64 %52313[0]
   %52316 = load.i64 %52313[1]
   %52317 = load.i64 %52313[2]
-  %52318 = call @std/utf8.IndexInvalid(%52315, %52316, %52317)
+  %52318 = call @std/strings.IndexInvalid(%52315, %52316, %52317)
   %52319 = const 97
   %52320 = const 97
   %52321 = const 97
@@ -73944,7 +73980,7 @@ b477:
   %52445 = load.i64 %52443[0]
   %52446 = load.i64 %52443[1]
   %52447 = load.i64 %52443[2]
-  %52448 = call @std/utf8.Valid(%52445, %52446, %52447)
+  %52448 = call @std/strings.Valid(%52445, %52446, %52447)
   call @rt.print_int(%52318)
   %52449 = const 32
   call @rt.print_char(%52449)
@@ -74319,7 +74355,7 @@ b480:
   %52715 = load.i64 %52713[0]
   %52716 = load.i64 %52713[1]
   %52717 = load.i64 %52713[2]
-  %52718 = call @std/utf8.IndexInvalid(%52715, %52716, %52717)
+  %52718 = call @std/strings.IndexInvalid(%52715, %52716, %52717)
   %52719 = const 97
   %52720 = const 97
   %52721 = const 97
@@ -74492,7 +74528,7 @@ b480:
   %52845 = load.i64 %52843[0]
   %52846 = load.i64 %52843[1]
   %52847 = load.i64 %52843[2]
-  %52848 = call @std/utf8.Valid(%52845, %52846, %52847)
+  %52848 = call @std/strings.Valid(%52845, %52846, %52847)
   call @rt.print_int(%52718)
   %52849 = const 32
   call @rt.print_char(%52849)
@@ -74867,7 +74903,7 @@ b483:
   %53115 = load.i64 %53113[0]
   %53116 = load.i64 %53113[1]
   %53117 = load.i64 %53113[2]
-  %53118 = call @std/utf8.IndexInvalid(%53115, %53116, %53117)
+  %53118 = call @std/strings.IndexInvalid(%53115, %53116, %53117)
   %53119 = const 97
   %53120 = const 97
   %53121 = const 97
@@ -75040,7 +75076,7 @@ b483:
   %53245 = load.i64 %53243[0]
   %53246 = load.i64 %53243[1]
   %53247 = load.i64 %53243[2]
-  %53248 = call @std/utf8.Valid(%53245, %53246, %53247)
+  %53248 = call @std/strings.Valid(%53245, %53246, %53247)
   call @rt.print_int(%53118)
   %53249 = const 32
   call @rt.print_char(%53249)
@@ -75415,7 +75451,7 @@ b486:
   %53515 = load.i64 %53513[0]
   %53516 = load.i64 %53513[1]
   %53517 = load.i64 %53513[2]
-  %53518 = call @std/utf8.IndexInvalid(%53515, %53516, %53517)
+  %53518 = call @std/strings.IndexInvalid(%53515, %53516, %53517)
   %53519 = const 97
   %53520 = const 97
   %53521 = const 97
@@ -75588,7 +75624,7 @@ b486:
   %53645 = load.i64 %53643[0]
   %53646 = load.i64 %53643[1]
   %53647 = load.i64 %53643[2]
-  %53648 = call @std/utf8.Valid(%53645, %53646, %53647)
+  %53648 = call @std/strings.Valid(%53645, %53646, %53647)
   call @rt.print_int(%53518)
   %53649 = const 32
   call @rt.print_char(%53649)
@@ -75963,7 +75999,7 @@ b489:
   %53915 = load.i64 %53913[0]
   %53916 = load.i64 %53913[1]
   %53917 = load.i64 %53913[2]
-  %53918 = call @std/utf8.IndexInvalid(%53915, %53916, %53917)
+  %53918 = call @std/strings.IndexInvalid(%53915, %53916, %53917)
   %53919 = const 97
   %53920 = const 97
   %53921 = const 97
@@ -76136,7 +76172,7 @@ b489:
   %54045 = load.i64 %54043[0]
   %54046 = load.i64 %54043[1]
   %54047 = load.i64 %54043[2]
-  %54048 = call @std/utf8.Valid(%54045, %54046, %54047)
+  %54048 = call @std/strings.Valid(%54045, %54046, %54047)
   call @rt.print_int(%53918)
   %54049 = const 32
   call @rt.print_char(%54049)
@@ -76511,7 +76547,7 @@ b492:
   %54315 = load.i64 %54313[0]
   %54316 = load.i64 %54313[1]
   %54317 = load.i64 %54313[2]
-  %54318 = call @std/utf8.IndexInvalid(%54315, %54316, %54317)
+  %54318 = call @std/strings.IndexInvalid(%54315, %54316, %54317)
   %54319 = const 97
   %54320 = const 97
   %54321 = const 97
@@ -76684,7 +76720,7 @@ b492:
   %54445 = load.i64 %54443[0]
   %54446 = load.i64 %54443[1]
   %54447 = load.i64 %54443[2]
-  %54448 = call @std/utf8.Valid(%54445, %54446, %54447)
+  %54448 = call @std/strings.Valid(%54445, %54446, %54447)
   call @rt.print_int(%54318)
   %54449 = const 32
   call @rt.print_char(%54449)
@@ -77059,7 +77095,7 @@ b495:
   %54715 = load.i64 %54713[0]
   %54716 = load.i64 %54713[1]
   %54717 = load.i64 %54713[2]
-  %54718 = call @std/utf8.IndexInvalid(%54715, %54716, %54717)
+  %54718 = call @std/strings.IndexInvalid(%54715, %54716, %54717)
   %54719 = const 97
   %54720 = const 97
   %54721 = const 97
@@ -77232,7 +77268,7 @@ b495:
   %54845 = load.i64 %54843[0]
   %54846 = load.i64 %54843[1]
   %54847 = load.i64 %54843[2]
-  %54848 = call @std/utf8.Valid(%54845, %54846, %54847)
+  %54848 = call @std/strings.Valid(%54845, %54846, %54847)
   call @rt.print_int(%54718)
   %54849 = const 32
   call @rt.print_char(%54849)
@@ -77607,7 +77643,7 @@ b498:
   %55115 = load.i64 %55113[0]
   %55116 = load.i64 %55113[1]
   %55117 = load.i64 %55113[2]
-  %55118 = call @std/utf8.IndexInvalid(%55115, %55116, %55117)
+  %55118 = call @std/strings.IndexInvalid(%55115, %55116, %55117)
   %55119 = const 97
   %55120 = const 97
   %55121 = const 97
@@ -77780,7 +77816,7 @@ b498:
   %55245 = load.i64 %55243[0]
   %55246 = load.i64 %55243[1]
   %55247 = load.i64 %55243[2]
-  %55248 = call @std/utf8.Valid(%55245, %55246, %55247)
+  %55248 = call @std/strings.Valid(%55245, %55246, %55247)
   call @rt.print_int(%55118)
   %55249 = const 32
   call @rt.print_char(%55249)
@@ -78155,7 +78191,7 @@ b501:
   %55515 = load.i64 %55513[0]
   %55516 = load.i64 %55513[1]
   %55517 = load.i64 %55513[2]
-  %55518 = call @std/utf8.IndexInvalid(%55515, %55516, %55517)
+  %55518 = call @std/strings.IndexInvalid(%55515, %55516, %55517)
   %55519 = const 97
   %55520 = const 97
   %55521 = const 97
@@ -78328,7 +78364,7 @@ b501:
   %55645 = load.i64 %55643[0]
   %55646 = load.i64 %55643[1]
   %55647 = load.i64 %55643[2]
-  %55648 = call @std/utf8.Valid(%55645, %55646, %55647)
+  %55648 = call @std/strings.Valid(%55645, %55646, %55647)
   call @rt.print_int(%55518)
   %55649 = const 32
   call @rt.print_char(%55649)
@@ -78703,7 +78739,7 @@ b504:
   %55915 = load.i64 %55913[0]
   %55916 = load.i64 %55913[1]
   %55917 = load.i64 %55913[2]
-  %55918 = call @std/utf8.IndexInvalid(%55915, %55916, %55917)
+  %55918 = call @std/strings.IndexInvalid(%55915, %55916, %55917)
   %55919 = const 97
   %55920 = const 97
   %55921 = const 97
@@ -78876,7 +78912,7 @@ b504:
   %56045 = load.i64 %56043[0]
   %56046 = load.i64 %56043[1]
   %56047 = load.i64 %56043[2]
-  %56048 = call @std/utf8.Valid(%56045, %56046, %56047)
+  %56048 = call @std/strings.Valid(%56045, %56046, %56047)
   call @rt.print_int(%55918)
   %56049 = const 32
   call @rt.print_char(%56049)
@@ -79251,7 +79287,7 @@ b507:
   %56315 = load.i64 %56313[0]
   %56316 = load.i64 %56313[1]
   %56317 = load.i64 %56313[2]
-  %56318 = call @std/utf8.IndexInvalid(%56315, %56316, %56317)
+  %56318 = call @std/strings.IndexInvalid(%56315, %56316, %56317)
   %56319 = const 97
   %56320 = const 97
   %56321 = const 97
@@ -79424,7 +79460,7 @@ b507:
   %56445 = load.i64 %56443[0]
   %56446 = load.i64 %56443[1]
   %56447 = load.i64 %56443[2]
-  %56448 = call @std/utf8.Valid(%56445, %56446, %56447)
+  %56448 = call @std/strings.Valid(%56445, %56446, %56447)
   call @rt.print_int(%56318)
   %56449 = const 32
   call @rt.print_char(%56449)
@@ -79799,7 +79835,7 @@ b510:
   %56715 = load.i64 %56713[0]
   %56716 = load.i64 %56713[1]
   %56717 = load.i64 %56713[2]
-  %56718 = call @std/utf8.IndexInvalid(%56715, %56716, %56717)
+  %56718 = call @std/strings.IndexInvalid(%56715, %56716, %56717)
   %56719 = const 97
   %56720 = const 97
   %56721 = const 97
@@ -79972,7 +80008,7 @@ b510:
   %56845 = load.i64 %56843[0]
   %56846 = load.i64 %56843[1]
   %56847 = load.i64 %56843[2]
-  %56848 = call @std/utf8.Valid(%56845, %56846, %56847)
+  %56848 = call @std/strings.Valid(%56845, %56846, %56847)
   call @rt.print_int(%56718)
   %56849 = const 32
   call @rt.print_char(%56849)
@@ -80347,7 +80383,7 @@ b513:
   %57115 = load.i64 %57113[0]
   %57116 = load.i64 %57113[1]
   %57117 = load.i64 %57113[2]
-  %57118 = call @std/utf8.IndexInvalid(%57115, %57116, %57117)
+  %57118 = call @std/strings.IndexInvalid(%57115, %57116, %57117)
   %57119 = const 97
   %57120 = const 97
   %57121 = const 97
@@ -80520,7 +80556,7 @@ b513:
   %57245 = load.i64 %57243[0]
   %57246 = load.i64 %57243[1]
   %57247 = load.i64 %57243[2]
-  %57248 = call @std/utf8.Valid(%57245, %57246, %57247)
+  %57248 = call @std/strings.Valid(%57245, %57246, %57247)
   call @rt.print_int(%57118)
   %57249 = const 32
   call @rt.print_char(%57249)
@@ -80895,7 +80931,7 @@ b516:
   %57515 = load.i64 %57513[0]
   %57516 = load.i64 %57513[1]
   %57517 = load.i64 %57513[2]
-  %57518 = call @std/utf8.IndexInvalid(%57515, %57516, %57517)
+  %57518 = call @std/strings.IndexInvalid(%57515, %57516, %57517)
   %57519 = const 97
   %57520 = const 97
   %57521 = const 97
@@ -81068,7 +81104,7 @@ b516:
   %57645 = load.i64 %57643[0]
   %57646 = load.i64 %57643[1]
   %57647 = load.i64 %57643[2]
-  %57648 = call @std/utf8.Valid(%57645, %57646, %57647)
+  %57648 = call @std/strings.Valid(%57645, %57646, %57647)
   call @rt.print_int(%57518)
   %57649 = const 32
   call @rt.print_char(%57649)
@@ -81443,7 +81479,7 @@ b519:
   %57915 = load.i64 %57913[0]
   %57916 = load.i64 %57913[1]
   %57917 = load.i64 %57913[2]
-  %57918 = call @std/utf8.IndexInvalid(%57915, %57916, %57917)
+  %57918 = call @std/strings.IndexInvalid(%57915, %57916, %57917)
   %57919 = const 97
   %57920 = const 97
   %57921 = const 97
@@ -81616,7 +81652,7 @@ b519:
   %58045 = load.i64 %58043[0]
   %58046 = load.i64 %58043[1]
   %58047 = load.i64 %58043[2]
-  %58048 = call @std/utf8.Valid(%58045, %58046, %58047)
+  %58048 = call @std/strings.Valid(%58045, %58046, %58047)
   call @rt.print_int(%57918)
   %58049 = const 32
   call @rt.print_char(%58049)
@@ -81991,7 +82027,7 @@ b522:
   %58315 = load.i64 %58313[0]
   %58316 = load.i64 %58313[1]
   %58317 = load.i64 %58313[2]
-  %58318 = call @std/utf8.IndexInvalid(%58315, %58316, %58317)
+  %58318 = call @std/strings.IndexInvalid(%58315, %58316, %58317)
   %58319 = const 97
   %58320 = const 97
   %58321 = const 97
@@ -82164,7 +82200,7 @@ b522:
   %58445 = load.i64 %58443[0]
   %58446 = load.i64 %58443[1]
   %58447 = load.i64 %58443[2]
-  %58448 = call @std/utf8.Valid(%58445, %58446, %58447)
+  %58448 = call @std/strings.Valid(%58445, %58446, %58447)
   call @rt.print_int(%58318)
   %58449 = const 32
   call @rt.print_char(%58449)
@@ -82539,7 +82575,7 @@ b525:
   %58715 = load.i64 %58713[0]
   %58716 = load.i64 %58713[1]
   %58717 = load.i64 %58713[2]
-  %58718 = call @std/utf8.IndexInvalid(%58715, %58716, %58717)
+  %58718 = call @std/strings.IndexInvalid(%58715, %58716, %58717)
   %58719 = const 97
   %58720 = const 97
   %58721 = const 97
@@ -82712,7 +82748,7 @@ b525:
   %58845 = load.i64 %58843[0]
   %58846 = load.i64 %58843[1]
   %58847 = load.i64 %58843[2]
-  %58848 = call @std/utf8.Valid(%58845, %58846, %58847)
+  %58848 = call @std/strings.Valid(%58845, %58846, %58847)
   call @rt.print_int(%58718)
   %58849 = const 32
   call @rt.print_char(%58849)
@@ -83087,7 +83123,7 @@ b528:
   %59115 = load.i64 %59113[0]
   %59116 = load.i64 %59113[1]
   %59117 = load.i64 %59113[2]
-  %59118 = call @std/utf8.IndexInvalid(%59115, %59116, %59117)
+  %59118 = call @std/strings.IndexInvalid(%59115, %59116, %59117)
   %59119 = const 97
   %59120 = const 97
   %59121 = const 97
@@ -83260,7 +83296,7 @@ b528:
   %59245 = load.i64 %59243[0]
   %59246 = load.i64 %59243[1]
   %59247 = load.i64 %59243[2]
-  %59248 = call @std/utf8.Valid(%59245, %59246, %59247)
+  %59248 = call @std/strings.Valid(%59245, %59246, %59247)
   call @rt.print_int(%59118)
   %59249 = const 32
   call @rt.print_char(%59249)
@@ -83635,7 +83671,7 @@ b531:
   %59515 = load.i64 %59513[0]
   %59516 = load.i64 %59513[1]
   %59517 = load.i64 %59513[2]
-  %59518 = call @std/utf8.IndexInvalid(%59515, %59516, %59517)
+  %59518 = call @std/strings.IndexInvalid(%59515, %59516, %59517)
   %59519 = const 97
   %59520 = const 97
   %59521 = const 97
@@ -83808,7 +83844,7 @@ b531:
   %59645 = load.i64 %59643[0]
   %59646 = load.i64 %59643[1]
   %59647 = load.i64 %59643[2]
-  %59648 = call @std/utf8.Valid(%59645, %59646, %59647)
+  %59648 = call @std/strings.Valid(%59645, %59646, %59647)
   call @rt.print_int(%59518)
   %59649 = const 32
   call @rt.print_char(%59649)
@@ -84183,7 +84219,7 @@ b534:
   %59915 = load.i64 %59913[0]
   %59916 = load.i64 %59913[1]
   %59917 = load.i64 %59913[2]
-  %59918 = call @std/utf8.IndexInvalid(%59915, %59916, %59917)
+  %59918 = call @std/strings.IndexInvalid(%59915, %59916, %59917)
   %59919 = const 97
   %59920 = const 97
   %59921 = const 97
@@ -84356,7 +84392,7 @@ b534:
   %60045 = load.i64 %60043[0]
   %60046 = load.i64 %60043[1]
   %60047 = load.i64 %60043[2]
-  %60048 = call @std/utf8.Valid(%60045, %60046, %60047)
+  %60048 = call @std/strings.Valid(%60045, %60046, %60047)
   call @rt.print_int(%59918)
   %60049 = const 32
   call @rt.print_char(%60049)
@@ -84731,7 +84767,7 @@ b537:
   %60315 = load.i64 %60313[0]
   %60316 = load.i64 %60313[1]
   %60317 = load.i64 %60313[2]
-  %60318 = call @std/utf8.IndexInvalid(%60315, %60316, %60317)
+  %60318 = call @std/strings.IndexInvalid(%60315, %60316, %60317)
   %60319 = const 97
   %60320 = const 97
   %60321 = const 97
@@ -84904,7 +84940,7 @@ b537:
   %60445 = load.i64 %60443[0]
   %60446 = load.i64 %60443[1]
   %60447 = load.i64 %60443[2]
-  %60448 = call @std/utf8.Valid(%60445, %60446, %60447)
+  %60448 = call @std/strings.Valid(%60445, %60446, %60447)
   call @rt.print_int(%60318)
   %60449 = const 32
   call @rt.print_char(%60449)
@@ -85279,7 +85315,7 @@ b540:
   %60715 = load.i64 %60713[0]
   %60716 = load.i64 %60713[1]
   %60717 = load.i64 %60713[2]
-  %60718 = call @std/utf8.IndexInvalid(%60715, %60716, %60717)
+  %60718 = call @std/strings.IndexInvalid(%60715, %60716, %60717)
   %60719 = const 97
   %60720 = const 97
   %60721 = const 97
@@ -85452,7 +85488,7 @@ b540:
   %60845 = load.i64 %60843[0]
   %60846 = load.i64 %60843[1]
   %60847 = load.i64 %60843[2]
-  %60848 = call @std/utf8.Valid(%60845, %60846, %60847)
+  %60848 = call @std/strings.Valid(%60845, %60846, %60847)
   call @rt.print_int(%60718)
   %60849 = const 32
   call @rt.print_char(%60849)
@@ -85827,7 +85863,7 @@ b543:
   %61115 = load.i64 %61113[0]
   %61116 = load.i64 %61113[1]
   %61117 = load.i64 %61113[2]
-  %61118 = call @std/utf8.IndexInvalid(%61115, %61116, %61117)
+  %61118 = call @std/strings.IndexInvalid(%61115, %61116, %61117)
   %61119 = const 97
   %61120 = const 97
   %61121 = const 97
@@ -86000,7 +86036,7 @@ b543:
   %61245 = load.i64 %61243[0]
   %61246 = load.i64 %61243[1]
   %61247 = load.i64 %61243[2]
-  %61248 = call @std/utf8.Valid(%61245, %61246, %61247)
+  %61248 = call @std/strings.Valid(%61245, %61246, %61247)
   call @rt.print_int(%61118)
   %61249 = const 32
   call @rt.print_char(%61249)
@@ -86375,7 +86411,7 @@ b546:
   %61515 = load.i64 %61513[0]
   %61516 = load.i64 %61513[1]
   %61517 = load.i64 %61513[2]
-  %61518 = call @std/utf8.IndexInvalid(%61515, %61516, %61517)
+  %61518 = call @std/strings.IndexInvalid(%61515, %61516, %61517)
   %61519 = const 97
   %61520 = const 97
   %61521 = const 97
@@ -86548,7 +86584,7 @@ b546:
   %61645 = load.i64 %61643[0]
   %61646 = load.i64 %61643[1]
   %61647 = load.i64 %61643[2]
-  %61648 = call @std/utf8.Valid(%61645, %61646, %61647)
+  %61648 = call @std/strings.Valid(%61645, %61646, %61647)
   call @rt.print_int(%61518)
   %61649 = const 32
   call @rt.print_char(%61649)
@@ -86923,7 +86959,7 @@ b549:
   %61915 = load.i64 %61913[0]
   %61916 = load.i64 %61913[1]
   %61917 = load.i64 %61913[2]
-  %61918 = call @std/utf8.IndexInvalid(%61915, %61916, %61917)
+  %61918 = call @std/strings.IndexInvalid(%61915, %61916, %61917)
   %61919 = const 97
   %61920 = const 97
   %61921 = const 97
@@ -87096,7 +87132,7 @@ b549:
   %62045 = load.i64 %62043[0]
   %62046 = load.i64 %62043[1]
   %62047 = load.i64 %62043[2]
-  %62048 = call @std/utf8.Valid(%62045, %62046, %62047)
+  %62048 = call @std/strings.Valid(%62045, %62046, %62047)
   call @rt.print_int(%61918)
   %62049 = const 32
   call @rt.print_char(%62049)
@@ -87471,7 +87507,7 @@ b552:
   %62315 = load.i64 %62313[0]
   %62316 = load.i64 %62313[1]
   %62317 = load.i64 %62313[2]
-  %62318 = call @std/utf8.IndexInvalid(%62315, %62316, %62317)
+  %62318 = call @std/strings.IndexInvalid(%62315, %62316, %62317)
   %62319 = const 195
   %62320 = const 169
   %62321 = const 195
@@ -87644,7 +87680,7 @@ b552:
   %62445 = load.i64 %62443[0]
   %62446 = load.i64 %62443[1]
   %62447 = load.i64 %62443[2]
-  %62448 = call @std/utf8.Valid(%62445, %62446, %62447)
+  %62448 = call @std/strings.Valid(%62445, %62446, %62447)
   call @rt.print_int(%62318)
   %62449 = const 32
   call @rt.print_char(%62449)
@@ -88019,7 +88055,7 @@ b555:
   %62715 = load.i64 %62713[0]
   %62716 = load.i64 %62713[1]
   %62717 = load.i64 %62713[2]
-  %62718 = call @std/utf8.IndexInvalid(%62715, %62716, %62717)
+  %62718 = call @std/strings.IndexInvalid(%62715, %62716, %62717)
   %62719 = const 195
   %62720 = const 169
   %62721 = const 195
@@ -88192,7 +88228,7 @@ b555:
   %62845 = load.i64 %62843[0]
   %62846 = load.i64 %62843[1]
   %62847 = load.i64 %62843[2]
-  %62848 = call @std/utf8.Valid(%62845, %62846, %62847)
+  %62848 = call @std/strings.Valid(%62845, %62846, %62847)
   call @rt.print_int(%62718)
   %62849 = const 32
   call @rt.print_char(%62849)
@@ -88567,7 +88603,7 @@ b558:
   %63115 = load.i64 %63113[0]
   %63116 = load.i64 %63113[1]
   %63117 = load.i64 %63113[2]
-  %63118 = call @std/utf8.IndexInvalid(%63115, %63116, %63117)
+  %63118 = call @std/strings.IndexInvalid(%63115, %63116, %63117)
   %63119 = const 195
   %63120 = const 169
   %63121 = const 195
@@ -88740,7 +88776,7 @@ b558:
   %63245 = load.i64 %63243[0]
   %63246 = load.i64 %63243[1]
   %63247 = load.i64 %63243[2]
-  %63248 = call @std/utf8.Valid(%63245, %63246, %63247)
+  %63248 = call @std/strings.Valid(%63245, %63246, %63247)
   call @rt.print_int(%63118)
   %63249 = const 32
   call @rt.print_char(%63249)
@@ -89115,7 +89151,7 @@ b561:
   %63515 = load.i64 %63513[0]
   %63516 = load.i64 %63513[1]
   %63517 = load.i64 %63513[2]
-  %63518 = call @std/utf8.IndexInvalid(%63515, %63516, %63517)
+  %63518 = call @std/strings.IndexInvalid(%63515, %63516, %63517)
   %63519 = const 195
   %63520 = const 169
   %63521 = const 195
@@ -89288,7 +89324,7 @@ b561:
   %63645 = load.i64 %63643[0]
   %63646 = load.i64 %63643[1]
   %63647 = load.i64 %63643[2]
-  %63648 = call @std/utf8.Valid(%63645, %63646, %63647)
+  %63648 = call @std/strings.Valid(%63645, %63646, %63647)
   call @rt.print_int(%63518)
   %63649 = const 32
   call @rt.print_char(%63649)
@@ -89663,7 +89699,7 @@ b564:
   %63915 = load.i64 %63913[0]
   %63916 = load.i64 %63913[1]
   %63917 = load.i64 %63913[2]
-  %63918 = call @std/utf8.IndexInvalid(%63915, %63916, %63917)
+  %63918 = call @std/strings.IndexInvalid(%63915, %63916, %63917)
   %63919 = const 195
   %63920 = const 169
   %63921 = const 195
@@ -89836,7 +89872,7 @@ b564:
   %64045 = load.i64 %64043[0]
   %64046 = load.i64 %64043[1]
   %64047 = load.i64 %64043[2]
-  %64048 = call @std/utf8.Valid(%64045, %64046, %64047)
+  %64048 = call @std/strings.Valid(%64045, %64046, %64047)
   call @rt.print_int(%63918)
   %64049 = const 32
   call @rt.print_char(%64049)
@@ -90211,7 +90247,7 @@ b567:
   %64315 = load.i64 %64313[0]
   %64316 = load.i64 %64313[1]
   %64317 = load.i64 %64313[2]
-  %64318 = call @std/utf8.IndexInvalid(%64315, %64316, %64317)
+  %64318 = call @std/strings.IndexInvalid(%64315, %64316, %64317)
   %64319 = const 195
   %64320 = const 169
   %64321 = const 195
@@ -90384,7 +90420,7 @@ b567:
   %64445 = load.i64 %64443[0]
   %64446 = load.i64 %64443[1]
   %64447 = load.i64 %64443[2]
-  %64448 = call @std/utf8.Valid(%64445, %64446, %64447)
+  %64448 = call @std/strings.Valid(%64445, %64446, %64447)
   call @rt.print_int(%64318)
   %64449 = const 32
   call @rt.print_char(%64449)
@@ -90759,7 +90795,7 @@ b570:
   %64715 = load.i64 %64713[0]
   %64716 = load.i64 %64713[1]
   %64717 = load.i64 %64713[2]
-  %64718 = call @std/utf8.IndexInvalid(%64715, %64716, %64717)
+  %64718 = call @std/strings.IndexInvalid(%64715, %64716, %64717)
   %64719 = const 195
   %64720 = const 169
   %64721 = const 195
@@ -90932,7 +90968,7 @@ b570:
   %64845 = load.i64 %64843[0]
   %64846 = load.i64 %64843[1]
   %64847 = load.i64 %64843[2]
-  %64848 = call @std/utf8.Valid(%64845, %64846, %64847)
+  %64848 = call @std/strings.Valid(%64845, %64846, %64847)
   call @rt.print_int(%64718)
   %64849 = const 32
   call @rt.print_char(%64849)
@@ -91307,7 +91343,7 @@ b573:
   %65115 = load.i64 %65113[0]
   %65116 = load.i64 %65113[1]
   %65117 = load.i64 %65113[2]
-  %65118 = call @std/utf8.IndexInvalid(%65115, %65116, %65117)
+  %65118 = call @std/strings.IndexInvalid(%65115, %65116, %65117)
   %65119 = const 195
   %65120 = const 169
   %65121 = const 195
@@ -91480,7 +91516,7 @@ b573:
   %65245 = load.i64 %65243[0]
   %65246 = load.i64 %65243[1]
   %65247 = load.i64 %65243[2]
-  %65248 = call @std/utf8.Valid(%65245, %65246, %65247)
+  %65248 = call @std/strings.Valid(%65245, %65246, %65247)
   call @rt.print_int(%65118)
   %65249 = const 32
   call @rt.print_char(%65249)
@@ -91855,7 +91891,7 @@ b576:
   %65515 = load.i64 %65513[0]
   %65516 = load.i64 %65513[1]
   %65517 = load.i64 %65513[2]
-  %65518 = call @std/utf8.IndexInvalid(%65515, %65516, %65517)
+  %65518 = call @std/strings.IndexInvalid(%65515, %65516, %65517)
   %65519 = const 195
   %65520 = const 169
   %65521 = const 195
@@ -92028,7 +92064,7 @@ b576:
   %65645 = load.i64 %65643[0]
   %65646 = load.i64 %65643[1]
   %65647 = load.i64 %65643[2]
-  %65648 = call @std/utf8.Valid(%65645, %65646, %65647)
+  %65648 = call @std/strings.Valid(%65645, %65646, %65647)
   call @rt.print_int(%65518)
   %65649 = const 32
   call @rt.print_char(%65649)
@@ -92403,7 +92439,7 @@ b579:
   %65915 = load.i64 %65913[0]
   %65916 = load.i64 %65913[1]
   %65917 = load.i64 %65913[2]
-  %65918 = call @std/utf8.IndexInvalid(%65915, %65916, %65917)
+  %65918 = call @std/strings.IndexInvalid(%65915, %65916, %65917)
   %65919 = const 195
   %65920 = const 169
   %65921 = const 195
@@ -92576,7 +92612,7 @@ b579:
   %66045 = load.i64 %66043[0]
   %66046 = load.i64 %66043[1]
   %66047 = load.i64 %66043[2]
-  %66048 = call @std/utf8.Valid(%66045, %66046, %66047)
+  %66048 = call @std/strings.Valid(%66045, %66046, %66047)
   call @rt.print_int(%65918)
   %66049 = const 32
   call @rt.print_char(%66049)
@@ -92951,7 +92987,7 @@ b582:
   %66315 = load.i64 %66313[0]
   %66316 = load.i64 %66313[1]
   %66317 = load.i64 %66313[2]
-  %66318 = call @std/utf8.IndexInvalid(%66315, %66316, %66317)
+  %66318 = call @std/strings.IndexInvalid(%66315, %66316, %66317)
   %66319 = const 195
   %66320 = const 169
   %66321 = const 195
@@ -93124,7 +93160,7 @@ b582:
   %66445 = load.i64 %66443[0]
   %66446 = load.i64 %66443[1]
   %66447 = load.i64 %66443[2]
-  %66448 = call @std/utf8.Valid(%66445, %66446, %66447)
+  %66448 = call @std/strings.Valid(%66445, %66446, %66447)
   call @rt.print_int(%66318)
   %66449 = const 32
   call @rt.print_char(%66449)
@@ -93499,7 +93535,7 @@ b585:
   %66715 = load.i64 %66713[0]
   %66716 = load.i64 %66713[1]
   %66717 = load.i64 %66713[2]
-  %66718 = call @std/utf8.IndexInvalid(%66715, %66716, %66717)
+  %66718 = call @std/strings.IndexInvalid(%66715, %66716, %66717)
   %66719 = const 195
   %66720 = const 169
   %66721 = const 195
@@ -93672,7 +93708,7 @@ b585:
   %66845 = load.i64 %66843[0]
   %66846 = load.i64 %66843[1]
   %66847 = load.i64 %66843[2]
-  %66848 = call @std/utf8.Valid(%66845, %66846, %66847)
+  %66848 = call @std/strings.Valid(%66845, %66846, %66847)
   call @rt.print_int(%66718)
   %66849 = const 32
   call @rt.print_char(%66849)
@@ -94047,7 +94083,7 @@ b588:
   %67115 = load.i64 %67113[0]
   %67116 = load.i64 %67113[1]
   %67117 = load.i64 %67113[2]
-  %67118 = call @std/utf8.IndexInvalid(%67115, %67116, %67117)
+  %67118 = call @std/strings.IndexInvalid(%67115, %67116, %67117)
   %67119 = const 195
   %67120 = const 169
   %67121 = const 195
@@ -94220,7 +94256,7 @@ b588:
   %67245 = load.i64 %67243[0]
   %67246 = load.i64 %67243[1]
   %67247 = load.i64 %67243[2]
-  %67248 = call @std/utf8.Valid(%67245, %67246, %67247)
+  %67248 = call @std/strings.Valid(%67245, %67246, %67247)
   call @rt.print_int(%67118)
   %67249 = const 32
   call @rt.print_char(%67249)
@@ -94595,7 +94631,7 @@ b591:
   %67515 = load.i64 %67513[0]
   %67516 = load.i64 %67513[1]
   %67517 = load.i64 %67513[2]
-  %67518 = call @std/utf8.IndexInvalid(%67515, %67516, %67517)
+  %67518 = call @std/strings.IndexInvalid(%67515, %67516, %67517)
   %67519 = const 195
   %67520 = const 169
   %67521 = const 195
@@ -94768,7 +94804,7 @@ b591:
   %67645 = load.i64 %67643[0]
   %67646 = load.i64 %67643[1]
   %67647 = load.i64 %67643[2]
-  %67648 = call @std/utf8.Valid(%67645, %67646, %67647)
+  %67648 = call @std/strings.Valid(%67645, %67646, %67647)
   call @rt.print_int(%67518)
   %67649 = const 32
   call @rt.print_char(%67649)
@@ -95143,7 +95179,7 @@ b594:
   %67915 = load.i64 %67913[0]
   %67916 = load.i64 %67913[1]
   %67917 = load.i64 %67913[2]
-  %67918 = call @std/utf8.IndexInvalid(%67915, %67916, %67917)
+  %67918 = call @std/strings.IndexInvalid(%67915, %67916, %67917)
   %67919 = const 195
   %67920 = const 169
   %67921 = const 195
@@ -95316,7 +95352,7 @@ b594:
   %68045 = load.i64 %68043[0]
   %68046 = load.i64 %68043[1]
   %68047 = load.i64 %68043[2]
-  %68048 = call @std/utf8.Valid(%68045, %68046, %68047)
+  %68048 = call @std/strings.Valid(%68045, %68046, %68047)
   call @rt.print_int(%67918)
   %68049 = const 32
   call @rt.print_char(%68049)
@@ -95691,7 +95727,7 @@ b597:
   %68315 = load.i64 %68313[0]
   %68316 = load.i64 %68313[1]
   %68317 = load.i64 %68313[2]
-  %68318 = call @std/utf8.IndexInvalid(%68315, %68316, %68317)
+  %68318 = call @std/strings.IndexInvalid(%68315, %68316, %68317)
   %68319 = const 195
   %68320 = const 169
   %68321 = const 195
@@ -95864,7 +95900,7 @@ b597:
   %68445 = load.i64 %68443[0]
   %68446 = load.i64 %68443[1]
   %68447 = load.i64 %68443[2]
-  %68448 = call @std/utf8.Valid(%68445, %68446, %68447)
+  %68448 = call @std/strings.Valid(%68445, %68446, %68447)
   call @rt.print_int(%68318)
   %68449 = const 32
   call @rt.print_char(%68449)
@@ -96239,7 +96275,7 @@ b600:
   %68715 = load.i64 %68713[0]
   %68716 = load.i64 %68713[1]
   %68717 = load.i64 %68713[2]
-  %68718 = call @std/utf8.IndexInvalid(%68715, %68716, %68717)
+  %68718 = call @std/strings.IndexInvalid(%68715, %68716, %68717)
   %68719 = const 195
   %68720 = const 169
   %68721 = const 195
@@ -96412,7 +96448,7 @@ b600:
   %68845 = load.i64 %68843[0]
   %68846 = load.i64 %68843[1]
   %68847 = load.i64 %68843[2]
-  %68848 = call @std/utf8.Valid(%68845, %68846, %68847)
+  %68848 = call @std/strings.Valid(%68845, %68846, %68847)
   call @rt.print_int(%68718)
   %68849 = const 32
   call @rt.print_char(%68849)
@@ -96787,7 +96823,7 @@ b603:
   %69115 = load.i64 %69113[0]
   %69116 = load.i64 %69113[1]
   %69117 = load.i64 %69113[2]
-  %69118 = call @std/utf8.IndexInvalid(%69115, %69116, %69117)
+  %69118 = call @std/strings.IndexInvalid(%69115, %69116, %69117)
   %69119 = const 195
   %69120 = const 169
   %69121 = const 195
@@ -96960,7 +96996,7 @@ b603:
   %69245 = load.i64 %69243[0]
   %69246 = load.i64 %69243[1]
   %69247 = load.i64 %69243[2]
-  %69248 = call @std/utf8.Valid(%69245, %69246, %69247)
+  %69248 = call @std/strings.Valid(%69245, %69246, %69247)
   call @rt.print_int(%69118)
   %69249 = const 32
   call @rt.print_char(%69249)
@@ -97335,7 +97371,7 @@ b606:
   %69515 = load.i64 %69513[0]
   %69516 = load.i64 %69513[1]
   %69517 = load.i64 %69513[2]
-  %69518 = call @std/utf8.IndexInvalid(%69515, %69516, %69517)
+  %69518 = call @std/strings.IndexInvalid(%69515, %69516, %69517)
   %69519 = const 195
   %69520 = const 169
   %69521 = const 195
@@ -97508,7 +97544,7 @@ b606:
   %69645 = load.i64 %69643[0]
   %69646 = load.i64 %69643[1]
   %69647 = load.i64 %69643[2]
-  %69648 = call @std/utf8.Valid(%69645, %69646, %69647)
+  %69648 = call @std/strings.Valid(%69645, %69646, %69647)
   call @rt.print_int(%69518)
   %69649 = const 32
   call @rt.print_char(%69649)
@@ -97883,7 +97919,7 @@ b609:
   %69915 = load.i64 %69913[0]
   %69916 = load.i64 %69913[1]
   %69917 = load.i64 %69913[2]
-  %69918 = call @std/utf8.IndexInvalid(%69915, %69916, %69917)
+  %69918 = call @std/strings.IndexInvalid(%69915, %69916, %69917)
   %69919 = const 195
   %69920 = const 169
   %69921 = const 195
@@ -98056,7 +98092,7 @@ b609:
   %70045 = load.i64 %70043[0]
   %70046 = load.i64 %70043[1]
   %70047 = load.i64 %70043[2]
-  %70048 = call @std/utf8.Valid(%70045, %70046, %70047)
+  %70048 = call @std/strings.Valid(%70045, %70046, %70047)
   call @rt.print_int(%69918)
   %70049 = const 32
   call @rt.print_char(%70049)
@@ -98431,7 +98467,7 @@ b612:
   %70315 = load.i64 %70313[0]
   %70316 = load.i64 %70313[1]
   %70317 = load.i64 %70313[2]
-  %70318 = call @std/utf8.IndexInvalid(%70315, %70316, %70317)
+  %70318 = call @std/strings.IndexInvalid(%70315, %70316, %70317)
   %70319 = const 195
   %70320 = const 169
   %70321 = const 195
@@ -98604,7 +98640,7 @@ b612:
   %70445 = load.i64 %70443[0]
   %70446 = load.i64 %70443[1]
   %70447 = load.i64 %70443[2]
-  %70448 = call @std/utf8.Valid(%70445, %70446, %70447)
+  %70448 = call @std/strings.Valid(%70445, %70446, %70447)
   call @rt.print_int(%70318)
   %70449 = const 32
   call @rt.print_char(%70449)
@@ -98979,7 +99015,7 @@ b615:
   %70715 = load.i64 %70713[0]
   %70716 = load.i64 %70713[1]
   %70717 = load.i64 %70713[2]
-  %70718 = call @std/utf8.IndexInvalid(%70715, %70716, %70717)
+  %70718 = call @std/strings.IndexInvalid(%70715, %70716, %70717)
   %70719 = const 195
   %70720 = const 169
   %70721 = const 195
@@ -99152,7 +99188,7 @@ b615:
   %70845 = load.i64 %70843[0]
   %70846 = load.i64 %70843[1]
   %70847 = load.i64 %70843[2]
-  %70848 = call @std/utf8.Valid(%70845, %70846, %70847)
+  %70848 = call @std/strings.Valid(%70845, %70846, %70847)
   call @rt.print_int(%70718)
   %70849 = const 32
   call @rt.print_char(%70849)
@@ -99527,7 +99563,7 @@ b618:
   %71115 = load.i64 %71113[0]
   %71116 = load.i64 %71113[1]
   %71117 = load.i64 %71113[2]
-  %71118 = call @std/utf8.IndexInvalid(%71115, %71116, %71117)
+  %71118 = call @std/strings.IndexInvalid(%71115, %71116, %71117)
   %71119 = const 195
   %71120 = const 169
   %71121 = const 195
@@ -99700,7 +99736,7 @@ b618:
   %71245 = load.i64 %71243[0]
   %71246 = load.i64 %71243[1]
   %71247 = load.i64 %71243[2]
-  %71248 = call @std/utf8.Valid(%71245, %71246, %71247)
+  %71248 = call @std/strings.Valid(%71245, %71246, %71247)
   call @rt.print_int(%71118)
   %71249 = const 32
   call @rt.print_char(%71249)
@@ -100075,7 +100111,7 @@ b621:
   %71515 = load.i64 %71513[0]
   %71516 = load.i64 %71513[1]
   %71517 = load.i64 %71513[2]
-  %71518 = call @std/utf8.IndexInvalid(%71515, %71516, %71517)
+  %71518 = call @std/strings.IndexInvalid(%71515, %71516, %71517)
   %71519 = const 195
   %71520 = const 169
   %71521 = const 195
@@ -100248,7 +100284,7 @@ b621:
   %71645 = load.i64 %71643[0]
   %71646 = load.i64 %71643[1]
   %71647 = load.i64 %71643[2]
-  %71648 = call @std/utf8.Valid(%71645, %71646, %71647)
+  %71648 = call @std/strings.Valid(%71645, %71646, %71647)
   call @rt.print_int(%71518)
   %71649 = const 32
   call @rt.print_char(%71649)
@@ -100623,7 +100659,7 @@ b624:
   %71915 = load.i64 %71913[0]
   %71916 = load.i64 %71913[1]
   %71917 = load.i64 %71913[2]
-  %71918 = call @std/utf8.IndexInvalid(%71915, %71916, %71917)
+  %71918 = call @std/strings.IndexInvalid(%71915, %71916, %71917)
   %71919 = const 195
   %71920 = const 169
   %71921 = const 195
@@ -100796,7 +100832,7 @@ b624:
   %72045 = load.i64 %72043[0]
   %72046 = load.i64 %72043[1]
   %72047 = load.i64 %72043[2]
-  %72048 = call @std/utf8.Valid(%72045, %72046, %72047)
+  %72048 = call @std/strings.Valid(%72045, %72046, %72047)
   call @rt.print_int(%71918)
   %72049 = const 32
   call @rt.print_char(%72049)
@@ -101171,7 +101207,7 @@ b627:
   %72315 = load.i64 %72313[0]
   %72316 = load.i64 %72313[1]
   %72317 = load.i64 %72313[2]
-  %72318 = call @std/utf8.IndexInvalid(%72315, %72316, %72317)
+  %72318 = call @std/strings.IndexInvalid(%72315, %72316, %72317)
   %72319 = const 195
   %72320 = const 169
   %72321 = const 195
@@ -101344,7 +101380,7 @@ b627:
   %72445 = load.i64 %72443[0]
   %72446 = load.i64 %72443[1]
   %72447 = load.i64 %72443[2]
-  %72448 = call @std/utf8.Valid(%72445, %72446, %72447)
+  %72448 = call @std/strings.Valid(%72445, %72446, %72447)
   call @rt.print_int(%72318)
   %72449 = const 32
   call @rt.print_char(%72449)
@@ -101719,7 +101755,7 @@ b630:
   %72715 = load.i64 %72713[0]
   %72716 = load.i64 %72713[1]
   %72717 = load.i64 %72713[2]
-  %72718 = call @std/utf8.IndexInvalid(%72715, %72716, %72717)
+  %72718 = call @std/strings.IndexInvalid(%72715, %72716, %72717)
   %72719 = const 195
   %72720 = const 169
   %72721 = const 195
@@ -101892,7 +101928,7 @@ b630:
   %72845 = load.i64 %72843[0]
   %72846 = load.i64 %72843[1]
   %72847 = load.i64 %72843[2]
-  %72848 = call @std/utf8.Valid(%72845, %72846, %72847)
+  %72848 = call @std/strings.Valid(%72845, %72846, %72847)
   call @rt.print_int(%72718)
   %72849 = const 32
   call @rt.print_char(%72849)
@@ -102267,7 +102303,7 @@ b633:
   %73115 = load.i64 %73113[0]
   %73116 = load.i64 %73113[1]
   %73117 = load.i64 %73113[2]
-  %73118 = call @std/utf8.IndexInvalid(%73115, %73116, %73117)
+  %73118 = call @std/strings.IndexInvalid(%73115, %73116, %73117)
   %73119 = const 195
   %73120 = const 169
   %73121 = const 195
@@ -102440,7 +102476,7 @@ b633:
   %73245 = load.i64 %73243[0]
   %73246 = load.i64 %73243[1]
   %73247 = load.i64 %73243[2]
-  %73248 = call @std/utf8.Valid(%73245, %73246, %73247)
+  %73248 = call @std/strings.Valid(%73245, %73246, %73247)
   call @rt.print_int(%73118)
   %73249 = const 32
   call @rt.print_char(%73249)
@@ -102815,7 +102851,7 @@ b636:
   %73515 = load.i64 %73513[0]
   %73516 = load.i64 %73513[1]
   %73517 = load.i64 %73513[2]
-  %73518 = call @std/utf8.IndexInvalid(%73515, %73516, %73517)
+  %73518 = call @std/strings.IndexInvalid(%73515, %73516, %73517)
   %73519 = const 195
   %73520 = const 169
   %73521 = const 195
@@ -102988,7 +103024,7 @@ b636:
   %73645 = load.i64 %73643[0]
   %73646 = load.i64 %73643[1]
   %73647 = load.i64 %73643[2]
-  %73648 = call @std/utf8.Valid(%73645, %73646, %73647)
+  %73648 = call @std/strings.Valid(%73645, %73646, %73647)
   call @rt.print_int(%73518)
   %73649 = const 32
   call @rt.print_char(%73649)
@@ -103363,7 +103399,7 @@ b639:
   %73915 = load.i64 %73913[0]
   %73916 = load.i64 %73913[1]
   %73917 = load.i64 %73913[2]
-  %73918 = call @std/utf8.IndexInvalid(%73915, %73916, %73917)
+  %73918 = call @std/strings.IndexInvalid(%73915, %73916, %73917)
   %73919 = const 195
   %73920 = const 169
   %73921 = const 195
@@ -103536,7 +103572,7 @@ b639:
   %74045 = load.i64 %74043[0]
   %74046 = load.i64 %74043[1]
   %74047 = load.i64 %74043[2]
-  %74048 = call @std/utf8.Valid(%74045, %74046, %74047)
+  %74048 = call @std/strings.Valid(%74045, %74046, %74047)
   call @rt.print_int(%73918)
   %74049 = const 32
   call @rt.print_char(%74049)
@@ -103911,7 +103947,7 @@ b642:
   %74315 = load.i64 %74313[0]
   %74316 = load.i64 %74313[1]
   %74317 = load.i64 %74313[2]
-  %74318 = call @std/utf8.IndexInvalid(%74315, %74316, %74317)
+  %74318 = call @std/strings.IndexInvalid(%74315, %74316, %74317)
   %74319 = const 195
   %74320 = const 169
   %74321 = const 195
@@ -104084,7 +104120,7 @@ b642:
   %74445 = load.i64 %74443[0]
   %74446 = load.i64 %74443[1]
   %74447 = load.i64 %74443[2]
-  %74448 = call @std/utf8.Valid(%74445, %74446, %74447)
+  %74448 = call @std/strings.Valid(%74445, %74446, %74447)
   call @rt.print_int(%74318)
   %74449 = const 32
   call @rt.print_char(%74449)
@@ -104459,7 +104495,7 @@ b645:
   %74715 = load.i64 %74713[0]
   %74716 = load.i64 %74713[1]
   %74717 = load.i64 %74713[2]
-  %74718 = call @std/utf8.IndexInvalid(%74715, %74716, %74717)
+  %74718 = call @std/strings.IndexInvalid(%74715, %74716, %74717)
   %74719 = const 195
   %74720 = const 169
   %74721 = const 195
@@ -104632,7 +104668,7 @@ b645:
   %74845 = load.i64 %74843[0]
   %74846 = load.i64 %74843[1]
   %74847 = load.i64 %74843[2]
-  %74848 = call @std/utf8.Valid(%74845, %74846, %74847)
+  %74848 = call @std/strings.Valid(%74845, %74846, %74847)
   call @rt.print_int(%74718)
   %74849 = const 32
   call @rt.print_char(%74849)
@@ -105007,7 +105043,7 @@ b648:
   %75115 = load.i64 %75113[0]
   %75116 = load.i64 %75113[1]
   %75117 = load.i64 %75113[2]
-  %75118 = call @std/utf8.IndexInvalid(%75115, %75116, %75117)
+  %75118 = call @std/strings.IndexInvalid(%75115, %75116, %75117)
   %75119 = const 195
   %75120 = const 169
   %75121 = const 195
@@ -105180,7 +105216,7 @@ b648:
   %75245 = load.i64 %75243[0]
   %75246 = load.i64 %75243[1]
   %75247 = load.i64 %75243[2]
-  %75248 = call @std/utf8.Valid(%75245, %75246, %75247)
+  %75248 = call @std/strings.Valid(%75245, %75246, %75247)
   call @rt.print_int(%75118)
   %75249 = const 32
   call @rt.print_char(%75249)
@@ -105555,7 +105591,7 @@ b651:
   %75515 = load.i64 %75513[0]
   %75516 = load.i64 %75513[1]
   %75517 = load.i64 %75513[2]
-  %75518 = call @std/utf8.IndexInvalid(%75515, %75516, %75517)
+  %75518 = call @std/strings.IndexInvalid(%75515, %75516, %75517)
   %75519 = const 195
   %75520 = const 169
   %75521 = const 195
@@ -105728,7 +105764,7 @@ b651:
   %75645 = load.i64 %75643[0]
   %75646 = load.i64 %75643[1]
   %75647 = load.i64 %75643[2]
-  %75648 = call @std/utf8.Valid(%75645, %75646, %75647)
+  %75648 = call @std/strings.Valid(%75645, %75646, %75647)
   call @rt.print_int(%75518)
   %75649 = const 32
   call @rt.print_char(%75649)
@@ -106103,7 +106139,7 @@ b654:
   %75915 = load.i64 %75913[0]
   %75916 = load.i64 %75913[1]
   %75917 = load.i64 %75913[2]
-  %75918 = call @std/utf8.IndexInvalid(%75915, %75916, %75917)
+  %75918 = call @std/strings.IndexInvalid(%75915, %75916, %75917)
   %75919 = const 195
   %75920 = const 169
   %75921 = const 195
@@ -106276,7 +106312,7 @@ b654:
   %76045 = load.i64 %76043[0]
   %76046 = load.i64 %76043[1]
   %76047 = load.i64 %76043[2]
-  %76048 = call @std/utf8.Valid(%76045, %76046, %76047)
+  %76048 = call @std/strings.Valid(%76045, %76046, %76047)
   call @rt.print_int(%75918)
   %76049 = const 32
   call @rt.print_char(%76049)
@@ -106651,7 +106687,7 @@ b657:
   %76315 = load.i64 %76313[0]
   %76316 = load.i64 %76313[1]
   %76317 = load.i64 %76313[2]
-  %76318 = call @std/utf8.IndexInvalid(%76315, %76316, %76317)
+  %76318 = call @std/strings.IndexInvalid(%76315, %76316, %76317)
   %76319 = const 195
   %76320 = const 169
   %76321 = const 195
@@ -106824,7 +106860,7 @@ b657:
   %76445 = load.i64 %76443[0]
   %76446 = load.i64 %76443[1]
   %76447 = load.i64 %76443[2]
-  %76448 = call @std/utf8.Valid(%76445, %76446, %76447)
+  %76448 = call @std/strings.Valid(%76445, %76446, %76447)
   call @rt.print_int(%76318)
   %76449 = const 32
   call @rt.print_char(%76449)
@@ -107199,7 +107235,7 @@ b660:
   %76715 = load.i64 %76713[0]
   %76716 = load.i64 %76713[1]
   %76717 = load.i64 %76713[2]
-  %76718 = call @std/utf8.IndexInvalid(%76715, %76716, %76717)
+  %76718 = call @std/strings.IndexInvalid(%76715, %76716, %76717)
   %76719 = const 195
   %76720 = const 169
   %76721 = const 195
@@ -107372,7 +107408,7 @@ b660:
   %76845 = load.i64 %76843[0]
   %76846 = load.i64 %76843[1]
   %76847 = load.i64 %76843[2]
-  %76848 = call @std/utf8.Valid(%76845, %76846, %76847)
+  %76848 = call @std/strings.Valid(%76845, %76846, %76847)
   call @rt.print_int(%76718)
   %76849 = const 32
   call @rt.print_char(%76849)
@@ -107747,7 +107783,7 @@ b663:
   %77115 = load.i64 %77113[0]
   %77116 = load.i64 %77113[1]
   %77117 = load.i64 %77113[2]
-  %77118 = call @std/utf8.IndexInvalid(%77115, %77116, %77117)
+  %77118 = call @std/strings.IndexInvalid(%77115, %77116, %77117)
   %77119 = const 195
   %77120 = const 169
   %77121 = const 195
@@ -107920,7 +107956,7 @@ b663:
   %77245 = load.i64 %77243[0]
   %77246 = load.i64 %77243[1]
   %77247 = load.i64 %77243[2]
-  %77248 = call @std/utf8.Valid(%77245, %77246, %77247)
+  %77248 = call @std/strings.Valid(%77245, %77246, %77247)
   call @rt.print_int(%77118)
   %77249 = const 32
   call @rt.print_char(%77249)
@@ -108295,7 +108331,7 @@ b666:
   %77515 = load.i64 %77513[0]
   %77516 = load.i64 %77513[1]
   %77517 = load.i64 %77513[2]
-  %77518 = call @std/utf8.IndexInvalid(%77515, %77516, %77517)
+  %77518 = call @std/strings.IndexInvalid(%77515, %77516, %77517)
   %77519 = const 195
   %77520 = const 169
   %77521 = const 195
@@ -108468,7 +108504,7 @@ b666:
   %77645 = load.i64 %77643[0]
   %77646 = load.i64 %77643[1]
   %77647 = load.i64 %77643[2]
-  %77648 = call @std/utf8.Valid(%77645, %77646, %77647)
+  %77648 = call @std/strings.Valid(%77645, %77646, %77647)
   call @rt.print_int(%77518)
   %77649 = const 32
   call @rt.print_char(%77649)
@@ -108843,7 +108879,7 @@ b669:
   %77915 = load.i64 %77913[0]
   %77916 = load.i64 %77913[1]
   %77917 = load.i64 %77913[2]
-  %77918 = call @std/utf8.IndexInvalid(%77915, %77916, %77917)
+  %77918 = call @std/strings.IndexInvalid(%77915, %77916, %77917)
   %77919 = const 195
   %77920 = const 169
   %77921 = const 195
@@ -109016,7 +109052,7 @@ b669:
   %78045 = load.i64 %78043[0]
   %78046 = load.i64 %78043[1]
   %78047 = load.i64 %78043[2]
-  %78048 = call @std/utf8.Valid(%78045, %78046, %78047)
+  %78048 = call @std/strings.Valid(%78045, %78046, %78047)
   call @rt.print_int(%77918)
   %78049 = const 32
   call @rt.print_char(%78049)
@@ -109391,7 +109427,7 @@ b672:
   %78315 = load.i64 %78313[0]
   %78316 = load.i64 %78313[1]
   %78317 = load.i64 %78313[2]
-  %78318 = call @std/utf8.IndexInvalid(%78315, %78316, %78317)
+  %78318 = call @std/strings.IndexInvalid(%78315, %78316, %78317)
   %78319 = const 195
   %78320 = const 169
   %78321 = const 195
@@ -109564,7 +109600,7 @@ b672:
   %78445 = load.i64 %78443[0]
   %78446 = load.i64 %78443[1]
   %78447 = load.i64 %78443[2]
-  %78448 = call @std/utf8.Valid(%78445, %78446, %78447)
+  %78448 = call @std/strings.Valid(%78445, %78446, %78447)
   call @rt.print_int(%78318)
   %78449 = const 32
   call @rt.print_char(%78449)
@@ -109939,7 +109975,7 @@ b675:
   %78715 = load.i64 %78713[0]
   %78716 = load.i64 %78713[1]
   %78717 = load.i64 %78713[2]
-  %78718 = call @std/utf8.IndexInvalid(%78715, %78716, %78717)
+  %78718 = call @std/strings.IndexInvalid(%78715, %78716, %78717)
   %78719 = const 195
   %78720 = const 169
   %78721 = const 195
@@ -110112,7 +110148,7 @@ b675:
   %78845 = load.i64 %78843[0]
   %78846 = load.i64 %78843[1]
   %78847 = load.i64 %78843[2]
-  %78848 = call @std/utf8.Valid(%78845, %78846, %78847)
+  %78848 = call @std/strings.Valid(%78845, %78846, %78847)
   call @rt.print_int(%78718)
   %78849 = const 32
   call @rt.print_char(%78849)
@@ -110487,7 +110523,7 @@ b678:
   %79115 = load.i64 %79113[0]
   %79116 = load.i64 %79113[1]
   %79117 = load.i64 %79113[2]
-  %79118 = call @std/utf8.IndexInvalid(%79115, %79116, %79117)
+  %79118 = call @std/strings.IndexInvalid(%79115, %79116, %79117)
   %79119 = const 195
   %79120 = const 169
   %79121 = const 195
@@ -110660,7 +110696,7 @@ b678:
   %79245 = load.i64 %79243[0]
   %79246 = load.i64 %79243[1]
   %79247 = load.i64 %79243[2]
-  %79248 = call @std/utf8.Valid(%79245, %79246, %79247)
+  %79248 = call @std/strings.Valid(%79245, %79246, %79247)
   call @rt.print_int(%79118)
   %79249 = const 32
   call @rt.print_char(%79249)
@@ -111035,7 +111071,7 @@ b681:
   %79515 = load.i64 %79513[0]
   %79516 = load.i64 %79513[1]
   %79517 = load.i64 %79513[2]
-  %79518 = call @std/utf8.IndexInvalid(%79515, %79516, %79517)
+  %79518 = call @std/strings.IndexInvalid(%79515, %79516, %79517)
   %79519 = const 195
   %79520 = const 169
   %79521 = const 195
@@ -111208,7 +111244,7 @@ b681:
   %79645 = load.i64 %79643[0]
   %79646 = load.i64 %79643[1]
   %79647 = load.i64 %79643[2]
-  %79648 = call @std/utf8.Valid(%79645, %79646, %79647)
+  %79648 = call @std/strings.Valid(%79645, %79646, %79647)
   call @rt.print_int(%79518)
   %79649 = const 32
   call @rt.print_char(%79649)
@@ -111583,7 +111619,7 @@ b684:
   %79915 = load.i64 %79913[0]
   %79916 = load.i64 %79913[1]
   %79917 = load.i64 %79913[2]
-  %79918 = call @std/utf8.IndexInvalid(%79915, %79916, %79917)
+  %79918 = call @std/strings.IndexInvalid(%79915, %79916, %79917)
   %79919 = const 195
   %79920 = const 169
   %79921 = const 195
@@ -111756,7 +111792,7 @@ b684:
   %80045 = load.i64 %80043[0]
   %80046 = load.i64 %80043[1]
   %80047 = load.i64 %80043[2]
-  %80048 = call @std/utf8.Valid(%80045, %80046, %80047)
+  %80048 = call @std/strings.Valid(%80045, %80046, %80047)
   call @rt.print_int(%79918)
   %80049 = const 32
   call @rt.print_char(%80049)
@@ -112131,7 +112167,7 @@ b687:
   %80315 = load.i64 %80313[0]
   %80316 = load.i64 %80313[1]
   %80317 = load.i64 %80313[2]
-  %80318 = call @std/utf8.IndexInvalid(%80315, %80316, %80317)
+  %80318 = call @std/strings.IndexInvalid(%80315, %80316, %80317)
   %80319 = const 195
   %80320 = const 169
   %80321 = const 195
@@ -112304,7 +112340,7 @@ b687:
   %80445 = load.i64 %80443[0]
   %80446 = load.i64 %80443[1]
   %80447 = load.i64 %80443[2]
-  %80448 = call @std/utf8.Valid(%80445, %80446, %80447)
+  %80448 = call @std/strings.Valid(%80445, %80446, %80447)
   call @rt.print_int(%80318)
   %80449 = const 32
   call @rt.print_char(%80449)
@@ -112679,7 +112715,7 @@ b690:
   %80715 = load.i64 %80713[0]
   %80716 = load.i64 %80713[1]
   %80717 = load.i64 %80713[2]
-  %80718 = call @std/utf8.IndexInvalid(%80715, %80716, %80717)
+  %80718 = call @std/strings.IndexInvalid(%80715, %80716, %80717)
   %80719 = const 195
   %80720 = const 169
   %80721 = const 195
@@ -112852,7 +112888,7 @@ b690:
   %80845 = load.i64 %80843[0]
   %80846 = load.i64 %80843[1]
   %80847 = load.i64 %80843[2]
-  %80848 = call @std/utf8.Valid(%80845, %80846, %80847)
+  %80848 = call @std/strings.Valid(%80845, %80846, %80847)
   call @rt.print_int(%80718)
   %80849 = const 32
   call @rt.print_char(%80849)
@@ -113227,7 +113263,7 @@ b693:
   %81115 = load.i64 %81113[0]
   %81116 = load.i64 %81113[1]
   %81117 = load.i64 %81113[2]
-  %81118 = call @std/utf8.IndexInvalid(%81115, %81116, %81117)
+  %81118 = call @std/strings.IndexInvalid(%81115, %81116, %81117)
   %81119 = const 195
   %81120 = const 169
   %81121 = const 195
@@ -113400,7 +113436,7 @@ b693:
   %81245 = load.i64 %81243[0]
   %81246 = load.i64 %81243[1]
   %81247 = load.i64 %81243[2]
-  %81248 = call @std/utf8.Valid(%81245, %81246, %81247)
+  %81248 = call @std/strings.Valid(%81245, %81246, %81247)
   call @rt.print_int(%81118)
   %81249 = const 32
   call @rt.print_char(%81249)
@@ -113775,7 +113811,7 @@ b696:
   %81515 = load.i64 %81513[0]
   %81516 = load.i64 %81513[1]
   %81517 = load.i64 %81513[2]
-  %81518 = call @std/utf8.IndexInvalid(%81515, %81516, %81517)
+  %81518 = call @std/strings.IndexInvalid(%81515, %81516, %81517)
   %81519 = const 195
   %81520 = const 169
   %81521 = const 195
@@ -113948,7 +113984,7 @@ b696:
   %81645 = load.i64 %81643[0]
   %81646 = load.i64 %81643[1]
   %81647 = load.i64 %81643[2]
-  %81648 = call @std/utf8.Valid(%81645, %81646, %81647)
+  %81648 = call @std/strings.Valid(%81645, %81646, %81647)
   call @rt.print_int(%81518)
   %81649 = const 32
   call @rt.print_char(%81649)
@@ -114323,7 +114359,7 @@ b699:
   %81915 = load.i64 %81913[0]
   %81916 = load.i64 %81913[1]
   %81917 = load.i64 %81913[2]
-  %81918 = call @std/utf8.IndexInvalid(%81915, %81916, %81917)
+  %81918 = call @std/strings.IndexInvalid(%81915, %81916, %81917)
   %81919 = const 195
   %81920 = const 169
   %81921 = const 195
@@ -114496,7 +114532,7 @@ b699:
   %82045 = load.i64 %82043[0]
   %82046 = load.i64 %82043[1]
   %82047 = load.i64 %82043[2]
-  %82048 = call @std/utf8.Valid(%82045, %82046, %82047)
+  %82048 = call @std/strings.Valid(%82045, %82046, %82047)
   call @rt.print_int(%81918)
   %82049 = const 32
   call @rt.print_char(%82049)
@@ -114871,7 +114907,7 @@ b702:
   %82315 = load.i64 %82313[0]
   %82316 = load.i64 %82313[1]
   %82317 = load.i64 %82313[2]
-  %82318 = call @std/utf8.IndexInvalid(%82315, %82316, %82317)
+  %82318 = call @std/strings.IndexInvalid(%82315, %82316, %82317)
   %82319 = const 195
   %82320 = const 169
   %82321 = const 195
@@ -115044,7 +115080,7 @@ b702:
   %82445 = load.i64 %82443[0]
   %82446 = load.i64 %82443[1]
   %82447 = load.i64 %82443[2]
-  %82448 = call @std/utf8.Valid(%82445, %82446, %82447)
+  %82448 = call @std/strings.Valid(%82445, %82446, %82447)
   call @rt.print_int(%82318)
   %82449 = const 32
   call @rt.print_char(%82449)
@@ -115419,7 +115455,7 @@ b705:
   %82715 = load.i64 %82713[0]
   %82716 = load.i64 %82713[1]
   %82717 = load.i64 %82713[2]
-  %82718 = call @std/utf8.IndexInvalid(%82715, %82716, %82717)
+  %82718 = call @std/strings.IndexInvalid(%82715, %82716, %82717)
   %82719 = const 195
   %82720 = const 169
   %82721 = const 195
@@ -115592,7 +115628,7 @@ b705:
   %82845 = load.i64 %82843[0]
   %82846 = load.i64 %82843[1]
   %82847 = load.i64 %82843[2]
-  %82848 = call @std/utf8.Valid(%82845, %82846, %82847)
+  %82848 = call @std/strings.Valid(%82845, %82846, %82847)
   call @rt.print_int(%82718)
   %82849 = const 32
   call @rt.print_char(%82849)
@@ -115967,7 +116003,7 @@ b708:
   %83115 = load.i64 %83113[0]
   %83116 = load.i64 %83113[1]
   %83117 = load.i64 %83113[2]
-  %83118 = call @std/utf8.IndexInvalid(%83115, %83116, %83117)
+  %83118 = call @std/strings.IndexInvalid(%83115, %83116, %83117)
   %83119 = const 195
   %83120 = const 169
   %83121 = const 195
@@ -116140,7 +116176,7 @@ b708:
   %83245 = load.i64 %83243[0]
   %83246 = load.i64 %83243[1]
   %83247 = load.i64 %83243[2]
-  %83248 = call @std/utf8.Valid(%83245, %83246, %83247)
+  %83248 = call @std/strings.Valid(%83245, %83246, %83247)
   call @rt.print_int(%83118)
   %83249 = const 32
   call @rt.print_char(%83249)
@@ -116515,7 +116551,7 @@ b711:
   %83515 = load.i64 %83513[0]
   %83516 = load.i64 %83513[1]
   %83517 = load.i64 %83513[2]
-  %83518 = call @std/utf8.IndexInvalid(%83515, %83516, %83517)
+  %83518 = call @std/strings.IndexInvalid(%83515, %83516, %83517)
   %83519 = const 195
   %83520 = const 169
   %83521 = const 195
@@ -116688,7 +116724,7 @@ b711:
   %83645 = load.i64 %83643[0]
   %83646 = load.i64 %83643[1]
   %83647 = load.i64 %83643[2]
-  %83648 = call @std/utf8.Valid(%83645, %83646, %83647)
+  %83648 = call @std/strings.Valid(%83645, %83646, %83647)
   call @rt.print_int(%83518)
   %83649 = const 32
   call @rt.print_char(%83649)
@@ -117063,7 +117099,7 @@ b714:
   %83915 = load.i64 %83913[0]
   %83916 = load.i64 %83913[1]
   %83917 = load.i64 %83913[2]
-  %83918 = call @std/utf8.IndexInvalid(%83915, %83916, %83917)
+  %83918 = call @std/strings.IndexInvalid(%83915, %83916, %83917)
   %83919 = const 195
   %83920 = const 169
   %83921 = const 195
@@ -117236,7 +117272,7 @@ b714:
   %84045 = load.i64 %84043[0]
   %84046 = load.i64 %84043[1]
   %84047 = load.i64 %84043[2]
-  %84048 = call @std/utf8.Valid(%84045, %84046, %84047)
+  %84048 = call @std/strings.Valid(%84045, %84046, %84047)
   call @rt.print_int(%83918)
   %84049 = const 32
   call @rt.print_char(%84049)
@@ -117611,7 +117647,7 @@ b717:
   %84315 = load.i64 %84313[0]
   %84316 = load.i64 %84313[1]
   %84317 = load.i64 %84313[2]
-  %84318 = call @std/utf8.IndexInvalid(%84315, %84316, %84317)
+  %84318 = call @std/strings.IndexInvalid(%84315, %84316, %84317)
   %84319 = const 195
   %84320 = const 169
   %84321 = const 195
@@ -117784,7 +117820,7 @@ b717:
   %84445 = load.i64 %84443[0]
   %84446 = load.i64 %84443[1]
   %84447 = load.i64 %84443[2]
-  %84448 = call @std/utf8.Valid(%84445, %84446, %84447)
+  %84448 = call @std/strings.Valid(%84445, %84446, %84447)
   call @rt.print_int(%84318)
   %84449 = const 32
   call @rt.print_char(%84449)
@@ -118159,7 +118195,7 @@ b720:
   %84715 = load.i64 %84713[0]
   %84716 = load.i64 %84713[1]
   %84717 = load.i64 %84713[2]
-  %84718 = call @std/utf8.IndexInvalid(%84715, %84716, %84717)
+  %84718 = call @std/strings.IndexInvalid(%84715, %84716, %84717)
   %84719 = const 195
   %84720 = const 169
   %84721 = const 195
@@ -118332,7 +118368,7 @@ b720:
   %84845 = load.i64 %84843[0]
   %84846 = load.i64 %84843[1]
   %84847 = load.i64 %84843[2]
-  %84848 = call @std/utf8.Valid(%84845, %84846, %84847)
+  %84848 = call @std/strings.Valid(%84845, %84846, %84847)
   call @rt.print_int(%84718)
   %84849 = const 32
   call @rt.print_char(%84849)
@@ -118707,7 +118743,7 @@ b723:
   %85115 = load.i64 %85113[0]
   %85116 = load.i64 %85113[1]
   %85117 = load.i64 %85113[2]
-  %85118 = call @std/utf8.IndexInvalid(%85115, %85116, %85117)
+  %85118 = call @std/strings.IndexInvalid(%85115, %85116, %85117)
   %85119 = const 195
   %85120 = const 169
   %85121 = const 195
@@ -118880,7 +118916,7 @@ b723:
   %85245 = load.i64 %85243[0]
   %85246 = load.i64 %85243[1]
   %85247 = load.i64 %85243[2]
-  %85248 = call @std/utf8.Valid(%85245, %85246, %85247)
+  %85248 = call @std/strings.Valid(%85245, %85246, %85247)
   call @rt.print_int(%85118)
   %85249 = const 32
   call @rt.print_char(%85249)
@@ -119255,7 +119291,7 @@ b726:
   %85515 = load.i64 %85513[0]
   %85516 = load.i64 %85513[1]
   %85517 = load.i64 %85513[2]
-  %85518 = call @std/utf8.IndexInvalid(%85515, %85516, %85517)
+  %85518 = call @std/strings.IndexInvalid(%85515, %85516, %85517)
   %85519 = const 195
   %85520 = const 169
   %85521 = const 195
@@ -119428,7 +119464,7 @@ b726:
   %85645 = load.i64 %85643[0]
   %85646 = load.i64 %85643[1]
   %85647 = load.i64 %85643[2]
-  %85648 = call @std/utf8.Valid(%85645, %85646, %85647)
+  %85648 = call @std/strings.Valid(%85645, %85646, %85647)
   call @rt.print_int(%85518)
   %85649 = const 32
   call @rt.print_char(%85649)
@@ -119803,7 +119839,7 @@ b729:
   %85915 = load.i64 %85913[0]
   %85916 = load.i64 %85913[1]
   %85917 = load.i64 %85913[2]
-  %85918 = call @std/utf8.IndexInvalid(%85915, %85916, %85917)
+  %85918 = call @std/strings.IndexInvalid(%85915, %85916, %85917)
   %85919 = const 195
   %85920 = const 169
   %85921 = const 195
@@ -119976,7 +120012,7 @@ b729:
   %86045 = load.i64 %86043[0]
   %86046 = load.i64 %86043[1]
   %86047 = load.i64 %86043[2]
-  %86048 = call @std/utf8.Valid(%86045, %86046, %86047)
+  %86048 = call @std/strings.Valid(%86045, %86046, %86047)
   call @rt.print_int(%85918)
   %86049 = const 32
   call @rt.print_char(%86049)
@@ -120351,7 +120387,7 @@ b732:
   %86315 = load.i64 %86313[0]
   %86316 = load.i64 %86313[1]
   %86317 = load.i64 %86313[2]
-  %86318 = call @std/utf8.IndexInvalid(%86315, %86316, %86317)
+  %86318 = call @std/strings.IndexInvalid(%86315, %86316, %86317)
   %86319 = const 227
   %86320 = const 129
   %86321 = const 130
@@ -120524,7 +120560,7 @@ b732:
   %86445 = load.i64 %86443[0]
   %86446 = load.i64 %86443[1]
   %86447 = load.i64 %86443[2]
-  %86448 = call @std/utf8.Valid(%86445, %86446, %86447)
+  %86448 = call @std/strings.Valid(%86445, %86446, %86447)
   call @rt.print_int(%86318)
   %86449 = const 32
   call @rt.print_char(%86449)
@@ -120899,7 +120935,7 @@ b735:
   %86715 = load.i64 %86713[0]
   %86716 = load.i64 %86713[1]
   %86717 = load.i64 %86713[2]
-  %86718 = call @std/utf8.IndexInvalid(%86715, %86716, %86717)
+  %86718 = call @std/strings.IndexInvalid(%86715, %86716, %86717)
   %86719 = const 227
   %86720 = const 129
   %86721 = const 130
@@ -121072,7 +121108,7 @@ b735:
   %86845 = load.i64 %86843[0]
   %86846 = load.i64 %86843[1]
   %86847 = load.i64 %86843[2]
-  %86848 = call @std/utf8.Valid(%86845, %86846, %86847)
+  %86848 = call @std/strings.Valid(%86845, %86846, %86847)
   call @rt.print_int(%86718)
   %86849 = const 32
   call @rt.print_char(%86849)
@@ -121447,7 +121483,7 @@ b738:
   %87115 = load.i64 %87113[0]
   %87116 = load.i64 %87113[1]
   %87117 = load.i64 %87113[2]
-  %87118 = call @std/utf8.IndexInvalid(%87115, %87116, %87117)
+  %87118 = call @std/strings.IndexInvalid(%87115, %87116, %87117)
   %87119 = const 227
   %87120 = const 129
   %87121 = const 130
@@ -121620,7 +121656,7 @@ b738:
   %87245 = load.i64 %87243[0]
   %87246 = load.i64 %87243[1]
   %87247 = load.i64 %87243[2]
-  %87248 = call @std/utf8.Valid(%87245, %87246, %87247)
+  %87248 = call @std/strings.Valid(%87245, %87246, %87247)
   call @rt.print_int(%87118)
   %87249 = const 32
   call @rt.print_char(%87249)
@@ -121995,7 +122031,7 @@ b741:
   %87515 = load.i64 %87513[0]
   %87516 = load.i64 %87513[1]
   %87517 = load.i64 %87513[2]
-  %87518 = call @std/utf8.IndexInvalid(%87515, %87516, %87517)
+  %87518 = call @std/strings.IndexInvalid(%87515, %87516, %87517)
   %87519 = const 227
   %87520 = const 129
   %87521 = const 130
@@ -122168,7 +122204,7 @@ b741:
   %87645 = load.i64 %87643[0]
   %87646 = load.i64 %87643[1]
   %87647 = load.i64 %87643[2]
-  %87648 = call @std/utf8.Valid(%87645, %87646, %87647)
+  %87648 = call @std/strings.Valid(%87645, %87646, %87647)
   call @rt.print_int(%87518)
   %87649 = const 32
   call @rt.print_char(%87649)
@@ -122543,7 +122579,7 @@ b744:
   %87915 = load.i64 %87913[0]
   %87916 = load.i64 %87913[1]
   %87917 = load.i64 %87913[2]
-  %87918 = call @std/utf8.IndexInvalid(%87915, %87916, %87917)
+  %87918 = call @std/strings.IndexInvalid(%87915, %87916, %87917)
   %87919 = const 227
   %87920 = const 129
   %87921 = const 130
@@ -122716,7 +122752,7 @@ b744:
   %88045 = load.i64 %88043[0]
   %88046 = load.i64 %88043[1]
   %88047 = load.i64 %88043[2]
-  %88048 = call @std/utf8.Valid(%88045, %88046, %88047)
+  %88048 = call @std/strings.Valid(%88045, %88046, %88047)
   call @rt.print_int(%87918)
   %88049 = const 32
   call @rt.print_char(%88049)
@@ -123091,7 +123127,7 @@ b747:
   %88315 = load.i64 %88313[0]
   %88316 = load.i64 %88313[1]
   %88317 = load.i64 %88313[2]
-  %88318 = call @std/utf8.IndexInvalid(%88315, %88316, %88317)
+  %88318 = call @std/strings.IndexInvalid(%88315, %88316, %88317)
   %88319 = const 227
   %88320 = const 129
   %88321 = const 130
@@ -123264,7 +123300,7 @@ b747:
   %88445 = load.i64 %88443[0]
   %88446 = load.i64 %88443[1]
   %88447 = load.i64 %88443[2]
-  %88448 = call @std/utf8.Valid(%88445, %88446, %88447)
+  %88448 = call @std/strings.Valid(%88445, %88446, %88447)
   call @rt.print_int(%88318)
   %88449 = const 32
   call @rt.print_char(%88449)
@@ -123639,7 +123675,7 @@ b750:
   %88715 = load.i64 %88713[0]
   %88716 = load.i64 %88713[1]
   %88717 = load.i64 %88713[2]
-  %88718 = call @std/utf8.IndexInvalid(%88715, %88716, %88717)
+  %88718 = call @std/strings.IndexInvalid(%88715, %88716, %88717)
   %88719 = const 227
   %88720 = const 129
   %88721 = const 130
@@ -123812,7 +123848,7 @@ b750:
   %88845 = load.i64 %88843[0]
   %88846 = load.i64 %88843[1]
   %88847 = load.i64 %88843[2]
-  %88848 = call @std/utf8.Valid(%88845, %88846, %88847)
+  %88848 = call @std/strings.Valid(%88845, %88846, %88847)
   call @rt.print_int(%88718)
   %88849 = const 32
   call @rt.print_char(%88849)
@@ -124187,7 +124223,7 @@ b753:
   %89115 = load.i64 %89113[0]
   %89116 = load.i64 %89113[1]
   %89117 = load.i64 %89113[2]
-  %89118 = call @std/utf8.IndexInvalid(%89115, %89116, %89117)
+  %89118 = call @std/strings.IndexInvalid(%89115, %89116, %89117)
   %89119 = const 227
   %89120 = const 129
   %89121 = const 130
@@ -124360,7 +124396,7 @@ b753:
   %89245 = load.i64 %89243[0]
   %89246 = load.i64 %89243[1]
   %89247 = load.i64 %89243[2]
-  %89248 = call @std/utf8.Valid(%89245, %89246, %89247)
+  %89248 = call @std/strings.Valid(%89245, %89246, %89247)
   call @rt.print_int(%89118)
   %89249 = const 32
   call @rt.print_char(%89249)
@@ -124735,7 +124771,7 @@ b756:
   %89515 = load.i64 %89513[0]
   %89516 = load.i64 %89513[1]
   %89517 = load.i64 %89513[2]
-  %89518 = call @std/utf8.IndexInvalid(%89515, %89516, %89517)
+  %89518 = call @std/strings.IndexInvalid(%89515, %89516, %89517)
   %89519 = const 227
   %89520 = const 129
   %89521 = const 130
@@ -124908,7 +124944,7 @@ b756:
   %89645 = load.i64 %89643[0]
   %89646 = load.i64 %89643[1]
   %89647 = load.i64 %89643[2]
-  %89648 = call @std/utf8.Valid(%89645, %89646, %89647)
+  %89648 = call @std/strings.Valid(%89645, %89646, %89647)
   call @rt.print_int(%89518)
   %89649 = const 32
   call @rt.print_char(%89649)
@@ -125283,7 +125319,7 @@ b759:
   %89915 = load.i64 %89913[0]
   %89916 = load.i64 %89913[1]
   %89917 = load.i64 %89913[2]
-  %89918 = call @std/utf8.IndexInvalid(%89915, %89916, %89917)
+  %89918 = call @std/strings.IndexInvalid(%89915, %89916, %89917)
   %89919 = const 227
   %89920 = const 129
   %89921 = const 130
@@ -125456,7 +125492,7 @@ b759:
   %90045 = load.i64 %90043[0]
   %90046 = load.i64 %90043[1]
   %90047 = load.i64 %90043[2]
-  %90048 = call @std/utf8.Valid(%90045, %90046, %90047)
+  %90048 = call @std/strings.Valid(%90045, %90046, %90047)
   call @rt.print_int(%89918)
   %90049 = const 32
   call @rt.print_char(%90049)
@@ -125831,7 +125867,7 @@ b762:
   %90315 = load.i64 %90313[0]
   %90316 = load.i64 %90313[1]
   %90317 = load.i64 %90313[2]
-  %90318 = call @std/utf8.IndexInvalid(%90315, %90316, %90317)
+  %90318 = call @std/strings.IndexInvalid(%90315, %90316, %90317)
   %90319 = const 227
   %90320 = const 129
   %90321 = const 130
@@ -126004,7 +126040,7 @@ b762:
   %90445 = load.i64 %90443[0]
   %90446 = load.i64 %90443[1]
   %90447 = load.i64 %90443[2]
-  %90448 = call @std/utf8.Valid(%90445, %90446, %90447)
+  %90448 = call @std/strings.Valid(%90445, %90446, %90447)
   call @rt.print_int(%90318)
   %90449 = const 32
   call @rt.print_char(%90449)
@@ -126379,7 +126415,7 @@ b765:
   %90715 = load.i64 %90713[0]
   %90716 = load.i64 %90713[1]
   %90717 = load.i64 %90713[2]
-  %90718 = call @std/utf8.IndexInvalid(%90715, %90716, %90717)
+  %90718 = call @std/strings.IndexInvalid(%90715, %90716, %90717)
   %90719 = const 227
   %90720 = const 129
   %90721 = const 130
@@ -126552,7 +126588,7 @@ b765:
   %90845 = load.i64 %90843[0]
   %90846 = load.i64 %90843[1]
   %90847 = load.i64 %90843[2]
-  %90848 = call @std/utf8.Valid(%90845, %90846, %90847)
+  %90848 = call @std/strings.Valid(%90845, %90846, %90847)
   call @rt.print_int(%90718)
   %90849 = const 32
   call @rt.print_char(%90849)
@@ -126927,7 +126963,7 @@ b768:
   %91115 = load.i64 %91113[0]
   %91116 = load.i64 %91113[1]
   %91117 = load.i64 %91113[2]
-  %91118 = call @std/utf8.IndexInvalid(%91115, %91116, %91117)
+  %91118 = call @std/strings.IndexInvalid(%91115, %91116, %91117)
   %91119 = const 227
   %91120 = const 129
   %91121 = const 130
@@ -127100,7 +127136,7 @@ b768:
   %91245 = load.i64 %91243[0]
   %91246 = load.i64 %91243[1]
   %91247 = load.i64 %91243[2]
-  %91248 = call @std/utf8.Valid(%91245, %91246, %91247)
+  %91248 = call @std/strings.Valid(%91245, %91246, %91247)
   call @rt.print_int(%91118)
   %91249 = const 32
   call @rt.print_char(%91249)
@@ -127475,7 +127511,7 @@ b771:
   %91515 = load.i64 %91513[0]
   %91516 = load.i64 %91513[1]
   %91517 = load.i64 %91513[2]
-  %91518 = call @std/utf8.IndexInvalid(%91515, %91516, %91517)
+  %91518 = call @std/strings.IndexInvalid(%91515, %91516, %91517)
   %91519 = const 227
   %91520 = const 129
   %91521 = const 130
@@ -127648,7 +127684,7 @@ b771:
   %91645 = load.i64 %91643[0]
   %91646 = load.i64 %91643[1]
   %91647 = load.i64 %91643[2]
-  %91648 = call @std/utf8.Valid(%91645, %91646, %91647)
+  %91648 = call @std/strings.Valid(%91645, %91646, %91647)
   call @rt.print_int(%91518)
   %91649 = const 32
   call @rt.print_char(%91649)
@@ -128023,7 +128059,7 @@ b774:
   %91915 = load.i64 %91913[0]
   %91916 = load.i64 %91913[1]
   %91917 = load.i64 %91913[2]
-  %91918 = call @std/utf8.IndexInvalid(%91915, %91916, %91917)
+  %91918 = call @std/strings.IndexInvalid(%91915, %91916, %91917)
   %91919 = const 227
   %91920 = const 129
   %91921 = const 130
@@ -128196,7 +128232,7 @@ b774:
   %92045 = load.i64 %92043[0]
   %92046 = load.i64 %92043[1]
   %92047 = load.i64 %92043[2]
-  %92048 = call @std/utf8.Valid(%92045, %92046, %92047)
+  %92048 = call @std/strings.Valid(%92045, %92046, %92047)
   call @rt.print_int(%91918)
   %92049 = const 32
   call @rt.print_char(%92049)
@@ -128539,7 +128575,7 @@ b777:
   %92291 = load.i64 %92289[0]
   %92292 = load.i64 %92289[1]
   %92293 = load.i64 %92289[2]
-  %92294 = call @std/utf8.IndexInvalid(%92291, %92292, %92293)
+  %92294 = call @std/strings.IndexInvalid(%92291, %92292, %92293)
   %92295 = const 97
   %92296 = const 97
   %92297 = const 97
@@ -128680,7 +128716,7 @@ b777:
   %92397 = load.i64 %92395[0]
   %92398 = load.i64 %92395[1]
   %92399 = load.i64 %92395[2]
-  %92400 = call @std/utf8.Valid(%92397, %92398, %92399)
+  %92400 = call @std/strings.Valid(%92397, %92398, %92399)
   call @rt.print_int(%92294)
   %92401 = const 32
   call @rt.print_char(%92401)
@@ -128927,7 +128963,7 @@ b780:
   %92571 = load.i64 %92569[0]
   %92572 = load.i64 %92569[1]
   %92573 = load.i64 %92569[2]
-  %92574 = call @std/utf8.IndexInvalid(%92571, %92572, %92573)
+  %92574 = call @std/strings.IndexInvalid(%92571, %92572, %92573)
   %92575 = const 97
   %92576 = const 97
   %92577 = const 97
@@ -129004,7 +129040,7 @@ b780:
   %92629 = load.i64 %92627[0]
   %92630 = load.i64 %92627[1]
   %92631 = load.i64 %92627[2]
-  %92632 = call @std/utf8.Valid(%92629, %92630, %92631)
+  %92632 = call @std/strings.Valid(%92629, %92630, %92631)
   call @rt.print_int(%92574)
   %92633 = const 32
   call @rt.print_char(%92633)
@@ -129267,7 +129303,7 @@ b783:
   %92815 = load.i64 %92813[0]
   %92816 = load.i64 %92813[1]
   %92817 = load.i64 %92813[2]
-  %92818 = call @std/utf8.IndexInvalid(%92815, %92816, %92817)
+  %92818 = call @std/strings.IndexInvalid(%92815, %92816, %92817)
   %92819 = const 227
   %92820 = const 129
   %92821 = const 130
@@ -129424,7 +129460,7 @@ b783:
   %92933 = load.i64 %92931[0]
   %92934 = load.i64 %92931[1]
   %92935 = load.i64 %92931[2]
-  %92936 = call @std/utf8.Valid(%92933, %92934, %92935)
+  %92936 = call @std/strings.Valid(%92933, %92934, %92935)
   call @rt.print_int(%92818)
   %92937 = const 32
   call @rt.print_char(%92937)
@@ -130179,7 +130215,7 @@ b89:
   br b83(%380, %384)
 }
 
-func @std/utf8.IndexInvalid(%0 i64, %1 i64, %2 i64) i64 {
+func @std/strings.IndexInvalid(%0 i64, %1 i64, %2 i64) i64 {
   slot s0 [3]
   slot s1 [1]
   slot s2 [1]
@@ -130215,7 +130251,7 @@ b2:
   %23 = load.i64 %3[1]
   %24 = load.i64 %3[2]
   %25 = load.i64 %6[0]
-  %26 = call @std/utf8.validPrefix(%22, %23, %24, %25)
+  %26 = call @std/strings.validPrefix(%22, %23, %24, %25)
   store %6[0], %26
   %27 = region.depth
   br b6
@@ -130259,7 +130295,7 @@ b9:
 b10(%31 i64):
   condbr %31, b7, b8
 b11:
-  %35 = const 1
+  %35 = const 0
   call @rt.panic(%35)
   exit 101
 b12:
@@ -130280,7 +130316,7 @@ b15:
   %51 = uge %49, %50
   condbr %51, b16, b17
 b16:
-  %52 = const 2
+  %52 = const 1
   call @rt.panic(%52)
   exit 101
 b17:
@@ -130316,7 +130352,7 @@ b22:
 b23(%68 i64):
   condbr %68, b26, b27
 b24:
-  %74 = const 3
+  %74 = const 2
   call @rt.panic(%74)
   exit 101
 b25:
@@ -130372,7 +130408,7 @@ b35:
 b36(%100 i64):
   condbr %100, b39, b40(%100)
 b37:
-  %106 = const 4
+  %106 = const 3
   call @rt.panic(%106)
   exit 101
 b38:
@@ -130395,7 +130431,7 @@ b39:
 b40(%115 i64):
   condbr %115, b43, b44
 b41:
-  %121 = const 5
+  %121 = const 4
   call @rt.panic(%121)
   exit 101
 b42:
@@ -130421,7 +130457,7 @@ b45:
   %134 = load.i64 %3[1]
   %135 = load.i64 %3[2]
   %136 = load.i64 %6[0]
-  %137 = call @std/utf8.seqLen(%133, %134, %135, %136)
+  %137 = call @std/strings.seqLen(%133, %134, %135, %136)
   %138 = const 0
   %139 = eq %137, %138
   condbr %139, b46, b47
@@ -130440,7 +130476,7 @@ b48:
   br b1
 }
 
-func @std/utf8.Valid(%0 i64, %1 i64, %2 i64) i64 {
+func @std/strings.Valid(%0 i64, %1 i64, %2 i64) i64 {
   slot s0 [3]
 b0:
   %3 = slotaddr s0
@@ -130452,7 +130488,7 @@ b0:
   %5 = load.i64 %3[0]
   %6 = load.i64 %3[1]
   %7 = load.i64 %3[2]
-  %8 = call @std/utf8.IndexInvalid(%5, %6, %7)
+  %8 = call @std/strings.IndexInvalid(%5, %6, %7)
   %9 = const 0
   %10 = lt %8, %9
   region.setdepth %4
@@ -130478,7 +130514,7 @@ b0:
   %6 = load.i64 %3[0]
   %7 = load.i64 %3[1]
   %8 = load.i64 %3[2]
-  call @std/utf8.Parse(%5, %6, %7, %8)
+  call @std/internal/utf8.Parse(%5, %6, %7, %8)
   %9 = const 3
   %10 = gep.word %5, %9
   %11 = slotaddr s2
@@ -130524,25 +130560,23 @@ b1:
   %35 = eq %33, %34
   condbr %35, b4, b3
 b2:
-  %45 = globaladdr @str.1
-  %46 = const 2
-  %47 = const 0
-  %48 = slotaddr s6
-  %49 = ptoi %45
-  store %48[0], %49
-  store %48[1], %46
-  store %48[2], %47
-  call @rt.print_str(%48)
-  %50 = const 32
-  call @rt.print_char(%50)
+  %44 = globaladdr @str.1
+  %45 = const 2
+  %46 = const 0
+  %47 = slotaddr s6
+  %48 = ptoi %44
+  store %47[0], %48
+  store %47[1], %45
+  store %47[2], %46
+  call @rt.print_str(%47)
+  %49 = const 32
+  call @rt.print_char(%49)
   call @rt.print_str(%11)
-  %51 = const 10
-  call @rt.print_char(%51)
+  %50 = const 10
+  call @rt.print_char(%50)
   br b6
 b3:
-  %44 = const 0
-  call @rt.panic(%44)
-  exit 101
+  br b5
 b4:
   %36 = load.i64 %27[1]
   %37 = globaladdr @str.0
@@ -130567,7 +130601,7 @@ b6:
   ret
 }
 
-func @std/utf8.Parse(%0 ptr, %1 i64, %2 i64, %3 i64) {
+func @std/internal/utf8.Parse(%0 ptr, %1 i64, %2 i64, %3 i64) {
   slot s0 [3]
   slot s1 [3]
   slot s2 [2]
@@ -130583,7 +130617,7 @@ b0:
   %6 = load.i64 %4[0]
   %7 = load.i64 %4[1]
   %8 = load.i64 %4[2]
-  %9 = call @std/utf8.IndexInvalid(%6, %7, %8)
+  %9 = call @std/strings.IndexInvalid(%6, %7, %8)
   %10 = const 0
   %11 = ge %9, %10
   condbr %11, b1, b2
@@ -130702,6 +130736,19 @@ b7:
   ret
 }
 
+func @std/strings.validPrefix(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
+  slot s0 [3]
+b0:
+  %4 = slotaddr s0
+  store %4[0], %0
+  store %4[1], %1
+  store %4[2], %2
+  %5 = region.depth
+  region.enter
+  region.setdepth %5
+  ret %3
+}
+
 func @rt.panic(%0 i64) {
   slot s0 [3]
   slot s1 [3]
@@ -130713,7 +130760,6 @@ func @rt.panic(%0 i64) {
   slot s7 [3]
   slot s8 [3]
   slot s9 [3]
-  slot s10 [3]
 b0:
   %1 = globaladdr @rt.meta
   %2 = globaladdr @rt.psites
@@ -130736,7 +130782,7 @@ b0:
   call @rt.flush()
   %19 = const 2
   store %1[1026], %19
-  %20 = globaladdr @str.13
+  %20 = globaladdr @str.14
   %21 = const 7
   %22 = const 0
   %23 = slotaddr s0
@@ -130749,7 +130795,7 @@ b0:
   %26 = eq %6, %25
   condbr %26, b2, b3
 b1:
-  %74 = globaladdr @str.21
+  %74 = globaladdr @str.22
   %75 = const 4
   %76 = const 0
   %77 = slotaddr s8
@@ -130762,7 +130808,7 @@ b1:
   %80 = eq %10, %79
   condbr %80, b17, b18
 b2:
-  %27 = globaladdr @str.14
+  %27 = globaladdr @str.15
   %28 = const 18
   %29 = const 0
   %30 = slotaddr s1
@@ -130777,7 +130823,7 @@ b3:
   %33 = eq %6, %32
   condbr %33, b4, b5
 b4:
-  %34 = globaladdr @str.15
+  %34 = globaladdr @str.16
   %35 = const 25
   %36 = const 0
   %37 = slotaddr s2
@@ -130792,7 +130838,7 @@ b5:
   %40 = eq %6, %39
   condbr %40, b6, b7
 b6:
-  %41 = globaladdr @str.16
+  %41 = globaladdr @str.17
   %42 = const 27
   %43 = const 0
   %44 = slotaddr s3
@@ -130807,7 +130853,7 @@ b7:
   %47 = eq %6, %46
   condbr %47, b8, b9
 b8:
-  %48 = globaladdr @str.17
+  %48 = globaladdr @str.18
   %49 = const 21
   %50 = const 0
   %51 = slotaddr s4
@@ -130822,7 +130868,7 @@ b9:
   %54 = eq %6, %53
   condbr %54, b10, b11
 b10:
-  %55 = globaladdr @str.18
+  %55 = globaladdr @str.19
   %56 = const 22
   %57 = const 0
   %58 = slotaddr s5
@@ -130837,7 +130883,7 @@ b11:
   %61 = eq %6, %60
   condbr %61, b12, b13
 b12:
-  %62 = globaladdr @str.19
+  %62 = globaladdr @str.20
   %63 = const 16
   %64 = const 0
   %65 = slotaddr s6
@@ -130852,7 +130898,7 @@ b13:
   %68 = eq %6, %67
   condbr %68, b14, b15
 b14:
-  %69 = globaladdr @str.20
+  %69 = globaladdr @str.21
   %70 = const 24
   %71 = const 0
   %72 = slotaddr s7
@@ -130865,19 +130911,19 @@ b14:
 b15:
   br b1
 b16:
-  %93 = const 58
-  call @rt.print_char(%93)
+  %86 = const 58
+  call @rt.print_char(%86)
   call @rt.print_int(%14)
-  %94 = const 58
-  call @rt.print_char(%94)
+  %87 = const 58
+  call @rt.print_char(%87)
   call @rt.print_int(%18)
-  %95 = const 10
-  call @rt.print_char(%95)
+  %88 = const 10
+  call @rt.print_char(%88)
   call @rt.flush()
   exit 101
 b17:
-  %81 = globaladdr @str.22
-  %82 = const 14
+  %81 = globaladdr @str.23
+  %82 = const 25
   %83 = const 0
   %84 = slotaddr s9
   %85 = ptoi %81
@@ -130887,38 +130933,10 @@ b17:
   call @rt.print_str(%84)
   br b16
 b18:
-  %86 = const 1
-  %87 = eq %10, %86
-  condbr %87, b19, b20
-b19:
-  %88 = globaladdr @str.23
-  %89 = const 19
-  %90 = const 0
-  %91 = slotaddr s10
-  %92 = ptoi %88
-  store %91[0], %92
-  store %91[1], %89
-  store %91[2], %90
-  call @rt.print_str(%91)
-  br b16
-b20:
   br b16
 }
 
-func @std/utf8.validPrefix(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
-  slot s0 [3]
-b0:
-  %4 = slotaddr s0
-  store %4[0], %0
-  store %4[1], %1
-  store %4[2], %2
-  %5 = region.depth
-  region.enter
-  region.setdepth %5
-  ret %3
-}
-
-func @std/utf8.seqLen(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
+func @std/strings.seqLen(%0 i64, %1 i64, %2 i64, %3 i64) i64 {
   slot s0 [3]
 b0:
   %4 = slotaddr s0
@@ -130931,7 +130949,7 @@ b0:
   %7 = uge %3, %6
   condbr %7, b1, b2
 b1:
-  %8 = const 6
+  %8 = const 5
   call @rt.panic(%8)
   exit 101
 b2:
@@ -130972,7 +130990,7 @@ b10:
   %28 = add %3, %27
   %29 = const 128
   %30 = const 191
-  %31 = call @std/utf8.cont(%24, %25, %26, %28, %29, %30)
+  %31 = call @std/strings.cont(%24, %25, %26, %28, %29, %30)
   condbr %31, b12, b13
 b11:
   br b15
@@ -131023,7 +131041,7 @@ b25(%49 i64):
   %52 = load.i64 %4[2]
   %53 = const 1
   %54 = add %3, %53
-  %55 = call @std/utf8.cont(%50, %51, %52, %54, %44, %49)
+  %55 = call @std/strings.cont(%50, %51, %52, %54, %44, %49)
   condbr %55, b26, b27(%55)
 b26:
   %57 = load.i64 %4[0]
@@ -131033,7 +131051,7 @@ b26:
   %61 = add %3, %60
   %62 = const 128
   %63 = const 191
-  %64 = call @std/utf8.cont(%57, %58, %59, %61, %62, %63)
+  %64 = call @std/strings.cont(%57, %58, %59, %61, %62, %63)
   br b27(%64)
 b27(%56 i64):
   condbr %56, b28, b29
@@ -131084,7 +131102,7 @@ b41(%82 i64):
   %85 = load.i64 %4[2]
   %86 = const 1
   %87 = add %3, %86
-  %88 = call @std/utf8.cont(%83, %84, %85, %87, %77, %82)
+  %88 = call @std/strings.cont(%83, %84, %85, %87, %77, %82)
   condbr %88, b42, b43(%88)
 b42:
   %90 = load.i64 %4[0]
@@ -131094,7 +131112,7 @@ b42:
   %94 = add %3, %93
   %95 = const 128
   %96 = const 191
-  %97 = call @std/utf8.cont(%90, %91, %92, %94, %95, %96)
+  %97 = call @std/strings.cont(%90, %91, %92, %94, %95, %96)
   br b43(%97)
 b43(%89 i64):
   condbr %89, b44, b45(%89)
@@ -131106,7 +131124,7 @@ b44:
   %103 = add %3, %102
   %104 = const 128
   %105 = const 191
-  %106 = call @std/utf8.cont(%99, %100, %101, %103, %104, %105)
+  %106 = call @std/strings.cont(%99, %100, %101, %103, %104, %105)
   br b45(%106)
 b45(%98 i64):
   condbr %98, b46, b47
@@ -131125,7 +131143,7 @@ b49:
   ret %110
 }
 
-func @std/utf8.cont(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
+func @std/strings.cont(%0 i64, %1 i64, %2 i64, %3 i64, %4 i64, %5 i64) i64 {
   slot s0 [3]
 b0:
   %6 = slotaddr s0
@@ -131144,7 +131162,7 @@ b1:
 b2(%10 i64):
   condbr %10, b5, b6(%10)
 b3:
-  %13 = const 7
+  %13 = const 6
   call @rt.panic(%13)
   exit 101
 b4:
@@ -131162,7 +131180,7 @@ b6(%19 i64):
   region.setdepth %7
   ret %19
 b7:
-  %22 = const 8
+  %22 = const 7
   call @rt.panic(%22)
   exit 101
 b8:

@@ -1,0 +1,164 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 4,
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 19
+                  },
+                  "field": "Run",
+                  "tok": 21
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "task.Scope"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "tx",
+                            "rx"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "index",
+                                "base": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "task",
+                                    "tok": 35
+                                  },
+                                  "field": "NewChannel",
+                                  "tok": 37
+                                },
+                                "idx": {
+                                  "k": "ident",
+                                  "name": "int",
+                                  "tok": 39
+                                },
+                                "tok": 38
+                              },
+                              "args": [
+                                {
+                                  "k": "named_arg",
+                                  "name": "cap",
+                                  "value": {
+                                    "k": "ident",
+                                    "name": "n",
+                                    "tok": 44
+                                  },
+                                  "tok": 42
+                                }
+                              ],
+                              "tok": 41
+                            }
+                          ],
+                          "tok": 31
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 47
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 29
+                  }
+                ],
+                "tok": 22
+              }
+            ],
+            "tok": 15
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 52
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 54
+                }
+              ],
+              "tok": 53
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 59
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

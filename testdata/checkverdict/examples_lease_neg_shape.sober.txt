@@ -1,0 +1,2 @@
+sober: load error at examples/lease_neg_shape.sober:19:37: a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters
+exit=1

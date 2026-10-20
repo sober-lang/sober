@@ -1,0 +1,13 @@
+package main
+
+// selfpar の節の規則の束の網（席 D の D-2 — loader/finpar.sober）: 同じ規則（mut 実引数の排他）の拒否を 2 ファイルに置く — 前のファイル（a）の拒否が出る
+func two(a mut int, b mut int) {
+    a += 1
+    b += 2
+}
+
+func main() {
+    mut a := 0
+    two(mut a, mut a)
+    println(a + g())
+}

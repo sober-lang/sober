@@ -1,0 +1,48 @@
+package main
+
+// net 段 4a-1（language.md 28 節の net）: loopback の echo を 1 本の task で。listen（port 0 — 割り当てを Port で読む）→ Dial して 3 つの塊を送る
+// （接続はカーネルの backlog に入るので accept の前に送れる）→ 同じ task が Accept で受け、届いた分を送り返す → Dial の側で戻りを受ける。
+// 寿命は for の本体（閉じる口は無い）。Listener は task.Run の本体の lambda に捕獲できる（N6 — 期限の内側で受ける形）。
+// 4a-1 の syscall は同期（accept / connect はワーカーをブロックする）なので、別の task 同士の往復は 4a-2（epoll の道）の網で
+
+import "std/net"
+import "std/task"
+
+func main() {
+    n := run() catch -1
+    println("echoed ${n}")
+}
+
+func run() (int, error?) {
+    mut n := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            net.Send(c, bytes("hello, "))?
+            net.Send(c, bytes("sober "))?
+            net.Send(c, bytes("net"))?
+            r, e := task.Run((s task.Scope) => echoOne(l, 16) catch -1, deadline: 5000 * task.MS)
+            n = if e == nil { r } else { -2 }
+            mut got := mut []byte{}
+            for chunk <- net.Recv(c)? {
+                for x <- chunk { got = append(got, x) }
+                if len(got) >= 16 { break }
+            }
+            println(string(freeze(got)) catch "")
+        }
+    }
+    return n, nil
+}
+
+// echoOne は 1 本だけ受けて、want バイト届くまで送り返す（送り返したバイト数）
+func echoOne(l net.Listener, want int) (int, error?) {
+    mut total := 0
+    for c <- net.Accept(l)? {
+        for chunk <- net.Recv(c)? {
+            total += len(chunk)
+            net.Send(c, chunk)?
+            if total >= want { break }
+        }
+        break
+    }
+    return total, nil
+}

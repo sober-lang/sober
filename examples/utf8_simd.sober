@@ -1,11 +1,11 @@
 package main
 
 // UTF-8 の SIMD 速い道（std/utf8.validPrefix — 最適化のバックエンドでは SSE2 の検査器）の網: 長い妥当な列（ASCII・2 / 3 / 4 バイト列が
-// 16 バイトの塊の境目をまたぐ）の 1 バイトを全部の位置で壊し、utf8.IndexInvalid の答えを例の中のスカラーの参照（std の本体と同じ判定の写し）と
+// 16 バイトの塊の境目をまたぐ）の 1 バイトを全部の位置で壊し、strings.IndexInvalid の答えを例の中のスカラーの参照（std の本体と同じ判定の写し）と
 // 突き合わせる（長い ASCII の区間を挟む列で、検査の環と速い道の切り替えも跨ぐ）。食い違いの数（0）と答えの和を印字（scripts/optdiff.sh の代表 — 最適化なしの経路とも突き合わせる）
 
 import "std/iter"
-import "std/utf8"
+import "std/strings"
 
 func cont(b mut []byte, i int, lo int, hi int) bool {
     return i < len(b) && int(b[i]) >= lo && int(b[i]) <= hi
@@ -62,7 +62,7 @@ func run(unit []byte) {
                 b = append(b, base[k])
             }
             b[p] = byte(vals[q])
-            got := utf8.IndexInvalid(b)
+            got := strings.IndexInvalid(b)
             mut b2 := mut []byte{}
             for k <- iter.Range(0, len(base)) {
                 b2 = append(b2, b[k])
@@ -75,7 +75,7 @@ func run(unit []byte) {
             sum += got + 1
         }
     }
-    println(len(base), utf8.IndexInvalid(base), bad, sum)
+    println(len(base), strings.IndexInvalid(base), bad, sum)
 }
 
 func main() {

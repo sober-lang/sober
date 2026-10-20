@@ -1,0 +1,37 @@
+package main
+
+import "std/builder"
+
+// ループの中から外の mut 場所へ代入する struct リテラルは、mut のコンテナの欄を行き先（外の束縛の region）に作る（F-bb — 2026-10-17・
+// M4 の行き先構築の struct リテラル版）。省いた欄のゼロ値（Builder の seed / chunks）・入れ子のリテラル・丸ごとの代入・欄の imm の値（行き先へ写す）。
+// 旧は check が反復の region に作って def error（build は正しく走る）
+
+type In struct {
+    s mut []int
+    tag string
+}
+
+type W struct {
+    in In
+    eh builder.Builder[int]
+    sp int
+}
+
+func run(n int, name string) int {
+    mut w := W{}
+    mut i := 0
+    while i < n {
+        w.eh = builder.Builder[int]{}
+        builder.Push(mut w.eh, i)
+        w.in = In{tag: name + "!"}
+        w.in.s = append(w.in.s, i)
+        w = W{in: w.in, eh: w.eh, sp: w.sp + 1}
+        i += 1
+    }
+    println(w.in.tag)
+    return w.sp + len(w.in.s) + builder.Len(mut w.eh)
+}
+
+func main() {
+    println(run(3, "x"))
+}

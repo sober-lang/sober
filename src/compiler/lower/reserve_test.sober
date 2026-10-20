@@ -16,6 +16,7 @@ func rsT(hd bool) []int {
     e.nv = n
     e.npc = n
     e.nx = xNXmm
+    e.ng = xNAlloc
     for k <- iter.Range(0, n) {
         e.ivS = append(e.ivS, if k == 0 { 50 } else if k == 3 { 70 } else { 0 })
         e.ivE = append(e.ivE, if k == 0 { 60 } else if k == 1 { 40 } else if k == 2 { 45 } else { 80 })

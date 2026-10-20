@@ -1,0 +1,14 @@
+{
+  "": {
+    "hash": "4117971885",
+    "doc": "negdoc is the negative case of stdref."
+  },
+  "Good": {
+    "hash": "3248272514",
+    "doc": "Good is a declaration the lint does not flag."
+  },
+  "Stale": {
+    "hash": "0",
+    "doc": "Stale has an outdated hash."
+  }
+}

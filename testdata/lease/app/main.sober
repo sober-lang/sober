@@ -1,0 +1,28 @@
+package main
+
+// 別の package の T の置き場を子 task が借りる（Local は imm のデータとして捕獲で渡る — 出力は W に依らない）
+
+import "std/iter"
+import "std/task"
+import "testdata/lease/wk"
+
+// count は窓 1 つ（Local は imm のデータとして実引数でも渡る）
+func count(lw task.Local, i int) int {
+    return task.Lease(lw, (w mut wk.Work) => wk.Count(mut w, []int{i}))
+}
+
+func main() {
+    lw := task.NewLocal((w mut wk.Work) => wk.Prep(mut w))
+    rs, err := task.Run((s) => {
+        mut hs := mut []task.Handle[int]{}
+        for i <- iter.Range(0, 8) {
+            hs = append(hs, task.Spawn(s, () => task.Lease(lw, (w mut wk.Work) => wk.Count(mut w, []int{i, i, 3, i % 2}))))
+        }
+        vs := task.Gather(hs)
+        vs
+    })
+    for i <- iter.Range(0, len(rs)) {
+        println(rs[i])
+    }
+    println(err == nil, count(lw, 5))
+}

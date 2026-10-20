@@ -3,7 +3,7 @@ package main
 // io-2 の突き合わせの対（Lean 側: Examples.lean の v47）。`string(b)`（std/utf8.Parse への置き換え）の
 // UTF-8 検査・検査後の恒等の戻し・`string(b)?` の伝播と包み替えを、結果を 1 語に畳み込んで照合する
 
-import "std/utf8"
+import "std/strings"
 
 type Line error {
     n int
@@ -13,7 +13,7 @@ func code(b []byte) int {
     s, err := string(b)
     return if err != nil {
         switch err {
-        case utf8.InvalidUtf8{pos}: 1000 + pos
+        case strings.InvalidUtf8{pos}: 1000 + pos
         }
     } else {
         len(bytes(s))

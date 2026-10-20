@@ -1,0 +1,65 @@
+package main
+
+// net 段 4a-2（epoll の道 — language.md 28 節の net）: 別の task 同士の往復。task.Run の本体（main の task）が Listener を捕獲して 3 本の接続を
+// 順に受けて送り返し、Spawn した 3 本の子がそれぞれ Dial → 送る → 戻りを受ける。accept / connect / recv / send は socket が非ブロックで、
+// EAGAIN なら task が fd の readiness を待つ（ワーカーは塞がれない）— W1（協調形）でも子が走り、W8 でも同じ出力
+
+import "std/net"
+import "std/task"
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, e := task.Run((s task.Scope) => {
+            a := task.Spawn(s, () => client(port, "alpha"))
+            b := task.Spawn(s, () => client(port, "bravo"))
+            c := task.Spawn(s, () => client(port, "charlie"))
+            k := serve(l, 3) catch -1
+            "served ${k}: ${task.Join(a)} ${task.Join(b)} ${task.Join(c)}"
+        }, deadline: 10000 * task.MS)
+        out = if e == nil { r } else { "scope failed" }
+    }
+    return out, nil
+}
+
+// serve は n 本の接続を順に受け、相手が閉じるまで届いた分を送り返す（受けた本数）
+func serve(l net.Listener, n int) (int, error?) {
+    mut k := 0
+    for c <- net.Accept(l)? {
+        for chunk <- net.Recv(c)? {
+            net.Send(c, chunk)?
+        }
+        k += 1
+        if k == n {
+            break
+        }
+    }
+    return k, nil
+}
+
+func client(port int, msg string) string {
+    return talk(port, msg) catch "error"
+}
+
+// talk は接続して msg を送り、同じ長さの戻りを受けて閉じる
+func talk(port int, msg string) (string, error?) {
+    want := len(bytes(msg))
+    mut got := mut []byte{}
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        net.Send(c, bytes(msg))?
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                got = append(got, x)
+            }
+            if len(got) >= want {
+                break
+            }
+        }
+    }
+    return string(freeze(got))?, nil
+}

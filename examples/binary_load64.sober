@@ -1,0 +1,27 @@
+package main
+
+// std/binary の Load64（report-723）: b[i]〜b[i + 7] を little-endian で読んだ int — b[i] が最下位のバイト・最上位のバイトの 0x80 以上は負の int。
+// 端の i = len(b) − 8 まで読める（その先は binary_load64_oob / _neg の panic）
+
+import "std/binary"
+import "std/iter"
+
+func main() {
+    b := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 255}
+    println("${binary.Load64(b, 0)}")
+    println("${binary.Load64(b, 1) & 255}")
+    println("${binary.Load64(b, 2)}")
+    println("${(binary.Load64(b, 2) >> 56) & 255}")
+    z := []byte{0, 0, 0, 0, 0, 0, 0, 128}
+    println("${binary.Load64(z, 0)}")
+    // バイトずつの読みと一致（全部の位置）
+    mut ok := true
+    for i <- iter.Range(0, len(b) - 7) {
+        mut v := 0
+        for k <- iter.Range(0, 8) {
+            v = v | (int(b[i + k]) << (8 * k))
+        }
+        ok = ok && v == binary.Load64(b, i)
+    }
+    println("${ok}")
+}

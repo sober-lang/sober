@@ -1,0 +1,50 @@
+package main
+
+// 段 6 P3a（language.md 11 節）: task.Run / Spawn / Join — 子の本体の捕獲（imm の局所・string・slice・struct）は閉包変換で
+// 渡す値の組になる。scope の本体は親の文脈を見てよい（mut の局所への代入・ループの中の Spawn）。build は即時形（P3a-2b — 子は Spawn の時点で走る）
+
+import "std/task"
+
+type P struct {
+    x int
+    y int
+}
+
+func count(s string) int {
+    return len(bytes(s))
+}
+
+func main() {
+    mut acc := 0
+    k := 7
+    ns := []int{1, 2, 3}
+    p := P{x: 5, y: 6}
+    tag := "de"
+    r, err := task.Run((s task.Scope) => {
+        acc = acc + 1
+        for i <- ns {
+            acc = acc + task.Join(task.Spawn(s, () => i * 10))
+        }
+        h1 := task.Spawn(s, () => {
+            w := "abc" + tag
+            count(w) + p.x * p.y
+        })
+        h2 := task.Spawn(s, () => {
+            mut t := 0
+            for x <- ns {
+                t += x * k
+            }
+            t
+        })
+        inner, e2 := task.Run((s2 task.Scope) => task.Join(task.Spawn(s2, () => k * 2)))
+        if e2 != nil {
+            println(-1)
+        }
+        acc + task.Join(h1) + task.Join(h2) + inner
+    })
+    if err != nil {
+        println(0)
+    }
+    println(r)
+    println(acc)
+}

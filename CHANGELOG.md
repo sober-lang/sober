@@ -2,6 +2,98 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.0 — 2026-10-20
+
+The Web release: networking, an HTTP/1.1 server, TLS 1.3 and the cryptography under it are now part of std, written in Sober. The language gains closures, and the whole std API went through a naming review (breaking — see "Renamed" below). The language specification is now written down as rules (docs/spec), and the std reference is generated from the sources.
+
+### Language
+
+- Closures: a lambda placed in a value position — a parameter or result of a named function type, a function-typed struct field, or its option `F?` — is a closure. It captures immutable values by copy at the point of creation and may cross function boundaries as an argument, a result or a field. Capturing a mut binding or an identity type (task scopes and handles, channel ends, `net.Conn`, …) is rejected, and `return` is not allowed in its body (it can outlive the function that made it). Anonymous function-typed parameters keep the existing expansion (no change in generated code)
+- Borrowed function parameters: in a named function type such as `type Stream func(emit func([]byte) error?) error?`, the anonymous function-typed parameter (`emit`) is a borrow. It can be called, passed on to another borrow position, or captured by an inlined lambda or a for body — binding it, storing it, returning it, or capturing it in a closure or a child task is rejected. A lambda in a borrow position may capture identity types such as `net.Conn`
+- Function-typed values may return `error?` (`func(net.Conn) error?`), `f(x)?` works on them, and a named function can be passed where a function type is expected
+- A call of a function-typed parameter can drive a for loop: `for b <- recv(k)? { … }`
+- `@errors` can name a function-typed parameter (`@errors(Bad, recv, send)`): the labels of that parameter's failures are taken from the argument at each call site
+- `std/internal/…` packages can only be imported from inside std
+- First analyzer warnings (they do not change what is accepted): waiting inside a lease window, and nesting two windows on the same `task.Local`
+- Clearer messages for three rejections that used to be reported without a position or reason (switch on a string value, comparing `T?` with a value, wrong argument count)
+
+### Standard library
+
+- net (new): `Listen` / `Accept` / `Dial` / `Recv` / `Send` / `Port` as for-loop generators that close on exit, and `net.Serve(l, handle, budget:, conns:, reject:)` — one task per connection, failures and deaths of a connection are absorbed, connections over the limit get the `reject:` bytes without running user code. The runtime uses io_uring per worker (multishot accept / recv into provided buffers, kernel ≥ 6.1) and falls back to epoll automatically when io_uring is not available. Output does not depend on the backend
+- http (new): an HTTP/1.1 server — `http.ServeConn(c, route, maxHead:, maxBody:, compress:, work:)` with keep-alive and pipelining, chunked request bodies, 413 / 431 limits; a router as a plain table (`[]http.Route` with `Mount` / `Merge` / `Dispatch` / `Param`, static > `:param` > `*rest` regardless of order, 405 with `Allow`) and before / after middleware; response headers, `Form`, `JsonDoc`; streamed response bodies (`Response{stream: …}` with a known length); gzip responses (`compress: http.Gzip{level: …}`, `Vary`, `Accept-Encoding`). `http.ServeWith(recv, send, …)` serves over any transport (TLS uses it)
+- tls (new): a TLS 1.3 server — `tls.Serve(addr, cfg, k)` hands only completed handshakes to `k`; `tls.Load` / `tls.Parse` for PEM certificates and keys, ALPN; X25519, AES-128-GCM and ChaCha20-Poly1305, RSA-PSS certificates; `tls.Recv` / `tls.Send` look like their net counterparts; errors are `tls.HandshakeFailed` / `tls.BadRecord` / `tls.Closed`. Server side only; no resumption or 0-RTT
+- crypto (new): SHA-256, HMAC-SHA256, HKDF-SHA256, ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM (AES-NI + PCLMULQDQ), X25519, RSA-PSS signing and verification (MULX / ADX Montgomery multiplication), PKCS#8 DER and PEM, constant-time helpers (`crypto.Equal` / `Select` / `Wipe`) and the system random source. Checked against RFC and Wycheproof vectors; a gate checks that the secret-dependent code has no secret-dependent branches
+- compress/flate, compress/gzip, hash/crc32 (new): deflate levels 0–9 (zlib-compatible settings, dynamic Huffman; compression ratio on par with zlib), gzip framing, CRC-32 with a PCLMULQDQ path
+- binary (new): `binary.Load64` — an 8-byte little-endian read with a single bounds check
+- pool: `pool.Scratch`, a fixed-capacity workspace with generation tags, used with worker-local leases
+- io: deadline expiry is now its own label `io.Expired` (previously reported as `io.Timeout`)
+- os: `os.Sleep` yields the worker in task programs and returns early at the scope deadline; `os.SleepExpired` reports whether it did
+
+### Concurrency (std/task)
+
+- Deadlines: `task.Run(body, deadline: 500 * task.MS)` sets a relative deadline on the scope, inherited by descendants (the earlier one wins). It bounds waiting, not computing: after the deadline, I/O calls return `io.Expired` and network waits are cut
+- `task.Run(body, wait: true)`: direct children that do not fit the budget wait for room instead of running inline
+- Children that run inline because they did not fit the budget are now counted in the ledger; `task.Ledger()` reports failures and deaths per pool, and `task.MarkFailed(pool)` counts a failure at a boundary
+- Worker-local leases: `task.NewLocal` / `task.Lease` lend a per-worker workspace inside a window. Every window sees a fresh value, so reuse is never observable; it keeps per-connection memory independent of the number of connections (gzip workspace in http)
+- When a task dies, I/O waits of its descendants are cut with `io.Expired` (a scope without a deadline could previously hang forever)
+- A child whose handle is discarded (`_ = task.Spawn(…)`) no longer leaves memory behind in a scope that never returns (such as `net.Serve`'s accept loop)
+- Each child task has its own region slot size: 512 MiB for a child without `budget:`, the power of two at or above the declared value otherwise (the main task keeps `SOBER_REGION_MB`). A child without `budget:` that piles more than that into one region dies with `RegionExceeded{cause: slot_capacity}` — declare `budget:` for large workspaces. Running out of address space is now reported as `RegionExceeded{cause: va_exhausted}` (it was misreported as `slot_capacity`). (this is what lets `net.Serve` hold 16k concurrent connections)
+
+### Renamed (API review — no aliases are kept)
+
+The 0.6.0 API review renames abbreviations and provisional names to the naming rules (language.md §34). Old names are removed, not deprecated:
+
+| Package | Old | New |
+|---|---|---|
+| json | `Value` variants `Num` / `Str` / `Arr` | `Number` / `String` / `Array` |
+| json | `DupKey` (`InvalidJson` kind) | `DuplicateKey` |
+| json | `DecString` / `DecBool` / `DecInt` / `DecFloat` | `ParseString` / `ParseBool` / `ParseInt` / `ParseFloat` |
+| json | `Object` (function) / `Value` variant `Obj` | `NeedObject` / `Object` |
+| builder | `PushStr` | `PushString` |
+| compress/flate | `Prep` | `Prepare` |
+| http | `Request.hdrs` / `Response.hdrs` (fields) | `headers` |
+| http | `Response.ctype` (field) | `contentType` |
+| http | `Route.h` / `Route.mw` (fields) | `handler` / `middleware` |
+| os | `SleepCut` | `SleepExpired` |
+| crypto | `Eq` | `Equal` |
+| crypto/pem | `Decode` | `Parse` |
+| hex | `Encode` / `Decode` | `Format` / `Parse` |
+| strings | `FormatInt` | `convert.FormatInt` (moved to std/convert — number/string conversion lives in convert) |
+| utf8 | `Valid` / `IndexInvalid` / `InvalidUtf8` (error label) | `strings.Valid` / `strings.IndexInvalid` / `strings.InvalidUtf8` (string validity lives in strings) |
+| utf8 | `Parse` | removed — write `string(b)` (its implementation moved inside std) |
+| std/floatfmt (package) | `floatfmt.…` | removed — use `FormatFloat` / `FormatFixed` / `ParseFloat` in `std/convert` and `Bits` / `FromBits` in `std/math` |
+| std/conv (package) | `conv.…` | `std/convert` — `convert.…` |
+| std/par (package) | `par.…` | `std/task` — `task.…`. Renamed inside: `Scope` (function) → `Run`, `S` (type) → `Scope`, `Task[T]` → `Handle[T]`, `Tx` / `Rx` → `Sender` / `Receiver`, `NewChan` → `NewChannel`, `TaskDied` → `ChildDied`, `Fail` → `MarkFailed`, `LeaseBlk` → `LeaseBlock` (the rest keep their names) |
+
+Pairs that are intentionally one-sided (for example `SealTo` without `OpenTo`) are now marked on the declaration instead of being filled in.
+
+Packages under `std/internal/…` are implementation details of std and cannot be imported from outside std (std/floatfmt, the implementation of `string(b)` and the TLS handshake state machine std/tls/hs, now std/internal/hs, moved there). std/utf8 stays as the package of validated views (`Check` / `View` / `Str` / `Bytes`).
+
+### Other breaking changes
+
+- Deadline expiry is `io.Expired`, no longer `io.Timeout` (match both if you handled timeouts generically)
+- `sober build -o <path>` writes `<path>.tmp` and renames it into place (like `go build -o`): the output gets a new inode each time, so hard links are not kept and the previous file's owner and mode are not inherited
+- A child task without `budget:` is limited to 512 MiB per region (see above)
+
+### Documentation
+
+- docs/spec: the language specification as rules — 13 chapters, 165 rules, each linked to accepted and rejected examples under examples/ that a gate runs (currently in Japanese)
+- docs/std: a reference for every std package, generated from the doc comments in the sources; a gate checks that it matches the sources and lints the doc comments (currently in Japanese)
+
+### Performance
+
+- HTTP: on the bench/httparena harness (the HttpArena load generators and request files, both servers on 32 vCPUs on GitHub Actions, compared with Go's net/http), Sober is ahead or level on every test we run — baseline 2.8×, pipelined 15×, limited-conn 7.3×, json-comp 1.3×, json-tls 1.6×, async 1.6×; 8gbit level at the rate cap with 2.6× less CPU; latency-1m holds 998K of the 1M req/s target at p99 0.16 ms (Go falls behind the rate and its p99 grows to seconds). This is our own harness, not an official HttpArena result
+- Cryptography: an RSA-2048 PSS signature takes 12 M instructions (from 222 M in the first version), on par with Go's crypto/rsa; AES-128-GCM runs at about 2.6 instructions per byte in the record layer; X25519 is 7× faster than the first version
+- Compiler, measured on the benchmark suite (2026-10-19 official run, see the README charts): memory — revcomp RSS 48.6 → 24.4 MB (now below Rust) and knucleotide 75.6 → 52.7 MB (within 2 MB of Rust); speed — word-sized reads and copies, more partial inlining, and lighter region handling around functions that never return. Against Rust, 7 of the 9 sequential benchmarks are at or below 1.03×, nbody is 1.17× and revcomp 1.48× (its ratio moves a lot with the measurement window); the Web-style benchmarks jsonapi / routing / logagg are at 1.22× / 1.13× / 1.16×
+- Self-build: more of the per-function work runs in the parallel lowering stage, and the loader's per-file checks run in parallel
+
+### Fixes
+
+- Fixed a memory leak where the result of an inlined call (a function with a mut or function-typed parameter) inside a loop was built in an outer region and accumulated on every iteration; two related leaks of the same kind were found and fixed by an exhaustive check
+- Fixed a miscompilation where region enter was removed for a function whose region depth is computed from its caller's depth
+- Fixed the record of a channel created inside a loop being placed in the per-iteration region and overwritten
+- Fixed several cases where `sober check` and `sober build` disagreed (one accepted a program the other rejected)
+
 ## v0.5.4 — 2026-10-14
 
 ### Language

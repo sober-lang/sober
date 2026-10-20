@@ -1,0 +1,56 @@
+package main
+
+// map の宛先構築（report-875 — knucleotide の frequencies の形）の回帰例: return に流れ着く `mut map[string]V{}` は呼び手の region に作り、
+// 戻りの写し（セル列の relocate と索引の作り直し）を省く。関数の中で作った string（自分の region の補間）を鍵・値に挿入しても、挿入の写し
+// （mapSet の relocKey / relocVal — ヘッダの深度へ）で中身は呼び手の region に移る — 戻った後に読んでも壊れない。
+// 呼び手の反復ごとに作って捨てる（反復の region に作られ、積もらない — scripts/iterregion.sh が N と 10N の RSS を見る）
+
+import "std/convert"
+import "std/os"
+
+// build は k 個の「キー → 値」（鍵も値も中で作った string）と、リテラルの要素の 1 つ
+func build(k int, salt int) map[string]string {
+    mut m := mut map[string]string{"lit${salt}": "v${salt}"}
+    mut i := 0
+    while i < k {
+        m["key${i}-${salt}"] = "val${i * salt}"
+        i += 1
+    }
+    return m
+}
+
+// counts は鍵が中で作った string の数え上げ（索引が立つ長さ）
+func counts(n int) map[string]int {
+    mut m := mut map[string]int{}
+    mut i := 0
+    while i < n {
+        key := "k${i % 37}"
+        c := m[key]
+        m[key] = if c != nil { c + 1 } else { 1 }
+        i += 1
+    }
+    return m
+}
+
+func main() {
+    args := os.Args() catch return
+    mut n := 2000
+    if len(args) == 2 {
+        v, _ := convert.ParseInt(args[1])
+        n = v
+    }
+    mut total := 0
+    mut r := 0
+    while r < n {
+        m := build(20, r)
+        v := m["key7-${r}"]
+        l := m["lit${r}"]
+        if v != nil && l != nil {
+            total += len(bytes(v)) + len(bytes(l))
+        }
+        r += 1
+    }
+    c := counts(1000)
+    k5 := c["k5"]
+    println("total ${total} k5 ${if k5 != nil { k5 } else { 0 }} keys ${len(c)}")
+}

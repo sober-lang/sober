@@ -1,0 +1,88 @@
+package main
+
+// 段 6 P3b-4b: region を持つペイロード（string・[]int と string の欄の struct）のチャネル。送りは値を記録の region へ写し（梱包 — formal.md の packV）、
+// 受け手はそこを読む。送り手は子（自前の region で作って送る — 作った task は親）・受け手は親。容量 1 で交互に待ちながら、
+// 子は送るたびに自分の region を開いて閉じ、親は受けるたびに確保する
+
+import "std/task"
+
+func word(i int) string {
+    mut s := ""
+    mut k := 0
+    while k <= i {
+        s = s + "ab"
+        k += 1
+    }
+    return s + "${i}"
+}
+
+type Row struct {
+    xs []int
+    tag string
+}
+
+func row(i int) Row {
+    mut xs := mut []int{}
+    mut k := 0
+    while k < i + 2 {
+        xs = append(xs, k * i)
+        k += 1
+    }
+    return Row{xs: xs, tag: "r${i}"}
+}
+
+func total(r Row) int {
+    mut t := 0
+    for x <- r.xs {
+        t += x
+    }
+    return t + len(bytes(r.tag))
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[string](cap: 1)
+        ty, ry := task.NewChannel[Row](cap: 1)
+        h := task.Spawn(s, (out) => {
+            mut i := 0
+            while i < 4 {
+                w := { word(i) }
+                task.Send(out, w)
+                i += 1
+            }
+            i
+        }, give: tx)
+        g := task.Spawn(s, (o2) => {
+            mut i := 0
+            while i < 3 {
+                task.Send(o2, row(i))
+                i += 1
+            }
+            i
+        }, give: ty)
+        mut acc := ""
+        mut k := 0
+        while k < 4 {
+            v := task.Recv(rx)
+            junk := "pad" + acc
+            if v != nil && len(bytes(junk)) > 0 {
+                acc = acc + v + ";"
+            }
+            k += 1
+        }
+        mut sum := 0
+        k = 0
+        while k < 3 {
+            rw := task.Recv(ry)
+            if rw != nil {
+                sum += total(rw)
+            }
+            k += 1
+        }
+        acc + "${task.Join(h) + task.Join(g) + sum}"
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

@@ -1,0 +1,2 @@
+sober: load error at examples/fnarg_arity.sober:14:13: this function takes a different number of parameters than the function type expects
+exit=1

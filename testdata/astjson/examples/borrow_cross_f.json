@@ -1,0 +1,363 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "A",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "param_names": [
+              "n"
+            ]
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "emit"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 17
+      }
+    },
+    {
+      "name": "B",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "param_names": [
+              "n"
+            ]
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "emit"
+        ]
+      },
+      "tok": 18,
+      "span": {
+        "start": 17,
+        "end": 31
+      }
+    },
+    {
+      "name": "HA",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "A"
+            },
+            "tok": 35
+          }
+        ]
+      },
+      "tok": 32,
+      "span": {
+        "start": 31,
+        "end": 40
+      }
+    },
+    {
+      "name": "HB",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "b",
+            "type": {
+              "k": "name",
+              "name": "B"
+            },
+            "tok": 44
+          }
+        ]
+      },
+      "tok": 41,
+      "span": {
+        "start": 40,
+        "end": 49
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 3,
+                "tok": 56
+              }
+            ],
+            "tok": 54
+          },
+          {
+            "k": "bind",
+            "names": [
+              "ha"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "HA",
+                "elems": [
+                  {
+                    "key": "a",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "emit",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "block",
+                        "stmts": [
+                          {
+                            "k": "bind",
+                            "names": [
+                              "hb"
+                            ],
+                            "mutable": false,
+                            "values": [
+                              {
+                                "k": "composite",
+                                "type_name": "HB",
+                                "elems": [
+                                  {
+                                    "key": "b",
+                                    "value": {
+                                      "k": "lambda",
+                                      "params": [
+                                        {
+                                          "name": "e2",
+                                          "type": null
+                                        }
+                                      ],
+                                      "body": {
+                                        "k": "binary",
+                                        "op": "+",
+                                        "lhs": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "ident",
+                                            "name": "e2",
+                                            "tok": 79
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "int",
+                                              "value": 10,
+                                              "tok": 81
+                                            }
+                                          ],
+                                          "tok": 80
+                                        },
+                                        "rhs": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "ident",
+                                            "name": "e2",
+                                            "tok": 84
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "int",
+                                              "value": 1,
+                                              "tok": 86
+                                            }
+                                          ],
+                                          "tok": 85
+                                        },
+                                        "tok": 83
+                                      },
+                                      "tok": 78
+                                    }
+                                  }
+                                ],
+                                "tok": 71,
+                                "type_args": []
+                              }
+                            ],
+                            "tok": 69
+                          },
+                          {
+                            "k": "expr",
+                            "expr": {
+                              "k": "binary",
+                              "op": "+",
+                              "lhs": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "hb",
+                                    "tok": 90
+                                  },
+                                  "field": "b",
+                                  "tok": 92
+                                },
+                                "args": [
+                                  {
+                                    "k": "ident",
+                                    "name": "emit",
+                                    "tok": 94
+                                  }
+                                ],
+                                "tok": 93
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 97
+                              },
+                              "tok": 96
+                            }
+                          }
+                        ]
+                      },
+                      "tok": 67
+                    }
+                  }
+                ],
+                "tok": 60,
+                "type_args": []
+              }
+            ],
+            "tok": 58
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 102
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "ha",
+                      "tok": 104
+                    },
+                    "field": "a",
+                    "tok": 106
+                  },
+                  "args": [
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "n",
+                          "type": {
+                            "k": "name",
+                            "name": "int"
+                          }
+                        }
+                      ],
+                      "body": {
+                        "k": "binary",
+                        "op": "*",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 113
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 115
+                        },
+                        "tok": 114
+                      },
+                      "tok": 112
+                    }
+                  ],
+                  "tok": 107
+                }
+              ],
+              "tok": 103
+            }
+          }
+        ]
+      },
+      "tok": 50,
+      "bodiless": false,
+      "span": {
+        "start": 49,
+        "end": 121
+      },
+      "sig_end": 53
+    }
+  ],
+  "consts": []
+}

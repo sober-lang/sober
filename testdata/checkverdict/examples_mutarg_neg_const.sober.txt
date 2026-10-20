@@ -1,0 +1,2 @@
+sober: desugar error at examples/mutarg_neg_const.sober:11:14 (CoreFragment)
+exit=1

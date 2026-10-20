@@ -1,0 +1,76 @@
+package main
+
+// 段 6 P3b-4 1b': error を返す task。Join は (T, error?) の 2 値・Try は Ok / Failed / Died・Join も Try もしなかった失敗は
+// scope の err へ集約（生んだ順で最初のもの）・死と失敗が両方なら死が先（ChildDied）。err は string を持つ（子の region から写る）
+
+import "std/task"
+
+type Bad error {
+    msg string
+}
+
+@errors(Bad)
+func load(n int) (int, error?) {
+    if n > 4 {
+        return 0, Bad{msg: "too big: ${n}"}
+    }
+    return n * 10, nil
+}
+
+@errors(Bad)
+func crash(n int) (int, error?) {
+    xs := []int{1, 2}
+    return xs[n], nil
+}
+
+func show(o task.Outcome[int]) string {
+    return switch o {
+    case task.Ok{v}: "ok ${v}"
+    case task.Failed{e}: "failed"
+    case task.Died{cause}: "died"
+    }
+}
+
+func report(r string, e error?) {
+    if e == nil {
+        println("${r} | nil")
+        return
+    }
+    switch e {
+    case Bad{msg}: println("${r} | Bad: ${msg}")
+    case task.ChildDied{}: println("${r} | ChildDied")
+    default: println("${r} | ?")
+    }
+}
+
+func main() {
+    // 回収した失敗は集約しない
+    r1, e1 := task.Run((s task.Scope) => {
+        h1 := task.Spawn(s, () => load(1))
+        h2 := task.Spawn(s, () => load(5))
+        h3 := task.Spawn(s, () => load(6))
+        v1, x1 := task.Join(h1)
+        v2, x2 := task.Join(h2)
+        mut acc := v1 + v2
+        if x1 == nil && x2 != nil {
+            acc += 100
+        }
+        "${acc} ${show(task.Try(h3))}"
+    })
+    report(r1, e1)
+    // 未回収の失敗: 生んだ順で最初のもの
+    r2, e2 := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => load(2))
+        b := task.Spawn(s, () => load(7))
+        c := task.Spawn(s, () => load(8))
+        3
+    })
+    report("${r2}", e2)
+    // 死と失敗: 死が先
+    r3, e3 := task.Run((s task.Scope) => {
+        b := task.Spawn(s, () => load(9))
+        d := task.Spawn(s, () => crash(5))
+        4
+    })
+    report("${r3}", e3)
+}

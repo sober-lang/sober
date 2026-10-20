@@ -1,0 +1,101 @@
+package main
+
+// net 段 4b-2（accept の列と listener の閉じ — language.md 28 節の net）: scope の子 5 本が Dial して（listen の前なら少し待って再試行）相手が
+// 閉じるまで受ける。本体は listen して 1 本だけ受けて "hi" を送り、少し眠ってから Accept の for を break で抜け、Listen の本体を抜けて listener を
+// 閉じる（子の決着は scope が待つ）。net の ring のワーカーでは眠っている間に multishot ACCEPT が残りの接続を listener の列へ受けるので、
+// listener の閉じがその列の fd を閉じる（閉じ損ねると子の Recv は期限まで待って expired を出す）。epoll の道では受けていない接続はカーネルが
+// listen の backlog ごと切る。どちらでも出力は served 1 の 1 行
+
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func main() {
+    port := freePort() catch 0
+    r, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => client(port))
+        b := task.Spawn(s, () => client(port))
+        c := task.Spawn(s, () => client(port))
+        d := task.Spawn(s, () => client(port))
+        f := task.Spawn(s, () => client(port))
+        k := listenServe(port) catch -1
+        _ = task.Join(a) + task.Join(b) + task.Join(c) + task.Join(d) + task.Join(f)
+        "served ${k}"
+    }, deadline: 5000 * task.MS)
+    println(if e == nil { r } else { "scope failed" })
+}
+
+// freePort は空いている port（listen して読んで閉じる）
+func freePort() (int, error?) {
+    mut p := 0
+    for l <- net.Listen("127.0.0.1:0")? {
+        p = net.Port(l)
+    }
+    return p, nil
+}
+
+// listenServe は port で listen して 1 本受け、listener を閉じて返す（受けた本数）
+func listenServe(port int) (int, error?) {
+    mut k := 0
+    for l <- net.Listen("127.0.0.1:${port}")? {
+        for c <- net.Accept(l)? {
+            net.Send(c, bytes("hi"))?
+            os.Sleep(50)
+            k += 1
+            break
+        }
+    }
+    return k, nil
+}
+
+// client は接続できるまで 5 ms おきに試し（100 回まで）、相手が閉じるまで受ける（切られても黙る — 期限で切れたときだけ言う）
+func client(port int) int {
+    mut i := 0
+    while i < 100 {
+        n, e := talk(port)
+        if e == nil {
+            return n
+        }
+        if timedOut(e) {
+            println("client: expired")
+            return n
+        }
+        os.Sleep(5)
+        i += 1
+    }
+    return 0
+}
+
+// talk は接続して相手が閉じるまで受けたバイト数（失敗は接続の前の失敗と期限 — 接続の後に切られたのは受けた分で終わる）
+func talk(port int) (int, error?) {
+    mut n := 0
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        k, e := recvN(c)
+        if timedOut(e) {
+            return k, io.Expired{}
+        }
+        n = k
+    }
+    return n, nil
+}
+
+func timedOut(e error?) bool {
+    return switch e {
+    case nil: false
+    case io.Timeout{}: false
+    case io.Expired{}: true
+    case io.Closed{}: false
+    case io.Denied{}: false
+    case io.Other{errno}: false
+    case net.Bad{}: false
+    }
+}
+
+func recvN(c net.Conn) (int, error?) {
+    mut n := 0
+    for chunk <- net.Recv(c)? {
+        n += len(chunk)
+    }
+    return n, nil
+}

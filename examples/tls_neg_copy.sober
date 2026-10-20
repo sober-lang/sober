@@ -1,0 +1,15 @@
+package main
+
+// 負例: tls.Conn は写せない（同一性の型 — net.Conn と同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節の tls）
+
+import "std/tls"
+
+func h(c tls.Conn) error? {
+    d := c
+    return tls.Send(d, bytes("x"))
+}
+
+func main() {
+    cfg, _ := tls.Parse("", "")
+    _ = tls.Serve("127.0.0.1:9", cfg, h)
+}

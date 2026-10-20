@@ -1,0 +1,7 @@
+package main
+
+import "std/negdoc"
+import "std/negnoen"
+
+func main() {
+}

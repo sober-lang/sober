@@ -1,0 +1,64 @@
+package main
+
+// 倒れの証人（region-domain-pool.md 4d 節）: 窓の中で譲る（チャネルで待つ）と、同じワーカーの別の task が同じ置き場を借りに来る — rt は使用中の印を見て
+// 後から来た窓を新しい割り当てに倒す。置き場を 2 つの窓が共有したら、待ちの間に相手の書きが見えて数が減る（出力はスケジュールに依らず 64 ずつ）
+
+import "std/iter"
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    tab pool.Scratch
+}
+
+// fill は tab を v から埋め、まっさらだった数を返す
+func fill(w mut Work, v int) int {
+    mut fresh := 0
+    for i <- iter.Range(0, 64) {
+        if pool.Load(mut w.tab, i) == 0 {
+            fresh += 1
+        }
+        pool.Store(mut w.tab, i, v + i)
+    }
+    return fresh
+}
+
+// kept は tab に v から埋めた値が残っている数
+func kept(w mut Work, v int) int {
+    mut ok := 0
+    for i <- iter.Range(0, 64) {
+        if pool.Load(mut w.tab, i) == v + i {
+            ok += 1
+        }
+    }
+    return ok
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 64))
+    tx, rx := task.NewChannel[int](1)
+    rs, err := task.Run((s) => {
+        // A は窓の中で受けを待つ（譲る）— その間に B が同じワーカーで借りに来る
+        ha := task.Spawn(s, (r) => task.Lease(lw, (w mut Work) => {
+            f := fill(mut w, 100)
+            got := task.Recv(r)
+            g := if got != nil { got } else { 0 }
+            f * 1000 + kept(mut w, 100) + g
+        }), give: rx)
+        hb := task.Spawn(s, (t) => {
+            v := task.Lease(lw, (w mut Work) => fill(mut w, 200) * 1000 + kept(mut w, 200))
+            task.Send(t, 0)
+            task.Close(t)
+            v
+        }, give: tx)
+        a := task.Join(ha)
+        b := task.Join(hb)
+        []int{a, b}
+    })
+    for i <- iter.Range(0, len(rs)) {
+        println(rs[i])
+    }
+    // 窓の後も同じワーカーで借りられて、まっさら
+    println(task.Lease(lw, (w mut Work) => fill(mut w, 900) * 1000 + kept(mut w, 900)), err == nil)
+}

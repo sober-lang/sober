@@ -8,12 +8,12 @@
     },
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 7
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -402,10 +402,10 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 120
                   },
-                  "field": "Scope",
+                  "field": "Run",
                   "tok": 122
                 },
                 "args": [
@@ -416,7 +416,7 @@
                         "name": "s",
                         "type": {
                           "k": "name",
-                          "name": "par.S"
+                          "name": "task.Scope"
                         }
                       }
                     ],
@@ -436,7 +436,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 134
                                 },
                                 "field": "Spawn",
@@ -493,7 +493,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 153
                                 },
                                 "field": "Spawn",
@@ -550,7 +550,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 172
                                 },
                                 "field": "Spawn",
@@ -610,7 +610,7 @@
                                     "k": "selector",
                                     "base": {
                                       "k": "ident",
-                                      "name": "par",
+                                      "name": "task",
                                       "tok": 192
                                     },
                                     "field": "Try",
@@ -632,7 +632,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Ok",
+                                      "variant": "task.Ok",
                                       "fields": [
                                         {
                                           "name": "v",
@@ -662,7 +662,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Failed",
+                                      "variant": "task.Failed",
                                       "fields": [],
                                       "tok": 210
                                     }
@@ -686,7 +686,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Died",
+                                      "variant": "task.Died",
                                       "fields": [
                                         {
                                           "name": "cause",
@@ -734,7 +734,7 @@
                                     "k": "selector",
                                     "base": {
                                       "k": "ident",
-                                      "name": "par",
+                                      "name": "task",
                                       "tok": 233
                                     },
                                     "field": "Try",
@@ -756,7 +756,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Ok",
+                                      "variant": "task.Ok",
                                       "fields": [
                                         {
                                           "name": "v",
@@ -786,7 +786,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Failed",
+                                      "variant": "task.Failed",
                                       "fields": [],
                                       "tok": 251
                                     }
@@ -810,7 +810,7 @@
                                     {
                                       "k": "type",
                                       "bind": null,
-                                      "variant": "par.Died",
+                                      "variant": "task.Died",
                                       "fields": [
                                         {
                                           "name": "cause",
@@ -856,7 +856,7 @@
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
-                                    "name": "par",
+                                    "name": "task",
                                     "tok": 271
                                   },
                                   "field": "Join",

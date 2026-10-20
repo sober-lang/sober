@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": "$float",
-      "path": "std/floatfmt",
+      "path": "std/internal/floatfmt",
       "tok": 0
     }
   ],

@@ -1,0 +1,44 @@
+package m
+
+// refs の欄・仮引数の負例（report-885）: 同綴りの欄 code を 3 つの型（Req・Resp・panic ラベル Oops）に置く — 対象は 1 つの持ち主の欄だけ。
+// Wire / Inner は json.Encode に届く型（欄名 = JSON のキー — 改名は wire の互換を変える）・Req / Resp は届かない
+
+import "std/json"
+
+type Req struct {
+    code int
+    path string
+}
+
+type Resp struct {
+    code int
+    body string
+}
+
+type Wire struct {
+    code int
+    inner Inner
+}
+
+type Inner struct {
+    tag string
+}
+
+type Oops panic {
+    code int
+}
+
+func Handle(req Req, scale int) Resp {
+    r := Resp{code: req.code * scale, body: req.path}
+    return r
+}
+
+func Render(w Wire) string {
+    return json.Encode[Wire](w)
+}
+
+func Check(code int) {
+    if code < 0 {
+        panic(Oops{code: code})
+    }
+}

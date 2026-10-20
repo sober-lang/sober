@@ -1,0 +1,65 @@
+package main
+
+// バイトの同じ値の詰め（copyloop の (C) 形・for の (Z) 形 — fillBulk のバイトの枝）の回帰例: 8 バイトの語で詰めて端数をバイトで（report-879 ⑫）。
+// 前置きの長さ 0..10 × 詰める数 0..20 の全部で中身を照合（語の境目・端数・先端の伸長と全コピーの両方）+ 16 KiB の 0 埋め
+import "std/convert"
+import "std/os"
+
+func fill(pre int, n int, v byte) []byte {
+    mut z := mut []byte{}
+    mut k := 0
+    while k < pre {
+        z = append(z, byte(k + 1))
+        k += 1
+    }
+    mut j := 0
+    while j < n {
+        z = append(z, v)
+        j += 1
+    }
+    return freeze(z)
+}
+
+func zeros(n int) []byte {
+    mut z := mut []byte{}
+    mut j := 0
+    while j < n {
+        z = append(z, 0)
+        j += 1
+    }
+    return freeze(z)
+}
+
+func main() {
+    args := os.Args() catch return
+    reps := if len(args) == 2 { convert.ParseInt(args[1]) catch 1 } else { 1 }
+    mut bad := 0
+    mut sum := 0
+    mut pre := 0
+    while pre < 11 {
+        mut n := 0
+        while n < 21 {
+            b := fill(pre, n, byte(171))
+            if len(b) != pre + n {
+                bad += 1
+            }
+            mut i := 0
+            while i < len(b) {
+                want := if i < pre { i + 1 } else { 171 }
+                if int(b[i]) != want {
+                    bad += 1
+                }
+                i += 1
+            }
+            n += 1
+        }
+        pre += 1
+    }
+    mut r := 0
+    while r < reps {
+        z := zeros(16384)
+        sum += len(z) + int(z[16383]) + int(z[5])
+        r += 1
+    }
+    println("bad ${bad} sum ${sum}")
+}

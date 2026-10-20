@@ -1,0 +1,18 @@
+package main
+
+// 負例（report-761 ① の対照 — 捕捉の無い K でも同じく拒否。lower では関数値 1 語どうしだが、check の核と同じ線で build も拒否する）
+type Gen func(n int) int
+
+type R struct {
+    g Gen
+}
+
+func dbl(n int) int {
+    return n * 2
+}
+
+func main() {
+    f := dbl
+    b := R{g: f}
+    println(b.g(3))
+}

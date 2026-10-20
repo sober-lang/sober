@@ -1,0 +1,18 @@
+package main
+
+// 段 6 P3b: give: で子へ移した送り端を親が使う = 失効した別名（定義された panic — 持ち主は記録の印・失効は親のプログラム順だけで決まる）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 2)
+        h := task.Spawn(s, (out) => {
+            task.Send(out, 1)
+            1
+        }, give: tx)
+        task.Send(tx, 5)
+        task.Join(h)
+    })
+    println(r)
+}

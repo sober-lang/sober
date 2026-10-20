@@ -5,7 +5,7 @@ package main
 // 200 scopes with two dying readers each: the open files do not grow and the readers that live still see every byte.
 // Run from the repository root.
 import "std/io"
-import "std/par"
+import "std/task"
 
 type Boom panic
 
@@ -37,11 +37,11 @@ func read(p string, die int) int {
 
 // dying runs two readers that die mid-stream (the scope fails with their deaths — the caller lives on)
 func dying(p string) int {
-    _, _ = par.Scope((s par.S) => {
-        b := par.Spawn(s, () => read(p, 1))
-        c := par.Spawn(s, () => read(p, 2))
-        _ = par.Try(b)
-        _ = par.Try(c)
+    _, _ = task.Run((s task.Scope) => {
+        b := task.Spawn(s, () => read(p, 1))
+        c := task.Spawn(s, () => read(p, 2))
+        _ = task.Try(b)
+        _ = task.Try(c)
         0
     })
     return 0
@@ -49,10 +49,10 @@ func dying(p string) int {
 
 // round reads p whole next to the dying readers
 func round(p string) int {
-    r, err := par.Scope((s par.S) => {
-        a := par.Spawn(s, () => read(p, 0))
-        d := par.Spawn(s, () => dying(p))
-        par.Join(d) + par.Join(a)
+    r, err := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => read(p, 0))
+        d := task.Spawn(s, () => dying(p))
+        task.Join(d) + task.Join(a)
     })
     return if err == nil { r } else { -3 }
 }

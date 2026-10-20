@@ -1,0 +1,300 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    },
+    {
+      "name": "Send",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "error"
+            }
+          }
+        ],
+        "param_names": [
+          "n"
+        ]
+      },
+      "tok": 8,
+      "span": {
+        "start": 7,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "NotFn",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "param_names": [
+              "x"
+            ]
+          },
+          "mutable": false
+        },
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "Send"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": ">",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "k",
+                    "tok": 50
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 52
+                    }
+                  ],
+                  "tok": 51
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 55
+                },
+                "tok": 54
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "composite",
+                        "type_name": "Bad",
+                        "elems": [],
+                        "tok": 58,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 57
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 49
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 65
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 67
+                  }
+                ],
+                "tok": 66
+              }
+            ],
+            "tok": 64
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 72
+      },
+      "sig_end": 48
+    },
+    {
+      "name": "put",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 82
+              }
+            ],
+            "tok": 81
+          }
+        ]
+      },
+      "tok": 73,
+      "bodiless": false,
+      "span": {
+        "start": 72,
+        "end": 86
+      },
+      "sig_end": 80
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "_",
+                "tok": 91
+              }
+            ],
+            "op": "=",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "NotFn",
+                  "tok": 93
+                },
+                "args": [
+                  {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 95
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "x",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 101
+                    },
+                    "tok": 100
+                  },
+                  {
+                    "k": "ident",
+                    "name": "put",
+                    "tok": 103
+                  }
+                ],
+                "tok": 94
+              }
+            ],
+            "tok": 91
+          }
+        ]
+      },
+      "tok": 87,
+      "bodiless": false,
+      "span": {
+        "start": 86,
+        "end": 108
+      },
+      "sig_end": 90
+    }
+  ],
+  "consts": []
+}

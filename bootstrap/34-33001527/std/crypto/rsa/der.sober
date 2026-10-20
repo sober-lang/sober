@@ -1,0 +1,145 @@
+package rsa
+
+// der.sober — PKCS#8 の PrivateKeyInfo（RFC 5208）に包まれた RSAPrivateKey（RFC 8017 A.1.2）の最小の DER の読み。
+// 読むのは自分の鍵ファイル（ネットから来るバイト列ではない）だが、形が違えば BadKey で止める（長さは全部範囲を検査する）
+
+import "std/iter"
+
+// ParsePKCS8 は PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密鍵
+@errors(BadKey)
+func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+    bad := PrivateKey{pub: noPublic(), mp: noMont(), mq: noMont(), dp: []int{}, dq: []int{}, qinv: []int{}}
+    // PrivateKeyInfo ::= SEQUENCE { version INTEGER, algorithm AlgorithmIdentifier, privateKey OCTET STRING }
+    top, tl, te := tlv(der, 0, len(der), 0x30)
+    if te || top + tl != len(der) {
+        return bad, BadKey{}
+    }
+    v0, vl, ve := tlv(der, top, len(der), 0x02)
+    if ve {
+        return bad, BadKey{}
+    }
+    a0, al, ae := tlv(der, v0 + vl, len(der), 0x30)
+    if ae {
+        return bad, BadKey{}
+    }
+    // rsaEncryption = 1.2.840.113549.1.1.1
+    o0, ol, oe := tlv(der, a0, a0 + al, 0x06)
+    if oe || !sameBytes(der, o0, ol, []byte{byte(0x2a), byte(0x86), byte(0x48), byte(0x86), byte(0xf7), byte(0x0d), byte(0x01), byte(0x01), byte(0x01)}) {
+        return bad, BadKey{}
+    }
+    k0, kl, ke := tlv(der, a0 + al, len(der), 0x04)
+    if ke {
+        return bad, BadKey{}
+    }
+    // RSAPrivateKey ::= SEQUENCE { version, n, e, d, p, q, dp, dq, qinv }
+    s0, sl, se := tlv(der, k0, k0 + kl, 0x30)
+    if se {
+        return bad, BadKey{}
+    }
+    end := s0 + sl
+    mut at := s0
+    mut ints := mut [][]byte{}
+    for i <- iter.Range(0, 9) {
+        i0, il, ie := tlv(der, at, end, 0x02)
+        if ie {
+            return bad, BadKey{}
+        }
+        mut b := mut []byte{}
+        for j <- iter.Range(i0, i0 + il) {
+            b = append(b, der[j])
+        }
+        ints = append(ints, freeze(b))
+        at = i0 + il
+    }
+    nb := ints[1]
+    // n の実バイト長（先頭の 0 を除く）
+    mut lead := 0
+    while lead < len(nb) && nb[lead] == byte(0) {
+        lead = lead + 1
+    }
+    k := len(nb) - lead
+    if k < 64 {
+        return bad, BadKey{}
+    }
+    n := bnFromBytes(nb, (8 * k + 63) / 64)
+    // p, q は実ビット長の limb 数に切り詰める（Montgomery の n — 余分な 0 の limb は積の段を n^2 で太らせる）。dp・qinv < p・dq < q で同じ limb 数に収まる
+    hl := (8 * ((k + 1) / 2) + 63) / 64 + 1
+    p0 := bnFromBytes(ints[4], hl)
+    q0 := bnFromBytes(ints[5], hl)
+    np := (bnBits(p0) + 63) / 64
+    nq := (bnBits(q0) + 63) / 64
+    p := bnTrim(p0, np)
+    q := bnTrim(q0, nq)
+    // p, q は奇数（Montgomery の前提）
+    if p[0] & 1 == 0 || q[0] & 1 == 0 {
+        return bad, BadKey{}
+    }
+    pub := newPublic(n, bnFromBytes(ints[2], 1), k)
+    return PrivateKey{pub: pub, mp: newMont(p), mq: newMont(q), dp: bnTrim(bnFromBytes(ints[6], hl), np), dq: bnTrim(bnFromBytes(ints[7], hl), nq), qinv: bnTrim(bnFromBytes(ints[8], hl), np)}, nil
+}
+
+// NewPublic は大きい端のバイト列の n と e の公開鍵（検証の網の口）
+@errors(BadKey)
+func NewPublic(nb []byte, eb []byte) (PublicKey, error?) {
+    mut lead := 0
+    while lead < len(nb) && nb[lead] == byte(0) {
+        lead = lead + 1
+    }
+    k := len(nb) - lead
+    if k < 64 || len(eb) > 7 {
+        return noPublic(), BadKey{}
+    }
+    return newPublic(bnFromBytes(nb, (8 * k + 63) / 64), bnFromBytes(eb, 1), k), nil
+}
+
+// newPublic は法 n（偶数でも可 — Montgomery の文脈は奇数のときだけ意味を持ち、偶数の法は VerifyPSS が先に落とす）の公開鍵
+func newPublic(n []int, e []int, k int) PublicKey {
+    return PublicKey{n: n, e: e, k: k, bits: bnBits(n), mt: if n[0] & 1 == 1 { newMont(n) } else { noMont() }}
+}
+
+func noMont() mont {
+    return mont{m: []int{}, m0i: 0, r2: []int{}}
+}
+
+func noPublic() PublicKey {
+    return PublicKey{n: []int{}, e: []int{}, k: 0, bits: 0, mt: noMont()}
+}
+
+// tlv は b[at..end) の先頭の DER の要素（タグ tag）の中身の位置と長さ（形が違えば第 3 の値が true）
+func tlv(b []byte, at int, end int, tag int) (int, int, bool) {
+    if at + 2 > end || int(b[at]) != tag {
+        return 0, 0, true
+    }
+    l0 := int(b[at + 1])
+    if l0 < 0x80 {
+        if at + 2 + l0 > end {
+            return 0, 0, true
+        }
+        return at + 2, l0, false
+    }
+    nl := l0 - 0x80
+    if nl < 1 || nl > 3 || at + 2 + nl > end {
+        return 0, 0, true
+    }
+    mut l := 0
+    for i <- iter.Range(0, nl) {
+        l = (l << 8) | int(b[at + 2 + i])
+    }
+    s := at + 2 + nl
+    if s + l > end {
+        return 0, 0, true
+    }
+    return s, l, false
+}
+
+func sameBytes(b []byte, at int, l int, want []byte) bool {
+    if l != len(want) {
+        return false
+    }
+    for i <- iter.Range(0, l) {
+        if b[at + i] != want[i] {
+            return false
+        }
+    }
+    return true
+}

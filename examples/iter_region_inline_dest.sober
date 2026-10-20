@@ -1,0 +1,78 @@
+package main
+
+// 反復の region の約束と inline 展開の宛先構築（report-689）の回帰例（std/http.ServeConn の形）: 関数型の仮引数を持つ関数は呼び出し点に
+// 本体を展開する。本体の「結果へ流れ着く値」（宛先構築の印）は展開入口の深度に作るのが正しく、展開先の関数の結果の宛先に作ると、ループの中の
+// 展開の結果が反復ごとに外の region へ積もる（keep-alive の接続で 64 B / 要求 — RSS が要求数に比例）。for <- の本体（ラムダ）の中の展開も同じ。
+// 回数は引数で変えられる（既定 2000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
+
+import "std/os"
+
+// build は応答の組み立ての形: 関数型の仮引数 f（展開の理由）・結果の列は宛先構築の印つき
+func build(n int, f func(int) int) []byte {
+    mut out := mut []byte{}
+    mut k := 0
+    while k < 64 {
+        out = append(out, byte((k + f(n)) % 200))
+        k += 1
+    }
+    return freeze(out)
+}
+
+func twice(x int) int {
+    return x * 2
+}
+
+// each は受けの反復子の形（for <- の本体 = ラムダを n 回呼ぶ — 関数型の仮引数なので展開される）
+func each(n int, k func(int)) error? {
+    mut i := 0
+    while i < n {
+        k(i)
+        i += 1
+    }
+    return nil
+}
+
+// loopWhile は while の本体の中の展開（自分は関数型の仮引数を持たない — 持つと main へ展開され、main は宛先構築をしないので形が出ない）
+func loopWhile(n int) int {
+    mut i := 0
+    mut s := 0
+    while i < n {
+        out := build(i, twice)
+        s += int(out[1])
+        i += 1
+    }
+    return s
+}
+
+// loopFor は for <- の本体（ラムダ）の中の展開
+func loopFor(n int) (int, error?) {
+    mut s := 0
+    for i <- each(n)? {
+        out := build(i, twice)
+        s += int(out[1])
+    }
+    return s, nil
+}
+
+func count() int {
+    args := os.Args() catch return 2000
+    if len(args) != 2 {
+        return 2000
+    }
+    mut n := 0
+    for c <- bytes(args[1]) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func main() int {
+    n := count()
+    a := loopWhile(n)
+    b, e := loopFor(n)
+    if e != nil {
+        return 1
+    }
+    println("${a} ${b}")
+    return 0
+}

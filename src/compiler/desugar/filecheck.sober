@@ -25,6 +25,7 @@ const FC_ESCAPE = 7    // return / File を持つ値を返す呼び出し
 const FC_HOLD = 8      // composite・append に入れる
 const FC_CAPTURE = 9   // 閉包の捕獲
 const FC_GIVE = 10     // give:
+const FC_BORROW = 11   // 借りの関数値を呼ぶ・借りの位置へ渡す以外に使った（(α-L0)）
 
 // fcFn は呼び出し先の節 callee が std/io の Open（1）・Close（2）か（違えば 0）
 func fcFn(st mut S, callee NodeRef) int {
@@ -40,13 +41,15 @@ func fcFn(st mut S, callee NodeRef) int {
     return if strIs(mut st, nm, "Open") { 1 } else if strIs(mut st, nm, "Close") { 2 } else { 0 }
 }
 
-// fcIsFile は表層型 y が std/io の File か
+// fcIsFile は表層型 y が同一性を持つ資源の型か — std/io の File と std/net の Listener / Conn（net 段 4a-1 — 28 節の net）・std/tls の Conn（TLS 便 R4 — 28 節。
+// net の 2 つは for の束縛でだけ生まれ Close の口を持たないので、Open / Close の対の照合は File だけ — 写し・持ち出し・捕獲・give: の規則は共通）
 func fcIsFile(st mut S, y int) bool {
     if yk(mut st, y) != YDecl {
         return false
     }
     x := YAt(mut st, y)
-    return strIs(mut st, PkgPath(mut st, x.b), "std/io") && strIs(mut st, sA(nodeOf(mut st, yNa(x))), "File")
+    nm := sA(nodeOf(mut st, yNa(x)))
+    return (strIs(mut st, PkgPath(mut st, x.b), "std/io") && strIs(mut st, nm, "File")) || (strIs(mut st, PkgPath(mut st, x.b), "std/net") && (strIs(mut st, nm, "Listener") || strIs(mut st, nm, "Conn"))) || (strIs(mut st, PkgPath(mut st, x.b), "std/tls") && strIs(mut st, nm, "Conn"))
 }
 
 // fcHolds は表層型 y が File を持つか（`T?`・slice / map の要素・多値・struct の欄・型引数を fuel 段まで）
@@ -117,7 +120,8 @@ func fcOpenCall(st mut S, v NodeRef, try bool) NodeRef {
 // Open の呼び出しの節・束縛した名前
 func fcOpenAt(st mut S, l ListRef, i int) (int, NodeRef, StrRef) {
     s := latN(mut st, l, i)
-    if kindN(mut st, s) != ast.SBind {
+    // 列の穴（パイプの段の `_` は -1 — 2026-10-17: 借りの検査で io / net 以外のプログラムでも歩くようになって露見）
+    if s == -1 || kindN(mut st, s) != ast.SBind {
         return 0, -1, -1
     }
     b := nodeOf(mut st, s)
@@ -190,6 +194,40 @@ func fcWalk(st mut S, n NodeRef) PcHit {
         fk := findFn(mut st, cal, -1)
         if fk >= 0 && ParKey(mut st, fk) == PAR_SPAWNGIVE && lenL(mut st, args) >= 2 && fcNodeHolds(mut st, latN(mut st, args, 1)) {
             return PcHit{at: latN(mut st, args, 1), kind: FC_GIVE}
+        }
+        // task.Run の本体の lambda は捕獲を許す（net の裁定 N6 — 本体は同じ task の上で同期に走り、Scope が返ってから外の defer Close が走る）。
+        // 本体の中は今どおり歩く（中の Spawn の g・他の閉包への捕獲は拒否）
+        if fk >= 0 && ParKey(mut st, fk) == PAR_SCOPE && lenL(mut st, args) >= 1 && kindN(mut st, latN(mut st, args, 0)) == ast.ELambda {
+            for i <- iter.Range(0, lenL(mut st, args)) {
+                a := latN(mut st, args, i)
+                h := fcWalk(mut st, if i == 0 { nB(nodeOf(mut st, a)) } else { a })
+                if h.kind != 0 {
+                    return h
+                }
+            }
+            return pcNone()
+        }
+        // 借りの位置（(α-L0) — language.md 25 節「借り」）: 展開される関数の匿名の関数型の仮引数のうち借りとして安全なもの（fsSafe）と、
+        // 値の呼び出し（値化可能な named fn type の閉包）の実引数。そこに置いたラムダは同一性の型・借りの値を捕捉してよい（捕捉の検査を飛ばして本体を歩く）
+        vcall := fk < 0 && fcValueCallee(mut st, cal)
+        if fk >= 0 || vcall {
+            mut any := false
+            for i <- iter.Range(0, lenL(mut st, args)) {
+                a := latN(mut st, args, i)
+                if a != -1 && kindN(mut st, a) == ast.ELambda && (vcall || fcBrwPos(mut st, fk, i, 8)) {
+                    any = true
+                }
+            }
+            if any {
+                for i <- iter.Range(0, lenL(mut st, args)) {
+                    a := latN(mut st, args, i)
+                    h := if a != -1 && kindN(mut st, a) == ast.ELambda && (vcall || fcBrwPos(mut st, fk, i, 8)) { fcWalk(mut st, nB(nodeOf(mut st, a))) } else { fcWalk(mut st, a) }
+                    if h.kind != 0 {
+                        return h
+                    }
+                }
+                return if vcall { fcWalk(mut st, nA(x)) } else { pcNone() }
+            }
         }
         if fk < 0 && pcIsAppend(mut st, cal) {
             for i <- iter.Range(1, lenL(mut st, args)) {
@@ -269,6 +307,17 @@ func fcWalk(st mut S, n NodeRef) PcHit {
         if h.kind != 0 {
             return h
         }
+        // 値の位置のラムダの匿名の関数型の仮引数 = 借り（(α-L0)）: 呼ぶ・借りの位置へ渡す・借りの位置のラムダに捕捉する、だけ
+        vl := capEntry(mut st, n)
+        if vl >= 0 && st.capBrw[vl] != 0 {
+            ps := lA(x)
+            for i <- iter.Range(0, lenL(mut st, ps)) {
+                b := if st.capBrw[vl] / pow2(i) % 2 == 1 { fsBad(mut st, nB(x), sA(nodeOf(mut st, latN(mut st, ps, i))), 8) } else { NodeRef(-1) }
+                if b != -1 {
+                    return PcHit{at: b, kind: FC_BORROW}
+                }
+            }
+        }
     }
     c := pcDesc(mut st, x)
     for j <- iter.Range(0, 6) {
@@ -325,7 +374,7 @@ func fcCapture(st mut S, n NodeRef, base int, end int) PcHit {
     }
     x := nodeOf(mut st, n)
     if x.kind == ast.EIdent {
-        if !pcIn(mut st, base, end, sA(x), false) && fcNodeHolds(mut st, n) {
+        if !pcIn(mut st, base, end, sA(x), false) && (fcNodeHolds(mut st, n) || fcBrwVal(mut st, n)) {
             return PcHit{at: n, kind: FC_CAPTURE}
         }
         return pcNone()
@@ -357,7 +406,7 @@ func fcCapture(st mut S, n NodeRef, base int, end int) PcHit {
 func fileCheck(st mut S) error? {
     for fi <- iter.Range(0, st.nfn) {
         body := fnBody(mut st, fi)
-        if body != -1 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/io") {
+        if body != -1 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/io") && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/net") && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/tls") {
             st.curPkg = fnPkg(mut st, fi)
             h := fcWalk(mut st, body)
             if h.kind != 0 {
@@ -366,4 +415,186 @@ func fileCheck(st mut S) error? {
         }
     }
     return nil
+}
+
+// ── 借り（(α-L0) — language.md 25 節「借り」・report-754 1 節）──
+
+// fcBrwVal は名前の参照 e が値の位置のラムダの借りの仮引数（閉包の値 — 同一性を捕捉しうる）か（loader の表 cap_brw のビット。
+// 影の禁止 — 名前で引ける。名前付き関数の匿名の関数型の仮引数は展開 — 借りの位置の安全は fcBrwPos が呼び手の側で見る）
+func fcBrwVal(st mut S, e NodeRef) bool {
+    if kindN(mut st, e) != ast.EIdent {
+        return false
+    }
+    nm := sA(nodeOf(mut st, e))
+    for i <- iter.Range(0, len(st.capFile)) {
+        if st.capBrw[i] != 0 {
+            ps := lA(nodeOf(mut st, NodeRef(ABASE + st.capFile[i] * FW + st.capNode[i])))
+            for j <- iter.Range(0, lenL(mut st, ps)) {
+                if st.capBrw[i] / pow2(j) % 2 == 1 && strEq(mut st, sA(nodeOf(mut st, latN(mut st, ps, j))), nm) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+// pow2 は 2 の i 乗（借りの仮引数のビットの読み）
+func pow2(i int) int {
+    mut r := 1
+    for _ <- iter.Range(0, i) { r *= 2 }
+    return r
+}
+
+// fcValueCallee は callee（名前付き関数でない）が値の呼び出し（値化可能な named fn type の閉包・借りの閉包）か
+func fcValueCallee(st mut S, cal NodeRef) bool {
+    k := kindN(mut st, cal)
+    if k != ast.EIdent && k != ast.ESelector {
+        return false
+    }
+    mut y := YTypeOf(mut st, cal)
+    if y >= 0 && yk(mut st, y) == YOpt {
+        y = YAt(mut st, y).a
+    }
+    if y < 0 {
+        return false
+    }
+    if yk(mut st, y) == YDecl {
+        return fnValDeclNode(mut st, yNa(YAt(mut st, y)))
+    }
+    if yk(mut st, y) != YFn {
+        return false
+    }
+    c := YAt(mut st, y).c
+    return c > 0 && fnValDeclNode(mut st, NodeRef(c - 1)) || c == 0 && fcBrwVal(mut st, cal)
+}
+
+// fcBrwPos は名前付き関数 fk の i 番目の仮引数が借りとして安全な位置か: 匿名の関数型で、本体がその仮引数を呼ぶ・借りの位置へ渡す・借りの位置の
+// ラムダに捕捉する、だけ（fsSafe）。std/task は Scope の本体だけ（Spawn の族・Map は子 task で走る）
+func fcBrwPos(st mut S, fk int, i int, fuel int) bool {
+    if fk < 0 || fuel == 0 {
+        return false
+    }
+    ps := fnParams(mut st, fk)
+    if i >= lenL(mut st, ps) {
+        return false
+    }
+    prm := latN(mut st, ps, i)
+    if kindN(mut st, nB(nodeOf(mut st, prm))) != ast.TFunc {
+        return false
+    }
+    if strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/task") {
+        return ParKey(mut st, fk) == PAR_SCOPE && i == 0
+    }
+    body := fnBody(mut st, fk)
+    if body == -1 {
+        return false
+    }
+    // fk の本体の中の名前（同じ package の関数・fk の package の import）は fk の package で引く — 呼び手の package のままだと、
+    // 別の package の関数（http.ServeWith の serveBuf / linger）の中の呼び出しが見つからず借りの位置でない扱いになる（report-841）
+    cp := st.curPkg
+    st.curPkg = fnPkg(mut st, fk)
+    b := fsBad(mut st, body, sA(nodeOf(mut st, prm)), fuel - 1)
+    st.curPkg = cp
+    return b == -1
+}
+
+// fsBad は木 n の中の名前 p（借りの関数値）の使い方のうち、借りの規則の外の最初の節（無ければ -1）: 許すのは呼ぶ・借りの位置
+// （fcBrwPos / 値の呼び出しの実引数）へ渡す・借りの位置のラムダ / task.Run の本体に捕捉する（その中の使い方も同じ規則）
+func fsBad(st mut S, n NodeRef, p StrRef, fuel int) NodeRef {
+    if n == -1 {
+        return -1
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.EIdent {
+        return if strEq(mut st, sA(x), p) { n } else { NodeRef(-1) }
+    }
+    if x.kind == ast.ECall {
+        cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
+        fk := findFn(mut st, cal, -1)
+        vcall := fk < 0 && fcValueCallee(mut st, cal)
+        if !(kindN(mut st, cal) == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, cal)), p)) {
+            b := fsBad(mut st, nA(x), p, fuel)
+            if b != -1 {
+                return b
+            }
+        }
+        args := lB(x)
+        for i <- iter.Range(0, lenL(mut st, args)) {
+            a := latN(mut st, args, i)
+            ka := if a == -1 { 0 } else { kindN(mut st, a) }
+            pos := vcall || fcBrwPos(mut st, fk, i, fuel)
+            if ka == ast.EIdent && strEq(mut st, sA(nodeOf(mut st, a)), p) {
+                if !pos {
+                    return a
+                }
+            } else if ka == ast.ELambda && !pos {
+                b := fsAny(mut st, nB(nodeOf(mut st, a)), p)
+                if b != -1 {
+                    return b
+                }
+            } else {
+                b := fsBad(mut st, if ka == ast.ELambda { nB(nodeOf(mut st, a)) } else { a }, p, fuel)
+                if b != -1 {
+                    return b
+                }
+            }
+        }
+        return -1
+    }
+    if x.kind == ast.ELambda {
+        // 借りの位置でないラムダ（値の位置・Spawn の子など）への捕捉
+        return fsAny(mut st, nB(x), p)
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            b := fsBad(mut st, NodeRef(v), p, fuel)
+            if b != -1 {
+                return b
+            }
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                b := fsBad(mut st, latN(mut st, l, i), p, fuel)
+                if b != -1 {
+                    return b
+                }
+            }
+        }
+    }
+    return -1
+}
+
+// fsAny は木 n の中の名前 p の参照の最初（無ければ -1）
+func fsAny(st mut S, n NodeRef, p StrRef) NodeRef {
+    if n == -1 {
+        return -1
+    }
+    x := nodeOf(mut st, n)
+    if x.kind == ast.EIdent {
+        return if strEq(mut st, sA(x), p) { n } else { NodeRef(-1) }
+    }
+    c := pcDesc(mut st, x)
+    for j <- iter.Range(0, 6) {
+        d := c / pow8(j) % 8
+        v := pcField(x, j)
+        if d == 1 && v != -1 {
+            b := fsAny(mut st, NodeRef(v), p)
+            if b != -1 {
+                return b
+            }
+        } else if d == 3 && v != -1 {
+            l := ListRef(v)
+            for i <- iter.Range(0, lenL(mut st, l)) {
+                b := fsAny(mut st, latN(mut st, l, i), p)
+                if b != -1 {
+                    return b
+                }
+            }
+        }
+    }
+    return -1
 }

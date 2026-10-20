@@ -1,0 +1,291 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 7
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          },
+          {
+            "name": "head",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 23
+      }
+    },
+    {
+      "name": "Other",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "m",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 27
+          },
+          {
+            "name": "head",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 30
+          }
+        ]
+      },
+      "tok": 24,
+      "span": {
+        "start": 23,
+        "end": 37
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 44
+                  },
+                  "field": "NewLocal",
+                  "tok": 46
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 54
+                        },
+                        "field": "NewScratch",
+                        "tok": 56
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.head",
+                          "tok": 59
+                        },
+                        {
+                          "k": "int",
+                          "value": 8,
+                          "tok": 63
+                        }
+                      ],
+                      "tok": 57
+                    },
+                    "tok": 53
+                  }
+                ],
+                "tok": 47
+              }
+            ],
+            "tok": 42
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 67
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 69
+                    },
+                    "field": "Lease",
+                    "tok": 71
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "lw",
+                      "tok": 73
+                    },
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "w",
+                          "type": {
+                            "k": "name",
+                            "name": "Work"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "w",
+                          "tok": 81
+                        },
+                        "field": "n",
+                        "tok": 83
+                      },
+                      "tok": 80
+                    }
+                  ],
+                  "tok": 72
+                }
+              ],
+              "tok": 68
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 87
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 89
+                    },
+                    "field": "Lease",
+                    "tok": 91
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "lw",
+                      "tok": 93
+                    },
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "w",
+                          "type": {
+                            "k": "name",
+                            "name": "Other"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "w",
+                          "tok": 101
+                        },
+                        "field": "m",
+                        "tok": 103
+                      },
+                      "tok": 100
+                    }
+                  ],
+                  "tok": 92
+                }
+              ],
+              "tok": 88
+            }
+          }
+        ]
+      },
+      "tok": 38,
+      "bodiless": false,
+      "span": {
+        "start": 37,
+        "end": 109
+      },
+      "sig_end": 41
+    }
+  ],
+  "consts": []
+}

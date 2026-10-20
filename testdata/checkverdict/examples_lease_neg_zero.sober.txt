@@ -1,0 +1,2 @@
+sober: load error at examples/lease_neg_zero.sober:14:11: `task.Local` has identity: only task.NewLocal makes one — a zero value would refer to nothing
+exit=1

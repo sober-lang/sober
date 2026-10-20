@@ -2,8 +2,9 @@ package main
 
 // 浮動小数の印字の差分（scripts/oracles/float_format.go — 境界値と乱択のビット列を Go の strconv.FormatFloat(f, 'g', -1, 64) と照合）
 
-import "std/floatfmt"
+import "std/convert"
 import "std/io"
+import "std/math"
 
 func main() int {
     b := io.ReadStdin() catch return 1
@@ -20,7 +21,7 @@ func main() int {
             i += 1
         }
         i += 1
-        println(floatfmt.Format(if neg { 0 - v } else { v }))
+        println(convert.FormatFloat(math.FromBits(if neg { 0 - v } else { v })))
     }
     return 0
 }

@@ -1,0 +1,38 @@
+package main
+
+// copyloop の形 D（語 → バイト列の直列化のループ — report-731）の意味の網:
+//   `while x >= 8 { out = append(out, byte(b & 0xff)); b = b >> 8; x = x - 8 }`
+// を b の符号・x の端（0 / 8 未満 / 8 の倍数でない / ちょうど 64 / 64 超）の組で回し、書いたバイト列と x・b の最終値を印字する。
+// 黄金 = 畳む前の素直な意味（--no-opt の道と同じ値 — optdiff が照合）。x ≥ 64 の語の道・端の 1 バイトの道・畳まれない負の x を全部通す
+
+import "std/iter"
+
+func one(b0 int, x0 int) {
+    mut out := mut []byte{}
+    mut b := b0
+    mut x := x0
+    while x >= 8 {
+        out = append(out, byte(b & 0xff))
+        b = b >> 8
+        x = x - 8
+    }
+    mut s := mut []byte{}
+    for i <- iter.Range(0, len(out)) {
+        h := "0123456789abcdef"
+        s = append(s, bytes(h)[int(out[i]) >> 4])
+        s = append(s, bytes(h)[int(out[i]) & 15])
+    }
+    t := string(freeze(s)) catch return
+    println("${t} b=${b} x=${x}")
+}
+
+func main() {
+    one(578437695752307201, 64)    // 0x0807060504030201 — ちょうど 1 語
+    one(578437695752307201, 20)    // 端だけ（2 バイト・x の残り 4）
+    one(-1, 64)                    // 負の b — 全部 0xff・算術シフトで b は -1 のまま
+    one(-2, 72)                    // 語 + 端 1 バイト（fe ff×8 — 9 バイト）
+    one(255, 0)                    // 回らない
+    one(255, 7)                    // 回らない（x < 8）
+    one(255, -8)                   // 回らない(負の x)
+    one(4822678189205111, 128)     // 2 語（0x00112233445566F7 — 上位 0 込み・2 語目は 0）
+}

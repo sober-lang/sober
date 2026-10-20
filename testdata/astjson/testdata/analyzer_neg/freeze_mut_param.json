@@ -2,8 +2,8 @@
   "package": "main",
   "imports": [
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],

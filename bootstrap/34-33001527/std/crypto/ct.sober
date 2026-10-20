@@ -1,0 +1,74 @@
+package crypto
+
+// crypto（TLS 便 — report-790）: 暗号の部品の置き場。この package は定数時間の部品と乱数の 1 か所で、各方式は std/crypto/<方式> に置く。
+// 公開の名前と署名は仮決め（0.6.0 の API 総再審に同席）。
+//
+// 定数時間の規律（v1 — std/crypto の中だけで守る。@secret の analyzer は別便）:
+//   1. 秘密に依存する if / switch / && / || / 比較演算子を書かない — 選択は Select、0 の判定は NonZero の mask
+//   2. 秘密に依存する添字を書かない（表引きなし — ソフトの AES を書かない理由）
+//   3. 秘密を / と % に渡さない（x86 の DIV は可変時間）
+//   4. ループの回数は公開の値だけで決める
+// 網: scripts/ctcheck.sh（ct の関数の機械語の条件分岐の数を黄金で照合）・dudect 流の時間の計器（gate 外 — .pair/tools/crypto/・方式の便で足す）
+
+import "std/iter"
+
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// Eq は a と b のバイト列が等しいか。長さは公開の値として扱う（長さが違えばすぐ false）。中身は全バイトの xor を OR で畳み、最後に 1 回だけ判定する
+// （どこで食い違ったかが時間に出ない — MAC の tag の比較の口）
+func Equal(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    mut d := 0
+    for i <- iter.Range(0, len(a)) {
+        d = d | (int(a[i]) ^ int(b[i]))
+    }
+    return d == 0
+}
+
+// NonZero は x が 0 なら 0、それ以外なら -1（全ビット 1）の mask（x | -x の最上位のビットを算術シフトで広げる — 分岐なし）
+func NonZero(x int) int {
+    return (x | -x) >> 63
+}
+
+// Select は m が -1 なら a、0 なら b（m は NonZero などで作った mask だけ — 他の値は契約違反で結果は不定）
+func Select(m int, a int, b int) int {
+    return (a & m) | (b & ^m)
+}
+
+// Wipe は b の全バイトを 0 にする（用済みの鍵の後始末）
+func Wipe(b mut []byte) {
+    for i <- iter.Range(0, len(b)) {
+        b[i] = byte(0)
+    }
+}
+
+// NoEntropy は getrandom が乱数を返せない（カーネル 3.17 未満 = ENOSYS など — 乱数なしで鍵を作らないための panic ラベル。language.md 27 節）
+type NoEntropy panic {
+    errno int
+}
+
+// Rand は OS の暗号論的な乱数 n バイト（getrandom — 呼ぶのはこの 1 か所だけ。flags 0 = 初期化前は待つ）。EINTR はやり直す。
+// 失敗は panic(NoEntropy{errno})
+func Rand(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(0))
+    }
+    mut off := 0
+    while off < n {
+        r := sysCall(318, sysAddr(b) + off, n - off, 0, 0, 0, 0)
+        if r < 0 && r != -4 {
+            return panic(NoEntropy{errno: -r})
+        }
+        if r > 0 {
+            off = off + r
+        }
+    }
+    return freeze(b)
+}

@@ -226,7 +226,7 @@ func scanFuncs(cx Cx) Funcs {
                 if ty.kind == ast.TFunc || (ty.kind == ast.TName || ty.kind == ast.TGeneric) && namedFunc(cx, f, Name(t, ty.a)) {
                     fu = true
                 }
-                if cx.pkg_path[pk] == "std/par" && parHandles(t, ty) {
+                if cx.pkg_path[pk] == "std/task" && parHandles(t, ty) {
                     fu = true
                 }
                 p += 1
@@ -443,12 +443,12 @@ func onCycle(cx Cx, files []int, nodes []int, lo []int, hi []int, cs []string, i
     return freeze(cyc)
 }
 
-// parHandles は std/par の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/par の口
+// parHandles は std/task の仮引数の型 ty が handle の slice（`[]Task[T]`）か — 札・handle は関数の境界を越えないので、それを取る std/task の口
 // （Gather — 段 6 P3b-5）は呼び出し点で展開する（関数型の引数と同じ扱い）
 func parHandles(t ast.Tree, ty ast.Node) bool {
     if ty.kind != ast.TSlice {
         return false
     }
     e := t.nodes[ty.a]
-    return e.kind == ast.TGeneric && StrIs(t, e.a, "Task")
+    return e.kind == ast.TGeneric && StrIs(t, e.a, "Handle")
 }

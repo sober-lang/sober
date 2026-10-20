@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_pend_mut.sober:13:30: a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation
+exit=1

@@ -15,3 +15,4 @@ FLEDGER.local.md
 
 # Sober 側の成果物（stage2 と鎖の boot のキャッシュ — 3''.5 で zig-out/stage2 から移した）
 out/
+bench/httparena/server

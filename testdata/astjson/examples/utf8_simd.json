@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/utf8",
+      "path": "std/strings",
       "tok": 7
     },
     {
@@ -1863,7 +1863,7 @@
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
-                                    "name": "utf8",
+                                    "name": "strings",
                                     "tok": 551
                                   },
                                   "field": "IndexInvalid",
@@ -2194,7 +2194,7 @@
                     "k": "selector",
                     "base": {
                       "k": "ident",
-                      "name": "utf8",
+                      "name": "strings",
                       "tok": 649
                     },
                     "field": "IndexInvalid",

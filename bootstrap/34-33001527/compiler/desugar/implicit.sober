@@ -1,0 +1,292 @@
+package desugar
+
+// 暗黙の freeze（便② — report-482 1 節）: 期待型が imm のコンテナの位置に、同じ形の mut のコンテナの式を置くと、その式は `freeze(式)` と同じ意味。
+// 点は表層型検査器（TypeAll）が型付けのついでに表へ積む（yNoteImplicit — 別キー 0 - IMPLKEY - 節）。analyzer（U1〜U3 の事象）・脱糖器（CFreeze）・
+// lower（mut → imm の型の付け替え）は位置を見ず、節が表にあるか（IsImplicit）だけを引く — 受理する点 ⊆ 表 = 規則が見る点が構成で決まる
+// （差し込み忘れは型の拒否に落ちるだけ。位置ごとに 3 者が判定すると、腕の合流で期待型が腕へ押し込まれる形などで点の集合がずれる — report-484 4 節）。
+// 起こす位置（v1）= 実引数（直接・総称・展開・関数値・パイプ・std/par の関数 — チャネルの送信も）・関数の return・欄 / imm の場所への代入・
+// 添字 / map への格納・composite の欄・slice / map のリテラルの要素・append の要素・for の slice の生成元（iter.Slice の xs — 2026-10-13）。起こさない位置 = 束縛（期待型が無い）・if / switch の腕の合流・
+// ラムダの return（typer がラムダの結果の型を持たない）・par の子の捕獲
+
+import "ast"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// ImplicitFreeze は期待型 want の位置に置いた式 e で暗黙の freeze が起きるか。e は局所の束縛を根に持つ道（名前・欄・添字・括弧 — v1）に限る
+// （呼び出しの結果・if 式などは点にしない — 分岐の合流は analyzer が根を取れない）。par の handle（Task / 札）を含む型は点にしない
+// （freeze できない — kind 16。`par.Gather(hs)` の mut の handle の slice は既存の特例の道のまま）
+func ImplicitFreeze(st mut S, e NodeRef, want int) bool {
+    if e == -1 || want < 0 || !(yIsPath(mut st, e) || yIsClone(mut st, e)) {
+        return false
+    }
+    have := YTypeOf(mut st, e)
+    return have >= 0 && yFreezes(mut st, have, want) && !yElemHasPar(mut st, want)
+}
+
+// yElemHasPar は slice の要素・map の鍵 / 値が札・handle を含むか
+func yElemHasPar(st mut S, y int) bool {
+    x := YAt(mut st, y)
+    return if x.k == YSlice { pcHasPar(mut st, x.a, 8) } else { pcHasPar(mut st, x.a, 8) || pcHasPar(mut st, x.b, 8) }
+}
+
+// yIsClone は e が `clone(x)` の呼び出しか（括弧は透過）。clone の結果は新しい値（別名が無い）なので、imm の位置に置けばその場で凍らせてよい —
+// 「写しを渡す」の素直な形 `f(clone(xs))`（clone の段 — 道でない式の中で clone だけを点にする。一般の呼び出しの結果には広げない）
+func yIsClone(st mut S, e NodeRef) bool {
+    k := kindN(mut st, e)
+    if k == ast.EParen {
+        return yIsClone(mut st, nA(nodeOf(mut st, e)))
+    }
+    if k != ast.ECall {
+        return false
+    }
+    c := nA(nodeOf(mut st, e))
+    return kindN(mut st, c) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c)), "clone") && lenL(mut st, lB(nodeOf(mut st, e))) == 1
+}
+
+// yIsPath は e が局所の束縛を根に持つ道か（名前・欄・添字・括弧の鎖）
+func yIsPath(st mut S, e NodeRef) bool {
+    k := kindN(mut st, e)
+    if k == ast.EIdent {
+        return true
+    }
+    return (k == ast.ESelector || k == ast.EIndex || k == ast.EParen) && yIsPath(mut st, nA(nodeOf(mut st, e)))
+}
+
+// MutContainer は式 e の表層型が mut の slice / map か（暗黙の freeze の候補 — 期待型を引く前の安い篩い）
+func MutContainer(st mut S, e NodeRef) bool {
+    return e != -1 && yMutTy(mut st, YTypeOf(mut st, e))
+}
+
+// yFreezes は型 have の値を freeze すると型 want になるか（外側の mut だけが違う同じ形の slice / map — 組み込みの freeze の型の付け替えと同じ）
+func yFreezes(st mut S, have int, want int) bool {
+    h := YAt(mut st, have)
+    w := YAt(mut st, want)
+    if h.k == YSlice && w.k == YSlice {
+        return h.b == 1 && w.b == 0 && yEq(mut st, h.a, w.a)
+    }
+    if h.k == YMap && w.k == YMap {
+        return h.c == 1 && w.c == 0 && yEq(mut st, h.a, w.a) && yEq(mut st, h.b, w.b)
+    }
+    return false
+}
+
+// WantParam は package pk の中の呼び出しの callee の節 callee0 の k 番の仮引数の型（引けなければ -1）。関数値（局所の名前・欄）は typer が
+// callee の節に載せた関数型から、名前付き関数は宣言の型（総称は呼び出しの型引数 YTArgsOf を代入・std/par の振り分け PREDIR の後の関数）から
+func WantParam(st mut S, pk int, callee0 NodeRef, k int) int {
+    if callee0 == -1 || k < 0 {
+        return -1
+    }
+    ft := YTypeOf(mut st, callee0)
+    if ft >= 0 {
+        if yk(mut st, ft) != YFn {
+            return -1
+        }
+        ps := yLa(YAt(mut st, ft))
+        return if k < lenL(mut st, ps) { latI(mut st, ps, k) } else { -1 }
+    }
+    callee := if kindN(mut st, callee0) == ast.EIndex { nA(nodeOf(mut st, callee0)) } else { callee0 }
+    mut fi := -1
+    ck := kindN(mut st, callee)
+    if ck == ast.EIdent {
+        fi = ResolveFn(mut st, pk, sA(nodeOf(mut st, callee)))
+    } else if ck == ast.ESelector {
+        base := nA(nodeOf(mut st, callee))
+        if kindN(mut st, base) == ast.EIdent && importRef(mut st, pk, sA(nodeOf(mut st, base))) {
+            fi = ResolveSelFn(mut st, pk, sA(nodeOf(mut st, base)), sB(nodeOf(mut st, callee)))
+        }
+    }
+    if fi < 0 {
+        return -1
+    }
+    rd := ParRedirectOf(mut st, callee)
+    if rd >= 0 {
+        fi = rd
+    }
+    ps := fnParams(mut st, fi)
+    if k >= lenL(mut st, ps) {
+        return -1
+    }
+    tps := fnTParams(mut st, fi)
+    t := yTe(mut st, fnPkg(mut st, fi), tps, nB(nodeOf(mut st, latN(mut st, ps, k))))
+    if t < 0 || lenL(mut st, tps) == 0 {
+        return t
+    }
+    ta := YTArgsOf(mut st, callee0)
+    return if ta == -1 { -1 } else { ySubst(mut st, t, ta) }
+}
+
+// WantStore は代入の受け手 t（名前・欄・添字の道）の期待型（map の添字は値の型 — 読みの型 T? ではなく）
+func WantStore(st mut S, t NodeRef) int {
+    if kindN(mut st, t) == ast.EIndex {
+        b := YTypeOf(mut st, nA(nodeOf(mut st, t)))
+        if yk(mut st, b) == YMap {
+            return YAt(mut st, b).b
+        }
+    }
+    return YTypeOf(mut st, t)
+}
+
+const IMPLKEY = 2251799813685248  // 2^51（暗黙の freeze の点の別キー — 型引数〔0 - 1 - 節〕・PREDIR〔2^50〕と重ならない）
+
+// IsImplicit は節 e が暗黙の freeze の点か（TypeAll の後）
+func IsImplicit(st mut S, e NodeRef) bool {
+    return st.nimpl > 0 && e != -1 && yGet(mut st, 0 - IMPLKEY - int(e)) >= 0
+}
+
+const FORSRCKEY = 4503599627370496  // 2^52（for の生成元の点の印の別キー — IMPLKEY〔2^51〕と重ならない）
+
+// IsForSource は暗黙の freeze の点 e が for の生成元か（診断の文面を分ける — 「渡す」でなく「for で回す」）
+func IsForSource(st mut S, e NodeRef) bool {
+    return IsImplicit(mut st, e) && yGet(mut st, 0 - FORSRCKEY - int(e)) >= 0
+}
+
+// yCand は位置の値 e が点の候補か（mut のコンテナ — 期待型を引く前の篩い。FreezeSites のときは明示の freeze の呼び出しも）
+func yCand(st mut S, e NodeRef) bool {
+    return MutContainer(mut st, e) || (st.yexplOn && explicitFreezeArg(mut st, e) != -1)
+}
+
+// explicitFreezeArg は e が `freeze(x)` の呼び出しなら x の節（でなければ -1）
+func explicitFreezeArg(st mut S, e NodeRef) NodeRef {
+    if e == -1 || kindN(mut st, e) != ast.ECall {
+        return -1
+    }
+    c := nA(nodeOf(mut st, e))
+    as := lB(nodeOf(mut st, e))
+    return if kindN(mut st, c) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, c)), "freeze") && lenL(mut st, as) == 1 { latN(mut st, as, 0) } else { -1 }
+}
+
+// FreezeSites は p の利用者のコード（std を除く）の明示の `freeze(x)` のうち、外して x にすると同じ点で暗黙の freeze になるものの位置
+// （開発の口 `check --freeze-sites` — 暗黙 ≡ 明示のオラクル scripts/implicitfreeze.sh が外した木を作る）
+func FreezeSites(p loader.Program) []diag.Pos {
+    mut st := S{}
+    Init(mut st, p)
+    st.yexplOn = true
+    TypeAll(mut st)
+    mut out := mut []diag.Pos{}
+    for i <- iter.Range(0, table.Len(mut st.yexpl)) {
+        out = append(out, posOf(mut st, NodeRef(table.Get(mut st.yexpl, i))))
+    }
+    return freeze(out)
+}
+
+// ImplicitCount / ImplicitNode は暗黙の freeze の点の列（積んだ順 — analyzer の freeze の規則が自前の集合に写す。IsImplicit の
+// yGet は型の全項と鎖を共有していて、式ごとに引くと重い — report-598）
+func ImplicitCount(st mut S) int {
+    return table.Len(mut st.ypts)
+}
+
+func ImplicitNode(st mut S, i int) NodeRef {
+    return NodeRef(table.Get(mut st.ypts, i))
+}
+
+// ImplicitPoints は p の暗黙の freeze の点の位置（std を含む全部 — 開発の口 `check --implicit-points`）
+func ImplicitPoints(p loader.Program) []diag.Pos {
+    mut st := S{}
+    Typed(mut st, p)
+    mut out := mut []diag.Pos{}
+    for i <- iter.Range(0, table.Len(mut st.ypts)) {
+        out = append(out, posOf(mut st, NodeRef(table.Get(mut st.ypts, i))))
+    }
+    return freeze(out)
+}
+
+// yNoteImplicit は期待型 want の位置に置いた式 e が暗黙の freeze なら点の表に積む（値は期待型）
+func yNoteImplicit(st mut S, e NodeRef, want int) {
+    if st.yexplOn {
+        x := explicitFreezeArg(mut st, e)
+        if x != -1 && want >= 0 && !IsStdPkg(mut st, st.ypk) && ImplicitFreeze(mut st, x, want) {
+            table.Push(mut st.yexpl, int(e))
+        }
+    }
+    if e != -1 && want >= 0 && kindN(mut st, e) != ast.EMutArg && kindN(mut st, e) != ast.ELambda && ImplicitFreeze(mut st, e, want) {
+        yPut(mut st, 0 - IMPLKEY - int(e), want)
+        table.Push(mut st.ypts, int(e))
+        st.nimpl += 1
+    }
+}
+
+// yArgCand は実引数 i（節の列 an・型の列 at — typer が計算済み）が点の候補か（型の表を引き直さない — 自己 build の値札）
+func yArgCand(st mut S, an ListRef, at ListRef, i int) bool {
+    if i < lenL(mut st, at) && yMutTy(mut st, latI(mut st, at, i)) {
+        return true
+    }
+    return st.yexplOn && explicitFreezeArg(mut st, latN(mut st, an, i)) != -1
+}
+
+// yMutTy は表層型 t が mut の slice / map か
+func yMutTy(st mut S, t int) bool {
+    k := yk(mut st, t)
+    return (k == YSlice && YAt(mut st, t).b == 1) || (k == YMap && YAt(mut st, t).c == 1)
+}
+
+// yNoteArgs は名前付き関数 fi の呼び出しの実引数（節 an・型 at）（env = 決まった型引数か -1）
+func yNoteArgs(st mut S, fi int, an ListRef, at ListRef, env ListRef) {
+    na := lenL(mut st, an)
+    mut any := false
+    for i <- iter.Range(0, na) {
+        if !any && yArgCand(mut st, an, at, i) {
+            any = true
+        }
+    }
+    if !any {
+        return
+    }
+    ps := fnParams(mut st, fi)
+    n := if na < lenL(mut st, ps) { na } else { lenL(mut st, ps) }
+    for i <- iter.Range(0, n) {
+        a := latN(mut st, an, i)
+        if yArgCand(mut st, an, at, i) {
+            t := yTe(mut st, fnPkg(mut st, fi), fnTParams(mut st, fi), nB(nodeOf(mut st, latN(mut st, ps, i))))
+            yNoteImplicit(mut st, a, if env == -1 { t } else { ySubst(mut st, t, env) })
+        }
+    }
+}
+
+// yNoteArgTys は関数値の呼び出しの実引数（節 an・型 at）（仮引数の型の列 ps）
+func yNoteArgTys(st mut S, an ListRef, at ListRef, ps ListRef) {
+    for i <- iter.Range(0, if lenL(mut st, an) < lenL(mut st, ps) { lenL(mut st, an) } else { lenL(mut st, ps) }) {
+        a := latN(mut st, an, i)
+        if yArgCand(mut st, an, at, i) {
+            yNoteImplicit(mut st, a, latI(mut st, ps, i))
+        }
+    }
+}
+
+// yNoteElems は slice のリテラルの要素の列 l（要素型 el）
+func yNoteElems(st mut S, l ListRef, el int) {
+    for i <- iter.Range(0, lenL(mut st, l)) {
+        if yCand(mut st, latN(mut st, l, i)) {
+            yNoteImplicit(mut st, latN(mut st, l, i), el)
+        }
+    }
+}
+
+// yNoteAssign は代入の受け手の列 ts と値の列 vs（数が揃うときだけ — 多値の分配は受け手ごとの値の節が無い）
+func yNoteAssign(st mut S, ts ListRef, vs ListRef) {
+    if lenL(mut st, ts) != lenL(mut st, vs) {
+        return
+    }
+    for i <- iter.Range(0, lenL(mut st, vs)) {
+        if yCand(mut st, latN(mut st, vs, i)) {
+            yNoteImplicit(mut st, latN(mut st, vs, i), WantStore(mut st, latN(mut st, ts, i)))
+        }
+    }
+}
+
+// yNoteRet は今の関数（st.yfi — ラムダの中は除く）の return の値の列 vs（結果の数と揃うときだけ）
+func yNoteRet(st mut S, vs ListRef) {
+    if st.ylam > 0 || st.yfi < 0 {
+        return
+    }
+    rs := fnResults(mut st, st.yfi)
+    if lenL(mut st, rs) != lenL(mut st, vs) {
+        return
+    }
+    for i <- iter.Range(0, lenL(mut st, vs)) {
+        if yCand(mut st, latN(mut st, vs, i)) {
+            yNoteImplicit(mut st, latN(mut st, vs, i), yTe(mut st, fnPkg(mut st, st.yfi), fnTParams(mut st, st.yfi), latN(mut st, rs, i)))
+        }
+    }
+}

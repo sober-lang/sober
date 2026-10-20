@@ -1,0 +1,17 @@
+package main
+
+// 負例（check が拒否 — analyzer）: error を返す公開関数（名前が大文字）は @errors が要る（language.md 13 節）。
+// 指摘は導出したラベル集合を添える — ここは `@errors(Empty)`
+
+type Empty error
+
+func Parse(s string) (int, error?) {
+    if s == "" {
+        return 0, Empty{}
+    }
+    return 1, nil
+}
+
+func main() {
+    println(Parse("x") catch -1)
+}

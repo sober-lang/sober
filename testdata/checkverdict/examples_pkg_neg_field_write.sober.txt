@@ -1,0 +1,2 @@
+examples/pkg_neg_field_write.sober:9:7: error: cannot write field `w` of `Rect` outside package testdata/specpkg/shapes — a type's fields are written only in the package that declares it (build a new value with the package's functions) (Analyzer)
+exit=1

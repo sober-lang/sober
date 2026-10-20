@@ -1,0 +1,19 @@
+package main
+
+// パイプ `|>`（language.md 4 節）: 左辺は既定で第 1 引数へ。穴 `_` で位置を選ぶ（直下の実引数だけ）
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func sub(a int, b int) int {
+    return a - b
+}
+
+func dbl(x int) int {
+    return x * 2
+}
+
+func main() {
+    println(4 |> dbl, 10 |> sub(3), 3 |> sub(10, _), 5 |> add(1) |> dbl)
+}

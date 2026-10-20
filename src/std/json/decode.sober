@@ -1,45 +1,45 @@
 package json
 
-// shape[T] の裏方（language.md 16 節 2）: 利用者は `json.Decode[T](d, n)` を書き、loader の固定テンプレート（compiler/loader/jsonshape.sober）が
-// struct T（と欄から届く struct・`[]U`・`U?`）ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。ここに置くのは写しの関数が呼ぶ
-// 部品（節の種類の検査・欄の引き・スカラーの解釈）と失敗のラベルだけ。欄の名前 = JSON のキー（Rename 辞書は第二便）
-
-import "std/conv"
+import "std/convert"
 import "std/iter"
 
-// Missing は T? でない欄 field が無い（pos = オブジェクトの位置）
+// shape[T] の裏方（language.md 16 節 2）: 利用者は `json.Decode[T](d, n)` を書き、loader の固定テンプレート（compiler/loader/jsonshape.sober）が
+// struct T（と欄から届く struct・`[]U`・`U?`）ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。ここに置くのは写しの関数が呼ぶ
+// 部品（ノードの種類の検査・欄の引き・スカラーの解釈）と失敗のラベルだけ。欄の名前 = JSON のキー（Rename 辞書は第二便）
+
+// T? でない欄 field が無い（pos = オブジェクトの位置）
 type Missing error {
     pos int
     field string
 }
 
-// WrongType は節の種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
+// ノードの種類が欄の型に合わない（want = 期待した JSON の種類: object・array・string・number・int・bool）
 type WrongType error {
     pos int
     want string
 }
 
-// IntRange は int の欄の数が int に収まらない（小数・指数を含む数は WrongType{want: "int"}）
+// int の欄の数が int に収まらない（小数・指数を含む数は WrongType{want: "int"}）
 type IntRange error {
     pos int
 }
 
-// Object は節 n がオブジェクトなら n（でなければ WrongType）
+// ノード n がオブジェクトなら n（でなければ WrongType）
 @errors(WrongType)
-func Object(d Doc, n int) (int, error?) {
+func NeedObject(d Doc, n int) (int, error?) {
     if d.kind[n] != kObj {
         return 0, WrongType{pos: d.pos[n], want: "object"}
     }
     return n, nil
 }
 
-// Need はオブジェクト n の欄 key の値の節（無ければ Missing）
+// オブジェクト n の欄 key の値のノード（無ければ Missing）
 @errors(Missing)
 func Need(d Doc, n int, key string) (int, error?) {
     return NeedAt(d, n, key, -1)
 }
 
-// NeedAt は Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写しの関数は欄の宣言の位置を渡す）
+// Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写しの関数は欄の宣言の位置を渡す）
 @errors(Missing)
 func NeedAt(d Doc, n int, key string, hint int) (int, error?) {
     v := GetAt(d, n, key, hint)
@@ -49,12 +49,12 @@ func NeedAt(d Doc, n int, key string, hint int) (int, error?) {
     return 0, Missing{pos: d.pos[n], field: key}
 }
 
-// IsNull は節 n が null か
+// ノード n が null か
 func IsNull(d Doc, n int) bool {
     return d.kind[n] == kNull
 }
 
-// Items は配列 n の要素の節（配列でなければ WrongType）
+// 配列 n の要素のノード（配列でなければ WrongType）
 @errors(WrongType)
 func Items(d Doc, n int) ([]int, error?) {
     if d.kind[n] != kArr {
@@ -63,9 +63,9 @@ func Items(d Doc, n int) ([]int, error?) {
     return d.kids[d.a[n]:d.a[n] + d.b[n]], nil
 }
 
-// DecString は文字列 n の中身
+// 文字列 n の中身
 @errors(WrongType)
-func DecString(d Doc, n int) (string, error?) {
+func ParseString(d Doc, n int) (string, error?) {
     k := d.kind[n]
     if k != kStr && k != kStrEsc {
         return "", WrongType{pos: d.pos[n], want: "string"}
@@ -73,9 +73,9 @@ func DecString(d Doc, n int) (string, error?) {
     return text(d, n), nil
 }
 
-// DecBool は true / false
+// true / false
 @errors(WrongType)
-func DecBool(d Doc, n int) (bool, error?) {
+func ParseBool(d Doc, n int) (bool, error?) {
     k := d.kind[n]
     if k != kTrue && k != kFalse {
         return false, WrongType{pos: d.pos[n], want: "bool"}
@@ -83,9 +83,9 @@ func DecBool(d Doc, n int) (bool, error?) {
     return k == kTrue, nil
 }
 
-// DecInt は整数の字句（小数点・指数なし）の数を int に（範囲外は IntRange）
+// 整数の字句（小数点・指数なし）の数を int に（範囲外は IntRange）
 @errors(WrongType, IntRange)
-func DecInt(d Doc, n int) (int, error?) {
+func ParseInt(d Doc, n int) (int, error?) {
     if d.kind[n] != kNum {
         return 0, WrongType{pos: d.pos[n], want: "int"}
     }
@@ -115,15 +115,25 @@ func DecInt(d Doc, n int) (int, error?) {
     return 0 - v, nil
 }
 
-// DecFloat は数を binary64 に（最近接・偶数への丸め — conv.ParseFloat。あふれは IntRange でなく WrongType{want: "float"}）
+// 数を binary64 に（最近接・偶数への丸め — convert.ParseFloat。あふれは IntRange でなく WrongType{want: "float"}）
 @errors(WrongType)
-func DecFloat(d Doc, n int) (float, error?) {
+func ParseFloat(d Doc, n int) (float, error?) {
     if d.kind[n] != kNum {
         return 0.0, WrongType{pos: d.pos[n], want: "number"}
     }
-    f, err := conv.ParseFloat(bytesToString(d.src[d.a[n]:d.b[n]]))
+    f, err := convert.ParseFloat(bytesToString(d.src[d.a[n]:d.b[n]]))
     if err != nil {
         return 0.0, WrongType{pos: d.pos[n], want: "float"}
     }
     return f, nil
 }
+
+// 以下は loader が合成する口（std に実体は無い — 呼び出しは型ごとの写しの関数へ写る）
+
+// 合成: func Decode[T](d Doc, n int) (T, error?)
+// ノード n を struct T に読む。欄の名前 = JSON のキー。T の欄に書ける型は int・float・bool・string・struct・`[]U`・`U?`（U は前のどれか）。
+// 欠けた欄は Missing（`U?` の欄だけ欠けと null を nil で受ける）・種類の合わないノードは WrongType・int の欄の範囲外は IntRange。余った欄は無視する
+// 例: examples/json_decode.sober
+
+// 合成: func DecodeWith[T](d Doc, n int, rename map[string]string) (T, error?)
+// Decode の欄名の対応つき版（rename = 欄名 → JSON のキー・入れ子の struct の欄にも同じ辞書が掛かる・対応の無い欄は欄名のまま）

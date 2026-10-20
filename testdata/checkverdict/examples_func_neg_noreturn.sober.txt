@@ -1,0 +1,2 @@
+{"errors":[{"msg":"def error"}],"ok":false}
+exit=1

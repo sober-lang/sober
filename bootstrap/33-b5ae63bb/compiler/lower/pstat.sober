@@ -1,0 +1,447 @@
+package lower
+
+// 並列の台帳の器（段 6 P5-1・language.md 11 節「予算と admission」）: 挙動を変えない計測だけ。
+// - プロセスの天井の読み（入口で 1 度 — rt.pcap_init）: cgroup v2 の cpu.max / memory.max（/proc/self/cgroup の `0::<経路>` から
+//   /sys/fs/cgroup/<経路>/…）・/proc/meminfo の MemTotal・/proc/self/statm の入口の RSS。ワーカー数 = min(affinity, ⌈cpu.max⌉)（mnInit）・
+//   根の天井 = min(memory.max, MemTotal) − 入口の RSS − PCAP_SLACK（試験の口 SOBER_BUDGET_MB があればそれ）。天井はまだ入場に使わない（P5-2）
+// - task ごとの使用量の計測（SOBER_PAR_STATS=1 のときだけ — 印の load + 分岐 1 つ）: spawn で生きている数 + 1（高水位）・終わりで自前のスロットの
+//   使った量の和（終わりの時点の bump — 入り直した深度は最後の命の量）を spawn の点（TC_SITE）ごとの最大へ・スロットの VA の予約の本数
+// - 終わりに標準エラーへ `#par …` の行（rt.pstat_dump — 網と運用の口。stdout は動かない）
+
+import "desugar"
+import "std/iter"
+
+// @rt.pstat（プロセスに 1 つ — 計測のときだけ書く。群ごとに 8 語以上離す）
+const PS_LIVE = 0     // 生きている task の数（main を除く）
+const PS_PEAK = 1     // その高水位
+const PS_TCBMAP = 2   // 新しく mmap した task の塊の数（入力に比例しないことの網）
+const PS_ENDED = 8    // 終わった task の数
+const PS_MAXB = 9     // task の使用量（終わりの時点の自前のスロットの使った量の和）の最大
+const PS_SUMB = 10    // その和
+const PS_VA = 16      // 予約したスロットの本数（VA = 本数 × スロットの大きさ）
+const PS_SITE = 24    // spawn の点 k（1 始まり — 0 = 走らせ直し）の [task の数, 使用量の最大] = PS_SITE + 2k・+1
+// @rt.pbuf（入口の読みの作業域 — [終わりの添字, 読んだバイト…]・経路は PB_PATH から）
+const PB_END = 0
+const PB_DATA = 8     // バイトの位置（語 1 から）
+const PB_CAP = 4000
+const PB_PATH = 4096  // 経路の組み立て（バイトの位置）
+const PB_WORDS = 1024
+const PCAP_SLACK = 67108864 // 根の天井の余白（64 MiB — rt と main の分。比率でなく定数 — p5-draft 揉みどころ 5）
+
+func needPstatRt(st mut St) {
+    st.pstatG = addGlobalInit(mut st, int(strLit(mut st, "rt.pstat")), PS_SITE + 2, -1)
+    st.pbufG = addGlobalInit(mut st, int(strLit(mut st, "rt.pbuf")), PB_WORDS, -1)
+    st.rtPstatSpawn = addFunc(mut st, int(strLit(mut st, "rt.pstat_spawn")), desugar.ListRef(list0(mut st)), -1)
+    st.rtPstatEnd = addFunc(mut st, int(strLit(mut st, "rt.pstat_end")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtPstatDump = addFunc(mut st, int(strLit(mut st, "rt.pstat_dump")), desugar.ListRef(list0(mut st)), -1)
+    st.rtPcapInit = addFunc(mut st, int(strLit(mut st, "rt.pcap_init")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    st.rtPread = addFunc(mut st, int(strLit(mut st, "rt.pread")), desugar.ListRef(list0(mut st)), TyI64)
+    st.rtPnum = addFunc(mut st, int(strLit(mut st, "rt.pnum")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+}
+
+func buildPstatRt(st mut St) {
+    // spawn の点の数はここで決まる（lower の最後 — buildTaskRt）
+    desugar.HeapSet(mut st.d, st.pstatG + G_WORDS, PS_SITE + 2 * (st.nsite + 1))
+    buildPstatSpawn(mut st)
+    buildPstatEnd(mut st)
+    buildPstatDump(mut st)
+    buildPread(mut st)
+    buildPnum(mut st)
+    buildPcapInit(mut st)
+}
+
+// pstatOn は計測の印（SOBER_PAR_STATS — rt.mn の読むだけの語）が立っているか（値 0 / 1）
+func pstatOn(st mut St) int {
+    return cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.mnG), MN_STATS), iconst(mut st, 0))
+}
+
+// pstatCall は印が立っていれば f(args) を呼ぶ
+func pstatCall(st mut St, f FnRef, args int) {
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, pstatOn(mut st), bY, -1, bN, -1)
+    setCur(mut st, bY)
+    call(mut st, f, args)
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// atomicMax は p[off] = max(p[off], v)（CAS の繰り返し）
+func atomicMax(st mut St, p int, off int, v int) {
+    loop := newBlock(mut st)
+    bTry := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    o := load(mut st, p, off)
+    condbr(mut st, cmp(mut st, CGt, v, o), bTry, -1, done, -1)
+    setCur(mut st, bTry)
+    r := atomicCas(mut st, p, off, o, v)
+    condbr(mut st, cmp(mut st, CEq, r, o), done, -1, loop, -1)
+    setCur(mut st, done)
+}
+
+// buildPstatSpawn は rt.pstat_spawn()（rt.task_go の頭から — 印のときだけ）: 生きている数 + 1 とその高水位
+func buildPstatSpawn(st mut St) {
+    begin(mut st, st.rtPstatSpawn)
+    ps := globaladdr(mut st, st.pstatG)
+    n := bin(mut st, BAdd, atomicXadd(mut st, ps, PS_LIVE, iconst(mut st, 1)), iconst(mut st, 1))
+    atomicMax(mut st, ps, PS_PEAK, n)
+    ret(mut st, -1)
+}
+
+// buildPstatEnd は rt.pstat_end(tcb)（task の終わり — スロットを返す前・印のときだけ）: 自前のスロット（深度 TC_BASE + 1 〜 own）の使った量の和を
+// 全体と spawn の点ごとの最大へ
+func buildPstatEnd(st mut St) {
+    begin(mut st, st.rtPstatEnd)
+    ps := globaladdr(mut st, st.pstatG)
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    atomicXadd(mut st, ps, PS_LIVE, iconst(mut st, -1))
+    atomicXadd(mut st, ps, PS_ENDED, iconst(mut st, 1))
+    hi := load(mut st, sg, SLOT_OWN)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    acc := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list2(mut st, bin(mut st, BAdd, load(mut st, 0, TC_BASE), iconst(mut st, 1)), iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, hi), body, -1, done, -1)
+    setCur(mut st, body)
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), load(mut st, gepWord(mut st, sg, k), 0))
+    pos := imax(mut st, used, iconst(mut st, 0))
+    br(mut st, loop, list2(mut st, bin(mut st, BAdd, k, iconst(mut st, 1)), bin(mut st, BAdd, acc, pos)))
+    setCur(mut st, done)
+    atomicMax(mut st, ps, PS_MAXB, acc)
+    atomicXadd(mut st, ps, PS_SUMB, acc)
+    site := load(mut st, 0, TC_SITE)
+    sp := gepWord(mut st, ps, bin(mut st, BAdd, bin(mut st, BMul, site, iconst(mut st, 2)), iconst(mut st, PS_SITE)))
+    atomicXadd(mut st, sp, 0, iconst(mut st, 1))
+    atomicMax(mut st, sp, 1, acc)
+    ret(mut st, -1)
+}
+
+// pstatVa はスロットを n 本予約した印（slotRefill の mmap の道 — 印のときだけ）
+func pstatVa(st mut St, n int) {
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, pstatOn(mut st), bY, -1, bN, -1)
+    setCur(mut st, bY)
+    atomicXadd(mut st, globaladdr(mut st, st.pstatG), PS_VA, iconst(mut st, n))
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+}
+
+// pfield は ` 名前=値`（rt の印字 — 今の出力先へ）
+func pfield(st mut St, name string, v int) {
+    printLit(mut st, " " + name + "=")
+    call(mut st, st.rtPint, list1(mut st, v))
+}
+
+// buildPstatDump は rt.pstat_dump()（終わり — main の後・出力の区間を全部出した後）: 印が立っていれば標準エラーへ
+//   #par root workers=… affinity=… cpuq=… cap=… capsrc=… rss0=…
+//   #par tasks live_peak=… ended=… bytes_max=… bytes_sum=… va_slots=… slot_bytes=…
+//   #par site k tasks=… peak=…（task のあった点だけ）
+func buildPstatDump(st mut St) {
+    begin(mut st, st.rtPstatDump)
+    bY := newBlock(mut st)
+    bN := newBlock(mut st)
+    condbr(mut st, pstatOn(mut st), bY, -1, bN, -1)
+    setCur(mut st, bY)
+    meta := globaladdr(mut st, st.meta)
+    mn := globaladdr(mut st, st.mnG)
+    ps := globaladdr(mut st, st.pstatG)
+    // 標準エラーへ（stdout は終わりの drain で出し切っている。toStderr / stdout の flush は出力の区間の drain を通る — drain の後に 2 度目を踏むと
+    // M:N の印で回り続ける。mn_trace と同じく fd を直に切り替える）
+    fd0 := load(mut st, meta, W_FD)
+    store(mut st, meta, W_FD, iconst(mut st, 2))
+    printLit(mut st, "#par root")
+    pfield(mut st, "workers", load(mut st, mn, MN_N))
+    pfield(mut st, "affinity", load(mut st, mn, MN_AFFC))
+    pfield(mut st, "cpuq", load(mut st, mn, MN_CPUQ))
+    pfield(mut st, "cap", load(mut st, mn, MN_CAP))
+    pfield(mut st, "capsrc", load(mut st, mn, MN_CAPSRC))
+    pfield(mut st, "rss0", load(mut st, mn, MN_RSS0))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    printLit(mut st, "#par tasks")
+    pfield(mut st, "live_peak", load(mut st, ps, PS_PEAK))
+    pfield(mut st, "ended", load(mut st, ps, PS_ENDED))
+    pfield(mut st, "bytes_max", load(mut st, ps, PS_MAXB))
+    pfield(mut st, "bytes_sum", load(mut st, ps, PS_SUMB))
+    pfield(mut st, "va_slots", load(mut st, ps, PS_VA))
+    pfield(mut st, "slot_bytes", load(mut st, meta, W_SLOT_DEF))
+    pfield(mut st, "tcb_mmaps", load(mut st, ps, PS_TCBMAP))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    // 入場の台帳（段 6 P5-2）: 入場・縮退・超過の数・計上の高水位・task の数の天井・終わりの計上（全部返れば 0）
+    printLit(mut st, "#par admit")
+    pfield(mut st, "inline", load(mut st, mn, MN_LINL))
+    pfield(mut st, "over", load(mut st, mn, MN_LOVER))
+    pfield(mut st, "decl_over", load(mut st, mn, MN_LDOVER))
+    pfield(mut st, "peak_bytes", load(mut st, mn, MN_LPEAKB))
+    pfield(mut st, "peak_tasks", load(mut st, mn, MN_LPEAKT))
+    // 天井を超えた計上（give:・縮退の記帳）込みの高水位（段 3 の ② — 計上 ≥ 実使用の網）
+    pfield(mut st, "peak_all", load(mut st, mn, MN_LPEAKA))
+    // wait の scope で入場を待った回数（段 3 の ③）
+    pfield(mut st, "waits", load(mut st, mn, MN_LWAIT))
+    pfield(mut st, "tcap", load(mut st, mn, MN_TCAP))
+    // 終わりの計上（全部返っていれば 0 — 変異 7 の網）
+    ledE := load(mut st, mn, MN_LED)
+    pfield(mut st, "held_bytes", bin(mut st, BAdd, load(mut st, mn, MN_CAP), bin(mut st, BSub, bin(mut st, BAnd, ledE, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX))))
+    pfield(mut st, "held_tasks", bin(mut st, BAdd, load(mut st, mn, MN_TCAP), bin(mut st, BSub, bin(mut st, BAnd, bin(mut st, BSar, ledE, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)), iconst(mut st, LED_TMAX))))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    if st.poolOn {
+        pstatPools(mut st)
+    }
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    pr := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, iconst(mut st, st.nsite)), body, -1, done, -1)
+    setCur(mut st, body)
+    sp := gepWord(mut st, ps, bin(mut st, BAdd, bin(mut st, BMul, k, iconst(mut st, 2)), iconst(mut st, PS_SITE)))
+    cnt := load(mut st, sp, 0)
+    condbr(mut st, cmp(mut st, CNe, cnt, iconst(mut st, 0)), pr, -1, next, -1)
+    setCur(mut st, pr)
+    printLit(mut st, "#par site ")
+    call(mut st, st.rtPint, list1(mut st, k))
+    pfield(mut st, "tasks", cnt)
+    pfield(mut st, "peak", load(mut st, sp, 1))
+    pfield(mut st, "est", bin(mut st, BAnd, load(mut st, gepWord(mut st, globaladdr(mut st, st.pestG), k), 0), iconst(mut st, LED_ONE - 2)))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    br(mut st, next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+    call(mut st, st.rtFlush, list0(mut st))
+    store(mut st, meta, W_FD, fd0)
+    br(mut st, bN, -1)
+    setCur(mut st, bN)
+    ret(mut st, -1)
+}
+
+// putPath は rt.pbuf の経路の組み立て域のバイト位置 at（値）から定数の文字列 s を書き、次の位置（値）を返す（nul = true なら最後に NUL も）
+func putPath(st mut St, at int, s string, nul bool) int {
+    pb := globaladdr(mut st, st.pbufG)
+    b := bytes(s)
+    for i <- iter.Range(0, len(b)) {
+        store8(mut st, gepByte(mut st, pb, bin(mut st, BAdd, at, iconst(mut st, i))), 0, iconst(mut st, int(b[i])))
+    }
+    end := bin(mut st, BAdd, at, iconst(mut st, len(b)))
+    if nul {
+        store8(mut st, gepByte(mut st, pb, end), 0, iconst(mut st, 0))
+    }
+    return end
+}
+
+// buildPread は rt.pread() i64: rt.pbuf の組み立て域（PB_PATH — NUL 終わり）の経路のファイルを作業域（PB_DATA から PB_CAP バイトまで）へ読み、
+// 読んだバイト数（失敗は負）。読んだ後ろに NUL
+func buildPread(st mut St) {
+    begin(mut st, st.rtPread)
+    pb := globaladdr(mut st, st.pbufG)
+    // openat(AT_FDCWD, 経路, O_RDONLY | O_CLOEXEC)
+    fd := syscall(mut st, list4(mut st, iconst(mut st, 257), iconst(mut st, -100), ptoi(mut st, gepByte(mut st, pb, iconst(mut st, PB_PATH))), iconst(mut st, 524288)))
+    bOk := newBlock(mut st)
+    bBad := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)), bBad, -1, bOk, -1)
+    setCur(mut st, bBad)
+    store8(mut st, gepByte(mut st, pb, iconst(mut st, PB_DATA)), 0, iconst(mut st, 0))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bOk)
+    n0 := syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, gepByte(mut st, pb, iconst(mut st, PB_DATA))), iconst(mut st, PB_CAP)))
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    n := imax(mut st, n0, iconst(mut st, 0))
+    store8(mut st, gepByte(mut st, pb, bin(mut st, BAdd, n, iconst(mut st, PB_DATA))), 0, iconst(mut st, 0))
+    ret(mut st, n0)
+}
+
+// buildPnum は rt.pnum(i) i64: 作業域のバイト位置 i（PB_DATA からの相対）から数字でないバイトを飛ばし、続く 10 進を読む（NUL まで数字が無ければ -1）。
+// 読み終えた位置を rt.pbuf[PB_END] へ
+func buildPnum(st mut St) {
+    begin(mut st, st.rtPnum)
+    pb := globaladdr(mut st, st.pbufG)
+    skip := newBlock(mut st)
+    si := param(mut st, skip, TyI64)
+    sBody := newBlock(mut st)
+    none := newBlock(mut st)
+    dig := newBlock(mut st)
+    di := param(mut st, dig, TyI64)
+    dv := param(mut st, dig, TyI64)
+    dBody := newBlock(mut st)
+    dEnd := newBlock(mut st)
+    br(mut st, skip, list1(mut st, 0))
+    setCur(mut st, skip)
+    c := load8(mut st, gepByte(mut st, pb, bin(mut st, BAdd, si, iconst(mut st, PB_DATA))), 0)
+    condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)), none, -1, sBody, -1)
+    setCur(mut st, sBody)
+    isd := bin(mut st, BAnd, cmp(mut st, CGe, c, iconst(mut st, '0')), cmp(mut st, CLe, c, iconst(mut st, '9')))
+    bNext := newBlock(mut st)
+    condbr(mut st, isd, dig, list2(mut st, si, iconst(mut st, 0)), bNext, -1)
+    setCur(mut st, bNext)
+    br(mut st, skip, list1(mut st, bin(mut st, BAdd, si, iconst(mut st, 1))))
+    setCur(mut st, none)
+    store(mut st, pb, PB_END, si)
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, dig)
+    c2 := load8(mut st, gepByte(mut st, pb, bin(mut st, BAdd, di, iconst(mut st, PB_DATA))), 0)
+    isd2 := bin(mut st, BAnd, cmp(mut st, CGe, c2, iconst(mut st, '0')), cmp(mut st, CLe, c2, iconst(mut st, '9')))
+    condbr(mut st, isd2, dBody, -1, dEnd, -1)
+    setCur(mut st, dBody)
+    br(mut st, dig, list2(mut st, bin(mut st, BAdd, di, iconst(mut st, 1)), bin(mut st, BAdd, bin(mut st, BMul, dv, iconst(mut st, 10)), bin(mut st, BSub, c2, iconst(mut st, '0')))))
+    setCur(mut st, dEnd)
+    store(mut st, pb, PB_END, di)
+    ret(mut st, dv)
+}
+
+// pbyte は作業域のバイト位置 i（値）のバイト
+func pbyte(st mut St, i int) int {
+    return load8(mut st, gepByte(mut st, globaladdr(mut st, st.pbufG), bin(mut st, BAdd, i, iconst(mut st, PB_DATA))), 0)
+}
+
+// buildPcapInit は rt.pcap_init(budget_mb)（入口 — mnInit から・ワーカー数を決める前）: rt.mn の MN_CPUQ / MN_CAP / MN_CAPSRC / MN_RSS0 を書く
+func buildPcapInit(st mut St) {
+    begin(mut st, st.rtPcapInit)
+    mn := globaladdr(mut st, st.mnG)
+    pb := globaladdr(mut st, st.pbufG)
+    zero := iconst(mut st, 0)
+    // 入口の RSS = /proc/self/statm の 2 つ目 × 4096
+    putPath(mut st, iconst(mut st, PB_PATH), "/proc/self/statm", true)
+    call(mut st, st.rtPread, list0(mut st))
+    call(mut st, st.rtPnum, list1(mut st, zero))
+    r2 := call(mut st, st.rtPnum, list1(mut st, load(mut st, pb, PB_END)))
+    rss0 := bin(mut st, BMul, imax(mut st, r2, zero), iconst(mut st, 4096))
+    store(mut st, mn, MN_RSS0, rss0)
+    // MemTotal = /proc/meminfo の最初の数（kB）
+    putPath(mut st, iconst(mut st, PB_PATH), "/proc/meminfo", true)
+    call(mut st, st.rtPread, list0(mut st))
+    mt := bin(mut st, BMul, imax(mut st, call(mut st, st.rtPnum, list1(mut st, zero)), zero), iconst(mut st, 1024))
+    // cgroup v2 の経路: /proc/self/cgroup の行頭 `0::` の後ろから改行まで → /sys/fs/cgroup<経路>/
+    putPath(mut st, iconst(mut st, PB_PATH), "/proc/self/cgroup", true)
+    cn := call(mut st, st.rtPread, list0(mut st))
+    find := newBlock(mut st)
+    fi := param(mut st, find, TyI64)
+    fBody := newBlock(mut st)
+    fNext := newBlock(mut st)
+    noCg := newBlock(mut st)
+    gotCg := newBlock(mut st)
+    gs := param(mut st, gotCg, TyI64)
+    bHave := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, cn, zero), bHave, -1, noCg, -1)
+    setCur(mut st, bHave)
+    br(mut st, find, list1(mut st, zero))
+    setCur(mut st, find)
+    condbr(mut st, cmp(mut st, CLt, bin(mut st, BAdd, fi, iconst(mut st, 3)), cn), fBody, -1, noCg, -1)
+    setCur(mut st, fBody)
+    atLine := bin(mut st, BOr, cmp(mut st, CEq, fi, zero), cmp(mut st, CEq, pbyte(mut st, bin(mut st, BSub, imax(mut st, fi, iconst(mut st, 1)), iconst(mut st, 1))), iconst(mut st, '\n')))
+    m3 := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, pbyte(mut st, fi), iconst(mut st, '0')), cmp(mut st, CEq, pbyte(mut st, bin(mut st, BAdd, fi, iconst(mut st, 1))), iconst(mut st, ':'))),
+        cmp(mut st, CEq, pbyte(mut st, bin(mut st, BAdd, fi, iconst(mut st, 2))), iconst(mut st, ':')))
+    condbr(mut st, bin(mut st, BAnd, atLine, m3), gotCg, list1(mut st, bin(mut st, BAdd, fi, iconst(mut st, 3))), fNext, -1)
+    setCur(mut st, fNext)
+    br(mut st, find, list1(mut st, bin(mut st, BAdd, fi, iconst(mut st, 1))))
+    // 経路を写す（作業域の gs から改行 / NUL まで → 組み立て域の "/sys/fs/cgroup" の後ろへ）
+    setCur(mut st, gotCg)
+    pre := putPath(mut st, iconst(mut st, PB_PATH), "/sys/fs/cgroup", false)
+    cp := newBlock(mut st)
+    ci := param(mut st, cp, TyI64)
+    co := param(mut st, cp, TyI64)
+    cBody := newBlock(mut st)
+    cEnd := newBlock(mut st)
+    ce := param(mut st, cEnd, TyI64)
+    br(mut st, cp, list2(mut st, gs, pre))
+    setCur(mut st, cp)
+    ch := pbyte(mut st, ci)
+    stop := bin(mut st, BOr, bin(mut st, BOr, cmp(mut st, CEq, ch, zero), cmp(mut st, CEq, ch, iconst(mut st, '\n'))), cmp(mut st, CGe, co, iconst(mut st, PB_PATH + 2048)))
+    condbr(mut st, stop, cEnd, list1(mut st, co), cBody, -1)
+    setCur(mut st, cBody)
+    store8(mut st, gepByte(mut st, pb, co), 0, ch)
+    br(mut st, cp, list2(mut st, bin(mut st, BAdd, ci, iconst(mut st, 1)), bin(mut st, BAdd, co, iconst(mut st, 1))))
+    setCur(mut st, cEnd)
+    // cpu.max: "max …" = 制限なし・"q p" = ⌈q ÷ p⌉ 本
+    putPath(mut st, ce, "/cpu.max", true)
+    cq := call(mut st, st.rtPread, list0(mut st))
+    cqOk := bin(mut st, BAnd, cmp(mut st, CGt, cq, zero), cmp(mut st, CNe, pbyte(mut st, zero), iconst(mut st, 'm')))
+    bCq := newBlock(mut st)
+    bMem := newBlock(mut st)
+    condbr(mut st, cqOk, bCq, -1, bMem, -1)
+    setCur(mut st, bCq)
+    q := call(mut st, st.rtPnum, list1(mut st, zero))
+    p := call(mut st, st.rtPnum, list1(mut st, load(mut st, pb, PB_END)))
+    bCq2 := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGt, q, zero), cmp(mut st, CGt, p, zero)), bCq2, -1, bMem, -1)
+    setCur(mut st, bCq2)
+    store(mut st, mn, MN_CPUQ, bin(mut st, BDiv, bin(mut st, BAdd, q, bin(mut st, BSub, p, iconst(mut st, 1))), p))
+    br(mut st, bMem, -1)
+    // memory.max: "max" = 制限なし
+    setCur(mut st, bMem)
+    putPath(mut st, ce, "/memory.max", true)
+    mm := call(mut st, st.rtPread, list0(mut st))
+    mmOk := bin(mut st, BAnd, cmp(mut st, CGt, mm, zero), cmp(mut st, CNe, pbyte(mut st, zero), iconst(mut st, 'm')))
+    bMm := newBlock(mut st)
+    bCap := newBlock(mut st)
+    mmax := param(mut st, bCap, TyI64)
+    condbr(mut st, mmOk, bMm, -1, bCap, list1(mut st, zero))
+    setCur(mut st, bMm)
+    br(mut st, bCap, list1(mut st, imax(mut st, call(mut st, st.rtPnum, list1(mut st, zero)), zero)))
+    setCur(mut st, noCg)
+    br(mut st, bCap, list1(mut st, zero))
+    // 根の天井: 試験の口（SOBER_BUDGET_MB）> min(memory.max, MemTotal) − 入口の RSS − 余白。出どころ 1 = memory.max・2 = MemTotal・3 = 試験の口
+    setCur(mut st, bCap)
+    useMm := bin(mut st, BAnd, cmp(mut st, CGt, mmax, zero), bin(mut st, BOr, cmp(mut st, CLt, mmax, mt), cmp(mut st, CEq, mt, zero)))
+    base := bin(mut st, BAdd, mt, bin(mut st, BMul, useMm, bin(mut st, BSub, mmax, mt)))
+    src := bin(mut st, BSub, iconst(mut st, 2), useMm)
+    capv := imax(mut st, bin(mut st, BSub, bin(mut st, BSub, base, rss0), iconst(mut st, PCAP_SLACK)), zero)
+    bEnv := newBlock(mut st)
+    bSet := newBlock(mut st)
+    cv := param(mut st, bSet, TyI64)
+    cs := param(mut st, bSet, TyI64)
+    // SOBER_BUDGET_MB=0 は天井 0（spawn の子は give: 以外全部縮退 — parbudget の網の口）・無ければ -1
+    condbr(mut st, cmp(mut st, CGe, 0, zero), bEnv, -1, bSet, list2(mut st, capv, src))
+    setCur(mut st, bEnv)
+    br(mut st, bSet, list2(mut st, bin(mut st, BShl, 0, iconst(mut st, 20)), iconst(mut st, 3)))
+    setCur(mut st, bSet)
+    store(mut st, mn, MN_CAP, cv)
+    store(mut st, mn, MN_CAPSRC, cs)
+    // task の数の天井（VA の上界 — 段 6 P5-2 admit.sober）: VA_BUDGET ÷ スロットの大きさ ÷ 2（1 task が 2 本のスロットを持つ見込み）・下限 16
+    ss := imax(mut st, load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF), iconst(mut st, 1))
+    tcap := imax(mut st, bin(mut st, BDiv, bin(mut st, BDiv, iconst(mut st, VA_BUDGET), ss), iconst(mut st, 2)), iconst(mut st, 16))
+    store(mut st, mn, MN_TCAP, tcap)
+    ledInit(mut st, cv, tcap)
+    pestInit(mut st)
+    ret(mut st, -1)
+}
+
+// pstatPools は名前つきプールの節ごとに 1 行（段 6 P5-4 — `#par pool <id> parent=… cap=… used=… tasks=… admit=… shed=…`。終わりの used / tasks は全部返れば 0）
+func pstatPools(st mut St) {
+    pg := globaladdr(mut st, st.poolG)
+    cnt := imin(mut st, load(mut st, pg, 0), iconst(mut st, POOL_MAX))
+    printLit(mut st, "#par pools")
+    pfield(mut st, "n", cnt)
+    pfield(mut st, "shed", load(mut st, globaladdr(mut st, st.mnG), MN_LSHED))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, cnt), body, -1, done, -1)
+    setCur(mut st, body)
+    slot := gepWord(mut st, pg, bin(mut st, BAdd, bin(mut st, BMul, i, iconst(mut st, POOL_W)), iconst(mut st, 1)))
+    pl := load(mut st, slot, 0)
+    pc := load(mut st, slot, 2)
+    printLit(mut st, "#par pool ")
+    call(mut st, st.rtPint, list1(mut st, i))
+    pfield(mut st, "parent", bin(mut st, BSub, load(mut st, slot, 5), iconst(mut st, 1)))
+    pfield(mut st, "cap", pc)
+    pfield(mut st, "used", bin(mut st, BAdd, pc, bin(mut st, BSub, bin(mut st, BAnd, pl, iconst(mut st, 2 * LED_BMAX + 1)), iconst(mut st, LED_BMAX))))
+    pfield(mut st, "tasks", bin(mut st, BAnd, bin(mut st, BSar, pl, iconst(mut st, LED_TSHIFT)), iconst(mut st, 2 * LED_TMAX + 1)))
+    pfield(mut st, "admit", load(mut st, slot, 3))
+    pfield(mut st, "shed", load(mut st, slot, 4))
+    call(mut st, st.rtPchar, list1(mut st, iconst(mut st, '\n')))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+}

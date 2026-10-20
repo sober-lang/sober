@@ -1,0 +1,2 @@
+sober: desugar error at examples/pipe_neg_nested_hole.sober:14:15 (Malformed): the number of arguments does not match the function's parameters
+exit=1

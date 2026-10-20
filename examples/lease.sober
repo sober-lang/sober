@@ -1,0 +1,47 @@
+package main
+
+// ワーカー局所の lease（region-domain-pool.md 4d 節）: 窓のたびに新しい値 — 前の窓の書き（Scratch の値・スカラーの欄）は見えない。
+// 窓の値は本体の値・窓は文の位置にも置ける・窓の本体は外の束縛を読める
+
+import "std/task"
+import "std/pool"
+
+const HN = 1 << 6
+
+type Work struct {
+    n int
+    head pool.Scratch
+    prev pool.Scratch
+}
+
+func sum(w mut Work, k int) int {
+    mut s := 0
+    mut i := 0
+    while i < 10 {
+        s += pool.Load(mut w.head, i) + pool.Load(mut w.prev, i) + w.n
+        pool.Store(mut w.head, i, k + i)
+        pool.Store(mut w.prev, i, k * i)
+        i += 1
+    }
+    w.n = k
+    return s
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => {
+        pool.NewScratch(mut w.head, HN)
+        pool.NewScratch(mut w.prev, 2 * HN + 3)
+    })
+    mut tot := 0
+    mut k := 1
+    while k <= 5 {
+        tot += task.Lease(lw, (w mut Work) => sum(mut w, k))
+        k += 1
+    }
+    caps := task.Lease(lw, (w mut Work) => pool.Cap(mut w.head) * 1000 + pool.Cap(mut w.prev))
+    task.Lease(lw, (w mut Work) => {
+        pool.Store(mut w.head, 0, 7)
+        println(pool.Load(mut w.head, 0), pool.Load(mut w.head, 1))
+    })
+    println(tot, caps)
+}

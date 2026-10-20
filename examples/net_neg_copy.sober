@@ -1,0 +1,17 @@
+package main
+
+// 負例: Conn は写せない（同一性の型 — File と同じ規則。diag.FileUse — desugar/filecheck・language.md 28 節の net）
+
+import "std/net"
+
+func main() {
+    _ = run()
+}
+
+func run() error? {
+    for c <- net.Dial("127.0.0.1:9")? {
+        d := c
+        _ = net.Send(d, bytes("x"))
+    }
+    return nil
+}

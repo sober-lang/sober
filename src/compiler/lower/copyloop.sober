@@ -600,6 +600,14 @@ func fillBulk(st mut St, dt int, haddr int, xt int, v int, n int) {
         gp = pw
         gd = dw
     }
+    if bytesKind {
+        fillBytes(mut st, gd, v, n)
+        nh8 := newHeader(mut st, dt, gp, bin(mut st, BAdd, load(mut st, h, 1), n), d)
+        for w <- iter.Range(0, tWords(mut st, dt)) {
+            store(mut st, haddr, w, load(mut st, nh8, w))
+        }
+        return
+    }
     // 詰める: i = 0..n
     loop := newBlock(mut st)
     i := param(mut st, loop, TyI64)
@@ -620,6 +628,35 @@ func fillBulk(st mut St, dt int, haddr int, xt int, v int, n int) {
     for w <- iter.Range(0, tWords(mut st, dt)) {
         store(mut st, haddr, w, load(mut st, nh, w))
     }
+}
+
+// fillBytes はバイトの番地 gd から n バイトを値 v で詰める: 8 バイトの語（v を 8 つ並べた語 — 揃いを問わない store・.ll は align 1）で
+// n / 8 語、残りをバイトで（1 バイトずつの store8 は 5 命令 / B — 16 KiB の 0 埋めで 16.4M 命令だった・report-824 の記帳 / report-879 ⑫）
+func fillBytes(st mut St, gd int, v int, n int) {
+    pat := bin(mut st, BMul, bin(mut st, BAnd, v, iconst(mut st, 255)), iconst(mut st, 72340172838076673))
+    nw := bin(mut st, BSar, n, iconst(mut st, 3))
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CLt, wi, nw), wb, -1, wd, -1)
+    setCur(mut st, wb)
+    store(mut st, gepByte(mut st, gd, bin(mut st, BShl, wi, iconst(mut st, 3))), 0, pat)
+    br(mut st, wl, list1(mut st, bin(mut st, BAdd, wi, iconst(mut st, 1))))
+    setCur(mut st, wd)
+    bl := newBlock(mut st)
+    bi := param(mut st, bl, TyI64)
+    bb := newBlock(mut st)
+    bd := newBlock(mut st)
+    br(mut st, bl, list1(mut st, bin(mut st, BShl, nw, iconst(mut st, 3))))
+    setCur(mut st, bl)
+    condbr(mut st, cmp(mut st, CLt, bi, n), bb, -1, bd, -1)
+    setCur(mut st, bb)
+    store8(mut st, gepByte(mut st, gd, bi), 0, v)
+    br(mut st, bl, list1(mut st, bin(mut st, BAdd, bi, iconst(mut st, 1))))
+    setCur(mut st, bd)
 }
 
 // growN はヘッダ h（cellw 語のセル）を n セル伸ばす先を取る: 先端に接していればその場で伸長・でなければ全コピー（grow の n 版）。（新しいセル列の先頭, 伸ばした先の最初のセル）
@@ -698,4 +735,167 @@ func growN8(st mut St, h int, d int, n int) (int, int) {
     br(mut st, join, list2(mut st, p, gepByte(mut st, p, ln)))
     setCur(mut st, join)
     return np, dst
+}
+
+// ── 語 → バイト列の直列化のループ (D)（731 — report-730 729 節の裁定 (B)）──
+//   `while x >= 8 { dst = append(dst, byte(b & 0xff)); b = b >> 8; x = x - 8 }`
+// （x・b は int の束縛・dst は mut []byte の束縛か欄の経路・`b >>= 8` / `x -= 8` の形も受ける — flate.put の溜めの書き切り）。
+// x ≥ 64 の間は 8 バイトずつ語の store（growN8 + 語の store — バイト列は little-endian で元と同一・b の進みは算術シフト 64 ≡ sar 8 × 8）、
+// 端（8 ≤ x < 64）は元の 1 バイトの形で下ろす。x・b の最終値・panic の点（無し）・観測とも元のループと同一（flatecheck のバイト一致と optdiff が網）
+
+type DrainLoop struct {
+    ok bool
+    x desugar.NodeRef
+    b desugar.NodeRef
+    dst desugar.NodeRef
+}
+
+// drainAsn は `t ◇= 字面 k` か `t = t ◇ 字面 k`（◇ = op の lexer の種類・opEq = 複合代入の種類）の形なら t を返す（違えば -1）
+func drainAsn(st mut St, s desugar.NodeRef, op int, opEq int, k int) desugar.NodeRef {
+    if kindN(mut st, s) != ast.SAssign || lenL(mut st, lA(nodeOf(mut st, s))) != 1 || lenL(mut st, lC(nodeOf(mut st, s))) != 1 {
+        return desugar.NodeRef(-1)
+    }
+    t := latN(mut st, lA(nodeOf(mut st, s)), 0)
+    v := latN(mut st, lC(nodeOf(mut st, s)), 0)
+    if kindN(mut st, t) != ast.EIdent {
+        return desugar.NodeRef(-1)
+    }
+    if nodeOf(mut st, s).b == opEq {
+        return if kindN(mut st, v) == ast.EInt && nodeOf(mut st, v).a == k { t } else { desugar.NodeRef(-1) }
+    }
+    if nodeOf(mut st, s).b != lexer.Equal || kindN(mut st, v) != ast.EBinary || nodeOf(mut st, v).a != op {
+        return desugar.NodeRef(-1)
+    }
+    ok := sameName(mut st, nB(nodeOf(mut st, v)), t) && kindN(mut st, nC(nodeOf(mut st, v))) == ast.EInt && nodeOf(mut st, nC(nodeOf(mut st, v))).a == k
+    return if ok { t } else { desugar.NodeRef(-1) }
+}
+
+// matchDrainLoop は while の節 s が直列化のループ (D) の形か
+func matchDrainLoop(st mut St, s desugar.NodeRef) DrainLoop {
+    no := DrainLoop{ok: false, x: -1, b: -1, dst: -1}
+    c := nA(nodeOf(mut st, s))
+    // 条件: x >= 8（x は名前・8 は字面）
+    if kindN(mut st, c) != ast.EBinary || nodeOf(mut st, c).a != lexer.GreaterEqual || kindN(mut st, nB(nodeOf(mut st, c))) != ast.EIdent {
+        return no
+    }
+    x := nB(nodeOf(mut st, c))
+    lim := nC(nodeOf(mut st, c))
+    if kindN(mut st, lim) != ast.EInt || nodeOf(mut st, lim).a != 8 {
+        return no
+    }
+    body := lA(nodeOf(mut st, nB(nodeOf(mut st, s))))
+    if lenL(mut st, body) != 3 {
+        return no
+    }
+    s1 := latN(mut st, body, 0)
+    // 1 文目: dst = append(dst, byte(b & 0xff))
+    if kindN(mut st, s1) != ast.SAssign || nodeOf(mut st, s1).b != lexer.Equal || lenL(mut st, lA(nodeOf(mut st, s1))) != 1 || lenL(mut st, lC(nodeOf(mut st, s1))) != 1 {
+        return no
+    }
+    dst := latN(mut st, lA(nodeOf(mut st, s1)), 0)
+    v1 := latN(mut st, lC(nodeOf(mut st, s1)), 0)
+    if kindN(mut st, v1) != ast.ECall || kindN(mut st, nA(nodeOf(mut st, v1))) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, nA(nodeOf(mut st, v1)))), "append") {
+        return no
+    }
+    args := lB(nodeOf(mut st, v1))
+    if lenL(mut st, args) != 2 || !samePlace(mut st, latN(mut st, args, 0), dst) {
+        return no
+    }
+    bv := latN(mut st, args, 1)
+    if kindN(mut st, bv) != ast.ECall || kindN(mut st, nA(nodeOf(mut st, bv))) != ast.EIdent || !strIs(mut st, sA(nodeOf(mut st, nA(nodeOf(mut st, bv)))), "byte") || lenL(mut st, lB(nodeOf(mut st, bv))) != 1 {
+        return no
+    }
+    m1 := latN(mut st, lB(nodeOf(mut st, bv)), 0)
+    if kindN(mut st, m1) != ast.EBinary || nodeOf(mut st, m1).a != lexer.Ampersand || kindN(mut st, nB(nodeOf(mut st, m1))) != ast.EIdent || kindN(mut st, nC(nodeOf(mut st, m1))) != ast.EInt || nodeOf(mut st, nC(nodeOf(mut st, m1))).a != 255 {
+        return no
+    }
+    b := nB(nodeOf(mut st, m1))
+    // 2 文目: b = b >> 8（b >>= 8）・3 文目: x = x - 8（x -= 8）
+    t2 := drainAsn(mut st, latN(mut st, body, 1), lexer.Shr, lexer.ShrEqual, 8)
+    t3 := drainAsn(mut st, latN(mut st, body, 2), lexer.Minus, lexer.MinusEqual, 8)
+    if int(t2) < 0 || int(t3) < 0 || !sameName(mut st, t2, b) || !sameName(mut st, t3, x) {
+        return no
+    }
+    // x・b は別の名前・dst の根は x・b と別の名前
+    mut dr := dst
+    while kindN(mut st, dr) == ast.ESelector {
+        dr = nA(nodeOf(mut st, dr))
+    }
+    if kindN(mut st, dr) != ast.EIdent || sameName(mut st, x, b) || sameName(mut st, dr, x) || sameName(mut st, dr, b) {
+        return no
+    }
+    return DrainLoop{ok: true, x: x, b: b, dst: dst}
+}
+
+// drainLoopStmt は (D) を下ろす（下ろせない形は false — 元の while へ）。頭で x を読み、x ≥ 64 なら 8 バイトの語・8 ≤ x < 64 なら 1 バイト、
+// どちらも頭へ戻る（x は単調減少なので止まる）。語の進み: b の 8 バイト（(b >> 8k) & 0xff の列 = little-endian の語そのもの）を
+// growN8 の先へ 1 本の store・b = sar(sar(b, 32), 32)・x = x − 64
+func drainLoopStmt(st mut St, s desugar.NodeRef, m DrainLoop) (bool, error?) {
+    lx := lookup(mut st, sA(nodeOf(mut st, m.x)))
+    lb := lookup(mut st, sA(nodeOf(mut st, m.b)))
+    if lx < 0 || lb < 0 || desugar.HeapGet(mut st.d, lx + 2) != LCell || desugar.HeapGet(mut st.d, lb + 2) != LCell || !isTag(mut st, desugar.HeapGet(mut st.d, lx + 3), TInt) || !isTag(mut st, desugar.HeapGet(mut st.d, lb + 3), TInt) {
+        return false, nil
+    }
+    mut dt := 0
+    mut haddr := 0
+    if kindN(mut st, m.dst) == ast.EIdent {
+        ld := lookup(mut st, sA(nodeOf(mut st, m.dst)))
+        if ld < 0 || desugar.HeapGet(mut st.d, ld + 2) != LCell {
+            return false, nil
+        }
+        dt = desugar.HeapGet(mut st.d, ld + 3)
+        haddr = desugar.HeapGet(mut st.d, ld + 4)
+    } else {
+        p := target(mut st, m.dst, s)?
+        dt = p.t
+        haddr = p.v
+    }
+    if !isTag(mut st, dt, TSlice) || desugar.HeapGet(mut st.d, dt + 2) == 0 || !isBytes(mut st, dt) {
+        return false, nil
+    }
+    xaddr := desugar.HeapGet(mut st.d, lx + 4)
+    baddr := desugar.HeapGet(mut st.d, lb + 4)
+    head := newBlock(mut st)
+    bulk := newBlock(mut st)
+    tailc := newBlock(mut st)
+    tail := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, head, -1)
+    setCur(mut st, head)
+    xv := load(mut st, xaddr, 0)
+    condbr(mut st, cmp(mut st, CGe, xv, iconst(mut st, 64)), bulk, -1, tailc, -1)
+    setCur(mut st, tailc)
+    condbr(mut st, cmp(mut st, CGe, xv, iconst(mut st, 8)), tail, -1, done, -1)
+    // 語: 8 バイトをまとめて
+    setCur(mut st, bulk)
+    bv := load(mut st, baddr, 0)
+    h := copyVal(mut st, dt, haddr)
+    d := load(mut st, h, 2)
+    ln := load(mut st, h, 1)
+    gp, _ := growN8(mut st, h, d, iconst(mut st, 8))
+    // store の番地は直接の gep.byte で取り直す（growN8 の合流のパラメータだと .ll の align 1 の印〔lc.gb — 値が OpGepB の結果〕が付かない）
+    store(mut st, gepByte(mut st, gp, ln), 0, bv)
+    nh := newHeader(mut st, dt, gp, bin(mut st, BAdd, ln, iconst(mut st, 8)), d)
+    for w <- iter.Range(0, tWords(mut st, dt)) {
+        store(mut st, haddr, w, load(mut st, nh, w))
+    }
+    store(mut st, baddr, 0, bin(mut st, BSar, bin(mut st, BSar, bv, iconst(mut st, 32)), iconst(mut st, 32)))
+    store(mut st, xaddr, 0, bin(mut st, BSub, xv, iconst(mut st, 64)))
+    br(mut st, head, -1)
+    // 端: 元の 1 バイトの形（grow8 + store8 — append の mut の道と同じ）
+    setCur(mut st, tail)
+    bv2 := load(mut st, baddr, 0)
+    h2 := copyVal(mut st, dt, haddr)
+    d2 := load(mut st, h2, 2)
+    bp, bd := grow8(mut st, h2, d2, true)
+    store8(mut st, bd, 0, bin(mut st, BAnd, bv2, iconst(mut st, 255)))
+    nh2 := newHeader(mut st, dt, bp, bin(mut st, BAdd, load(mut st, h2, 1), iconst(mut st, 1)), d2)
+    for w <- iter.Range(0, tWords(mut st, dt)) {
+        store(mut st, haddr, w, load(mut st, nh2, w))
+    }
+    store(mut st, baddr, 0, bin(mut st, BSar, bv2, iconst(mut st, 8)))
+    store(mut st, xaddr, 0, bin(mut st, BSub, xv, iconst(mut st, 8)))
+    br(mut st, head, -1)
+    setCur(mut st, done)
+    return true, nil
 }

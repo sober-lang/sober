@@ -1,0 +1,28 @@
+package main
+
+// 拒否のまま（F-ba の残り — formal.md「check の callM の段」の (ii)）: 外の mut slice を欄に持つ mut 局所をループの中で組み、callM の Def へ渡す。
+// セルの中の mut の成分は束縛点の region へ緩められず、anchor（= 束縛点）の写しと合わない — language.md 21 節 (β) と同じ根。build は受理して走る
+
+type W struct {
+    buf mut []int
+    sp int
+}
+
+func walk(w mut W, n int) {
+    if n > 0 {
+        w.buf = append(w.buf, n)
+        w.sp = w.sp + 1
+        walk(mut w, n - 1)
+    }
+}
+
+func main() {
+    mut s := mut []int{}
+    mut i := 0
+    while i < 2 {
+        i += 1
+        mut w := W{buf: s}
+        walk(mut w, 2)
+        println(w.sp)
+    }
+}

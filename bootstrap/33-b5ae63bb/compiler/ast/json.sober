@@ -1,0 +1,594 @@
+package ast
+
+// C4 の AST JSON（src/stage1/ast_json.zig と同じバイト列）。
+// 整形: 2 スペースインデント・1 キー 1 行・末尾改行 1 つ。union は "k" が先頭、キーは ast.zig の宣言順。
+// 各 emit は「値を 1 つ、今の行の続きから書く」。d はその値の閉じ括弧の深さ（中のキーは d + 1）。
+// 出力は Json の frame の mut slice に append で積む（この region では他に確保しないので先端で伸びる — 21 節）。
+// std/builder を使わないのは、mut 引数の関数（Push）が呼び出し点ごとに展開され、書き出しの helper の入れ子で掛け算になって
+// IR が 50 万行を超えたため（selfhost-drafts の F-9）
+
+import "lexer"
+import "std/iter"
+import "obuf"
+
+// Json は t の根を 1 ファイル分の JSON バイト列にする
+func Json(t Tree) []byte {
+    mut out := mut []byte{}
+    emit(mut out, t, t.file, 0)
+    out = append(out, '\n')
+    return freeze(out)
+}
+
+// ── 整形の骨 ──
+
+func hex(n int) byte {
+    return byte(if n < 10 { n + 48 } else { n + 87 })
+}
+
+// str は文字列 s（データプールの添字）を escape して書く
+func str(out mut []byte, t Tree, s int) {
+    out = append(out, '"')
+    n := t.data[s]
+    for i <- iter.Range(0, n) {
+        c := t.data[s + 1 + i]
+        if c == '"' {
+            obuf.Lit(mut out, "\\\"")
+        } else if c == '\\' {
+            obuf.Lit(mut out, "\\\\")
+        } else if c == '\n' {
+            obuf.Lit(mut out, "\\n")
+        } else if c == '\t' {
+            obuf.Lit(mut out, "\\t")
+        } else if c == '\r' {
+            obuf.Lit(mut out, "\\r")
+        } else if c < ' ' {
+            obuf.Lit(mut out, "\\u00")
+            out = append(out, hex(c / 16))
+            out = append(out, hex(c % 16))
+        } else {
+            out = append(out, byte(c))
+        }
+    }
+    out = append(out, '"')
+}
+
+func kStr(out mut []byte, t Tree, d int, first bool, name string, s int) {
+    obuf.Key(mut out, d, first, name)
+    if s < 0 {
+        obuf.Lit(mut out, "null")
+    } else {
+        str(mut out, t, s)
+    }
+}
+
+func kLit(out mut []byte, d int, first bool, name string, v string) {
+    obuf.Key(mut out, d, first, name)
+    out = append(out, '"')
+    obuf.Lit(mut out, v)
+    out = append(out, '"')
+}
+
+func kInt(out mut []byte, d int, name string, v int) {
+    obuf.Key(mut out, d, false, name)
+    obuf.Int(mut out, v)
+}
+
+func kBool(out mut []byte, d int, name string, v int) {
+    obuf.Key(mut out, d, false, name)
+    obuf.Lit(mut out, if v != 0 { "true" } else { "false" })
+}
+
+func tag(out mut []byte, d int, k string) {
+    kLit(mut out, d, true, "k", k)
+}
+
+// strs は文字列の列
+func strs(out mut []byte, t Tree, d int, first bool, name string, l int) {
+    obuf.Key(mut out, d, first, name)
+    n := t.data[l]
+    if n == 0 {
+        obuf.Lit(mut out, "[]")
+    } else {
+        out = append(out, '[')
+        for i <- iter.Range(0, n) {
+            if i > 0 {
+                out = append(out, ',')
+            }
+            obuf.Nl(mut out, d + 1)
+            str(mut out, t, t.data[l + 1 + i])
+        }
+        obuf.Nl(mut out, d)
+        out = append(out, ']')
+    }
+}
+
+// kList / kNode はキー + 節の列 / キー + 節。再帰の輪（emit ↔ list）に入る mut 引数の関数（anchor つきで呼ぶ Def）にキー名の
+// 文字列リテラルを渡すが、Def 呼び出しの実引数のリテラルは region 0（strlit の段）なので anchor 1 slot の条件に掛からない
+func kList(out mut []byte, t Tree, d int, first bool, name string, l int) {
+    obuf.Key(mut out, d, first, name)
+    list(mut out, t, d, l)
+}
+
+func kNode(out mut []byte, t Tree, d int, first bool, name string, n int) {
+    obuf.Key(mut out, d, first, name)
+    emit(mut out, t, n, d)
+}
+
+// list は節の列（穴 -1 は null）
+func list(out mut []byte, t Tree, d int, l int) {
+    n := t.data[l]
+    if n == 0 {
+        obuf.Lit(mut out, "[]")
+    } else {
+        out = append(out, '[')
+        for i <- iter.Range(0, n) {
+            if i > 0 {
+                out = append(out, ',')
+            }
+            obuf.Nl(mut out, d + 1)
+            emit(mut out, t, t.data[l + 1 + i], d + 1)
+        }
+        obuf.Nl(mut out, d)
+        out = append(out, ']')
+    }
+}
+
+func kTok(out mut []byte, d int, x Node) {
+    kInt(mut out, d, "tok", x.tok)
+}
+
+// OpName は演算子の綴り（F1）
+func OpName(op int) string {
+    return switch op {
+    case lexer.Plus: "+"
+    case lexer.Minus: "-"
+    case lexer.Star: "*"
+    case lexer.Slash: "/"
+    case lexer.Percent: "%"
+    case lexer.Ampersand: "&"
+    case lexer.Pipe: "|"
+    case lexer.Caret: "^"
+    case lexer.Shl: "<<"
+    case lexer.Shr: ">>"
+    case lexer.AmpersandAmpersand: "&&"
+    case lexer.PipePipe: "||"
+    case lexer.Bang: "!"
+    case lexer.Equal: "="
+    case lexer.EqualEqual: "=="
+    case lexer.BangEqual: "!="
+    case lexer.Less: "<"
+    case lexer.LessEqual: "<="
+    case lexer.Greater: ">"
+    case lexer.GreaterEqual: ">="
+    case lexer.PlusEqual: "+="
+    case lexer.MinusEqual: "-="
+    case lexer.StarEqual: "*="
+    case lexer.SlashEqual: "/="
+    case lexer.PercentEqual: "%="
+    case lexer.AmpersandEqual: "&="
+    case lexer.PipeEqual: "|="
+    case lexer.CaretEqual: "^="
+    case lexer.ShlEqual: "<<="
+    case lexer.ShrEqual: ">>="
+    case _: lexer.TagName(op)
+    }
+}
+
+// compositeBody は composite の中身（"k" を除いた欄）。Try.wrap は k なしでこれだけを書く
+func compositeBody(out mut []byte, t Tree, d int, first bool, x Node) {
+    kStr(mut out, t, d, first, "type_name", x.a)
+    obuf.Key(mut out, d, false, "elems")
+    n := t.data[x.b]
+    if n == 0 {
+        obuf.Lit(mut out, "[]")
+    } else {
+        out = append(out, '[')
+        for i <- iter.Range(0, n) {
+            if i > 0 {
+                out = append(out, ',')
+            }
+            obuf.Nl(mut out, d + 1)
+            el := t.nodes[t.data[x.b + 1 + i]]
+            out = append(out, '{')
+            kStr(mut out, t, d + 2, true, "key", el.a)
+            kNode(mut out, t, d + 2, false, "value", el.b)
+            obuf.Nl(mut out, d + 1)
+            out = append(out, '}')
+        }
+        obuf.Nl(mut out, d)
+        out = append(out, ']')
+    }
+    kTok(mut out, d, x)
+    kList(mut out, t, d, false, "type_args", x.c)
+}
+
+// emit は節 n を 1 つ書く（-1 は null、括弧は透過）
+func emit(out mut []byte, t Tree, n0 int, d int) {
+    mut n := n0
+    while n >= 0 && t.nodes[n].kind == EParen {
+        n = t.nodes[n].a
+    }
+    if n < 0 {
+        obuf.Lit(mut out, "null")
+        return
+    }
+    x := t.nodes[n]
+    k := x.kind
+    out = append(out, '{')
+    e := d + 1
+    if k == KFile {
+        kStr(mut out, t, e, true, "package", x.a)
+        kList(mut out, t, e, false, "imports", x.b)
+        kList(mut out, t, e, false, "types", x.c)
+        kList(mut out, t, e, false, "funcs", x.d)
+        kList(mut out, t, e, false, "consts", x.e)
+        if x.f != 0 {
+            kList(mut out, t, e, false, "intrinsics", x.f)
+        }
+    } else if k == KImport {
+        kStr(mut out, t, e, true, "alias", x.a)
+        kStr(mut out, t, e, false, "path", x.b)
+        kTok(mut out, e, x)
+    } else if k == KTypeDecl {
+        kStr(mut out, t, e, true, "name", x.a)
+        strs(mut out, t, e, false, "type_params", x.b)
+        kNode(mut out, t, e, false, "body", x.c)
+        // `@layout` の印は立っているときだけ書く（無い型宣言の JSON は前と同じ）
+        if x.f != 0 {
+            kBool(mut out, e, "layout", x.f)
+        }
+        kTok(mut out, e, x)
+        spanOf(mut out, e, x.d, x.e)
+    } else if k == BStruct {
+        tag(mut out, e, "struct")
+        kList(mut out, t, e, false, "fields", x.a)
+    } else if k == BUnion {
+        tag(mut out, e, "union")
+        kList(mut out, t, e, false, "variants", x.a)
+    } else if k == BFunc {
+        tag(mut out, e, "func")
+        kList(mut out, t, e, false, "params", x.a)
+        kList(mut out, t, e, false, "results", x.b)
+        // 仮引数名（名前つきの関数型だけ — 名前なしはキーごと出さない）
+        if x.c >= 0 {
+            strs(mut out, t, e, false, "param_names", x.c)
+        }
+    } else if k == BDefined {
+        tag(mut out, e, "defined")
+        kNode(mut out, t, e, false, "type", x.a)
+    } else if k == BError {
+        tag(mut out, e, "error")
+        kList(mut out, t, e, false, "fields", x.a)
+    } else if k == BPanic {
+        tag(mut out, e, "panic")
+        kList(mut out, t, e, false, "fields", x.a)
+    } else if k == KField {
+        kStr(mut out, t, e, true, "name", x.a)
+        kNode(mut out, t, e, false, "type", x.b)
+        kTok(mut out, e, x)
+    } else if k == KVariant {
+        kStr(mut out, t, e, true, "name", x.a)
+        kList(mut out, t, e, false, "fields", x.b)
+        kTok(mut out, e, x)
+    } else if k == KFuncDecl {
+        kStr(mut out, t, e, true, "name", x.a)
+        strs(mut out, t, e, false, "type_params", x.b)
+        kList(mut out, t, e, false, "params", x.c)
+        kList(mut out, t, e, false, "results", x.d)
+        kNode(mut out, t, e, false, "body", x.e)
+        kTok(mut out, e, x)
+        kBool(mut out, e, "bodiless", t.data[x.f + 1])
+        spanOf(mut out, e, t.data[x.f + 2], t.data[x.f + 3])
+        kInt(mut out, e, "sig_end", t.data[x.f + 4])
+    } else if k == KIntrinsic {
+        kStr(mut out, t, e, true, "name", x.a)
+        kStr(mut out, t, e, false, "key", x.b)
+        kList(mut out, t, e, false, "params", x.c)
+        kList(mut out, t, e, false, "results", x.d)
+        kTok(mut out, e, x)
+        spanOf(mut out, e, x.e, x.f)
+    } else if k == KParam {
+        kStr(mut out, t, e, true, "name", x.a)
+        kNode(mut out, t, e, false, "type", x.b)
+        kBool(mut out, e, "mutable", x.c)
+    } else if k == KConst {
+        kStr(mut out, t, e, true, "name", x.a)
+        kNode(mut out, t, e, false, "expr", x.b)
+        kTok(mut out, e, x)
+        spanOf(mut out, e, x.c, x.d)
+    } else if k == KBlock {
+        kList(mut out, t, e, true, "stmts", x.a)
+    } else if k == KCase {
+        kList(mut out, t, e, true, "patterns", x.a)
+        kNode(mut out, t, e, false, "body", x.b)
+        kTok(mut out, e, x)
+    } else if k == KEntry {
+        kNode(mut out, t, e, true, "key", x.a)
+        kNode(mut out, t, e, false, "value", x.b)
+    } else if k == KLParam {
+        kStr(mut out, t, e, true, "name", x.a)
+        kNode(mut out, t, e, false, "type", x.b)
+        // mut 仮引数の印は立っているときだけ（窓のラムダ — 既存の黄金を動かさない）
+        if x.c != 0 {
+            kBool(mut out, e, "mutable", x.c)
+        }
+    } else if k == KGen {
+        strs(mut out, t, e, true, "names", x.a)
+        kNode(mut out, t, e, false, "src", x.b)
+        kList(mut out, t, e, false, "guards", x.c)
+        kTok(mut out, e, x)
+    } else if k == KPConst {
+        tag(mut out, e, "const")
+        kList(mut out, t, e, false, "alts", x.a)
+    } else if k == KPType {
+        tag(mut out, e, "type")
+        kStr(mut out, t, e, false, "bind", x.a)
+        kStr(mut out, t, e, false, "variant", x.b)
+        kList(mut out, t, e, false, "fields", x.c)
+        kTok(mut out, e, x)
+    } else if k == KFieldPat {
+        kStr(mut out, t, e, true, "name", x.a)
+        kNode(mut out, t, e, false, "sub", x.b)
+        kTok(mut out, e, x)
+    } else if k == KNamedArg {
+        tag(mut out, e, "named_arg")
+        kStr(mut out, t, e, false, "name", x.a)
+        kNode(mut out, t, e, false, "value", x.b)
+        kTok(mut out, e, x)
+    } else if k >= TName && k <= TTuple {
+        emitType(mut out, t, e, x)
+    } else if k >= SBind && k <= SYield {
+        emitStmt(mut out, t, e, x)
+    } else {
+        emitExpr(mut out, t, e, x)
+    }
+    obuf.Nl(mut out, d)
+    out = append(out, '}')
+}
+
+func spanOf(out mut []byte, e int, s int, en int) {
+    obuf.Key(mut out, e, false, "span")
+    out = append(out, '{')
+    obuf.Key(mut out, e + 1, true, "start")
+    obuf.Int(mut out, s)
+    kInt(mut out, e + 1, "end", en)
+    obuf.Nl(mut out, e)
+    out = append(out, '}')
+}
+
+func emitType(out mut []byte, t Tree, e int, x Node) {
+    k := x.kind
+    if k == TName {
+        tag(mut out, e, "name")
+        kStr(mut out, t, e, false, "name", x.a)
+    } else if k == TFunc {
+        tag(mut out, e, "func")
+        kList(mut out, t, e, false, "params", x.a)
+        kList(mut out, t, e, false, "results", x.b)
+        if x.c >= 0 {
+            strs(mut out, t, e, false, "param_names", x.c)
+        }
+    } else if k == TOpt {
+        tag(mut out, e, "opt")
+        kNode(mut out, t, e, false, "type", x.a)
+    } else if k == TSlice {
+        tag(mut out, e, "slice_of")
+        kNode(mut out, t, e, false, "elem", x.a)
+        kBool(mut out, e, "mut", x.b)
+    } else if k == TMap {
+        tag(mut out, e, "map_of")
+        kNode(mut out, t, e, false, "key", x.a)
+        kNode(mut out, t, e, false, "value", x.b)
+        kBool(mut out, e, "mut", x.c)
+    } else if k == TArray {
+        tag(mut out, e, "array_of")
+        kInt(mut out, e, "len", x.a)
+        kNode(mut out, t, e, false, "elem", x.b)
+    } else if k == TTuple {
+        tag(mut out, e, "tuple")
+        kList(mut out, t, e, false, "elems", x.a)
+    } else {
+        tag(mut out, e, "generic")
+        kStr(mut out, t, e, false, "name", x.a)
+        kList(mut out, t, e, false, "args", x.b)
+    }
+}
+
+func emitStmt(out mut []byte, t Tree, e int, x Node) {
+    k := x.kind
+    if k == SBind {
+        tag(mut out, e, "bind")
+        strs(mut out, t, e, false, "names", x.a)
+        kBool(mut out, e, "mutable", x.b)
+        kList(mut out, t, e, false, "values", x.c)
+        kTok(mut out, e, x)
+    } else if k == SAssign {
+        tag(mut out, e, "assign")
+        kList(mut out, t, e, false, "targets", x.a)
+        kLit(mut out, e, false, "op", OpName(x.b))
+        kList(mut out, t, e, false, "values", x.c)
+        kTok(mut out, e, x)
+    } else if k == SRet {
+        tag(mut out, e, "ret")
+        kList(mut out, t, e, false, "values", x.a)
+        kTok(mut out, e, x)
+    } else if k == SExpr {
+        tag(mut out, e, "expr")
+        kNode(mut out, t, e, false, "expr", x.a)
+    } else if k == SWhile {
+        tag(mut out, e, "while")
+        kNode(mut out, t, e, false, "cond", x.a)
+        kNode(mut out, t, e, false, "body", x.b)
+        kTok(mut out, e, x)
+    } else if k == SBreak {
+        tag(mut out, e, "break")
+        kTok(mut out, e, x)
+    } else if k == SContinue {
+        tag(mut out, e, "continue")
+        kTok(mut out, e, x)
+    } else if k == SDefer {
+        tag(mut out, e, "defer")
+        kNode(mut out, t, e, false, "expr", x.a)
+        kTok(mut out, e, x)
+    } else {
+        tag(mut out, e, "yield")
+        kNode(mut out, t, e, false, "expr", x.a)
+        kTok(mut out, e, x)
+    }
+}
+
+func emitExpr(out mut []byte, t Tree, e int, x Node) {
+    k := x.kind
+    if k == EInt {
+        tag(mut out, e, "int")
+        kInt(mut out, e, "value", x.a)
+        if x.b == 1 {
+            // 文字リテラルの綴り（byte の段で足した欄 — 印の無い節の出力は変えない）
+            kBool(mut out, e, "char", 1)
+        } else if x.b != 0 {
+            // n 進リテラルの基数（16 / 8 / 2 — 同上）
+            kInt(mut out, e, "radix", x.b)
+        }
+        kTok(mut out, e, x)
+    } else if k == ENil {
+        tag(mut out, e, "nil")
+        kTok(mut out, e, x)
+    } else if k == EFloat {
+        tag(mut out, e, "float")
+        kInt(mut out, e, "bits", x.a)
+        kStr(mut out, t, e, false, "text", x.b)
+        kTok(mut out, e, x)
+    } else if k == EIdent {
+        tag(mut out, e, "ident")
+        kStr(mut out, t, e, false, "name", x.a)
+        kTok(mut out, e, x)
+    } else if k == EUtf8Ref {
+        tag(mut out, e, "ident")
+        kLit(mut out, e, false, "name", "$utf8")
+        kTok(mut out, e, x)
+    } else if k == EBinary {
+        tag(mut out, e, "binary")
+        kLit(mut out, e, false, "op", OpName(x.a))
+        kNode(mut out, t, e, false, "lhs", x.b)
+        kNode(mut out, t, e, false, "rhs", x.c)
+        kTok(mut out, e, x)
+    } else if k == EUnary {
+        tag(mut out, e, "unary")
+        kLit(mut out, e, false, "op", OpName(x.a))
+        kNode(mut out, t, e, false, "operand", x.b)
+        kTok(mut out, e, x)
+    } else if k == ECall {
+        tag(mut out, e, "call")
+        kNode(mut out, t, e, false, "callee", x.a)
+        kList(mut out, t, e, false, "args", x.b)
+        kTok(mut out, e, x)
+    } else if k == EPipe {
+        tag(mut out, e, "pipe")
+        kNode(mut out, t, e, false, "lhs", x.a)
+        kNode(mut out, t, e, false, "callee", x.b)
+        kList(mut out, t, e, false, "args", x.c)
+        kTok(mut out, e, x)
+    } else if k == EIndex {
+        tag(mut out, e, "index")
+        kNode(mut out, t, e, false, "base", x.a)
+        kNode(mut out, t, e, false, "idx", x.b)
+        kTok(mut out, e, x)
+    } else if k == ESlice3 {
+        tag(mut out, e, "slice3")
+        kNode(mut out, t, e, false, "base", x.a)
+        kNode(mut out, t, e, false, "lo", x.b)
+        kNode(mut out, t, e, false, "hi", x.c)
+        kTok(mut out, e, x)
+    } else if k == EStrlit {
+        tag(mut out, e, "strlit")
+        kStr(mut out, t, e, false, "value", x.a)
+        kTok(mut out, e, x)
+    } else if k == EInterp {
+        tag(mut out, e, "interp")
+        obuf.Key(mut out, e, false, "tmpl")
+        out = append(out, '{')
+        strs(mut out, t, e + 1, true, "lits", x.a)
+        kList(mut out, t, e + 1, false, "holes", x.b)
+        obuf.Nl(mut out, e)
+        out = append(out, '}')
+        kTok(mut out, e, x)
+    } else if k == ESlicelit {
+        tag(mut out, e, "slicelit")
+        kNode(mut out, t, e, false, "elem", x.a)
+        kList(mut out, t, e, false, "elems", x.b)
+        kBool(mut out, e, "mut", x.c)
+        kTok(mut out, e, x)
+    } else if k == EMaplit {
+        tag(mut out, e, "maplit")
+        kNode(mut out, t, e, false, "key", x.a)
+        kNode(mut out, t, e, false, "value", x.b)
+        kList(mut out, t, e, false, "entries", x.c)
+        kBool(mut out, e, "mut", x.d)
+        kTok(mut out, e, x)
+    } else if k == EComposite {
+        tag(mut out, e, "composite")
+        compositeBody(mut out, t, e, false, x)
+    } else if k == ESelector {
+        tag(mut out, e, "selector")
+        kNode(mut out, t, e, false, "base", x.a)
+        kStr(mut out, t, e, false, "field", x.b)
+        kTok(mut out, e, x)
+    } else if k == ELambda {
+        tag(mut out, e, "lambda")
+        kList(mut out, t, e, false, "params", x.a)
+        kNode(mut out, t, e, false, "body", x.b)
+        kTok(mut out, e, x)
+    } else if k == EIf {
+        tag(mut out, e, "if")
+        kNode(mut out, t, e, false, "cond", x.a)
+        kNode(mut out, t, e, false, "then", x.b)
+        kNode(mut out, t, e, false, "else", x.c)
+        kTok(mut out, e, x)
+    } else if k == ESwitch {
+        tag(mut out, e, "switch")
+        kList(mut out, t, e, false, "subjects", x.a)
+        kList(mut out, t, e, false, "cases", x.b)
+        kNode(mut out, t, e, false, "default", x.c)
+        kTok(mut out, e, x)
+    } else if k == EBlock {
+        tag(mut out, e, "block")
+        kList(mut out, t, e, false, "stmts", x.a)
+    } else if k == EFor {
+        tag(mut out, e, "for")
+        kList(mut out, t, e, false, "gens", x.a)
+        obuf.Key(mut out, e, false, "body")
+        out = append(out, '{')
+        if x.b == 0 {
+            tag(mut out, e + 1, "yield")
+            kNode(mut out, t, e + 1, false, "expr", x.c)
+        } else {
+            tag(mut out, e + 1, "block")
+            kList(mut out, t, e + 1, false, "stmts", x.c)
+        }
+        obuf.Nl(mut out, e)
+        out = append(out, '}')
+        kTok(mut out, e, x)
+    } else if k == EMutArg {
+        tag(mut out, e, "mut_arg")
+        kStr(mut out, t, e, false, "name", x.a)
+        kTok(mut out, e, x)
+    } else if k == ECatch {
+        tag(mut out, e, "catch")
+        kNode(mut out, t, e, false, "e", x.a)
+        kNode(mut out, t, e, false, "rhs", x.b)
+        kTok(mut out, e, x)
+    } else {
+        tag(mut out, e, "try")
+        kNode(mut out, t, e, false, "e", x.a)
+        obuf.Key(mut out, e, false, "wrap")
+        if x.b < 0 {
+            obuf.Lit(mut out, "null")
+        } else {
+            out = append(out, '{')
+            compositeBody(mut out, t, e + 1, true, t.nodes[x.b])
+            obuf.Nl(mut out, e)
+            out = append(out, '}')
+        }
+        kTok(mut out, e, x)
+    }
+}

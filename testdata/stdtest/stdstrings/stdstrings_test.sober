@@ -3,6 +3,7 @@ package stdstrings
 // std/strings の black-box の表駆動テスト（Go のオラクル scripts/strings_oracle.ts と併存。`bin/sober test testdata/stdtest/stdstrings`）。
 // std/strings の中に置けないのは、assert の値の印字（補間）が std/strings を暗黙に import するため（自分自身への import の循環）
 
+import "std/convert"
 import "std/iter"
 import "std/strings"
 
@@ -50,11 +51,11 @@ func TestIndexByte() {
 }
 
 func TestFormatInt() {
-    assert(strings.FormatInt(0) == "0")
-    assert(strings.FormatInt(42) == "42")
-    assert(strings.FormatInt(0 - 7) == "-7")
-    assert(strings.FormatInt(9223372036854775807) == "9223372036854775807")
-    assert(strings.FormatInt(0 - 9223372036854775807 - 1) == "-9223372036854775808")
+    assert(convert.FormatInt(0) == "0")
+    assert(convert.FormatInt(42) == "42")
+    assert(convert.FormatInt(0 - 7) == "-7")
+    assert(convert.FormatInt(9223372036854775807) == "9223372036854775807")
+    assert(convert.FormatInt(0 - 9223372036854775807 - 1) == "-9223372036854775808")
 }
 
 func TestJoin() {

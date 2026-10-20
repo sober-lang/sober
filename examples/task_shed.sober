@@ -1,0 +1,95 @@
+package main
+
+// 段 6 P5-4（language.md 11 節「shed」・「天井の木」）: task.SpawnIn は名前つきプールの天井に入れなければ縮退せず (nil, Shed{}) を返す
+// （受けられない、という値 — io の入力）。shed の単位 = プールの節（親のプールの天井も見る）。子と子の中の Spawn はプールの天井の下に計上される。
+// 天井 0 のプールは常に shed・天井の大きいプールは常に入場（ワーカーの数・スケジュールに依らない）
+
+import "std/task"
+
+func fib(n int) int {
+    return if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+// serve はプール p で n 件の仕事を受け、(受けた件の結果の和, shed の件数)
+func serve(p task.Pool, n int) (int, int) {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        mut shed := 0
+        mut i := 0
+        while i < n {
+            k := i
+            h, err := task.SpawnIn(s, p, () => fib(10 + k % 4), budget: 64 * task.KB)
+            if err != nil {
+                switch err {
+                case task.Shed{}: shed += 1
+                }
+            } else if h != nil {
+                hs = append(hs, h)
+            }
+            i += 1
+        }
+        vs := task.Gather(hs)
+        mut sum := 0
+        for v <- vs {
+            sum += v
+        }
+        sum * 1000 + shed
+    })
+    if e != nil {
+        return -1, -1
+    }
+    return r / 1000, r % 1000
+}
+
+func main() {
+    // 天井 0 のプール: 全部 shed
+    zero := task.NewPool(0, nil)
+    a, sa := serve(zero, 5)
+    println(a)
+    println(sa)
+    // 天井の大きいプール: 全部入場
+    big := task.NewPool(1 * task.GB, nil)
+    b, sb := serve(big, 6)
+    println(b)
+    println(sb)
+    // 親のプールが天井 0 なら子のプールの天井が大きくても shed（入場は節から根まで全部）
+    child := task.NewPool(1 * task.GB, zero)
+    c, sc := serve(child, 3)
+    println(c)
+    println(sc)
+    // 子の中の Spawn はプールの天井の下: 天井 64 KiB + α のプールで受けた子が中で生む子は縮退する（値は同じ）
+    tight := task.NewPool(80 * task.KB, nil)
+    r, e := task.Run((s task.Scope) => {
+        h, err := task.SpawnIn(s, tight, () => {
+            v, ie := task.Run((t task.Scope) => {
+                x := task.Spawn(t, () => fib(12))
+                y := task.Spawn(t, () => fib(13))
+                task.Join(x) + task.Join(y)
+            })
+            if ie != nil { -1 } else { v }
+        }, budget: 64 * task.KB)
+        if err != nil {
+            -2
+        } else if h != nil {
+            task.Join(h)
+        } else {
+            -3
+        }
+    })
+    println(r)
+    if e != nil {
+        println(-1)
+    }
+    // 台帳: プールの数・天井・shed の数（静止した時点の計上は 0）
+    l := task.Ledger()
+    println(len(l.pools))
+    for pv <- l.pools {
+        println(pv.id)
+        println(pv.parent)
+        println(pv.cap)
+        println(pv.used)
+        println(pv.tasks)
+        println(pv.shed)
+    }
+    println(l.shed)
+}

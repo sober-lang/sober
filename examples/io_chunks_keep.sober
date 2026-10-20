@@ -1,0 +1,67 @@
+package main
+
+// IO 便 ②（design-dev.md）の確認の網: 文形 for の k の引数（切片の View）を反復の外へ逃がす形 — 外の mut 変数・struct の欄・
+// Bytes の値ごと — は check が拒否するのでなく、region の境界コピーで写しになる（language.md 28 節「外へ持ち出した View は写しになる」）。
+// ストリームが先へ進んでスロットが使い回された後も、逃がした写しは最初の切片の中身のまま（写しが無ければ後の切片の中身に化ける）。
+// リポジトリのルートを cwd にして実行する。書き込み先は out/ の下
+import "std/io"
+import "std/iter"
+
+// Keep は切片を欄に逃がす先（b = 切片の写し・c = Bytes の値ごと）
+type Keep struct {
+    b []byte
+    n int
+}
+
+// pat は位置 i の既知のパターン（切片 1 つ目と 2 つ目で必ず違う値になる — 251 は 65536 と互いに素）
+func pat(i int) byte {
+    return byte(i % 251)
+}
+
+// check は b が先頭からパターンどおりの 65536 バイトか
+func check(b []byte) bool {
+    mut ok := len(b) == 65536
+    for i <- iter.Range(0, len(b)) {
+        ok = ok && b[i] == pat(i)
+    }
+    return ok
+}
+
+func run(p string) (bool, bool, bool, int, error?) {
+    f := io.Open(p)?
+    defer io.Close(f)
+    // 逃がす先 3 つ: 外の mut 変数・struct の欄・Bytes の値ごと
+    mut raw := []byte{}
+    mut box := Keep{b: []byte{}, n: 0}
+    mut held := io.Bytes{}
+    mut k := 0
+    for c <- io.Chunks(f)? {
+        if k == 0 {
+            raw = io.Raw(c)
+            box.b = io.Raw(c)
+            held = c
+        }
+        k += 1
+    }
+    return check(raw), check(box.b), check(io.Raw(held)), k, nil
+}
+
+func main() int {
+    p := "out/io_chunks_keep.tmp"
+    mut w := mut []byte{}
+    for i <- iter.Range(0, 163840) {
+        w = append(w, pat(i))
+    }
+    if io.WriteFile(p, freeze(w)) != nil {
+        return 1
+    }
+    a, b, c, k, e := run(p)
+    if e != nil {
+        return 1
+    }
+    println("chunks: ${k}")
+    println("kept via mut local: ${a}")
+    println("kept via struct field: ${b}")
+    println("kept via Bytes value: ${c}")
+    return 0
+}

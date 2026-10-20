@@ -1,0 +1,22 @@
+package main
+
+// 借りの関数値は task.Spawn の子に捕捉させられない（(α-L0) — 借りの閉包は同一性の型〔Conn〕を運びうる・子 task から叩く形は同一性の 1 task の破れ）
+
+import "std/task"
+
+type Stream func(emit func(n int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+func main() {
+    r := Resp{stream: (emit) => run1(emit)}
+    st := r.stream
+    if st != nil { println(st((n int) => n)) }
+}
+
+func run1(k func(n int) int) int {
+    v, _ := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => k(1))))
+    return v
+}

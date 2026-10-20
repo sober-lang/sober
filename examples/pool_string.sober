@@ -5,6 +5,7 @@ package main
 // 深いブロックで作った string は strings.Clone で Arena（= Pool と同じ region）へ置き直してから入れる —
 // Clone を外すと check が escape で拒否する（コピーはソースに見える: 境界コピー = 明示イディオム）
 
+import "std/convert"
 import "std/pool"
 import "std/strings"
 
@@ -15,7 +16,7 @@ func main() {
     mut i := 0
     while i < 3 {
         name := {
-            s := "user" + strings.FormatInt(i * 10)
+            s := "user" + convert.FormatInt(i * 10)
             strings.Clone(mut a, s)
         }
         h := pool.Acquire(mut p, name)

@@ -1,0 +1,2 @@
+panic: ChildDied{cause: index out of range} at task_print_die.sober:28:23
+  cause at task_print_die.sober:10:14

@@ -7,15 +7,15 @@ package main
 
 import "std/iter"
 import "std/os"
-import "std/par"
+import "std/task"
 
 func loop(n int) int {
     mut acc := 0
     mut i := 0
     while i < n {
         k := i
-        r, e := par.Scope((s par.S) => {
-            par.Join(par.Spawn(s, () => k + 1))
+        r, e := task.Run((s task.Scope) => {
+            task.Join(task.Spawn(s, () => k + 1))
         })
         acc += r
         i += 1
@@ -24,15 +24,15 @@ func loop(n int) int {
 }
 
 func wide(n int) int {
-    r, e := par.Scope((s par.S) => {
-        mut hs := mut []par.Task[int]{}
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
         mut i := 0
         while i < n {
             k := i
-            hs = append(hs, par.Spawn(s, () => k + 1))
+            hs = append(hs, task.Spawn(s, () => k + 1))
             i += 1
         }
-        vs := par.Gather(hs)
+        vs := task.Gather(hs)
         mut acc := 0
         mut j := 0
         while j < len(vs) {

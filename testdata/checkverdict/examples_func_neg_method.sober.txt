@@ -1,0 +1,2 @@
+sober: load error at examples/func_neg_method.sober:7:1: source does not match the grammar
+exit=1

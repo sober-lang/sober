@@ -1,2 +1,0 @@
-panic: TaskDied{cause: Boom{…}} at par_die_label.sober:22:17
-  cause at par_die_label.sober:17:22

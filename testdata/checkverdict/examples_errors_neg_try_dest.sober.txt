@@ -1,0 +1,2 @@
+sober: desugar error at examples/errors_neg_try_dest.sober:16:18 (Malformed)
+exit=1

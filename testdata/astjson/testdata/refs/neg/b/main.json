@@ -1,0 +1,82 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "task",
+      "path": "testdata/refs/neg/lib",
+      "tok": 5
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 12
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 14
+                    },
+                    "field": "MarkFailed",
+                    "tok": 16
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "task",
+                          "tok": 18
+                        },
+                        "field": "Mk",
+                        "tok": 20
+                      },
+                      "args": [
+                        {
+                          "k": "int",
+                          "value": 2,
+                          "tok": 22
+                        }
+                      ],
+                      "tok": 21
+                    }
+                  ],
+                  "tok": 17
+                }
+              ],
+              "tok": 13
+            }
+          }
+        ]
+      },
+      "tok": 8,
+      "bodiless": false,
+      "span": {
+        "start": 7,
+        "end": 29
+      },
+      "sig_end": 11
+    }
+  ],
+  "consts": []
+}

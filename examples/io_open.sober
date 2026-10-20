@@ -12,14 +12,14 @@ func fds() int {
 }
 
 // size は開いた File を今の位置から全部読んだ長さ（File を実引数で受ける helper）
-@errors(io.NotFound, io.Denied, io.Other)
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func size(f io.File) (int, error?) {
     b := io.ReadAll(f)?
     return len(b), nil
 }
 
 // sizeOf は path を開いて読む（`?` の形 — 失敗は呼び手へ）
-@errors(io.NotFound, io.Denied, io.Other)
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
 func sizeOf(p string) (int, error?) {
     f := io.Open(p)?
     defer io.Close(f)
@@ -42,6 +42,8 @@ func why(e error) string {
     return switch e {
     case io.NotFound{}: "not found"
     case io.Denied{}: "denied"
+    case io.Timeout{}: "timed out"
+    case io.Expired{}: "expired"
     case io.Other{errno}: "errno ${errno}"
     }
 }

@@ -1,0 +1,48 @@
+package main
+
+// std/crypto の定数時間の部品（report-790 / 791）: Eq・NonZero・Select・Wipe・Rand の性質。Rand は値でなく長さと「64 バイトが全部 0 でない」だけを見る
+
+import "std/crypto"
+import "std/iter"
+
+func main() {
+    println(crypto.Equal(bytes("abc"), bytes("abc")))
+    println(crypto.Equal(bytes("abc"), bytes("abd")))
+    println(crypto.Equal(bytes("abc"), bytes("ab")))
+    println(crypto.Equal(bytes(""), bytes("")))
+    // 1 ビットだけ違う全位置
+    mut miss := 0
+    base := bytes("0123456789abcdef0123456789abcdef")
+    for i <- iter.Range(0, len(base)) {
+        for k <- iter.Range(0, 8) {
+            mut c := mut []byte{}
+            for j <- iter.Range(0, len(base)) {
+                c = append(c, if j == i { byte(int(base[j]) ^ (1 << k)) } else { base[j] })
+            }
+            if crypto.Equal(base, freeze(c)) {
+                miss = miss + 1
+            }
+        }
+    }
+    println(miss)
+    xs := []int{0, 1, -1, 5, 0x7fffffffffffffff, -0x7fffffffffffffff - 1, 0x100000000}
+    for x <- xs {
+        println(crypto.NonZero(x))
+    }
+    println(crypto.Select(-1, 7, 9))
+    println(crypto.Select(0, 7, 9))
+    println(crypto.Select(crypto.NonZero(3), 7, 9))
+    println(crypto.Select(crypto.NonZero(0), 7, 9))
+    mut w := mut []byte{1, 2, 3, 255}
+    crypto.Wipe(mut w)
+    println(int(w[0]) + int(w[1]) + int(w[2]) + int(w[3]))
+    r := crypto.Rand(64)
+    println(len(r))
+    mut acc := 0
+    for i <- iter.Range(0, len(r)) {
+        acc = acc | int(r[i])
+    }
+    println(acc != 0)
+    println(len(crypto.Rand(0)))
+    println(len(crypto.Rand(1000)))
+}

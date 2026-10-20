@@ -1,0 +1,100 @@
+package main
+
+// map の索引の予約（K1b — report-877）の回帰例: rt.map_grow が索引を先に作るとき容量の 16 倍（上限 + 2^21 枠）を索引のためだけに取り、
+// 以後の索引の作り直し（rt.map_find — 容量の倍化）は予約の中で済ませる。索引の記憶は索引にだけ使い回す（先端の自分の索引の巻き戻しも索引どうし）。
+// 3 つの道を通して、入れた鍵が全部引け・入れていない鍵が引けないことを数える（自己検査 — 不一致は bad に出る）:
+// ① 1 本の map を伸ばし続ける（予約の中の作り直し）② 2 本を交互に伸ばす（先端を奪い合う — 幾何成長と巻き戻し）
+// ③ 予約の上限を越える大きさ（予約が尽きて先端に作り直す道）。string の鍵の map も ① の形で
+
+import "std/convert"
+import "std/os"
+
+func checkInt(m map[int]int, n int, mul int) int {
+    mut bad := 0
+    mut i := 0
+    while i < n {
+        v := m[i * mul]
+        if v != nil {
+            if v != i {
+                bad += 1
+            }
+        } else {
+            bad += 1
+        }
+        if m[i * mul + 1] != nil {
+            bad += 1
+        }
+        i += 1
+    }
+    return bad
+}
+
+func grow(n int, mul int) map[int]int {
+    mut m := mut map[int]int{}
+    mut i := 0
+    while i < n {
+        m[i * mul] = i
+        // 伸ばしながら引く（索引の追いつきと作り直しを挿入の合間に）
+        if i % 97 == 0 {
+            v := m[(i / 2) * mul]
+            ok := if v != nil { v == i / 2 } else { false }
+            if !ok {
+                m[0 - 1] = 1
+            }
+        }
+        i += 1
+    }
+    return m
+}
+
+func main() {
+    args := os.Args() catch return
+    mut big := 600000
+    if len(args) == 2 {
+        v, _ := convert.ParseInt(args[1])
+        big = v
+    }
+    // ①
+    a := grow(50000, 3)
+    bad1 := checkInt(a, 50000, 3) + if a[0 - 1] != nil { 1 } else { 0 }
+    // ②
+    mut x := mut map[int]int{}
+    mut y := mut map[int]int{}
+    mut i := 0
+    while i < 30000 {
+        x[i * 5] = i
+        y[i * 5] = i
+        if i % 3 == 0 {
+            y[i * 5 + 2] = 0
+        }
+        i += 1
+    }
+    bad2 := checkInt(freeze(x), 30000, 5) + checkInt(freeze(y), 30000, 5)
+    // ③
+    c := grow(big, 2)
+    bad3 := checkInt(c, big, 2) + if c[0 - 1] != nil { 1 } else { 0 }
+    // string の鍵
+    mut s := mut map[string]int{}
+    mut j := 0
+    while j < 20000 {
+        s["k${j}"] = j
+        j += 1
+    }
+    mut bad4 := 0
+    j = 0
+    while j < 20000 {
+        v := s["k${j}"]
+        if v != nil {
+            if v != j {
+                bad4 += 1
+            }
+        } else {
+            bad4 += 1
+        }
+        if s["q${j}"] != nil {
+            bad4 += 1
+        }
+        j += 1
+    }
+    println("sizes ${len(a)} ${len(x)} ${len(y)} ${len(c)} ${len(s)} bad ${bad1} ${bad2} ${bad3} ${bad4}")
+}

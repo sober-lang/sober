@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_deadline.sober:13:57: deadline: is a relative time written without calls or division (a literal, a name, task.MS, + - *)
+exit=1

@@ -1,0 +1,520 @@
+package lower
+
+// 切片の読み（IO 便 段 2 (c) — std/io の Chunks / Lines の下ろし先。language.md 28 節「読みのストリーム」・region-domain-pool.md 4c 節の案 P）:
+// 1 本のストリーム（Chunks の 1 回の for）が自分のスロット gens 個（既定 64 KiB × 2 — std が渡す）を私有する。ストリームの記録は chunk_open を呼んだ
+// 深度の region に置く（Chunks の出口で region と一緒に消える — 出口の chunk_close が先に読みの完了を待つ）。
+// 1 回の chunk_next が 1 つのスロットをプログラムへ貸し（View = ヘッダの ptr がスロット・depth は呼んだ時点の深度 — 外へは境界の写しでだけ出る）、
+// 前に貸したスロットを空きへ戻し、空いたスロットへ次の読みを先に出す（世代の回転 = 反復の境目）。
+// - スロットの置き場: std/par のプログラムでワーカーに ring があれば、ワーカーのアリーナ（AR_N 個 × 64 KiB — そのワーカーの最初の chunk_open で mmap し、
+//   ring に 1 本の固定バッファとして REGISTER_BUFFERS で 1 回だけ登録する）から gens 個を取り、READ_FIXED（buf_index 0）で読む。アリーナが尽きた・
+//   登録できない・大きさが違うときは記録と同じ region に取り、READ で読む。ストリームごとに登録しない理由: 5.15 は登録を外した分の memlock の戻りが
+//   遅延 work なので、短いストリームが続くと BUFFERS_UPDATE が ENOMEM で落ちる（実測 — report-608）
+// - 読みは ring に出す（待たずに提出 — user_data = スロットの組の番地 | 1・完了は rt.uring_poll が組に書き、待っている task を起こす）
+// - ring の無い道（逐次・W1・probe の失敗・SOBER_IO=1/2・積んだ io が UR_FLYMAX 本）は同期の read(2) — 先読みの位置は ring と同じ
+//   （読みの回数・順序が backend に依らない — ファイルの位置も同じ）
+// - task の死（defer が走らない）: ストリームの記録は task の鎖（TCB の TC_CHS — 次 = 記録の CH_LINK）に載り、子の入口の出口の rt.chunk_drain が
+//   chunk_close を呼んで読みの完了を待ち、スロットを返す（fd_drain の前 — region・アリーナのスロットが再利用される前に）
+// 書かないもの（4c 節の前提の 1 文）: chunk_open / chunk_next / chunk_close が書くのは、自分の記録・スロット（貸出中の pool）・戻りの値と W_ERRNO だけ
+
+import "desugar"
+import "diag"
+import "std/iter"
+
+// ストリームの記録（語）
+const CH_FD = 0
+const CH_FIX = 1     // 1 = スロットはワーカーのアリーナ（READ_FIXED）・0 = region（READ / 同期）
+const CH_SIZE = 2
+const CH_GENS = 3
+const CH_MASK = 4    // アリーナから取ったスロットのビット
+const CH_HELD = 5    // プログラムへ貸しているスロット（-1 = 無し）
+const CH_NEXT = 6    // 次に渡すスロット
+const CH_SUBM = 7    // 次に読みを出すスロット
+const CH_DONE = 8    // 1 = 列の終わり（EOF か失敗を渡した）
+const CH_LINK = 9    // task の鎖の次の記録（std/par）
+const CH_WAIT = 10   // 完了を待っている task（0 = 無し）
+const CH_INFL = 11   // ring に出して完了を取り込んでいない読みの数
+const CH_ERR = 12    // 列の終わりの errno（0 = EOF）
+const CH_POS = 13    // 次に出す読みの位置（ChunksAt — pread の形・完了を受け取るたびに進める）。-1 = 今の位置（Chunks — read と抜けたときの巻き戻し）
+const CH_CELL = 14   // スロット i の組 [結果, 記録の番地, スロットの番地]（CH_CELL + 3i）
+const CH_GMAX = 8
+const CH_WORDS = CH_CELL + 3 * CH_GMAX
+const CH_EMPTY = -9223372036854775806   // 組の結果: 読みを出していない（IO_PENDING = 出して完了待ち）
+// ワーカーのアリーナ（ring の記録の語 — uring.sober の UR_* の続き）
+const UR_ARENA = 24  // アリーナの番地（0 = まだ・-1 = 作れない / 登録できない）
+const UR_FREE = 25   // 空きのスロットのビット（AR_N 個）
+const UR_IOV = 26    // REGISTER_BUFFERS の iovec（2 語）
+const AR_N = 16
+const AR_SLOT = 65536
+// 開いた fd の鎖の次の語（task.sober の TC_FDS の次 — 記録の先頭の頁）
+const TC_CHS = TC_WORDS + 1
+
+// ioRec は rt の io の関数の記録（Chunks の 5 本 + net の 2 本 — 使わない欄は 0〔chF は -1 で返す〕。St の欄は rtCh 1 つ）
+func ioRec(st mut St) int {
+    if st.rtCh == -1 {
+        st.rtCh = listN(mut st, NETF_RECV + 1)
+    }
+    return st.rtCh
+}
+
+// needChunk は rt.chunk_* を（初出なら）宣言する — std/io の Chunks を使うプログラムでだけ足す
+func needChunk(st mut St) {
+    if chF(mut st, CHF_OPEN) == -1 {
+        r := ioRec(mut st)
+        desugar.HeapSet(mut st.d, r + 1 + CHF_OPEN, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_open")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)))
+        desugar.HeapSet(mut st.d, r + 1 + CHF_NEXT, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_next")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), -1)))
+        desugar.HeapSet(mut st.d, r + 1 + CHF_CLOSE, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_close")), desugar.ListRef(list1(mut st, TyI64)), TyI64)))
+        desugar.HeapSet(mut st.d, r + 1 + CHF_SUBMIT, int(addFunc(mut st, int(strLit(mut st, "rt.chunk_submit")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)))
+        desugar.HeapSet(mut st.d, r + 1 + CHF_DRAIN, if st.taskUse { int(addFunc(mut st, int(strLit(mut st, "rt.chunk_drain")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)) } else { -1 })
+    }
+}
+
+// rt.chunk_* の記録の欄（needChunk）
+const CHF_OPEN = 0
+const CHF_NEXT = 1
+const CHF_CLOSE = 2
+const CHF_SUBMIT = 3
+const CHF_DRAIN = 4
+
+// chF は rt.chunk_* の k 番（使わないプログラム・drain の逐次は -1）
+func chF(st mut St, k int) FnRef {
+    x := if st.rtCh == -1 { 0 } else { desugar.HeapGet(mut st.d, st.rtCh + 1 + k) }
+    return FnRef(if x == 0 { -1 } else { x })
+}
+
+// chDrainCall は子の入口の出口で task の鎖に残ったストリームを閉じる（fdDrainCall の前 — Chunks を使う std/par のプログラムだけ）
+func chDrainCall(st mut St) {
+    if chF(mut st, CHF_DRAIN) != -1 {
+        call(mut st, chF(mut st, CHF_DRAIN), list2(mut st, 0, iconst(mut st, 0)))
+    }
+}
+
+// chCell はスロット i の組の番地（ptr）
+func chCell(st mut St, rec int, i int) int {
+    return itop(mut st, bin(mut st, BAdd, rec, bin(mut st, BAdd, iconst(mut st, CH_CELL * 8), bin(mut st, BMul, i, iconst(mut st, 24)))))
+}
+
+// chWrap は (i + 1) mod g（0 ≤ i < g）
+func chWrap(st mut St, i int, g int) int {
+    n := bin(mut st, BAdd, i, iconst(mut st, 1))
+    return bin(mut st, BSub, n, bin(mut st, BMul, g, cmp(mut st, CEq, n, g)))
+}
+
+// chMe は今の task の記録（ptr）
+func chMe(st mut St) int {
+    return itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+}
+
+// chWait は rp の記録の cond が真の間（cond は毎回読み直す — 0 = 組の結果・1 = 完了待ちの数）、待ち手を記して task を待たせる
+func chWait(st mut St, rp int, cell int, kind int) {
+    wl := newBlock(mut st)
+    wb := newBlock(mut st)
+    wd := newBlock(mut st)
+    br(mut st, wl, -1)
+    setCur(mut st, wl)
+    c := if kind == 0 { cmp(mut st, CEq, load(mut st, cell, 0), iconst(mut st, IO_PENDING)) } else { cmp(mut st, CGt, load(mut st, rp, CH_INFL), iconst(mut st, 0)) }
+    condbr(mut st, c, wb, -1, wd, -1)
+    setCur(mut st, wb)
+    store(mut st, rp, CH_WAIT, ptoi(mut st, chMe(mut st)))
+    call(mut st, st.rtTaskWait, list0(mut st))
+    br(mut st, wl, -1)
+    setCur(mut st, wd)
+}
+
+// buildChunkSubmit は chunk_submit(rec, i): スロット i へ次の読みを出す。ring があれば SQE を積んで即時に提出（完了は rt.uring_poll が組へ）、
+// 無ければ同期の read(2)（EINTR は再試行）の結果を組に書く
+func buildChunkSubmit(st mut St) {
+    begin(mut st, chF(mut st, CHF_SUBMIT))
+    rec := 0
+    i := 1
+    rp := itop(mut st, rec)
+    cell := chCell(mut st, rec, i)
+    size := load(mut st, rp, CH_SIZE)
+    addr := load(mut st, cell, 2)
+    fd := load(mut st, rp, CH_FD)
+    bSync := newBlock(mut st)
+    if st.taskUse {
+        wk := globaladdr(mut st, st.wkG)
+        rr := load(mut st, wk, WK_RING)
+        bRing := newBlock(mut st)
+        ok := bin(mut st, BAnd, cmp(mut st, CNe, rr, iconst(mut st, 0)), cmp(mut st, CLt, load(mut st, wk, WK_IOFLY), iconst(mut st, UR_FLYMAX)))
+        condbr(mut st, ok, bRing, -1, bSync, -1)
+        setCur(mut st, bRing)
+        // READ_FIXED = 4（アリーナ = 固定バッファ 0 番）・READ = 22
+        op := bin(mut st, BAdd, iconst(mut st, 22), bin(mut st, BMul, load(mut st, rp, CH_FIX), iconst(mut st, -18)))
+        urSqe(mut st, rr, bin(mut st, BOr, op, bin(mut st, BShl, fd, iconst(mut st, 32))), addr, size, bin(mut st, BOr, ptoi(mut st, cell), iconst(mut st, 1)), load(mut st, rp, CH_POS))
+        store(mut st, cell, 0, iconst(mut st, IO_PENDING))
+        store(mut st, rp, CH_INFL, urAdd(mut st, load(mut st, rp, CH_INFL), 1))
+        store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), 1))
+        call(mut st, st.rtUpoll, list1(mut st, iconst(mut st, 0)))
+        ret(mut st, -1)
+    } else {
+        br(mut st, bSync, -1)
+    }
+    setCur(mut st, bSync)
+    // 位置が -1 なら read(2)（0 番 — 5 つ目の引数は見ない）・でなければ pread64(2)（17 番）
+    pos := load(mut st, rp, CH_POS)
+    nr := bin(mut st, BMul, cmp(mut st, CGe, pos, iconst(mut st, 0)), iconst(mut st, 17))
+    loop := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    r := syscall(mut st, list5(mut st, nr, fd, addr, size, pos))
+    done := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
+    br(mut st, loop, -1)
+    setCur(mut st, done)
+    store(mut st, cell, 0, r)
+    ret(mut st, -1)
+}
+
+// buildChunkOpen は chunk_open(fd, size, gens, off) → 記録の番地: 今の深度の region に記録を取り、スロットを決めて（アリーナか region）最初のスロットへ
+// 読みを出す。std/par のプログラムは task の鎖に積む
+func buildChunkOpen(st mut St) {
+    begin(mut st, chF(mut st, CHF_OPEN))
+    fd := 0
+    size := 1
+    gens := 2
+    off := 3
+    depth := load(mut st, globaladdr(mut st, st.meta), W_DEPTH)
+    rp := call(mut st, st.rtRalloc, list2(mut st, depth, iconst(mut st, CH_WORDS)))
+    rec := ptoi(mut st, rp)
+    zero := iconst(mut st, 0)
+    store(mut st, rp, CH_FD, fd)
+    store(mut st, rp, CH_FIX, zero)
+    store(mut st, rp, CH_SIZE, size)
+    store(mut st, rp, CH_GENS, gens)
+    store(mut st, rp, CH_POS, off)
+    store(mut st, rp, CH_HELD, iconst(mut st, -1))
+    for k <- iter.Range(CH_NEXT, CH_POS) {
+        if k != CH_LINK {
+            store(mut st, rp, k, zero)
+        }
+    }
+    for k <- iter.Range(0, CH_GMAX) {
+        store(mut st, rp, CH_CELL + 3 * k, iconst(mut st, CH_EMPTY))
+        store(mut st, rp, CH_CELL + 3 * k + 1, rec)
+    }
+    bRegion := newBlock(mut st)
+    bGo := newBlock(mut st)
+    if st.taskUse {
+        me := chMe(mut st)
+        store(mut st, rp, CH_LINK, load(mut st, me, TC_CHS))
+        store(mut st, me, TC_CHS, rec)
+        chTakeSlots(mut st, rp, size, gens, bRegion, bGo)
+    } else {
+        br(mut st, bRegion, -1)
+    }
+    // region のスロット（gens × size バイト — 記録と同じ深度）
+    setCur(mut st, bRegion)
+    base := ptoi(mut st, call(mut st, st.rtRalloc, list2(mut st, depth, bin(mut st, BMul, gens, bin(mut st, BSar, size, iconst(mut st, 3))))))
+    rl := newBlock(mut st)
+    j := param(mut st, rl, TyI64)
+    rb := newBlock(mut st)
+    br(mut st, rl, list1(mut st, zero))
+    setCur(mut st, rl)
+    condbr(mut st, cmp(mut st, CLt, j, gens), rb, -1, bGo, -1)
+    setCur(mut st, rb)
+    store(mut st, chCell(mut st, rec, j), 2, bin(mut st, BAdd, base, bin(mut st, BMul, j, size)))
+    br(mut st, rl, list1(mut st, urAdd(mut st, j, 1)))
+    setCur(mut st, bGo)
+    call(mut st, chF(mut st, CHF_SUBMIT), list2(mut st, rec, zero))
+    store(mut st, rp, CH_SUBM, chWrap(mut st, zero, gens))
+    ret(mut st, rec)
+}
+
+// chTakeSlots はワーカーのアリーナから gens 個のスロットを取って組に入れ、CH_FIX = 1・CH_MASK を置いて bGo へ（ring が無い・大きさが AR_SLOT でない・
+// アリーナを作れない・空きが足りないときは何も取らずに bRegion へ）。アリーナはワーカーの最初の呼び出しで mmap して ring に登録する
+func chTakeSlots(st mut St, rp int, size int, gens int, bRegion BlkRef, bGo BlkRef) {
+    wk := globaladdr(mut st, st.wkG)
+    rr := load(mut st, wk, WK_RING)
+    zero := iconst(mut st, 0)
+    bHas := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, rr, zero), cmp(mut st, CEq, size, iconst(mut st, AR_SLOT))), bHas, -1, bRegion, -1)
+    setCur(mut st, bHas)
+    ring := itop(mut st, rr)
+    bMk := newBlock(mut st)
+    bAr := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, ring, UR_ARENA), zero), bMk, -1, bAr, -1)
+    setCur(mut st, bMk)
+    // mmap → io_uring_register(fd, IORING_REGISTER_BUFFERS = 0, &{arena, AR_N × AR_SLOT}, 1)。失敗は -1（以後このワーカーは region）
+    m := sysMmap(mut st, iconst(mut st, AR_N * AR_SLOT))
+    bMapped := newBlock(mut st)
+    bFail := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, m, zero), bFail, -1, bMapped, -1)
+    setCur(mut st, bMapped)
+    store(mut st, ring, UR_IOV, m)
+    store(mut st, ring, UR_IOV + 1, iconst(mut st, AR_N * AR_SLOT))
+    r := urSys(mut st, 427, []int{load(mut st, ring, 0), zero, ptoi(mut st, gepWord(mut st, ring, iconst(mut st, UR_IOV))), iconst(mut st, 1)})
+    bReg := newBlock(mut st)
+    bUnmap := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, r, zero), bReg, -1, bUnmap, -1)
+    setCur(mut st, bReg)
+    store(mut st, ring, UR_ARENA, m)
+    store(mut st, ring, UR_FREE, iconst(mut st, (1 << AR_N) - 1))
+    br(mut st, bAr, -1)
+    setCur(mut st, bUnmap)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), m, iconst(mut st, AR_N * AR_SLOT)))
+    br(mut st, bFail, -1)
+    setCur(mut st, bFail)
+    store(mut st, ring, UR_ARENA, iconst(mut st, -1))
+    br(mut st, bRegion, -1)
+    setCur(mut st, bAr)
+    arena := load(mut st, ring, UR_ARENA)
+    bTake := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, arena, zero), bTake, -1, bRegion, -1)
+    setCur(mut st, bTake)
+    // 空きのビットの下から gens 個（足りなければ取らずに region へ — 組の番地は region の道が書き直す）
+    free := load(mut st, ring, UR_FREE)
+    sl := newBlock(mut st)
+    b := param(mut st, sl, TyI64)
+    k := param(mut st, sl, TyI64)
+    got := param(mut st, sl, TyI64)
+    sStep := newBlock(mut st)
+    sHit := newBlock(mut st)
+    sNext := newBlock(mut st)
+    k2 := param(mut st, sNext, TyI64)
+    got2 := param(mut st, sNext, TyI64)
+    sEnd := newBlock(mut st)
+    sOk := newBlock(mut st)
+    br(mut st, sl, list3(mut st, zero, zero, zero))
+    setCur(mut st, sl)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CLt, b, iconst(mut st, AR_N)), cmp(mut st, CLt, k, gens)), sStep, -1, sEnd, -1)
+    setCur(mut st, sStep)
+    bit := bin(mut st, BShl, iconst(mut st, 1), b)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, free, bit), zero), sHit, -1, sNext, list2(mut st, k, got))
+    setCur(mut st, sHit)
+    store(mut st, chCell(mut st, ptoi(mut st, rp), k), 2, bin(mut st, BAdd, arena, bin(mut st, BMul, b, iconst(mut st, AR_SLOT))))
+    br(mut st, sNext, list2(mut st, urAdd(mut st, k, 1), bin(mut st, BOr, got, bit)))
+    setCur(mut st, sNext)
+    br(mut st, sl, list3(mut st, urAdd(mut st, b, 1), k2, got2))
+    setCur(mut st, sEnd)
+    condbr(mut st, cmp(mut st, CEq, k, gens), sOk, -1, bRegion, -1)
+    setCur(mut st, sOk)
+    store(mut st, ring, UR_FREE, bin(mut st, BAnd, free, bin(mut st, BXor, got, iconst(mut st, -1))))
+    store(mut st, rp, CH_MASK, got)
+    store(mut st, rp, CH_FIX, iconst(mut st, 1))
+    br(mut st, bGo, -1)
+}
+
+// buildChunkNext は chunk_next(rec, out): 前に貸したスロットを空きへ戻し、次のスロットの読みの完了を待って out に View（ptr = スロット・
+// depth = 今の深度）を置く。空いたスロットへ次の読みを先に出す。列の終わり（EOF・失敗）は空の out と W_ERRNO（EOF は 0）— 以後も同じ
+func buildChunkNext(st mut St) {
+    begin(mut st, chF(mut st, CHF_NEXT))
+    rec := 0
+    out := 1
+    rp := itop(mut st, rec)
+    zero := iconst(mut st, 0)
+    empty := iconst(mut st, CH_EMPTY)
+    gens := load(mut st, rp, CH_GENS)
+    held := load(mut st, rp, CH_HELD)
+    bRel := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, held, zero), bRel, -1, bGo, -1)
+    setCur(mut st, bRel)
+    store(mut st, chCell(mut st, rec, held), 0, empty)
+    store(mut st, rp, CH_HELD, iconst(mut st, -1))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+    i := load(mut st, rp, CH_NEXT)
+    cell := chCell(mut st, rec, i)
+    bFin := newBlock(mut st)
+    bWait := newBlock(mut st)
+    bEmpty := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, cell, 0), empty), bEmpty, -1, bWait, -1)
+    setCur(mut st, bEmpty)
+    // 出していない: 列の終わりなら終わり、でなければ今出す（gens = 1 の形）
+    bSub := branchIf(mut st, cmp(mut st, CNe, load(mut st, rp, CH_DONE), zero))
+    br(mut st, bFin, -1)
+    setCur(mut st, bSub)
+    call(mut st, chF(mut st, CHF_SUBMIT), list2(mut st, rec, i))
+    store(mut st, rp, CH_SUBM, chWrap(mut st, i, gens))
+    br(mut st, bWait, -1)
+    setCur(mut st, bWait)
+    if st.taskUse {
+        chWait(mut st, rp, cell, 0)
+    }
+    r := load(mut st, cell, 0)
+    bGot := branchIf(mut st, cmp(mut st, CLe, r, zero))
+    store(mut st, rp, CH_DONE, iconst(mut st, 1))
+    store(mut st, cell, 0, empty)
+    store(mut st, rp, CH_ERR, bin(mut st, BSub, zero, r))
+    br(mut st, bFin, -1)
+    setCur(mut st, bGot)
+    store(mut st, rp, CH_HELD, i)
+    store(mut st, rp, CH_NEXT, chWrap(mut st, i, gens))
+    // 位置を受け取ったバイト数だけ進める（-1 = 今の位置のまま。先読みはこの後にだけ出るので、出す読みの位置は常に確定している）
+    pos := load(mut st, rp, CH_POS)
+    store(mut st, rp, CH_POS, bin(mut st, BAdd, pos, bin(mut st, BMul, r, cmp(mut st, CGe, pos, zero))))
+    // 先読み: 次に出すスロットが空き（貸していない・出していない）で列が終わっていなければ出す
+    s := load(mut st, rp, CH_SUBM)
+    bPre := newBlock(mut st)
+    bOut := newBlock(mut st)
+    can := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, chCell(mut st, rec, s), 0), empty), cmp(mut st, CNe, s, i))
+    condbr(mut st, bin(mut st, BAnd, can, cmp(mut st, CEq, load(mut st, rp, CH_DONE), zero)), bPre, -1, bOut, -1)
+    setCur(mut st, bPre)
+    call(mut st, chF(mut st, CHF_SUBMIT), list2(mut st, rec, s))
+    store(mut st, rp, CH_SUBM, chWrap(mut st, s, gens))
+    br(mut st, bOut, -1)
+    setCur(mut st, bOut)
+    store(mut st, out, 0, load(mut st, cell, 2))
+    store(mut st, out, 1, r)
+    store(mut st, out, 2, load(mut st, globaladdr(mut st, st.meta), W_DEPTH))
+    setErrno(mut st, zero)
+    ret(mut st, -1)
+    setCur(mut st, bFin)
+    initOut(mut st, out)
+    setErrno(mut st, load(mut st, rp, CH_ERR))
+    ret(mut st, -1)
+}
+
+// buildChunkClose は chunk_close(rec) → 0: 貸したスロットを戻し、ring に出した読みの完了を全部待ってから（スロットの region が消える前に）
+// 登録表の席を空に戻し、task の鎖から外す
+func buildChunkClose(st mut St) {
+    begin(mut st, chF(mut st, CHF_CLOSE))
+    rec := 0
+    rp := itop(mut st, rec)
+    zero := iconst(mut st, 0)
+    // 貸しているスロットは渡し済み（読み終えた分）
+    held := load(mut st, rp, CH_HELD)
+    bRel := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, held, zero), bRel, -1, bGo, -1)
+    setCur(mut st, bRel)
+    store(mut st, chCell(mut st, rec, held), 0, iconst(mut st, CH_EMPTY))
+    store(mut st, rp, CH_HELD, iconst(mut st, -1))
+    br(mut st, bGo, -1)
+    setCur(mut st, bGo)
+    if st.taskUse {
+        chWait(mut st, rp, -1, 1)
+    }
+    // 先に読んで渡していない分だけファイルの位置を戻す（for を途中で抜けた後の読みが続きから読める — 通常のファイル。pipe 等は lseek が
+    // ESPIPE で戻せない: 先読みの分は捨てる）。組の結果の空き・完了待ちの印は負なので 0 として数える
+    mut sum := zero
+    for k <- iter.Range(0, CH_GMAX) {
+        sum = bin(mut st, BAdd, sum, imax(mut st, load(mut st, rp, CH_CELL + 3 * k), zero))
+    }
+    // ChunksAt（位置 ≥ 0）は pread なので f の位置は動いていない — 戻さない
+    bSeek := newBlock(mut st)
+    bDone := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGt, sum, zero), cmp(mut st, CLt, load(mut st, rp, CH_POS), zero)), bSeek, -1, bDone, -1)
+    setCur(mut st, bSeek)
+    syscall(mut st, list4(mut st, iconst(mut st, 8), load(mut st, rp, CH_FD), bin(mut st, BSub, zero, sum), iconst(mut st, 1)))
+    br(mut st, bDone, -1)
+    setCur(mut st, bDone)
+    if st.taskUse {
+        bFree := newBlock(mut st)
+        bLink := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, rp, CH_FIX), zero), bFree, -1, bLink, -1)
+        setCur(mut st, bFree)
+        // アリーナのスロットを返す（task はワーカーに固定 — 取ったのと同じワーカーの ring の記録）
+        ring := itop(mut st, load(mut st, globaladdr(mut st, st.wkG), WK_RING))
+        store(mut st, ring, UR_FREE, bin(mut st, BOr, load(mut st, ring, UR_FREE), load(mut st, rp, CH_MASK)))
+        store(mut st, rp, CH_FIX, zero)
+        br(mut st, bLink, -1)
+        setCur(mut st, bLink)
+        // 鎖から外す（Chunks の入れ子は積んだ順の逆に閉じるので、ふつうは頭で当たる）
+        me := chMe(mut st)
+        loop := newBlock(mut st)
+        p := param(mut st, loop, TyI64)
+        done := newBlock(mut st)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, me, iconst(mut st, TC_CHS)))))
+        setCur(mut st, loop)
+        v := load(mut st, itop(mut st, p), 0)
+        more := branchIf(mut st, cmp(mut st, CEq, v, zero))
+        br(mut st, done, -1)
+        setCur(mut st, more)
+        miss := branchIf(mut st, cmp(mut st, CEq, v, rec))
+        store(mut st, itop(mut st, p), 0, load(mut st, rp, CH_LINK))
+        br(mut st, done, -1)
+        setCur(mut st, miss)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, itop(mut st, v), iconst(mut st, CH_LINK)))))
+        setCur(mut st, done)
+    }
+    ret(mut st, zero)
+}
+
+// buildChunkDrain は chunk_drain(tcb, stop): task の鎖の頭が stop になるまでストリームを閉じる（子の入口の出口 — 死・切られた子は stop = 0 で全部。
+// ふつうに終わった子の鎖は空。縮退して親の中で走った子は子に入る前の頭 — rt.fd_drain と同じ形）
+func buildChunkDrain(st mut St) {
+    begin(mut st, chF(mut st, CHF_DRAIN))
+    tcb := 0
+    stop := 1
+    loop := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    h := load(mut st, tcb, TC_CHS)
+    more := branchIf(mut st, cmp(mut st, CEq, h, stop))
+    br(mut st, done, -1)
+    setCur(mut st, more)
+    call(mut st, chF(mut st, CHF_CLOSE), list1(mut st, h))
+    br(mut st, loop, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// chReap は rt.uring_poll の完了のうちスロットの読み（user_data の下位ビット 1）: 組に結果を書き、記録の完了待ちを減らして待ち手を起こす
+func chReap(st mut St, ud int, res int, tk int) {
+    cell := itop(mut st, bin(mut st, BAnd, ud, iconst(mut st, -2)))
+    store(mut st, cell, 0, res)
+    rp := itop(mut st, load(mut st, cell, 1))
+    store(mut st, rp, CH_INFL, urAdd(mut st, load(mut st, rp, CH_INFL), -1))
+    w := load(mut st, rp, CH_WAIT)
+    bWake := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, w, iconst(mut st, 0)), bWake, -1, bEnd, -1)
+    setCur(mut st, bWake)
+    store(mut st, rp, CH_WAIT, iconst(mut st, 0))
+    store(mut st, itop(mut st, w), TC_NEXT, load(mut st, tk, TK_READY))
+    store(mut st, tk, TK_READY, w)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
+func buildChunkRt(st mut St) {
+    if chF(mut st, CHF_OPEN) == -1 {
+        return
+    }
+    buildChunkOpen(mut st)
+    buildChunkNext(mut st)
+    buildChunkClose(mut st)
+    buildChunkSubmit(mut st)
+    if chF(mut st, CHF_DRAIN) != -1 {
+        buildChunkDrain(mut st)
+    }
+}
+
+// chunkBuiltin は鍵 chunk_open（k = 19 — int 4 つ → 記録）・chunk_next（20 — 記録 → []byte）・chunk_close（21 — 記録 → 0）の呼び出し（cont.sober の ioBuiltin から）
+func chunkBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    a := expr(mut st, latN(mut st, args, 0))?
+    if isTag(mut st, a.t, TNever) {
+        return -1, nil
+    }
+    if !isTag(mut st, a.t, TInt) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    needChunk(mut st)
+    if k == 20 {
+        t := mkSlice(mut st, tByte(mut st), false)
+        out := newAgg(mut st, t)
+        call(mut st, chF(mut st, CHF_NEXT), list2(mut st, a.v, out))
+        return one1(mut st, t, out), nil
+    }
+    if k == 21 {
+        return one1(mut st, tInt(mut st), call(mut st, chF(mut st, CHF_CLOSE), list1(mut st, a.v))), nil
+    }
+    b := expr(mut st, latN(mut st, args, 1))?
+    if isTag(mut st, b.t, TNever) {
+        return -1, nil
+    }
+    c := expr(mut st, latN(mut st, args, 2))?
+    if isTag(mut st, c.t, TNever) {
+        return -1, nil
+    }
+    d := expr(mut st, latN(mut st, args, 3))?
+    if isTag(mut st, d.t, TNever) {
+        return -1, nil
+    }
+    if !isTag(mut st, b.t, TInt) || !isTag(mut st, c.t, TInt) || !isTag(mut st, d.t, TInt) {
+        return 0, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    return one1(mut st, tInt(mut st), call(mut st, chF(mut st, CHF_OPEN), list4(mut st, a.v, b.v, c.v, d.v))), nil
+}

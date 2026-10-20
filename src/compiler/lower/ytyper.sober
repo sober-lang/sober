@@ -102,6 +102,10 @@ func yMatch(st mut St, y int, t int) int {
         if isTag(mut st, t, TFnv) {
             return -1
         }
+        if isClosT(mut st, t) {
+            // 値の位置の named fn type の閉包の struct（closure.sober）— 宣言 K で照合
+            return b2i(desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + CL_K) + 1) == x.a)
+        }
         if !isTag(mut st, t, TStruct) && !isTag(mut st, t, TUnion) {
             return 0
         }
@@ -119,10 +123,10 @@ func yMatch(st mut St, y int, t int) int {
         b := envLookup(mut st, st.tenv, desugar.StrRef(x.b))
         return if b < 0 { -1 } else { b2i(tEql(mut st, b, t)) }
     case desugar.YFn:
-        if !isTag(mut st, t, TFnv) {
+        if !isTag(mut st, t, TFnv) && !isClosT(mut st, t) {
             return 0
         }
-        ft := desugar.HeapGet(mut st.d, t + 1)
+        ft := if isClosT(mut st, t) { closFt(mut st, t) } else { desugar.HeapGet(mut st.d, t + 1) }
         return yAnd(yMatchList(mut st, desugar.ListRef(x.a), hgetL(mut st, ft)), yMatchList(mut st, desugar.ListRef(x.b), hgetL(mut st, ft + 1)))
     }
     return -1

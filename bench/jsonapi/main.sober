@@ -130,7 +130,7 @@ func main() int {
             } else {
                 // id は検証の誤りのレスポンスにも返す（読めるときだけ）
                 idn := json.Get(d, json.Root(d), "id")
-                id := if idn != nil { json.DecInt(d, idn) catch -1 } else { -1 }
+                id := if idn != nil { json.ParseInt(d, idn) catch -1 } else { -1 }
                 r, derr := json.Decode[Req](d, json.Root(d))
                 code := if derr != nil {
                     switch derr {

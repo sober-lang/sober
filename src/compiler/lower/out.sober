@@ -10,6 +10,7 @@ package lower
 // 不変条件: task の切替点で行バッファは常に空（println は全引数を先に評価してから書く — expr.sober printlnCall）。spawn / 終わりの熱い道は行バッファを見ない
 
 import "desugar"
+import "std/iter"
 
 // @rt.out の配置（語）
 const OUT_HEAD = 0
@@ -25,8 +26,9 @@ const SG_WORDS = 5
 const SG_CHUNK = 256        // 区間の塊（mmap 1 回で SG_CHUNK 個）
 const SG_BUF_MIN = 4096     // 溜めの最初の容量（バイト — 1 頁。倍々に伸びる）
 
-// needOutRt は区間の rt の宣言（needTaskRt から — std/par を使うプログラムだけ）
+// needOutRt は区間の rt の宣言（needTaskRt から — std/task を使うプログラムだけ）
 func needOutRt(st mut St) {
+    lsNeed(mut st, NEED_OUT, 0)
     st.outG = addGlobalInit(mut st, int(strLit(mut st, "rt.out")), OUT_WORDS, -1)
     st.rtOutNode = addFunc(mut st, int(strLit(mut st, "rt.out_node")), desugar.ListRef(list0(mut st)), TyPtr)
     st.rtOutAdv = addFunc(mut st, int(strLit(mut st, "rt.out_adv")), desugar.ListRef(list0(mut st)), -1)
@@ -156,7 +158,7 @@ func outClose(st mut St, tcb int) {
     setCur(mut st, bEnd)
 }
 
-// outRoute は rt.flush の頭（std/par を使うプログラムだけ）: fd 1 で今の task の区間が頭でなければ、行を区間の溜めへ積んで返る
+// outRoute は rt.flush の頭（std/task を使うプログラムだけ）: fd 1 で今の task の区間が頭でなければ、行を区間の溜めへ積んで返る
 func outRoute(st mut St, meta int) {
     // M:N（段 6 P4-4）: 頭かどうかの判定と溜めへの積みを鍵の中で（頭を進める task が同時に溜めを出して頭を移しうる）
     // fd 2（死の文面・trace）は鍵を取らない（区間の対象外 — 終わりの drain が鍵を持ったまま stderr へ書く）
@@ -222,7 +224,7 @@ func buildOutNode(st mut St) {
     ret(mut st, itop(mut st, a))
 }
 
-// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102）
+// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）
 func sysMmap(st mut St, size int) int {
     args := listN(mut st, 7)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
@@ -237,7 +239,7 @@ func sysMmap(st mut St, size int) int {
     good := newBlock(mut st)
     condbr(mut st, cmp(mut st, CUge, a, iconst(mut st, -4095)), bad, -1, good, -1)
     setCur(mut st, bad)
-    memPanic(mut st, PM_SLOT)
+    memPanic(mut st, PM_VA)
     setCur(mut st, good)
     return a
 }
@@ -371,6 +373,27 @@ func buildOutDrain(st mut St) {
         call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
         call(mut st, st.rtPint, list1(mut st, load(mut st, mnD, MN_PTAIL)))
         call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 10)))
+        // 計器（scratch）: ワーカーごとに `#wk <k> <計器 16 語>`
+        kl := newBlock(mut st)
+        kk := param(mut st, kl, TyI64)
+        kb := newBlock(mut st)
+        kd := newBlock(mut st)
+        br(mut st, kl, list1(mut st, iconst(mut st, 0)))
+        setCur(mut st, kl)
+        condbr(mut st, cmp(mut st, CLt, kk, load(mut st, mnD, MN_N)), kb, -1, kd, -1)
+        setCur(mut st, kb)
+        kwp := itop(mut st, load(mut st, gepWord(mut st, mnD, bin(mut st, BAdd, kk, iconst(mut st, MN_WK))), 0))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 35)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 119)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+        call(mut st, st.rtPint, list1(mut st, kk))
+        for j <- iter.Range(0, 16) {
+            call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+            call(mut st, st.rtPint, list1(mut st, load(mut st, kwp, WK_K0 + j)))
+        }
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 10)))
+        br(mut st, kl, list1(mut st, bin(mut st, BAdd, kk, iconst(mut st, 1))))
+        setCur(mut st, kd)
     }
     call(mut st, st.rtFlush, list0(mut st))
     // M:N: 鍵を取ったまま出す（終わりの直前 — 他のワーカーの区間の操作を止める。外さない: この後 exit_group）

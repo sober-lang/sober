@@ -4,10 +4,10 @@ package main
 // 値の型の標準ストリーム io.Stream（同一性なし）を欄に持つ io.Writer のゼロ値も今どおり（標準出力へ書く）
 
 import "std/io"
-import "std/par"
+import "std/task"
 
 type Slot struct {
-    tx par.Tx[int]?
+    tx task.Sender[int]?
     n int
 }
 

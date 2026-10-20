@@ -1,7 +1,7 @@
 package main
 
 import "std/iter"
-import "std/par"
+import "std/task"
 
 type TooLarge error {
     n int
@@ -27,7 +27,7 @@ func main() int {
         ns = append(ns, i)
     }
     // a parallel Map — the output is the same for any number of workers
-    ks, err := par.Map(ns, (n) => steps(n) catch -1)
+    ks, err := task.Map(ns, (n) => steps(n) catch -1)
     if err != nil {
         return 1
     }

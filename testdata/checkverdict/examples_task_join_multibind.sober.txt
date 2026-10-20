@@ -1,0 +1,2 @@
+sober: load error at examples/task_join_multibind.sober:17:9: this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)
+exit=1

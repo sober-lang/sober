@@ -1,0 +1,10 @@
+package main
+
+// 負例: std/internal/… は std の実装の詳細で、std の外（利用者のコード・examples・bench）からは import できない — load の拒否
+// （InternalImport — language.md 20 節。パスの字面で判定するので、package の有無を読む前に止まる）
+
+import "std/internal/hs"
+
+func main() {
+    println(hs.Version)
+}

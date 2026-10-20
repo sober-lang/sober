@@ -70,7 +70,7 @@ const EIf = 17         // a = cond, b = then（KBlock）, c = else（-1 可）
 const ESwitch = 18     // a = subjects（列）, b = cases（KCase の列）, c = default（KBlock、-1 可）
 const EBlock = 19      // a = stmts（列）
 const EFor = 20        // a = gens（KGen の列）, b = 0（yield）/ 1（block）, c = yield の式 / stmts（列）
-const EMutArg = 21     // a = 名前
+const EMutArg = 21     // a = 名前, b = 1 なら loader の lease の写しが組んだ欄の場所（他の package の欄の書きの規則の外 — loader/lease.sober。ソースには書けない）
 const ETry = 22        // a = e, b = wrap（EComposite、-1 可）
 const EParen = 23      // a = 中身（括弧 — 出力では透過。パターンの選択 `|` の分解だけが区別する）
 const EFloat = 26      // a = 値（IEEE 754 binary64 のビット列を i64 の 2 の補数で読んだ値 — language.md 37 節）, b = 綴り（データの文字列 — printer と AST JSON が保つ）
@@ -96,7 +96,7 @@ const TSlice = 43      // a = elem, b = mut
 const TMap = 44        // a = key, b = value, c = mut
 const TGeneric = 45    // a = 名前, b = args（列）
 const TArray = 46      // a = 長さ（値）, b = elem — `[N]T`。struct の欄の型の位置にだけ（parser）・@layout の struct の外は loader の拒否（language.md 36 節）
-const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?)`。型引数の位置にだけ（parser）・std/par の Task の型引数の外は loader の拒否（language.md 11 節 — P3b 残穴1）
+const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?)`。型引数の位置にだけ（parser）・std/task の Task の型引数の外は loader の拒否（language.md 11 節 — P3b 残穴1）
 
 // ── 宣言・その他 ──
 const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）
@@ -115,7 +115,7 @@ const KBlock = 62      // a = stmts（列）
 const KCase = 63       // a = patterns（列）, b = body（KBlock）
 const KElem = 64       // a = key（文字列、-1 可）, b = value
 const KEntry = 65      // a = key, b = value
-const KLParam = 66     // a = 名前, b = 型（-1 可）
+const KLParam = 66     // a = 名前, b = 型（-1 可）, c = mut 仮引数の印（窓のラムダ — task.Lease / task.NewLocal）
 const KGen = 67        // a = names（文字列の列）, b = src, c = guards（列）
 const KPConst = 68     // a = alts（列）
 const KPType = 69      // a = bind（文字列、-1 可）, b = variant（文字列）, c = fields（KFieldPat の列）

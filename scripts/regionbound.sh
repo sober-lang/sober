@@ -20,7 +20,7 @@ one() {
     "$STAGE2" build "$e" --emit=ir -o "$w/p.ir" 2> /dev/null || { echo "@@ lskip"; return; }   # check ⊃ build の形は F 台帳と他のゲートが見る
     # ループ本体の反復の region（宛先構築レーン M4 / M5）は両側から除く — 総称関数の単相化で IR 側だけループが複製されるので数が合わない。
     # コア = while の本体の block・IR = ラベルの直後の region.enter（式ブロックと関数の入口の enter は必ず直前に region.depth がある）
-    # 段 6 P3a: コアの scope は block と同じく region を 1 段開く（lower = par.Scope の enter）。spawn の子の region は子の関数の入口（lower/par.sober の kid#N）
+    # 段 6 P3a: コアの scope は block と同じく region を 1 段開く（lower = task.Run の enter）。spawn の子の region は子の関数の入口（lower/task.sober の kid#N）
     # 数えるのは main の式から呼び出し（call / callm / fnref の f）で届く Def だけ — lower は届く関数しか下ろさない。読み込んだ std の届かない Def
     # （std/utf8 の内側の par の Scope 等 — 全プログラムに暗黙で読み込まれる）は IR に現れない（並列 1.0× 便）
     cb=$(jq '

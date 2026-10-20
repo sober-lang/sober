@@ -1,0 +1,2 @@
+testdata/analyzer_neg/fnval_err_switch.sober:31:5: error: switch does not cover Big (error labels the subject may carry): add cases or a default (Analyzer)
+testdata/analyzer_neg/fnval_err_switch.sober:35:5: error: switch does not cover Big (error labels the subject may carry): add cases or a default (Analyzer)

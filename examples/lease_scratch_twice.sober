@@ -1,0 +1,20 @@
+package main
+
+// Scratch の容量は 1 回だけ — 窓の中で作り直すと panic(pool.ScratchSized{})（置き場が宙吊りにならない）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.head, 8))
+    println(task.Lease(lw, (w mut Work) => pool.Cap(mut w.head)))
+    task.Lease(lw, (w mut Work) => {
+        pool.NewScratch(mut w.head, 16)
+    })
+    println("unreachable")
+}

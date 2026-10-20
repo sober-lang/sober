@@ -1,0 +1,218 @@
+package main
+
+// std/compress/flate・std/compress/gzip・std/hash/crc32 の往復の網（scripts/flatecheck.sh — report-712 / 713）: 入力の形（乱数〔字母 2・16・256〕・繰り返し・0 埋め・
+// 文字列の羅列・境界の長さ〔0〜4・257〜259・ブロックの記号の上限 16383 前後・stored の切れ 65535 前後〕・HttpArena json-comp の本文
+// 〔dataset の先頭 25 / 40 / 50 本 × m = 4 / 8 / 6 — bench/httparena/main.sober と同じ直列化〕）× level 0〜9 を符号化して
+// <dir>/<名前>.in と <dir>/<名前>.<level>.z（生の DEFLATE）・.gz（gzip）に書き、1 行ずつ「名前 level 入力の長さ 入力の CRC-32 出力の長さ 出力の CRC-32」を出す。
+// 照合（外の zlib で解いて一致・CRC-32 の一致・大きさの黄金）は testdata/flatecheck/check.ts。作業域の口（report-720）も照合する: ワーカー局所の lease で
+// 借りた作業域（flate.Prepare）・入力をまたいで使い回す 1 つの作業域（最初の入力の長さで取られ、足りない入力では新しい作業域に倒れる）の EncodeWith が
+// Encode とバイト一致（違えば FAIL の行）
+//   main <dataset.json> <dir>
+
+import "std/compress/flate"
+import "std/compress/gzip"
+import "std/convert"
+import "std/hash/crc32"
+import "std/io"
+import "std/iter"
+import "std/json"
+import "std/os"
+import "std/task"
+
+type Rating struct {
+    score int
+    count int
+}
+
+type Item struct {
+    id int
+    name string
+    category string
+    price int
+    quantity int
+    active bool
+    tags []string
+    rating Rating
+}
+
+type Processed struct {
+    id int
+    name string
+    category string
+    price int
+    quantity int
+    active bool
+    tags []string
+    rating Rating
+    total int
+}
+
+type Body struct {
+    items []Processed
+    count int
+}
+
+func load(path string) []Item {
+    b := io.ReadFile(path) catch return []Item{}
+    d := json.Parse(b) catch return []Item{}
+    ns := json.Items(d, json.Root(d)) catch return []Item{}
+    mut xs := mut []Item{}
+    mut i := 0
+    while i < len(ns) {
+        x, e := json.Decode[Item](d, ns[i])
+        if e != nil {
+            return []Item{}
+        }
+        xs = append(xs, x)
+        i += 1
+    }
+    return freeze(xs)
+}
+
+// body は json-comp の応答の本文（先頭 n 本・total = price × quantity × m）
+func body(ds []Item, n int, m int) []byte {
+    mut out := mut []Processed{}
+    for i <- iter.Range(0, n) {
+        d := ds[i]
+        out = append(out, Processed{id: d.id, name: d.name, category: d.category, price: d.price, quantity: d.quantity, active: d.active, tags: d.tags, rating: d.rating, total: d.price * d.quantity * m})
+    }
+    return bytes(json.Encode[Body](Body{items: freeze(out), count: n}))
+}
+
+func next(x int) int {
+    mut y := x
+    y = y ^ (y << 13)
+    y = y ^ (y >> 7)
+    y = y ^ (y << 17)
+    return y
+}
+
+// rnd は長さ n・字母 k の乱数のバイト列（種 seed）
+func rnd(n int, k int, seed int) []byte {
+    mut b := mut []byte{}
+    mut x := seed * 2654435761 + 1
+    for i <- iter.Range(0, n) {
+        x = next(x)
+        r := if x < 0 { 0 - x } else { x }
+        b = append(b, byte((r >> 7) % k))
+    }
+    return freeze(b)
+}
+
+// rep は s を合計 n バイトまで繰り返す
+func rep(s string, n int) []byte {
+    sb := bytes(s)
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, sb[i % len(sb)])
+    }
+    return freeze(b)
+}
+
+// words は語の羅列（語彙 62・長さ n — 文章に近い一致の分布: 距離も長さもまちまち）
+func words(n int, seed int) []byte {
+    vocab := []string{"the", "of", "and", "to", "in", "is", "was", "that", "for", "on", "are", "with", "as", "his", "they", "be",
+        "at", "one", "have", "this", "from", "or", "had", "by", "word", "but", "what", "some", "we", "can", "out", "other",
+        "were", "all", "there", "when", "up", "use", "your", "how", "said", "an", "each", "she", "which", "do", "their", "time",
+        "compression", "deflate", "huffman", "window", "distance", "length", "literal", "symbol", "block", "stored", "fixed", "dynamic", "region", "sober"}
+    mut b := mut []byte{}
+    mut x := seed * 2654435761 + 7
+    while len(b) < n {
+        x = next(x)
+        r := if x < 0 { 0 - x } else { x }
+        w := bytes(vocab[(r >> 9) % len(vocab)])
+        mut j := 0
+        while j < len(w) && len(b) < n {
+            b = append(b, w[j])
+            j += 1
+        }
+        if len(b) < n {
+            b = append(b, if (r >> 3) % 11 == 0 { byte('\n') } else { byte(' ') })
+        }
+    }
+    return freeze(b)
+}
+
+func cat(a []byte, b []byte) []byte {
+    mut r := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        r = append(r, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        r = append(r, b[i])
+    }
+    return freeze(r)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func one(dir string, lw task.Local, sw mut flate.Work, name string, data []byte) error? {
+    io.WriteFile("${dir}/${name}.in", data)?
+    for lv <- iter.Range(0, 10) {
+        z := flate.Encode(data, lv)
+        g := gzip.Encode(data, lv)
+        zl := task.Lease(lw, (w mut flate.Work) => flate.EncodeWith(mut w, data, lv))
+        gl := task.Lease(lw, (w mut flate.Work) => gzip.EncodeWith(mut w, data, lv))
+        if !same(z, zl) || !same(g, gl) {
+            println("FAIL lease ${name} ${convert.FormatInt(lv)}: EncodeWith differs from Encode")
+        }
+        if !same(z, flate.EncodeWith(mut sw, data, lv)) {
+            println("FAIL reuse ${name} ${convert.FormatInt(lv)}: EncodeWith differs from Encode")
+        }
+        io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.z", z)?
+        io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.gz", g)?
+        println("${name} ${convert.FormatInt(lv)} ${convert.FormatInt(len(data))} ${convert.FormatInt(crc32.Sum(data))} ${convert.FormatInt(len(z))} ${convert.FormatInt(crc32.Sum(z))}")
+    }
+    return nil
+}
+
+func run(ds string, dir string) error? {
+    items := load(ds)
+    if len(items) < 50 {
+        println("FAIL dataset ${ds}: ${convert.FormatInt(len(items))} items")
+        return nil
+    }
+    lw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))
+    mut sw := flate.Work{}
+    one(dir, lw, mut sw, "json25", body(items, 25, 4))?
+    one(dir, lw, mut sw, "json40", body(items, 40, 8))?
+    one(dir, lw, mut sw, "json50", body(items, 50, 6))?
+    one(dir, lw, mut sw, "dataset", io.ReadFile(ds)?)?
+    for n <- iter.Range(0, 5) {
+        one(dir, lw, mut sw, "len${convert.FormatInt(n)}", rnd(n, 4, n + 1))?
+    }
+    one(dir, lw, mut sw, "len257", rep("ab", 257))?
+    one(dir, lw, mut sw, "len258", rep("a", 258))?
+    one(dir, lw, mut sw, "len259", rep("xyz", 259))?
+    one(dir, lw, mut sw, "rnd2", rnd(30000, 2, 11))?
+    one(dir, lw, mut sw, "rnd16", rnd(40000, 16, 12))?
+    one(dir, lw, mut sw, "rnd256", rnd(70000, 256, 13))?
+    one(dir, lw, mut sw, "sym16383", rnd(16383, 256, 14))?
+    one(dir, lw, mut sw, "sym16384", rnd(16384, 256, 15))?
+    one(dir, lw, mut sw, "st65535", rnd(65535, 256, 16))?
+    one(dir, lw, mut sw, "st65536", rnd(65536, 256, 17))?
+    one(dir, lw, mut sw, "zeros", rnd(300000, 1, 1))?
+    one(dir, lw, mut sw, "abc", rep("abcdefghij", 100003))?
+    one(dir, lw, mut sw, "words", words(200000, 21))?
+    one(dir, lw, mut sw, "mixed", cat(cat(words(20000, 22), rnd(5000, 256, 23)), rep("0123456789", 20000)))?
+    return nil
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) != 3 {
+        return 2
+    }
+    e := run(args[1], args[2])
+    return if e != nil { 1 } else { 0 }
+}

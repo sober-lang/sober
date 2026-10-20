@@ -1,7 +1,7 @@
 // std/utf8 の差分オラクル — Go の unicode/utf8 を真実として期待値を作る（strings_oracle.ts と同じ作法）。
 //
 // 1 つのケース表（バイト列）から 2 本を生成する:
-//   - examples/utf8_std.sober … Sober 側（utf8.Invalid / utf8.Valid と `string(b)` を呼んで println）
+//   - examples/utf8_std.sober … Sober 側（strings.IndexInvalid / strings.Valid と `string(b)` を呼んで println）
 //   - Go の双子プログラム     … 同じバイト列を Go で。その出力が examples/utf8_std.out
 //
 // 再生成手順（リポジトリルートで。要件: node 22.6+、go 1.21+）:
@@ -42,18 +42,18 @@ cases.push(Array.from({ length: 12 }, () => [0xe3, 0x81, 0x82]).flat());
 const sl = (b: number[]) => `[]byte{${b.join(", ")}}`;
 const sober = [
   "package main", "", "// Go の unicode/utf8 との突き合わせ。生成物 — scripts/utf8_oracle.ts から再生成する",
-  "", 'import "std/utf8"', "",
+  "", 'import "std/strings"', "",
   "func show(b []byte) {",
   "    s, err := string(b)",
   "    if err != nil {",
   "        switch err {",
-  '        case utf8.InvalidUtf8{pos}: println("bad", pos)',
+  '        case strings.InvalidUtf8{pos}: println("bad", pos)',
   "        }",
   "    } else {",
   '        println("ok", s)',
   "    }",
   "}", "", "func main() {",
-  ...cases.flatMap((b) => [`    println(utf8.IndexInvalid(${sl(b)}), utf8.Valid(${sl(b)}))`, `    show(${sl(b)})`]),
+  ...cases.flatMap((b) => [`    println(strings.IndexInvalid(${sl(b)}), strings.Valid(${sl(b)}))`, `    show(${sl(b)})`]),
   "}", "",
 ].join("\n");
 

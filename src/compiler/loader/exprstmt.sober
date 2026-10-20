@@ -226,29 +226,35 @@ func pushExprKids(st mut []int, sp0 int, t ast.Tree, n int) int {
 // exprStmtHit は全 package の式文の検査の最初の違反（違反なしは file = -1）
 func exprStmtHit(cx Cx, pnames []string) NameHit {
     for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        root := t.nodes[t.file]
-        isMain := pnames[cx.file_pkg[f]] == "main"
-        mut hit := 0 - 1
-        for i <- iter.Range(0, ast.ListLen(t, root.d)) {
-            fd := t.nodes[ast.ListAt(t, root.d, i)]
-            if fd.e >= 0 {
-                h := stmtHit(t, fd.e, isMain && StrIs(t, fd.a, "main"))
-                if h >= 0 && (hit < 0 || h < hit) {
-                    hit = h
-                }
-            }
-        }
-        for i <- iter.Range(0, ast.ListLen(t, root.e)) {
-            c := t.nodes[ast.ListAt(t, root.e, i)]
-            h := constHit(t, c.b)
-            if h >= 0 && (hit < 0 || h < hit) {
-                hit = h
-            }
-        }
+        hit := exprStmtIn(cx, pnames, f)
         if hit >= 0 {
             return NameHit{f, hit, diag.PureExprStmt{at: diag.Pos{f, hit}}}
         }
     }
     return noHit()
+}
+
+// exprStmtIn はファイル f の式文の検査の最も前の違反の字句（無ければ -1 — finpar.sober の子も同じ関数を呼ぶ）
+func exprStmtIn(cx Cx, pnames []string, f int) int {
+    t := cx.trees[f]
+    root := t.nodes[t.file]
+    isMain := pnames[cx.file_pkg[f]] == "main"
+    mut hit := 0 - 1
+    for i <- iter.Range(0, ast.ListLen(t, root.d)) {
+        fd := t.nodes[ast.ListAt(t, root.d, i)]
+        if fd.e >= 0 {
+            h := stmtHit(t, fd.e, isMain && StrIs(t, fd.a, "main"))
+            if h >= 0 && (hit < 0 || h < hit) {
+                hit = h
+            }
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, root.e)) {
+        c := t.nodes[ast.ListAt(t, root.e, i)]
+        h := constHit(t, c.b)
+        if h >= 0 && (hit < 0 || h < hit) {
+            hit = h
+        }
+    }
+    return hit
 }

@@ -1,13 +1,13 @@
 package main
 
 // 1BRC の並列版（段 6 P4-6 — 逐次の bench/1brc と同じ集計・同じ出力）: 全体を読んで UTF-8 を 1 回だけ検査し、行の切れ目で NCHUNK 個の区間に
-// 分けて区間ごとに par.Map で集計（子ごとに自分の map と列）、親が生んだ順に合わせる。素直縛り — ワーカーの数は書かない（区間の数は固定・
+// 分けて区間ごとに task.Map で集計（子ごとに自分の map と列）、親が生んだ順に合わせる。素直縛り — ワーカーの数は書かない（区間の数は固定・
 // 余った区間は pull で均される）
 
 import "std/io"
 import "std/iter"
 import "std/os"
-import "std/par"
+import "std/task"
 import "std/utf8"
 
 const NCHUNK = 64
@@ -43,7 +43,7 @@ func main() int {
     for k <- iter.Range(0, NCHUNK) {
         ks = append(ks, k)
     }
-    parts, e := par.Map(ks, (k) => part(b, v, bs[k], bs[k + 1]))
+    parts, e := task.Map(ks, (k) => part(b, v, bs[k], bs[k + 1]))
     if e != nil {
         return 1
     }

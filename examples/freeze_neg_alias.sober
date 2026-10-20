@@ -1,0 +1,11 @@
+package main
+
+// 負例: freeze できるのは、その点で他に別名の無い道だけ（language.md 17 節 U1）
+
+func main() {
+    mut xs := mut []int{1, 2}
+    mut ys := xs
+    zs := freeze(xs)
+    ys[0] = 9
+    println(zs[0])
+}

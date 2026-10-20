@@ -20,7 +20,7 @@
 # あわせて .ll の固定点（stage2 が吐く .ll ≡ stage3 が吐く .ll — B-5 までの暫定形）も残す（LLVM 経路は stage2 自身の建て方 = scripts/stage2.sh が使う）。
 # おまけ（要求しない — 成り立てば強い）: 最後の boot が建てた stage2 の ELF ≡ stage2 が建てた stage3 の ELF（起点から今までの lower / バックエンドの変更が
 # コンパイラ自身のソースの出力を変えていない）。鎖の前は「stage1 ≡ stage2」で必須だったが、lower の正当な変更で崩れうるので表示だけにした。
-# zig cc の ELF（SOBER_O1 の列の stage2・stage3raw）は比べない（-O0 のデバッグ情報が .ll のファイル名を持つ）。比べる ELF は Sober の正規バックエンドが建てたものだけ。
+# zig cc の ELF（SOBER_O1 の列の stage2・rawcheck の掛けない道具）は比べない（-O0 のデバッグ情報が .ll のファイル名を持つ）。比べる ELF は Sober の正規バックエンドが建てたものだけ。
 #
 # ビルドの起点（仮決め R35-1）: compiler/ の package は compiler/ 相対で import し合い（ルート = cwd — 20 節）、std は `@embed("std/**/*.sober")`
 # （ルート相対）で焼き込む。そこで作業ディレクトリに compiler/* とリポジトリの std/ の写しを並べた木を組み、そこを cwd にして build する
@@ -69,13 +69,14 @@ echo "stage3: stage2 → ELF $(dt "$t" "$t1")s ($(stat -c %s "$W/stage3") bytes)
 ( (cd "$B" && "$W/stage2" build app/main.sober --emit=ir --passes -o "$W/stage3.ir") && "$STAGE1" build "$W/stage3.ir" -o "$W/stage3z" \
     && (cd "$B" && "$W/stage2" build app/main.sober --emit=elf --passes --backend=copy -o "$W/stage3c") ) > "$W/cross.log" 2>&1 &
 crosspid=$!
-# 掛けない版（raw — 設計整合パスなし）: 掛けた / 掛けない stage3 のコア AST の突き合わせ専用（背景で並べる）。
-# raw の .ll は 1.6 GB 級（--passes なし = mut 関数を全部呼び出し点に展開・RSS 9 GB・約 150 s）なので STAGES_RAW=1（gates --all と単体実行）のときだけ建てる
-# （決定 2026-09-29 で ELF 化とコア AST を --all に回し、2026-10-04 の裁定で manifest の相手からも外した — 下の manifest の段）
+# 掛けない版（raw — 設計整合パスなし）: 同じ stage2 が掛けた / 掛けないの 2 通りに建てた check の経路の道具（sobercheck・desugardump）の出力の突き合わせ
+# （scripts/rawcheck.sh — 背景で並べる・約 3.5 分）。STAGES_RAW=1（gates --all と単体実行）のときだけ回す
+# （決定 2026-09-29 で ELF 化とコア AST を --all に回し、2026-10-04 の裁定で manifest の相手からも外した — 下の manifest の段）。
+# 2026-10-19 までは compiler/app 全体を raw で建てた stage3raw の `check --core-json` ≡ stage3 だったが、raw の .ll が 6.1 GB に育って clang の
+# 4 GiB 上限を越えた（report-891 / 893）→ 決定 (C2) 2026-10-20: check の経路（loader + desugar + checker）の道具に縮めた（report-898 — 検出力の差もそこに）
 STAGES_RAW=${STAGES_RAW:-1}
 if [ "$STAGES_RAW" != 0 ]; then
-    # 出力のバイト列が既定のスロット 4 GiB を越えるので広げる（2026-10-03）
-    ( (cd "$B" && SOBER_REGION_MB=16384 "$W/stage2" build app/main.sober --emit=ll -o "$W/stage3raw.ll") && ll_cc "$W/stage3raw.ll" "$W/stage3raw" ) > "$W/raw.log" 2>&1 &
+    scripts/rawcheck.sh "$W/stage2" "$B" "$W/raw" > "$W/raw.log" 2>&1 &
     rawpid=$!
 fi
 # manifest（std の焼き込み〔stage2 の @embed〕と置き場〔Manifest 暫定 — std/ を読む〕が同じ中身を与えること — 1 対の事実の確認）: 2 つで見る（背景で）
@@ -135,27 +136,63 @@ fi
 # stage4: stage3 で ELF と .ll（固定点の右辺）。ELF の build は出荷の形（IR の検証器は最後に 1 回 — gates が export する SOBER_VERIFY=each を外す）で
 # 建てる: 下の RSS のラチェットは bench.sh の self/build と同じ形で測る（段ごとの検証器は自己 build の peak を約 60 MB 押し上げ、ラチェットの際で
 # 揺れていた — 段 6 P6-4。同じソースの段ごとの検証は stage3 の build〔stage2 → stage3〕が掛けている）
+# 同じ build を perf stat で包んで命令数（instructions:u — 決定的）も取る: 下の inst のラチェット（report-780 / 781 — inst は検問の外で
+# 734 以降 20 本強のコミットの間 +4.3 G 超過したまま誰も見ていなかった）。ワーカー 1・種 0 を明示（gates の export と同じ — 単体で回しても同じ値）。
+# perf が無い・使えない環境では命令数だけ飛ばす（RSS は従来どおり）
+PERF=${PERF:-$(command -v perf || ls -d /nix/store/*perf-linux*/bin/perf 2> /dev/null | head -n 1)}
+INSTP=()
+if [ -n "$PERF" ] && "$PERF" stat -x, -e instructions:u -o /dev/null true > /dev/null 2>&1; then
+    INSTP=("$PERF" stat -x, -e instructions:u -o "$W/stage4.inst")
+fi
 t=$(now)
-(cd "$B" && env -u SOBER_VERIFY /usr/bin/time -f %M -o "$W/stage4.rss" "$W/stage3" build app/main.sober --emit=elf --passes -o "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
+(cd "$B" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 "$W/stage3" build app/main.sober --emit=elf --passes -o "$W/stage4") || { echo "stages: FAIL stage3 build of src/compiler/app"; exit 1; }
 t1=$(now)
 (cd "$B" && "$W/stage3" build app/main.sober --emit=ll --passes -o "$W/stage4.ll") || { echo "stages: FAIL stage3 build of src/compiler/app (.ll)"; exit 1; }
 echo "stage4: stage3 → ELF $(dt "$t" "$t1")s, → .ll $(dt "$t1" "$(now)")s"
+# ラチェットの物差し（self/build3 inst / rss — ユーザー承認 2026-10-18・report-789）: compiler/app は std の全部を `@embed` で自分に焼き込むので、
+# compiler が使わない std を足すだけで自己 build の仕事が伸びる（≈ 10.7 M 命令 / KB — report-791 3 節）。線の目的（コンパイラの退行の検出）に合わせ、
+# 測りは「compiler の import 閉包の std の package だけを残した木」の自己 build（同じ stage3・同じ形）にする。閉包の std（iter / table / strings …）と
+# compiler 自身の仕事・計算量の退行はそのまま鳴り、閉包の外の std の伸び（焼き込みの値札だけ）は鳴らない。stage4 の固定点は全部の木のまま
+M=$W/meas
+mkdir -p "$M"
+tar -C "$B" --exclude=./std -cf - . | tar -C "$M" -xf - || { echo "stages: FAIL meas tree"; exit 1; }
+for p in $( (cd "$B" && "$W/stage3" parse --loader-json app/main.sober) | grep -o '"path": "std/[^"]*"' | sed 's/.*"\(std\/[^"]*\)"/\1/' | sort -u); do
+    mkdir -p "$M/$p" && find "$B/$p" -maxdepth 1 -type f -exec cp {} "$M/$p/" \;
+done
+[ -d "$M/std" ] || { echo "stages: FAIL meas tree (no std package in the import closure)"; exit 1; }
+(cd "$M" && env -u SOBER_VERIFY SOBER_WORKERS=1 SOBER_HASH_SEED=0 /usr/bin/time -f %M -o "$W/stage4.rss" "${INSTP[@]}" "$W/stage3" build app/main.sober --emit=elf --passes -o "$W/stage4m") || { echo "stages: FAIL stage3 build of the meas tree"; exit 1; }
+echo "meas: $(cd "$M" && find std -name '*.sober' | wc -l) std files in the import closure ($(cd "$B" && find std -name '*.sober' | wc -l) in the tree)"
 
-# RSS のラチェット（bench/ratchet.txt の self/build rss — 自己 build の peak RSS。stage3 = 今のソースを今の最適化で建てたコンパイラ。仕上げ便）
-rlim=$(awk '$1 == "self/build" && $2 == "rss" { print $3 }' "$ROOT/bench/ratchet.txt")
+# RSS のラチェット（bench/ratchet.txt の self/build3 rss — 閉包の std だけの木の自己 build の peak RSS〔上の物差し〕。stage3 = 今のソースを今の最適化で建てたコンパイラ。
+# self/build rss は bench.sh の物差し〔stage2 × 全部の木 — std の焼き込みを含む〕で、stages は照合しない）
+rlim=$(awk '$1 == "self/build3" && $2 == "rss" { print $3 }' "$ROOT/bench/ratchet.txt")
 rss=$(( $(cat "$W/stage4.rss") / 1024 ))
 if [ -n "$rlim" ] && [ "$rss" -gt "$rlim" ]; then
     echo "FAIL: ratchet — stage3 の自己 build の peak RSS ${rss} MB > ${rlim} MB（bench/ratchet.txt）"; fail=1
 else
     echo "ratchet: stage3 の自己 build の peak RSS ${rss} MB ≤ ${rlim} MB"
 fi
-# ELF の大きさのラチェット（bench/ratchet.txt の self/elf size — stage3 の ELF・MB = 10^6 バイト。展開の膨張の網 — report-465）
+# 命令数のラチェット（bench/ratchet.txt の self/build3 inst — stage3 の自己 build の instructions:u・G。bench.sh の self/build inst は
+# out/stage2〔boot が建てたもの〕の物差しで約 0.8 G 多い — 2 本立てで残し、照合はこちら。鳴ったら scripts/inst/ の 2×2 で木の仕事と退行を分ける）
+ilim=$(awk '$1 == "self/build3" && $2 == "inst" { print $3 }' "$ROOT/bench/ratchet.txt")
+if [ "${#INSTP[@]}" = 0 ]; then
+    echo "SKIP inst ratchet — perf が無いか使えない（PERF で perf の実行ファイルを指す）: 自己 build の命令数は照合していない"
+elif [ -n "$ilim" ]; then
+    inst=$(awk -F, '/instructions/ { printf "%.3f", $1 / 1e9 }' "$W/stage4.inst")
+    if awk -v v="$inst" -v l="$ilim" 'BEGIN { exit !(v > l) }'; then
+        echo "FAIL: ratchet — stage3 の自己 build の命令 ${inst} G > ${ilim} G（bench/ratchet.txt — scripts/inst/README.md の 2×2 で切り分け）"; fail=1
+    else
+        echo "ratchet: stage3 の自己 build の命令 ${inst} G ≤ ${ilim} G"
+    fi
+fi
+# ELF の大きさのラチェット（bench/ratchet.txt の self/elf size — 閉包の std だけの木の自己 build の ELF〔stage4m — 上の命令 / RSS と同じ物差し。
+# 閉包の外の std の焼き込みは鳴らない — report-827〕・MB = 10^6 バイト。展開の膨張の網 — report-465）
 elim=$(awk '$1 == "self/elf" && $2 == "size" { print $3 }' "$ROOT/bench/ratchet.txt")
-esz=$(stat -c %s "$W/stage3")
+esz=$(stat -c %s "$W/stage4m")
 if [ -n "$elim" ] && awk -v v="$esz" -v l="$elim" 'BEGIN { exit !(v > l * 1000000) }'; then
-    echo "FAIL: ratchet — stage3 の ELF ${esz} バイト > ${elim} MB（bench/ratchet.txt）"; fail=1
+    echo "FAIL: ratchet — 閉包の木の自己 build の ELF ${esz} バイト > ${elim} MB（bench/ratchet.txt）"; fail=1
 else
-    echo "ratchet: stage3 の ELF ${esz} バイト ≤ ${elim} MB"
+    echo "ratchet: 閉包の木の自己 build の ELF ${esz} バイト ≤ ${elim} MB（全部の木の stage3 = $(stat -c %s "$W/stage3") バイト — 参考）"
 fi
 if cmp -s "$W/stage3" "$W/stage4"; then
     echo "fixed point (binary): stage3 の ELF ≡ stage4 の ELF ($(stat -c %s "$W/stage3") bytes)"
@@ -165,9 +202,9 @@ fi
 crossrc=0
 wait "$crosspid" || crossrc=$?
 if [ "$crossrc" != 0 ] && [ -s "$W/stage3.ir" ] && beyond_stage1 "$W/stage3.ir"; then
-    # compiler/ 自身の IR が stage1 の IR の語彙を越えた（段 6 P6-1 — compiler/ が std/par を使う）: stage1 との交差照合はコンパイラ自身には掛からない。
+    # compiler/ 自身の IR が stage1 の IR の語彙を越えた（段 6 P6-1 — compiler/ が std/task を使う）: stage1 との交差照合はコンパイラ自身には掛からない。
     # 写しのバックエンドと stage1 の一致は examples の elfeq（stage1 の語彙の内の entry）が持つ（「Zig ≡ Sober の差分は凍結コーパスだけで見る」の規約どおり）
-    echo "cross: skipped — compiler/ の IR が stage1 の語彙を越える（std/par — beyond_stage1）。写しのバックエンドの照合は elfeq が持つ"
+    echo "cross: skipped — compiler/ の IR が stage1 の語彙を越える（std/task — beyond_stage1）。写しのバックエンドの照合は elfeq が持つ"
 elif [ "$crossrc" != 0 ]; then
     echo "FAIL: cross — stage1 が stage2 の IR テキストから ELF を建てられない: $(head -c 300 "$W/cross.log")"; fail=1
 elif cmp -s "$W/stage3c" "$W/stage3z"; then
@@ -186,23 +223,13 @@ else
     echo "note: stage2 の ELF ≠ stage3 の ELF（起点からの lower / バックエンドの変更がコンパイラ自身の出力を変えた、または stage2 が zig cc の列 — 固定点は上の stage3 ≡ stage4 が正）"
 fi
 
-# 設計整合パスの守り: 掛けた stage3 と掛けない stage3raw が、コンパイラ自身に対して同じコア AST を吐く（.ll の側は固定点 stage3.ll ≡ stage4.ll と
-# passes.sh・obs が見る — ここで stage3raw に .ll も吐かせると stages の所要がさらに 20 秒延びる）
+# 設計整合パスの守り: 掛けた / 掛けないの check の経路の道具が同じ出力を吐く（scripts/rawcheck.sh — 上で背景に起動）
 if [ "$STAGES_RAW" = 0 ]; then
-    echo "passes: 掛けた / 掛けない stage3 のコア AST の突き合わせは省略（STAGES_RAW=0 — gates --all と単体実行で回る）"
+    echo "passes: 掛けた / 掛けないの check の経路の突き合わせは省略（STAGES_RAW=0 — gates --all と単体実行で回る）"
 elif ! wait "$rawpid"; then
-    echo "stages: FAIL raw build: $(head -c 300 "$W/raw.log")"; fail=1
+    echo "FAIL: passes — $(grep -a 'rawcheck: FAIL' "$W/raw.log" | head -c 300 || head -c 300 "$W/raw.log")"; fail=1
 else
-    (cd "$B" && "$W/stage3" check app/main.sober --core-json) > "$W/core3" 2> /dev/null
-    # raw（--passes なし = mut 引数の関数も全部呼び出し点に展開）で建てた stage3raw は、for 化した compiler/（2026-09-29）の check で
-    # フレームの太りと脱糖の再帰の深さが重なり 8MB のスタックを溢れる（WSL2 では固まる）。raw はこの照合専用の経路（利用者の経路は --passes の
-    # 主の sober で、そちらは溢れない）なので、スタックだけ無制限にして照合の目的（掛けた / 掛けないのコア AST 一致）を保つ（決定 2026-09-29）
-    (cd "$B" && ulimit -s unlimited && "$W/stage3raw" check app/main.sober --core-json) > "$W/core3raw" 2> /dev/null
-    if [ -s "$W/core3" ] && cmp -s "$W/core3" "$W/core3raw"; then
-        echo "passes: 掛けた stage3 と掛けない stage3raw のコア AST が一致（$(stat -c %s "$W/core3") bytes）"
-    else
-        echo "FAIL: passes — 掛けた stage3 と掛けない stage3raw の出力が違う"; fail=1
-    fi
+    echo "passes: $(tail -1 "$W/raw.log" | sed 's/^rawcheck: //')"
 fi
 
 wait "$manpid" || { echo "stages: FAIL build src/compiler/tools/loaderdump / lldump"; exit 1; }

@@ -1,0 +1,8 @@
+package main
+
+import "std/io"
+
+func g() int {
+    d := io.ReadStdin()
+    return len(d)
+}

@@ -8,12 +8,12 @@
     },
     {
       "alias": null,
-      "path": "std/conv",
+      "path": "std/convert",
       "tok": 7
     },
     {
       "alias": "$float",
-      "path": "std/floatfmt",
+      "path": "std/internal/floatfmt",
       "tok": 0
     }
   ],
@@ -251,7 +251,7 @@
                   "name": "builder",
                   "tok": 84
                 },
-                "field": "PushStr",
+                "field": "PushString",
                 "tok": 86
               },
               "args": [
@@ -647,7 +647,7 @@
                                   "name": "builder",
                                   "tok": 222
                                 },
-                                "field": "PushStr",
+                                "field": "PushString",
                                 "tok": 224
                               },
                               "args": [
@@ -1336,7 +1336,7 @@
                     "k": "selector",
                     "base": {
                       "k": "ident",
-                      "name": "conv",
+                      "name": "convert",
                       "tok": 428
                     },
                     "field": "FormatFloat",

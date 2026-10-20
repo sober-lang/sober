@@ -1,0 +1,39 @@
+package main
+
+// analyzer の負例（scripts/analyzer_neg.sh — 期待は fnval_err_switch.err）: 関数型の結果の error?（language.md 25 節 — 2026-10-14）を通った error の switch。
+// 閉包の呼び出し（`f(x)?`）の error は呼び出し点ごとに実引数のラベル（13 節「仮引数の名前の @errors」— 2026-10-18。それまでは TOP で default を要求した）
+// なので、each(…, check) の switch は check の Odd と Big を覆わなければ拒否。build は analyzer を走らせないので受理し、覆っていないラベルが来たら exit 101（fnval_err_switch.exit）
+
+type Odd error {
+    n int
+}
+
+type Big error
+
+func each(xs []int, f func(int) error?) error? {
+    for x <- xs {
+        f(x)?
+    }
+    return nil
+}
+
+func check(v int) error? {
+    if v % 2 == 1 {
+        return Odd{n: v}
+    }
+    if v > 100 {
+        return Big{}
+    }
+    return nil
+}
+
+func main() {
+    switch each([]int{2, 4}, check) {
+    case nil: println("ok")
+    case Odd{n}: println("odd ${n}")
+    }
+    switch each([]int{2, 200}, check) {
+    case nil: println("ok")
+    case Odd{n}: println("odd ${n}")
+    }
+}

@@ -1,2 +1,2 @@
-{"errors":[{"msg":"type error"}],"ok":false}
-exit=1
+{"ok":true,"ty":{"k":"int"}}
+exit=0

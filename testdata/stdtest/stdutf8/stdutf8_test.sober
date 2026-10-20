@@ -4,7 +4,7 @@ package stdutf8
 // std/utf8 の中に置けないのは、std/testing → std/io → std/utf8 の import の循環のため
 
 import "std/iter"
-import "std/utf8"
+import "std/strings"
 
 type Case struct {
     b []byte
@@ -26,16 +26,16 @@ func TestIndexInvalid() {
     }
     for i <- iter.Range(0, len(cases)) {
         c := cases[i]
-        got := utf8.IndexInvalid(c.b)
+        got := strings.IndexInvalid(c.b)
         assert(got == c.at)
-        assert(utf8.Valid(c.b) == (c.at < 0))
+        assert(strings.Valid(c.b) == (c.at < 0))
     }
 }
 
 func TestParse() {
-    s, err := utf8.Parse([]byte{104, 105})
+    s, err := string([]byte{104, 105})
     assert(err == nil)
     assert(s == "hi")
-    _, bad := utf8.Parse([]byte{97, 255})
+    _, bad := string([]byte{97, 255})
     assert(bad != nil)
 }

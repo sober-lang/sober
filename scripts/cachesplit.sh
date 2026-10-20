@@ -15,7 +15,7 @@ export SOBER_SELF_KEY=$(cat "$(dirname "$STAGE2")/.key")
 fail=0
 # L0 ①
 mkdir -p "$tmp/l0"
-{ echo "package main"; echo; for d in src/std/*/; do echo "import \"std/$(basename "$d")\""; done; echo; echo "func main() {"; echo "}"; } > "$tmp/l0/all.sober"
+{ echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$tmp/l0/all.sober"
 nl0=$(SOBER_CACHE= SOBER_CACHE_VERIFY=1 "$STAGE2" check "$tmp/l0/all.sober" --split --cache-trace 2>&1 >/dev/null | grep -c '^cache: std/.* hit$')
 SOBER_CACHE= SOBER_CACHE_VERIFY=1 "$STAGE2" check "$tmp/l0/all.sober" --split > "$tmp/l0/out" 2>&1 || { echo "FAIL: L0 verify: $(head -2 "$tmp/l0/out")"; fail=$((fail + 1)); }
 [ "$nl0" -ge 1 ] || { echo "FAIL: L0 is empty (no std package hit — stage2 built without the L0 bake?)"; fail=$((fail + 1)); }

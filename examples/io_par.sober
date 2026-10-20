@@ -4,7 +4,7 @@ package main
 // Each task reads its shard and writes a one-line summary next to the report; main merges the counts.
 // Run from the repository root (writes under out/).
 import "std/io"
-import "std/par"
+import "std/task"
 import "std/strings"
 
 type Tally struct {
@@ -50,7 +50,7 @@ func summarize(shard int) (Tally, error?) {
 
 func main() int {
     shards := []int{1, 2, 3, 4}
-    ts, err := par.Map(shards, (k) => summarize(k))
+    ts, err := task.Map(shards, (k) => summarize(k))
     if err != nil {
         println(switch err {
         case io.NotFound{}: "a log shard is missing"

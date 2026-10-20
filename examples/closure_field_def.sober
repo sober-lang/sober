@@ -1,0 +1,26 @@
+package main
+
+// 捕捉のない値の位置の閉包は Def の境界を越える（環境は空 = int 0）。捕捉つきの境界越えは examples/closure_def_capture（env の閉じた union）
+
+type Less func(a int, b int) bool
+
+type Ord struct {
+    less Less
+}
+
+func asc() Ord {
+    return Ord{less: (a int, b int) => a < b}
+}
+
+func gt(a int, b int) bool {
+    return a > b
+}
+
+func pick(o Ord, x int, y int) int {
+    return if o.less(x, y) { x } else { y }
+}
+
+func main() {
+    println(pick(asc(), 3, 5))
+    println(pick(Ord{less: gt}, 3, 5))
+}

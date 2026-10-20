@@ -4,7 +4,7 @@
 #   bench/extsort.sh [-n 回数] [-w 窓 MiB] [--size バイト] [--chart "バイト…"] [--cpu K] [-o 結果の TSV]
 # 1. 看板の表: 入力 --size（既定 1 GiB）を 4 実装 × n 回（既定 5）の交互で。cycles:u / instructions:u / task-clock / wall / 最大 RSS
 #    （perf → time → 本体 — seqperf と同じ並び）。出力の md5 を毎回 `LC_ALL=C sort` の出力の md5 と照合する
-# 2. RSS の図: --chart の大きさ（既定 256 MiB / 1 GiB / 4 GiB）で各実装 1 回ずつ — 「RSS は窓 × 定数で、入力の大きさに比例しない」の確認
+# 2. RSS の図: --chart の大きさ（既定 256 MiB / 1 GiB / 4 GiB・--chart "" で省く）で各実装 1 回ずつ — 「RSS は窓 × 定数で、入力の大きさに比例しない」の確認
 # 規律: warm（入力はページキャッシュに載る大きさ — デバイスは測らない。WSL2 の VHD はデバイス縛りを歪める）・同じ 1 つの論理 CPU に固定・
 # ワーカー 1（SOBER_WORKERS=1 — 逐次の土俵。GNU sort も --parallel=1）・gates と同時に回さない。
 # cycles:u は利用者の空間だけを数える（写し・ページフォールト・ファイルの読み書きのカーネルの費用は task-clock と wall に出る — report-610 の注）
@@ -37,6 +37,8 @@ mkdir -p "$B"
 [ -n "$res" ] || res=$B/extsort-$(date +%Y%m%d-%H%M%S).tsv
 res=$(realpath -m "$res")
 : > "$res"
+# ev <perf の -x, の出力> <事象>: 値（<not supported> は NA — PMU の無い VM〔GitHub Actions〕で cycles / 命令が取れない・列をずらさない）
+ev() { local v; v=$(grep -m1 ",$2" "$1" | cut -d, -f1); case $v in [0-9]*) echo "$v" ;; *) echo NA ;; esac; }
 # 実行ファイル（Sober = bin/sober・Go = go build・Rust素 = bench/rust/build.sh の out/rust/release/extsort）
 bin/sober build bench/extsort/main.sober -o "$B/extsort-sober" > /dev/null || { echo "extsort.sh: FAIL build sober" >&2; exit 1; }
 (cd bench && go build -o "$B/extsort-go" ./extsort/go) || { echo "extsort.sh: FAIL build go" >&2; exit 1; }
@@ -70,7 +72,7 @@ one() {
     local sum
     sum=$(md5sum < "$TMP/out" | cut -d' ' -f1)
     [ "$sum" = "$(cat "$in.md5")" ] || { echo "extsort.sh: output mismatch $name $n" >&2; exit 1; }
-    echo "$name $n $(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.3f", b - a }') $(cat "$TMP/t") $(grep cycles "$TMP/p" | cut -d, -f1) $(grep instructions "$TMP/p" | cut -d, -f1) $(grep task-clock "$TMP/p" | cut -d, -f1)" >> "$res"
+    echo "$name $n $(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.3f", b - a }') $(cat "$TMP/t") $(ev "$TMP/p" cycles:u) $(ev "$TMP/p" instructions:u) $(ev "$TMP/p" task-clock)" >> "$res"
 }
 IMPLS="sober go rust gnu"
 input "$SIZE"

@@ -1,0 +1,88 @@
+package main
+
+// net 段 4a-3（N1 / N3 / N4 — language.md 28 節の net）: net.Serve が accept のループを持ち、接続 1 本 = task 1 本で handler を走らせる。
+// handler の死（"die" を受けたら panic）は Serve が吸収し（死んだ接続も閉じる — task の登録簿）、他の接続の echo は続く。何も送らない接続の
+// handler の Recv は Serve を包む scope の期限で切れる（その接続は閉じられる）。Serve が返るのは期限で accept の待ちが切れたとき（io.Expired）— 走っている接続の
+// 決着を待ってから。W1（協調形）でも W8 でも同じ出力。終わりに Serve のプールの台帳（入場・失敗・死の数）
+
+import "std/io"
+import "std/net"
+import "std/task"
+import "std/strings"
+
+type Boom panic
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Timeout{}: "timeout"
+    case io.Expired{}: "expired"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    case strings.InvalidUtf8{}: "invalid utf8"
+    }
+}
+
+// echo は接続 1 本の handler: 届いた分を送り返す（"die" を受けたら死ぬ。失敗〔Recv / Send の error〕は Serve が吸収する）
+func echo(c net.Conn) error? {
+    for chunk <- net.Recv(c)? {
+        if (string(chunk) catch "") == "die" {
+            panic(Boom{})
+        }
+        net.Send(c, chunk)?
+    }
+    return nil
+}
+
+func main() {
+    println(run() catch "listen failed")
+    // Serve のプールの台帳: 何も送らない接続の handler は期限で切れた Recv の error を返す（fail 1）・"die" の handler は死ぬ（died 1）
+    for pv <- task.Ledger().pools {
+        println("pool ${pv.id}: admit ${pv.admit} fail ${pv.fail} died ${pv.died}")
+    }
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            a := task.Spawn(s, () => client(port, "alpha", true))
+            b := task.Spawn(s, () => client(port, "die", true))
+            c := task.Spawn(s, () => client(port, "charlie", true))
+            d := task.Spawn(s, () => client(port, "", false))
+            // Serve の期限は内側の scope（クライアントは外の 10 秒 — 何も送らない d は Serve の期限で handler が切れて閉じられる側を見る）
+            sv, _ := task.Run((s2 task.Scope) => show(net.Serve(l, echo, budget: 64 * task.KB, conns: 16)), deadline: 300 * task.MS)
+            "serve: ${sv}\n${task.Join(a)} / ${task.Join(b)} / ${task.Join(c)} / ${task.Join(d)}"
+        }, deadline: 10000 * task.MS)
+        out = r
+    }
+    return out, nil
+}
+
+// client は接続して msg を送り（send = false なら何も送らない）、相手が閉じるか msg の長さ分届くまで受ける
+func client(port int, msg string, send bool) string {
+    v, e := talk(port, msg, send)
+    return if e != nil { show(e) } else if v == "" { "(closed)" } else { v }
+}
+
+func talk(port int, msg string, send bool) (string, error?) {
+    want := len(bytes(msg))
+    mut got := mut []byte{}
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        if send {
+            net.Send(c, bytes(msg))?
+        }
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                got = append(got, x)
+            }
+            if want > 0 && len(got) >= want {
+                break
+            }
+        }
+    }
+    return string(freeze(got))?, nil
+}

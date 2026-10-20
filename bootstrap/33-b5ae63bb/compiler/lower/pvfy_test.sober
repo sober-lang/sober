@@ -1,0 +1,72 @@
+package lower
+
+// packed f64 の語彙（段 4②a — ir.sober の OpPMem / OpPArith）の検証器の網: v128 の約束（packed の op だけが使う・ブロックの中で閉じる・
+// 呼び出しを跨がない）と欄の型を、IR を手で組んで vfyFunc に掛けて見る（`cd src/compiler && ../../bin/sober test lower`）。
+// x86 まで通す網は開発の口（.pair/packed-552.patch の pdev — 出力の一致・report-552 3 節）。生成器（SLP）が入れば出力一致の網に
+
+import "desugar"
+
+// pvT は `f(p ptr) i64` に kind の形の本体を組んで検証器の文面を返す（"" = 通る）。
+// 0 = load2 → addpd → store2（通る）・1 = load2 と store2 の間に call・2 = load2 と store2 が別のブロック・3 = v128 を素の store で書く・
+// 4 = v128 を ret・5 = pack の被演算子に v128・6 = lo の被演算子に i64・7 = splat → sqrt → hi・lo → pack（通る）・8 = load2 の c が a でない
+func pvT(kind int) string {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    pt := listN(mut st, 1)
+    desugar.HeapSet(mut st.d, pt + 1, TyPtr)
+    other := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), -1)
+    f := addFunc(mut st, 0, desugar.ListRef(pt), TyI64)
+    st.fn = f
+    entry := newBlock(mut st)
+    st.cur = entry
+    next := newBlock(mut st)
+    t := push(mut st, true, OpPMem, 0, 0, if kind == 8 { iconst(mut st, 0) } else { 0 })
+    u := push(mut st, true, OpPArith, BFAdd, t, t)
+    if kind == 1 {
+        _ = call(mut st, other, listN(mut st, 0))
+    } else if kind == 2 {
+        br(mut st, next, -1)
+        setCur(mut st, next)
+    }
+    mut r := iconst(mut st, 0)
+    if kind == 3 {
+        store(mut st, 0, 2, u)
+    } else if kind == 4 {
+        r = u
+    } else if kind == 5 {
+        r = push(mut st, true, OpPArith, PK_LO, push(mut st, true, OpPArith, PK_PACK, u, r), 0)
+    } else if kind == 6 {
+        r = push(mut st, true, OpPArith, PK_LO, r, r)
+    } else if kind == 7 {
+        lo := push(mut st, true, OpPArith, PK_LO, u, u)
+        s := push(mut st, true, OpPArith, PK_SPLAT, lo, lo)
+        q := push(mut st, true, OpPArith, BFSqrt, s, s)
+        hi := push(mut st, true, OpPArith, PK_HI, q, q)
+        _ = push(mut st, false, OpPMem, 0, 2, push(mut st, true, OpPArith, PK_PACK, lo, hi))
+    } else {
+        _ = push(mut st, false, OpPMem, 0, 2, u)
+    }
+    ret(mut st, r)
+    if kind != 2 {
+        setCur(mut st, next)
+        ret(mut st, iconst(mut st, 0))
+        // next は到達しない（前任なし）— 型と範囲だけを見る
+    }
+    return vfyFunc(mut st, f, xCountFuncs(mut st))
+}
+
+func TestPackedVerify() {
+    assert(pvT(0) == "")
+    assert(pvT(7) == "")
+    // 呼び出しを跨ぐ v128（変異「区間の呼び出しの検査を外す」はここで落ちる）
+    assert(pvT(1) == "b0: v128 %2 lives across a call")
+    // ブロックを跨ぐ v128
+    assert(pvT(2) == "b1: v128 %2 is used outside its block")
+    // packed でない op の被演算子・ret・型の取り違え
+    assert(pvT(3) == "b0: v128 %2 is used by a non-packed op")
+    assert(pvT(4) != "")
+    assert(pvT(5) != "")
+    assert(pvT(6) != "")
+    assert(pvT(8) == "b0: packed load with c != a")
+}

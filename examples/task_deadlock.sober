@@ -1,0 +1,21 @@
+package main
+
+// 段 6 P3b: 全 task が待っている（受け手の子に誰も送らない）= 定義された死 `panic: Deadlock{}`（exit 101 — Kahn により有無はスケジュールに依らない）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        h := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            mut t := 0
+            if v != nil {
+                t = v
+            }
+            t
+        }, give: rx)
+        task.Join(h)
+    })
+    println(r)
+}

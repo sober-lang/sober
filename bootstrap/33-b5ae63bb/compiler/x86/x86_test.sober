@@ -1,0 +1,81 @@
+package x86
+
+// x86 エンコーダの単体テスト（`cd compiler && ../bin/sober test x86`）。全レジスタの網羅は GNU as の照合（scripts/x86enc.sh）が見る —
+// ここは as を立てずに読める少数の黄金（16 進は GNU as の出力）と、後埋め（PatchRel32 / PatchImm32）
+
+import "std/iter"
+import "std/table"
+
+// hex は c の中身の 16 進（小文字）
+func hex(c mut table.Table[byte]) string {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, table.Len(mut c)) {
+        b := int(table.Get(mut c, i))
+        out = append(out, digit(b >> 4))
+        out = append(out, digit(b & 15))
+    }
+    s := string(freeze(out)) catch panic(Unreachable{})
+    return s
+}
+
+func digit(n int) byte {
+    return byte(if n < 10 { 48 + n } else { 87 + n })
+}
+
+func TestMemOperand() {
+    mut c := table.Table[byte]{}
+    MovRegMem(mut c, Rax, Rbp, 0)     // mov rax, [rbp] = 48 8b 45 00（rbp は disp8 0）
+    MovRegMem(mut c, R12, Rsp, -8)    // mov r12, [rsp-8] = 4c 8b 64 24 f8（rsp は SIB）
+    MovMemReg(mut c, R13, 4096, Rdi)  // mov [r13+4096], rdi = 49 89 bd 00 10 00 00
+    MovMem8Reg(mut c, Rax, 16, Rsi)   // mov byte [rax+16], sil = 40 88 70 10（REX 強制）
+    assert(hex(mut c) == "488b45004c8b6424f84989bd0010000040887010")
+}
+
+func TestImm() {
+    mut c := table.Table[byte]{}
+    AddRegImm(mut c, Rax, 4096)   // add rax, 4096 = 48 05 00 10 00 00（rax の短縮形）
+    SubRegImm(mut c, Rsp, 8)      // sub rsp, 8 = 48 83 ec 08
+    CmpRegImm(mut c, R11, -129)   // cmp r11, -129 = 49 81 fb 7f ff ff ff
+    MovRegImm64(mut c, R15, -2)   // movabs r15, -2 = 49 bf fe ff ff ff ff ff ff ff
+    assert(hex(mut c) == "4805001000004883ec084981fb7fffffff49bffeffffffffffffff")
+}
+
+func TestImulImm() {
+    mut c := table.Table[byte]{}
+    ImulRegRegImm(mut c, Rax, Rcx, 8)            // imul rax, rcx, 8 = 48 6b c1 08（imm8）
+    ImulRegRegImm(mut c, R9, R12, -128)          // imul r9, r12, -128 = 4d 6b cc 80
+    ImulRegRegImm(mut c, Rsi, R13, 128)          // imul rsi, r13, 128 = 49 69 f5 80 00 00 00（imm8 に収まらない）
+    ImulRegRegImm(mut c, R15, Rbx, -2147483648)  // imul r15, rbx, -2147483648 = 4c 69 fb 00 00 00 80
+    assert(hex(mut c) == "486bc1084d6bcc804969f5800000004c69fb00000080")
+}
+
+func TestTestImm() {
+    mut c := table.Table[byte]{}
+    TestRegImm(mut c, Rax, 63)    // test rax, 63 = 48 a9 3f 00 00 00（rax の短縮形）
+    TestRegImm(mut c, R14, 63)    // test r14, 63 = 49 f7 c6 3f 00 00 00（imm8 の形は無い）
+    TestRegImm(mut c, Rcx, 4096)  // test rcx, 4096 = 48 f7 c1 00 10 00 00
+    assert(hex(mut c) == "48a93f00000049f7c63f00000048f7c100100000")
+}
+
+func TestNop() {
+    mut c := table.Table[byte]{}
+    for n <- iter.Range(1, 10) {
+        Nop(mut c, n)
+    }
+    // nop 1〜9 バイト（GNU as の .nops と同じ推奨形）
+    assert(hex(mut c) == "906690" + "0f1f00" + "0f1f4000" + "0f1f440000" + "660f1f440000" + "0f1f8000000000" + "0f1f840000000000" + "660f1f840000000000")
+    mut d := table.Table[byte]{}
+    Ret(mut d)
+    AlignTo(mut d, 176, 32)       // 176 + 1 = 177 → 192 まで 15 バイト（9 + 6）
+    assert(table.Len(mut d) == 16)
+}
+
+func TestPatch() {
+    mut c := table.Table[byte]{}
+    at := JmpRel32(mut c)
+    Ret(mut c)
+    PatchRel32(mut c, at, 0)      // 自分の先頭（0）への jmp = rel32 -5
+    assert(hex(mut c) == "e9fbffffffc3")
+    PatchImm32(mut c, at, 305419896)
+    assert(hex(mut c) == "e978563412c3")
+}

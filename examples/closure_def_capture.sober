@@ -1,0 +1,24 @@
+package main
+
+// 捕捉つきの閉包を欄に持つ struct は Def の境界を越える（env は named fn type の閉じた union — language.md 25 節 工程 4 B1）:
+// handler の Def が引数の string を捕捉した応答を返し、呼び手が欄を読んで呼ぶ
+
+type Gen func(n int) int
+
+type Resp struct {
+    status int
+    gen Gen?
+}
+
+func handle(path string) Resp {
+    return Resp{status: 200, gen: (n int) => n + len(bytes(path))}
+}
+
+func main() {
+    r := handle("/abc")
+    g := r.gen
+    if g != nil {
+        println(g(1))
+    }
+    println(r.status)
+}

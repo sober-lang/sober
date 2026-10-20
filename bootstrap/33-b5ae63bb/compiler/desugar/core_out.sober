@@ -1,0 +1,188 @@
+package desugar
+
+// 脱糖の結果をプロセス内で渡す口（Sober 版 `sober check` の直結 — compiler/tools/sobercheck。JSON を経ない）。
+// 意味は Json と同じ: run の結果（関数表・持ち上げたラムダの鎖・根の式）を、ヒープの読み出し専用の眺めとして受け手 k に渡す。
+// 記録の形（Def の [param, ret, body, tparams, next]）は json.sober の印字が読む形そのまま。ラベルは Labels（CLabel の a = 添字）、型は Types（参照 − TBASE = 添字）、コア式は Exprs（参照 − CBASE = 添字）
+
+import "loader"
+import "std/iter"
+import "std/table"
+import "diag"
+
+// Core はヒープの眺め。Defs = 名前付き関数の列 [n, def…]、Lifted = 持ち上げたラムダの鎖の頭（def + 4 = 次、-1 = 終わり）
+type Core struct {
+    H []int
+    Labels []Label
+    Types []Ty
+    Exprs []CoreExpr
+    Defs int
+    Lifted int
+    Root int
+}
+
+// WithCore は p を脱糖して k に結果を渡す（失敗なら k を呼ばず拒否を返す — diag のラベル）。
+// k を関数型引数にするのは、ヒープを返り値で持ち出さないため（Def の返り値は呼び手の region への境界コピーになる — ヒープは数十 MB）。
+// 結果の型 T はゼロ値の実引数 z で決める（拒否のときの戻り値も z — ラムダの結果からの型引数の推論は無い）。
+// check の経路なので E2-S（e2s.sober）で上げる。excl = 上げない関数（逃げ）。k の 2 つ目の実引数は Def の添字 → 上げた関数の表（E2Map）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func WithCore[T](p loader.Program, excl []int, z T, k func(Core, []int) T) (T, error?) {
+    return WithCorePkg(p, excl, -1, z, k)
+}
+
+// WithCorePkg は WithCore の部分検査版（check --pkg — 3'' M2）: only >= 0 なら package only の Def だけ本体つき・他の Def は署名だけ（本体 -1）、
+// 根の式は only が main のときだけ（でなければ Root = -1）。only = -1 は WithCore と同じ
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func WithCorePkg[T](p loader.Program, excl []int, only int, z T, k func(Core, []int) T) (T, error?) {
+    return WithCoreOpt(p, excl, only, false, 0, WholeRng(), z, k)
+}
+
+// WithCoreOpt は WithCorePkg に trust（L0 — 3'' 第 2 段の 1.5: std の Def は署名だけ・受理印は焼き込みが運ぶ）を足したもの。
+// rng は Def の区間（段 6 P6-3 — WholeRng = 全部）。
+// stopAt は計測の口（段 6 P6-3 — SOBER_CHECK_STOP）: 4 = 表層型検査器（TypeAll）の後・5 = Def と根の脱糖の後（検査器への写しの前）で止めて z を返す。0 = 止めない。
+// 本体は関数型の引数を取る総称 = 呼び出し点ごとに展開されるので、呼び手は 1 か所で呼ぶ（raw ビルドの lower のヒープの容量）
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
+func WithCoreOpt[T](p loader.Program, excl []int, only int, trust bool, stopAt int, rng DefRng, z T, k func(Core, []int) T) (T, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.stopAt = stopAt
+    st.rangeSet = rng.set
+    st.rlo = rng.lo
+    st.rhi = rng.hi
+    st.rangeRoot = rng.root
+    st.refs = rng.plan.refs
+    st.planBad = rng.plan.bad
+    st.e2s = true
+    st.e2sExcl = excl
+    st.only = only
+    st.onlySet = only >= 0
+    st.trustStd = trust
+    // env の形の前走り（工程 4 B1）は区間なし — 区間の子どうしで U が揃う（子ごとに同じ前走りを走らせ直す — 決定的）
+    loadShapes(mut st, shapesFor(p, true, excl, only, trust))
+    defs, root, err := run(mut st)
+    if err != nil {
+        return z, err
+    }
+    if stopAt == 4 || stopAt == 5 || stopAt == 6 || stopAt == 7 {
+        return z, nil
+    }
+    lifted := st.liftedHead
+    // 検査器へは連続した imm の列で渡す（1 回だけ写す）
+    mut hs := mut []int{}
+    mut i := 0
+    while i < hlen(mut st) {
+        hs = append(hs, hget(mut st, i))
+        i += 1
+    }
+    h := freeze(hs)
+    mut ls := mut []Label{}
+    i = 0
+    while i < table.Len(mut st.labels) {
+        ls = append(ls, lab(mut st, i))
+        i += 1
+    }
+    mut ts := mut []Ty{}
+    i = 0
+    while i < table.Len(mut st.types) {
+        ts = append(ts, tyAt(mut st, TyRef(TBASE + i)))
+        i += 1
+    }
+    mut es := mut []CoreExpr{}
+    i = 0
+    while i < table.Len(mut st.cores) {
+        es = append(es, coreAt(mut st, CoreRef(CBASE + i)))
+        i += 1
+    }
+    return k(Core{h, freeze(ls), freeze(ts), freeze(es), int(defs), lifted, int(root)}, E2Map(mut st)), nil
+}
+
+// ── Def の区間（段 6 P6-3）──
+// 判定の経路（check — idx でない）は Def の区間ごとに子 task が「前段 → 区間の Def の本体だけ脱糖（区間の外は署名だけ）→ 検査」を自前の S で
+// 行い、親は区間の順に判定を合流する（checker/e2s.sober）。持ち上げ・インスタンスは子の中で作る（子ごとに自己完結 — Core は合流しない）。
+// コアを出す経路（--core-json・--def-index・lower）は今までどおり 1 本の脱糖（持ち上げの大域の番号が要る）
+
+// DefRng は区間: set なら関数表の添字 [lo, hi) の Def の本体だけ・root なら根の式も（set でなければ全部 — 区間を使わない）。
+// 関数表の添字で切るのは、子の Def の添字（renumberDefs）が子の型付けの範囲〔rangeReach〕で変わりうるため — 関数表は前段で動かない
+type DefRng struct {
+    set bool
+    lo int
+    hi int
+    root bool
+    plan DefPlan
+}
+
+// WholeRng は区間を使わない（全部の Def と根）
+func WholeRng() DefRng {
+    return DefRng{set: false, lo: 0, hi: 0, root: true, plan: emptyPlan()}
+}
+
+// DefPlan は区間の切り方の材料（PlanDefs — 親が前段を 1 回走らせて出す）: cost = 関数表の添字ごとの費用の代理（本体を脱糖する Def だけ — 他は 0）・
+// heap = 前段の後のヒープの語数（子の前段の作業域の見積もり）
+type DefPlan struct {
+    cost []int
+    heap int
+    bad []int
+    refs RefGraph
+}
+
+func emptyPlan() DefPlan {
+    return DefPlan{cost: []int{}, heap: 0, bad: []int{}, refs: RefGraph{head: []int{}, adj: []int{}}}
+}
+
+// RangeOf は計画 d の区間 [lo, hi)（root なら根も）— 子が親の走査の結果（計画）を読む
+func RangeOf(d DefPlan, lo int, hi int, root bool) DefRng {
+    return DefRng{set: true, lo: lo, hi: hi, root: root, plan: d}
+}
+
+// RngLo / RngHi / RngRoot は区間の欄の読み口（checker から）
+func RngLo(r DefRng) int {
+    return r.lo
+}
+
+func RngHi(r DefRng) int {
+    return r.hi
+}
+
+// PlanCost / PlanHeap は DefPlan の欄の読み口（checker から）
+func PlanCost(d DefPlan) []int {
+    return d.cost
+}
+
+func PlanHeap(d DefPlan) int {
+    return d.heap
+}
+
+// PlanDefs は前段（prefix）を走らせて Def ごとの費用の代理を出す（前段の拒否はそのまま返す — 逐次の run と同じ順の最初の拒否）。
+// 費用の代理 = 展開込みの節の数（ExpCost — 自分の節の数は、木は後置順に積むので同じファイルの前の関数の宣言の節との添字の差〔間の型・const の宣言も含む粗い上界〕）
+@errors(diag.CoreFragment)
+func PlanDefs(p loader.Program, excl []int, only int, trust bool) (DefPlan, error?) {
+    mut st := S{}
+    initState(mut st, p)
+    st.e2s = true
+    st.e2sExcl = excl
+    st.only = only
+    st.onlySet = only >= 0
+    st.trustStd = trust
+    st.planOnly = true
+    perr := prefix(mut st)
+    if perr != nil {
+        return emptyPlan(), perr
+    }
+    mut own := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        fl := p.fn_file[i]
+        prev := if i > 0 && p.fn_file[i - 1] == fl { p.fn_node[i - 1] } else { 0 }
+        c := p.fn_node[i] - prev
+        own = append(own, if c > 0 { c } else { 1 })
+    }
+    ex := ExpCost(mut st, freeze(own))
+    mut cost := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        dx := fnDef(mut st, i)
+        cost = append(cost, if dx >= 0 && !sigOnlyAt(mut st, i, dx) { ex[i] } else { 0 })
+    }
+    mut bad := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        bad = append(bad, latI(mut st, st.e2sBad, i))
+    }
+    return DefPlan{cost: freeze(cost), heap: hlen(mut st), bad: freeze(bad), refs: refGraph(mut st)}, nil
+}

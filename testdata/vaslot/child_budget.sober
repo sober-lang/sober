@@ -1,0 +1,44 @@
+package main
+
+// vaslot ③: 宣言（budget:）が既定より大きい子は宣言以上の 2 の冪のスロットを持つ（深度ごとに自前の mmap・終わりで munmap）。
+// 既定 1 MiB（SOBER_TASK_REGION_MB=1）の下で 8 MB 余りを積む子が通る・宣言の無い同じ子は死ぬ（child_over）。孫は既定に戻る（宣言は継がない）
+
+import "std/task"
+
+func fill(n int) int {
+    mut acc := mut []int{}
+    mut i := 0
+    while i < n {
+        acc = append(acc, i)
+        i += 1
+    }
+    return len(acc)
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        hs = append(hs, task.Spawn(s, () => fill(1000000), budget: 16 * task.MB))
+        hs = append(hs, task.Spawn(s, () => fill(10), budget: 16 * task.MB))
+        hs = append(hs, task.Spawn(s, () => fill(10000)))
+        mut sum := 0
+        for v <- task.Gather(hs) {
+            sum += v
+        }
+        sum
+    })
+    println(r)
+    // 繰り返し（munmap の返しとプールの既定のスロットの取り違えが無い — 大きい子と既定の子が交互に同じワーカーで回る）
+    mut t := 0
+    mut k := 0
+    while k < 20 {
+        x, xe := task.Run((s task.Scope) => {
+            a := task.Spawn(s, () => fill(300000), budget: 4 * task.MB)
+            b := task.Spawn(s, () => fill(1000))
+            task.Join(a) + task.Join(b)
+        })
+        t += x
+        k += 1
+    }
+    println(t)
+}

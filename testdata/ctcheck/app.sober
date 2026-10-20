@@ -1,0 +1,70 @@
+package main
+
+// ctcheck の題材（scripts/ctcheck.sh — report-791）: std/crypto の定数時間の関数を全部呼んで ELF に載せる。中身の値は見ない（見るのは機械語の条件分岐）。
+// neg* は規律を破った形の見本（秘密の mask で if・食い違いで早く抜ける比較）— 網が分岐を数えられることの負例として黄金に載せる
+
+import "std/crypto"
+import "std/crypto/aesgcm"
+import "std/crypto/chacha20"
+import "std/crypto/chacha20poly1305"
+import "std/crypto/poly1305"
+import "std/crypto/x25519"
+import "std/crypto/pem"
+import "std/crypto/rsa"
+import "std/iter"
+import "std/tls/record"
+
+@embed("testdata/crypto/rsa2048.key")
+const Keys = map[string]string{}
+
+func negSelectIf(m int, a int, b int) int {
+    return if m != 0 { a } else { b }
+}
+
+func negEqEarly(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func main() {
+    a := crypto.Rand(16)
+    b := crypto.Rand(16)
+    m := crypto.NonZero(int(a[0]))
+    mut w := mut []byte{1, 2, 3}
+    crypto.Wipe(mut w)
+    k := crypto.Rand(32)
+    n := crypto.Rand(12)
+    t := poly1305.Sum(k, a)
+    c := chacha20.XorKeyStream(k, n, 1, a)
+    sealed, _ := chacha20poly1305.Seal(k, n, b, a)
+    opened, _ := chacha20poly1305.Open(k, n, b, sealed)
+    xs := x25519.Shared(k, x25519.Base(a))
+    ga, _ := aesgcm.Seal(a, n, b, k)
+    gk, _ := aesgcm.Prepare(a)
+    go, _ := aesgcm.OpenAt(gk, n, b, ga, 0, len(ga))
+    println(len(ga) + len(go))
+    mut rw, _ := record.NewDir(record.ChaCha, k)
+    mut rr, _ := record.NewDir(record.ChaCha, k)
+    rec := record.Seal(mut rw, record.CtApp, a, 3)
+    rct, rpt, _ := record.Open(mut rr, record.Frame{b: rec, off: 0, n: len(rec)})
+    println(rct + len(rpt))
+    ks := Keys
+    kt := ks["testdata/crypto/rsa2048.key"]
+    if kt != nil {
+        bs, _ := pem.Parse(kt)
+        if len(bs) == 1 {
+            pk, _ := rsa.ParsePKCS8(bs[0].der)
+            sig, _ := rsa.SignPSS(pk, a, b)
+            println(len(sig))
+        }
+    }
+    println(len(xs) + len(t) + len(c) + len(opened) + len(chacha20.Block(k, n, 0)) == 0)
+    println(crypto.Equal(a, b) || negEqEarly(a, b) || crypto.Select(m, 1, 2) + negSelectIf(m, 1, 2) == 0 || int(w[0]) == 9)
+}

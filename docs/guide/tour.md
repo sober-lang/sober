@@ -338,7 +338,7 @@ Output:
 - A function that rewrites the caller's variable says `mut` on the parameter, and the call site says `f(mut x)` too. Where and what gets rewritten is visible in the source.
 - There are no pointers. There are no lifetime annotations or borrowing rules either — rewriting happens only where `mut` is marked, and to share, you pass a frozen immutable value.
 - You can `freeze` only a value that has no other alias (holding the same contents under another name, as in `mut a := xs`, is rejected). After `freeze`, you can neither write through the original variable nor pass it as `mut`. The compiler checks this, so a frozen value never changes.
-- Writing a mut variable where an immutable value is expected (an immutable parameter, a `return`, an immutable field, and so on) freezes it right there (`ns` in `par.Map(ns, …)` in section 7). The rules after that are the same as `freeze` — finish writing before you pass it, or pass a copy (`clone(xs)` — a shallow copy, returned as mut). A binding `ys := xs` does not freeze (`ys` is a mut view of the same contents); to bind an immutable snapshot, write `ys := freeze(xs)`.
+- Writing a mut variable where an immutable value is expected (an immutable parameter, a `return`, an immutable field, and so on) freezes it right there (`ns` in `task.Map(ns, …)` in section 7). The rules after that are the same as `freeze` — finish writing before you pass it, or pass a copy (`clone(xs)` — a shallow copy, returned as mut). A binding `ys := xs` does not freeze (`ys` is a mut view of the same contents); to bind an immutable snapshot, write `ys := freeze(xs)`.
 
 Differences from Go: use `mut` arguments instead of `*T` and `&x`. Values mean what they mean in Go: "just values".
 
@@ -349,7 +349,7 @@ Differences from Go: use `mut` arguments instead of `*T` and `&x`. Values mean w
 package main
 
 import "std/iter"
-import "std/par"
+import "std/task"
 
 // Tour 7: parallelism — structured concurrency, channels (docs/guide/tour.md)
 
@@ -358,43 +358,43 @@ func fib(n int) int {
 }
 
 func main() int {
-    // par.Map: one task per element — results come back in input order
+    // task.Map: one task per element — results come back in input order
     mut ns := mut []int{}
     for i <- iter.Range(20, 26) {
         ns = append(ns, i)
     }
-    fs, err := par.Map(ns, (n) => fib(n))
+    fs, err := task.Map(ns, (n) => fib(n))
     if err != nil {
         return 1
     }
     for f <- fs {
         println(f)
     }
-    // par.Scope: child tasks always join before the scope ends
-    r, e := par.Scope((s par.S) => {
-        a := par.Spawn(s, () => fib(24))
-        b := par.Spawn(s, () => fib(25))
-        par.Join(a) + par.Join(b)
+    // task.Run: child tasks always join before the scope ends
+    r, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => fib(24))
+        b := task.Spawn(s, () => fib(25))
+        task.Join(a) + task.Join(b)
     })
     if e == nil {
         println(r)
     }
     // channels
-    r2, e2 := par.Scope((s par.S) => {
-        tx, rx := par.NewChan[int](cap: 4)
-        h := par.Spawn(s, (out) => {
+    r2, e2 := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 4)
+        h := task.Spawn(s, (out) => {
             for i <- iter.Range(1, 4) {
-                par.Send(out, i * 10)
+                task.Send(out, i * 10)
             }
-            par.Close(out)
+            task.Close(out)
             0
         }, give: tx)
         // for-Recv: receive until the channel is closed
         mut got := 0
-        for v <- par.Recv(rx) {
+        for v <- task.Recv(rx) {
             got += v
         }
-        par.Join(h) + got
+        task.Join(h) + got
     })
     if e2 == nil {
         println(r2)
@@ -416,13 +416,13 @@ Output:
 60
 ```
 
-- `par.Map` creates a task per element, and the results come back in input order.
-- Children spawned with `par.Spawn` inside a `par.Scope` always join before the scope ends (there are no abandoned goroutines).
+- `task.Map` creates a task per element, and the results come back in input order.
+- Children spawned with `task.Spawn` inside a `task.Run` always join before the scope ends (there are no abandoned goroutines).
 - Only immutable values or channels can be passed to a child. Data races cannot be written.
 - The output is deterministic: changing the number of workers (`SOBER_WORKERS`) leaves standard output byte-for-byte the same.
-- A channel is made with `par.NewChan`, and the sending end is handed to a child with `give:`. `for v <- par.Recv(rx)` receives until the channel is closed.
+- A channel is made with `task.NewChannel`, and the sending end is handed to a child with `give:`. `for v <- task.Recv(rx)` receives until the channel is closed.
 
-Differences from Go: use `par.Scope` + `par.Spawn` + `par.Join` instead of `go f()` and `sync.WaitGroup`. Changing `GOMAXPROCS` does not change the order of the output.
+Differences from Go: use `task.Run` + `task.Spawn` + `task.Join` instead of `go f()` and `sync.WaitGroup`. Changing `GOMAXPROCS` does not change the order of the output.
 
 ## 8. Tests
 
@@ -432,4 +432,4 @@ Each `func TestXxx()` in a `*_test.sober` file inside a package is a test. `sobe
 
 - A map of the standard library: [Standard library guide](std.md)
 - Why things are shaped this way: [design notes](../design-notes/) (in Japanese)
-- Exact definitions: [language specification](../language.md), [syntax](../syntax.md) (for developers, in Japanese)
+- Exact definitions: [language specification](../spec/README.ja.md), [syntax](../syntax.md) (the history of each decision is in the [decision record](../language.md) — for developers; all in Japanese)

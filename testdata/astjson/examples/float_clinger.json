@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/conv",
+      "path": "std/convert",
       "tok": 4
     },
     {
@@ -18,7 +18,7 @@
     },
     {
       "alias": "$utf8",
-      "path": "std/utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],
@@ -248,7 +248,7 @@
                         "k": "selector",
                         "base": {
                           "k": "ident",
-                          "name": "conv",
+                          "name": "convert",
                           "tok": 78
                         },
                         "field": "ParseFloat",
@@ -345,7 +345,7 @@
                             {
                               "k": "type",
                               "bind": null,
-                              "variant": "conv.InvalidFloat",
+                              "variant": "convert.InvalidFloat",
                               "fields": [],
                               "tok": 105
                             }

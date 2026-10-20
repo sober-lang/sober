@@ -1,0 +1,15 @@
+package main
+
+// 負例: 穴 `_` は右辺の呼び出しの直下の実引数の位置だけ — 入れ子の呼び出しの中には置けない（language.md 4 節）
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func dbl(x int) int {
+    return x * 2
+}
+
+func main() {
+    println(3 |> add(dbl(_), 1))
+}

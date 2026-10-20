@@ -1,0 +1,205 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "pick2",
+      "type_params": [
+        "T"
+      ],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "bool"
+          },
+          "mutable": false
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "T"
+          },
+          "mutable": false
+        },
+        {
+          "name": "y",
+          "type": {
+            "k": "name",
+            "name": "T"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "T"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 25
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 27
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "ident",
+                        "name": "y",
+                        "tok": 31
+                      }
+                    }
+                  ]
+                },
+                "tok": 24
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 36
+      },
+      "sig_end": 22
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v1",
+              "pe1"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 45
+                  },
+                  "field": "Run",
+                  "tok": 47
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s1",
+                        "type": {
+                          "k": "name",
+                          "name": "task.Scope"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "int",
+                      "value": 5,
+                      "tok": 56
+                    },
+                    "tok": 55
+                  }
+                ],
+                "tok": 48
+              }
+            ],
+            "tok": 41
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 59
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "pick2",
+                    "tok": 61
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "true",
+                      "tok": 63
+                    },
+                    {
+                      "k": "ident",
+                      "name": "v1",
+                      "tok": 65
+                    },
+                    {
+                      "k": "ident",
+                      "name": "v1",
+                      "tok": 67
+                    }
+                  ],
+                  "tok": 62
+                }
+              ],
+              "tok": 60
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 73
+      },
+      "sig_end": 40
+    }
+  ],
+  "consts": []
+}

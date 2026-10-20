@@ -3,7 +3,7 @@ package main
 // spectral-norm（benchmarks game — docs/bench.md）: A(i, j) = 1 / ((i+j)(i+j+1)/2 + i + 1) の AᵀA に冪乗法を 10 回、√(vBv / vv) を小数 9 桁で。
 // 素直な形・逐次（Go の双子 bench/spectralnorm/go と同じアルゴリズム・同じ演算の順）
 
-import "std/conv"
+import "std/convert"
 import "std/iter"
 import "std/math"
 import "std/os"
@@ -71,6 +71,6 @@ func main() int {
         vBv += u[i] * v[i]
         vv += v[i] * v[i]
     }
-    println(conv.FormatFixed(math.Sqrt(vBv / vv), 9))
+    println(convert.FormatFixed(math.Sqrt(vBv / vv), 9))
     return 0
 }

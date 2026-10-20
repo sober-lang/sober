@@ -1,0 +1,27 @@
+package main
+
+// 値の位置の閉包の env は named fn type ごとの閉じた union（language.md 25 節 — 工程 4 B1）: 形が 3 種類（空 = int・string・(int, string)）の閉包が同じ named fn type の欄で Def を越える
+
+type Gen func(n int) int
+
+type Resp struct {
+    status int
+    gen Gen
+}
+
+func run(r Resp) int {
+    return r.gen(r.status)
+}
+
+func mk(path string, k int) Resp {
+    return Resp{status: k, gen: (n int) => n + k + len(bytes(path))}
+}
+
+func main() {
+    tag := "abcd"
+    a := Resp{status: 1, gen: (n int) => n * 2}
+    b := Resp{status: 2, gen: (n int) => n + len(bytes(tag))}
+    println(run(a))
+    println(run(b))
+    println(run(mk("xy", 3)))
+}

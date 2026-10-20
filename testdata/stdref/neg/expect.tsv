@@ -1,0 +1,40 @@
+WARN	name	std/negdoc/negdoc.sober:111	Synth	1 文目が「Synth は」で始まる
+WARN	nodoc	std/negdoc/negdoc.sober:11	NoDoc	doc コメントなし
+WARN	name	std/negdoc/negdoc.sober:16	BadName	1 文目が「BadName は」で始まる
+WARN	jargon	std/negdoc/negdoc.sober:21	Report	report-N
+WARN	jargon	std/negdoc/negdoc.sober:26	Bin	便
+WARN	jargon	std/negdoc/negdoc.sober:31	Dan	段 N
+WARN	jargon	std/negdoc/negdoc.sober:36	Date	日付
+WARN	section	std/negdoc/negdoc.sober:41	Section	language.md 999 節
+WARN	example	std/negdoc/negdoc.sober:52	Example	examples/no_such_example.sober
+WARN	bold	std/negdoc/negdoc.sober:57	Bold	**
+WARN	name	std/negdoc/negdoc.sober:76	Rec.a	1 文目が「a は」で始まる
+WARN	jargon	std/negdoc/negdoc.sober:84	Phase	P3a 形
+WARN	name	std/negdoc/negdoc.sober:98	GroupC	1 文目が「GroupC は」で始まる
+WARN	name	std/negdoc/negdoc.sober:99	GroupD	1 文目が「GroupC は」で始まる
+WARN	section	std/negdoc/negdoc.sober:102	Bare	裸の 7 節（language.md 7 節 と書く）
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Synth	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	NoDoc	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	BadName	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Report	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Bin	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Dan	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Date	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Section	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	SectionOk	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Example	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Bold	訳なし
+WARN	en-stale	testdata/stdref/neg/en/negdoc.json	Stale	原文 4119815950 ≠ 訳 0
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Pair	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Fail	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Rec	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Phase	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	CodeStar	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	GroupA	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	GroupB	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	GroupC	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	GroupD	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	Bare	訳なし
+WARN	en-missing	testdata/stdref/neg/en/negdoc.json	NotBare	訳なし
+WARN	name	std/negnoen/negnoen.sober	std/negnoen	1 文目が「negnoen は」で始まる
+WARN	en-none	testdata/stdref/neg/en/negnoen.json	std/negnoen	2 項目

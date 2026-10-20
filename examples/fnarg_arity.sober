@@ -1,0 +1,15 @@
+package main
+
+// 負例: 関数型の仮引数に、仮引数の数の違う名前付き関数を渡す（η 展開 — language.md 25 節）。loader が名指して拒否する
+
+func apply(x int, f func(int) int) int {
+    return f(x)
+}
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func main() {
+    println("${apply(3, add)}")
+}

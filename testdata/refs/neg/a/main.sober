@@ -1,0 +1,25 @@
+package main
+
+// refs の負例（report-883）: std/task を別名 pp で読み、pp.MarkFailed だけが std/task.MarkFailed。
+// 局所名 MarkFailed・欄 r.MarkFailed・欄キー MarkFailed:・別 package の lib.MarkFailed・コメントと文字列の綴りは別物
+
+import pp "std/task"
+import "testdata/refs/neg/lib"
+
+func note(pool pp.Pool) {
+    pp.MarkFailed(pool)
+}
+
+func width(s lib.Shape) int {
+    return switch s {
+    case lib.Bar{MarkFailed}: MarkFailed
+    case lib.Baz{}: 0
+    }
+}
+
+func main() {
+    r := lib.Rec{MarkFailed: 3}
+    MarkFailed := r.MarkFailed + lib.MarkFailed(r)
+    s := lib.Bar{MarkFailed: MarkFailed}
+    println("MarkFailed ${r.MarkFailed} ${MarkFailed} ${lib.Width(s)} ${width(s)}")
+}

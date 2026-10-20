@@ -7,6 +7,11 @@ package analyzer
 // 集合の置き場（スロット — az.sets）: 関数 fi の戻り R[fi] = スロット fi・ラベル L の cause C[L] = nfn + L（wrap の地点の内側の合併 — 裁定 C-b）・
 // 関数の仮引数 P[fi][j]（呼び手の実引数の合併 — 裁定 P-b。公開関数の error の仮引数は TOP）・error 型の struct の欄（欄の名前ごとの合併 — 閉世界）。
 // package をまたぐ呼び出しは呼び先の `@errors` の宣言を読む（裁定 E2 — 無ければ導出。公開関数に宣言が無いことは declare.sober が拒否する）。
+// 展開される関数 F の匿名の関数型の仮引数 r（結果が error?）の呼び出しの値は擬ラベル FLOW（符号のビット — ラベルの容量を食わない）で、呼んだ r を Cand[F] に記す。
+// FLOW が F の戻り R[F] に届けば Flow[F] = Cand[F]（ビット j = 仮引数 j — 呼んだ r のどれかの失敗が漏れうるなら呼んだ r 全部の過大近似）、
+// 他の置き場（cause・仮引数・欄・switch の subject）に届いた FLOW は TOP（呼び出し点ごとに違う集合 — 関数の中では言えない）。包み替え `r()? L{}`・握って返さない形は漏れない。
+// F の呼び出し点ごとに、Flow の位置の実引数のラベルが合流する（ラムダ = 本体の値・名前つき関数 = その集合・呼び手自身の仮引数 = 呼び手の FLOW へ —
+// language.md 13 節「仮引数の名前の @errors」）。
 // 解き方: スロットを読んだ関数を読み手として登録し、スロットが広がったら読み手を作業の列へ（不動点 — 格子の高さはラベル数）。
 // 関数の中は流れに鈍感（局所の名前ごとの合併 — シャドーイング禁止なので名前で引ける）で、局所が広がらなくなるまで本体を歩き直す
 
@@ -17,6 +22,11 @@ import "std/table"
 
 const TOP = 4611686018427387904  // 1 << 62
 const NBITS = 62                   // これ以上のタグのラベルは TOP に倒す（1 語の集合）
+
+// flowBit は擬ラベル FLOW（1 << 63 — 符号のビット。const にすると .sobi が `-9223372036854775808` と印字して読み戻せない）
+func flowBit() int {
+    return TOP << 1
+}
 
 // bit はラベル L の集合
 func bit(L int) int {
@@ -54,11 +64,13 @@ func addSlot(az mut Az, s int, m int) {
     if s == -1 || m == 0 {
         return
     }
+    // FLOW を持てるのは今の関数の戻りだけ（他の置き場では呼び出し点ごとの集合を言えない — TOP）
+    n := if (m & flowBit()) != 0 && s != az.cur { (m & ^flowBit()) | TOP } else { m }
     o := table.Get(mut az.sets, s)
-    if (o | m) == o {
+    if (o | n) == o {
         return
     }
-    table.Set(mut az.sets, s, o | m)
+    table.Set(mut az.sets, s, o | n)
     mut r := table.Get(mut az.rhead, s)
     while r != -1 {
         enqueue(mut az, table.Get(mut az.rnode, r))
@@ -169,6 +181,42 @@ func ident(az mut Az, name desugar.StrRef) int {
     return 0
 }
 
+// paramOf は関数 fi の仮引数 name の添字（無ければ -1）
+func paramOf(az mut Az, fi int, name desugar.StrRef) int {
+    ps := desugar.ListRef(fnDecl(mut az, fi).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a), name) {
+            return j
+        }
+    }
+    return -1
+}
+
+// flowParam は関数 fi の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象 — 名前つき関数型の仮引数は対象外）
+func flowParam(az mut Az, fi int, j int) bool {
+    t := desugar.NodeRef(node(mut az, nat(mut az, desugar.ListRef(fnDecl(mut az, fi).c), j)).b)
+    if j >= NBITS || t == -1 || kind(mut az, t) != ast.TFunc {
+        return false
+    }
+    rs := desugar.ListRef(node(mut az, t).b)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, rs)) {
+        if isErrTy(mut az, nat(mut az, rs, i)) {
+            return true
+        }
+    }
+    return false
+}
+
+// curFlowParam は式 e が今の関数の Flow の対象の仮引数の名前ならその添字（でなければ -1）
+func curFlowParam(az mut Az, e desugar.NodeRef) int {
+    if kind(mut az, e) != ast.EIdent {
+        return -1
+    }
+    name := desugar.StrRef(node(mut az, e).a)
+    j := if envFind(mut az, name) == -1 { paramIdx(mut az, name) } else { -1 }
+    return if j != -1 && flowParam(mut az, az.cur, j) { j } else { -1 }
+}
+
 // isLocal は名前が局所か仮引数か（関数値の呼び出しの判定）
 func isLocal(az mut Az, name desugar.StrRef) bool {
     return envFind(mut az, name) != -1 || paramIdx(mut az, name) != -1
@@ -199,6 +247,12 @@ func errInit(az mut Az) {
     }
     for fi <- iter.Range(0, az.nfn) {
         table.Push(mut az.declared, declaredSet(mut az, fi))
+        table.Push(mut az.dflow, declaredFlow(mut az, fi))
+    }
+    az.flowBase = table.Len(mut az.sets)
+    for fi <- iter.Range(0, az.nfn) {
+        newSlot(mut az, 0)
+        table.Push(mut az.cand, 0)
     }
     for fi <- iter.Range(0, az.nfn) {
         fd := fnDecl(mut az, fi)
@@ -264,6 +318,9 @@ func walkFn(az mut Az, fi int) {
         blockVal(mut az, body)
         again = az.envChanged
         n += 1
+    }
+    if (table.Get(mut az.sets, fi) & flowBit()) != 0 {
+        addSlot(mut az, az.flowBase + fi, table.Get(mut az.cand, fi))
     }
 }
 
@@ -438,14 +495,10 @@ func ev(az mut Az, e desugar.NodeRef) int {
         for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
             envAdd(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, i)).a), TOP)
         }
+        // 値 = 本体の値の集合（Flow の実引数として呼び出し点で読む — callVal。他の位置では関数値は error の位置へ流れない）
         body := desugar.NodeRef(x.b)
         bk := kind(mut az, body)
-        if bk == ast.EBlock || bk == ast.KBlock {
-            blockVal(mut az, body)
-        } else {
-            ev(mut az, body)
-        }
-        return 0
+        return if bk == ast.EBlock || bk == ast.KBlock { blockVal(mut az, body) } else { ev(mut az, body) }
     case ast.EFor:
         gs := desugar.ListRef(x.a)
         for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
@@ -555,9 +608,13 @@ func calleeFn(az mut Az, callee desugar.NodeRef) int {
 // callVal は呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
 func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm int) int {
     fi := calleeFn(mut az, callee)
+    fp := if fi == -2 { curFlowParam(mut az, callee) } else { -1 }
     if fi == -2 {
         ev(mut az, callee)
     }
+    // 呼び先の Flow（読み手に登録 — 広がったらこの関数を歩き直す）
+    fl := if fi >= 0 { flowOf(mut az, fi) } else { 0 }
+    mut extra := 0
     n := desugar.LenL(mut az.d, args)
     mut j := 0
     mut hole := false
@@ -569,9 +626,12 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
     }
     if lhs != -1 && !hole {
         argTo(mut az, fi, 0, lm)
+        if (fl & 1) != 0 {
+            extra = extra | flowArg(mut az, lhs, lm)
+        }
         j = 1
     }
-    // par.Scope の本体の `?` は scope の失敗（関数の戻りへ流さない）
+    // task.Run の本体の `?` は scope の失敗（関数の戻りへ流さない）
     sink := fi >= 0 && desugar.ParKey(mut az.d, fi) == desugar.PAR_SCOPE
     if sink {
         az.trySink += 1
@@ -580,29 +640,72 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
         a := nat(mut az, args, i)
         m := if a == -1 { lm } else { ev(mut az, a) }
         argTo(mut az, fi, j, m)
+        if j < NBITS && (fl & (1 << j)) != 0 {
+            extra = extra | flowArg(mut az, if a == -1 { lhs } else { a }, m)
+        }
         j += 1
     }
     if sink {
         az.trySink -= 1
+    }
+    if fp != -1 {
+        // 今の関数の匿名の関数型の仮引数の呼び出し: 失敗は呼び出し点ごとに実引数のラベル — 擬ラベル FLOW（戻りに届けば Flow へ — walkFn）
+        table.Set(mut az.cand, az.cur, table.Get(mut az.cand, az.cur) | (1 << fp))
+        return flowBit()
     }
     if fi == -2 {
         az.unknown += 1
         return TOP
     }
     if fi >= 0 && desugar.ParOpenErr(mut az.d, fi) {
-        // par.Scope の err は TaskDied か、Join も Try もしなかった子の err（P3b-4 1b' — 本体で生んだ error を返す task の err の合併。
-        // 子のラムダの集合を scope ごとに集める形は未実装 — 開いた集合として扱う〔網羅の主張をしない〕）。par.Map（scope を開く std の口）も同じ
+        // task.Run の err は ChildDied か、Join も Try もしなかった子の err（P3b-4 1b' — 本体で生んだ error を返す task の err の合併。
+        // 子のラムダの集合を scope ごとに集める形は未実装 — 開いた集合として扱う〔網羅の主張をしない〕）。task.Map（scope を開く std の口）も同じ
         return TOP
     }
     if fi == -1 || table.Get(mut az.errfn, fi) == 0 {
         return 0
     }
+    return fnLabels(mut az, fi) | extra
+}
+
+// fnLabels は関数 fi（error を返す）の集合
+func fnLabels(az mut Az, fi int) int {
     d := table.Get(mut az.declared, fi)
     if d != -1 && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         // package をまたぐ呼び出しは宣言を読む（裁定 E2 — 依存 package の中を解析しない 29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側の package で拒否する）
         return d
     }
-    return readSlot(mut az, fi)
+    return readSlot(mut az, fi) & ^flowBit()
+}
+
+// flowOf は関数 fi の Flow（package をまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 裁定 E2 と同じ）
+func flowOf(az mut Az, fi int) int {
+    d := table.Get(mut az.declared, fi)
+    if d != -1 && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
+        return table.Get(mut az.dflow, fi)
+    }
+    return readSlot(mut az, az.flowBase + fi)
+}
+
+// flowArg は Flow の位置の実引数 a（集合 m — ラムダなら本体の値）の失敗のラベル: ラムダは本体の値・名前つき関数はその集合・
+// 呼び手自身の Flow の対象の仮引数は呼び手の FLOW（推移）・他（局所の関数値など）は TOP
+func flowArg(az mut Az, a desugar.NodeRef, m int) int {
+    k := kind(mut az, a)
+    if k == ast.ELambda {
+        return m
+    }
+    p := curFlowParam(mut az, a)
+    if p != -1 {
+        table.Set(mut az.cand, az.cur, table.Get(mut az.cand, az.cur) | (1 << p))
+        return flowBit()
+    }
+    if k == ast.EIdent || k == ast.ESelector {
+        g := calleeFn(mut az, a)
+        if g >= 0 {
+            return if table.Get(mut az.errfn, g) == 0 { 0 } else { fnLabels(mut az, g) }
+        }
+    }
+    return TOP
 }
 
 // argTo は関数 fi の j 番目の仮引数が error 型なら、実引数の集合 m を P へ
@@ -620,7 +723,8 @@ func argTo(az mut Az, fi int, j int, m int) {
 // error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無 — A5 の裁定材料）
 func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
     subs := desugar.ListRef(x.a)
-    S := evList(mut az, subs)
+    S0 := evList(mut az, subs)
+    S := if (S0 & flowBit()) != 0 { (S0 & ^flowBit()) | TOP } else { S0 }
     single := desugar.LenL(mut az.d, subs) == 1
     cs := desugar.ListRef(x.b)
     mut covered := 0

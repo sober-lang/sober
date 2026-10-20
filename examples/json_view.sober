@@ -12,15 +12,15 @@ func walk(d json.Doc, n int, path string) {
     switch json.At(d, n) {
     case json.Null{}: println("${path} = null")
     case json.Bool{v}: println("${path} = ${if v { "true" } else { "false" }}")
-    case json.Num{lit}: println("${path} = num ${lit}")
-    case json.Str{v}: println("${path} = str \"${v}\" (${len(bytes(v))} bytes)")
-    case json.Arr{items}: {
+    case json.Number{lit}: println("${path} = num ${lit}")
+    case json.String{v}: println("${path} = str \"${v}\" (${len(bytes(v))} bytes)")
+    case json.Array{items}: {
         println("${path} = array of ${len(items)}")
         for i <- iter.Range(0, len(items)) {
             walk(d, items[i], "${path}[${i}]")
         }
     }
-    case json.Obj{names, vals}: {
+    case json.Object{names, vals}: {
         println("${path} = object of ${len(names)}")
         for i <- iter.Range(0, len(names)) {
             walk(d, vals[i], "${path}.${names[i]}")

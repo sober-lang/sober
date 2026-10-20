@@ -8,7 +8,7 @@ import "desugar"
 import "diag"
 import "loader"
 import "std/iter"
-import "std/par"
+import "std/task"
 
 // Round は 1 周の結果: out = 判定 JSON・def = 最初の def error の Def の添字・back = 展開へ戻す関数（上げた関数のうち Def として落ちたもの）
 type Round struct {
@@ -94,7 +94,7 @@ func maxCost(cost []int, rs []desugar.DefRng) int {
 }
 
 // checkRoundPar は判定の経路の 1 周（idx でない・止めない）。区間が 1 つなら checkRound の 1 本の経路
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int) (Round, error?) {
     plan := desugar.PlanDefs(p, excl, only, trust)?
     cost := desugar.PlanCost(plan)
@@ -138,10 +138,10 @@ func checkRoundPar(p loader.Program, excl []int, only int, trust bool, stop int)
     return outs[0], nil
 }
 
-// rangeRounds は区間ごとの子 task の 1 周（区間の順 — par.Map の添字の順）。子の脱糖の拒否は値（def = R_REJ）にして返す — 親は 1 本の経路で
+// rangeRounds は区間ごとの子 task の 1 周（区間の順 — task.Map の添字の順）。子の脱糖の拒否は値（def = R_REJ）にして返す — 親は 1 本の経路で
 // 走らせ直して逐次と同じ最初の拒否を出す（拒否は稀・診断の位置ごと逐次と一致する。子の err を Map で運ぶと @errors が導けない）。子の死は親の死
 func rangeRounds(p loader.Program, excl []int, only int, trust bool, stop int, rs []desugar.DefRng, bud int) []Round {
-    outs, serr := par.Map(rs, (r) => rangeRound(p, excl, only, trust, stop, r), budget: bud)
+    outs, serr := task.Map(rs, (r) => rangeRound(p, excl, only, trust, stop, r), budget: bud)
     if serr != nil {
         return panic(InvariantBroken{})
     }
@@ -202,14 +202,14 @@ func runE2X(p loader.Program, idx bool, only int, trust bool, excl0 []int, stop 
 }
 
 // CheckE2 は p を（E2-S の逃げの周回込みで）脱糖して検査した判定 JSON（`sober check`）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func CheckE2(p loader.Program, dpar bool) ([]byte, error?) {
     r := runE2(p, false, dpar)?
     return r.round.out, nil
 }
 
 // CheckE2Trust は CheckE2 の L0 版（std の受理印が焼き込まれているとき — std の Def は検査しない。excl0 = 焼き込みの std の逃げ）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func CheckE2Trust(p loader.Program, excl0 []int, dpar bool) ([]byte, error?) {
     r := runE2X(p, false, -1, true, excl0, 0, dpar)?
     return r.round.out, nil
@@ -217,7 +217,7 @@ func CheckE2Trust(p loader.Program, excl0 []int, dpar bool) ([]byte, error?) {
 
 // CheckStop は計測の口（段 6 P6-0 — SOBER_CHECK_STOP=desugar）: 判定の経路（一括 = only -1・trust / excl0 は CheckE2Trust と同じ・package = only）を
 // 脱糖まで走らせて検査器を呼ばずに止める（lvl = 3 脱糖の後・4 表層型検査器の後・5 Def の脱糖の後で写しの前 — WithCoreOpt の stopAt。出力は空 — 脱糖と検査の費用の帰属を perf の命令数の差で取る）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func CheckStop(p loader.Program, only int, trust bool, excl0 []int, lvl int, dpar bool) ([]byte, error?) {
     r := runE2X(p, false, only, trust, excl0, lvl, dpar)?
     return r.round.out, nil
@@ -225,14 +225,14 @@ func CheckStop(p loader.Program, only int, trust bool, excl0 []int, lvl int, dpa
 
 // CheckPkgE2 は package only の部分検査（`sober check <entry> --pkg P --iface D` — 3'' M2）の判定 JSON:
 // p は LoadView の視点（P はソース・他は .sobi）。P の Def は本体つき・他は署名だけ（合成定理 defsOk_of_linked の hchk — formal.md V5-6）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func CheckPkgE2(p loader.Program, only int, dpar bool) ([]byte, error?) {
     r := runE2Pkg(p, false, only, dpar)?
     return r.round.out, nil
 }
 
 // PkgE2 は CheckPkgE2 の判定と逃げの集合（小分けの check — 3'' M3。逃げは iface.Emit が `@expand` に書く）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func PkgE2(p loader.Program, only int, dpar bool) (E2Out, error?) {
     return runE2Pkg(p, false, only, dpar)
 }
@@ -243,13 +243,13 @@ func Out(r E2Out) []byte {
 }
 
 // DefFailE2 は開発用（`sober check --def-index`）: 逃げの集合と、確定した周回の最初の def error の Def の添字（無ければ -1）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func DefFailE2(p loader.Program) (E2Out, error?) {
     return runE2(p, true, false)
 }
 
 // ExclE2 は逃げの集合（`sober check --core-json` — 判定と同じコアを出すため）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func ExclE2(p loader.Program, dpar bool) ([]int, error?) {
     r := runE2(p, false, dpar)?
     return r.excl, nil

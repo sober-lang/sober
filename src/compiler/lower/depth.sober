@@ -134,7 +134,7 @@ func dfBlock(st mut St, rep mut []int, blk BlkRef, x0 int, apply bool) int {
             }
         } else if op == OpREnter || rlEnterCall(mut st, ins) || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpAtomic || op == OpClone {
             // 軽い enter（rlight.sober — loopLightModule の後に掛け直すとき）も深度を進める。罠の呼び出し（trap）は中で死んで巻き戻ると深度を
-            // 戻さずに帰る（罠を張る側が罠の後で setdepth する — lower/par.sober。普通の call と違い「深度を変えない」と言えない）
+            // 戻さずに帰る（罠を張る側が罠の後で setdepth する — lower/task.sober。普通の call と違い「深度を変えない」と言えない）
             x = DF_UNK
         } else if op == OpRSetDepth {
             v := dfRep(mut rep, resolve(mut st, irInsA(mut st, ins)))

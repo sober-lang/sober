@@ -8,12 +8,12 @@
     },
     {
       "alias": null,
-      "path": "std/utf8",
+      "path": "std/strings",
       "tok": 7
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -94,7 +94,7 @@
                             {
                               "k": "type",
                               "bind": null,
-                              "variant": "utf8.InvalidUtf8",
+                              "variant": "strings.InvalidUtf8",
                               "fields": [
                                 {
                                   "name": "pos",

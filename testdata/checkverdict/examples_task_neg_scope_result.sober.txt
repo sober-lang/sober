@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_scope_result.sober:8:37: the result of task.Run cannot hold a task.Scope or task.Handle (it would outlive the scope)
+exit=1

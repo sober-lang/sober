@@ -1,0 +1,52 @@
+package lower
+
+// spill 先の合流の干渉の判定（x86.sober xJoinSlots — 置き場の往復レーン 段 4a）の単体テスト（`cd compiler && ../bin/sober test lower`）:
+// 値の区間（部分区間の鎖）を手で組み、併せる / 併せないを直に見る。値の番号 0〜nv − 1 は最初の部分区間・続きは nv 以降を pnx で繋ぐ
+
+import "std/iter"
+
+// sjT は値 nv 個の区間 [s[k], t[k]]（k < nv は値の最初の部分区間・k ≥ nv は pn[k] の値の続き — 鎖は開始の昇順）で、組 (pa, pb) を順に併せた代表を返す（詰めた番号 = 値の番号）
+func sjT(nv int, s []int, t []int, pn []int, pa []int, pb []int) []int {
+    mut ivS := mut []int{}
+    mut ivE := mut []int{}
+    mut pnx := mut []int{}
+    for k <- iter.Range(0, len(s)) {
+        ivS = append(ivS, s[k])
+        ivE = append(ivE, t[k])
+        pnx = append(pnx, -1)
+    }
+    // 続きの部分区間を値の鎖の最後へ
+    for k <- iter.Range(nv, len(s)) {
+        mut last := pn[k]
+        while pnx[last] >= 0 {
+            last = pnx[last]
+        }
+        pnx[last] = k
+    }
+    mut vs := mut []int{}
+    for v <- iter.Range(0, nv) {
+        vs = append(vs, v)
+    }
+    return xJoinSlots(mut ivS, mut ivE, mut pnx, freeze(vs), pa, pb)
+}
+
+func TestSpillJoin() {
+    // 0: 使用の点で終わる値と同じ点で始まる値は併せる（レジスタの共有と同じ — 読みが先・書きが後）
+    a := sjT(2, []int{10, 20}, []int{20, 30}, []int{}, []int{1}, []int{0})
+    assert(a[0] == a[1])
+    // 1: 重なる区間は併せない
+    b := sjT(2, []int{10, 20}, []int{25, 30}, []int{}, []int{1}, []int{0})
+    assert(b[0] != b[1])
+    // 2: 同じ点で始まる値（同じブロックの仮引数どうし）は併せない
+    c := sjT(2, []int{10, 10}, []int{11, 12}, []int{}, []int{1}, []int{0})
+    assert(c[0] != c[1])
+    // 3: 群どうしで見る — x と y を併せた後、y とは重ならないが x と重なる z は入れない
+    d := sjT(3, []int{0, 5, 3}, []int{5, 10, 4}, []int{}, []int{0, 2}, []int{1, 1})
+    assert(d[0] == d[1] && d[2] != d[1])
+    // 4: 部分区間の間の穴（値が死んでいる）に収まる値は併せる・穴をはみ出す値は併せない
+    e := sjT(3, []int{0, 10, 4, 20}, []int{5, 15, 12, 25}, []int{0, 0, 0, 0}, []int{1, 2}, []int{0, 0})
+    assert(e[1] == e[0] && e[2] != e[0])
+    // 5: 区間の無い値（始まり < 0）は何とも重ならない
+    f := sjT(2, []int{-1, 3}, []int{-1, 9}, []int{}, []int{1}, []int{0})
+    assert(f[0] == f[1])
+}

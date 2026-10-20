@@ -1,0 +1,30 @@
+package shapes
+
+// docs/spec 8 章（package）の例が import する package: 公開 = 大文字・非公開の名前・他 package から書けない欄
+
+type Rect struct {
+    w int
+    h int
+}
+
+type Unknown error {
+    name string
+}
+
+const Unit = 1
+
+func Area(r Rect) int {
+    return scale(r.w * r.h)
+}
+
+@errors(Unknown)
+func Parse(name string) (Rect, error?) {
+    if name == "square" {
+        return Rect{w: Unit, h: Unit}, nil
+    }
+    return Rect{}, Unknown{name: name}
+}
+
+func scale(n int) int {
+    return n * Unit
+}

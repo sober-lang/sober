@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_tuple_shape.sober:9:37: a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)
+exit=1

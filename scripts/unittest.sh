@@ -24,5 +24,12 @@ for p in "${spkgs[@]}"; do
     "$SOBER" check "$p" --test > /dev/null || { echo "FAIL: check --test $p"; fail=1; }
 done
 "$SOBER" test "${spkgs[@]}" || fail=1
-echo "unittest: ${#pkgs[@]} compiler packages (${pkgs[*]}) + ${#spkgs[@]} std packages, fail=$fail"
+# std の中の _test.sober（white-box — std の内側の実装〔std/internal/…〕を見る網: std/tls の hs の拒否・Go との往復の再生・状態機械。cwd = ルート — @embed はルート相対）
+ipkgs=()
+for d in $(cd "$ROOT/src" && find std -name '*_test.sober' -printf '%h\n' | sort -u); do ipkgs+=("$d"); done
+for p in "${ipkgs[@]}"; do
+    "$SOBER" check "$p" --test > /dev/null || { echo "FAIL: check --test $p"; fail=1; }
+done
+[ "${#ipkgs[@]}" -eq 0 ] || "$SOBER" test "${ipkgs[@]}" || fail=1
+echo "unittest: ${#pkgs[@]} compiler packages (${pkgs[*]}) + ${#spkgs[@]} std packages + ${#ipkgs[@]} std white-box (${ipkgs[*]}), fail=$fail"
 [ "$fail" = 0 ]

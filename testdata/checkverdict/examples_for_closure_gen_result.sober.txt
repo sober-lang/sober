@@ -1,0 +1,2 @@
+sober: load error at examples/for_closure_gen_result.sober:14:20: `?` on a generator needs a generator that returns error? only
+exit=1

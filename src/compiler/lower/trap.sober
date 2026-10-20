@@ -19,7 +19,9 @@ const TW_SITE = 2
 
 // trapDie は rt.panic / rt.panic_mem の入口の分岐: 罠が張られていれば死因（終了コード code・点 site）を書いて巻き戻る
 func trapDie(st mut St, code int, site int) {
-    if !st.trapUse {
+    // 開発用 `sober build --death-trace`（rt の変異 14 — 4a-4 / report-653）: task の死を罠で吸収せず、罠の外の死と同じく印字して終了する
+    // （死因の種・panic のラベル・位置が stderr に 1 行。吸収された死が観測に何も残さない形の切り分け用）
+    if !st.trapUse || st.rtMut == 14 {
         return
     }
     tg := globaladdr(mut st, st.trapG)

@@ -28,7 +28,7 @@
 | Sober | 0.209 s | 0.065 s | 636 / 1,054 | 0.4 / 7.7 MB |
 | Go | 1.079 s | 0.395 s | 2,693 / 3,643 | 211 / 132 MB |
 
-100 万の葉に 10 分岐の木で、task は計 1,111,111。Sober は par.Map の木、Go は goroutine + チャネル（atemerev/skynet の形）。再現: `bench/par/sky.sh -n 5`（wall は 5 回の最小）。
+100 万の葉に 10 分岐の木で、task は計 1,111,111。Sober は task.Map の木、Go は goroutine + チャネル（atemerev/skynet の形）。再現: `bench/par/sky.sh -n 5`（wall は 5 回の最小）。
 
 - Go の W8 の wall は回ごとに大きく揺れる（同じ日の 3 回で 0.27〜0.40 s — GC のワーカーが 8 コアを分け合う）。W1 の比は安定していて 5.1〜5.2 倍（2026-10-10 の 2 回）。10-08 の取り直し前の値は W1 0.27 / 0.96 s・W8 0.064 / 0.27 s
 
@@ -63,7 +63,7 @@
 | Sober 並列 | 13.9 s / 38.1 G | 7.8 | 3.1 | 2.4 | 128 MB |
 | Go 並列 | 49.1 s / 133.0 G | 15.2 | 8.2 | 6.1 | 308〜320 MB |
 
-深さ 21（benchmarks game の値）。並列版（bench/binarytreespar）は深さごとに子を 1 つ立てる形で、Sober は par.Map、Go は goroutine。benchmarks game の並列の定番の切り方である。子は 9 つで仕事量はほぼ等しいため、W8 は 2 巡、W4 は 3 巡になる。再現: `bench/par/btpar.sh -n 3`。
+深さ 21（benchmarks game の値）。並列版（bench/binarytreespar）は深さごとに子を 1 つ立てる形で、Sober は task.Map、Go は goroutine。benchmarks game の並列の定番の切り方である。子は 9 つで仕事量はほぼ等しいため、W8 は 2 巡、W4 は 3 巡になる。再現: `bench/par/btpar.sh -n 3`。
 
 - Sober は task ごとの region で確保するので、共有点がない。並列にしても RSS が 128 MB のまま増えない。Go は並列のミューテータ × GC で 271 → 335 MB に増える
 - 並列版の W1 の cycles は逐次の +6%（前回 +44% — 関数の入口の軽い region.enter が基底の bump を書かない形に）。W8 は W4 より速くなった（前回は逆）
@@ -73,7 +73,7 @@
 | | W1 | W2 | W4 | W8 | 命令 | 最大 RSS |
 |---|---|---|---|---|---|---|
 | Sober 逐次（bench/1brc） | 0.46 s | | | | 6.05 G | 134 MB |
-| Sober 並列（64 区間 × par.Map） | 0.53 | 0.29 | 0.18 | 0.12 | 6.52 G | 140 MB |
+| Sober 並列（64 区間 × task.Map） | 0.53 | 0.29 | 0.18 | 0.12 | 6.52 G | 140 MB |
 | Sober 並列（検査点なし — 対照） | 0.53 | 0.31 | 0.18 | 0.13 | 6.35 G | 140 MB |
 | Go 逐次 | 0.56 | | | | 4.80 G | 240 MB |
 | Go 並列（64 goroutine + WaitGroup） | 0.56 | 0.30 | 0.17 | 0.10 | 4.96 G | 247 MB |
@@ -108,7 +108,7 @@ W8 で固定し、3 回の最小をとった。Sober は `SOBER_BUDGET_MB`（根
 | 切る（既定） | 0.29 s | 0.18 s | 1.71 G |
 | 切らない（検査点なし — 対照） | 1.47 s | 0.41 s | 7.20 G |
 
-par.Map の 16 の子のうち子 3 が死に、他の子は 3,000 万回の剰余のループを回す（bench/par/failfast）。wall は 5 回の最小。
+task.Map の 16 の子のうち子 3 が死に、他の子は 3,000 万回の剰余のループを回す（bench/par/failfast）。wall は 5 回の最小。
 
 切るのは死んだ子より後ろの純な子だけ（正準順）なので、子 0〜2 は走り切る。io に届く子は切らない（観測を動かさない）。
 

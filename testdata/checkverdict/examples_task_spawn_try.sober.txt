@@ -1,0 +1,2 @@
+sober: load error at examples/task_spawn_try.sober:17:24: return and break / continue cannot leave a task.Run / task.Spawn body, and ? cannot leave a task.Spawn body (the scope waits for its children at its end; ? in a task.Run body fails the scope)
+exit=1

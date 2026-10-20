@@ -1,0 +1,13 @@
+package main
+
+// 負例: mut 仮引数への実引数には呼び出し点で `mut` の印を付ける（language.md 26 節）
+
+func bump(n mut int) {
+    n += 1
+}
+
+func main() {
+    mut k := 1
+    bump(k)
+    println(k)
+}

@@ -329,6 +329,7 @@ func mrKey(r MapRepr) int {
 
 // needMapFind は表現 r の引きの関数（初出なら宣言する — 本体は program の最後に buildMapFinds が組む）
 func needMapFind(st mut St, r MapRepr) FnRef {
+    lsNeed(mut st, NEED_MAPFIND, mrKey(r))
     if st.mapFinds == -1 {
         st.mapFinds = recN(mut st, 1 + 2 * MF_CAP)
         desugar.HeapSet(mut st.d, st.mapFinds, 0)
@@ -362,6 +363,7 @@ const MF_PREFIX = -1
 
 // needMapPrefix は rt.map_prefix(cell, kp)（MR_PRE のセル cell の前置き 2 語を鍵 kp から詰めて書く — 初出なら宣言・本体は buildMapFinds）
 func needMapPrefix(st mut St) FnRef {
+    lsNeed(mut st, NEED_MAPPRE, 0)
     if st.mapFinds == -1 {
         st.mapFinds = recN(mut st, 1 + 2 * MF_CAP)
         desugar.HeapSet(mut st.d, st.mapFinds, 0)

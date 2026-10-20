@@ -1,0 +1,28 @@
+  send 0
+  send 20
+  send 30
+  (gen done)
+  after loop
+ok
+  send 0
+  send 20
+  (gen done)
+  after loop
+ok
+  send 0
+  send 20
+  send 30
+  send 40
+  (gen done)
+short 50
+  send 0
+  send 20
+  send 30
+  (gen done)
+gone at 4
+  send 0
+  send 20
+  (gen done)
+ok
+10
+196

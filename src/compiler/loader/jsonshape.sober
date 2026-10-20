@@ -7,7 +7,7 @@ package loader
 //     （DecodeWith / EncodeWith は最後の実引数に欄名 → JSON のキーの対応の辞書 map[string]string — 根の口 _1）
 //
 // struct T と、その欄から届く型（int・float・bool・string・`U?`・`[]U`・入れ子の struct）ごとに写しの関数（普通の Sober）を、呼び出すファイル f ごとの
-// 合成ファイル `$json/<f のパス>`（同じ package）に書いて package の末尾に足す。写しの関数は std/json の部品（Object・Need・Get・Items・DecInt …）を呼ぶ。
+// 合成ファイル `$json/<f のパス>`（同じ package）に書いて package の末尾に足す。写しの関数は std/json の部品（NeedObject・Need・Get・Items・DecInt …）を呼ぶ。
 // 欄の名前 = JSON のキー（Rename 辞書は第二便）・`U?` の欄だけ欠けと null を nil で受ける・余った欄は無視・欠けた欄は json.Missing。
 // 範囲外（第二便以降）: 総称の struct・union の欄・map の欄・named scalar の欄 — 写す前に diag.JsonShape で名指して拒否。
 // 以降の層（脱糖器・検査器・lower）は写した後の木だけを読む — コア / Lean は無変更
@@ -330,7 +330,7 @@ func jsonSource(ts []ast.Tree, fpkg []string, f int, rs []JReq) string {
             st := ts[r.file]
             body := st.nodes[st.nodes[r.node].c]
             s = s + "\n// ${r.canon} の写し（shape[T] — loader/jsonshape.sober の固定テンプレート）\n"
-            s = s + "func ${fname}($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    $o := $jj.Object($d, $n)?\n"
+            s = s + "func ${fname}($d $jj.Doc, $n int, rename map[string]string) (${sp}, error?) {\n    $o := $jj.NeedObject($d, $n)?\n"
             mut lit := ""
             for j <- iter.Range(0, ast.ListLen(st, body.a)) {
                 fd := st.nodes[ast.ListAt(st, body.a, j)]
@@ -375,7 +375,7 @@ func decTail(e JReq) string {
 }
 
 // jsonEncodeFn は要求 k の書きの写しの関数（mut の builder に積む — struct は根の口 $jsonEncodeTop も）。2 系統を合成する:
-// rn = 偽 — rename なし（Encode）: 欄の頭は定数の断片（`{"name":` / `,"name":` — キーのエスケープは合成時に jsonKeyLit）を 1 回の PushStr・
+// rn = 偽 — rename なし（Encode）: 欄の頭は定数の断片（`{"name":` / `,"name":` — キーのエスケープは合成時に jsonKeyLit）を 1 回の PushString・
 // 根の口 _0 は空の rename の map を作らずに直に呼ぶ。rn = 真 — rename つき（EncodeWith の根の口 _1 から）: 欄ごとに KeyOf で引いて PutKey（旧の形）。
 // 系統どうしは呼び合わない（rename つきの値の中の struct も rename つきで書く）。lower は届く関数しか下ろさないので、使わない系統は ELF に入らない
 func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg string, f int, k int, rn bool) string {
@@ -399,7 +399,7 @@ func jsonEncodeFn(ts []ast.Tree, fpkg []string, rs []JReq, ps []string, pkg stri
             if rn {
                 s = s + "    $jj.PutKey(mut $o, $jj.KeyOf(rename, \"${nm}\"), ${if j == 0 { "true" } else { "false" }})\n"
             } else {
-                s = s + "    $jb.PushStr(mut $o, \"${if j == 0 { "{" } else { "," }}${jsonKeyLit(nm)}:\")\n"
+                s = s + "    $jb.PushString(mut $o, \"${if j == 0 { "{" } else { "," }}${jsonKeyLit(nm)}:\")\n"
             }
             s = s + "    ${encCall(rs, f, e, "$v.${nm}", nm, rn)}\n"
         }
@@ -468,10 +468,10 @@ func encCall(rs []JReq, f int, e JReq, x string, nm string, rn bool) string {
 // decCall は要求 e（スカラーなら std/json の部品・それ以外は写しの関数）を節から読む関数の名前
 func decCall(rs []JReq, f int, e JReq) string {
     return switch e.kind {
-    case jInt: "$jj.DecInt"
-    case jFloat: "$jj.DecFloat"
-    case jBool: "$jj.DecBool"
-    case jString: "$jj.DecString"
+    case jInt: "$jj.ParseInt"
+    case jFloat: "$jj.ParseFloat"
+    case jBool: "$jj.ParseBool"
+    case jString: "$jj.ParseString"
     default: "$jsonDecode_${f}_${reqIndex(rs, e.canon)}"
     }
 }

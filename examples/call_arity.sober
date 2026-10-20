@@ -1,0 +1,12 @@
+package main
+
+// 負例（check が名指しで拒否 — diag.Malformed kind 1）: 呼び出しの実引数の数が仮引数の数と合わない（省略できる仮引数は無い — `T?` の仮引数も
+// 実引数が要る）。以前は check が `(Malformed)` だけ（report-878）
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func main() {
+    println(add(1))
+}

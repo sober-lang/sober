@@ -1,0 +1,30 @@
+package main
+
+// 負例（check が拒否 — analyzer）: error の switch が、subject が持ちうるラベル（Empty と TooLong）を覆わず default も無い（language.md 13 節）。
+// build は analyzer を走らせないので受理し、覆っていないラベルが来たら exit 101
+
+type Empty error
+
+type TooLong error {
+    n int
+}
+
+func parse(s string) (int, error?) {
+    n := len(bytes(s))
+    if n == 0 {
+        return 0, Empty{}
+    }
+    if n > 8 {
+        return 0, TooLong{n: n}
+    }
+    return n, nil
+}
+
+func main() {
+    _, err := parse("")
+    if err != nil {
+        switch err {
+        case Empty{}: println("empty")
+        }
+    }
+}

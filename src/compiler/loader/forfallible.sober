@@ -4,7 +4,9 @@ package loader
 // 結果が `error?` 1 つのものは、for に印 `?` を付けて書く — `for x <- g(a)? { … }`（脱糖 = `g(a, (x) => { … })?` — desugar の forGen が `?` の節で包む）。
 // 判定は宣言の署名だけ（固定テンプレート — 呼び出し形の生成元と同じ）。呼び出し形でない `f()?`（slice を返す `([]T, error?)` の呼び出し）は普通の `?` のまま。
 // 拒否（diag.ForFallible の kind）: 1 = 印が無い（結果の `error?` を黙って捨てる — 11 節「defer 内のエラー」の暗黙の drop の拒否と同じ線）・
-// 2 = 式の位置の for（yield 形 — Iter[T] は失敗の通り道を持たない）・3 = 印つきだが生成元の結果が `error?` 1 つでない。check と build が同じ層（loader）
+// 2 = 式の位置の for（yield 形 — Iter[T] は失敗の通り道を持たない）・3 = 印つきだが生成元の結果が `error?` 1 つでない。check と build が同じ層（loader）。
+// 閉包の名前の呼び出し形（L-for — `for x <- recv(a)? { … }`・recv は囲む関数の匿名の関数型の仮引数）も同じテンプレートを仮引数の型の字面で掛ける。
+// 4 = 生成元の呼び先が名前付き関数型の仮引数（値の位置の閉包は展開されないので生成元にならない）
 
 import "std/iter"
 import "ast"
@@ -31,18 +33,40 @@ func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     if t.nodes[c].kind != ast.ECall {
         return 0
     }
-    fi := calleeFn(cx, ft, f, t.nodes[c].a, false)
+    fi := calleeFn(cx, ft, f, t.nodes[c].a, 0)
+    na := ast.ListLen(t, t.nodes[c].b)
+    mut fallible := false
     if fi < 0 {
-        return 0
+        // 閉包の名前: 囲む関数の仮引数の匿名の関数型（a = 仮引数の型の列・b = 結果の列）。名前付き関数型の仮引数（型宣言の中身が BFunc —
+        // 値の位置の閉包）は展開されないので生成元にならない — 4。他の型の仮引数を呼ぶ形は下流の型検査に任せる
+        pa := closureParam(cx, ft, f, g, t.nodes[c].a)
+        if pa < 0 {
+            return 0
+        }
+        ty := t.nodes[pa].b
+        if t.nodes[ty].kind == ast.TName {
+            df, dn := typeDeclAt(cx, f, Name(t, t.nodes[ty].a))
+            return if df >= 0 && cx.trees[df].nodes[cx.trees[df].nodes[dn].c].kind == ast.BFunc { 4 } else { 0 }
+        }
+        if t.nodes[ty].kind != ast.TFunc {
+            return 0
+        }
+        tps := t.nodes[ty].a
+        np := ast.ListLen(t, tps)
+        if np != na + 1 || t.nodes[ast.ListAt(t, tps, np - 1)].kind != ast.TFunc {
+            return 0
+        }
+        fallible = errOptList(t, t.nodes[ty].b)
+    } else {
+        dt := cx.trees[ft.file[fi]]
+        d := ft.node[fi]
+        ps := dt.nodes[d].c
+        np := ast.ListLen(dt, ps)
+        if np != na + 1 || dt.nodes[dt.nodes[ast.ListAt(dt, ps, np - 1)].b].kind != ast.TFunc {
+            return 0
+        }
+        fallible = errOptOnly(dt, d)
     }
-    dt := cx.trees[ft.file[fi]]
-    d := ft.node[fi]
-    ps := dt.nodes[d].c
-    np := ast.ListLen(dt, ps)
-    if np != ast.ListLen(t, t.nodes[c].b) + 1 || dt.nodes[dt.nodes[ast.ListAt(dt, ps, np - 1)].b].kind != ast.TFunc {
-        return 0
-    }
-    fallible := errOptOnly(dt, d)
     if !marked {
         return if fallible { 1 } else { 0 }
     }
@@ -52,9 +76,41 @@ func forGenHit(cx Cx, ft FnTab, f int, g int, stmt bool) int {
     return if fallible { 0 } else { 3 }
 }
 
+// closureParam は生成元の callee（節 callee）が囲む関数（生成元の節 g を含む同じファイルの func 宣言 — 字句の位置で決める）の仮引数の名前なら
+// その仮引数の節（でなければ -1）。シャドーイング禁止（決定 13）なので名前は関数の中で一意
+func closureParam(cx Cx, ft FnTab, f int, g int, callee int) int {
+    t := cx.trees[f]
+    if t.nodes[callee].kind != ast.EIdent {
+        return 0 - 1
+    }
+    at := t.nodes[g].tok
+    mut d := 0 - 1
+    for fi <- iter.Range(0, len(ft.file)) {
+        if ft.file[fi] == f && t.nodes[ft.node[fi]].tok <= at && (d < 0 || t.nodes[ft.node[fi]].tok > t.nodes[d].tok) {
+            d = ft.node[fi]
+        }
+    }
+    if d < 0 {
+        return 0 - 1
+    }
+    name := Name(t, t.nodes[callee].a)
+    ps := t.nodes[d].c
+    for j <- iter.Range(0, ast.ListLen(t, ps)) {
+        p := t.nodes[ast.ListAt(t, ps, j)]
+        if Name(t, p.a) == name {
+            return ast.ListAt(t, ps, j)
+        }
+    }
+    return 0 - 1
+}
+
 // errOptOnly は func 宣言 d の結果が `error?` 1 つか
 func errOptOnly(t ast.Tree, d int) bool {
-    rs := t.nodes[d].d
+    return errOptList(t, t.nodes[d].d)
+}
+
+// errOptList は結果の型の列 rs が `error?` 1 つか
+func errOptList(t ast.Tree, rs int) bool {
     if ast.ListLen(t, rs) != 1 {
         return false
     }

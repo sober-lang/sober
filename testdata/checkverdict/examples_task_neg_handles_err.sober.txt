@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_handles_err.sober:15:35: an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)
+exit=1

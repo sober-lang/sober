@@ -1,0 +1,33 @@
+package main
+
+// 名前付き関数型の値を展開される関数どうしで転送する（F-bk — 2026-10-19）。展開の実引数のラムダは値の位置へ持ち上げた値として
+// 期待型（名前付き関数型 Sink）のまま束ね、次の値の位置への転送でも同じ型で照合する（check ≡ build）
+
+type Sink func(emit func([]byte) error?) error?
+
+func inner(send func(b []byte) error?, st Sink, tag string) error? {
+    println(tag)
+    return st((b) => send(b))
+}
+
+func outer(send func(b []byte) error?, st Sink) error? {
+    return inner(send, st, "outer")
+}
+
+type Long error
+
+func count(st Sink) int {
+    e := st((b) => if len(b) > 3 { Long{} } else { nil })
+    return if e == nil { 0 } else { 1 }
+}
+
+func viaCount(send func(b []byte) error?, st Sink) int {
+    _ = send(bytes("x"))
+    return count(st)
+}
+
+func main() {
+    e := outer((b []byte) => if len(b) > 2 { nil } else { Long{} }, (emit) => emit(bytes("abc")))
+    println(e == nil)
+    println(viaCount((b []byte) => nil, (emit) => emit(bytes("hello"))))
+}

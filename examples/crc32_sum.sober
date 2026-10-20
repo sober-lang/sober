@@ -1,0 +1,54 @@
+package main
+
+// std/hash/crc32.Sum の全部の道の網（report-774 — 64 バイト以上は PCLMULQDQ の折り畳み〔x86 の最適化のバックエンド・CPUID の判定つき〕・
+// 他と倒れ先は slicing-by-8 / 1 バイトずつ）: 長さ 0〜300 の全部 × 番地のずれ 0〜3・1K / 8K / 64K + 1 を 1 ビットずつの割り算（参照の実装）と照合し、
+// 混ぜた値と RFC 1952 の照合値 0xcbf43926 を出す。SOBER_NOCLMUL=1（倒れ先へ強制）でも同じ出力
+
+import "std/convert"
+import "std/hash/crc32"
+import "std/iter"
+
+// ref は 1 ビットずつの CRC-32（反転形の多項式 0xedb88320 — 表も語も使わない参照）
+func ref(b []byte) int {
+    mut c := 0xffffffff
+    for i <- iter.Range(0, len(b)) {
+        c = c ^ int(b[i])
+        for k <- iter.Range(0, 8) {
+            c = if c & 1 == 1 { (c >> 1) ^ 0xedb88320 } else { c >> 1 }
+        }
+    }
+    return c ^ 0xffffffff
+}
+
+func main() int {
+    mut b := mut []byte{}
+    mut x := 12345
+    for n <- iter.Range(0, 65540) {
+        x = x * 1103515245 + 12345
+        b = append(b, byte((x >> 16) & 0xff))
+    }
+    d := freeze(b)
+    // 長さ 0〜300 × ずれ 0〜3（16 の倍数の境・64 の境・端数の全部）
+    mut bad := 0
+    mut sum := 0
+    for off <- iter.Range(0, 4) {
+        for n <- iter.Range(0, 301) {
+            s := d[off:off + n]
+            c := crc32.Sum(s)
+            if c != ref(s) {
+                bad += 1
+            }
+            sum = sum ^ (c * (n + 1 + off * 301))
+        }
+    }
+    println("mismatch ${bad}")
+    println(convert.FormatInt(sum))
+    // 大きい本文（折り畳みの 64 バイトの環を長く回す）
+    big := []int{1024, 8192, 65537}
+    for n <- big {
+        s := d[3:3 + n]
+        println("${n} ${convert.FormatInt(crc32.Sum(s))} ${crc32.Sum(s) == ref(s)}")
+    }
+    println(convert.FormatInt(crc32.Sum(bytes("123456789"))))
+    return 0
+}

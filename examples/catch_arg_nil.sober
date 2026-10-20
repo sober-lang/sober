@@ -1,0 +1,33 @@
+package main
+
+// catch の実引数の直書き・式位置の塊の mut の束縛（2026-10-19 — r848 の F 候補）。式位置の `f() catch nil` は
+// `{ $v, $e := f(); mut $r := $v; if $e != nil { $r = nil }; $r }` に写り、mut のセルは束縛点（塊の region）の座標に緩むので、
+// 塊の末尾の型の推定も同じ座標で読んで出口の写しを付ける（check ≡ build）
+
+type Bad error
+
+@errors(Bad)
+func get(k int) (string?, error?) {
+    if k > 5 {
+        return nil, Bad{}
+    }
+    return if k > 2 { "big" } else { nil }, nil
+}
+
+func num(s string?) int {
+    return if s == nil { 0 } else { 1 }
+}
+
+func sum(k int) int {
+    return num(get(k) catch nil) + num(get(k + 1) catch nil)
+}
+
+func main() {
+    println(sum(1))
+    println(sum(2))
+    println(sum(3))
+    println(sum(5))
+    u := "outer"
+    n := { mut r := u; r }
+    println(n)
+}

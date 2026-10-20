@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_endpoint.sober:11:23: a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)
+exit=1

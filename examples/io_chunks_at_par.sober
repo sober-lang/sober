@@ -5,7 +5,7 @@ package main
 // leaves the loop once it is past the end of its range. The pieces add up to the whole file. Run from the repository root.
 import "std/io"
 import "std/iter"
-import "std/par"
+import "std/task"
 
 // piece counts the newlines and the byte sum of p's bytes in [lo, hi)
 func piece(p string, lo int, hi int) ([]int, error?) {
@@ -39,7 +39,7 @@ func main() int {
     // 7 ranges of unequal sizes (some inside one slot, some across several)
     cuts := []int{0, 1000, 70000, 70001, 140000, 150000, 200000, n}
     ks := []int{0, 1, 2, 3, 4, 5, 6}
-    rs, err := par.Map(ks, (k) => piece(p, cuts[k], cuts[k + 1]))
+    rs, err := task.Map(ks, (k) => piece(p, cuts[k], cuts[k + 1]))
     if err != nil {
         println("cannot read the pieces")
         return 1

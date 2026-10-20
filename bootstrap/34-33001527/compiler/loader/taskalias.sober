@@ -1,0 +1,121 @@
+package loader
+
+// std/task の別名（API 総再審 便 4b の第 1 相 — 2026-10-20・report-901。第 2 相で消す）: `import "std/task"` を `import task "std/par"` に写し、
+// その参照名の修飾名 `task.X` を par の語彙へ写す（Run → Scope・Scope → S・Handle → Task・Sender / Receiver → Tx / Rx・NewChannel → NewChan・
+// ChildDied → TaskDied・MarkFailed → Fail・LeaseBlock → LeaseBlk — 他は同じ名前）。以降の層（desugar・checker・lower・x86・rt）は par の語彙のまま。
+// std/task のソースはこの窓では読まない（par の package を共有する — 同じ path なので型も同一で、std の中の par の利用と混ざっても型が割れない）。
+// 鎖の二相: 第 1 相の compiler（boot になる）が task の語彙のソース〔第 2 相の compiler/ と std〕を建てられるようにする口。第 2 相で compiler が
+// task の名前で引くように付け替えて、この写しと std/par を消す。値札 = この窓では task を使うプログラムの印字（型名・panic の文面）が par の語彙で出る
+
+import "ast"
+import "std/iter"
+import "std/strings"
+
+// taskToPar は std/task の公開の名前の par の語彙（表に無ければ同じ名前 — 2 本の列の同じ位置が対）
+func taskToPar(n string) string {
+    ts := []string{"Run", "Scope", "Handle", "Sender", "Receiver", "NewChannel", "ChildDied", "MarkFailed", "LeaseBlock"}
+    ps := []string{"Scope", "S", "Task", "Tx", "Rx", "NewChan", "TaskDied", "Fail", "LeaseBlk"}
+    for i <- iter.Range(0, len(ts)) {
+        if ts[i] == n {
+            return ps[i]
+        }
+    }
+    return n
+}
+
+// putStr はデータの池 d の末尾に文字列 s を積んだ番号
+func putStr(d mut []int, s string) int {
+    at := len(d)
+    b := bytes(s)
+    d = append(d, len(b))
+    for i <- iter.Range(0, len(b)) {
+        d = append(d, int(b[i]))
+    }
+    return at
+}
+
+func hasRef(refs []string, r string) bool {
+    for i <- iter.Range(0, len(refs)) {
+        if refs[i] == r {
+            return true
+        }
+    }
+    return false
+}
+
+// qualMapped は修飾名の文字列 s（`R.X`）の R が std/task の参照名なら `R.<par の語彙>`（そうでなければ ""）
+func qualMapped(refs []string, s string) string {
+    r, x, dot := strings.CutLast(s, ".")
+    if !dot || !hasRef(refs, r) {
+        return ""
+    }
+    p := taskToPar(x)
+    return if p == x { "" } else { r + "." + p }
+}
+
+// taskAlias は木 t の std/task の import を par の別名へ写した木（std/task を import していなければ t のまま — 写した後の木にもう一度掛けても同じ）
+func taskAlias(t ast.Tree) ast.Tree {
+    imps := t.nodes[t.file].b
+    mut refs := mut []string{}
+    for k <- iter.Range(0, ast.ListLen(t, imps)) {
+        im := t.nodes[ast.ListAt(t, imps, k)]
+        if Name(t, im.b) == "std/task" {
+            refs = append(refs, if im.a >= 0 { Name(t, im.a) } else { "task" })
+        }
+    }
+    if len(refs) == 0 {
+        return t
+    }
+    rs := freeze(refs)
+    mut d := mut []int{}
+    for i <- iter.Range(0, len(t.data)) {
+        d = append(d, t.data[i])
+    }
+    mut ns := mut []ast.Node{}
+    for i <- iter.Range(0, len(t.nodes)) {
+        ns = append(ns, t.nodes[i])
+    }
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.KImport && Name(t, x.b) == "std/task" {
+            ref := if x.a >= 0 { Name(t, x.a) } else { "task" }
+            ns[i] = ast.Node{kind: x.kind, tok: x.tok, a: putStr(mut d, ref), b: putStr(mut d, "std/par"), c: x.c, d: x.d, e: x.e, f: x.f}
+        } else if x.kind == ast.ESelector && x.a >= 0 && t.nodes[x.a].kind == ast.EIdent && hasRef(rs, Name(t, t.nodes[x.a].a)) {
+            n := Name(t, x.b)
+            p := taskToPar(n)
+            if p != n {
+                ns[i] = ast.WithB(x, putStr(mut d, p))
+            }
+        } else if x.kind == ast.EComposite || x.kind == ast.TName || x.kind == ast.TGeneric || x.kind == ast.KPType && x.b >= 0 {
+            // 修飾名の文字列（composite・型名は a・型パターンは b）
+            onB := x.kind == ast.KPType
+            m := qualMapped(rs, Name(t, if onB { x.b } else { x.a }))
+            if m != "" {
+                v := putStr(mut d, m)
+                ns[i] = if onB { ast.WithB(x, v) } else { ast.WithA(x, v) }
+            }
+        } else if x.kind == ast.KFuncDecl && x.f >= 0 && ast.ListLen(t, x.f) > 5 {
+            // `@errors(…)` のラベルの名前の列（付加の列の 6 番目 — 文字列の列・無ければ -1）: 列の中の番号をその場で差し替える
+            errs := ast.ListAt(t, x.f, 5)
+            if errs >= 0 {
+                for j <- iter.Range(0, ast.ListLen(t, errs)) {
+                    m := qualMapped(rs, Name(t, ast.ListAt(t, errs, j)))
+                    if m != "" {
+                        v := putStr(mut d, m)
+                        d[errs + 1 + j] = v
+                    }
+                }
+            }
+        }
+    }
+    return ast.Tree{nodes: freeze(ns), data: freeze(d), file: t.file}
+}
+
+// taskAliasAll は木の列の全部に taskAlias を掛けた列
+func taskAliasAll(ts []ast.Tree) []ast.Tree {
+    mut out := mut []ast.Tree{}
+    for i <- iter.Range(0, len(ts)) {
+        out = append(out, taskAlias(ts[i]))
+    }
+    return freeze(out)
+}

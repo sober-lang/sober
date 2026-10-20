@@ -1,0 +1,74 @@
+package main
+
+// Wycheproof（testdata/wycheproof/README.md）の X25519 518 件を std/crypto/x25519 に通す（report-794）。valid も acceptable（低位数の点・
+// twist・非正準の u・全 0 の共有値）も RFC 7748 の値どおりの共有値を出すこと（全 0 の検査は TLS の側 — RFC 8446 7.4.2）。食い違った tcId を印字する
+
+import "std/crypto/x25519"
+import "std/hex"
+import "std/iter"
+import "std/json"
+
+@embed("testdata/wycheproof/x25519_test.json")
+const Files = map[string]string{}
+
+type XTest struct {
+    tcId int
+    public string
+    private string
+    shared string
+    result string
+}
+
+type XGroup struct {
+    tests []XTest
+}
+
+type XFile struct {
+    testGroups []XGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func file(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func main() {
+    fs := Files
+    d, err := json.Parse(bytes(file(fs, "testdata/wycheproof/x25519_test.json")))
+    if err != nil {
+        println("parse error")
+        return
+    }
+    f, derr := json.Decode[XFile](d, json.Root(d))
+    if derr != nil {
+        println("decode error")
+        return
+    }
+    mut n := 0
+    mut zero := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        for t <- g.tests {
+            n = n + 1
+            got := hex.Format(x25519.Shared(unhex(t.private), unhex(t.public)))
+            if got != t.shared {
+                bad = append(bad, t.tcId)
+            }
+            if t.shared == "0000000000000000000000000000000000000000000000000000000000000000" {
+                zero = zero + 1
+            }
+        }
+    }
+    println("x25519: ${n} tests, ${len(bad)} failed (all-zero shared ${zero})")
+    for i <- iter.Range(0, len(bad)) {
+        println("  fail tcId ${bad[i]}")
+    }
+}

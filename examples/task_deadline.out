@@ -1,0 +1,8 @@
+zero: expired, hour: ok
+outer first: expired, inner first: expired, neither: ok
+after the inner scope: ok
+spawned: expired, mapped: 1 expired / 2 expired / 3 expired
+pure: 2999997
+slept: expired
+flush: expired
+outside: ok

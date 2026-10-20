@@ -1,0 +1,9 @@
+package main
+
+// selfpar の節の規則の束の網（席 D の D-2）: 規則 0（値 1 つの束縛に多値）を前のファイル（a）・catch の左辺を後のファイル（b）に置く — catch の左辺が先に出る
+import "std/io"
+
+func main() {
+    d := io.ReadStdin()
+    println(len(d) + g())
+}

@@ -1,0 +1,10 @@
+package main
+
+func one(n int) int {
+    return n + 1
+}
+
+func g() int {
+    x := one(1) catch 0
+    return x
+}

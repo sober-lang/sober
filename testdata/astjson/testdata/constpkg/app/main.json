@@ -284,6 +284,30 @@
               ],
               "tok": 76
             }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 83
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 85
+                  },
+                  "field": "Min",
+                  "tok": 87
+                }
+              ],
+              "tok": 84
+            }
           }
         ]
       },
@@ -291,7 +315,7 @@
       "bodiless": false,
       "span": {
         "start": 10,
-        "end": 85
+        "end": 92
       },
       "sig_end": 14
     }

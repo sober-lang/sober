@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from "fs";
 
 const DIR = new URL("../src/compiler/lower/", import.meta.url).pathname;
 // 関数ごとの入口（群の子の束の列 lB1Func / lB2Func — move.sober — と、〜Module が関数ごとに呼ぶもの）
-const ENTRIES = ["lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "slpFunc", "cmpDupFunc"];
+const ENTRIES = ["optFunc", "lB1Func", "lB2Func", "sroaFunc", "m2rFunc", "gvnFunc", "hdrFunc", "bceFunc", "licmFunc", "depthFlowFunc", "cfgCleanFunc", "mfFunc", "vecFunc", "slpFunc", "cmpDupFunc"];
 // 子の St に写してよい欄（読みの種類: cfg = 親の値を写す・work = 子では空から〔作業域〕・fn = 子では渡した関数・tbl = kindsInit が組む・
 // ro = 子では既定〔偽 / 空〕のまま — x86 の読み口 xg は xro が偽ならヒープ st.d.h を読む）
 const ALLOW: Record<string, string> = {

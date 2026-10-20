@@ -367,43 +367,49 @@ func namesHit(cx Cx) NameHit {
     for pk <- iter.Range(0, len(cx.pkg_path)) {
         ix := pkgNames(cx, pk)
         for f <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
-            t := cx.trees[f]
-            root := t.nodes[t.file]
-            mut h := noHit()
-            for i <- iter.Range(0, ast.ListLen(t, root.c)) {
-                td := t.nodes[ast.ListAt(t, root.c, i)]
-                h = earlier(h, tparamsHit(t, ix, td.b, f, td.tok))
-                body := t.nodes[td.c]
-                h = earlier(h, declHit(ix, Name(t, td.a), body.kind == ast.BError, f, td.tok))
-                if body.kind == ast.BUnion {
-                    for j <- iter.Range(0, ast.ListLen(t, body.a)) {
-                        v := t.nodes[ast.ListAt(t, body.a, j)]
-                        h = earlier(h, declHit(ix, Name(t, v.a), true, f, v.tok))
-                    }
-                }
-            }
-            for i <- iter.Range(0, ast.ListLen(t, root.d)) {
-                fd := t.nodes[ast.ListAt(t, root.d, i)]
-                h = earlier(h, tparamsHit(t, ix, fd.b, f, fd.tok))
-                h = earlier(h, declHit(ix, Name(t, fd.a), false, f, fd.tok))
-                for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
-                    h = earlier(h, bindHit(ix, t, t.nodes[ast.ListAt(t, fd.c, p)].a, f, fd.tok))
-                }
-                if fd.e >= 0 {
-                    h = earlier(h, shadowHit(t, ix, fd, f))
-                }
-            }
-            for i <- iter.Range(0, ast.ListLen(t, root.e)) {
-                c := t.nodes[ast.ListAt(t, root.e, i)]
-                h = earlier(h, declHit(ix, Name(t, c.a), false, f, c.tok))
-                h = earlier(h, bodyHit(t, ix, c.b, f))
-            }
+            h := namesIn(cx, ix, f)
             if h.file >= 0 {
                 return h
             }
         }
     }
     return noHit()
+}
+
+// namesIn はファイル f（ix = その package の索引）の名前の検査の最も前の違反（finpar.sober の子も同じ関数を呼ぶ）
+func namesIn(cx Cx, ix NameIx, f int) NameHit {
+    t := cx.trees[f]
+    root := t.nodes[t.file]
+    mut h := noHit()
+    for i <- iter.Range(0, ast.ListLen(t, root.c)) {
+        td := t.nodes[ast.ListAt(t, root.c, i)]
+        h = earlier(h, tparamsHit(t, ix, td.b, f, td.tok))
+        body := t.nodes[td.c]
+        h = earlier(h, declHit(ix, Name(t, td.a), body.kind == ast.BError, f, td.tok))
+        if body.kind == ast.BUnion {
+            for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+                v := t.nodes[ast.ListAt(t, body.a, j)]
+                h = earlier(h, declHit(ix, Name(t, v.a), true, f, v.tok))
+            }
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, root.d)) {
+        fd := t.nodes[ast.ListAt(t, root.d, i)]
+        h = earlier(h, tparamsHit(t, ix, fd.b, f, fd.tok))
+        h = earlier(h, declHit(ix, Name(t, fd.a), false, f, fd.tok))
+        for p <- iter.Range(0, ast.ListLen(t, fd.c)) {
+            h = earlier(h, bindHit(ix, t, t.nodes[ast.ListAt(t, fd.c, p)].a, f, fd.tok))
+        }
+        if fd.e >= 0 {
+            h = earlier(h, shadowHit(t, ix, fd, f))
+        }
+    }
+    for i <- iter.Range(0, ast.ListLen(t, root.e)) {
+        c := t.nodes[ast.ListAt(t, root.e, i)]
+        h = earlier(h, declHit(ix, Name(t, c.a), false, f, c.tok))
+        h = earlier(h, bodyHit(t, ix, c.b, f))
+    }
+    return h
 }
 
 // ── ローカル束縛どうしのシャドーイング（決定 13 — 同じスコープでの再宣言を含む）──

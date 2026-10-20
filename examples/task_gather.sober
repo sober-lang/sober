@@ -1,0 +1,64 @@
+package main
+
+// 段 6 P3b-5: handle の slice と task.Gather（正準順 = 生んだ順で待つ fan-in）。handle は mut slice に積む
+// （`mut hs := mut []task.Handle[T]{}` — 要素の型は囲む scope の region の handle）。Gather は Join の列（死んだ子があれば呼び手も死ぬ）
+
+import "std/task"
+
+func work(n int) int {
+    return n * n
+}
+
+func label(n int) string {
+    return "t${n}"
+}
+
+// sumSquares は関数の本体の scope で Gather する
+func sumSquares(n int) int {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        mut i := 0
+        while i < n {
+            k := i
+            hs = append(hs, task.Spawn(s, () => work(k)))
+            i += 1
+        }
+        vs := task.Gather(hs)
+        mut acc := 0
+        mut j := 0
+        while j < len(vs) {
+            acc += vs[j]
+            j += 1
+        }
+        acc
+    })
+    return r
+}
+
+func main() {
+    println(sumSquares(5))
+    // string の結果（子の region から scope の region へ写る）・生んだ順に並ぶ
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[string]{}
+        mut i := 3
+        while i > 0 {
+            k := i
+            hs = append(hs, task.Spawn(s, () => label(k)))
+            i -= 1
+        }
+        vs := task.Gather(hs)
+        "${vs[0]} ${vs[1]} ${vs[2]} (${len(vs)})"
+    })
+    println(r)
+    // 同じ handle を 2 度（Join は冪等）・空の列
+    r2, e2 := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        none := task.Gather(hs)
+        hs = append(hs, task.Spawn(s, () => work(7)))
+        hs = append(hs, hs[0])
+        vs := task.Gather(hs)
+        ws := task.Gather(hs)
+        vs[0] + vs[1] + ws[1] + len(none)
+    })
+    println(r2)
+}

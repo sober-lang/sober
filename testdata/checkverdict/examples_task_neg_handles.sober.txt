@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_handles.sober:9:19: handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)
+exit=1

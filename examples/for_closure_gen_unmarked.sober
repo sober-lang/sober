@@ -1,0 +1,23 @@
+package main
+
+// 負例（language.md 7 節 L-for）: 結果が error? の閉包の呼び出し形を印 `?` なしで回す — 失敗を黙って捨てる形は呼び出し形の生成元と同じ拒否
+
+func gen(n int, k func(int)) error? {
+    mut i := 0
+    while i < n {
+        k(i)
+        i += 1
+    }
+    return nil
+}
+
+func relay(recv func(k func(int)) error?) error? {
+    for x <- recv() {
+        println(x)
+    }
+    return nil
+}
+
+func main() {
+    println(relay((k) => gen(3, k)) == nil)
+}

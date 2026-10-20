@@ -8,7 +8,7 @@ package loader
 import "std/builder"
 import "std/io"
 import "std/iter"
-import "std/utf8"
+import "std/strings"
 import "ast"
 import "diag"
 
@@ -263,7 +263,7 @@ func embedConst(t ast.Tree, c int, f int) (ast.Tree, error?) {
         if !ok {
             return t, diag.EmbedRead{at: at}
         }
-        if !utf8.Valid(b) {
+        if !strings.Valid(b) {
             return t, diag.EmbedFileUtf8{at: at}
         }
         bodies = append(bodies, b)

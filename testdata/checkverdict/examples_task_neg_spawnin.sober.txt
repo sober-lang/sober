@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_spawnin.sober:11:54: a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body
+exit=1

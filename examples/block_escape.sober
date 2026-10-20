@@ -4,7 +4,7 @@ package main
 // ブロックの出口は暗黙のラベルへの脱出で、jump と同じ境界コピー（ブロックの region の中身を親の最内 region へ写してから pop）。
 // 写しが消えるのは再標的の最適化（最初から親の region に作る）の仕事で、意味論は常に写す
 
-import "std/strings"
+import "std/convert"
 
 func noise() int {
     t := "zzzzzzzzzzzzzzzz" + "yyyyyyyyyyyyyyyy"
@@ -13,7 +13,7 @@ func noise() int {
 
 func label(n int) string {
     s := {
-        t := "n=" + strings.FormatInt(n)
+        t := "n=" + convert.FormatInt(n)
         t + "!"
     }
     k := noise()

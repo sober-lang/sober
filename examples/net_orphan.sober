@@ -1,0 +1,153 @@
+package main
+
+// 親の task が死ぬと、その開いている scope の下で io を待つ子孫は待ちを切られて io.Expired を受け、普通の道で巻き戻る（language.md 28 節
+// 「キャンセルは協調的」— rt は待ちを起こすだけ）。期限の無い scope でも永眠しない（report-741 の穴 — 直しは lower/orphan.sober）。
+// 待ちの種類ごと: 受け（Recv）・accept・孫（死んだ親の scope の下の、生きている子の scope の下）・切られた後の再試行（次の待ちの入口で即 Expired）・
+// 送りの詰まり（読まない相手への Send）・親の死の時には走っていた子（次の待ちの入口で捕まる）。外の scope は親の死を受ける（died）
+
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/task"
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    for l <- net.Listen("127.0.0.1:0")? {
+        addr := "127.0.0.1:${net.Port(l)}"
+        for k <- iter.Range(0, 6) {
+            _, e := task.Run((s task.Scope) => {
+                h := task.Spawn(s, () => parent(k, addr))
+                _ = h
+                0
+            })
+            println("case ${k}: outer died=${e != nil}")
+        }
+        break
+    }
+    return "done", nil
+}
+
+// parent は scope を開いて子を生み、子が待ちに入った頃に死ぬ（範囲外の添字）
+func parent(k int, addr string) int {
+    _, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => child(k, addr))
+        _ = h
+        os.Sleep(50)
+        xs := []int{1}
+        xs[9]
+    })
+    _ = e
+    return 0
+}
+
+func child(k int, addr string) int {
+    switch k {
+    case 0: println("recv: ${label(waitRecv(addr))}")
+    case 1: println("accept: ${label(waitAccept())}")
+    case 2: grand(addr)
+    case 3: retry(addr)
+    case 4: println("send: ${label(flood(addr))}")
+    case 5: late(addr)
+    }
+    return 0
+}
+
+func label(e error?) string {
+    return switch e {
+    case nil: "done"
+    case io.Expired{}: "expired"
+    case io.Timeout{}: "timeout"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    }
+}
+
+// 誰も送らない接続を Recv で待つ
+func waitRecv(addr string) error? {
+    for c <- net.Dial(addr)? {
+        for chunk <- net.Recv(c)? {
+            _ = chunk
+            break
+        }
+    }
+    return nil
+}
+
+// 誰も繋がない listener で Accept を待つ
+func waitAccept() error? {
+    for l2 <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Accept(l2)? {
+            println("accept: got ${net.Port(l2)}")
+            break
+        }
+        break
+    }
+    return nil
+}
+
+// 孫: 子は自分の scope を開いて孫に Recv を待たせ、孫を待つ（子の scope に印は無い — 印は死んだ親の scope にだけ立つ）
+func grand(addr string) {
+    _, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => {
+            println("grand recv: ${label(waitRecv(addr))}")
+            0
+        })
+        _ = h
+        0
+    })
+    println("grand scope: err=${e != nil}")
+}
+
+// 切られた後の再試行: 2 回目の待ちは入口で即 Expired（待たない）
+func retry(addr string) {
+    e := retryRecv(addr)
+    _ = e
+}
+
+func retryRecv(addr string) error? {
+    for c <- net.Dial(addr)? {
+        e1 := recvOnce(c)
+        e2 := recvOnce(c)
+        println("retry: ${label(e1)} ${label(e2)}")
+    }
+    return nil
+}
+
+func recvOnce(c net.Conn) error? {
+    for chunk <- net.Recv(c)? {
+        _ = chunk
+        break
+    }
+    return nil
+}
+
+// 読まない相手へ送り続けて送りの完了待ちで詰まる（何回目で詰まるかは観測に出さない）
+func flood(addr string) error? {
+    big := filled(1048576)
+    for c <- net.Dial(addr)? {
+        for _ <- iter.Range(0, 4096) {
+            net.Send(c, big)?
+        }
+    }
+    return nil
+}
+
+// 親の死の時には眠っていた（待ちの登録簿に居ない）子: 起きてからの最初の待ちの入口が祖先を辿って捕まえる
+func late(addr string) {
+    os.Sleep(200)
+    println("late recv: ${label(waitRecv(addr))}")
+}
+
+func filled(n int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte(i % 256))
+    }
+    return b
+}

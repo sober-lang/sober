@@ -1,2 +1,0 @@
-panic: TaskDied{cause: TaskDied} at par_die.sober:59:17
-  cause at par_die.sober:55:54

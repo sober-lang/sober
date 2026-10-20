@@ -1,0 +1,64 @@
+package main
+
+// 段 6 P3b-5: task.Map（要素ごとに 1 task・結果は添字の順・`([]U, error?)`）。実引数のラムダの本体は子の本体へ展開される
+// （β 簡約で持ち上げ — 捕獲は Spawn と同じ imm の値）。子が死ねば err = ChildDied で結果は空。結果の型 U はラムダの結果から推論する
+// （P3b 残穴2 — T → U）
+
+import "std/convert"
+import "std/task"
+
+type Row struct {
+    key string
+    n int
+}
+
+func pick(xs []int, i int) int {
+    return xs[i]
+}
+
+func report(e error?) {
+    if e == nil {
+        println("nil")
+        return
+    }
+    switch e {
+    case task.ChildDied{}: println("ChildDied")
+    default: println("?")
+    }
+}
+
+// scaled は関数の本体の Map（仮引数を捕獲する）
+func scaled(xs []int, x int) []int {
+    ys, e := task.Map(xs, (v) => v * x)
+    return ys
+}
+
+func main() {
+    i := 100
+    x := 7
+    hs := []int{1, 2, 3}
+    // ラムダの自由変数 i / x / hs は Map の本体の局所と同名（子の本体では外の束縛を指す）
+    ys, err := task.Map([]int{1, 2}, (v) => v + i + x + len(hs))
+    println("${ys[0]} ${ys[1]}")
+    report(err)
+    // 子が死ぬ（範囲外）: err = ChildDied・結果は空
+    zs, e2 := task.Map([]int{0, 5, 1}, (j) => pick(hs, j))
+    println(len(zs))
+    report(e2)
+    ws := scaled([]int{2, 3}, 4)
+    println("${ws[0]} ${ws[1]}")
+    // pipe・string の要素
+    ss, e3 := []string{"p", "q"} |> task.Map((s) => "${s}${x}")
+    println(ss[0] + ss[1])
+    report(e3)
+    // T → U: string → int・int → string・int → struct
+    ls, e4 := []string{"a", "bcd"} |> task.Map((s) => len(bytes(s)))
+    println(ls[0] + ls[1])
+    report(e4)
+    fs, e5 := task.Map([]int{4, 9}, (v) => convert.FormatInt(v * x) + "!")
+    println(fs[0] + fs[1])
+    report(e5)
+    rs, e6 := task.Map([]int{1, 2}, (v) => Row{key: "k" + convert.FormatInt(v), n: v + i})
+    println("${rs[1].key} ${rs[1].n}")
+    report(e6)
+}

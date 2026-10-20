@@ -1,0 +1,11 @@
+package main
+
+// 負例: 結果を持つ func の本体は return が要る — 本体の末尾の式は戻り値にならない（syntax.md 決定 9）
+
+func f() int {
+    println(1)
+}
+
+func main() {
+    println(f())
+}

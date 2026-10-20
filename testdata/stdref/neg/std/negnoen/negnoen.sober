@@ -1,0 +1,6 @@
+package negnoen
+
+// negnoen は訳表の無い package（en-none の負例・package の doc が名前で始まる負例）
+
+// 1
+const One = 1

@@ -1,2 +1,0 @@
-panic: TaskDied{cause: index out of range} at par_print_die.sober:28:22
-  cause at par_print_die.sober:10:14

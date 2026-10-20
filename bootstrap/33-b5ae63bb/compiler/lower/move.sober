@@ -1,0 +1,548 @@
+package lower
+
+// 移し器（段 4 後半 ラウンド 9）: 関数 1 つの本体の IR を番地 0 起点の詰めた []int へ移し（mvPack）、
+// 詰めた形を今のヒープの末尾へ積んで関数の記録の頭を付け替える（mvUnpack）。束（B1 = optimizeSsa・B2 = 展開の後の cfgClean〜cmpDup）を
+// 群の子へ配る前提の形 — 子は詰めた形を自前のヒープに積んで束を回し、同じ形で詰め直して返す。
+// - 動かすもの = 関数の本体: スロット [next, 語数, 番号, 空きの鎖, 値]・ブロック [B_*]・ブロックの引数 [next, 値, 型, 0]・命令 [I_*]・値の列 [n, …]
+// - 動かさないもの = 関数の記録そのもの（他の関数の呼び出し〔K_FN〕・関数の鎖が番地で指す — 頭の本体の欄だけ書き換える）と外の参照
+//   （K_FN・K_GLOB・F_NAME・F_PTYS — 不透明にそのまま運ぶ）
+// - 付け替える欄 = 記録の鎖（スロットの next・ブロックの B_NEXT / B_PHEAD / B_PTAIL / B_IHEAD / B_ITAIL・引数の next・命令の I_NEXT）と、
+//   欄の種別の表（ir.sober の opRow / termRow）が K_BLK / K_VLIST / K_OLIST とする欄。値の番号（K_VAL）は関数ごとの通しなので付け替えない
+// - 値の列は命令・終端の間で共有されうる（opt の vlist が同じ列を 2 度書かない印を付けるのはそのため）— 1 つの列は 1 回だけ移す
+// - 旧い番地 → 詰めた番地は、写し終えた旧い記録（と列の頭）の先頭の語に転送先の符号（mvCode — 負・持ち主の関数つき）を書いて引く
+//   （詰めた後の旧い本体は死ぬ — 親は子の結果を積み直す・roundtrip は積み直す。ハッシュの表を引く形は自己 build で 1.2 G 命令）
+// 詰めた形: [頭 MV_HDR 語][スロット MV_SLOT 語…][ブロック BSZ 語…][引数 MV_PAR 語…][命令 ISZ 語…][値の列…]（各々鎖の順）
+
+import "desugar"
+import "std/iter"
+import "std/par"
+
+const MV_SLOT = 5
+const MV_PAR = 4
+// 頭: [スロット数, ブロック数, 引数数, 命令数, F_NVAL, F_BHEAD, F_BTAIL, F_NBLK, F_SHEAD, F_STAIL, F_NSLOT]
+const MV_NS = 0
+const MV_NB = 1
+const MV_NP = 2
+const MV_NI = 3
+const MV_FN = 4  // 関数の記録の本体の欄の写し（F_NVAL〜F_NSLOT の 7 語 — MV_FN + k = 下の mvFnField(k)）
+const MV_HDR = 11
+
+// mvFnField は頭に写す関数の記録の欄（k = 0〜6）
+func mvFnField(k int) int {
+    return switch k {
+    case 0: F_NVAL
+    case 1: F_BHEAD
+    case 2: F_BTAIL
+    case 3: F_NBLK
+    case 4: F_SHEAD
+    case 5: F_STAIL
+    default: F_NSLOT
+    }
+}
+
+// mvFnRef は頭の関数の欄 k が記録を指すか（鎖の頭・尾 — 付け替える）
+func mvFnRef(k int) bool { return k == 1 || k == 2 || k == 4 || k == 5 }
+
+// MV_OWN は転送先の符号の持ち主の桁（詰めた番地 < 2^24 語）
+const MV_OWN = 16777216
+
+// mvCode は関数 f の詰めた番地 off への転送先の符号（≤ -2 — 鎖の -1〔無し〕・列の長さ〔≥ 0〕と重ならない）
+func mvCode(f FnRef, off int) int { return -(2 + off + int(f) * MV_OWN) }
+
+// mvOwn は旧い番地 x の先頭の語が関数 f の転送先の符号か
+func mvOwn(st mut St, f FnRef, x int) bool {
+    c := desugar.HeapGet(mut st.d, x)
+    return c <= -2 && (-c - 2) / MV_OWN == int(f)
+}
+
+// mvFwd は旧い番地 x の詰めた番地（-1 = 無しはそのまま）。転送先の符号が無ければ詰めの抜け（本体の外を指す鎖・列 — roundtrip の網が落とす形）
+func mvFwd(st mut St, f FnRef, x int) int {
+    if x < 0 {
+        return x
+    }
+    if !mvOwn(mut st, f, x) {
+        panic(Unreachable{})
+    }
+    return -desugar.HeapGet(mut st.d, x) - 2 - int(f) * MV_OWN
+}
+
+// mvListMove は値の列 l を（初出なら）out の末尾へ写して詰めた番地を返す（旧い列の頭に転送先を書く・毒のために [番地, 長さ] を残す）
+func mvListMove(st mut St, f FnRef, out mut []int, lists mut []int, l int) int {
+    if l < 0 {
+        return l
+    }
+    n := desugar.HeapGet(mut st.d, l)
+    if n <= -2 {
+        return mvFwd(mut st, f, l)
+    }
+    off := len(out)
+    mvCopy(mut st, mut out, l, 1 + n)
+    desugar.HeapSet(mut st.d, l, mvCode(f, off))
+    lists = append(lists, l)
+    lists = append(lists, n)
+    return off
+}
+
+// mvCopy は旧い記録 x の n 語を out の末尾へ。語ごとにヒープの口（desugar.HeapGet）で読む — Table の chunk を直に読む速い道
+// （copyloop.sober が一括の写しにしていた形）は、他の package の mut の中身を持つ欄の読みなので外した（language.md 20 節・report-493）。
+// 一括の読み口（std/table に chunk 単位の写し）は鎖の行が要る — 積み
+func mvCopy(st mut St, out mut []int, x int, n int) {
+    mut a := x
+    end := x + n
+    while a < end {
+        out = append(out, desugar.HeapGet(mut st.d, a))
+        a += 1
+    }
+}
+
+// mvPack は関数 f の本体を詰めた形にする。旧い本体の記録の先頭の語は転送先の符号で潰れる（poison なら記録と列の全部を毒で — roundtrip）
+func mvPack(st mut St, f FnRef, poison bool) []int {
+    mut ss := mut []int{}
+    mut bs := mut []int{}
+    mut ps := mut []int{}
+    mut is := mut []int{}
+    mut s := irFnSHead(mut st, f)
+    while s >= 0 {
+        ss = append(ss, s)
+        s = desugar.HeapGet(mut st.d, s)
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        bs = append(bs, int(b))
+        b = irBlkNext(mut st, b)
+    }
+    for k <- iter.Range(0, len(bs)) {
+        mut p := irBlkPHead(mut st, BlkRef(bs[k]))
+        while p >= 0 {
+            ps = append(ps, p)
+            p = desugar.HeapGet(mut st.d, p)
+        }
+        mut i := irBlkIHead(mut st, BlkRef(bs[k]))
+        while i != -1 {
+            is = append(is, int(i))
+            i = irInsNext(mut st, i)
+        }
+    }
+    sOff := MV_HDR
+    bOff := sOff + len(ss) * MV_SLOT
+    pOff := bOff + len(bs) * BSZ
+    iOff := pOff + len(ps) * MV_PAR
+    // 頭（関数の欄は最後に付け替える）と記録の生の写し
+    mut out := mut []int{}
+    out = append(out, len(ss))
+    out = append(out, len(bs))
+    out = append(out, len(ps))
+    out = append(out, len(is))
+    for k <- iter.Range(0, 7) {
+        out = append(out, desugar.HeapGet(mut st.d, int(f) + mvFnField(k)))
+    }
+    for k <- iter.Range(0, len(ss)) {
+        mvCopy(mut st, mut out, ss[k], MV_SLOT)
+    }
+    for k <- iter.Range(0, len(bs)) {
+        mvCopy(mut st, mut out, bs[k], BSZ)
+    }
+    for k <- iter.Range(0, len(ps)) {
+        mvCopy(mut st, mut out, ps[k], MV_PAR)
+    }
+    for k <- iter.Range(0, len(is)) {
+        mvCopy(mut st, mut out, is[k], ISZ)
+    }
+    // 転送先（写し終えたので旧い記録の先頭の語を潰してよい）
+    for k <- iter.Range(0, len(ss)) {
+        desugar.HeapSet(mut st.d, ss[k], mvCode(f, sOff + k * MV_SLOT))
+    }
+    for k <- iter.Range(0, len(bs)) {
+        desugar.HeapSet(mut st.d, bs[k], mvCode(f, bOff + k * BSZ))
+    }
+    for k <- iter.Range(0, len(ps)) {
+        desugar.HeapSet(mut st.d, ps[k], mvCode(f, pOff + k * MV_PAR))
+    }
+    for k <- iter.Range(0, len(is)) {
+        desugar.HeapSet(mut st.d, is[k], mvCode(f, iOff + k * ISZ))
+    }
+    // 値の列（命令の順 → 終端の順に初出で写す）と付け替え
+    mut lists := mut []int{}
+    for k <- iter.Range(0, len(is)) {
+        at := iOff + k * ISZ
+        out[at + I_NEXT] = mvFwd(mut st, f, out[at + I_NEXT])
+        mut r := st.opk[out[at + I_OP]]
+        mut fa := at + I_A
+        while r != 0 {
+            kind := r & 15
+            if kind == K_VLIST || kind == K_OLIST {
+                out[fa] = mvListMove(mut st, f, mut out, mut lists, out[fa])
+            }
+            r = r >> 4
+            fa += 1
+        }
+    }
+    for k <- iter.Range(0, len(bs)) {
+        at := bOff + k * BSZ
+        out[at + B_NEXT] = mvFwd(mut st, f, out[at + B_NEXT])
+        out[at + B_PHEAD] = mvFwd(mut st, f, out[at + B_PHEAD])
+        out[at + B_PTAIL] = mvFwd(mut st, f, out[at + B_PTAIL])
+        out[at + B_IHEAD] = mvFwd(mut st, f, out[at + B_IHEAD])
+        out[at + B_ITAIL] = mvFwd(mut st, f, out[at + B_ITAIL])
+        mut r := st.tmk[out[at + B_TERM]]
+        mut fa := at + B_X1
+        while r != 0 {
+            kind := r & 15
+            if kind == K_BLK {
+                out[fa] = mvFwd(mut st, f, out[fa])
+            } else if kind == K_VLIST {
+                out[fa] = mvListMove(mut st, f, mut out, mut lists, out[fa])
+            }
+            r = r >> 4
+            fa += 1
+        }
+    }
+    for k <- iter.Range(0, len(ss)) {
+        at := sOff + k * MV_SLOT
+        out[at] = mvFwd(mut st, f, out[at])
+        // 空きの鎖（lower の間だけ使う — begin が関数ごとに空にする）は同じ関数のスロットなら付け替え・外なら無し
+        fr := out[at + 3]
+        out[at + 3] = if fr >= 0 && mvOwn(mut st, f, fr) { mvFwd(mut st, f, fr) } else { -1 }
+    }
+    for k <- iter.Range(0, len(ps)) {
+        at := pOff + k * MV_PAR
+        out[at] = mvFwd(mut st, f, out[at])
+    }
+    for k <- iter.Range(0, 7) {
+        if mvFnRef(k) {
+            out[MV_FN + k] = mvFwd(mut st, f, out[MV_FN + k])
+        }
+    }
+    if poison {
+        mvFillAll(mut st, mut ss, MV_SLOT)
+        mvFillAll(mut st, mut bs, BSZ)
+        mvFillAll(mut st, mut ps, MV_PAR)
+        mvFillAll(mut st, mut is, ISZ)
+        for k <- iter.Range(0, len(lists) / 2) {
+            mvFill(mut st, lists[k * 2], 1 + lists[k * 2 + 1])
+        }
+    }
+    return freeze(out)
+}
+
+// mvUnpack は詰めた形 p を内側の参照を + 基底で付け替えた写しにして今のヒープの末尾へ塊で積み、関数 f の記録の本体の欄を書き換える
+// （旧い本体の記録はヒープにゴミとして残る）
+func mvUnpack(st mut St, f FnRef, p []int) {
+    base := desugar.HeapLen(mut st.d)
+    mut q := mut []int{}
+    pn := len(p)
+    mut w := 0
+    while w < pn {
+        q = append(q, p[w])
+        w += 1
+    }
+    mut at := MV_HDR
+    for k <- iter.Range(0, p[MV_NS]) {
+        mvRel(mut q, at, base)
+        mvRel(mut q, at + 3, base)
+        at += MV_SLOT
+    }
+    for k <- iter.Range(0, p[MV_NB]) {
+        mvRel(mut q, at + B_NEXT, base)
+        mvRel(mut q, at + B_PHEAD, base)
+        mvRel(mut q, at + B_PTAIL, base)
+        mvRel(mut q, at + B_IHEAD, base)
+        mvRel(mut q, at + B_ITAIL, base)
+        mut r := st.tmk[q[at + B_TERM]]
+        mut x := at + B_X1
+        while r != 0 {
+            kind := r & 15
+            if kind == K_BLK || kind == K_VLIST {
+                mvRel(mut q, x, base)
+            }
+            r = r >> 4
+            x += 1
+        }
+        at += BSZ
+    }
+    for k <- iter.Range(0, p[MV_NP]) {
+        mvRel(mut q, at, base)
+        at += MV_PAR
+    }
+    for k <- iter.Range(0, p[MV_NI]) {
+        mvRel(mut q, at + I_NEXT, base)
+        mut r := st.opk[q[at + I_OP]]
+        mut x := at + I_A
+        while r != 0 {
+            kind := r & 15
+            if kind == K_VLIST || kind == K_OLIST {
+                mvRel(mut q, x, base)
+            }
+            r = r >> 4
+            x += 1
+        }
+        at += ISZ
+    }
+    desugar.HeapPushAll(mut st.d, freeze(q))
+    for k <- iter.Range(0, 7) {
+        v := p[MV_FN + k]
+        desugar.HeapSet(mut st.d, int(f) + mvFnField(k), if mvFnRef(k) && v >= 0 { v + base } else { v })
+    }
+}
+
+// mvRel は q[at] が詰めた番地なら + base（-1 = 無しはそのまま）
+func mvRel(q mut []int, at int, base int) {
+    if q[at] >= 0 {
+        q[at] = q[at] + base
+    }
+}
+
+// MV_POISON は roundtrip が旧い本体の記録に書く毒（ヒープの外の番地 — 付け替え忘れの参照を読めば添字の範囲外で落ちる・値として使えば ELF が変わる）
+const MV_POISON = 1125899906842624
+
+func mvFillAll(st mut St, xs mut []int, n int) {
+    for k <- iter.Range(0, len(xs)) {
+        mvFill(mut st, xs[k], n)
+    }
+}
+
+func mvFill(st mut St, at int, n int) {
+    for k <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, at + k, MV_POISON)
+    }
+}
+
+// mvRoundtripModule は全関数の本体を詰め、旧い本体を毒で潰して積み直す（束を回さない — 移し器の網: SOBER_BUILD_PAR=roundtrip で、
+// ELF ≡ 移さない経路。毒は付け替え忘れの欄・本体の外から本体の記録を番地で持ち越す表を落とす）
+func mvRoundtripModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            p := mvPack(mut st, f, true)
+            mvUnpack(mut st, f, p)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// ── 束の群の子（段 4 後半 ラウンド 10）──
+// 束（B1 = optimizeSsa の sroa〜depth・B2 = 展開の後の cfgClean〜cmpDup）の関数ごとのパスを、関数を命令の数で群に分けて群の子で回す:
+// 親が関数の本体を詰め（mvPack — 旧い本体は死ぬ）、子は自前の St のヒープに関数の記録を新しく組んで積み（mvUnpack）、束のパスを関数ごとに
+// 全部掛けて詰め直して返す。親は群の順に積み直す。束の各 Module は関数ごとのループだけ（パスの順 × 関数の順を、関数の順 × パスの順に
+// 入れ替えても同じ — selfpar の 1 本の経路 ≡ W8 の ELF の照合が網）。子が読む St の欄は lParCfg（scripts/lparcfg.ts が閉包を棚卸しする）と、
+// 呼び先の戻りの型の表（lret — valueTypes が呼び出しの結果の型を引く: lFnRet）だけ。
+// ワーカー 1・群 1 つ以下・1 本の経路（xseq）・roundtrip では移さず今までの Module の列（呼び手）
+
+const LG_COST = 25000  // 群の目標の太さ（命令の数 — x86 の群と同じ物差し。W で割らない）
+
+// LGroup は 1 つの群（親の関数の記録・詰めた本体・引数の型の列・戻りの型）
+type LGroup struct {
+    fns []int
+    bodies [][]int
+    ptys [][]int
+    rets []int
+    mutp []int
+}
+
+// lParCfg は子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
+func lParCfg(st mut St, b2 bool) []int {
+    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq)})
+}
+
+// lRets は呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く）
+func lRets(st mut St) []int {
+    mut out := mut []int{}
+    mut f := st.fhead
+    mut last := -1
+    while f != -1 {
+        if int(f) <= last {
+            panic(Unreachable{}) // 関数の鎖は記録の番地の昇順（追加順）
+        }
+        last = int(f)
+        out = append(out, int(f))
+        out = append(out, irFnRet(mut st, f))
+        f = irFnNext(mut st, f)
+    }
+    return freeze(out)
+}
+
+// lFnRet は関数 g の戻りの型（群の子は親の表 st.lret から・他はヒープの記録から）
+func lFnRet(st mut St, g FnRef) int {
+    if !st.lkid {
+        return irFnRet(mut st, g)
+    }
+    mut lo := 0
+    mut hi := len(st.lret) / 2 - 1
+    while lo <= hi {
+        m := (lo + hi) / 2
+        a := st.lret[m * 2]
+        if a == int(g) {
+            return st.lret[m * 2 + 1]
+        }
+        if a < int(g) {
+            lo = m + 1
+        } else {
+            hi = m - 1
+        }
+    }
+    panic(Unreachable{})
+}
+
+// lParOn は束を群の子で回す形か（ワーカー 1・1 本の経路・roundtrip でない）
+func lParOn(st mut St) bool {
+    return !st.xseq && !st.mvRound && par.Ledger().workers > 1
+}
+
+// lParBatch は束 b2（偽 = B1・真 = B2）を群の子で回す。回さない形（ワーカー 1・群 1 つ以下・1 本の経路・roundtrip）なら何もせず false
+func lParBatch(st mut St, b2 bool) bool {
+    if !lParOn(mut st) {
+        return false
+    }
+    mut fr := mut []int{}
+    mut cut := mut []int{0}   // 群の境（fr の添字）
+    mut acc := 0
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            fr = append(fr, int(f))
+            acc += xFnCost(mut st, f)
+            if acc >= LG_COST {
+                cut = append(cut, len(fr))
+                acc = 0
+            }
+        }
+        f = irFnNext(mut st, f)
+    }
+    if acc > 0 {
+        cut = append(cut, len(fr))
+    }
+    if len(cut) <= 2 {
+        return false
+    }
+    lret := lRets(mut st)
+    cfg := lParCfg(mut st, b2)
+    mut gs := mut []LGroup{}
+    mut big := 0
+    for k <- iter.Range(0, len(cut) - 1) {
+        mut fns := mut []int{}
+        mut bodies := mut [][]int{}
+        mut ptys := mut [][]int{}
+        mut rets := mut []int{}
+        mut mutp := mut []int{}
+        mut words := 0
+        for j <- iter.Range(cut[k], cut[k + 1]) {
+            g := FnRef(fr[j])
+            fns = append(fns, fr[j])
+            pt := irFnPtys(mut st, g)
+            mut pv := mut []int{}
+            for q <- iter.Range(0, desugar.HeapGet(mut st.d, pt)) {
+                pv = append(pv, desugar.HeapGet(mut st.d, pt + 1 + q))
+            }
+            ptys = append(ptys, freeze(pv))
+            rets = append(rets, irFnRet(mut st, g))
+            mutp = append(mutp, irFnMutP(mut st, g))
+            body := mvPack(mut st, g, false)
+            words += len(body)
+            bodies = append(bodies, body)
+        }
+        if words > big {
+            big = words
+        }
+        gs = append(gs, LGroup{fns: freeze(fns), bodies: freeze(bodies), ptys: freeze(ptys), rets: freeze(rets), mutp: freeze(mutp)})
+    }
+    // budget: = 群の詰めた語数の最大 × 128 B + 8 MiB（子のヒープ〔パスが積む記録で伸びる〕と作業域 — 写しは親の分で子は数えない）
+    bud := big * 128 + 8 * par.MB
+    outs, serr := par.Map(freeze(gs), (g) => lParGroup(g, cfg, lret), budget: bud)
+    if serr != nil {
+        return panic(InvariantBroken{})
+    }
+    for k <- iter.Range(0, len(outs)) {
+        for j <- iter.Range(0, len(outs[k])) {
+            mvUnpack(mut st, FnRef(gs[k].fns[j]), outs[k][j])
+        }
+    }
+    return true
+}
+
+// lParGroup は子の本体: 自前の St のヒープに群の関数を積み、束のパスを関数ごとに掛けて詰め直す
+func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
+    mut st := St{}
+    kindsInit(mut st)
+    st.rtPanic = FnRef(cfg[0])
+    st.rtPanicMem = FnRef(cfg[1])
+    st.rtMapfind = FnRef(cfg[2])
+    st.rtRenterL = FnRef(cfg[3])
+    st.rtRenterLL = FnRef(cfg[4])
+    st.noVec = cfg[5] & 1 == 1
+    // task を使うプログラムには SLP を掛けない（slp.sober — キャンセルの検査点が v128 の区間を跨ぎうる）
+    st.taskUse = cfg[5] & 2 == 2
+    st.lkid = true
+    st.lret = lret
+    desugar.HeapPush(mut st.d, 0)
+    st.ubCheck = FnRef(cfg[7])
+    st.ubBound = FnRef(cfg[8])
+    // ヘッダのループ昇格（hloop.sober）が許す rt の呼び出し・確保の根
+    st.rtGrow = FnRef(cfg[9])
+    st.rtGrow8 = FnRef(cfg[10])
+    st.rtRalloc = FnRef(cfg[11])
+    st.rtAlloc8 = FnRef(cfg[12])
+    // 展開後の上限の巻き上げ（rlim.sober）の種の番地 @rt.meta
+    st.meta = cfg[13]
+    // 写しの転送（cpfwd.sober）が読むだけとみなす rt.str_eq
+    st.rtStreq = FnRef(cfg[14])
+    mfCfgSet(mut st, cfg, 15)
+    mut out := mut [][]int{}
+    for j <- iter.Range(0, len(g.fns)) {
+        cf := FnRef(recN(mut st, FSZ))
+        pl := listN(mut st, len(g.ptys[j]))
+        for q <- iter.Range(0, len(g.ptys[j])) {
+            desugar.HeapSet(mut st.d, pl + 1 + q, g.ptys[j][q])
+        }
+        desugar.HeapSet(mut st.d, int(cf) + F_PTYS, pl)
+        desugar.HeapSet(mut st.d, int(cf) + F_RET, g.rets[j])
+        desugar.HeapSet(mut st.d, int(cf) + F_MUTP, g.mutp[j])
+        mvUnpack(mut st, cf, g.bodies[j])
+        if cfg[6] == 1 {
+            lB2Func(mut st, cf)
+        } else {
+            // 2 = 設計整合パスの関数ごとの段を頭で（elfOutSt が optPre だけを済ませた形）
+            if cfg[6] == 2 {
+                optFunc(mut st, cf)
+            }
+            lB1Func(mut st, cf)
+        }
+        out = append(out, mvPack(mut st, cf, false))
+    }
+    return freeze(out)
+}
+
+// lB1Func は B1（optimizeSsa）の関数ごとのパスの列
+func lB1Func(st mut St, f FnRef) {
+    sroaFunc(mut st, f, false)
+    m2rFunc(mut st, f)
+    gvnFunc(mut st, f)
+    hdrFunc(mut st, f)
+    hloopFunc(mut st, f)
+    cpfwdFunc(mut st, f)
+    unrollFunc(mut st, f)
+    bceFunc(mut st, f)
+    licmFunc(mut st, f)
+    depthFlowFunc(mut st, f)
+}
+
+// lB2Func は B2（展開の後の cfgClean〜cmpDup）の関数ごとのパスの列
+func lB2Func(st mut St, f FnRef) {
+    cfgCleanFunc(mut st, f)
+    if st.rtMapfind != -1 {
+        mfFunc(mut st, f)
+    }
+    sroaFunc(mut st, f, true)
+    p0 := ccNParams(mut st, f)
+    m2rFunc(mut st, f)
+    if ccNParams(mut st, f) > p0 {
+        ccDeadAfterM2r(mut st, f)
+        ccPostFold(mut st, f)
+    }
+    rlimFunc(mut st, f)
+    _ = ubfFunc(mut st, f)
+    if !st.noVec {
+        _ = vecFunc(mut st, f)
+        slpFunc(mut st, f)
+    }
+    _ = cmpDupFunc(mut st, f)
+}

@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_tuple.sober:10:21: a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)
-exit=1

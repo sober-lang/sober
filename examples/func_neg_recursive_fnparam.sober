@@ -1,0 +1,11 @@
+package main
+
+// 負例: 関数型の仮引数を持つ関数は呼び出し点に展開されるので、再帰できない（language.md 8 節）
+
+func apply(f func(int) int, n int) int {
+    return if n == 0 { f(0) } else { apply(f, n - 1) }
+}
+
+func main() {
+    println(apply((x) => x + 1, 3))
+}

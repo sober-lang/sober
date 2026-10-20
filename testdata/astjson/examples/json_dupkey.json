@@ -3,17 +3,17 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/iter",
+      "path": "std/convert",
       "tok": 4
     },
     {
       "alias": null,
-      "path": "std/json",
+      "path": "std/iter",
       "tok": 7
     },
     {
       "alias": null,
-      "path": "std/strings",
+      "path": "std/json",
       "tok": 10
     },
     {
@@ -22,8 +22,8 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -495,7 +495,7 @@
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
-                                    "name": "strings",
+                                    "name": "convert",
                                     "tok": 136
                                   },
                                   "field": "FormatInt",
@@ -525,7 +525,7 @@
                               "k": "selector",
                               "base": {
                                 "k": "ident",
-                                "name": "strings",
+                                "name": "convert",
                                 "tok": 145
                               },
                               "field": "FormatInt",

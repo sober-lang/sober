@@ -1,0 +1,56 @@
+package main
+
+// 段 6 P4-5: キャンセル — 子 a が死ぬと、後ろの純な子（io もチャネルも持たない）は検査点で切られる: ループの後ろの辺（spin）・再帰する関数の入口（fib）・
+// 入れ子の scope の孫（nest — 祖先の印を辿る）。切られた子の値を Join / Try が求めたら切らない形で走らせ直す（b・d — 値は切らないときと同じ）。
+// 後ろの子は有界（乱択のスケジュールでは死より先に走り切ることがある — 値は同じ）
+import "std/task"
+
+func spin(n int) int {
+    mut s := 0
+    mut i := 0
+    while i < n {
+        s = (s + i * 7) % 1000003
+        i += 1
+    }
+    return s
+}
+
+func fib(n int) int {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+func nest(n int) int {
+    r, e := task.Run((s task.Scope) => {
+        x := task.Spawn(s, () => spin(n))
+        y := task.Spawn(s, () => spin(n * 2))
+        task.Join(x) + task.Join(y)
+    })
+    return r
+}
+
+func main() {
+    r, se := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => {
+            xs := []int{1}
+            xs[3]
+        })
+        b := task.Spawn(s, () => spin(100000))
+        c := task.Spawn(s, () => nest(20000000))
+        d := task.Spawn(s, () => nest(1000))
+        f := task.Spawn(s, () => fib(32))
+        println("b = ${task.Join(b)}")
+        switch task.Try(d) {
+        case task.Ok{v}: println("d = ${v}")
+        case task.Failed{e}: println("d failed")
+        case task.Died{cause}: println("d died")
+        }
+        3
+    })
+    if se != nil {
+        println("scope died")
+    }
+    println("${r}")
+}

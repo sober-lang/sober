@@ -1,0 +1,2 @@
+sober: load error at examples/mutarg_neg_alias.sober:13:21: mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call
+exit=1

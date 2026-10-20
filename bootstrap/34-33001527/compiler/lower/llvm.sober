@@ -1,0 +1,1122 @@
+package lower
+
+// region op の展開（src/stage1/ir_rtlower.zig の写し）と IR → LLVM テキスト（src/stage1/ir_llvm.zig の写し — 開発時専用の差分オラクル経路。docs/ir.md 8 節）。
+// - rtlower: region_enter → call rt.region_enter / region_depth → load @rt.meta[W_DEPTH] / region_setdepth → store / region_alloc → call rt.region_alloc /
+//   region_bump → load.ptr (gep.word @rt.meta, d)[W_BUMP] / region_relocate → call rt.region_relocate(hdr, const cellw, floor)。
+//   結果の値の番号は元の op のものを引き継ぎ、中間の値は関数の末尾に番号を足す
+// - .ll: ブロック引数は φ（前任は IR ブロックの末尾ラベル — div のガード等でブロック内にラベルが増える）。condbr の辺は中継ブロックを通す。
+//   φ の前任を先に知るため、ラベルの採番（fresh）だけをなぞる前走査で入り辺を集めてから印字する（Zig 版はブロックごとの本文を溜めて後から φ を前に付ける）
+
+import "desugar"
+import "obuf"
+
+const W_BUMP_OFF = 1
+
+// ── rtlower ──
+
+func newValueIn(st mut St, f FnRef) int {
+    v := irFnNVal(mut st, f)
+    irSetFnNVal(mut st, f, v + 1)
+    return v
+}
+
+// linkInst は命令の記録 r をブロック b の命令の鎖の末尾へつなぐ
+func linkInst(st mut St, b BlkRef, r InsRef) {
+    irSetInsNext(mut st, r, -1)
+    tail := irBlkITail(mut st, b)
+    if tail == -1 {
+        irSetBlkIHead(mut st, b, r)
+    } else {
+        irSetInsNext(mut st, tail, r)
+    }
+    irSetBlkITail(mut st, b, r)
+}
+
+func mkInst(st mut St, res int, op int, a int, b int, c int) InsRef {
+    r := InsRef(recN(mut st, ISZ))
+    irSetInsRes(mut st, r, res)
+    irSetInsOp(mut st, r, op)
+    irSetInsA(mut st, r, a)
+    irSetInsB(mut st, r, b)
+    irSetInsC(mut st, r, c)
+    return r
+}
+
+// metaAddr は globaladdr @rt.meta の命令を b へ足して値を返す
+func metaAddr(st mut St, f FnRef, b BlkRef) int {
+    v := newValueIn(mut st, f)
+    // std/par を使うプログラムではワーカーの表（段 6 P4-3 の fsaddr — P4-4 で見つけた穴: ここだけ大域の番地のままで、ワーカー k の深度・bump が
+    // ワーカー 0 の表を読み書きしていた。ワーカー 1 では表 = 大域なので観測に出なかった）
+    linkInst(mut st, b, mkInst(mut st, v, if st.taskUse && desugar.HeapGet(mut st.d, st.meta + G_WSLOT) >= 0 { OpFsAddr } else { OpGlobal }, st.meta, 0, 0))
+    return v
+}
+
+func rtlower(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        mut b := irFnBHead(mut st, f)
+        while b != -1 {
+            mut ins := irBlkIHead(mut st, b)
+            irSetBlkIHead(mut st, b, -1)
+            irSetBlkITail(mut st, b, -1)
+            while ins != -1 {
+                nx := irInsNext(mut st, ins)
+                op := irInsOp(mut st, ins)
+                res := irInsRes(mut st, ins)
+                a := irInsA(mut st, ins)
+                if op == OpREnter {
+                    linkInst(mut st, b, mkInst(mut st, -1, OpCall, int(st.rtRenter), list0(mut st), 0))
+                } else if op == OpRDepth {
+                    m := metaAddr(mut st, f, b)
+                    linkInst(mut st, b, mkInst(mut st, res, OpLoad, m, W_DEPTH, 0))
+                } else if op == OpRSetDepth {
+                    m := metaAddr(mut st, f, b)
+                    linkInst(mut st, b, mkInst(mut st, -1, OpStore, m, W_DEPTH, a))
+                } else if op == OpRAlloc {
+                    linkInst(mut st, b, mkInst(mut st, res, OpCall, int(st.rtRalloc), list2(mut st, a, irInsB(mut st, ins)), 0))
+                } else if op == OpRBump {
+                    m := metaAddr(mut st, f, b)
+                    p := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, p, OpGepW, m, a, 0))
+                    linkInst(mut st, b, mkInst(mut st, res, OpLoad, p, W_BUMP_OFF, 1))
+                } else if op == OpRReloc {
+                    c := newValueIn(mut st, f)
+                    linkInst(mut st, b, mkInst(mut st, c, OpConst, irInsB(mut st, ins), 0, 0))
+                    linkInst(mut st, b, mkInst(mut st, -1, OpCall, int(st.rtReloc), list3(mut st, a, c, irInsC(mut st, ins)), 0))
+                } else {
+                    linkInst(mut st, b, ins)
+                }
+                ins = nx
+            }
+            b = irBlkNext(mut st, b)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// ── 値の型の表（印字に要る — store の値・呼び出しの引数・ret）──
+
+// valueTypes は関数 f の値の型の列（添字 = 値の番号）
+func valueTypes(st mut St, f FnRef) int {
+    n := irFnNVal(mut st, f)
+    vt := listN(mut st, n)
+    ptys := irFnPtys(mut st, f)
+    mut i := 0
+    while i < desugar.HeapGet(mut st.d, ptys) {
+        desugar.HeapSet(mut st.d, vt + 1 + i, desugar.HeapGet(mut st.d, ptys + 1 + i))
+        i += 1
+    }
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut p := irBlkPHead(mut st, b)
+        while p >= 0 {
+            desugar.HeapSet(mut st.d, vt + 1 + desugar.HeapGet(mut st.d, p + 1), desugar.HeapGet(mut st.d, p + 2))
+            p = desugar.HeapGet(mut st.d, p)
+        }
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            r := irInsRes(mut st, ins)
+            if r >= 0 {
+                op := irInsOp(mut st, ins)
+                t := if op == OpGepW || op == OpGepB || op == OpItop || op == OpSlotaddr || op == OpGlobal || op == OpFsAddr || op == OpRAlloc || op == OpRBump {
+                    TyPtr
+                } else if op == OpLoad {
+                    if irInsC(mut st, ins) == 1 { TyPtr } else { TyI64 }
+                } else if op == OpCall {
+                    lFnRet(mut st, irInsFn(mut st, ins))
+                } else if op == OpCallI {
+                    irInsC(mut st, ins)
+                } else if op == OpPMem || (op == OpPArith && irInsA(mut st, ins) != PK_LO && irInsA(mut st, ins) != PK_HI) {
+                    TyV128
+                } else {
+                    TyI64
+                }
+                desugar.HeapSet(mut st.d, vt + 1 + r, t)
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return vt
+}
+
+// ── ラベル（"b<N>" か "b<N>.<tag><k>"）──
+
+const LbNone = 0
+const LbT = 1
+const LbE = 2
+const LbDz = 3
+const LbDnz = 4
+const LbDm1 = 5
+const LbDop = 6
+const LbDj = 7
+
+func llLabel(out mut []byte, bi int, tag int, k int) {
+    out = append(out, 'b')
+    num(mut out, bi)
+    if tag == LbNone {
+        return
+    }
+    out = append(out, '.')
+    if tag == LbT {
+        obuf.Lit(mut out, "t")
+    } else if tag == LbE {
+        obuf.Lit(mut out, "e")
+    } else if tag == LbDz {
+        obuf.Lit(mut out, "dz")
+    } else if tag == LbDnz {
+        obuf.Lit(mut out, "dnz")
+    } else if tag == LbDm1 {
+        obuf.Lit(mut out, "dm1")
+    } else if tag == LbDop {
+        obuf.Lit(mut out, "dop")
+    } else {
+        obuf.Lit(mut out, "dj")
+    }
+    num(mut out, k)
+}
+
+// divGuarded は div / rem の除数 y にガードが要るか（y が 0 でも -1 でもない定数 — それまでに印字した iconst — ならガードを省く）
+func divGuarded(st mut St, cs int, y int) bool {
+    return !(desugar.HeapGet(mut st.d, cs + 1 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != 0 && desugar.HeapGet(mut st.d, cs + 2 + y * 2) != -1)
+}
+
+// incoming はブロックの入り辺の鎖の末尾へ 1 辺足す（[next, from の bi, tag, k, 引数]）
+func incomingAdd(st mut St, inc int, to BlkRef, bi int, tag int, k int, args int) {
+    id := irBlkId(mut st, to)
+    e := recN(mut st, 5)
+    desugar.HeapSet(mut st.d, e + 1, bi)
+    desugar.HeapSet(mut st.d, e + 2, tag)
+    desugar.HeapSet(mut st.d, e + 3, k)
+    desugar.HeapSet(mut st.d, e + 4, args)
+    tail := desugar.HeapGet(mut st.d, inc + 1 + id * 2 + 1)
+    if tail < 0 {
+        desugar.HeapSet(mut st.d, inc + 1 + id * 2, e)
+    } else {
+        desugar.HeapSet(mut st.d, tail, e)
+    }
+    desugar.HeapSet(mut st.d, inc + 1 + id * 2 + 1, e)
+}
+
+// collectIncoming は印字と同じ順にラベルの採番をなぞって、ブロックごとの入り辺（[head, tail] の対の列）を集める
+func collectIncoming(st mut St, f FnRef) int {
+    nb := irFnNBlk(mut st, f)
+    inc := listN(mut st, nb * 2)
+    mut i := 0
+    while i < nb * 2 {
+        desugar.HeapSet(mut st.d, inc + 1 + i, -1)
+        i += 1
+    }
+    cs := listN(mut st, irFnNVal(mut st, f) * 2)
+    mut fresh := 0
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        bi := irBlkId(mut st, b)
+        mut tag := LbNone
+        mut k := 0
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            op := irInsOp(mut st, ins)
+            if op == OpConst {
+                r := irInsRes(mut st, ins)
+                desugar.HeapSet(mut st.d, cs + 1 + r * 2, 1)
+                desugar.HeapSet(mut st.d, cs + 2 + r * 2, irInsA(mut st, ins))
+            } else if op == OpStore || op == OpStore8 || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart {
+                fresh += 1
+            } else if op == OpBin && (irInsA(mut st, ins) == BDiv || irInsA(mut st, ins) == BRem) && divGuarded(mut st, cs, irInsC(mut st, ins)) {
+                fresh += 5
+                tag = LbDj
+                k = fresh
+            }
+            ins = irInsNext(mut st, ins)
+        }
+        t := irBlkTerm(mut st, b)
+        if t == TmBr {
+            incomingAdd(mut st, inc, irBrTo(mut st, b), bi, tag, k, irBlkX2(mut st, b))
+        } else if t == TmCondbr {
+            incomingAdd(mut st, inc, irCondThen(mut st, b), bi, LbT, fresh + 1, irBlkX3(mut st, b))
+            incomingAdd(mut st, inc, irCondElse(mut st, b), bi, LbE, fresh + 2, irBlkX5(mut st, b))
+            fresh += 2
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return inc
+}
+
+// ── 印字 ──
+
+// llHead は .ll の冒頭（target triple・_start の module asm・属性 — ir_llvm.emit の固定部）
+func llHead(out mut []byte) {
+    obuf.Lit(mut out, "; 生成物（sober build --emit=ll）\ntarget triple = \"x86_64-unknown-linux-none\"\n\n")
+    obuf.Lit(mut out, "module asm \".globl _start\"\nmodule asm \"_start:\"\nmodule asm \"  movq %rsp, %rdi\"\n")
+    obuf.Lit(mut out, "module asm \"  andq \$-16, %rsp\"\nmodule asm \"  call sober_entry\"\nmodule asm \"  ud2\"\n\n")
+    obuf.Lit(mut out, "attributes #0 = { nounwind \"no-builtins\" \"frame-pointer\"=\"all\" }\n\n")
+}
+
+func llTy(out mut []byte, t int) {
+    if t == TyPtr {
+        obuf.Lit(mut out, "ptr")
+    } else if t == TyI64 {
+        obuf.Lit(mut out, "i64")
+    } else {
+        obuf.Lit(mut out, "void")
+    }
+}
+
+// llName は `@"name"`（引用は常に — ir_llvm は名前を escape しない）
+func llName(st mut St, out mut []byte, s int) {
+    obuf.Lit(mut out, "@\"")
+    mut i := 0
+    while i < dat(mut st, s) {
+        out = append(out, byte(dat(mut st, s + 1 + i)))
+        i += 1
+    }
+    out = append(out, '"')
+}
+
+func llArgs(st mut St, out mut []byte, vt int, args int) {
+    if args >= 0 {
+        mut i := 0
+        while i < desugar.HeapGet(mut st.d, args) {
+            if i > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            v := desugar.HeapGet(mut st.d, args + 1 + i)
+            llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + v))
+            obuf.Lit(mut out, " %v")
+            num(mut out, v)
+            i += 1
+        }
+    }
+    obuf.Lit(mut out, ")\n")
+}
+
+func llExit(out mut []byte, code int) {
+    obuf.Lit(mut out, "  call i64 asm sideeffect \"syscall\", \"={rax},{rax},{rdi},~{rcx},~{r11},~{memory}\"(i64 60, i64 ")
+    num(mut out, code)
+    obuf.Lit(mut out, ")\n  unreachable\n")
+}
+
+func regName(out mut []byte, k int) {
+    if k == 0 {
+        obuf.Lit(mut out, "rax")
+    } else if k == 1 {
+        obuf.Lit(mut out, "rdi")
+    } else if k == 2 {
+        obuf.Lit(mut out, "rsi")
+    } else if k == 3 {
+        obuf.Lit(mut out, "rdx")
+    } else if k == 4 {
+        obuf.Lit(mut out, "r10")
+    } else if k == 5 {
+        obuf.Lit(mut out, "r8")
+    } else {
+        obuf.Lit(mut out, "r9")
+    }
+}
+
+// vreg は "%v<N>"
+func vreg(out mut []byte, v int) {
+    obuf.Lit(mut out, "%v")
+    num(mut out, v)
+}
+
+func llCmpName(out mut []byte, op int) {
+    if op == CEq {
+        obuf.Lit(mut out, "eq")
+    } else if op == CNe {
+        obuf.Lit(mut out, "ne")
+    } else if op == CLt {
+        obuf.Lit(mut out, "slt")
+    } else if op == CLe {
+        obuf.Lit(mut out, "sle")
+    } else if op == CGt {
+        obuf.Lit(mut out, "sgt")
+    } else if op == CGe {
+        obuf.Lit(mut out, "sge")
+    } else if op == CUlt {
+        obuf.Lit(mut out, "ult")
+    } else {
+        obuf.Lit(mut out, "uge")
+    }
+}
+
+func llBinName(out mut []byte, op int) {
+    if op == BAdd {
+        obuf.Lit(mut out, "add")
+    } else if op == BSub {
+        obuf.Lit(mut out, "sub")
+    } else if op == BMul {
+        obuf.Lit(mut out, "mul")
+    } else if op == BAnd {
+        obuf.Lit(mut out, "and")
+    } else if op == BOr {
+        obuf.Lit(mut out, "or")
+    } else {
+        obuf.Lit(mut out, "xor")
+    }
+}
+
+// llFunc は関数 1 つの .ll（入り辺は collectIncoming が先に集めたもの）。ブロックごとに φ・（入口なら）スロット・命令・終端
+func llFunc(st mut St, out mut []byte, f FnRef) {
+    vt := irFnLLVt(mut st, f)
+    inc := irFnLLInc(mut st, f)
+    cs := irFnLLCs(mut st, f)
+    llSig(mut st, mut out, f)
+    mut lc := LlCur{fresh: 0, ctag: LbNone, ck: 0, gb: listN(mut st, irFnNVal(mut st, f))}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut gi := irBlkIHead(mut st, b)
+        while gi != -1 {
+            if irInsOp(mut st, gi) == OpGepB && irInsRes(mut st, gi) >= 0 {
+                desugar.HeapSet(mut st.d, lc.gb + 1 + irInsRes(mut st, gi), 1)
+            }
+            gi = irInsNext(mut st, gi)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        bi := irBlkId(mut st, b)
+        llLabel(mut out, bi, LbNone, 0)
+        obuf.Lit(mut out, ":\n")
+        llPhis(mut st, mut out, b, bi, inc)
+        if bi == 0 {
+            llSlots(mut st, mut out, f)
+        }
+        lc.ctag = LbNone
+        lc.ck = 0
+        mut ins := irBlkIHead(mut st, b)
+        while ins != -1 {
+            llIns(mut st, mut out, mut lc, ins, bi, cs, vt)
+            ins = irInsNext(mut st, ins)
+        }
+        llTerm(mut st, mut out, mut lc, b, bi, vt)
+        b = irBlkNext(mut st, b)
+    }
+    obuf.Lit(mut out, "}\n")
+}
+
+// LlCur は llFunc の印字の状態（局所名 lc）: fresh = 次の新しい名前の番号（関数で通し）・ctag / ck = ブロックの直近のラベル
+// （div / rem の検査でブロックが割れたら合流点 LbDj — 終端の分岐はそこから出る）
+type LlCur struct {
+    fresh int
+    ctag int
+    ck int
+    // gb = 値の列（heap — listN）: 1 = gep.byte の結果（その番地からの語の load は揃っていない — std/binary.Load64・report-724 で `align 1`）
+    gb int
+}
+
+// llSig は define の行（名前・結果の型・仮引数）
+func llSig(st mut St, out mut []byte, f FnRef) {
+    obuf.Lit(mut out, if irFnExport(mut st, f) != 0 { "\ndefine " } else { "\ndefine internal " })
+    llTy(mut out, irFnRet(mut st, f))
+    out = append(out, ' ')
+    llName(mut st, mut out, irFnName(mut st, f))
+    out = append(out, '(')
+    ptys := irFnPtys(mut st, f)
+    mut i := 0
+    while i < desugar.HeapGet(mut st.d, ptys) {
+        if i > 0 {
+            obuf.Lit(mut out, ", ")
+        }
+        llTy(mut out, desugar.HeapGet(mut st.d, ptys + 1 + i))
+        out = append(out, ' ')
+        vreg(mut out, i)
+        i += 1
+    }
+    obuf.Lit(mut out, ") #0 {\n")
+}
+
+// llPhis はブロック b（番号 bi）の φ（入り辺の順 = 前任の jump の順）
+func llPhis(st mut St, out mut []byte, b BlkRef, bi int, inc int) {
+    mut p := irBlkPHead(mut st, b)
+    mut pi := 0
+    while p >= 0 {
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, desugar.HeapGet(mut st.d, p + 1))
+        obuf.Lit(mut out, " = phi ")
+        llTy(mut out, desugar.HeapGet(mut st.d, p + 2))
+        out = append(out, ' ')
+        mut e := desugar.HeapGet(mut st.d, inc + 1 + bi * 2)
+        mut first := true
+        while e >= 0 {
+            if !first {
+                obuf.Lit(mut out, ", ")
+            }
+            first = false
+            obuf.Lit(mut out, "[ ")
+            vreg(mut out, desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, e + 4) + 1 + pi))
+            obuf.Lit(mut out, ", %")
+            llLabel(mut out, desugar.HeapGet(mut st.d, e + 1), desugar.HeapGet(mut st.d, e + 2), desugar.HeapGet(mut st.d, e + 3))
+            obuf.Lit(mut out, " ]")
+            e = desugar.HeapGet(mut st.d, e)
+        }
+        out = append(out, '\n')
+        p = desugar.HeapGet(mut st.d, p)
+        pi += 1
+    }
+}
+
+// llSlots はスロットを入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
+func llSlots(st mut St, out mut []byte, f FnRef) {
+    // スロットは入口で確保してゼロ初期化（未初期化読みの undef を塞ぐ）
+    mut s := irFnSHead(mut st, f)
+    mut si := 0
+    while s >= 0 {
+        obuf.Lit(mut out, "  %s")
+        num(mut out, si)
+        obuf.Lit(mut out, " = alloca [")
+        num(mut out, desugar.HeapGet(mut st.d, s + 1))
+        obuf.Lit(mut out, " x i64], align 8\n")
+        mut w := 0
+        while w < desugar.HeapGet(mut st.d, s + 1) {
+            obuf.Lit(mut out, "  %s")
+            num(mut out, si)
+            obuf.Lit(mut out, ".z")
+            num(mut out, w)
+            obuf.Lit(mut out, " = getelementptr i64, ptr %s")
+            num(mut out, si)
+            obuf.Lit(mut out, ", i64 ")
+            num(mut out, w)
+            obuf.Lit(mut out, "\n  store i64 0, ptr %s")
+            num(mut out, si)
+            obuf.Lit(mut out, ".z")
+            num(mut out, w)
+            out = append(out, '\n')
+            w += 1
+        }
+        s = desugar.HeapGet(mut st.d, s)
+        si += 1
+    }
+}
+
+// llIns は命令 ins 1 つ（ブロック bi — 腕 1 本 = IR の op 1 つ）
+func llIns(st mut St, out mut []byte, lc mut LlCur, ins InsRef, bi int, cs int, vt int) {
+    op := irInsOp(mut st, ins)
+    r := irInsRes(mut st, ins)
+    ia := irInsA(mut st, ins)
+    ib := irInsB(mut st, ins)
+    ic := irInsC(mut st, ins)
+    switch op {
+    case OpConst:
+        desugar.HeapSet(mut st.d, cs + 1 + r * 2, 1)
+        desugar.HeapSet(mut st.d, cs + 2 + r * 2, ia)
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = add i64 0, ")
+        num(mut out, ia)
+        out = append(out, '\n')
+    case OpBin:
+        if ia == BMulHi {
+            // 128 ビットへ広げて積の上位
+            obuf.Lit(mut out, "  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".a = zext i64 ")
+            vreg(mut out, ib)
+            obuf.Lit(mut out, " to i128\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".b = zext i64 ")
+            vreg(mut out, ic)
+            obuf.Lit(mut out, " to i128\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".p = mul i128 ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".a, ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".b\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".h = lshr i128 ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".p, 64\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = trunc i128 ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".h to i64\n")
+        } else if ia >= BFAdd {
+            llFBin(mut st, mut out, r, ia, ib, ic)
+        } else if ia == BDiv || ia == BRem {
+            sname := if ia == BDiv { "sdiv" } else { "srem" }
+            if !divGuarded(mut st, cs, ic) {
+                obuf.Lit(mut out, "  ")
+                vreg(mut out, r)
+                obuf.Lit(mut out, " = ")
+                obuf.Lit(mut out, sname)
+                obuf.Lit(mut out, " i64 ")
+                vreg(mut out, ib)
+                obuf.Lit(mut out, ", ")
+                vreg(mut out, ic)
+                out = append(out, '\n')
+            } else {
+                llDivChecked(mut out, mut lc, bi, r, ia, ib, ic, sname)
+            }
+        } else if ia == BShl || ia == BSar {
+            // 量を 6 bit にマスクしてから（LLVM は量 ≥ 64 を poison にする — IR の意味は x86 のマスク）
+            obuf.Lit(mut out, "  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".n = and i64 ")
+            vreg(mut out, ic)
+            obuf.Lit(mut out, ", 63\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, if ia == BShl { " = shl i64 " } else { " = ashr i64 " })
+            vreg(mut out, ib)
+            obuf.Lit(mut out, ", ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".n\n")
+        } else {
+            obuf.Lit(mut out, "  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = ")
+            llBinName(mut out, ia)
+            obuf.Lit(mut out, " i64 ")
+            vreg(mut out, ib)
+            obuf.Lit(mut out, ", ")
+            vreg(mut out, ic)
+            out = append(out, '\n')
+        }
+    case OpCmp:
+        if ia >= CFEq {
+            llFCmp(mut out, r, ia, ib, ic)
+            return
+        }
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".c = icmp ")
+        llCmpName(mut out, ia)
+        obuf.Lit(mut out, " i64 ")
+        vreg(mut out, ib)
+        obuf.Lit(mut out, ", ")
+        vreg(mut out, ic)
+        obuf.Lit(mut out, "\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = zext i1 ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".c to i64\n")
+    case OpLoad:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p = getelementptr i64, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ib)
+        obuf.Lit(mut out, "\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = load ")
+        llTy(mut out, if ic == 1 { TyPtr } else { TyI64 })
+        obuf.Lit(mut out, ", ptr ")
+        vreg(mut out, r)
+        // gep.byte の番地からの語の load（std/binary.Load64 — 揃いを問わない）は align 1（既定は i64 の ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        obuf.Lit(mut out, if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 { ".p, align 1\n" } else { ".p\n" })
+    case OpStore:
+        n := lc.fresh
+        lc.fresh += 1
+        obuf.Lit(mut out, "  %st")
+        num(mut out, n)
+        obuf.Lit(mut out, " = getelementptr i64, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ib)
+        obuf.Lit(mut out, "\n  store ")
+        llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + ic))
+        out = append(out, ' ')
+        vreg(mut out, ic)
+        obuf.Lit(mut out, ", ptr %st")
+        num(mut out, n)
+        // gep.byte の番地への語の store（copyloop の形 D — 731）は align 1（load の対・724。既定は ABI の揃い 8 を仮定する — 揃っていなければ UB）
+        if ia >= 0 && desugar.HeapGet(mut st.d, lc.gb + 1 + ia) == 1 {
+            obuf.Lit(mut out, ", align 1")
+        }
+        out = append(out, '\n')
+    case OpLoad8:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p = getelementptr i8, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ib)
+        obuf.Lit(mut out, "\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".b = load i8, ptr ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = zext i8 ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".b to i64\n")
+    case OpStore8:
+        n := lc.fresh
+        lc.fresh += 1
+        obuf.Lit(mut out, "  %st")
+        num(mut out, n)
+        obuf.Lit(mut out, " = getelementptr i8, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ib)
+        obuf.Lit(mut out, "\n  %st")
+        num(mut out, n)
+        obuf.Lit(mut out, ".b = trunc i64 ")
+        vreg(mut out, ic)
+        obuf.Lit(mut out, " to i8\n  store i8 %st")
+        num(mut out, n)
+        obuf.Lit(mut out, ".b, ptr %st")
+        num(mut out, n)
+        out = append(out, '\n')
+    case OpGepW | OpGepB:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, if op == OpGepW { " = getelementptr i64, ptr " } else { " = getelementptr i8, ptr " })
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        vreg(mut out, ib)
+        out = append(out, '\n')
+    case OpPtoi | OpItop:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, if op == OpPtoi { " = ptrtoint ptr " } else { " = inttoptr i64 " })
+        vreg(mut out, ia)
+        obuf.Lit(mut out, if op == OpPtoi { " to i64\n" } else { " to ptr\n" })
+    case OpSlotaddr:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = getelementptr i64, ptr %s")
+        num(mut out, ia)
+        obuf.Lit(mut out, ", i64 0\n")
+    case OpGlobal | OpFsAddr:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = getelementptr i64, ptr ")
+        llName(mut st, mut out, desugar.HeapGet(mut st.d, ia + G_NAME))
+        obuf.Lit(mut out, ", i64 0\n")
+    case OpCall:
+        obuf.Lit(mut out, "  ")
+        if r >= 0 {
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = ")
+        }
+        obuf.Lit(mut out, "call ")
+        llTy(mut out, irFnRet(mut st, FnRef(ia)))
+        out = append(out, ' ')
+        llName(mut st, mut out, irFnName(mut st, FnRef(ia)))
+        out = append(out, '(')
+        llArgs(mut st, mut out, vt, ib)
+    case OpFuncaddr:
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = ptrtoint ptr ")
+        llName(mut st, mut out, irFnName(mut st, FnRef(ia)))
+        obuf.Lit(mut out, " to i64\n")
+    case OpCallI:
+        n := lc.fresh
+        lc.fresh += 1
+        obuf.Lit(mut out, "  %fp")
+        num(mut out, n)
+        obuf.Lit(mut out, " = inttoptr i64 ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, " to ptr\n  ")
+        if r >= 0 {
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = ")
+        }
+        obuf.Lit(mut out, "call ")
+        llTy(mut out, ic)
+        obuf.Lit(mut out, " %fp")
+        num(mut out, n)
+        out = append(out, '(')
+        llArgs(mut st, mut out, vt, ib)
+    case OpTrapI:
+        // .ll の経路は罠を持たない（段 6 P3a-2a — 子をただ呼んで結果 0。中の死は今までどおりプロセスの死。--via=ll は罠のモジュールの照合をしない）
+        n := lc.fresh
+        lc.fresh += 1
+        obuf.Lit(mut out, "  %fp")
+        num(mut out, n)
+        obuf.Lit(mut out, " = inttoptr i64 ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, " to ptr\n  call void %fp")
+        num(mut out, n)
+        out = append(out, '(')
+        llArgs(mut st, mut out, vt, ib)
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = add i64 0, 0\n")
+    case OpUnwind:
+        // .ll の経路は罠を持たない（何もしない — 続く exit がプロセスを終える）
+    case OpTSwitch:
+        // .ll の経路は task の切替を持たない（段 6 P3b — 何もしない。子は tstart の呼び出しの中で走り切る・待つ形は .ll では動かない）
+    case OpTStart:
+        // .ll の経路: 新しいスタックへ移らずに fn(arg) をそのまま呼ぶ（子を先に走らせる既定の方針の 1 本道 — fn は .ll では戻る）
+        n := lc.fresh
+        lc.fresh += 1
+        obuf.Lit(mut out, "  %fp")
+        num(mut out, n)
+        obuf.Lit(mut out, " = inttoptr i64 ")
+        vreg(mut out, xAt(mut st, ib, 1))
+        obuf.Lit(mut out, " to ptr\n  call void %fp")
+        num(mut out, n)
+        out = append(out, '(')
+        llArgs(mut st, mut out, vt, list1(mut st, xAt(mut st, ib, 2)))
+    case OpAtomic:
+        // 原子の op（段 6 P4-4）: LLVM の原子の命令で（.ll の経路は 1 本道だが、値を定義しないと使う側が undefined value になる — report-879）
+        k := ic & 7
+        if k == AT_FENCE {
+            obuf.Lit(mut out, "  fence seq_cst\n")
+            return
+        }
+        if k == AT_PAUSE {
+            return
+        }
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p = getelementptr i64, ptr ")
+        vreg(mut out, ia)
+        obuf.Lit(mut out, ", i64 ")
+        num(mut out, ic >> 3)
+        obuf.Lit(mut out, "\n  ")
+        vreg(mut out, r)
+        if k == AT_CAS {
+            obuf.Lit(mut out, ".x = cmpxchg ptr ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".p, i64 ")
+            vreg(mut out, xAt(mut st, ib, 0))
+            obuf.Lit(mut out, ", i64 ")
+            vreg(mut out, xAt(mut st, ib, 1))
+            obuf.Lit(mut out, " seq_cst seq_cst\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = extractvalue { i64, i1 } ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, ".x, 0\n")
+            return
+        }
+        obuf.Lit(mut out, if k == AT_XADD { " = atomicrmw add ptr " } else { " = atomicrmw xchg ptr " })
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".p, i64 ")
+        vreg(mut out, xAt(mut st, ib, 0))
+        obuf.Lit(mut out, " seq_cst\n")
+    case OpClone:
+        // .ll の経路はスレッドを持たない（task の切替も無い 1 本道）: clone は失敗（-ENOSYS）— ワーカーを増やして走らせたら rt が黙らずに落ちる
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = add i64 0, -38\n")
+    case OpSyscall:
+        if ib == AES_B || ib == MM_B {
+            // AES-GCM の塊（aes.sober）は .ll では持たない — cpuaes の印は 0 で、std の分岐が塊を呼ばない（残りの種類も 0 を返すだけ）
+            obuf.Lit(mut out, "  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = add i64 0, 0\n")
+            return
+        }
+        if ib == 1 {
+            // vDSO の関数（頭 = 番地）を C の規約で: %vf<r> = inttoptr i64 <番地> to ptr・%r = call i64 %vf<r>(i64 …)
+            obuf.Lit(mut out, "  %vf")
+            num(mut out, r)
+            obuf.Lit(mut out, " = inttoptr i64 ")
+            vreg(mut out, desugar.HeapGet(mut st.d, ia + 1))
+            obuf.Lit(mut out, " to ptr\n  ")
+            vreg(mut out, r)
+            obuf.Lit(mut out, " = call i64 %vf")
+            num(mut out, r)
+            out = append(out, '(')
+            mut k := 1
+            while k < desugar.HeapGet(mut st.d, ia) {
+                if k > 1 {
+                    obuf.Lit(mut out, ", ")
+                }
+                obuf.Lit(mut out, "i64 ")
+                vreg(mut out, desugar.HeapGet(mut st.d, ia + 1 + k))
+                k += 1
+            }
+            obuf.Lit(mut out, ")\n")
+            return
+        }
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = call i64 asm sideeffect \"syscall\", \"={rax}")
+        mut k := 0
+        while k < desugar.HeapGet(mut st.d, ia) {
+            obuf.Lit(mut out, ",{")
+            regName(mut out, k)
+            out = append(out, '}')
+            k += 1
+        }
+        obuf.Lit(mut out, ",~{rcx},~{r11},~{memory}\"(")
+        k = 0
+        while k < desugar.HeapGet(mut st.d, ia) {
+            if k > 0 {
+                obuf.Lit(mut out, ", ")
+            }
+            obuf.Lit(mut out, "i64 ")
+            vreg(mut out, desugar.HeapGet(mut st.d, ia + 1 + k))
+            k += 1
+        }
+        obuf.Lit(mut out, ")\n")
+    }
+}
+
+// llDivChecked は div / rem（除数が 0 でない・-1 でないと示せないもの）: 0 なら panic、-1 なら 0 - x / 0（x86 の #DE と LLVM の UB を塞ぐ）、
+// それ以外は sdiv / srem。ブロックは合流点 LbDj で続く（cur.ctag / ck）
+func llDivChecked(out mut []byte, lc mut LlCur, bi int, r int, ia int, ib int, ic int, sname string) {
+    kz := lc.fresh + 1
+    lc.fresh += 5
+    obuf.Lit(mut out, "  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".z = icmp eq i64 ")
+    vreg(mut out, ic)
+    obuf.Lit(mut out, ", 0\n  br i1 ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".z, label %")
+    llLabel(mut out, bi, LbDz, kz)
+    obuf.Lit(mut out, ", label %")
+    llLabel(mut out, bi, LbDnz, kz + 1)
+    out = append(out, '\n')
+    llLabel(mut out, bi, LbDz, kz)
+    obuf.Lit(mut out, ":\n")
+    llExit(mut out, PANIC)
+    llLabel(mut out, bi, LbDnz, kz + 1)
+    obuf.Lit(mut out, ":\n  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".m = icmp eq i64 ")
+    vreg(mut out, ic)
+    obuf.Lit(mut out, ", -1\n  br i1 ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".m, label %")
+    llLabel(mut out, bi, LbDm1, kz + 2)
+    obuf.Lit(mut out, ", label %")
+    llLabel(mut out, bi, LbDop, kz + 3)
+    out = append(out, '\n')
+    llLabel(mut out, bi, LbDm1, kz + 2)
+    obuf.Lit(mut out, ":\n  ")
+    vreg(mut out, r)
+    if ia == BDiv {
+        obuf.Lit(mut out, ".n = sub i64 0, ")
+        vreg(mut out, ib)
+        out = append(out, '\n')
+    } else {
+        obuf.Lit(mut out, ".n = add i64 0, 0\n")
+    }
+    obuf.Lit(mut out, "  br label %")
+    llLabel(mut out, bi, LbDj, kz + 4)
+    out = append(out, '\n')
+    llLabel(mut out, bi, LbDop, kz + 3)
+    obuf.Lit(mut out, ":\n  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".q = ")
+    obuf.Lit(mut out, sname)
+    obuf.Lit(mut out, " i64 ")
+    vreg(mut out, ib)
+    obuf.Lit(mut out, ", ")
+    vreg(mut out, ic)
+    obuf.Lit(mut out, "\n  br label %")
+    llLabel(mut out, bi, LbDj, kz + 4)
+    out = append(out, '\n')
+    llLabel(mut out, bi, LbDj, kz + 4)
+    obuf.Lit(mut out, ":\n  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, " = phi i64 [ ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".n, %")
+    llLabel(mut out, bi, LbDm1, kz + 2)
+    obuf.Lit(mut out, " ], [ ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".q, %")
+    llLabel(mut out, bi, LbDop, kz + 3)
+    obuf.Lit(mut out, " ]\n")
+    lc.ctag = LbDj
+    lc.ck = kz + 4
+}
+
+// llTerm はブロック b の終端
+func llTerm(st mut St, out mut []byte, lc mut LlCur, b BlkRef, bi int, vt int) {
+    t := irBlkTerm(mut st, b)
+    x1 := irBlkX1(mut st, b)
+    if t == TmBr {
+        obuf.Lit(mut out, "  br label %b")
+        num(mut out, irBlkId(mut st, irBrTo(mut st, b)))
+        out = append(out, '\n')
+    } else if t == TmCondbr {
+        kt := lc.fresh + 1
+        lc.fresh += 2
+        obuf.Lit(mut out, "  %c.")
+        llLabel(mut out, bi, lc.ctag, lc.ck)
+        obuf.Lit(mut out, " = icmp ne i64 ")
+        vreg(mut out, x1)
+        obuf.Lit(mut out, ", 0\n  br i1 %c.")
+        llLabel(mut out, bi, lc.ctag, lc.ck)
+        obuf.Lit(mut out, ", label %")
+        llLabel(mut out, bi, LbT, kt)
+        obuf.Lit(mut out, ", label %")
+        llLabel(mut out, bi, LbE, kt + 1)
+        out = append(out, '\n')
+        llLabel(mut out, bi, LbT, kt)
+        obuf.Lit(mut out, ":\n  br label %b")
+        num(mut out, irBlkId(mut st, irCondThen(mut st, b)))
+        out = append(out, '\n')
+        llLabel(mut out, bi, LbE, kt + 1)
+        obuf.Lit(mut out, ":\n  br label %b")
+        num(mut out, irBlkId(mut st, irCondElse(mut st, b)))
+        out = append(out, '\n')
+    } else if t == TmRet {
+        if x1 >= 0 {
+            obuf.Lit(mut out, "  ret ")
+            llTy(mut out, desugar.HeapGet(mut st.d, vt + 1 + x1))
+            out = append(out, ' ')
+            vreg(mut out, x1)
+            out = append(out, '\n')
+        } else {
+            obuf.Lit(mut out, "  ret void\n")
+        }
+    } else {
+        llExit(mut out, x1)
+    }
+}
+
+// llPrepare は全関数の印字の表（値の型・入り辺・定数の表）を先に作る。印字の間はヒープを伸ばさない —
+// 出力 out は同じ region にあるので、交互に伸びると先端の伸長が効かず全コピーが続く（F-27 の交錯成長 — 自己適用の大きい入力で exit 102 になった）
+func llPrepare(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        irSetFnLLVt(mut st, f, valueTypes(mut st, f))
+        irSetFnLLInc(mut st, f, collectIncoming(mut st, f))
+        irSetFnLLCs(mut st, f, listN(mut st, irFnNVal(mut st, f) * 2))
+        f = irFnNext(mut st, f)
+    }
+}
+
+// llModule はモジュール全体の .ll（冒頭の固定部 → グローバル → 関数）。呼び手が rtlower と llPrepare を先に掛ける
+func llModule(st mut St, out mut []byte) {
+    llHead(mut out)
+    mut g := st.ghead
+    while g >= 0 {
+        llName(mut st, mut out, desugar.HeapGet(mut st.d, g + G_NAME))
+        init := desugar.HeapGet(mut st.d, g + G_INIT)
+        if init >= 0 {
+            obuf.Lit(mut out, " = internal constant [")
+            num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
+            obuf.Lit(mut out, " x i64] ")
+            if desugar.HeapGet(mut st.d, init) == 0 {
+                obuf.Lit(mut out, "zeroinitializer")
+            } else {
+                out = append(out, '[')
+                mut i := 0
+                while i < desugar.HeapGet(mut st.d, init) {
+                    if i > 0 {
+                        obuf.Lit(mut out, ", ")
+                    }
+                    obuf.Lit(mut out, "i64 ")
+                    num(mut out, desugar.HeapGet(mut st.d, init + 1 + i))
+                    i += 1
+                }
+                out = append(out, ']')
+            }
+            out = append(out, '\n')
+        } else {
+            obuf.Lit(mut out, " = internal global [")
+            num(mut out, desugar.HeapGet(mut st.d, g + G_WORDS))
+            obuf.Lit(mut out, " x i64] zeroinitializer\n")
+        }
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+    mut f := st.fhead
+    while f != -1 {
+        llFunc(mut st, mut out, f)
+        f = irFnNext(mut st, f)
+    }
+    if st.llSqrt {
+        obuf.Lit(mut out, "declare double @llvm.sqrt.f64(double)\n")
+    }
+}
+
+// llAsF は %r.<s> = bitcast i64 %v to double（float の段 — 値は i64 のビット列）
+func llAsF(out mut []byte, r int, s string, v int) {
+    obuf.Lit(mut out, "  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, s)
+    obuf.Lit(mut out, " = bitcast i64 ")
+    vreg(mut out, v)
+    obuf.Lit(mut out, " to double\n")
+}
+
+// llFBin は float の二項・単項（ir.sober の BFAdd〜BFToInt）。toInt は cvttsd2si と同じ生の値（範囲外・NaN は i64 の最小値 —
+// fptosi の範囲外は poison なので、範囲内だけを select で選ぶ）
+func llFBin(st mut St, out mut []byte, r int, ia int, ib int, ic int) {
+    if ia == BFOfInt {
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".f = sitofp i64 ")
+        vreg(mut out, ib)
+        obuf.Lit(mut out, " to double\n")
+    } else if ia == BFToInt {
+        llAsF(mut out, r, ".a", ib)
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".lo = fcmp oge double ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".a, 0xC3E0000000000000\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".hi = fcmp olt double ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".a, 0x43E0000000000000\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".ok = and i1 ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".lo, ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".hi\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".i = fptosi double ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".a to i64\n  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, " = select i1 ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".ok, i64 ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".i, i64 -9223372036854775808\n")
+        return
+    } else if ia == BFSqrt {
+        st.llSqrt = true
+        llAsF(mut out, r, ".a", ib)
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".f = call double @llvm.sqrt.f64(double ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".a)\n")
+    } else {
+        llAsF(mut out, r, ".a", ib)
+        llAsF(mut out, r, ".b", ic)
+        obuf.Lit(mut out, "  ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, if ia == BFAdd { ".f = fadd double " } else if ia == BFSub { ".f = fsub double " } else if ia == BFMul { ".f = fmul double " } else { ".f = fdiv double " })
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".a, ")
+        vreg(mut out, r)
+        obuf.Lit(mut out, ".b\n")
+    }
+    obuf.Lit(mut out, "  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, " = bitcast double ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".f to i64\n")
+}
+
+// llFCmp は float の比較（ordered — NaN は偽。fne だけ unordered の une）
+func llFCmp(out mut []byte, r int, ia int, ib int, ic int) {
+    llAsF(mut out, r, ".a", ib)
+    llAsF(mut out, r, ".b", ic)
+    obuf.Lit(mut out, "  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, switch ia {
+    case CFEq: ".c = fcmp oeq double "
+    case CFNe: ".c = fcmp une double "
+    case CFLt: ".c = fcmp olt double "
+    case CFLe: ".c = fcmp ole double "
+    case CFGt: ".c = fcmp ogt double "
+    default: ".c = fcmp oge double "
+    })
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".a, ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".b\n  ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, " = zext i1 ")
+    vreg(mut out, r)
+    obuf.Lit(mut out, ".c to i64\n")
+}

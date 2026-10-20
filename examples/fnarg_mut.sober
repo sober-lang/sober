@@ -1,0 +1,16 @@
+package main
+
+// 負例: mut 仮引数を持つ関数は関数型の仮引数に渡せない（η 展開 — language.md 25 節。関数型に mut の席が無い — 26 節）。loader が名指して拒否する
+
+func apply(x int, f func(int) int) int {
+    return f(x)
+}
+
+func bump(n mut int, d int) int {
+    n += d
+    return n
+}
+
+func main() {
+    println("${apply(3, bump)}")
+}

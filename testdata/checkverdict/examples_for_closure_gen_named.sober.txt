@@ -1,0 +1,2 @@
+sober: load error at examples/for_closure_gen_named.sober:18:20: only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)
+exit=1

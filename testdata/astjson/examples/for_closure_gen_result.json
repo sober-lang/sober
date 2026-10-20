@@ -1,0 +1,326 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "count",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "k",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "name",
+                "name": "int"
+              }
+            ],
+            "results": []
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 19
+              }
+            ],
+            "tok": 16
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "i",
+                "tok": 22
+              },
+              "rhs": {
+                "k": "ident",
+                "name": "n",
+                "tok": 24
+              },
+              "tok": 23
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "expr",
+                  "expr": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "k",
+                      "tok": 26
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "i",
+                        "tok": 28
+                      }
+                    ],
+                    "tok": 27
+                  }
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 31
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 33
+                    }
+                  ],
+                  "tok": 31
+                }
+              ]
+            },
+            "tok": 21
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 39
+      },
+      "sig_end": 15
+    },
+    {
+      "name": "relay",
+      "type_params": [],
+      "params": [
+        {
+          "name": "recv",
+          "type": {
+            "k": "func",
+            "params": [
+              {
+                "k": "func",
+                "params": [
+                  {
+                    "k": "name",
+                    "name": "int"
+                  }
+                ],
+                "results": []
+              }
+            ],
+            "results": [],
+            "param_names": [
+              "k"
+            ]
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "x"
+                  ],
+                  "src": {
+                    "k": "try",
+                    "e": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "recv",
+                        "tok": 58
+                      },
+                      "args": [],
+                      "tok": 59
+                    },
+                    "wrap": null,
+                    "tok": 61
+                  },
+                  "guards": [],
+                  "tok": 56
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 63
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 65
+                        }
+                      ],
+                      "tok": 64
+                    }
+                  }
+                ]
+              },
+              "tok": 55
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "nil",
+                "tok": 71
+              }
+            ],
+            "tok": 70
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 39,
+        "end": 75
+      },
+      "sig_end": 54
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 80
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "relay",
+                      "tok": 82
+                    },
+                    "args": [
+                      {
+                        "k": "lambda",
+                        "params": [
+                          {
+                            "name": "k",
+                            "type": null
+                          }
+                        ],
+                        "body": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "count",
+                            "tok": 88
+                          },
+                          "args": [
+                            {
+                              "k": "int",
+                              "value": 3,
+                              "tok": 90
+                            },
+                            {
+                              "k": "ident",
+                              "name": "k",
+                              "tok": 92
+                            }
+                          ],
+                          "tok": 89
+                        },
+                        "tok": 87
+                      }
+                    ],
+                    "tok": 83
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 96
+                  },
+                  "tok": 95
+                }
+              ],
+              "tok": 81
+            }
+          }
+        ]
+      },
+      "tok": 76,
+      "bodiless": false,
+      "span": {
+        "start": 75,
+        "end": 101
+      },
+      "sig_end": 79
+    }
+  ],
+  "consts": []
+}

@@ -28,18 +28,18 @@ func repeat(c byte, n int) []byte {
 
 func main() {
     // NIST のベクタ
-    println("empty", hex.Encode(hash.Sha256(bytes(""))))
-    println("abc", hex.Encode(hash.Sha256(bytes("abc"))))
-    println("448bit", hex.Encode(hash.Sha256(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))))
-    println("896bit", hex.Encode(hash.Sha256(bytes("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"))))
-    println("million-a", hex.Encode(hash.Sha256(repeat(byte(97), 1000000))))
+    println("empty", hex.Format(hash.Sha256(bytes(""))))
+    println("abc", hex.Format(hash.Sha256(bytes("abc"))))
+    println("448bit", hex.Format(hash.Sha256(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))))
+    println("896bit", hex.Format(hash.Sha256(bytes("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"))))
+    println("million-a", hex.Format(hash.Sha256(repeat(byte(97), 1000000))))
     // ブロック境界
     lens := []int{1, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129}
     for i <- iter.Range(0, len(lens)) {
-        println("pattern", lens[i], hex.Encode(hash.Sha256(pattern(lens[i]))))
+        println("pattern", lens[i], hex.Format(hash.Sha256(pattern(lens[i]))))
     }
     // 長入力（全バイト値の並び）
-    println("pattern", 100003, hex.Encode(hash.Sha256(pattern(100003))))
+    println("pattern", 100003, hex.Format(hash.Sha256(pattern(100003))))
     // 生の 32 バイト
     sum := hash.Sha256(bytes("abc"))
     println(len(sum), int(sum[0]), int(sum[31]))

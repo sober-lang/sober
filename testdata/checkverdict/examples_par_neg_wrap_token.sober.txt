@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_wrap_token.sober:14:52: a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body
-exit=1

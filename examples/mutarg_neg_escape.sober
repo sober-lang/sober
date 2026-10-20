@@ -1,0 +1,14 @@
+package main
+
+// 負例: mut 仮引数の中身は呼び出しの外へ逃げない — 返せない（language.md 26 節 U3）。要素の読み `return xs[i]` は書ける
+
+func keep(xs mut []int) []int {
+    xs = append(xs, 1)
+    return xs
+}
+
+func main() {
+    mut a := mut []int{}
+    b := keep(mut a)
+    println(len(b))
+}

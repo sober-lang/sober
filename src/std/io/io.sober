@@ -1,6 +1,10 @@
 package io
 
-import "std/utf8"
+// ファイル・標準ストリーム・ディレクトリの読み書き（language.md 28 節）。どの関数も同期の形で、バイト列は []byte で受け渡す。
+// 失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。
+// text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
+
+import "std/strings"
 
 // 組み込みの宣言（息継ぎ ③ — 本体なし。鍵の実装はコンパイラの表: loader/intrinsic.sober・desugar / lower の SysKey）
 @intrinsic("read_file")
@@ -36,17 +40,31 @@ func sysChunkNext(rec int) []byte
 @intrinsic("chunk_close")
 func sysChunkClose(rec int) int
 
-// ファイルの読み書き（同期 syscall の直呼び — Executor・block 効果は持ち込まない。Phase 5a で中身を差し替えても
-// API は同期形のまま）。バイト列は []byte（33 節 — byte の段 C で []int から切り替え）。
-// text として読むなら `s := string(io.ReadFile(p)?)?`（std/utf8 の検査つき）
+// 今の task の期限（task.Run の deadline: — 子孫の task も継ぐ）が過ぎていれば 1。I/O 呼び出しの頭で見る（過ぎたら syscall を出さずに Timeout）。
+// deadline: を書かないプログラムでは定数 0（判定ごと畳まれる）
+@intrinsic("deadline")
+func sysDeadline() int
 
-// ENOENT / ENOTDIR
+// ファイルの読み書きは同期 syscall の直呼び（Executor・block 効果は持ち込まない）
+
+// ファイルかディレクトリが無い（errno の ENOENT / ENOTDIR）
 type NotFound error
 
-// EACCES / EPERM / EROFS
+// 許可が無い（errno の EACCES / EPERM / EROFS）
 type Denied error
 
-// 開いたバケツ（13 節「正直な宣言」）: 上の 2 つ以外の errno。EISDIR・EINVAL（path に NUL）・ENAMETOOLONG など
+// 相手の事情のタイムアウト（errno の ETIMEDOUT〔110〕— connect の不達・TCP の再送の尽き）: リトライの余地がある側。
+// 自分の期限（deadline:）が尽きたのは Expired — 呼び手の行動が違うのでラベルを分ける（language.md 28 節「壊れ方の規律」）
+type Timeout error
+
+// 自分の期限が尽きた（language.md 28 節「デッドライン」）: 囲む task.Run の deadline: が過ぎた後に I/O 呼び出しを行った。走っていた io は完了まで待つ —
+// 期限の後に「次に呼んだ」I/O 関数がこれを返す（待ちの上限であって実行時間の上限ではない）。同じ期限の中でリトライしても無駄 — 上へ抜けるのが正
+type Expired error
+
+// 相手がもういない（language.md 28 節の net — 送信の EPIPE / ECONNRESET・受信の RST・接続の拒否を 1 本で。受信の FIN は失敗でなく列の終わり）
+type Closed error
+
+// 上のラベルに当たらない errno の開いたバケツ（language.md 13 節「正直な宣言」）。EISDIR・EINVAL（path に NUL）・ENAMETOOLONG など
 type Other error {
     errno int
 }
@@ -59,12 +77,15 @@ func errOf(e int) error {
     if e == 13 || e == 1 || e == 30 {
         return Denied{}
     }
+    if e == 110 {
+        return Timeout{}
+    }
     return Other{errno: e}
 }
 
-// Stream は標準ストリーム（language.md 28 節「標準ストリーム」— Stdin / Stdout / Stderr の 3 つだけ）。プロセスの寿命で開いていて Close が無く、
-// コピーしても害が無い値の型（同一性なし — Open が返す同一性の型 io.File とは別の型: 2026-10-13 の裁定 Qa4）。fd の番号は値にしない —
-// 非公開の型の封の欄 seal があるので外からは欄つきで書けず（utf8.View と同じ形）、int と Stream の間の変換の口は無い。番号は std と rt の中にだけある。
+// 標準ストリーム（language.md 28 節「標準ストリーム」— Stdin / Stdout / Stderr の 3 つだけ）。プロセスの寿命で開いていて Close が無く、
+// コピーしても害が無い値の型（同一性なし — Open が返す同一性の型 io.File とは別の型）。fd の番号は値にしない —
+// 非公開の型の封の欄 seal があるので外からは欄つきで書けず（utf8.View と同じ形）、int と Stream の間の変換の関数は無い。番号は std と rt の中にだけある。
 // ゼロ値 `io.Stream{}` は番号 0（Writer の欄としては標準出力へ読み替える — 下の Writer）
 type Stream struct {
     fd int
@@ -80,9 +101,9 @@ const Stdin = Stream{fd: 0, seal: streamSeal{}}
 const Stdout = Stream{fd: 1, seal: streamSeal{}}
 const Stderr = Stream{fd: 2, seal: streamSeal{}}
 
-// File は Open で開いたファイル（language.md 28 節「資源とストリーム」— 同一性を持つ型: 作る口は Open だけ・後始末は同じブロックの
+// Open で開いたファイル（language.md 28 節「資源とストリーム」— 同一性を持つ型: 作る関数は Open だけ・後始末は同じブロックの
 // `defer io.Close(f)`・写せない・外へ出せない・give: では渡せない — 子は path から自分で開く。desugar/filecheck の規則）。fd の番号は封の欄の中で、std と rt の外に出ない。
-// 標準ストリームの Stream とは別の型（Stream はプロセスの寿命・Close なし・写して害なし — 裁定 Qa4）
+// 標準ストリームの Stream とは別の型（Stream はプロセスの寿命・Close なし・写して害なし）
 type File struct {
     fd int
     seal fileSeal
@@ -92,9 +113,12 @@ type File struct {
 type fileSeal struct {
 }
 
-// Open は path のファイルを読むために開く（O_RDONLY）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く
-@errors(NotFound, Denied, Other)
+// path のファイルを読むために開く（O_RDONLY）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func Open(path string) (File, error?) {
+    if sysDeadline() != 0 {
+        return File{fd: -1, seal: fileSeal{}}, Expired{}
+    }
     fd := sysOpen(path)
     if fd < 0 {
         return File{fd: -1, seal: fileSeal{}}, errOf(0 - fd)
@@ -102,14 +126,17 @@ func Open(path string) (File, error?) {
     return File{fd: fd, seal: fileSeal{}}, nil
 }
 
-// Close は f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。閉じる失敗は返さない: 読むためだけに開いた fd の close の失敗に打つ手は無い）
+// f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。閉じる失敗は返さない: 読むためだけに開いた fd の close の失敗に打つ手は無い）
 func Close(f File) {
     _ = sysClose(f.fd)
 }
 
-// ReadAll は f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。途中で失敗したら error（読めた分は捨てる）
-@errors(NotFound, Denied, Other)
-func ReadAll(f File) ([]byte, error?) {
+// f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。途中で失敗したら error（読めた分は捨てる）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func ReadAll(f File) ([]byte, error?) { // 対の WriteAll は実需まで足さない（language.md 34 節 2 の注記・2026-10-20 ④）
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
     b := sysReadFd(f.fd, -1)
     e := sysErrno()
     if e != 0 {
@@ -118,9 +145,9 @@ func ReadAll(f File) ([]byte, error?) {
     return b, nil
 }
 
-// Bytes は読むだけのバイト列の View（Chunks / Lines の切片 — language.md 28 節「読みのストリーム」）。作れるのは std/io だけ（封 — utf8.View と同じ形）。
+// 読むだけのバイト列の View（Chunks / Lines の切片 — language.md 28 節「読みのストリーム」）。作れるのは std/io だけ（封 — utf8.View と同じ形）。
 // 中身は rt のスロット（貸出中の pool — region-domain-pool.md 4c 節）を指し、for の 1 反復の間だけ有効: 反復の外の変数への代入・return・送りは
-// 境界の写しになる（region の規則 — 外へは写してしか出せない）。書きの口は無い
+// 境界の写しになる（region の規則 — 外へは写してしか出せない）。書きの関数は無い
 type Bytes struct {
     b []byte
     seal bytesSeal
@@ -130,7 +157,7 @@ type Bytes struct {
 type bytesSeal struct {
 }
 
-// Raw は v のバイト列（読むだけ — 同じ反復の中の View）
+// v のバイト列（読むだけ — 同じ反復の中の View）
 func Raw(v Bytes) []byte {
     return v.b
 }
@@ -139,16 +166,16 @@ func Raw(v Bytes) []byte {
 const chunkSize = 65536
 const chunkGens = 2
 
-// Chunks は f を今の位置から EOF まで切片ずつ k へ渡す（失敗しうる生成元 — `for c <- io.Chunks(f)? { … }`）。切片は 1 回の読みの分
+// f を今の位置から EOF まで切片ずつ k へ渡す（失敗しうる生成元 — `for c <- io.Chunks(f)? { … }`）。切片は 1 回の読みの分
 // （通常のファイルは最後以外 64 KiB）。次の切片の読みは前の切片を渡している間に先に出す（ダブルバッファ）。読みの失敗は errno のラベル
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func Chunks(f File, k func(Bytes)) error? {
     return chunksFrom(f, -1, k)
 }
 
-// ChunksAt は f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同じ切片・先読み — 読みは pread の形で f の位置を動かさない。
+// f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同じ切片・先読み — 読みは pread の形で f の位置を動かさない。
 // off が EOF 以上なら空の列・off < 0 は Other{errno: 22}）
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func ChunksAt(f File, off int, k func(Bytes)) error? {
     if off < 0 {
         return Other{errno: 22}
@@ -157,11 +184,15 @@ func ChunksAt(f File, off int, k func(Bytes)) error? {
 }
 
 // chunksFrom は Chunks / ChunksAt の本体（off = -1 は今の位置から read — 抜けたら先読みの分を巻き戻す）
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func chunksFrom(f File, off int, k func(Bytes)) error? {
     rec := sysChunkOpen(f.fd, chunkSize, chunkGens, off)
     defer chunkEnd(rec)
     while true {
+        // 切片ごとに期限を見る（先に出した読みは chunkEnd が完了を待つ — 打ち切らない）
+        if sysDeadline() != 0 {
+            return Expired{}
+        }
         b := sysChunkNext(rec)
         if len(b) == 0 {
             e := sysErrno()
@@ -180,9 +211,9 @@ func chunkEnd(rec int) {
     _ = sysChunkClose(rec)
 }
 
-// Lines は f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。
+// f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。
 // 行は切片の部分 View で、切片をまたぐ行だけ std の中で写す
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func Lines(f File, k func(Bytes)) error? {
     mut carry := mut []byte{}
     for c <- Chunks(f)? {
@@ -240,8 +271,11 @@ func joined(a []byte, b []byte) []byte {
 }
 
 // path のファイルを全部読む
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func ReadFile(path string) ([]byte, error?) {
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
     b := sysReadFile(path)
     e := sysErrno()
     if e != 0 {
@@ -251,8 +285,11 @@ func ReadFile(path string) ([]byte, error?) {
 }
 
 // path に b を書く（作成 / 切り詰め、0644）。/dev/stdout への追記には使わない（切り詰める）— WriteStdout を使う
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func WriteFile(path string, b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
     e := sysWriteFile(path, b)
     if e != 0 {
         return errOf(e)
@@ -260,11 +297,14 @@ func WriteFile(path string, b []byte) error? {
     return nil
 }
 
-// WriteStdout は開いている標準出力（fd 1）へ b を書く（open しないので切り詰めない）。println の行バッファに残りがあれば先に出す
-// （出る順 = 呼んだ順。ただし std/par の task の中では println の行は spawn の木の先行順で出る〔溜まりうる〕ので、直書きとの順は約束しない —
-// language.md 11 節 P4 の裁定）
-@errors(NotFound, Denied, Other)
+// 開いている標準出力（fd 1）へ b を書く（open しないので切り詰めない）。println の行バッファに残りがあれば先に出す
+// （出る順 = 呼んだ順。ただし std/task の task の中では println の行は spawn の木の先行順で出る〔溜まりうる〕ので、直書きとの順は約束しない —
+// language.md 11 節）
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func WriteStdout(b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
     e := sysWriteFd(1, b)
     if e != 0 {
         return errOf(e)
@@ -272,10 +312,13 @@ func WriteStdout(b []byte) error? {
     return nil
 }
 
-// ReadStdin は標準入力（fd 0）を EOF まで全部読む（同期 — Unix フィルタの入口。text なら `string(io.ReadStdin()?)?`）。
+// 標準入力（fd 0）を EOF まで全部読む（同期 — Unix フィルタの入口。text なら `string(io.ReadStdin()?)?`）。
 // 途中で失敗したら error（読めた分は捨てる）
-@errors(NotFound, Denied, Other)
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func ReadStdin() ([]byte, error?) {
+    if sysDeadline() != 0 {
+        return []byte{}, Expired{}
+    }
     b := sysReadFd(0, -1)
     e := sysErrno()
     if e != 0 {
@@ -284,9 +327,12 @@ func ReadStdin() ([]byte, error?) {
     return b, nil
 }
 
-// WriteStderr は開いている標準エラー（fd 2）へ b を書く（WriteStdout と同じ規則）
-@errors(NotFound, Denied, Other)
+// 開いている標準エラー（fd 2）へ b を書く（WriteStdout と同じ規則）
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func WriteStderr(b []byte) error? {
+    if sysDeadline() != 0 {
+        return Expired{}
+    }
     e := sysWriteFd(2, b)
     if e != 0 {
         return errOf(e)
@@ -302,6 +348,7 @@ type EntryKind union {
     Irregular {}
 }
 
+// ReadDir が返すディレクトリの項目 1 つ（名前と種類）
 type DirEntry struct {
     Name string
     Kind EntryKind
@@ -336,11 +383,14 @@ func less(a string, b string) bool {
     return if i < len(x) && i < len(y) { x[i] < y[i] } else { len(x) < len(y) }
 }
 
-// ReadDir は path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
-// 並びはファイルシステムの列挙順に依らない（loader の決定性 — 29 節）。名前が 1 つでも不正な UTF-8 なら全体が utf8.InvalidUtf8
-@errors(NotFound, Denied, Other, utf8.InvalidUtf8)
+// path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
+// 並びはファイルシステムの列挙順に依らない（loader の決定性 — language.md 29 節）。名前が 1 つでも不正な UTF-8 なら全体が strings.InvalidUtf8
+@errors(NotFound, Denied, Other, Timeout, Expired, strings.InvalidUtf8)
 func ReadDir(path string) ([]DirEntry, error?) {
     // 「d_type + 名前のバイト + 0」の連結（getdents64 の順のまま）
+    if sysDeadline() != 0 {
+        return []DirEntry{}, Expired{}
+    }
     b := sysReadDir(path)
     e := sysErrno()
     if e != 0 {
@@ -375,15 +425,15 @@ func ReadDir(path string) ([]DirEntry, error?) {
     return freeze(es), nil
 }
 
-// Writer は書きバッファ（定常メモリで流す — 64 KiB の枠を添字で使い回し、満杯で書き出す。溜め込んで最後に 1 回書く形の RSS の回避）:
+// 書きバッファ（定常メモリで流す — 64 KiB のバッファを添字で使い回し、満杯で書き出す。溜め込んで最後に 1 回書く形の RSS の回避）:
 //
 //     mut w := io.Writer{}            // ゼロ値は標準出力へ書く（欄 to のゼロ値 = 番号 0 は標準出力へ読み替える — 標準入力へは書かない）。標準エラーへは io.SetFile(mut w, io.Stderr)
 //     io.WriteString(mut w, "hello\n")
 //     io.WriteByte(mut w, 'x')
-//     err := io.Flush(mut w)          // 残りを書き出す — 最後に Flush しないと枠に残った分は書かれない
+//     err := io.Flush(mut w)          // 残りを書き出す — 最後に Flush しないとバッファに残った分は書かれない
 //
-// 書き出しの失敗は err に貯め（以後の書き出しはしない）、Flush が返す（bufio と同じ「後で返す」）。
-// 構築の関数（WriterOf）を持たないのは、mut の欄を持つ struct を関数から返す形を check が受けないため（language.md 26 節 G3）— ゼロ値 + SetFile の口にした
+// 書き出しの失敗は err に貯め（以後の書き出しはしない — 失敗の後に書いたバイトは捨てられる）、Flush が返す（bufio と同じ「後で返す」）。Flush が失敗を返すと貯めた失敗は消え、次の書き出しから再び書く。
+// 構築の関数（WriterOf）を持たないのは、mut の欄を持つ struct を関数から返す形を check が受けないため（language.md 26 節 G3）— ゼロ値 + SetFile の形にした
 type Writer struct {
     to Stream
     buf mut []byte
@@ -393,12 +443,12 @@ type Writer struct {
 
 const writerSize = 65536
 
-// SetFile は書き出す先を f に変える（io.Stdout / io.Stderr — 番号は Stream の中に閉じる）
+// 書き出す先を f に変える（io.Stdout / io.Stderr — 番号は Stream の中に閉じる）
 func SetFile(w mut Writer, f Stream) {
     w.to = f
 }
 
-// WriteByte は 1 バイト書く（速い道 = 空きがあれば書いて進めるだけ — 呼び手に展開される大きさに保つ。満杯・初回は writerByteSlow）
+// 1 バイト書く（速い道 = 空きがあれば書いて進めるだけ — 呼び手に展開される大きさに保つ。満杯・初回は writerByteSlow）
 func WriteByte(w mut Writer, c byte) {
     if w.n < len(w.buf) {
         w.buf[w.n] = c
@@ -416,7 +466,7 @@ func writerByteSlow(w mut Writer, c byte) {
     w.n += 1
 }
 
-// WriteBytes はバイト列を書く（枠の空きの分ずつ — 内側は添字の写しの形で、最適化のバックエンドが一括の写しにする）
+// バイト列を書く（バッファの空きの分ずつ — 内側は添字の写しの形で、最適化のバックエンドが一括の写しにする）
 func WriteBytes(w mut Writer, b []byte) {
     mut i := 0
     while i < len(b) {
@@ -435,18 +485,21 @@ func WriteBytes(w mut Writer, b []byte) {
     }
 }
 
-// WriteString は文字列を書く
+// 文字列を書く
 func WriteString(w mut Writer, s string) {
     WriteBytes(mut w, bytes(s))
 }
 
-// Flush は枠に残った分を書き出し、それまでの書き出しの失敗を返す（返したら失敗は消える）
-@errors(NotFound, Denied, Other)
+// バッファに残った分を書き出し、それまでの書き出しの失敗を返す（返したら失敗は消える）
+@errors(NotFound, Denied, Other, Timeout, Expired)
 func Flush(w mut Writer) error? {
     writerSpill(mut w)
     if w.err != 0 {
         e := w.err
         w.err = 0
+        if e < 0 {
+            return Expired{}
+        }
         return errOf(e)
     }
     return nil
@@ -469,7 +522,10 @@ func writerSpill(w mut Writer) {
     if w.n > 0 && w.err == 0 {
         fd := if w.to.fd == 0 { 1 } else { w.to.fd }
         mut e := 0
-        if w.n == len(w.buf) {
+        if sysDeadline() != 0 {
+            // 期限切れ（負の印 — Flush が Expired で返す。正の値は errno）: 書かずに失敗を貯める
+            e = 0 - 110
+        } else if w.n == len(w.buf) {
             e = sysWriteFd(fd, w.buf)
         } else {
             mut part := mut []byte{}

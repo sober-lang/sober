@@ -1,0 +1,2 @@
+examples/mutarg_neg_escape.sober:7:12: error: passing `xs` where an immutable value is expected freezes the contents of the mut parameter `xs` (implicit freeze) — the caller still holds them and can write. Freeze in the caller instead (this function only writes through `mut xs`), or pass a copy: clone(x) (Analyzer)
+exit=1

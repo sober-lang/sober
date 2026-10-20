@@ -1,0 +1,2 @@
+panic: ChildDied{cause: index out of range} at std/task/task.sober:147:31
+  cause at task_gather_die.sober:8:14

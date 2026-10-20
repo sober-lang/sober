@@ -1,0 +1,225 @@
+package rsa
+
+// rsa（TLS 便 — report-790 / 795）: RSA の秘密鍵の読み（PKCS#8 の DER）と RSASSA-PSS（RFC 8017 8.1 — SHA-256・MGF1-SHA256）の署名と検証。
+// 公開の名前と署名は仮決め（0.6.0 の API 総再審に同席）。TLS 1.3 の CertificateVerify（rsa_pss_rsae_sha256）の本体 — HttpArena の証明書は RSA-2048 固定。
+//
+//     k := rsa.ParsePKCS8(der)?
+//     sig := rsa.SignPSS(k, msg, crypto.Rand(32))?   // salt は呼び手が渡す（決定的な網のため）
+//     ok := rsa.VerifyPSS(rsa.Public(k), msg, sig, 32)
+//
+// 署名は CRT（m^dp mod p・m^dq mod q を合わせる）で、出した署名を公開鍵で検証してから返す（CRT の故障攻撃〔Bellcore〕の古典の防御 —
+// 合わなければ rsa.Fault）。多倍長は 64 bit の limb（bn.sober — 積の上位は組み込み mulhi・montMul は x86 の塊）・定数時間の規律は std/crypto の頭の 4 項
+
+import "std/crypto/sha256"
+import "std/iter"
+
+// PublicKey は法 n と公開の指数 e（limb の列）・k = n のバイト長・bits = n のビット長・mt = n の Montgomery の文脈（鍵を読むときに 1 回）
+type PublicKey struct {
+    n []int
+    e []int
+    k int
+    bits int
+    mt mont
+}
+
+// PrivateKey は RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
+type PrivateKey struct {
+    pub PublicKey
+    mp mont
+    mq mont
+    dp []int
+    dq []int
+    qinv []int
+}
+
+// BadKey は鍵の DER の形が違う（PKCS#8 の RSA でない・長さが合わない）
+type BadKey error
+
+// Fault は署名の自己検証が合わなかった（計算の故障 — 署名を捨てた）
+type Fault error
+
+// BadSize は salt の長さや鍵の大きさが PSS に足りない
+type BadSize error
+
+// Public は k の公開鍵
+func Public(k PrivateKey) PublicKey {
+    return k.pub
+}
+
+// Size は pub の法のバイト長（署名の長さ）
+func Size(pub PublicKey) int {
+    return pub.k
+}
+
+// SignPSS は msg の RSASSA-PSS の署名（k バイト）。salt の長さが PSS の salt 長
+@errors(BadSize, Fault)
+func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
+    pub := k.pub
+    em, ee := pssEncode(sha256.Sum256(msg), salt, pub.bits - 1)
+    if ee != nil {
+        return []byte{}, BadSize{}
+    }
+    // CRT: s = sq + q × (qinv × (sp - sq) mod p)。差は Montgomery の形で引き（(sp - sq) × R mod p）、qinv（普通の形）との montMul で R が消える
+    x := bnFromBytes(em, (8 * len(em) + 63) / 64)
+    mp := k.mp
+    np := len(mp.m)
+    sp := expMont(toMont(x, mp), k.dp, bnBits(mp.m), mp)
+    sq := expMont(toMont(x, k.mq), k.dq, bnBits(k.mq.m), k.mq)
+    // 区画（各 np + 1 語）: 0 = sp_M・1 = sq_M・2 = 差・3 = qinv・4 = h
+    l := np + 1
+    blk := zeros(5 * l)
+    mut w := leaseView(blk, 0, 5 * l)
+    wa := addrn(blk)
+    put(mut w, 0, toMont(sp, mp), np)
+    put(mut w, l, toMont(sq, mp), np)
+    put(mut w, 3 * l, k.qinv, np)
+    subMod(mut w, 2 * l, 0, l, mp.m)
+    montMul(mut w, wa, 4 * l, 2 * l, 3 * l, mp)
+    mut h := mut []int{}
+    for i <- iter.Range(0, np) {
+        h = append(h, w[4 * l + i])
+    }
+    s := bnAddMul(sq, k.mq.m, freeze(h), len(pub.n))
+    sig := bnToBytes(s, pub.k)
+    // 自己検証: s^e mod n が em（左を 0 で埋めた k バイト）に戻ること
+    back := bnToBytes(expPub(toMont(bnFromBytes(sig, len(pub.n)), pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
+    if !sameTail(back, em) {
+        return []byte{}, Fault{}
+    }
+    return sig, nil
+}
+
+// VerifyPSS は sig が pub で msg の RSASSA-PSS の署名（salt 長 sLen）か
+func VerifyPSS(pub PublicKey, msg []byte, sig []byte, sLen int) bool {
+    if len(sig) != pub.k {
+        return false
+    }
+    s := bnFromBytes(sig, len(pub.n))
+    if pub.n[0] & 1 == 0 || !bnLess(s, pub.n) {
+        return false
+    }
+    m := bnToBytes(expPub(toMont(s, pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
+    emBits := pub.bits - 1
+    emLen := (emBits + 7) / 8
+    // k - emLen 個の先頭の 0 を確かめて落とす
+    for i <- iter.Range(0, pub.k - emLen) {
+        if m[i] != byte(0) {
+            return false
+        }
+    }
+    mut em := mut []byte{}
+    for i <- iter.Range(pub.k - emLen, pub.k) {
+        em = append(em, m[i])
+    }
+    return pssVerify(sha256.Sum256(msg), freeze(em), emBits, sLen)
+}
+
+// sameTail は back（k バイト）が em（k - (k - emLen) バイト）を右寄せにした値か
+func sameTail(back []byte, em []byte) bool {
+    off := len(back) - len(em)
+    mut d := 0
+    for i <- iter.Range(0, off) {
+        d = d | int(back[i])
+    }
+    for i <- iter.Range(0, len(em)) {
+        d = d | (int(back[off + i]) ^ int(em[i]))
+    }
+    return d == 0
+}
+
+// mgf1 は MGF1-SHA256(seed) の先頭 n バイト（RFC 8017 B.2.1）
+func mgf1(seed []byte, n int) []byte {
+    mut out := mut []byte{}
+    mut c := 0
+    while len(out) < n {
+        mut s := sha256.New()
+        sha256.Write(mut s, seed)
+        sha256.Write(mut s, []byte{byte((c >> 24) & 0xff), byte((c >> 16) & 0xff), byte((c >> 8) & 0xff), byte(c & 0xff)})
+        h := sha256.Sum(s)
+        for i <- iter.Range(0, len(h)) {
+            if len(out) < n {
+                out = append(out, h[i])
+            }
+        }
+        c = c + 1
+    }
+    return freeze(out)
+}
+
+// pssEncode は EMSA-PSS-ENCODE（RFC 8017 9.1.1 — mHash は SHA-256 の値・emBits = modBits - 1）
+@errors(BadSize)
+func pssEncode(mHash []byte, salt []byte, emBits int) ([]byte, error?) {
+    emLen := (emBits + 7) / 8
+    hLen := 32
+    sLen := len(salt)
+    if emLen < hLen + sLen + 2 {
+        return []byte{}, BadSize{}
+    }
+    mut mp := sha256.New()
+    sha256.Write(mut mp, []byte{byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0)})
+    sha256.Write(mut mp, mHash)
+    sha256.Write(mut mp, salt)
+    h := sha256.Sum(mp)
+    dbLen := emLen - hLen - 1
+    mask := mgf1(h, dbLen)
+    mut em := mut []byte{}
+    ps := dbLen - sLen - 1
+    for i <- iter.Range(0, dbLen) {
+        db := if i < ps { 0 } else if i == ps { 1 } else { int(salt[i - ps - 1]) }
+        em = append(em, byte(db ^ int(mask[i])))
+    }
+    em[0] = byte(int(em[0]) & (0xff >> (8 * emLen - emBits)))
+    for i <- iter.Range(0, hLen) {
+        em = append(em, h[i])
+    }
+    em = append(em, byte(0xbc))
+    return freeze(em), nil
+}
+
+// pssVerify は EMSA-PSS-VERIFY（RFC 8017 9.1.2 — 公開の値だけを扱うので分岐してよい）
+func pssVerify(mHash []byte, em []byte, emBits int, sLen int) bool {
+    emLen := (emBits + 7) / 8
+    hLen := 32
+    if len(em) != emLen || emLen < hLen + sLen + 2 || em[emLen - 1] != byte(0xbc) {
+        return false
+    }
+    dbLen := emLen - hLen - 1
+    top := 0xff >> (8 * emLen - emBits)
+    if (int(em[0]) & (0xff ^ top)) != 0 {
+        return false
+    }
+    mut h := mut []byte{}
+    for i <- iter.Range(dbLen, dbLen + hLen) {
+        h = append(h, em[i])
+    }
+    hh := freeze(h)
+    mask := mgf1(hh, dbLen)
+    mut db := mut []byte{}
+    for i <- iter.Range(0, dbLen) {
+        db = append(db, byte(int(em[i]) ^ int(mask[i])))
+    }
+    db[0] = byte(int(db[0]) & top)
+    ps := dbLen - sLen - 1
+    for i <- iter.Range(0, ps) {
+        if db[i] != byte(0) {
+            return false
+        }
+    }
+    if db[ps] != byte(1) {
+        return false
+    }
+    mut mp := sha256.New()
+    sha256.Write(mut mp, []byte{byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0), byte(0)})
+    sha256.Write(mut mp, mHash)
+    mut salt := mut []byte{}
+    for i <- iter.Range(ps + 1, dbLen) {
+        salt = append(salt, db[i])
+    }
+    sha256.Write(mut mp, freeze(salt))
+    want := sha256.Sum(mp)
+    mut d := 0
+    for i <- iter.Range(0, hLen) {
+        d = d | (int(want[i]) ^ int(hh[i]))
+    }
+    return d == 0
+}

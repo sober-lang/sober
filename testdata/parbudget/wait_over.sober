@@ -1,0 +1,14 @@
+package main
+
+// parbudget の wait の負例（段 3 の ③）: wait の scope の天井 8 MB に宣言 16 MB の子 — 待っても入れないので spawn の点で名指しの panic（101）
+
+import "std/task"
+
+func main() int {
+    r, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => 1, budget: 16 * task.MB)
+        task.Join(h)
+    }, budget: 8 * task.MB, wait: true)
+    println(r)
+    return 0
+}

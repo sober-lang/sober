@@ -1,0 +1,2 @@
+examples/errors_neg_undeclared.sober:8:6: error: public function 'Parse' returns an error but has no @errors: add `@errors(Empty)` (Analyzer)
+exit=1

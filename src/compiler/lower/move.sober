@@ -15,7 +15,7 @@ package lower
 
 import "desugar"
 import "std/iter"
-import "std/par"
+import "std/task"
 
 const MV_SLOT = 5
 const MV_PAR = 4
@@ -341,7 +341,7 @@ type LGroup struct {
 
 // lParCfg は子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
 func lParCfg(st mut St, b2 bool) []int {
-    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq)})
+    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq)})
 }
 
 // lRets は呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く）
@@ -383,9 +383,14 @@ func lFnRet(st mut St, g FnRef) int {
     panic(Unreachable{})
 }
 
+// lParOn は束を群の子で回す形か（ワーカー 1・1 本の経路・roundtrip でない）
+func lParOn(st mut St) bool {
+    return !st.xseq && !st.mvRound && task.Ledger().workers > 1
+}
+
 // lParBatch は束 b2（偽 = B1・真 = B2）を群の子で回す。回さない形（ワーカー 1・群 1 つ以下・1 本の経路・roundtrip）なら何もせず false
 func lParBatch(st mut St, b2 bool) bool {
-    if st.xseq || st.mvRound || par.Ledger().workers <= 1 {
+    if !lParOn(mut st) {
         return false
     }
     mut fr := mut []int{}
@@ -411,47 +416,89 @@ func lParBatch(st mut St, b2 bool) bool {
     }
     lret := lRets(mut st)
     cfg := lParCfg(mut st, b2)
-    mut gs := mut []LGroup{}
-    mut big := 0
-    for k <- iter.Range(0, len(cut) - 1) {
-        mut fns := mut []int{}
-        mut bodies := mut [][]int{}
-        mut ptys := mut [][]int{}
-        mut rets := mut []int{}
-        mut mutp := mut []int{}
-        mut words := 0
-        for j <- iter.Range(cut[k], cut[k + 1]) {
-            g := FnRef(fr[j])
-            fns = append(fns, fr[j])
-            pt := irFnPtys(mut st, g)
-            mut pv := mut []int{}
-            for q <- iter.Range(0, desugar.HeapGet(mut st.d, pt)) {
-                pv = append(pv, desugar.HeapGet(mut st.d, pt + 1 + q))
-            }
-            ptys = append(ptys, freeze(pv))
-            rets = append(rets, irFnRet(mut st, g))
-            mutp = append(mutp, irFnMutP(mut st, g))
-            body := mvPack(mut st, g, false)
-            words += len(body)
-            bodies = append(bodies, body)
-        }
-        if words > big {
-            big = words
-        }
-        gs = append(gs, LGroup{fns: freeze(fns), bodies: freeze(bodies), ptys: freeze(ptys), rets: freeze(rets), mutp: freeze(mutp)})
-    }
-    // budget: = 群の詰めた語数の最大 × 128 B + 8 MiB（子のヒープ〔パスが積む記録で伸びる〕と作業域 — 写しは親の分で子は数えない）
-    bud := big * 128 + 8 * par.MB
-    outs, serr := par.Map(freeze(gs), (g) => lParGroup(g, cfg, lret), budget: bud)
-    if serr != nil {
+    frz := freeze(fr)
+    ct := freeze(cut)
+    // 流し込み（report-783 4.2 / 785）: 群ごとに詰めて、チャネルを作り give: で子を起こしてから送る — 親の詰めが先に起こした子の走りに重なる。
+    // 積み戻しは起こした順（= 群の順 — 終わった順でなく）に Join して 1 群ずつ — 尻の子の走りに重なる。群の割り方と積み戻しの順は全部を詰めてから
+    // task.Map で回していた形と同じなので出力は変わらない（ワーカー数に依らない）
+    if !lStream(mut st, frz, ct, cfg, lret) {
         return panic(InvariantBroken{})
     }
-    for k <- iter.Range(0, len(outs)) {
-        for j <- iter.Range(0, len(outs[k])) {
-            mvUnpack(mut st, FnRef(gs[k].fns[j]), outs[k][j])
-        }
-    }
     return true
+}
+
+// lStream は流し込みの scope（切り出し — lParBatch の本体を展開の重複から離す・report-787）。子が死ねば false
+func lStream(st mut St, frz []int, ct []int, cfg []int, lret []int) bool {
+    _, serr := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[LOut]{}
+        mut k := 0
+        while k < len(ct) - 1 {
+            g := lPack(mut st, frz, ct[k], ct[k + 1])
+            // budget: = 群の詰めた語数 × 128 B + 8 MiB（子のヒープ〔パスが積む記録で伸びる〕と作業域 — 写しは親の分で子は数えない）
+            bud := lWords(g) * 128 + 8 * task.MB
+            tx, rx := task.NewChannel[LGroup](cap: 1)
+            h := task.Spawn(s, (inp) => {
+                gi := task.Recv(inp)
+                if gi != nil { LOut{bodies: lParGroup(gi, cfg, lret)} } else { LOut{bodies: [][]int{}} }
+            }, give: rx, budget: bud)
+            hs = append(hs, h)
+            task.Send(tx, g)
+            k += 1
+        }
+        mut j := 0
+        while j < len(hs) {
+            o := task.Join(hs[j])
+            lUnpack(mut st, frz, ct[j], o)
+            j += 1
+        }
+        0
+    })
+    return serr == nil
+}
+
+// LOut は群の子の結果（群の中の関数の順の詰めた本体 — handle の型引数に [][]int を直に書けない綴りの都合で包む）
+type LOut struct {
+    bodies [][]int
+}
+
+// lUnpack は群の子の結果 o（fr の添字 lo から続く関数の詰めた本体）を積み戻す（scope の本体で Join の結果の欄を直に読む形は check の
+// コアの範囲の外 — struct ごと渡す）
+func lUnpack(st mut St, fr []int, lo int, o LOut) {
+    for q <- iter.Range(0, len(o.bodies)) {
+        mvUnpack(mut st, FnRef(fr[lo + q]), o.bodies[q])
+    }
+}
+
+// lPack は fr の添字 [lo, hi) の関数を詰めた群（署名の型の列・戻り・mut 仮引数の印と本体）
+func lPack(st mut St, fr []int, lo int, hi int) LGroup {
+    mut fns := mut []int{}
+    mut bodies := mut [][]int{}
+    mut ptys := mut [][]int{}
+    mut rets := mut []int{}
+    mut mutp := mut []int{}
+    for j <- iter.Range(lo, hi) {
+        g := FnRef(fr[j])
+        fns = append(fns, fr[j])
+        pt := irFnPtys(mut st, g)
+        mut pv := mut []int{}
+        for q <- iter.Range(0, desugar.HeapGet(mut st.d, pt)) {
+            pv = append(pv, desugar.HeapGet(mut st.d, pt + 1 + q))
+        }
+        ptys = append(ptys, freeze(pv))
+        rets = append(rets, irFnRet(mut st, g))
+        mutp = append(mutp, irFnMutP(mut st, g))
+        bodies = append(bodies, mvPack(mut st, g, false))
+    }
+    return LGroup{fns: freeze(fns), bodies: freeze(bodies), ptys: freeze(ptys), rets: freeze(rets), mutp: freeze(mutp)}
+}
+
+// lWords は群の詰めた語数
+func lWords(g LGroup) int {
+    mut w := 0
+    for b <- g.bodies {
+        w += len(b)
+    }
+    return w
 }
 
 // lParGroup は子の本体: 自前の St のヒープに群の関数を積み、束のパスを関数ごとに掛けて詰め直す
@@ -495,6 +542,10 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
         if cfg[6] == 1 {
             lB2Func(mut st, cf)
         } else {
+            // 2 = 設計整合パスの関数ごとの段を頭で（elfOutSt が optPre だけを済ませた形）
+            if cfg[6] == 2 {
+                optFunc(mut st, cf)
+            }
             lB1Func(mut st, cf)
         }
         out = append(out, mvPack(mut st, cf, false))

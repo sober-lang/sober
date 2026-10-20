@@ -1,0 +1,24 @@
+package main
+
+// http.ServeWith に同一性の型（net.Conn / tls.Conn）を捕捉したラムダを渡す形（report-841 / 842 の受理例）: recv / send は ServeWith の借りの位置
+// （本体の中で別の関数〔serveBuf / linger〕へ渡すのも借りの位置 — その名前は std/http の中で引く）。check / build だけを見る例（走らせない）
+
+import "std/http"
+import "std/net"
+import "std/tls"
+
+func route(r http.Request) http.Response {
+    return http.Text("ok")
+}
+
+func plain(c net.Conn) error? {
+    return http.ServeWith((k) => net.Recv(c, k), (b) => net.Send(c, b), route)
+}
+
+func secure(c tls.Conn) error? {
+    return http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)
+}
+
+func main() int {
+    return 0
+}

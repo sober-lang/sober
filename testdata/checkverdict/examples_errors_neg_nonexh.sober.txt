@@ -1,0 +1,2 @@
+examples/errors_neg_nonexh.sober:26:9: error: switch does not cover TooLong (error labels the subject may carry): add cases or a default (Analyzer)
+exit=1

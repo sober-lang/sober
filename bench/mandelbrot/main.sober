@@ -3,10 +3,10 @@ package main
 // mandelbrot（benchmarks game — docs/bench.md）: n × n の点を 50 回まで反復し、|z|² ≤ 4 を 1 ビットで詰めた PBM（P4）を標準出力へ。
 // 素直な形・逐次（Go の双子 bench/mandelbrot/go と同じアルゴリズム・同じ演算の順）
 
+import "std/convert"
 import "std/io"
 import "std/iter"
 import "std/os"
-import "std/strings"
 
 func atoi(s string) int {
     b := bytes(s)
@@ -21,7 +21,7 @@ func main() int {
     args := os.Args() catch return 2
     n := if len(args) > 1 { atoi(args[1]) } else { 200 }
     mut out := mut []byte{}
-    head := bytes("P4\n" + strings.FormatInt(n) + " " + strings.FormatInt(n) + "\n")
+    head := bytes("P4\n" + convert.FormatInt(n) + " " + convert.FormatInt(n) + "\n")
     for k <- iter.Range(0, len(head)) {
         out = append(out, head[k])
     }

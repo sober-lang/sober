@@ -1,12 +1,12 @@
 package json
 
-// JSON（RFC 8259）の読みと決定的な印字（language.md 16 節）。文書は平らな表 Doc（節の番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、
-// 触るのは 1 段だけ開くビューの union Value（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — 16 節）。
+// JSON（RFC 8259）の読みと決定的な印字（language.md 16 節）。文書は平らな表 Doc（ノードの番号で子を指す — compiler/ の ast.Tree と同じ形）に置き、
+// 触るのは 1 段だけ開くビューの union Value（json.At）— 各段の switch に網羅が要る（雑に読む手段が構成的に無い — language.md 16 節）。
 // 再帰の union にしないのはコアに再帰型が無いため（形式化の箱「ジェネリック union 段 (3) 再帰」— 入ったら再訪）。
 //
 //     d := json.Parse(b)?                       // 全量・入れ子の深さは MaxDepth まで
 //     switch json.At(d, json.Root(d)) {
-//     case json.Obj{names, vals}: …              // 子は節の番号 — json.At(d, vals[i]) で 1 段ずつ開く
+//     case json.Object{names, vals}: …              // 子はノードの番号 — json.At(d, vals[i]) で 1 段ずつ開く
 //     …
 //     }
 //     s := json.Format(d, json.Root(d))        // 決定的（空白なし・欄はソースの順・数は字句のまま）
@@ -16,9 +16,9 @@ package json
 
 import "std/builder"
 import "std/iter"
-import "std/utf8"
+import "std/strings"
 
-// 節の種類（Doc.kind）
+// ノードの種類（Doc.kind）
 const kNull = 0
 const kFalse = 1
 const kTrue = 2
@@ -28,22 +28,22 @@ const kStrEsc = 5   // a, b = esc の [a, b)（エスケープを解いた写し
 const kArr = 6      // a = kids の先頭, b = 要素の数
 const kObj = 7      // a = kids の先頭（キーの節 b 個、続けて値の節 b 個）, b = 欄の数
 
-// MaxDepth は入れ子の深さの上限（配列とオブジェクトの開き — 防御の上限。読みは明示のスタックで再帰しないので、深さはスタックの長さにだけ効く）
+// 入れ子の深さの上限（配列とオブジェクトの開き — 防御の上限。読みは明示のスタックで再帰しないので、深さはスタックの長さにだけ効く）
 const MaxDepth = 1000
 
-// InvalidJson の kind
+// InvalidJson の kind（形の誤り・不正な UTF-8・MaxDepth を超えた入れ子・オブジェクトのキーの重複）
 const Syntax = 1
 const BadUtf8 = 2
 const TooDeep = 3
-const DupKey = 4
+const DuplicateKey = 4
 
-// InvalidJson は読めなかった位置（src 上のバイトオフセット）と種類（Syntax・BadUtf8・TooDeep・DupKey）
+// 読めなかった位置（src 上のバイトオフセット）と種類（Syntax・BadUtf8・TooDeep・DuplicateKey）
 type InvalidJson error {
     pos int
     kind int
 }
 
-// Doc は読んだ文書: 節の表（番号 = 添字。子は親より先に並ぶ — 根は最後）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:
+// 読んだ文書: ノードの表（番号 = 添字。子は親より先に並ぶ — 根は最後）。書き換えない値なので task の子へそのまま渡せる（例: examples/json_put.sober）。作れるのは Parse だけ（証人 — 外から作った表を At に渡させない）:
 // 非公開の型の封の欄 seal があるので、外からは composite に書けない（部分リテラルは拒否・sealed の値は外で書けない）。型は公開のまま
 // （引数の型に json.Doc と書ける — shape[T] の写しの関数も）。欄の読みは塞いでいない（裸の int で At なしには解釈できない — 規律の面だけ）。
 // 再訪条件: 可視性の細分（構築のみ私有・欄の私有）が入ったら封を外してそれに置き換える
@@ -62,47 +62,47 @@ type Doc struct {
 type sealed struct {
 }
 
-// Value は節 1 つのビュー（子は節の番号 — json.At で開く）
+// ノード 1 つのビュー（子はノードの番号 — json.At で開く）
 type Value union {
     Null {}
     Bool { v bool }
-    Num { lit string }
-    Str { v string }
-    Arr { items []int }
-    Obj { names []string; vals []int }
+    Number { lit string }
+    String { v string }
+    Array { items []int }
+    Object { names []string; vals []int }
 }
 
-// Root は根の節
+// 根のノード
 func Root(d Doc) int {
     return len(d.kind) - 1
 }
 
-// Pos は節 n の src 上の位置（値の先頭のバイト）
+// ノード n の src 上の位置（値の先頭のバイト）
 func Pos(d Doc, n int) int {
     return d.pos[n]
 }
 
-// At は節 n を 1 段開く
+// ノード n を 1 段開く
 func At(d Doc, n int) Value {
     a := d.a[n]
     b := d.b[n]
     k := d.kind[n]
     // 文の if + return で書く（値の位置の switch だと、[]string を持つ variant の腕の合流を check が拒否する — F-ab）
     if k == kObj {
-        return Obj{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
+        return Object{names: keysOf(d, a, b), vals: d.kids[a + b:a + b + b]}
     }
     return switch k {
     case kNull: Null{}
     case kFalse: Bool{v: false}
     case kTrue: Bool{v: true}
-    case kNum: Num{lit: bytesToString(d.src[a:b])}
-    case kStr: Str{v: bytesToString(d.src[a:b])}
-    case kStrEsc: Str{v: bytesToString(d.esc[a:b])}
-    default: Arr{items: d.kids[a:a + b]}
+    case kNum: Number{lit: bytesToString(d.src[a:b])}
+    case kStr: String{v: bytesToString(d.src[a:b])}
+    case kStrEsc: String{v: bytesToString(d.esc[a:b])}
+    default: Array{items: d.kids[a:a + b]}
     }
 }
 
-// keysOf はオブジェクトのキーの節 kids[a, a + n) の文字列の列
+// keysOf はオブジェクトのキーのノード kids[a, a + n) の文字列の列
 func keysOf(d Doc, a int, n int) []string {
     mut ks := mut []string{}
     for i <- iter.Range(0, n) {
@@ -111,17 +111,17 @@ func keysOf(d Doc, a int, n int) []string {
     return ks
 }
 
-// text は文字列の節 k の中身
+// text は文字列のノード k の中身
 func text(d Doc, k int) string {
     return if d.kind[k] == kStr { bytesToString(d.src[d.a[k]:d.b[k]]) } else { bytesToString(d.esc[d.a[k]:d.b[k]]) }
 }
 
-// Get はオブジェクトの節 n の欄 key の値の節（n がオブジェクトでない・欄が無ければ nil）
+// オブジェクトのノード n の欄 key の値のノード（n がオブジェクトでない・欄が無ければ nil）
 func Get(d Doc, n int, key string) int? {
     return GetAt(d, n, key, -1)
 }
 
-// GetAt は Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
+// Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
 // 渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）
 // キーの比較は手で展開してある（Doc の欄を局所に取ってから回す — 旧 keyIs は Doc を値で渡す呼び出しを欄ごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0 から線形
 func GetAt(d Doc, n int, key string, hint int) int? {
@@ -364,8 +364,8 @@ func put(st mut []int, sp int, x int) {
     }
 }
 
-// nodes は節の表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
-// （Builder に積んで Build で写す形は chunk の倍々の余りと写しで RSS が表の 3 倍だった）。n = 節の数・nk = 子の数
+// nodes はノードの表の組み立て（Parse の作業域）: 4 本の列と子の列 kids を、入力から数えた上界の長さで先に確保して添字で書く
+// （Builder に積んで Build で写す形は chunk の倍々の余りと写しで RSS が表の 3 倍だった）。n = ノードの数・nk = 子の数
 type nodes struct {
     kind mut []int
     a mut []int
@@ -376,7 +376,7 @@ type nodes struct {
     nk int
 }
 
-// node は節を足してその番号を返す
+// node はノードを足してその番号を返す
 func node(ns mut nodes, k int, a int, b int, p int) int {
     i := ns.n
     ns.kind[i] = k
@@ -387,7 +387,7 @@ func node(ns mut nodes, k int, a int, b int, p int) int {
     return i
 }
 
-// bound は節の数の上界（根 1 つ + 値と鍵の前に来る区切り `{` `[` `,` `:` の数 — 文字列の中のものも数えるので多めになる）
+// bound はノードの数の上界（根 1 つ + 値と鍵の前に来る区切り `{` `[` `,` `:` の数 — 文字列の中のものも数えるので多めになる）
 func bound(b []byte) int {
     mut n := 1
     mut i := 0
@@ -410,10 +410,10 @@ func zeroFill(xs mut []int, n int) {
     }
 }
 
-// Parse は b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろに何か残れば Syntax）
+// b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろに何か残れば Syntax）
 @errors(InvalidJson)
 func Parse(b []byte) (Doc, error?) {
-    bad := utf8.IndexInvalid(b)
+    bad := strings.IndexInvalid(b)
     if bad >= 0 {
         return Doc{}, InvalidJson{pos: bad, kind: BadUtf8}
     }
@@ -544,12 +544,12 @@ func Parse(b []byte) (Doc, error?) {
     d := Doc{src: b, esc: builder.Build(mut esc), kind: fkd[0:n], a: fa[0:n], b: fb[0:n], pos: fp[0:n], kids: fk[0:ns.nk], seal: sealed{}}
     dup := dupKey(d)
     if dup >= 0 {
-        return Doc{}, InvalidJson{pos: dup, kind: DupKey}
+        return Doc{}, InvalidJson{pos: dup, kind: DuplicateKey}
     }
     return d, nil
 }
 
-// readKey は b[i] から オブジェクトのキーの文字列と ':' を読む: (キーの節, ':' の後の位置)
+// readKey は b[i] から オブジェクトのキーの文字列と ':' を読む: (キーのノード, ':' の後の位置)
 @errors(InvalidJson)
 func readKey(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int) (int, int, error?) {
     if i >= len(b) || b[i] != '"' {
@@ -567,7 +567,7 @@ func readKey(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int) (int,
     return k, skipWs(b, j + 1), nil
 }
 
-// strNode は検査済みの文字列の字句 b[i..e]（両端の '"' 込み）の節
+// strNode は検査済みの文字列の字句 b[i..e]（両端の '"' 込み）のノード
 func strNode(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int, e int, hasEsc bool) int {
     if !hasEsc {
         return node(mut ns, kStr, i + 1, e, i)
@@ -577,7 +577,7 @@ func strNode(ns mut nodes, esc mut builder.Builder[byte], b []byte, i int, e int
     return node(mut ns, kStrEsc, s, builder.Len(mut esc), i)
 }
 
-// closeFrame は枠 ft（子は st[ft + 3, sp)）を閉じた入れ物の節
+// closeFrame は枠 ft（子は st[ft + 3, sp)）を閉じた入れ物のノード
 func closeFrame(ns mut nodes, st mut []int, ft int, sp int) int {
     k := st[ft]
     a := ns.nk
@@ -661,7 +661,7 @@ func dupLarge(d Doc, a int, m int) int {
     return -1
 }
 
-// Format は節 n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
+// ノード n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
 func Format(d Doc, n int) string {
     mut out := builder.Builder[byte]{}
     // 明示のスタック: [節, 次の子の添字] の組
@@ -709,7 +709,7 @@ func Format(d Doc, n int) string {
     return bytesToString(builder.Build(mut out))
 }
 
-// scalar は入れ物でない節 n を out に書く
+// scalar は入れ物でないノード n を out に書く
 func scalar(out mut builder.Builder[byte], d Doc, n int) {
     k := d.kind[n]
     if k == kNull {
@@ -726,7 +726,7 @@ func scalar(out mut builder.Builder[byte], d Doc, n int) {
 }
 
 func putLit(out mut builder.Builder[byte], s string) {
-    builder.PushStr(mut out, s)
+    builder.PushString(mut out, s)
 }
 
 // quote は s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む）

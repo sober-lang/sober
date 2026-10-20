@@ -1,0 +1,204 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Ord",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "less",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "name",
+                  "name": "int"
+                },
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "results": [
+                {
+                  "k": "name",
+                  "name": "bool"
+                }
+              ]
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "asc",
+      "type_params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "b",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "<",
+                "lhs": {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 30
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 32
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 36
+      },
+      "sig_end": 28
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "ident",
+                "name": "asc",
+                "tok": 43
+              }
+            ],
+            "tok": 41
+          },
+          {
+            "k": "bind",
+            "names": [
+              "o"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Ord",
+                "elems": [
+                  {
+                    "key": "less",
+                    "value": {
+                      "k": "ident",
+                      "name": "f",
+                      "tok": 51
+                    }
+                  }
+                ],
+                "tok": 47,
+                "type_args": []
+              }
+            ],
+            "tok": 45
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 54
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "o",
+                      "tok": 56
+                    },
+                    "field": "less",
+                    "tok": 58
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 60
+                    },
+                    {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 62
+                    }
+                  ],
+                  "tok": 59
+                }
+              ],
+              "tok": 55
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 68
+      },
+      "sig_end": 40
+    }
+  ],
+  "consts": []
+}

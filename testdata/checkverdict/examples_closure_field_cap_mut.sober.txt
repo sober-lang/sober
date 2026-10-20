@@ -1,0 +1,2 @@
+sober: load error at examples/closure_field_cap_mut.sober:14:30: a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation
+exit=1

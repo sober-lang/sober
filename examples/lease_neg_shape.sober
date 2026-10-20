@@ -1,0 +1,21 @@
+package main
+
+// 置き場の T はスカラーと pool.Scratch の欄だけの struct（diag.Par kind 26 — slice の欄は窓の中で置き場を伸ばしうる）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+type Bad struct {
+    xs []int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.NewLocal((w mut Bad) => pool.NewScratch(mut w.head, 8))
+    println(task.Lease(lw, (w mut Bad) => len(w.xs)))
+}

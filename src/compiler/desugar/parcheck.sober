@@ -1,22 +1,22 @@
 package desugar
 
-// std/par の呼び出し点の形の検査（段 6 P3a-1d — language.md 11 節・p3a-draft 1.2 / 4 節 5）: Spawn の g が捕獲できない値・本体からの脱出・
+// std/task の呼び出し点の形の検査（段 6 P3a-1d — language.md 11 節・p3a-draft 1.2 / 4 節 5）: Spawn の g が捕獲できない値・本体からの脱出・
 // task の結果の形を名指しで拒否する（diag.Par の kind 3〜10）。check と build の両方が通る層（NamedValueArgs の後 — 表層の木と表層型）に置く:
 // check だけで拒否すると build が通って意味が割れる（D1 の MutAlias と同じ理由）。コアの検査（givable・Λ = []・regionsBelow）も同じ形を拒否するが、
-// 名指しはここ。std/par を import しないプログラムでは走らない
+// 名指しはここ。std/task を import しないプログラムでは走らない
 //
-// kind: 3 = 実引数が生のラムダでない・4 = mut の束縛の捕獲・5 = 札（par.S）の捕獲・6 = handle（par.Task）の捕獲・
+// kind: 3 = 実引数が生のラムダでない・4 = mut の束縛の捕獲・5 = 札（task.Scope）の捕獲・6 = handle（task.Handle）の捕獲・
 //       7 = 本体から外への脱出（return / `?` / 外のループへの break・continue）・8 = task の結果が写せない（関数値・札・handle — string・slice・map・error は P3b-4 から写せる）・
 //       9 = scope の結果が札・handle を持つ（scope の外へ逃げる）。10（main 以外の関数の中）は撤去 — Def の本体の par は Lean の noNewchan の解禁で受理・
-//       16 = handle を imm の slice に（mut slice だけ — P3b-5 Gather）・17 = error を返す task の handle を `par.Task[T]` の slice に
-//       （要素の型は `par.Task[(T, error?)]` — P3b 残穴1）
+//       16 = handle を imm の slice に（mut slice だけ — P3b-5 Gather）・17 = error を返す task の handle を `task.Handle[T]` の slice に
+//       （要素の型は `task.Handle[(T, error?)]` — P3b 残穴1）
 //       20 = budget: が呼び出し・割り算を含む（段 6 P5-3）
 //       21 = mut の中身を持つ値（imm の束縛の mut の別名 `v := m` を含む）の捕獲（F-ao — 2026-10-11）
 //       19 = chan のペイロードの型が札・handle・端点を含む（欄・`T?` の中も）
 //       11 = 関数型の仮引数（展開される閉包 — 子へは値しか渡せない）の捕獲・12 = 札・handle を関数の実引数 / 戻り値に（コアの paramOk / retOk が拒否する形）
 // Join の結果の数（PC_CATCHLHS / PC_MULTIBIND — diag.Par でなく loader の診断を名指す）: Join の結果は字面で T 1 つで、fallible な task の T = `(U, error?)` は
-// 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `par.Join(h) catch D` は fallible な task だけ（CatchLhs）・
-// 値 1 つの束縛 `d := par.Join(h)` は infallible な task だけ（MultiBind — report-582 2 節）
+// 呼び出し点の型引数で決まる。loader（catchx.sober）は字面で数えるので Join の判定をここへ保留する — `task.Join(h) catch D` は fallible な task だけ（CatchLhs）・
+// 値 1 つの束縛 `d := task.Join(h)` は infallible な task だけ（MultiBind — report-582 2 節）
 
 import "ast"
 import "diag"
@@ -28,11 +28,11 @@ import "std/table"
 const PC_CATCHLHS = 101
 const PC_MULTIBIND = 102
 
-// ParCheck は p の std/par の呼び出し点の形を検査する
+// ParCheck は p の std/task の呼び出し点の形を検査する
 @errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
 func ParCheck(p loader.Program) error? {
     par, file := pcImports(p)
-    if !par && !file {
+    if !par && !file && len(p.cap_lo) == 0 {
         return nil
     }
     mut st := S{}
@@ -44,8 +44,8 @@ func ParCheck(p loader.Program) error? {
 @errors(diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind)
 func ParCheckTyped(st mut S, p loader.Program) error? {
     par, file := pcImports(p)
-    if file {
-        // io.File の使い方（filecheck.sober — 同じ層・同じ表層型）
+    if file || len(p.cap_lo) > 0 {
+        // io.File の使い方と借りの関数値の使い方（filecheck.sober — 同じ層・同じ表層型。借りは値の位置のラムダがあるときだけ — (α-L0)）
         fileCheck(mut st)?
     }
     if !par {
@@ -54,7 +54,7 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
     pcMemoInit(mut st)
     for fi <- iter.Range(0, st.nfn) {
         body := fnBody(mut st, fi)
-        if body != -1 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/par") {
+        if body != -1 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/task") {
             st.curPkg = fnPkg(mut st, fi)
             r := pcWalk(mut st, fi, body)
             if r.kind == PC_CATCHLHS {
@@ -71,7 +71,7 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
     return nil
 }
 
-// pcImports は p が std/par を import するか（しなければ ParCheck の std/par の検査は走らない）と、`X.Open` の形の選択を書くか（std/io の外 —
+// pcImports は p が std/task を import するか（しなければ ParCheck の std/task の検査は走らない）と、`X.Open` の形の選択を書くか（std/io の外 —
 // 書かなければ io.File の値は作れないので filecheck は走らない。1 回の走査で両方を引く）
 func pcImports(p loader.Program) (bool, bool) {
     mut par := false
@@ -80,8 +80,11 @@ func pcImports(p loader.Program) (bool, bool) {
         t := p.trees[f]
         for i <- iter.Range(0, len(t.nodes)) {
             x := t.nodes[i]
-            if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/par")) {
+            if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 8 && dataIs(t.data, x.b + 1, bytes("std/task")) {
                 par = true
+            } else if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/net")) {
+                // std/net の Listener / Conn も同じ検査（net 段 4a-1）
+                file = true
             } else if x.kind == ast.ESelector && x.b >= 0 && t.data[x.b] == 4 && dataIs(t.data, x.b + 1, bytes("Open")) {
                 file = true
             }
@@ -118,7 +121,7 @@ func pcField(x ast.Node, j int) int {
     return if j == 0 { x.a } else if j == 1 { x.b } else if j == 2 { x.c } else if j == 3 { x.d } else if j == 4 { x.e } else { x.f }
 }
 
-// pcWalk は関数 fi の木 n の中の std/par の呼び出しを検査する
+// pcWalk は関数 fi の木 n の中の std/task の呼び出しを検査する
 func pcWalk(st mut S, fi int, n NodeRef) PcHit {
     if n == -1 {
         return pcNone()
@@ -131,7 +134,7 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
         }
     }
     if x.kind == ast.ECall {
-        // 明示の型引数 `f[T](…)` は土台の名前で引く（par.NewChan[T]）
+        // 明示の型引数 `f[T](…)` は土台の名前で引く（task.NewChannel[T]）
         cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
         fk := findFn(mut st, cal, -1)
         key := if fk >= 0 { ParKey(mut st, fk) } else { 0 }
@@ -141,8 +144,8 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
                 return h
             }
         } else if fk < 0 && pcIsAppend(mut st, cal) {
-            // handle を積むのは mut slice へ・error を返す task の handle は要素の型が `par.Task[(T, error?)]` の slice へだけ（P3b 残穴1 —
-            // `par.Task[T]` の slice に積むと Join が失敗を落とす）
+            // handle を積むのは mut slice へ・error を返す task の handle は要素の型が `task.Handle[(T, error?)]` の slice へだけ（P3b 残穴1 —
+            // `task.Handle[T]` の slice に積むと Join が失敗を落とす）
             args := lB(x)
             if lenL(mut st, args) == 2 && parTaskFallible(mut st, latN(mut st, args, 1)) && !pcFallibleElem(mut st, YTypeOf(mut st, latN(mut st, args, 0))) {
                 return PcHit{at: latN(mut st, args, 1), kind: 17}
@@ -152,11 +155,11 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
             }
         } else if fk < 0 && kindN(mut st, cal) == ast.EIdent && strIs(mut st, sA(nodeOf(mut st, cal)), "freeze") && pcImmHandles(mut st, YTypeOf(mut st, n)) {
             return PcHit{at: n, kind: 16}
-        } else if fk >= 0 && strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/par") && (strIs(mut st, fnName(mut st, fk), "Map") || strIs(mut st, fnName(mut st, fk), "mapE")) && lenL(mut st, lB(x)) == 3 && !pcSizeExpr(mut st, latN(mut st, lB(x), 2)) {
-            // par.Map の budget:（段 6 P5-3 — Spawn と同じ柵 kind 20）
+        } else if fk >= 0 && strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/task") && (strIs(mut st, fnName(mut st, fk), "Map") || strIs(mut st, fnName(mut st, fk), "mapE")) && lenL(mut st, lB(x)) == 3 && !pcSizeExpr(mut st, latN(mut st, lB(x), 2)) {
+            // task.Map の budget:（段 6 P5-3 — Spawn と同じ柵 kind 20）
             return PcHit{at: latN(mut st, lB(x), 2), kind: 20}
-        } else if (fk < 0 && !pcIsAppend(mut st, cal)) || (fk >= 0 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/par")) {
-            // 札・handle は関数の境界を越えない（コアの paramOk が拒否する — build だけ通る割れを作らない）。std/par の展開される口（RecvAll）は除く
+        } else if (fk < 0 && !pcIsAppend(mut st, cal)) || (fk >= 0 && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fk)), "std/task")) {
+            // 札・handle は関数の境界を越えない（コアの paramOk が拒否する — build だけ通る割れを作らない）。std/task の展開される口（RecvAll）は除く
             args := lB(x)
             for i <- iter.Range(0, lenL(mut st, args)) {
                 a := latN(mut st, args, i)
@@ -166,11 +169,11 @@ func pcWalk(st mut S, fi int, n NodeRef) PcHit {
             }
         }
     }
-    // 穴のある段 `xs |> par.Map(_, g, budget: b)` の budget:（段 6 P5-3 — kind 20）
+    // 穴のある段 `xs |> task.Map(_, g, budget: b)` の budget:（段 6 P5-3 — kind 20）
     if x.kind == ast.EPipe && x.c != -1 {
         fp := findFn(mut st, nB(x), -1)
         pa := ListRef(x.c)
-        if fp >= 0 && strIs(mut st, PkgPath(mut st, fnPkg(mut st, fp)), "std/par") && (strIs(mut st, fnName(mut st, fp), "Map") || strIs(mut st, fnName(mut st, fp), "mapE")) && lenL(mut st, pa) == 3 && latN(mut st, pa, 2) != -1 && !pcSizeExpr(mut st, latN(mut st, pa, 2)) {
+        if fp >= 0 && strIs(mut st, PkgPath(mut st, fnPkg(mut st, fp)), "std/task") && (strIs(mut st, fnName(mut st, fp), "Map") || strIs(mut st, fnName(mut st, fp), "mapE")) && lenL(mut st, pa) == 3 && latN(mut st, pa, 2) != -1 && !pcSizeExpr(mut st, latN(mut st, pa, 2)) {
             return PcHit{at: latN(mut st, pa, 2), kind: 20}
         }
     }
@@ -228,7 +231,7 @@ func pcJoinBind(st mut S, n NodeRef) PcHit {
     }
     fal := parTaskFallible(mut st, latN(mut st, lB(cx), 0))
     names := lA(x)
-    // catch の写した束縛 `$ctKv, $ctKe := par.Join(h)`（loader/catchx.sober — 名前の `$` は合成の名前にだけ現れる）
+    // catch の写した束縛 `$ctKv, $ctKe := task.Join(h)`（loader/catchx.sober — 名前の `$` は合成の名前にだけ現れる）
     if lenL(mut st, names) == 2 && strHasPrefix(mut st, latS(mut st, names, 0), "$ct") && !fal {
         return PcHit{at: n, kind: PC_CATCHLHS}
     }
@@ -238,7 +241,7 @@ func pcJoinBind(st mut S, n NodeRef) PcHit {
     return pcNone()
 }
 
-// HasTry は scope の本体 n が後置 `?` を含むか（lower の par.Scope が本体の `?` の戻りの文脈を立てるかの判定 — 立てなければ IR は従来のまま。
+// HasTry は scope の本体 n が後置 `?` を含むか（lower の task.Run が本体の `?` の戻りの文脈を立てるかの判定 — 立てなければ IR は従来のまま。
 // return と本体の外への break / continue は ParCheck の kind 7 が先に拒否するので、ここで当たるのは `?` だけ）
 func HasTry(st mut S, n NodeRef) bool {
     return pcEscape(mut st, n, 0, true) != -1
@@ -252,7 +255,7 @@ func pow8(j int) int {
     return r
 }
 
-// pcCall は std/par の鍵 key の呼び出し n の形
+// pcCall は std/task の鍵 key の呼び出し n の形
 func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
     args := lB(nodeOf(mut st, n))
     if key == PAR_NEWCHAN {
@@ -273,18 +276,34 @@ func pcCall(st mut S, fi int, n NodeRef, key int) PcHit {
     if key == PAR_SCOPE || key == PAR_SPAWN || key == PAR_SPAWNGIVE || key == PAR_SPAWNIN {
         // 実引数の数・ラムダの位置・ラムダの仮引数の数: Scope (s) => …・Spawn () => …・SpawnGive（give: の写し — loader）(ep) => …・
         // SpawnIn（段 6 P5-4 — [札, プール, ラムダ]）() => …。末尾は budget:（段 6 P5-3 — 省略は loader が nil で埋める）
-        na := if key == PAR_SCOPE { 2 } else if key == PAR_SPAWN { 3 } else { 4 }
+        na := if key == PAR_SCOPE { 4 } else if key == PAR_SPAWN { 3 } else { 4 }
         nlp := if key == PAR_SPAWN || key == PAR_SPAWNIN { 0 } else { 1 }
         if lenL(mut st, args) != na {
             return pcNone()
         }
         // budget: は呼び出しを含まない整数式（kind 20 — check の経路は捨てる・build は rt へ渡す: 評価の有無で観測が割れない形に限る。
         // 割り算は 0 で死ぬので入れない）
-        bx := latN(mut st, args, na - 1)
+        // Scope は [本体, budget, wait] — wait: は true / false の字面（kind 22 — 入場の方針は書いた場所で決まる。check の経路は捨てる）
+        bx := latN(mut st, args, if key == PAR_SCOPE { 1 } else { na - 1 })
         if !pcSizeExpr(mut st, bx) {
             return PcHit{at: bx, kind: 20}
         }
-        lam := latN(mut st, args, na - 2)
+        if key == PAR_SCOPE {
+            wx := latN(mut st, args, 2)
+            if kindN(mut st, wx) != ast.ENil && !(kindN(mut st, wx) == ast.EIdent && (strIs(mut st, sA(nodeOf(mut st, wx)), "true") || strIs(mut st, sA(nodeOf(mut st, wx)), "false"))) {
+                return PcHit{at: wx, kind: 22}
+            }
+            // deadline: も budget: と同じ形（kind 23 — 呼び出し・割り算を含まない整数式。check の経路は捨てる）。書いた Scope があれば印を立てる
+            // （lower が期限の rt と io の口の判定を組むかの事前の印 — pcMemo の末尾の語・pcDeadlineMark）
+            dx := latN(mut st, args, 3)
+            if kindN(mut st, dx) != ast.ENil {
+                if !pcSizeExpr(mut st, dx) {
+                    return PcHit{at: dx, kind: 23}
+                }
+                pcDeadlineMark(mut st)
+            }
+        }
+        lam := latN(mut st, args, if key == PAR_SCOPE { 0 } else { na - 2 })
         if kindN(mut st, lam) != ast.ELambda || lenL(mut st, lA(nodeOf(mut st, lam))) != nlp {
             return PcHit{at: lam, kind: 3}
         }
@@ -393,7 +412,7 @@ func pcCaptures(st mut S, fi int, lam NodeRef) PcHit {
 }
 
 // LamFree はラムダ lam の本体が参照する名前（EIdent — 重複なし・出現順）のうち、ラムダの中で束ねていないもの。lower の閉包変換
-// （lower/par.sober — 子の関数の捕獲）が今の可視範囲の局所で絞って使う。捕獲の拒否（pcCaptures）と同じ走査なので、名指しと持ち上げの捕獲の集合が割れない
+// （lower/task.sober — 子の関数の捕獲）が今の可視範囲の局所で絞って使う。捕獲の拒否（pcCaptures）と同じ走査なので、名指しと持ち上げの捕獲の集合が割れない
 func LamFree(st mut S, lam NodeRef) ListRef {
     base := hlen(mut st)
     pcDecls(mut st, lam)
@@ -485,7 +504,8 @@ func pcUses(st mut S, fi int, n NodeRef, base int, end int) PcHit {
             if mk == 1 || (k == ast.EMutArg && mk >= 0) {
                 return PcHit{at: n, kind: 4}
             }
-            if mk == 0 && pcParamFn(mut st, fi, name) {
+            // std/net の Serve の handler は子の本体で直に呼ぶ（task.Map の f と同じ — 実引数のラムダの捕獲は子の本体への展開の後の検査が見る）
+            if mk == 0 && pcParamFn(mut st, fi, name) && !strIs(mut st, PkgPath(mut st, fnPkg(mut st, fi)), "std/net") {
                 return PcHit{at: n, kind: 11}
             }
             if mk == 0 {
@@ -608,17 +628,17 @@ func pcBindMut(st mut S, n NodeRef, name StrRef, dotted bool) int {
     return -1
 }
 
-// pcParKind は表層型 y が std/par の札（1）・handle（2）か（違えば 0）
+// pcParKind は表層型 y が std/task の札（1）・handle（2）か（違えば 0）
 func pcParKind(st mut S, y int) int {
     if yk(mut st, y) != YDecl {
         return 0
     }
     x := YAt(mut st, y)
-    if !strIs(mut st, PkgPath(mut st, x.b), "std/par") {
+    if !strIs(mut st, PkgPath(mut st, x.b), "std/task") {
         return 0
     }
     nm := sA(nodeOf(mut st, yNa(x)))
-    return if strIs(mut st, nm, "S") { 1 } else if strIs(mut st, nm, "Task") { 2 } else if strIs(mut st, nm, "Tx") || strIs(mut st, nm, "Rx") { 3 } else { 0 }
+    return if strIs(mut st, nm, "Scope") { 1 } else if strIs(mut st, nm, "Handle") { 2 } else if strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") { 3 } else { 0 }
 }
 
 // pcParDeep は表層型 y（欄・`T?` を fuel 段まで）が含む札（1）・handle（2）・端点（3）の最初の種類（無ければ 0）
@@ -685,7 +705,7 @@ func pcHasPar(st mut S, y int, fuel int) bool {
         return pcHasPar(mut st, YAt(mut st, y).a, fuel - 1)
     }
     if k == YDecl && kindN(mut st, nC(nodeOf(mut st, yNa(YAt(mut st, y))))) == ast.BStruct {
-        // 型引数の無い struct は欄の型が置換に依らない — 宣言 × fuel でメモする（段 6 P6-1: compiler/ が std/par を使い始めて、全部の呼び出しの
+        // 型引数の無い struct は欄の型が置換に依らない — 宣言 × fuel でメモする（段 6 P6-1: compiler/ が std/task を使い始めて、全部の呼び出しの
         // 実引数の `mut st`〔欄が百を超える〕を 8 段まで毎回辿る形が自己 check の load を 5 → 88 G にした）
         dn := int(yNa(YAt(mut st, y)))
         plain := lenL(mut st, lB(nodeOf(mut st, yNa(YAt(mut st, y))))) == 0
@@ -714,9 +734,19 @@ func pcHasPar(st mut S, y int, fuel int) bool {
 const PC_MEMO = 8192
 
 func pcMemoInit(st mut S) {
-    for i <- iter.Range(0, PC_MEMO * 2) {
+    // 末尾の 1 語（PC_MEMO * 2）= deadline: を書いた Scope がある印（段 3 の ④ — S の欄を足さない: 欄 1 つで自己 check の核の節が数百 × 呼び出し点）
+    for i <- iter.Range(0, PC_MEMO * 2 + 1) {
         table.Push(mut st.pcMemo, 0)
     }
+}
+
+func pcDeadlineMark(st mut S) {
+    table.Set(mut st.pcMemo, PC_MEMO * 2, 1)
+}
+
+// DeadlineUse は ParCheckTyped の歩きが deadline: を書いた task.Run を見たか（lower が期限の rt を組むか — 段 3 の ④）
+func DeadlineUse(st mut S) bool {
+    return table.Len(mut st.pcMemo) > PC_MEMO * 2 && table.Get(mut st.pcMemo, PC_MEMO * 2) == 1
 }
 
 func pcMemoGet(st mut S, dn int, fuel int) int {

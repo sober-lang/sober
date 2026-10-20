@@ -6,7 +6,7 @@ package main
 // 死んだ子の fd が残れば 1 周 2 本ずつ（400）伸びる。リポジトリのルートを cwd にして実行する
 
 import "std/io"
-import "std/par"
+import "std/task"
 
 type Boom panic
 
@@ -26,23 +26,23 @@ func read(p string, die int) int {
     return len(b)
 }
 
-// round は子 3 本（ふつう 1・開いた後に死ぬ 2）の scope — 死んだ子は scope の err（TaskDied）になる
+// round は子 3 本（ふつう 1・開いた後に死ぬ 2）の scope — 死んだ子は scope の err（ChildDied）になる
 func round(p string) error? {
-    r, err := par.Scope((s par.S) => {
-        a := par.Spawn(s, () => read(p, 0))
-        b := par.Spawn(s, () => read(p, 1))
-        c := par.Spawn(s, () => read(p, 2))
-        k := switch par.Try(b) {
-        case par.Ok{v}: v
-        case par.Failed{}: 100
-        case par.Died{cause}: 100
+    r, err := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => read(p, 0))
+        b := task.Spawn(s, () => read(p, 1))
+        c := task.Spawn(s, () => read(p, 2))
+        k := switch task.Try(b) {
+        case task.Ok{v}: v
+        case task.Failed{}: 100
+        case task.Died{cause}: 100
         }
-        k2 := switch par.Try(c) {
-        case par.Ok{v}: v
-        case par.Failed{}: 100
-        case par.Died{cause}: 100
+        k2 := switch task.Try(c) {
+        case task.Ok{v}: v
+        case task.Failed{}: 100
+        case task.Died{cause}: 100
         }
-        par.Join(a) + k + k2
+        task.Join(a) + k + k2
     })
     return err
 }

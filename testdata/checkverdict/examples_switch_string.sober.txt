@@ -1,0 +1,2 @@
+sober: desugar error at examples/switch_string.sober:7:19 (TypeMismatch): switch on a string value is not in the language — the subject of a value switch is an int (with default), a union, an error or a T?; compare strings with if / else if
+exit=1

@@ -1,0 +1,128 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "one",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 12
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 14
+                },
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 18
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "g",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "one",
+                    "tok": 26
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 28
+                    }
+                  ],
+                  "tok": 27
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 31
+                },
+                "tok": 30
+              }
+            ],
+            "tok": 24
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "x",
+                "tok": 34
+              }
+            ],
+            "tok": 33
+          }
+        ]
+      },
+      "tok": 19,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 38
+      },
+      "sig_end": 23
+    }
+  ],
+  "consts": []
+}

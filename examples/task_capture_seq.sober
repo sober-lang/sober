@@ -1,0 +1,41 @@
+package main
+
+// task_capture の逐次の双子（seq ≡ par の照合 — scripts/seqpar.sh）: Spawn の子の本体をその場の式に置き換えたもの。出力は task_capture と同じ
+
+type P struct {
+    x int
+    y int
+}
+
+func count(s string) int {
+    return len(bytes(s))
+}
+
+func main() {
+    mut acc := 0
+    k := 7
+    ns := []int{1, 2, 3}
+    p := P{x: 5, y: 6}
+    tag := "de"
+    r := {
+        acc = acc + 1
+        for i <- ns {
+            acc = acc + i * 10
+        }
+        h1 := {
+            w := "abc" + tag
+            count(w) + p.x * p.y
+        }
+        h2 := {
+            mut t := 0
+            for x <- ns {
+                t += x * k
+            }
+            t
+        }
+        inner := k * 2
+        acc + h1 + h2 + inner
+    }
+    println(r)
+    println(acc)
+}

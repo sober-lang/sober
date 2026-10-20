@@ -1,0 +1,679 @@
+{
+  "package": "negdoc",
+  "imports": [],
+  "types": [
+    {
+      "name": "Fail",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 156,
+      "span": {
+        "start": 155,
+        "end": 159
+      }
+    },
+    {
+      "name": "Rec",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "a",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 163
+          },
+          {
+            "name": "b",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 166
+          },
+          {
+            "name": "c",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 169
+          }
+        ]
+      },
+      "tok": 160,
+      "span": {
+        "start": 159,
+        "end": 174
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Good",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 10
+              }
+            ],
+            "tok": 9
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 14
+      },
+      "sig_end": 8
+    },
+    {
+      "name": "NoDoc",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 2,
+                "tok": 21
+              }
+            ],
+            "tok": 20
+          }
+        ]
+      },
+      "tok": 15,
+      "bodiless": false,
+      "span": {
+        "start": 14,
+        "end": 25
+      },
+      "sig_end": 19
+    },
+    {
+      "name": "BadName",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 3,
+                "tok": 32
+              }
+            ],
+            "tok": 31
+          }
+        ]
+      },
+      "tok": 26,
+      "bodiless": false,
+      "span": {
+        "start": 25,
+        "end": 36
+      },
+      "sig_end": 30
+    },
+    {
+      "name": "Report",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 4,
+                "tok": 43
+              }
+            ],
+            "tok": 42
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 47
+      },
+      "sig_end": 41
+    },
+    {
+      "name": "Bin",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 5,
+                "tok": 54
+              }
+            ],
+            "tok": 53
+          }
+        ]
+      },
+      "tok": 48,
+      "bodiless": false,
+      "span": {
+        "start": 47,
+        "end": 58
+      },
+      "sig_end": 52
+    },
+    {
+      "name": "Dan",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 6,
+                "tok": 65
+              }
+            ],
+            "tok": 64
+          }
+        ]
+      },
+      "tok": 59,
+      "bodiless": false,
+      "span": {
+        "start": 58,
+        "end": 69
+      },
+      "sig_end": 63
+    },
+    {
+      "name": "Date",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 7,
+                "tok": 76
+              }
+            ],
+            "tok": 75
+          }
+        ]
+      },
+      "tok": 70,
+      "bodiless": false,
+      "span": {
+        "start": 69,
+        "end": 80
+      },
+      "sig_end": 74
+    },
+    {
+      "name": "Section",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 8,
+                "tok": 87
+              }
+            ],
+            "tok": 86
+          }
+        ]
+      },
+      "tok": 81,
+      "bodiless": false,
+      "span": {
+        "start": 80,
+        "end": 91
+      },
+      "sig_end": 85
+    },
+    {
+      "name": "SectionOk",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 9,
+                "tok": 98
+              }
+            ],
+            "tok": 97
+          }
+        ]
+      },
+      "tok": 92,
+      "bodiless": false,
+      "span": {
+        "start": 91,
+        "end": 102
+      },
+      "sig_end": 96
+    },
+    {
+      "name": "Example",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 10,
+                "tok": 109
+              }
+            ],
+            "tok": 108
+          }
+        ]
+      },
+      "tok": 103,
+      "bodiless": false,
+      "span": {
+        "start": 102,
+        "end": 113
+      },
+      "sig_end": 107
+    },
+    {
+      "name": "Bold",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 11,
+                "tok": 120
+              }
+            ],
+            "tok": 119
+          }
+        ]
+      },
+      "tok": 114,
+      "bodiless": false,
+      "span": {
+        "start": 113,
+        "end": 124
+      },
+      "sig_end": 118
+    },
+    {
+      "name": "Stale",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 12,
+                "tok": 131
+              }
+            ],
+            "tok": 130
+          }
+        ]
+      },
+      "tok": 125,
+      "bodiless": false,
+      "span": {
+        "start": 124,
+        "end": 135
+      },
+      "sig_end": 129
+    },
+    {
+      "name": "Pair",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Fail",
+                "elems": [],
+                "tok": 149,
+                "type_args": []
+              }
+            ],
+            "tok": 148
+          }
+        ]
+      },
+      "tok": 142,
+      "bodiless": false,
+      "span": {
+        "start": 135,
+        "end": 155
+      },
+      "sig_end": 147
+    },
+    {
+      "name": "Phase",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 13,
+                "tok": 181
+              }
+            ],
+            "tok": 180
+          }
+        ]
+      },
+      "tok": 175,
+      "bodiless": false,
+      "span": {
+        "start": 174,
+        "end": 185
+      },
+      "sig_end": 179
+    },
+    {
+      "name": "CodeStar",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 14,
+                "tok": 192
+              }
+            ],
+            "tok": 191
+          }
+        ]
+      },
+      "tok": 186,
+      "bodiless": false,
+      "span": {
+        "start": 185,
+        "end": 196
+      },
+      "sig_end": 190
+    },
+    {
+      "name": "Bare",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 15,
+                "tok": 223
+              }
+            ],
+            "tok": 222
+          }
+        ]
+      },
+      "tok": 217,
+      "bodiless": false,
+      "span": {
+        "start": 216,
+        "end": 227
+      },
+      "sig_end": 221
+    },
+    {
+      "name": "NotBare",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 16,
+                "tok": 234
+              }
+            ],
+            "tok": 233
+          }
+        ]
+      },
+      "tok": 228,
+      "bodiless": false,
+      "span": {
+        "start": 227,
+        "end": 238
+      },
+      "sig_end": 232
+    }
+  ],
+  "consts": [
+    {
+      "name": "GroupA",
+      "expr": {
+        "k": "int",
+        "value": 1,
+        "tok": 199
+      },
+      "tok": 197,
+      "span": {
+        "start": 196,
+        "end": 201
+      }
+    },
+    {
+      "name": "GroupB",
+      "expr": {
+        "k": "int",
+        "value": 2,
+        "tok": 204
+      },
+      "tok": 202,
+      "span": {
+        "start": 201,
+        "end": 206
+      }
+    },
+    {
+      "name": "GroupC",
+      "expr": {
+        "k": "int",
+        "value": 3,
+        "tok": 209
+      },
+      "tok": 207,
+      "span": {
+        "start": 206,
+        "end": 211
+      }
+    },
+    {
+      "name": "GroupD",
+      "expr": {
+        "k": "int",
+        "value": 4,
+        "tok": 214
+      },
+      "tok": 212,
+      "span": {
+        "start": 211,
+        "end": 216
+      }
+    }
+  ]
+}

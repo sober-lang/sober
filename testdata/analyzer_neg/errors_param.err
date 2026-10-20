@@ -1,0 +1,6 @@
+testdata/analyzer_neg/errors_param.sober:14:1: error: 'Leak' may return the errors of its parameter 'recv' not listed in its @errors (Analyzer)
+testdata/analyzer_neg/errors_param.sober:20:1: error: @errors of 'Stale' lists the parameter 'recv' whose errors it never returns: write `@errors(Bad)` (Analyzer)
+testdata/analyzer_neg/errors_param.sober:33:6: error: public function 'Missing' returns an error but has no @errors: add `@errors(send)` (Analyzer)
+testdata/analyzer_neg/errors_param.sober:45:5: error: switch does not cover Bad (error labels the subject may carry): add cases or a default (Analyzer)
+testdata/analyzer_neg/errors_param.sober:54:10: error: case Short is unreachable: the subject never carries it (it may carry: none) — remove the case (Analyzer)
+testdata/analyzer_neg/errors_param.sober:57:5: error: switch does not cover every Bad{cause: …} (the cause cannot be derived — not all matched): add cases or a default (Analyzer)

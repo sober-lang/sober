@@ -1,0 +1,181 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "differs",
+      "type_params": [],
+      "params": [
+        {
+          "name": "v",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "int"
+            }
+          },
+          "mutable": false
+        },
+        {
+          "name": "j",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 16
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 18
+                  },
+                  "tok": 17
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": "!=",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "v",
+                    "tok": 20
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "j",
+                    "tok": 22
+                  },
+                  "tok": 21
+                },
+                "tok": 19
+              }
+            ],
+            "tok": 15
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 26
+      },
+      "sig_end": 14
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 31
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "differs",
+                          "tok": 33
+                        },
+                        "args": [
+                          {
+                            "k": "nil",
+                            "tok": 33
+                          },
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 33
+                          }
+                        ],
+                        "tok": 33
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "differs",
+                          "tok": 33
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 33
+                          },
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 33
+                          }
+                        ],
+                        "tok": 33
+                      }
+                    ]
+                  },
+                  "tok": 33
+                }
+              ],
+              "tok": 32
+            }
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 26,
+        "end": 38
+      },
+      "sig_end": 30
+    }
+  ],
+  "consts": []
+}

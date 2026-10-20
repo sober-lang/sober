@@ -1,0 +1,62 @@
+package main
+
+// 段 6 P3a（language.md 11 節 — A1 (X)）: 子の死の 3 通りの受け方。Try = 死は値（Died）・Scope の err = 完走したが死んだ子・
+// Join = この子の死は私の死（最後の Join で main が死ぬ — exit 101・`panic: ChildDied{cause: …} at …` + 死因の位置）。死因 = 範囲外・ゼロ除算・region の深度の超過（102）
+
+import "std/task"
+
+func deep(n int) int {
+    return deep(n + 1) + 1
+}
+
+func pick(xs []int, i int) int {
+    return xs[i]
+}
+
+func main() {
+    xs := []int{4, 5, 6}
+    zero := len(xs) - 3
+    r, err := task.Run((s task.Scope) => {
+        // 102 の子の後にも子を生む（巻き戻りの後の深度の書き戻し — 最適化器が罠の前後の setdepth を消さないこと）
+        mem := task.Spawn(s, () => deep(0))
+        ok := task.Spawn(s, () => pick(xs, 1) * 10)
+        oob := task.Spawn(s, () => pick(xs, 7))
+        div := task.Spawn(s, () => 100 / zero)
+        a := switch task.Try(oob) {
+        case task.Ok{v}: v
+        case task.Failed{}: 1
+        case task.Died{cause}: 1
+        }
+        b := switch task.Try(div) {
+        case task.Ok{v}: v
+        case task.Failed{}: 2
+        case task.Died{cause}: 2
+        }
+        c := switch task.Try(mem) {
+        case task.Ok{v}: v
+        case task.Failed{}: 3
+        case task.Died{cause}: 3
+        }
+        println(task.Join(ok) + a * 100 + b * 10 + c)
+        1
+    })
+    if err != nil {
+        println(-1)
+    }
+    println(r)
+    // 死んだ子のいない scope は err なし・値はそのまま
+    r2, e2 := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => pick(xs, 2))))
+    if e2 == nil {
+        println(r2)
+    }
+    // 子の死を Join で受ける: main も死ぬ。子は自分の scope の孫の死を Join で受けて死んでいる（死因 = ChildDied・2 行目 = 子の Join の位置）
+    r3, e3 := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => {
+            g, ge := task.Run((s2 task.Scope) => task.Join(task.Spawn(s2, () => pick(xs, 9))))
+            g
+        })
+        println(7)
+        task.Join(h)
+    })
+    println(r3)
+}

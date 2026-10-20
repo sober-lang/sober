@@ -1,0 +1,9 @@
+package main
+
+// 負例: import したパスに package が無い（language.md 20 節 — import パスはルート相対）
+
+import "testdata/specpkg/nosuch"
+
+func main() {
+    println(nosuch.F())
+}

@@ -1,0 +1,357 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "Rec",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "MarkFailed",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "Shape",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Bar",
+            "fields": [
+              {
+                "name": "MarkFailed",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 21
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "name": "Baz",
+            "fields": [],
+            "tok": 25
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 31
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "MarkFailed",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "Rec"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 40
+                  },
+                  "field": "MarkFailed",
+                  "tok": 42
+                },
+                "rhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 44
+                  },
+                  "field": "n",
+                  "tok": 46
+                },
+                "tok": 43
+              }
+            ],
+            "tok": 39
+          }
+        ]
+      },
+      "tok": 32,
+      "bodiless": false,
+      "span": {
+        "start": 31,
+        "end": 50
+      },
+      "sig_end": 38
+    },
+    {
+      "name": "Mk",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Rec"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Rec",
+                "elems": [
+                  {
+                    "key": "MarkFailed",
+                    "value": {
+                      "k": "ident",
+                      "name": "n",
+                      "tok": 63
+                    }
+                  },
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 67
+                    }
+                  }
+                ],
+                "tok": 59,
+                "type_args": []
+              }
+            ],
+            "tok": 58
+          }
+        ]
+      },
+      "tok": 51,
+      "bodiless": false,
+      "span": {
+        "start": 50,
+        "end": 72
+      },
+      "sig_end": 57
+    },
+    {
+      "name": "Width",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "Shape"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 82
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Bar",
+                        "fields": [],
+                        "tok": 85
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 89
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 84
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "Baz",
+                        "fields": [],
+                        "tok": 92
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 96
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 91
+                  }
+                ],
+                "default": null,
+                "tok": 81
+              }
+            ],
+            "tok": 80
+          }
+        ]
+      },
+      "tok": 73,
+      "bodiless": false,
+      "span": {
+        "start": 72,
+        "end": 102
+      },
+      "sig_end": 79
+    },
+    {
+      "name": "Twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "Rec"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "MarkFailed",
+                    "tok": 111
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 113
+                    }
+                  ],
+                  "tok": 112
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 116
+                },
+                "tok": 115
+              }
+            ],
+            "tok": 110
+          }
+        ]
+      },
+      "tok": 103,
+      "bodiless": false,
+      "span": {
+        "start": 102,
+        "end": 120
+      },
+      "sig_end": 109
+    }
+  ],
+  "consts": []
+}

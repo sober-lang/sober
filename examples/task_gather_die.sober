@@ -1,0 +1,21 @@
+package main
+
+// 段 6 P3b-5: Gather は Join の列 — 死んだ子を待った呼び手も死ぬ（この子の死は私の死）
+
+import "std/task"
+
+func pick(xs []int, i int) int {
+    return xs[i]
+}
+
+func main() {
+    xs := []int{10, 20}
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        hs = append(hs, task.Spawn(s, () => pick(xs, 1)))
+        hs = append(hs, task.Spawn(s, () => pick(xs, 2)))
+        vs := task.Gather(hs)
+        vs[0]
+    })
+    println(r)
+}

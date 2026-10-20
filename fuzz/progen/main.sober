@@ -10,6 +10,7 @@ package main
 // — 駆動部（scripts/fuzz_cb.ts）の縮小が「行の範囲を消す」で構造を壊さずに済むように。生成するのは型の合うプログラムを狙った形だけで、
 // 型の合わないものは check / build の両方が拒否する（一致 — 差分オラクルは両者の受理 / 拒否の食い違いだけを拾う）
 
+import "std/convert"
 import "std/io"
 import "std/iter"
 import "std/os"
@@ -40,7 +41,7 @@ type G struct {
     nf int
     depth int
     inErr bool       // 今の関数が (int, error?) を返す（`?` を書ける）
-    par bool         // std/par の文を混ぜる（第 3 引数 `par` — 無ければ今までのシードと同じバイト列）
+    par bool         // std/task の文を混ぜる（第 3 引数 `par` — 無ければ今までのシードと同じバイト列）
     usedPar bool
 }
 
@@ -64,7 +65,7 @@ func pick(g mut G, n int) int {
 }
 
 func vname(i int) string {
-    return "v" + strings.FormatInt(i)
+    return "v" + convert.FormatInt(i)
 }
 
 // varOf は型 t の見えている変数の番号（無ければ -1）。mut のものだけなら wantMut
@@ -128,7 +129,7 @@ func expr(g mut G, t int, d int) string {
     if k == 3 {
         f := funcOf(mut g, t)
         if f >= 0 && !g.fmutp[f] && !g.fer[f] {
-            return "f" + strings.FormatInt(f) + "(" + expr(mut g, g.fpar[f], d - 1) + ")"
+            return "f" + convert.FormatInt(f) + "(" + expr(mut g, g.fpar[f], d - 1) + ")"
         }
     }
     return switch t {
@@ -232,11 +233,11 @@ func leaf(g mut G, t int) string {
         return vname(v)
     }
     return switch t {
-    case TInt: strings.FormatInt(pick(mut g, 20))
+    case TInt: convert.FormatInt(pick(mut g, 20))
     case TBool: if pick(mut g, 2) == 0 { "true" } else { "false" }
     case TStr: strLit(pick(mut g, 3))
-    case TS: "S{a: " + strings.FormatInt(pick(mut g, 9)) + ", s: \"z\"}"
-    default: if pick(mut g, 2) == 0 { "nil" } else { strings.FormatInt(pick(mut g, 9)) }
+    case TS: "S{a: " + convert.FormatInt(pick(mut g, 9)) + ", s: \"z\"}"
+    default: if pick(mut g, 2) == 0 { "nil" } else { convert.FormatInt(pick(mut g, 9)) }
     }
 }
 
@@ -250,7 +251,7 @@ func errCall(g mut G, d int) string {
     }
     if len(cands) > 0 && pick(mut g, 2) == 0 {
         f := cands[pick(mut g, len(cands))]
-        return "f" + strings.FormatInt(f) + "(" + expr(mut g, g.fpar[f], d) + ")"
+        return "f" + convert.FormatInt(f) + "(" + expr(mut g, g.fpar[f], d) + ")"
     }
     return "mayFail(" + expr(mut g, TInt, d) + ")"
 }
@@ -264,7 +265,7 @@ func catchD(g mut G) string {
             return vname(v)
         }
     }
-    return if k == 1 { "-" + strings.FormatInt(pick(mut g, 5)) } else { strings.FormatInt(pick(mut g, 9)) }
+    return if k == 1 { "-" + convert.FormatInt(pick(mut g, 5)) } else { convert.FormatInt(pick(mut g, 9)) }
 }
 
 func strLit(k int) string {
@@ -323,8 +324,8 @@ func stmt(g mut G, ret int, d int) {
         // 多値の束縛 + `!= nil`（error の値は捨てる — switch は入れない）
         rhs := errCall(mut g, 2)
         v := declare(mut g, TInt, false)
-        line(mut g, vname(v) + ", e" + strings.FormatInt(v) + " := " + rhs)
-        line(mut g, "if e" + strings.FormatInt(v) + " != nil {")
+        line(mut g, vname(v) + ", e" + convert.FormatInt(v) + " := " + rhs)
+        line(mut g, "if e" + convert.FormatInt(v) + " != nil {")
         g.depth = g.depth + 1
         if g.inErr && pick(mut g, 2) == 0 {
             line(mut g, "return 0, Worse{}")
@@ -380,7 +381,7 @@ func stmt(g mut G, ret int, d int) {
         // 有界のループ
         c := declare(mut g, TInt, true)
         line(mut g, "mut " + vname(c) + " := 0")
-        line(mut g, "while " + vname(c) + " < " + strings.FormatInt(1 + pick(mut g, 3)) + " {")
+        line(mut g, "while " + vname(c) + " < " + convert.FormatInt(1 + pick(mut g, 3)) + " {")
         g.depth = g.depth + 1
         g.vmut[c] = false
         stmts(mut g, 1 + pick(mut g, 2), ret, d - 1)
@@ -393,7 +394,7 @@ func stmt(g mut G, ret int, d int) {
         // 値を捨てる式文（関数の呼び出し — F-e の型）
         f := funcOf(mut g, TInt)
         if f >= 0 && !g.fmutp[f] && !g.fer[f] {
-            line(mut g, "f" + strings.FormatInt(f) + "(" + expr(mut g, g.fpar[f], 2) + ")")
+            line(mut g, "f" + convert.FormatInt(f) + "(" + expr(mut g, g.fpar[f], 2) + ")")
             return
         }
     }
@@ -403,12 +404,12 @@ func stmt(g mut G, ret int, d int) {
             if g.fmutp[i] {
                 v := varOf(mut g, TS, true)
                 if v >= 0 && !g.fmut2[i] {
-                    line(mut g, "f" + strings.FormatInt(i) + "(mut " + vname(v) + ")")
+                    line(mut g, "f" + convert.FormatInt(i) + "(mut " + vname(v) + ")")
                     return
                 }
                 w := varOther(mut g, TS, v)
                 if v >= 0 && w >= 0 {
-                    line(mut g, "f" + strings.FormatInt(i) + "(mut " + vname(v) + ", mut " + vname(w) + ".a)")
+                    line(mut g, "f" + convert.FormatInt(i) + "(mut " + vname(v) + ", mut " + vname(w) + ".a)")
                     return
                 }
             }
@@ -443,13 +444,13 @@ func childExpr(g mut G, d int) string {
     return e
 }
 
-// spawnLine は `h := par.Spawn(s, () => …)`: 半分は子が印字する本体（段 6 P4-2 — stdout の先行順〔O1〕の網: 子の行は spawn の位置に入る）
+// spawnLine は `h := task.Spawn(s, () => …)`: 半分は子が印字する本体（段 6 P4-2 — stdout の先行順〔O1〕の網: 子の行は spawn の位置に入る）
 func spawnLine(g mut G, h string, ns string) {
     if pick(mut g, 2) == 0 {
-        line(mut g, h + " := par.Spawn(s" + ns + ", () => " + childExpr(mut g, 2) + ")")
+        line(mut g, h + " := task.Spawn(s" + ns + ", () => " + childExpr(mut g, 2) + ")")
         return
     }
-    line(mut g, h + " := par.Spawn(s" + ns + ", () => {")
+    line(mut g, h + " := task.Spawn(s" + ns + ", () => {")
     g.depth = g.depth + 1
     line(mut g, "println(" + childExpr(mut g, 2) + ")")
     line(mut g, childExpr(mut g, 2))
@@ -457,31 +458,31 @@ func spawnLine(g mut G, h string, ns string) {
     line(mut g, "})")
 }
 
-// parStmt は std/par の文（段 6 P3a — 捕獲の 2 実装〔desugar = コアの自由変数・lower = 表層の走査〕の網）: scope を開き、捕獲する子を 1〜2 本生んで
+// parStmt は std/task の文（段 6 P3a — 捕獲の 2 実装〔desugar = コアの自由変数・lower = 表層の走査〕の網）: scope を開き、捕獲する子を 1〜2 本生んで
 // Join / Try で受ける。scope の err は -3 を印字・値は println（子の死は Try で値・Join で親の死 — どちらも観測）
 func parStmt(g mut G) {
     g.usedPar = true
     n := declare(mut g, TInt, false)
-    ns := strings.FormatInt(n)
+    ns := convert.FormatInt(n)
     // 束縛の名前は scope の後から見える（本体の中では見せない）
     g.vty[n] = -3
-    line(mut g, vname(n) + ", pe" + ns + " := par.Scope((s" + ns + " par.S) => {")
+    line(mut g, vname(n) + ", pe" + ns + " := task.Run((s" + ns + " task.Scope) => {")
     g.depth = g.depth + 1
     spawnLine(mut g, "h" + ns, ns)
     form := pick(mut g, 3)
     if form == 0 {
-        line(mut g, "par.Join(h" + ns + ") + " + expr(mut g, TInt, 2))
+        line(mut g, "task.Join(h" + ns + ") + " + expr(mut g, TInt, 2))
     } else if form == 1 {
-        line(mut g, "k" + ns + " := switch par.Try(h" + ns + ") {")
+        line(mut g, "k" + ns + " := switch task.Try(h" + ns + ") {")
         // 欄の名前の省略形（{v} / {cause}）— 付け替え {v: t} は値位置の switch で check が拒否する既知の形（F-aj 候補）
-        line(mut g, "case par.Ok{v}: v")
-        line(mut g, "case par.Failed{}: -5")
-        line(mut g, "case par.Died{cause}: -4")
+        line(mut g, "case task.Ok{v}: v")
+        line(mut g, "case task.Failed{}: -5")
+        line(mut g, "case task.Died{cause}: -4")
         line(mut g, "}")
         line(mut g, "k" + ns)
     } else {
         spawnLine(mut g, "g" + ns, ns)
-        line(mut g, "par.Join(h" + ns + ") - par.Join(g" + ns + ")")
+        line(mut g, "task.Join(h" + ns + ") - task.Join(g" + ns + ")")
     }
     g.depth = g.depth - 1
     line(mut g, "})")
@@ -494,7 +495,7 @@ func parStmt(g mut G) {
 
 // callShow は戻りの型 rt の関数 f<i> の呼び出しを println に渡せる int の式に（string は長さ・bool は 0 / 1・S は欄 a・int? は nil なら -1）
 func callShow(i int, rt int, arg string) string {
-    c := "f" + strings.FormatInt(i) + "(" + arg + ")"
+    c := "f" + convert.FormatInt(i) + "(" + arg + ")"
     return switch rt {
     case TInt: c
     case TBool: "if " + c + " { 1 } else { 0 }"
@@ -527,7 +528,7 @@ func function(g mut G, i int) {
         sig = sig + ", " + vname(q) + " mut int"
     }
     res := if g.fer[i] { " (int, error?)" } else if rt >= 0 { " " + tyName(rt) } else { "" }
-    line(mut g, "func f" + strings.FormatInt(i) + "(" + sig + ")" + res + " {")
+    line(mut g, "func f" + convert.FormatInt(i) + "(" + sig + ")" + res + " {")
     g.depth = 1
     g.inErr = g.fer[i]
     stmts(mut g, 1 + pick(mut g, g.size), rt, 2)
@@ -551,7 +552,7 @@ func main() int {
     mut g := G{out: mut []byte{}, r: rand.New(seed), size: if size < 1 { 1 } else { size }, vty: mut []int{}, vmut: mut []bool{}, nv: 0, fty: mut []int{}, fpar: mut []int{}, fmutp: mut []bool{}, fmut2: mut []bool{}, fer: mut []bool{}, vdm: mut []bool{}, nf: 0, depth: 0, inErr: false, par: usePar, usedPar: false}
     line(mut g, "package main")
     line(mut g, "")
-    line(mut g, "// progen seed=" + strings.FormatInt(seed) + " size=" + strings.FormatInt(size))
+    line(mut g, "// progen seed=" + convert.FormatInt(seed) + " size=" + convert.FormatInt(size))
     line(mut g, "")
     line(mut g, "type S struct {")
     line(mut g, "    a int")
@@ -630,25 +631,25 @@ func main() int {
     line(mut g, "mut sw := S{a: 2, s: \"w\"}")
     for i <- iter.Range(0, g.nf) {
         if g.fmut2[i] {
-            line(mut g, "f" + strings.FormatInt(i) + "(mut sv, mut sw.a)")
+            line(mut g, "f" + convert.FormatInt(i) + "(mut sv, mut sw.a)")
         } else if g.fmutp[i] {
-            line(mut g, "f" + strings.FormatInt(i) + "(mut sv)")
+            line(mut g, "f" + convert.FormatInt(i) + "(mut sv)")
         } else if g.fer[i] {
-            line(mut g, "println(f" + strings.FormatInt(i) + "(" + leaf(mut g, g.fpar[i]) + ") catch -9)")
+            line(mut g, "println(f" + convert.FormatInt(i) + "(" + leaf(mut g, g.fpar[i]) + ") catch -9)")
         } else if g.fty[i] >= 0 {
             line(mut g, "println(" + callShow(i, g.fty[i], leaf(mut g, g.fpar[i])) + ")")
         } else {
-            line(mut g, "f" + strings.FormatInt(i) + "(" + leaf(mut g, g.fpar[i]) + ")")
+            line(mut g, "f" + convert.FormatInt(i) + "(" + leaf(mut g, g.fpar[i]) + ")")
         }
     }
     line(mut g, "println(sv.a)")
     line(mut g, "println(sw.a)")
     g.depth = 0
     line(mut g, "}")
-    // par の文を出したプログラムだけ std/par を import する（package の行の後ろに差し込む — 出していなければ今までと同じバイト列）
+    // par の文を出したプログラムだけ std/task を import する（package の行の後ろに差し込む — 出していなければ今までと同じバイト列）
     if g.usedPar {
         mut o := mut []byte{}
-        hd := bytes("package main\n\nimport \"std/par\"\n")
+        hd := bytes("package main\n\nimport \"std/task\"\n")
         for i <- iter.Range(0, len(hd)) {
             o = append(o, hd[i])
         }

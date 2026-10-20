@@ -3,7 +3,7 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/conv",
+      "path": "std/convert",
       "tok": 4
     },
     {
@@ -358,7 +358,7 @@
                           "k": "selector",
                           "base": {
                             "k": "ident",
-                            "name": "conv",
+                            "name": "convert",
                             "tok": 104
                           },
                           "field": "FormatFloat",

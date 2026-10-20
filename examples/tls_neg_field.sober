@@ -1,0 +1,21 @@
+package main
+
+// 負例: tls.Conn は struct の欄に置けない（同一性の型 — 状態は値の外の置き場に住むので、写しが別の値の顔をすると隠れた可変が観測できてしまう。
+// diag.FileUse — desugar/filecheck・language.md 28 節の tls）
+
+import "std/tls"
+
+type Peer struct {
+    c tls.Conn
+    n int
+}
+
+func h(c tls.Conn) error? {
+    p := Peer{c: c, n: 1}
+    return tls.Send(p.c, bytes("x"))
+}
+
+func main() {
+    cfg, _ := tls.Parse("", "")
+    _ = tls.Serve("127.0.0.1:9", cfg, h)
+}

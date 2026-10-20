@@ -1,0 +1,19 @@
+package main
+
+// 段 6 P3b-5: error を返す task の handle を task.Handle[int] の slice に積む（diag.Par kind 17 — 要素の型は task.Handle[(T, error?)]〔P3b 残穴1〕。
+// task.Handle[T] の slice に積めると Join が失敗を落とす）
+
+import "std/task"
+
+func load(n int) (int, error?) {
+    return n, nil
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[int]{}
+        hs = append(hs, task.Spawn(s, () => load(3)))
+        3
+    })
+    println(r)
+}

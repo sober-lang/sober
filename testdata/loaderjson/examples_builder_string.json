@@ -6,12 +6,16 @@
       "name": "main",
       "imports": [
         {
-          "ref": "$strings",
-          "path": "std/strings"
+          "ref": "$convert",
+          "path": "std/convert"
         },
         {
           "ref": "builder",
           "path": "std/builder"
+        },
+        {
+          "ref": "convert",
+          "path": "std/convert"
         },
         {
           "ref": "strings",
@@ -28,10 +32,10 @@
             "builder.Build",
             "builder.Push",
             "bytes",
+            "convert.FormatInt",
             "len",
             "println",
-            "strings.Clone",
-            "strings.FormatInt"
+            "strings.Clone"
           ]
         }
       ],
@@ -63,7 +67,7 @@
           ]
         },
         {
-          "name": "PushStr",
+          "name": "PushString",
           "expands": true,
           "mut_def": false,
           "has_try": false,
@@ -106,6 +110,99 @@
           "dict": false
         }
       ]
+    },
+    {
+      "path": "std/convert",
+      "name": "convert",
+      "imports": [
+        {
+          "ref": "$float",
+          "path": "std/internal/floatfmt"
+        },
+        {
+          "ref": "floatfmt",
+          "path": "std/internal/floatfmt"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "FormatFloat",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "floatfmt.Format",
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "FormatFixed",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "floatfmt.FormatFixed",
+            "sysFBits"
+          ]
+        },
+        {
+          "name": "ParseFloat",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "fastFloat",
+            "floatfmt.ParseBits",
+            "sysFFromBits"
+          ]
+        },
+        {
+          "name": "fastFloat",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "float",
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "ParseInt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "FormatInt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "formatUint"
+          ]
+        },
+        {
+          "name": "formatUint",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytesToString",
+            "freeze",
+            "len"
+          ]
+        }
+      ],
+      "consts": []
     },
     {
       "path": "std/strings",
@@ -261,28 +358,6 @@
           ]
         },
         {
-          "name": "utoa",
-          "expands": false,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "append",
-            "byte",
-            "bytesToString",
-            "freeze",
-            "len"
-          ]
-        },
-        {
-          "name": "FormatInt",
-          "expands": false,
-          "mut_def": false,
-          "has_try": false,
-          "callees": [
-            "utoa"
-          ]
-        },
-        {
           "name": "Clone",
           "expands": true,
           "mut_def": false,
@@ -307,10 +382,428 @@
             "freeze",
             "len"
           ]
+        },
+        {
+          "name": "cont",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "seqLen",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "cont",
+            "int"
+          ]
+        },
+        {
+          "name": "IndexInvalid",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len",
+            "seqLen",
+            "validPrefix"
+          ]
+        },
+        {
+          "name": "validPrefix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "Valid",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "IndexInvalid"
+          ]
+        }
+      ],
+      "consts": []
+    },
+    {
+      "path": "std/internal/floatfmt",
+      "name": "floatfmt",
+      "imports": [
+        {
+          "ref": "iter",
+          "path": "std/iter"
+        },
+        {
+          "ref": "iter#",
+          "path": "std/iter"
+        }
+      ],
+      "funcs": [
+        {
+          "name": "Format",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytesToString",
+            "exactShort",
+            "freeze",
+            "iter.Range",
+            "len",
+            "shortest"
+          ]
+        },
+        {
+          "name": "FormatFixed",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bnCmp",
+            "bnDivSmall",
+            "bnMulAdd",
+            "bnOdd",
+            "bnSet",
+            "bnSetInt",
+            "bnShl",
+            "bnShr",
+            "bnSub",
+            "bnTop",
+            "byte",
+            "bytesToString",
+            "freeze",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "exactShort",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "shortest",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bitLen",
+            "bnAdd",
+            "bnCmp",
+            "bnMulAdd",
+            "bnSet",
+            "bnSetInt",
+            "bnShl",
+            "bnSub",
+            "iter.Range"
+          ]
+        },
+        {
+          "name": "ParseBits",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "parseBits"
+          ]
+        },
+        {
+          "name": "parseBits",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "decimalBits",
+            "int",
+            "len",
+            "wordAt"
+          ]
+        },
+        {
+          "name": "wordAt",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "int",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "decimalBits",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bnBitLen",
+            "bnCmp",
+            "bnDivScaled",
+            "bnMulAdd",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "bnDivScaled",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bnCmp",
+            "bnSet",
+            "bnShl",
+            "bnSub"
+          ]
+        },
+        {
+          "name": "bitLen",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "bnSetInt",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append"
+          ]
+        },
+        {
+          "name": "bnSet",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "bnMulAdd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "bnAdd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "bnShl",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "iter.Range",
+            "len"
+          ]
+        },
+        {
+          "name": "bnShr",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "len"
+          ]
+        },
+        {
+          "name": "bnDivSmall",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "bnOdd",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "bnTop",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len"
+          ]
+        },
+        {
+          "name": "bnBitLen",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bitLen",
+            "bnTop"
+          ]
+        },
+        {
+          "name": "bnCmp",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bnTop"
+          ]
+        },
+        {
+          "name": "bnSub",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "iter.Range",
+            "len"
+          ]
+        }
+      ],
+      "consts": [
+        {
+          "name": "LIMB",
+          "value": 1073741824,
+          "dict": false
+        },
+        {
+          "name": "HIDDEN",
+          "value": 4503599627370496,
+          "dict": false
+        },
+        {
+          "name": "NoFast",
+          "value": -100000,
+          "dict": false
+        }
+      ]
+    },
+    {
+      "path": "std/iter",
+      "name": "iter",
+      "imports": [],
+      "funcs": [
+        {
+          "name": "Slice",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k",
+            "len"
+          ]
+        },
+        {
+          "name": "Range",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "k"
+          ]
+        },
+        {
+          "name": "Each",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Count",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
+        },
+        {
+          "name": "Sum",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "it"
+          ]
         }
       ],
       "consts": []
     }
   ],
-  "errors": []
+  "errors": [
+    {
+      "name": "InvalidFloat",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "FloatOutOfRange",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "InvalidInt",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "IntOutOfRange",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "InvalidUtf8",
+      "pkg": "std/strings"
+    },
+    {
+      "name": "InvalidSyntax",
+      "pkg": "std/internal/floatfmt"
+    },
+    {
+      "name": "OutOfRange",
+      "pkg": "std/internal/floatfmt"
+    }
+  ]
 }

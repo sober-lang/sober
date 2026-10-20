@@ -1,0 +1,247 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 7
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 13
+          },
+          {
+            "name": "head",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 23
+      }
+    },
+    {
+      "name": "Bad",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "xs",
+            "type": {
+              "k": "slice_of",
+              "elem": {
+                "k": "name",
+                "name": "int"
+              },
+              "mut": false
+            },
+            "tok": 27
+          },
+          {
+            "name": "head",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 32
+          }
+        ]
+      },
+      "tok": 24,
+      "span": {
+        "start": 23,
+        "end": 39
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 46
+                  },
+                  "field": "NewLocal",
+                  "tok": 48
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Bad"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 56
+                        },
+                        "field": "NewScratch",
+                        "tok": 58
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.head",
+                          "tok": 61
+                        },
+                        {
+                          "k": "int",
+                          "value": 8,
+                          "tok": 65
+                        }
+                      ],
+                      "tok": 59
+                    },
+                    "tok": 55
+                  }
+                ],
+                "tok": 49
+              }
+            ],
+            "tok": 44
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 69
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 71
+                    },
+                    "field": "Lease",
+                    "tok": 73
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "lw",
+                      "tok": 75
+                    },
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "w",
+                          "type": {
+                            "k": "name",
+                            "name": "Bad"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 83
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "w",
+                              "tok": 85
+                            },
+                            "field": "xs",
+                            "tok": 87
+                          }
+                        ],
+                        "tok": 84
+                      },
+                      "tok": 82
+                    }
+                  ],
+                  "tok": 74
+                }
+              ],
+              "tok": 70
+            }
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 39,
+        "end": 94
+      },
+      "sig_end": 43
+    }
+  ],
+  "consts": []
+}

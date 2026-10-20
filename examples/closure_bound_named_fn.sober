@@ -1,0 +1,22 @@
+package main
+
+// 負例（report-761 ① — check / build の両方が拒否）: 名前付き関数を局所に束縛してから（f := dbl）値の位置の欄に置く。値の位置に入れられるのは
+// ラムダ・η 済みの名前（R{g: dbl}）・同じ鍵の値だけ — 局所の関数値は閉包でない。捕捉ありの K の形（捕捉なしの対照は closure_bound_named_fn_nocap）
+type Gen func(n int) int
+
+type R struct {
+    g Gen
+}
+
+func dbl(n int) int {
+    return n * 2
+}
+
+func main() {
+    k := 5
+    a := R{g: (n int) => n + k}
+    f := dbl
+    b := R{g: f}
+    println(a.g(1))
+    println(b.g(3))
+}

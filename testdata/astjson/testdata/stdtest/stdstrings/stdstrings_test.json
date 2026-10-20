@@ -3,13 +3,18 @@
   "imports": [
     {
       "alias": null,
-      "path": "std/iter",
+      "path": "std/convert",
       "tok": 4
     },
     {
       "alias": null,
-      "path": "std/strings",
+      "path": "std/iter",
       "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 10
     },
     {
       "alias": "iter#",
@@ -22,8 +27,8 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -40,7 +45,7 @@
               "k": "name",
               "name": "string"
             },
-            "tok": 13
+            "tok": 16
           },
           {
             "name": "sub",
@@ -48,7 +53,7 @@
               "k": "name",
               "name": "string"
             },
-            "tok": 16
+            "tok": 19
           },
           {
             "name": "want",
@@ -56,14 +61,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 19
+            "tok": 22
           }
         ]
       },
-      "tok": 10,
+      "tok": 13,
       "span": {
-        "start": 9,
-        "end": 24
+        "start": 12,
+        "end": 27
       }
     }
   ],
@@ -98,7 +103,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "chicken",
-                          "tok": 39
+                          "tok": 42
                         }
                       },
                       {
@@ -106,7 +111,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "ken",
-                          "tok": 43
+                          "tok": 46
                         }
                       },
                       {
@@ -114,11 +119,11 @@
                         "value": {
                           "k": "int",
                           "value": 4,
-                          "tok": 47
+                          "tok": 50
                         }
                       }
                     ],
-                    "tok": 35,
+                    "tok": 38,
                     "type_args": []
                   },
                   {
@@ -130,7 +135,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "chicken",
-                          "tok": 54
+                          "tok": 57
                         }
                       },
                       {
@@ -138,7 +143,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "dmr",
-                          "tok": 58
+                          "tok": 61
                         }
                       },
                       {
@@ -149,18 +154,18 @@
                           "lhs": {
                             "k": "int",
                             "value": 0,
-                            "tok": 62
+                            "tok": 65
                           },
                           "rhs": {
                             "k": "int",
                             "value": 1,
-                            "tok": 64
+                            "tok": 67
                           },
-                          "tok": 63
+                          "tok": 66
                         }
                       }
                     ],
-                    "tok": 50,
+                    "tok": 53,
                     "type_args": []
                   },
                   {
@@ -172,7 +177,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "abc",
-                          "tok": 71
+                          "tok": 74
                         }
                       },
                       {
@@ -180,7 +185,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "",
-                          "tok": 75
+                          "tok": 78
                         }
                       },
                       {
@@ -188,11 +193,11 @@
                         "value": {
                           "k": "int",
                           "value": 0,
-                          "tok": 79
+                          "tok": 82
                         }
                       }
                     ],
-                    "tok": 67,
+                    "tok": 70,
                     "type_args": []
                   },
                   {
@@ -204,7 +209,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "",
-                          "tok": 86
+                          "tok": 89
                         }
                       },
                       {
@@ -212,7 +217,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "a",
-                          "tok": 90
+                          "tok": 93
                         }
                       },
                       {
@@ -223,18 +228,18 @@
                           "lhs": {
                             "k": "int",
                             "value": 0,
-                            "tok": 94
+                            "tok": 97
                           },
                           "rhs": {
                             "k": "int",
                             "value": 1,
-                            "tok": 96
+                            "tok": 99
                           },
-                          "tok": 95
+                          "tok": 98
                         }
                       }
                     ],
-                    "tok": 82,
+                    "tok": 85,
                     "type_args": []
                   },
                   {
@@ -246,7 +251,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "aaab",
-                          "tok": 103
+                          "tok": 106
                         }
                       },
                       {
@@ -254,7 +259,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "aab",
-                          "tok": 107
+                          "tok": 110
                         }
                       },
                       {
@@ -262,11 +267,11 @@
                         "value": {
                           "k": "int",
                           "value": 1,
-                          "tok": 111
+                          "tok": 114
                         }
                       }
                     ],
-                    "tok": 99,
+                    "tok": 102,
                     "type_args": []
                   },
                   {
@@ -278,7 +283,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "あいう",
-                          "tok": 118
+                          "tok": 121
                         }
                       },
                       {
@@ -286,7 +291,7 @@
                         "value": {
                           "k": "strlit",
                           "value": "い",
-                          "tok": 122
+                          "tok": 125
                         }
                       },
                       {
@@ -294,19 +299,19 @@
                         "value": {
                           "k": "int",
                           "value": 3,
-                          "tok": 126
+                          "tok": 129
                         }
                       }
                     ],
-                    "tok": 114,
+                    "tok": 117,
                     "type_args": []
                   }
                 ],
                 "mut": false,
-                "tok": 31
+                "tok": 34
               }
             ],
-            "tok": 29
+            "tok": 32
           },
           {
             "k": "expr",
@@ -324,38 +329,38 @@
                       "base": {
                         "k": "ident",
                         "name": "iter",
-                        "tok": 134
+                        "tok": 137
                       },
                       "field": "Range",
-                      "tok": 136
+                      "tok": 139
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 0,
-                        "tok": 138
+                        "tok": 141
                       },
                       {
                         "k": "call",
                         "callee": {
                           "k": "ident",
                           "name": "len",
-                          "tok": 140
+                          "tok": 143
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "cases",
-                            "tok": 142
+                            "tok": 145
                           }
                         ],
-                        "tok": 141
+                        "tok": 144
                       }
                     ],
-                    "tok": 137
+                    "tok": 140
                   },
                   "guards": [],
-                  "tok": 132
+                  "tok": 135
                 }
               ],
               "body": {
@@ -373,17 +378,17 @@
                         "base": {
                           "k": "ident",
                           "name": "cases",
-                          "tok": 148
+                          "tok": 151
                         },
                         "idx": {
                           "k": "ident",
                           "name": "i",
-                          "tok": 150
+                          "tok": 153
                         },
-                        "tok": 149
+                        "tok": 152
                       }
                     ],
-                    "tok": 146
+                    "tok": 149
                   },
                   {
                     "k": "expr",
@@ -392,7 +397,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "assert",
-                        "tok": 153
+                        "tok": 156
                       },
                       "args": [
                         {
@@ -405,10 +410,10 @@
                               "base": {
                                 "k": "ident",
                                 "name": "strings",
-                                "tok": 155
+                                "tok": 158
                               },
                               "field": "Index",
-                              "tok": 157
+                              "tok": 160
                             },
                             "args": [
                               {
@@ -416,54 +421,54 @@
                                 "base": {
                                   "k": "ident",
                                   "name": "c",
-                                  "tok": 159
+                                  "tok": 162
                                 },
                                 "field": "s",
-                                "tok": 161
+                                "tok": 164
                               },
                               {
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
                                   "name": "c",
-                                  "tok": 163
+                                  "tok": 166
                                 },
                                 "field": "sub",
-                                "tok": 165
+                                "tok": 168
                               }
                             ],
-                            "tok": 158
+                            "tok": 161
                           },
                           "rhs": {
                             "k": "selector",
                             "base": {
                               "k": "ident",
                               "name": "c",
-                              "tok": 168
+                              "tok": 171
                             },
                             "field": "want",
-                            "tok": 170
+                            "tok": 173
                           },
-                          "tok": 167
+                          "tok": 170
                         }
                       ],
-                      "tok": 154
+                      "tok": 157
                     }
                   }
                 ]
               },
-              "tok": 131
+              "tok": 134
             }
           }
         ]
       },
-      "tok": 25,
+      "tok": 28,
       "bodiless": false,
       "span": {
-        "start": 24,
-        "end": 177
+        "start": 27,
+        "end": 180
       },
-      "sig_end": 28
+      "sig_end": 31
     },
     {
       "name": "TestPrefixSuffix",
@@ -479,7 +484,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 182
+                "tok": 185
               },
               "args": [
                 {
@@ -489,27 +494,27 @@
                     "base": {
                       "k": "ident",
                       "name": "strings",
-                      "tok": 184
+                      "tok": 187
                     },
                     "field": "HasPrefix",
-                    "tok": 186
+                    "tok": 189
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "hello world",
-                      "tok": 188
+                      "tok": 191
                     },
                     {
                       "k": "strlit",
                       "value": "hello",
-                      "tok": 190
+                      "tok": 193
                     }
                   ],
-                  "tok": 187
+                  "tok": 190
                 }
               ],
-              "tok": 183
+              "tok": 186
             }
           },
           {
@@ -519,7 +524,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 194
+                "tok": 197
               },
               "args": [
                 {
@@ -532,29 +537,29 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 197
+                        "tok": 200
                       },
                       "field": "HasPrefix",
-                      "tok": 199
+                      "tok": 202
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "hi",
-                        "tok": 201
+                        "tok": 204
                       },
                       {
                         "k": "strlit",
                         "value": "hello",
-                        "tok": 203
+                        "tok": 206
                       }
                     ],
-                    "tok": 200
+                    "tok": 203
                   },
-                  "tok": 196
+                  "tok": 199
                 }
               ],
-              "tok": 195
+              "tok": 198
             }
           },
           {
@@ -564,7 +569,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 207
+                "tok": 210
               },
               "args": [
                 {
@@ -574,27 +579,27 @@
                     "base": {
                       "k": "ident",
                       "name": "strings",
-                      "tok": 209
+                      "tok": 212
                     },
                     "field": "HasPrefix",
-                    "tok": 211
+                    "tok": 214
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "",
-                      "tok": 213
+                      "tok": 216
                     },
                     {
                       "k": "strlit",
                       "value": "",
-                      "tok": 215
+                      "tok": 218
                     }
                   ],
-                  "tok": 212
+                  "tok": 215
                 }
               ],
-              "tok": 208
+              "tok": 211
             }
           },
           {
@@ -604,7 +609,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 219
+                "tok": 222
               },
               "args": [
                 {
@@ -614,27 +619,27 @@
                     "base": {
                       "k": "ident",
                       "name": "strings",
-                      "tok": 221
+                      "tok": 224
                     },
                     "field": "HasSuffix",
-                    "tok": 223
+                    "tok": 226
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "hello world",
-                      "tok": 225
+                      "tok": 228
                     },
                     {
                       "k": "strlit",
                       "value": "world",
-                      "tok": 227
+                      "tok": 230
                     }
                   ],
-                  "tok": 224
+                  "tok": 227
                 }
               ],
-              "tok": 220
+              "tok": 223
             }
           },
           {
@@ -644,7 +649,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 231
+                "tok": 234
               },
               "args": [
                 {
@@ -657,29 +662,29 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 234
+                        "tok": 237
                       },
                       "field": "HasSuffix",
-                      "tok": 236
+                      "tok": 239
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "lo",
-                        "tok": 238
+                        "tok": 241
                       },
                       {
                         "k": "strlit",
                         "value": "hello",
-                        "tok": 240
+                        "tok": 243
                       }
                     ],
-                    "tok": 237
+                    "tok": 240
                   },
-                  "tok": 233
+                  "tok": 236
                 }
               ],
-              "tok": 232
+              "tok": 235
             }
           },
           {
@@ -689,7 +694,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 244
+                "tok": 247
               },
               "args": [
                 {
@@ -699,27 +704,27 @@
                     "base": {
                       "k": "ident",
                       "name": "strings",
-                      "tok": 246
+                      "tok": 249
                     },
                     "field": "Contains",
-                    "tok": 248
+                    "tok": 251
                   },
                   "args": [
                     {
                       "k": "strlit",
                       "value": "seafood",
-                      "tok": 250
+                      "tok": 253
                     },
                     {
                       "k": "strlit",
                       "value": "foo",
-                      "tok": 252
+                      "tok": 255
                     }
                   ],
-                  "tok": 249
+                  "tok": 252
                 }
               ],
-              "tok": 245
+              "tok": 248
             }
           },
           {
@@ -729,7 +734,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 256
+                "tok": 259
               },
               "args": [
                 {
@@ -742,40 +747,40 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 259
+                        "tok": 262
                       },
                       "field": "Contains",
-                      "tok": 261
+                      "tok": 264
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "seafood",
-                        "tok": 263
+                        "tok": 266
                       },
                       {
                         "k": "strlit",
                         "value": "bar",
-                        "tok": 265
+                        "tok": 268
                       }
                     ],
-                    "tok": 262
+                    "tok": 265
                   },
-                  "tok": 258
+                  "tok": 261
                 }
               ],
-              "tok": 257
+              "tok": 260
             }
           }
         ]
       },
-      "tok": 178,
+      "tok": 181,
       "bodiless": false,
       "span": {
-        "start": 177,
-        "end": 271
+        "start": 180,
+        "end": 274
       },
-      "sig_end": 181
+      "sig_end": 184
     },
     {
       "name": "TestCount",
@@ -791,7 +796,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 276
+                "tok": 279
               },
               "args": [
                 {
@@ -804,34 +809,34 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 278
+                        "tok": 281
                       },
                       "field": "Count",
-                      "tok": 280
+                      "tok": 283
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "cheese",
-                        "tok": 282
+                        "tok": 285
                       },
                       {
                         "k": "strlit",
                         "value": "e",
-                        "tok": 284
+                        "tok": 287
                       }
                     ],
-                    "tok": 281
+                    "tok": 284
                   },
                   "rhs": {
                     "k": "int",
                     "value": 3,
-                    "tok": 287
+                    "tok": 290
                   },
-                  "tok": 286
+                  "tok": 289
                 }
               ],
-              "tok": 277
+              "tok": 280
             }
           },
           {
@@ -841,7 +846,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 290
+                "tok": 293
               },
               "args": [
                 {
@@ -854,34 +859,34 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 292
+                        "tok": 295
                       },
                       "field": "Count",
-                      "tok": 294
+                      "tok": 297
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "five",
-                        "tok": 296
+                        "tok": 299
                       },
                       {
                         "k": "strlit",
                         "value": "",
-                        "tok": 298
+                        "tok": 301
                       }
                     ],
-                    "tok": 295
+                    "tok": 298
                   },
                   "rhs": {
                     "k": "int",
                     "value": 5,
-                    "tok": 301
+                    "tok": 304
                   },
-                  "tok": 300
+                  "tok": 303
                 }
               ],
-              "tok": 291
+              "tok": 294
             }
           },
           {
@@ -891,7 +896,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 304
+                "tok": 307
               },
               "args": [
                 {
@@ -904,45 +909,45 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 306
+                        "tok": 309
                       },
                       "field": "Count",
-                      "tok": 308
+                      "tok": 311
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "aaaa",
-                        "tok": 310
+                        "tok": 313
                       },
                       {
                         "k": "strlit",
                         "value": "aa",
-                        "tok": 312
+                        "tok": 315
                       }
                     ],
-                    "tok": 309
+                    "tok": 312
                   },
                   "rhs": {
                     "k": "int",
                     "value": 2,
-                    "tok": 315
+                    "tok": 318
                   },
-                  "tok": 314
+                  "tok": 317
                 }
               ],
-              "tok": 305
+              "tok": 308
             }
           }
         ]
       },
-      "tok": 272,
+      "tok": 275,
       "bodiless": false,
       "span": {
-        "start": 271,
-        "end": 320
+        "start": 274,
+        "end": 323
       },
-      "sig_end": 275
+      "sig_end": 278
     },
     {
       "name": "TestIndexByte",
@@ -958,7 +963,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 325
+                "tok": 328
               },
               "args": [
                 {
@@ -971,35 +976,35 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 327
+                        "tok": 330
                       },
                       "field": "IndexByte",
-                      "tok": 329
+                      "tok": 332
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "golang",
-                        "tok": 331
+                        "tok": 334
                       },
                       {
                         "k": "int",
                         "value": 108,
                         "char": true,
-                        "tok": 333
+                        "tok": 336
                       }
                     ],
-                    "tok": 330
+                    "tok": 333
                   },
                   "rhs": {
                     "k": "int",
                     "value": 2,
-                    "tok": 336
+                    "tok": 339
                   },
-                  "tok": 335
+                  "tok": 338
                 }
               ],
-              "tok": 326
+              "tok": 329
             }
           },
           {
@@ -1009,7 +1014,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 339
+                "tok": 342
               },
               "args": [
                 {
@@ -1022,25 +1027,25 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 341
+                        "tok": 344
                       },
                       "field": "IndexByte",
-                      "tok": 343
+                      "tok": 346
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "golang",
-                        "tok": 345
+                        "tok": 348
                       },
                       {
                         "k": "int",
                         "value": 120,
                         "char": true,
-                        "tok": 347
+                        "tok": 350
                       }
                     ],
-                    "tok": 344
+                    "tok": 347
                   },
                   "rhs": {
                     "k": "binary",
@@ -1048,19 +1053,19 @@
                     "lhs": {
                       "k": "int",
                       "value": 0,
-                      "tok": 350
+                      "tok": 353
                     },
                     "rhs": {
                       "k": "int",
                       "value": 1,
-                      "tok": 352
+                      "tok": 355
                     },
-                    "tok": 351
+                    "tok": 354
                   },
-                  "tok": 349
+                  "tok": 352
                 }
               ],
-              "tok": 340
+              "tok": 343
             }
           },
           {
@@ -1070,7 +1075,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 355
+                "tok": 358
               },
               "args": [
                 {
@@ -1083,25 +1088,25 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 357
+                        "tok": 360
                       },
                       "field": "IndexByte",
-                      "tok": 359
+                      "tok": 362
                     },
                     "args": [
                       {
                         "k": "strlit",
                         "value": "",
-                        "tok": 361
+                        "tok": 364
                       },
                       {
                         "k": "int",
                         "value": 97,
                         "char": true,
-                        "tok": 363
+                        "tok": 366
                       }
                     ],
-                    "tok": 360
+                    "tok": 363
                   },
                   "rhs": {
                     "k": "binary",
@@ -1109,30 +1114,30 @@
                     "lhs": {
                       "k": "int",
                       "value": 0,
-                      "tok": 366
+                      "tok": 369
                     },
                     "rhs": {
                       "k": "int",
                       "value": 1,
-                      "tok": 368
+                      "tok": 371
                     },
-                    "tok": 367
+                    "tok": 370
                   },
-                  "tok": 365
+                  "tok": 368
                 }
               ],
-              "tok": 356
+              "tok": 359
             }
           }
         ]
       },
-      "tok": 321,
+      "tok": 324,
       "bodiless": false,
       "span": {
-        "start": 320,
-        "end": 373
+        "start": 323,
+        "end": 376
       },
-      "sig_end": 324
+      "sig_end": 327
     },
     {
       "name": "TestFormatInt",
@@ -1148,7 +1153,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 378
+                "tok": 381
               },
               "args": [
                 {
@@ -1160,30 +1165,30 @@
                       "k": "selector",
                       "base": {
                         "k": "ident",
-                        "name": "strings",
-                        "tok": 380
+                        "name": "convert",
+                        "tok": 383
                       },
                       "field": "FormatInt",
-                      "tok": 382
+                      "tok": 385
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 0,
-                        "tok": 384
+                        "tok": 387
                       }
                     ],
-                    "tok": 383
+                    "tok": 386
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "0",
-                    "tok": 387
+                    "tok": 390
                   },
-                  "tok": 386
+                  "tok": 389
                 }
               ],
-              "tok": 379
+              "tok": 382
             }
           },
           {
@@ -1193,7 +1198,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 390
+                "tok": 393
               },
               "args": [
                 {
@@ -1205,30 +1210,30 @@
                       "k": "selector",
                       "base": {
                         "k": "ident",
-                        "name": "strings",
-                        "tok": 392
+                        "name": "convert",
+                        "tok": 395
                       },
                       "field": "FormatInt",
-                      "tok": 394
+                      "tok": 397
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 42,
-                        "tok": 396
+                        "tok": 399
                       }
                     ],
-                    "tok": 395
+                    "tok": 398
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "42",
-                    "tok": 399
+                    "tok": 402
                   },
-                  "tok": 398
+                  "tok": 401
                 }
               ],
-              "tok": 391
+              "tok": 394
             }
           },
           {
@@ -1238,7 +1243,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 402
+                "tok": 405
               },
               "args": [
                 {
@@ -1250,11 +1255,11 @@
                       "k": "selector",
                       "base": {
                         "k": "ident",
-                        "name": "strings",
-                        "tok": 404
+                        "name": "convert",
+                        "tok": 407
                       },
                       "field": "FormatInt",
-                      "tok": 406
+                      "tok": 409
                     },
                     "args": [
                       {
@@ -1263,27 +1268,27 @@
                         "lhs": {
                           "k": "int",
                           "value": 0,
-                          "tok": 408
+                          "tok": 411
                         },
                         "rhs": {
                           "k": "int",
                           "value": 7,
-                          "tok": 410
+                          "tok": 413
                         },
-                        "tok": 409
+                        "tok": 412
                       }
                     ],
-                    "tok": 407
+                    "tok": 410
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "-7",
-                    "tok": 413
+                    "tok": 416
                   },
-                  "tok": 412
+                  "tok": 415
                 }
               ],
-              "tok": 403
+              "tok": 406
             }
           },
           {
@@ -1293,7 +1298,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 416
+                "tok": 419
               },
               "args": [
                 {
@@ -1305,30 +1310,30 @@
                       "k": "selector",
                       "base": {
                         "k": "ident",
-                        "name": "strings",
-                        "tok": 418
+                        "name": "convert",
+                        "tok": 421
                       },
                       "field": "FormatInt",
-                      "tok": 420
+                      "tok": 423
                     },
                     "args": [
                       {
                         "k": "int",
                         "value": 9223372036854775807,
-                        "tok": 422
+                        "tok": 425
                       }
                     ],
-                    "tok": 421
+                    "tok": 424
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "9223372036854775807",
-                    "tok": 425
+                    "tok": 428
                   },
-                  "tok": 424
+                  "tok": 427
                 }
               ],
-              "tok": 417
+              "tok": 420
             }
           },
           {
@@ -1338,7 +1343,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 428
+                "tok": 431
               },
               "args": [
                 {
@@ -1350,11 +1355,11 @@
                       "k": "selector",
                       "base": {
                         "k": "ident",
-                        "name": "strings",
-                        "tok": 430
+                        "name": "convert",
+                        "tok": 433
                       },
                       "field": "FormatInt",
-                      "tok": 432
+                      "tok": 435
                     },
                     "args": [
                       {
@@ -1366,45 +1371,45 @@
                           "lhs": {
                             "k": "int",
                             "value": 0,
-                            "tok": 434
+                            "tok": 437
                           },
                           "rhs": {
                             "k": "int",
                             "value": 9223372036854775807,
-                            "tok": 436
+                            "tok": 439
                           },
-                          "tok": 435
+                          "tok": 438
                         },
                         "rhs": {
                           "k": "int",
                           "value": 1,
-                          "tok": 438
+                          "tok": 441
                         },
-                        "tok": 437
+                        "tok": 440
                       }
                     ],
-                    "tok": 433
+                    "tok": 436
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "-9223372036854775808",
-                    "tok": 441
+                    "tok": 444
                   },
-                  "tok": 440
+                  "tok": 443
                 }
               ],
-              "tok": 429
+              "tok": 432
             }
           }
         ]
       },
-      "tok": 374,
+      "tok": 377,
       "bodiless": false,
       "span": {
-        "start": 373,
-        "end": 446
+        "start": 376,
+        "end": 449
       },
-      "sig_end": 377
+      "sig_end": 380
     },
     {
       "name": "TestJoin",
@@ -1420,7 +1425,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 451
+                "tok": 454
               },
               "args": [
                 {
@@ -1433,10 +1438,10 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 453
+                        "tok": 456
                       },
                       "field": "Join",
-                      "tok": 455
+                      "tok": 458
                     },
                     "args": [
                       {
@@ -1449,39 +1454,39 @@
                           {
                             "k": "strlit",
                             "value": "a",
-                            "tok": 461
+                            "tok": 464
                           },
                           {
                             "k": "strlit",
                             "value": "b",
-                            "tok": 463
+                            "tok": 466
                           },
                           {
                             "k": "strlit",
                             "value": "c",
-                            "tok": 465
+                            "tok": 468
                           }
                         ],
                         "mut": false,
-                        "tok": 457
+                        "tok": 460
                       },
                       {
                         "k": "strlit",
                         "value": ", ",
-                        "tok": 468
+                        "tok": 471
                       }
                     ],
-                    "tok": 456
+                    "tok": 459
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "a, b, c",
-                    "tok": 471
+                    "tok": 474
                   },
-                  "tok": 470
+                  "tok": 473
                 }
               ],
-              "tok": 452
+              "tok": 455
             }
           },
           {
@@ -1491,7 +1496,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 474
+                "tok": 477
               },
               "args": [
                 {
@@ -1504,10 +1509,10 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 476
+                        "tok": 479
                       },
                       "field": "Join",
-                      "tok": 478
+                      "tok": 481
                     },
                     "args": [
                       {
@@ -1520,29 +1525,29 @@
                           {
                             "k": "strlit",
                             "value": "x",
-                            "tok": 484
+                            "tok": 487
                           }
                         ],
                         "mut": false,
-                        "tok": 480
+                        "tok": 483
                       },
                       {
                         "k": "strlit",
                         "value": "-",
-                        "tok": 487
+                        "tok": 490
                       }
                     ],
-                    "tok": 479
+                    "tok": 482
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "x",
-                    "tok": 490
+                    "tok": 493
                   },
-                  "tok": 489
+                  "tok": 492
                 }
               ],
-              "tok": 475
+              "tok": 478
             }
           },
           {
@@ -1552,7 +1557,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 493
+                "tok": 496
               },
               "args": [
                 {
@@ -1565,10 +1570,10 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 495
+                        "tok": 498
                       },
                       "field": "Join",
-                      "tok": 497
+                      "tok": 500
                     },
                     "args": [
                       {
@@ -1579,25 +1584,25 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 499
+                        "tok": 502
                       },
                       {
                         "k": "strlit",
                         "value": "-",
-                        "tok": 505
+                        "tok": 508
                       }
                     ],
-                    "tok": 498
+                    "tok": 501
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "",
-                    "tok": 508
+                    "tok": 511
                   },
-                  "tok": 507
+                  "tok": 510
                 }
               ],
-              "tok": 494
+              "tok": 497
             }
           },
           {
@@ -1607,7 +1612,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 511
+                "tok": 514
               },
               "args": [
                 {
@@ -1620,10 +1625,10 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 513
+                        "tok": 516
                       },
                       "field": "Join",
-                      "tok": 515
+                      "tok": 518
                     },
                     "args": [
                       {
@@ -1636,34 +1641,34 @@
                           {
                             "k": "strlit",
                             "value": "",
-                            "tok": 521
+                            "tok": 524
                           },
                           {
                             "k": "strlit",
                             "value": "",
-                            "tok": 523
+                            "tok": 526
                           }
                         ],
                         "mut": false,
-                        "tok": 517
+                        "tok": 520
                       },
                       {
                         "k": "strlit",
                         "value": "",
-                        "tok": 526
+                        "tok": 529
                       }
                     ],
-                    "tok": 516
+                    "tok": 519
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "",
-                    "tok": 529
+                    "tok": 532
                   },
-                  "tok": 528
+                  "tok": 531
                 }
               ],
-              "tok": 512
+              "tok": 515
             }
           },
           {
@@ -1673,7 +1678,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 532
+                "tok": 535
               },
               "args": [
                 {
@@ -1686,10 +1691,10 @@
                       "base": {
                         "k": "ident",
                         "name": "strings",
-                        "tok": 534
+                        "tok": 537
                       },
                       "field": "Join",
-                      "tok": 536
+                      "tok": 539
                     },
                     "args": [
                       {
@@ -1702,45 +1707,45 @@
                           {
                             "k": "strlit",
                             "value": "あ",
-                            "tok": 542
+                            "tok": 545
                           },
                           {
                             "k": "strlit",
                             "value": "い",
-                            "tok": 544
+                            "tok": 547
                           }
                         ],
                         "mut": false,
-                        "tok": 538
+                        "tok": 541
                       },
                       {
                         "k": "strlit",
                         "value": "・",
-                        "tok": 547
+                        "tok": 550
                       }
                     ],
-                    "tok": 537
+                    "tok": 540
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "あ・い",
-                    "tok": 550
+                    "tok": 553
                   },
-                  "tok": 549
+                  "tok": 552
                 }
               ],
-              "tok": 533
+              "tok": 536
             }
           }
         ]
       },
-      "tok": 447,
+      "tok": 450,
       "bodiless": false,
       "span": {
-        "start": 446,
-        "end": 555
+        "start": 449,
+        "end": 558
       },
-      "sig_end": 450
+      "sig_end": 453
     }
   ],
   "consts": []

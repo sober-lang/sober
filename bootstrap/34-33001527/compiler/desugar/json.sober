@@ -1,0 +1,560 @@
+package desugar
+
+import "std/iter"
+import "obuf"
+
+
+
+// コア AST の JSON 印字（src/stage1/desugar.zig の JsonWriter と同じバイト列 — 1 行・空白なし）。
+// 式は明示スタックで印字する（let の鎖・文字列リテラルの append の鎖は深い — 再帰の実効上限を踏まない）。型は浅いので再帰
+
+// 作業の種類（スタックに (op, arg) で積む）
+const OE = 0   // 式を印字
+const OT = 1   // 型を印字
+const OS = 2   // 定型の断片（emitFrag の番号 — J_*）
+const OPop = 3 // 印字中のラベルを 1 つ降ろす
+
+// 定型の断片の番号（emitFrag）
+const J_CLOSE = 1   // `}`
+const J_E = 2   // `,"e":`
+const J_BODY = 3   // `,"body":`
+const J_B = 4   // `,"b":`
+const J_T = 5   // `,"t":`
+const J_NIL = 6   // `,"nil":`
+const J_SOME = 7   // `,"some":`
+const J_L = 8   // `,"l":`
+const J_R = 9   // `,"r":`
+const J_I = 10   // `,"i":`
+const J_V = 11   // `,"v":`
+const J_A = 12   // `,"a":`
+const J_KEY = 13   // `,"key":`
+const J_BODYTRIV = 15   // `,"body":{"k":"triv"}}`
+
+func emitFrag(out mut []byte, c int) {
+    switch c {
+    case J_CLOSE:
+        out = append(out, '}')
+    case J_E:
+        obuf.Lit(mut out, ",\"e\":")
+    case J_BODY:
+        obuf.Lit(mut out, ",\"body\":")
+    case J_B:
+        obuf.Lit(mut out, ",\"b\":")
+    case J_T:
+        obuf.Lit(mut out, ",\"t\":")
+    case J_NIL:
+        obuf.Lit(mut out, ",\"nil\":")
+    case J_SOME:
+        obuf.Lit(mut out, ",\"some\":")
+    case J_L:
+        obuf.Lit(mut out, ",\"l\":")
+    case J_R:
+        obuf.Lit(mut out, ",\"r\":")
+    case J_I:
+        obuf.Lit(mut out, ",\"i\":")
+    case J_V:
+        obuf.Lit(mut out, ",\"v\":")
+    case J_A:
+        obuf.Lit(mut out, ",\"a\":")
+    case J_KEY:
+        obuf.Lit(mut out, ",\"key\":")
+    case J_BODYTRIV:
+        obuf.Lit(mut out, ",\"body\":{\"k\":\"triv\"}}")
+    }
+}
+
+// tyJson は型 t を印字する
+func tyJson(st mut S, out mut []byte, t TyRef) {
+    k := tg(mut st, t)
+    if k == TInt {
+        obuf.Lit(mut out, "{\"k\":\"int\"}")
+    } else if k == TVar {
+        obuf.Lit(mut out, "{\"k\":\"tvar\",\"i\":")
+        obuf.Int(mut out, tVarIdx(mut st, t))
+        out = append(out, '}')
+    } else if k == TBool {
+        obuf.Lit(mut out, "{\"k\":\"bool\"}")
+    } else if k == TByte {
+        obuf.Lit(mut out, "{\"k\":\"byte\"}")
+    } else if k == TFloat {
+        obuf.Lit(mut out, "{\"k\":\"f64\"}")
+    } else if k == TUnit {
+        obuf.Lit(mut out, "{\"k\":\"unit\"}")
+    } else if k == TSl || k == TRef {
+        obuf.Lit(mut out, if k == TSl { "{\"k\":\"slice\",\"m\":" } else { "{\"k\":\"ref\",\"m\":" })
+        obuf.Bool(mut out, tMutBit(mut st, t) != 0)
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, tRegion(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tElem(mut st, t))
+        out = append(out, '}')
+    } else if k == TMp {
+        obuf.Lit(mut out, "{\"k\":\"map\",\"m\":")
+        obuf.Bool(mut out, tMutBit(mut st, t) != 0)
+        obuf.Lit(mut out, ",\"r\":")
+        obuf.Int(mut out, tRegion(mut st, t))
+        obuf.Lit(mut out, ",\"key\":")
+        tyJson(mut st, mut out, tKey(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tVal(mut st, t))
+        out = append(out, '}')
+    } else if k == TOpt {
+        obuf.Lit(mut out, "{\"k\":\"opt\",\"t\":")
+        tyJson(mut st, mut out, tInner(mut st, t))
+        out = append(out, '}')
+    } else if k == TUn || k == TPr {
+        obuf.Lit(mut out, if k == TUn { "{\"k\":\"union\",\"l\":" } else { "{\"k\":\"prod\",\"l\":" })
+        tyJson(mut st, mut out, tLeft(mut st, t))
+        obuf.Lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tRight(mut st, t))
+        out = append(out, '}')
+    } else if k == TChan {
+        obuf.Lit(mut out, "{\"k\":\"chan\",\"rc\":")
+        obuf.Int(mut out, tChanRc(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tChanElem(mut st, t))
+        out = append(out, '}')
+    } else if k == TOwn {
+        o := tyAt(mut st, t).a
+        obuf.Lit(mut out, if o == OWN_SCOPE { "{\"k\":\"own\",\"o\":\"scope\",\"r\":" } else if o == OWN_TASK { "{\"k\":\"own\",\"o\":\"task\",\"r\":" } else if o == OWN_TX { "{\"k\":\"own\",\"o\":\"tx\",\"r\":" } else { "{\"k\":\"own\",\"o\":\"rx\",\"r\":" })
+        obuf.Int(mut out, tRegion(mut st, t))
+        obuf.Lit(mut out, ",\"t\":")
+        tyJson(mut st, mut out, tElem(mut st, t))
+        out = append(out, '}')
+    } else if k == TFn {
+        obuf.Lit(mut out, "{\"k\":\"fn\",\"p\":")
+        tyJson(mut st, mut out, tLeft(mut st, t))
+        obuf.Lit(mut out, ",\"r\":")
+        tyJson(mut st, mut out, tRight(mut st, t))
+        out = append(out, '}')
+    }
+}
+
+// tsJson は型引数の列（-1 か空なら何も書かない）
+func tsJson(st mut S, out mut []byte, l ListRef) {
+    if l == -1 || lenL(mut st, l) == 0 {
+        return
+    }
+    obuf.Lit(mut out, ",\"ts\":[")
+    for i <- iter.Range(0, lenL(mut st, l)) {
+        if i > 0 {
+            out = append(out, ',')
+        }
+        tyJson(mut st, mut out, latTy(mut st, l, i))
+    }
+    out = append(out, ']')
+}
+
+// fbinName は float の二項の種類の綴り（Lean の Json — fadd… / feq…）
+func fbinName(out mut []byte, k int) {
+    obuf.Lit(mut out, switch k {
+    case FAdd: "fadd"
+    case FSub: "fsub"
+    case FMul: "fmul"
+    case FDiv: "fdiv"
+    case FEq: "feq"
+    case FNe: "fne"
+    case FLt: "flt"
+    case FLe: "fle"
+    case FGt: "fgt"
+    default: "fge"
+    })
+}
+
+// fconvName は float の単項の写しの綴り
+func fconvName(out mut []byte, k int) {
+    obuf.Lit(mut out, switch k {
+    case FCNeg: "fneg"
+    case FCSqrt: "fsqrt"
+    case FCOfInt: "tofloat"
+    case FCToInt: "ftoint"
+    case FCBits: "fbits"
+    default: "ffrombits"
+    })
+}
+
+func binName(out mut []byte, k int) {
+    if k == BSub {
+        obuf.Lit(mut out, "sub")
+    } else if k == BMul {
+        obuf.Lit(mut out, "mul")
+    } else if k == BDiv {
+        obuf.Lit(mut out, "div")
+    } else if k == BMod {
+        obuf.Lit(mut out, "mod")
+    } else if k == BEq {
+        obuf.Lit(mut out, "eq")
+    } else if k == BNe {
+        obuf.Lit(mut out, "ne")
+    } else if k == BLe {
+        obuf.Lit(mut out, "le")
+    } else if k == BGt {
+        obuf.Lit(mut out, "gt")
+    } else if k == BGe {
+        obuf.Lit(mut out, "ge")
+    } else if k == BAnd {
+        obuf.Lit(mut out, "and")
+    } else if k == BOr {
+        obuf.Lit(mut out, "or")
+    } else if k == BXor {
+        obuf.Lit(mut out, "xor")
+    } else if k == BShl {
+        obuf.Lit(mut out, "shl")
+    } else if k == BShr {
+        obuf.Lit(mut out, "shr")
+    }
+}
+
+// spush は作業スタック（ヒープの st.jstk から (op, arg) の対 — 先頭 sp 対が生きている）に 1 対積み、新しい深さを返す。
+// スタックを印字の関数の frame の mut slice に置くと、この関数は呼び手へ展開されるので出力 out と同じ region で交互に伸び、
+// 伸びるたびにコピーが走る（region の上限 64MB で exit 102 — selfhost-drafts F-16）
+func spush(st mut S, sp int, op int, x int) int {
+    lset(mut st, st.jstk, sp * 2, op)
+    lset(mut st, st.jstk, sp * 2 + 1, x)
+    return sp + 1
+}
+
+// exprJson は式 e0 を印字する（明示スタック）
+func exprJson(st mut S, out mut []byte, e0 CoreRef) {
+    mut nl := 0
+    mut sp := spush(mut st, 0, OE, int(e0))
+    while sp > 0 {
+        sp -= 1
+        op := hget(mut st, st.jstk + 1 + sp * 2)
+        x := hget(mut st, st.jstk + 2 + sp * 2)
+        if op == OS {
+            emitFrag(mut out, x)
+            continue
+        }
+        if op == OT {
+            tyJson(mut st, mut out, TyRef(x))
+            continue
+        }
+        if op == OPop {
+            nl -= 1
+            continue
+        }
+        cx := coreAt(mut st, CoreRef(x))
+        k := cx.tag
+        a := cx.a
+        b := cx.b
+        c := ListRef(cx.c)
+        d := cx.d
+        // 積む順は印字の逆
+        if k == CLit || k == CFlit {
+            obuf.Lit(mut out, if k == CLit { "{\"k\":\"lit\",\"n\":" } else { "{\"k\":\"flit\",\"n\":" })
+            obuf.Int(mut out, a)
+            out = append(out, '}')
+        } else if k == CTT {
+            obuf.Lit(mut out, "{\"k\":\"true\"}")
+        } else if k == CFF {
+            obuf.Lit(mut out, "{\"k\":\"false\"}")
+        } else if k == CTriv {
+            obuf.Lit(mut out, "{\"k\":\"triv\"}")
+        } else if k == CVar {
+            obuf.Lit(mut out, "{\"k\":\"var\",\"i\":")
+            obuf.Int(mut out, a)
+            out = append(out, '}')
+        } else if k == CLet || k == CAdd || k == CLt || k == CPair || k == CAssign || k == CWhile || k == CAppend || k == CEqs || k == CConcat || k == CCallv {
+            // node2
+            if k == CLet {
+                obuf.Lit(mut out, "{\"k\":\"let\",\"e\":")
+            } else if k == CAdd {
+                obuf.Lit(mut out, "{\"k\":\"add\",\"a\":")
+            } else if k == CLt {
+                obuf.Lit(mut out, "{\"k\":\"lt\",\"a\":")
+            } else if k == CPair {
+                obuf.Lit(mut out, "{\"k\":\"pair\",\"a\":")
+            } else if k == CAssign {
+                obuf.Lit(mut out, "{\"k\":\"assign\",\"l\":")
+            } else if k == CWhile {
+                obuf.Lit(mut out, "{\"k\":\"while\",\"c\":")
+            } else if k == CAppend {
+                obuf.Lit(mut out, "{\"k\":\"append\",\"e\":")
+            } else if k == CEqs {
+                obuf.Lit(mut out, "{\"k\":\"eqs\",\"a\":")
+            } else if k == CConcat {
+                obuf.Lit(mut out, "{\"k\":\"concat\",\"a\":")
+            } else {
+                obuf.Lit(mut out, "{\"k\":\"callv\",\"f\":")
+            }
+            f2 := if k == CLet { J_BODY } else if k == CAssign || k == CCallv { J_E } else if k == CWhile { J_BODY } else if k == CAppend { J_V } else { J_B }
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, f2)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CBin || k == CFBin {
+            obuf.Lit(mut out, "{\"k\":\"")
+            if k == CBin {
+                binName(mut out, a)
+            } else {
+                fbinName(mut out, a)
+            }
+            obuf.Lit(mut out, "\",\"a\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, int(c))
+            sp = spush(mut st, sp, OS, J_B)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CIte || k == CIfnil || k == CCase || k == CSetidx || k == CSubslice || k == CSetm {
+            // node3
+            if k == CIte {
+                obuf.Lit(mut out, "{\"k\":\"if\",\"c\":")
+            } else if k == CIfnil {
+                obuf.Lit(mut out, "{\"k\":\"ifnil\",\"e\":")
+            } else if k == CCase {
+                obuf.Lit(mut out, "{\"k\":\"case\",\"e\":")
+            } else if k == CSetidx {
+                obuf.Lit(mut out, "{\"k\":\"setidx\",\"e\":")
+            } else if k == CSubslice {
+                obuf.Lit(mut out, "{\"k\":\"subslice\",\"e\":")
+            } else {
+                obuf.Lit(mut out, "{\"k\":\"setm\",\"e\":")
+            }
+            f2 := if k == CIte { J_T } else if k == CIfnil { J_NIL } else if k == CCase { J_L } else if k == CSetidx { J_I } else if k == CSubslice { J_A } else { J_KEY }
+            f3 := if k == CIte { J_E } else if k == CIfnil { J_SOME } else if k == CCase { J_R } else if k == CSetidx || k == CSetm { J_V } else { J_B }
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, int(c))
+            sp = spush(mut st, sp, OS, f3)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, f2)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CNil {
+            obuf.Lit(mut out, "{\"k\":\"nil\",\"t\":")
+            tyJson(mut st, mut out, TyRef(a))
+            out = append(out, '}')
+        } else if k == CUnreach {
+            obuf.Lit(mut out, "{\"k\":\"unreach\",\"t\":")
+            tyJson(mut st, mut out, TyRef(a))
+            out = append(out, '}')
+        } else if k == CSome || k == CFst || k == CSnd || k == CBlock || k == CDeref || k == CFreeze || k == CLen || k == CLenm || k == CKeysm || k == CToByte || k == CToInt || k == CFConv {
+            // node1（CFConv は a = 種類・b = e）
+            if k == CSome {
+                obuf.Lit(mut out, "{\"k\":\"some\",\"e\":")
+            } else if k == CFst {
+                obuf.Lit(mut out, "{\"k\":\"fst\",\"e\":")
+            } else if k == CSnd {
+                obuf.Lit(mut out, "{\"k\":\"snd\",\"e\":")
+            } else if k == CBlock {
+                obuf.Lit(mut out, "{\"k\":\"block\",\"e\":")
+            } else if k == CDeref {
+                obuf.Lit(mut out, "{\"k\":\"deref\",\"e\":")
+            } else if k == CFreeze {
+                obuf.Lit(mut out, "{\"k\":\"freeze\",\"e\":")
+            } else if k == CLen {
+                obuf.Lit(mut out, "{\"k\":\"len\",\"e\":")
+            } else if k == CLenm {
+                obuf.Lit(mut out, "{\"k\":\"lenm\",\"e\":")
+            } else if k == CToByte {
+                obuf.Lit(mut out, "{\"k\":\"tobyte\",\"e\":")
+            } else if k == CToInt {
+                obuf.Lit(mut out, "{\"k\":\"toint\",\"e\":")
+            } else if k == CFConv {
+                obuf.Lit(mut out, "{\"k\":\"")
+                fconvName(mut out, a)
+                obuf.Lit(mut out, "\",\"e\":")
+            } else {
+                obuf.Lit(mut out, "{\"k\":\"keysm\",\"e\":")
+            }
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, if k == CFConv { b } else { a })
+        } else if k == CAnn || k == CBlockR {
+            // {"k":"ann","e":E,"t":T} / {"k":"block","e":E,"t":T}（blockR は a = 型, b = e）
+            obuf.Lit(mut out, if k == CAnn { "{\"k\":\"ann\",\"e\":" } else { "{\"k\":\"block\",\"e\":" })
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OT, if k == CAnn { b } else { a })
+            sp = spush(mut st, sp, OS, J_T)
+            sp = spush(mut st, sp, OE, if k == CAnn { a } else { b })
+        } else if k == CScope || k == CTry || k == CJoin {
+            // {"k":"scope","t":T,"e":E} / {"k":"try","t":T,"h":H} / {"k":"join","t":T,"h":H}（a = 型, b = 本体 / handle）
+            obuf.Lit(mut out, if k == CScope { "{\"k\":\"scope\",\"t\":" } else if k == CTry { "{\"k\":\"try\",\"t\":" } else { "{\"k\":\"join\",\"t\":" })
+            tyJson(mut st, mut out, TyRef(a))
+            if k == CScope {
+                obuf.Lit(mut out, ",\"eps\":")
+                tyJson(mut st, mut out, TyRef(cx.c))
+            }
+            obuf.Lit(mut out, if k == CScope { ",\"e\":" } else { ",\"h\":" })
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CNewch {
+            // {"k":"newch","r":r,"cap":n,"t":T}（段 6 P3b）
+            obuf.Lit(mut out, "{\"k\":\"newch\",\"r\":")
+            obuf.Int(mut out, a)
+            obuf.Lit(mut out, ",\"cap\":")
+            obuf.Int(mut out, b)
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, TyRef(cx.c))
+            out = append(out, '}')
+        } else if k == CSend {
+            // {"k":"send","c":C,"e":E}
+            obuf.Lit(mut out, "{\"k\":\"send\",\"c\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_E)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CRecv || k == CClose {
+            obuf.Lit(mut out, if k == CRecv { "{\"k\":\"recv\",\"c\":" } else { "{\"k\":\"close\",\"c\":" })
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CSpawn {
+            // {"k":"spawn","s":S,"a":A,"e":E}
+            obuf.Lit(mut out, "{\"k\":\"spawn\",\"s\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, int(cx.c))
+            sp = spush(mut st, sp, OS, J_E)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_A)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CCopyTo {
+            // {"k":"copyto","r":k,"t":T,"e":E}（a = 型, b = e, c = k）
+            obuf.Lit(mut out, "{\"k\":\"copyto\",\"r\":")
+            obuf.Int(mut out, cx.c)
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_E)
+            sp = spush(mut st, sp, OT, a)
+            sp = spush(mut st, sp, OS, J_T)
+        } else if k == CInl || k == CInr {
+            obuf.Lit(mut out, if k == CInl { "{\"k\":\"inl\",\"r\":" } else { "{\"k\":\"inr\",\"l\":" })
+            tyJson(mut st, mut out, TyRef(a))
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CCall {
+            obuf.Lit(mut out, if d != 0 { "{\"k\":\"callm\",\"f\":" } else { "{\"k\":\"call\",\"f\":" })
+            obuf.Int(mut out, a)
+            tsJson(mut st, mut out, c)
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CFnref {
+            obuf.Lit(mut out, "{\"k\":\"fnref\",\"f\":")
+            obuf.Int(mut out, a)
+            tsJson(mut st, mut out, ListRef(b))
+            out = append(out, '}')
+        } else if k == CAlloc {
+            obuf.Lit(mut out, "{\"k\":\"alloc\",\"mut\":")
+            obuf.Bool(mut out, a != 0)
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CStrlit {
+            obuf.Lit(mut out, "{\"k\":\"strlit\",\"bs\":[")
+            mut i := 0
+            while i < dat(mut st, a) {
+                if i > 0 {
+                    out = append(out, ',')
+                }
+                obuf.Int(mut out, dat(mut st, a + 1 + i))
+                i += 1
+            }
+            obuf.Lit(mut out, "],\"r\":")
+            obuf.Int(mut out, b)
+            out = append(out, '}')
+        } else if k == CMkslice {
+            obuf.Lit(mut out, "{\"k\":\"mkslice\",\"m\":")
+            obuf.Bool(mut out, a != 0)
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, TyRef(b))
+            if cx.d != 0 {
+                obuf.Lit(mut out, ",\"r\":")
+                obuf.Int(mut out, cx.d - 1)
+            }
+            out = append(out, '}')
+        } else if k == CClone {
+            obuf.Lit(mut out, "{\"k\":\"clone\",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            if b != -1 {
+                sp = spush(mut st, sp, OT, int(b))
+                sp = spush(mut st, sp, OS, J_T)
+            }
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CIndex {
+            obuf.Lit(mut out, "{\"k\":\"index\",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            if c != -1 {
+                sp = spush(mut st, sp, OT, int(c))
+                sp = spush(mut st, sp, OS, J_T)
+            }
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_I)
+            sp = spush(mut st, sp, OE, a)
+        } else if k == CMkmap {
+            obuf.Lit(mut out, "{\"k\":\"mkmap\",\"m\":")
+            obuf.Bool(mut out, a != 0)
+            obuf.Lit(mut out, ",\"key\":")
+            tyJson(mut st, mut out, TyRef(b))
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, TyRef(c))
+            if cx.d != 0 {
+                obuf.Lit(mut out, ",\"r\":")
+                obuf.Int(mut out, cx.d - 1)
+            }
+            out = append(out, '}')
+        } else if k == CGetm || k == CDelm {
+            obuf.Lit(mut out, if k == CGetm { "{\"k\":\"getm\",\"t\":" } else { "{\"k\":\"delm\",\"t\":" })
+            tyJson(mut st, mut out, TyRef(a))
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, int(c))
+            sp = spush(mut st, sp, OS, J_KEY)
+            sp = spush(mut st, sp, OE, b)
+        } else if k == CLabel {
+            if !lab(mut st, a).used {
+                sp = spush(mut st, sp, OE, int(c))
+            } else {
+                lset(mut st, st.jlab, nl, lab(mut st, a).id)
+                nl += 1
+                obuf.Lit(mut out, "{\"k\":\"label\",\"t\":")
+                tyJson(mut st, mut out, TyRef(b))
+                obuf.Lit(mut out, ",\"e\":")
+                sp = spush(mut st, sp, OS, J_CLOSE)
+                sp = spush(mut st, sp, OPop, 0)
+                if d == WDiscard {
+                    obuf.Lit(mut out, "{\"k\":\"let\",\"e\":")
+                    sp = spush(mut st, sp, OS, J_BODYTRIV)
+                } else if d == WAnn {
+                    obuf.Lit(mut out, "{\"k\":\"ann\",\"e\":")
+                    sp = spush(mut st, sp, OS, J_CLOSE)
+                    sp = spush(mut st, sp, OT, b)
+                    sp = spush(mut st, sp, OS, J_T)
+                }
+                sp = spush(mut st, sp, OE, int(c))
+            }
+        } else if k == CJump {
+            // 添字 = 印字中の囲むラベルのうち、目標より内側にある数
+            mut n := 0
+            mut j := nl - 1
+            while j >= 0 && hget(mut st, st.jlab + 1 + j) != a {
+                n += 1
+                j -= 1
+            }
+            obuf.Lit(mut out, "{\"k\":\"jump\",\"n\":")
+            obuf.Int(mut out, n)
+            obuf.Lit(mut out, ",\"t\":")
+            tyJson(mut st, mut out, TyRef(b))
+            obuf.Lit(mut out, ",\"e\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, int(c))
+        }
+    }
+}
+
+// defJson は Def 1 つ（[param, ret, body, tparams]）を印字する（trust = std の信頼の口の Def — trustDefs）
+func defJson(st mut S, out mut []byte, d int, trust bool) {
+    out = append(out, '{')
+    if trust {
+        obuf.Lit(mut out, "\"trust\":true,")
+    }
+    if hget(mut st, d + 3) > 0 {
+        obuf.Lit(mut out, "\"tparams\":")
+        obuf.Int(mut out, hget(mut st, d + 3))
+        out = append(out, ',')
+    }
+    obuf.Lit(mut out, "\"param\":")
+    tyJson(mut st, mut out, hgetTy(mut st, d))
+    obuf.Lit(mut out, ",\"ret\":")
+    tyJson(mut st, mut out, hgetTy(mut st, d + 1))
+    obuf.Lit(mut out, ",\"body\":")
+    exprJson(mut st, mut out, hgetCore(mut st, d + 2))
+    out = append(out, '}')
+}

@@ -192,3 +192,52 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
   - 副産物（別件として置く。ランタイムが小さく GC もリフレクションも無いので TinyGo が Go から削るものが元から無い）: (1) Sober 自身を wasm ターゲットにする道（ブラウザ） (2) マイコン（ARM Thumb / RISC-V）ターゲット。ランタイムの mmap を静的な固定 arena に、syscall シムを HAL に差し替え、スタック上界の数字でスタック全体を静的確保する（RAM 予算に合わなければリンクで落とす）。足りないのはバックエンドの実装量で、codegen の入力 IR を一本にしておけばターゲット依存部だけ足せばよい。未検討: 割り込み（Executor が interrupt である Domain と読めるか）、ヒープの静的上限（ループ内の無制限割り当てを `alloc` 効果の lint で指摘）
   - 棄てた案: native FFI のみ（C を呼んだ瞬間に全保証が消える。Go の cgo と同じ立場になる）、既存 wasm ランタイムの組み込み（wasmtime は Rust + C、wazero は Go。libc 非依存・単一バイナリの方針と合わない）
   SoA 強制の撤退条件（書けない並列パターン 3 つ）をここで計測
+- IO 便（0.6.0 Web 波 — 設計の壁打ち完了 2026-10-17。裁定の正 = language.md 7 節「規約の二層」・28 節「読み書きの規約」「壊れ方の規律」/
+  region-domain-pool.md 4c・4e 節。着手順と各段の検収の素描 — 詳細の設計は各段の実装便の起案で）:
+  - ① 生成元の `?` の脱糖 + 網 — **着地済み**（2026-10-13 — language.md 7 節「失敗しうる生成元」・examples/for_fallible と負例 3 本）。壁打ちの時点で
+    「唯一の言語変更」と見ていたものが先に入っていた — この段の残作業なし
+  - ② io / net の口の for 対応の整え — Chunks / Lines / ChunksAt / Recv は既に CPS 生成元の形で、**署名は不変の見込み（要確認）**: 残る論点は
+    「k の引数（View）を欄へ逃がす形」を既存の escape 規則が塞いでいるかの確認だけ。検収 = 塞がっていることの負例（逃がす形が拒否される examples）+
+    既存の網（for_fallible・httpcheck・iouring）が不変で通ること
+  - ③ http の Response stream + static ファイルの送出 — `Response{stream: func(emit func([]byte) error?) error?}`（w2 — 欄の名前は仮決め）を ServeConn の
+    wire に足し、gzip のストリーム圧縮を同じ署名の段で挟む。static 種目（HttpArena — 「cache は framework 自身のもの・ディスクに追従」の条文が設計制約）が
+    第一顧客。検収 = httpcheck の拡張（stream の応答が一括の body の応答と同じバイト列）+ RSS（大きいファイルの送出が本文の大きさに比例しない）。
+    **順延（2026-10-17）: この形は関数値の壁 4 枚（report-740）で今の言語に書けない — クロージャの波（下の項）の後に再開**。
+    **stream の部分は着地（2026-10-17・report-763）**: Response の length / stream・ServeConn の送出（長さ既知・圧縮しない・HEAD は呼ばない）・
+    httpcheck の stream 12 検査・examples/http_stream。残り = static ハンドラ（FileSize の口の API 裁定と同席）・compress + stream（chunked とセットの裁定）
+    条文の実読の訂正（report-740 4.3）: 本家に素の static 種目は無く static-tls のみ（TLS 前提 — 参戦は TLS 便の後）・ディスクの
+    pre-compressed .gz / .br の選択は全エントリ型で許可・長さの口に std/os の FileSize が要る（API の裁定の席）
+  - ④ 期限の別ラベル — `io.Expired`（仮決め）を `io.Timeout` から分離（language.md 28 節「壊れ方の規律」）。検収 = @errors の網羅の追従
+    （既存の switch に腕が要る — 影響の数え上げから）+ デッドラインの examples の更新・「相手の ETIMEDOUT は Timeout のまま」の負例
+  - ⑤ rt — キャンセルの協調形（ASYNC_CANCEL は待ちを起こすだけ・書きかけの半端を作らない — 28 節の規律の実装）。READ_FIXED / WRITE_FIXED
+    （registered buffers）は rt の内側の性能便として別便（region-domain-pool.md 4e 節の 0.6.0 裁定 — 表面は変えない）。検収 = 出力のバイト列が backend に
+    依らない約束の網（gate iouring の格子）のまま。偵察済み（report-741）: 期限なしの scope の下の IO 待ち × 親の死で子が永眠する穴の実証
+    （.pair/fx/r741-orphan-sleep）・直しの形 = 待ち手の鎖の一般化 + 死の発火で epoch + 祖先判定（印・判定・起こしの部品 3 つは既存）・
+    起こされた待ちのラベルの推し = io.Expired に読む（@errors の波及ゼロ）。**着地 2026-10-17（report-777〜）**: ラベル = io.Expired（ユーザー裁定 (a)）・
+    形 = ワーカーごとの待ち手の登録簿（鎖の一般化は外しが O(n) なので棄て）+ @rt.orphgen（親の死の印でだけ進む）+ 待ちの入口の関門（lower/orphan.sober）
+- クロージャの波（0.6.0 — 決定 2026-10-17・案 B「クロージャ = 辞書 struct の糖衣」。裁定の正 = language.md 25 節〔改訂 2026-10-17〕・
+  14 / 15 / 7 / 8 節の同日の追記・偵察 = report-742・壁の名指し = report-740）: 関数値 = コード + imm の写しの環境。値の位置（named fn type の
+  仮引数・struct の関数型欄・option の欄）に実装を追いつかせ、http の `Response{stream:}`（IO 便 ③）を素直な形のまま書けるようにする。
+  捕捉 = 作成点の imm の写し・mut / 同一性 / task.Scope は名指し拒否・第 1 段は region 込み（string / slice — Lean の突き合わせで R0 に乗らなければ
+  「環境は呼び出しで写らない」に縮めて段切り）。工程（report-742 6 節）:
+  1. docs 便 — **着地済み 2026-10-17**（この項 + language.md の 5 節の改訂）
+  2. Lean 小便 — コア無変更の検証（ex36 の形に region つき環境の例を足して突き合わせ。開くなら loc-free 環境限定で第 1 段を切る）
+  3. loader / desugar — 持ち上げテンプレート（env struct + 隠れ第 1 引数・fnref + struct + callv の pair 鎖）・**値の位置の判定の一元化**
+    （check / build が同じ判定を読む — η 展開の前例の形）・拒否の diag（FnCap 系: mut / 同一性 / task.Scope の捕捉・値形ラムダの非局所 return）。
+    **着地 2026-10-17**: 3a = loader の fnval（f70ec8f6）・3b = desugar の閉包（f50f8a52）・**3c = 捕捉つき閉包の Def 境界越え**（env = named fn type
+    ごとの閉じた union・前走り・同梱 = named fn type の Def の仮引数 / 結果の値の位置への昇格と F-au の修理 — report-751 / 752。
+    report-745〜751 で「工程 4」と呼んでいたのはこの 3c）。**3d = (α-L0) 借りの関数型仮引数**（裁定 2026-10-17 — report-754 が起案の正・language.md 25 節）:
+    値の F の匿名の関数型の仮引数 = 借り（同一性の型の規則の流用 — filecheck）・借りの位置のラムダは同一性の型を捕捉可・env は imm + 同一性だけ
+    （Lean 無変更・証人 Examples eb1）。mut の捕捉（L1 — コアの callMv）は compress + stream の実需の席（PINS）
+  4. checker / analyzer — named fn type の nominal と option の型付け・クロージャ欄の @errors / @pure 注釈の要求（13 節の既定の実装）
+  5. lower / x86 — named fn type = クロージャ struct の表現（ir.md「関数値は i64 1 語」の改訂）・間接呼び出し（既存 callv / call rax の上）・
+    14 節の UndefinedType の不整合の修理（同じ作業）。rt は無変更の見込み（クロージャはただのデータ）。
+    **着地 2026-10-17**: 5a = 型の索引の修理 + lowerView 撤去（5942fb36）・5b = lower の閉包の値形（a015b705）・5c = 借りの閉包の値形 + 借りの η を loader へ
+    （3620bdf5）・**5d = 匿名欄の反転**（第一階の匿名の関数型の欄も値の位置・env の鍵 = 構造・corejson regen 7 本・IR 不変 = η の畳み・
+    局所の関数値を値の位置へ入れる形の拒否を check / build で揃えた — report-762）。rt は無変更
+  6. std/http — Response stream（IO 便 ③ の再開・第一顧客）— **着地 2026-10-17（report-763）**
+  7. 鎖 — compiler/ は当面閉包フリーに保ち動かさない（compiler/ で使う前にスナップショット + chain.txt / boot.commit の行）
+  検収の軸: 既存 IR 不変（匿名仮引数の展開の位置に触れない — optdiff / irtext の黄金が網・std の CPS は書き直しゼロ）・checkverdict の
+  値形の格子（check ≡ build）・fx/r740-*.sober 6 本の verdict 反転（壁の負例が正例になる）。
+  棄てた案（一行）: 案 C = 本物の D3（型付けの面 3 つ + Lean の loc-free の配当を失う）・案 A = fat pointer（参照の寿命が関数型に region を
+  持ち込み実質 C・境界コピーが deep copy の新規実装）

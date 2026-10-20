@@ -1,0 +1,178 @@
+package main
+
+// std/crypto/aesgcm（report-796 — AES-NI + PCLMULQDQ の塊）: NIST の GCM の仕様の例 1〜4（AES-128）・長さ 0〜300 × ad の長さ 3 通りの往復と
+// Go の crypto/aes + cipher.GCM の値（擬似乱数の鍵・nonce・平文の暗号文 ‖ tag を混ぜた値）・1 ビットの改竄が Auth で落ちること。
+// record 層の口（TLS 便 R1 — report-811）: Prepare した Key 1 つを 301 record に使い回し（nonce = iv ⊕ seq・ad = record の頭 5 バイト）・SealTo の
+// head ‖ 暗号文 ‖ tag の値・前後に屑を挟んだ受けの切片からの OpenAt の往復・切片の中の改竄が Auth で落ち切片の外の改竄は効かないこと・長さの検査。
+// Go の双子 = scripts/oracles/crypto_aesgcm.go。塊の無い機械（SOBER_NOAES=1）では NoHardware だけを印字する形（.out は塊ありの機械の値）
+
+import "std/crypto/aesgcm"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/iter"
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func gen(seed int, n int) []byte {
+    mut out := mut []byte{}
+    mut x := seed * 2654435761 + 12345
+    for j <- iter.Range(0, n) {
+        x = (x * 6364136223846793005 + 1442695040888963407)
+        out = append(out, byte((x >> 33) & 0xff))
+    }
+    return freeze(out)
+}
+
+func seal(name string, k string, iv string, ad string, pt string) {
+    s, e := aesgcm.Seal(unhex(k), unhex(iv), unhex(ad), unhex(pt))
+    if e != nil {
+        println(name, "error")
+        return
+    }
+    println(name, hex.Format(s))
+}
+
+func main() {
+    if !aesgcm.Available() {
+        _, e := aesgcm.Seal(gen(1, 16), gen(2, 12), bytes(""), bytes("x"))
+        println("no hardware", e != nil)
+        return
+    }
+    seal("nist1", "00000000000000000000000000000000", "000000000000000000000000", "", "")
+    seal("nist2", "00000000000000000000000000000000", "000000000000000000000000", "", "00000000000000000000000000000000")
+    p3 := "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255"
+    seal("nist3", "feffe9928665731c6d6a8f9467308308", "cafebabefacedbaddecaf888", "", p3)
+    seal("nist4", "feffe9928665731c6d6a8f9467308308", "cafebabefacedbaddecaf888", "feedfacedeadbeeffeedfacedeadbeefabaddad2", "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
+    // 長さ 0〜300 × ad 0 / 13 / 64: 往復と値の混ぜ（SHA-256 で畳んで 1 行）
+    mut acc := sha256.New()
+    mut rt := 0
+    adLens := []int{0, 13, 64}
+    for n <- iter.Range(0, 301) {
+        for a <- iter.Range(0, 3) {
+            key := gen(3 * n + a, 16)
+            nonce := gen(7 * n + a + 1000, 12)
+            ad := gen(n + 2000, adLens[a])
+            pt := gen(n + 3000, n)
+            s, _ := aesgcm.Seal(key, nonce, ad, pt)
+            sha256.Write(mut acc, s)
+            o, oe := aesgcm.Open(key, nonce, ad, s)
+            if oe == nil && hex.Format(o) == hex.Format(pt) {
+                rt = rt + 1
+            }
+        }
+    }
+    println("roundtrip", rt, hex.Format(sha256.Sum(acc)))
+    // 大きい本文（8 ブロックの環と端の両方）
+    big := gen(9, 10240 + 7)
+    sb, _ := aesgcm.Seal(gen(10, 16), gen(11, 12), gen(12, 5), big)
+    println("10k", hex.Format(sha256.Sum256(sb)))
+    // 改竄: 暗号文の全ビットの位置のうち 64 か所・tag・ad
+    k := gen(20, 16)
+    nn := gen(21, 12)
+    ad := gen(22, 20)
+    s, _ := aesgcm.Seal(k, nn, ad, gen(23, 100))
+    mut rej := 0
+    for i <- iter.Range(0, 64) {
+        at := (i * 37) % len(s)
+        mut t := mut []byte{}
+        for j <- iter.Range(0, len(s)) {
+            t = append(t, if j == at { byte(int(s[j]) ^ (1 << (i % 8))) } else { s[j] })
+        }
+        _, te := aesgcm.Open(k, nn, ad, freeze(t))
+        if te != nil {
+            rej = rej + 1
+        }
+    }
+    _, ae := aesgcm.Open(k, nn, gen(24, 20), s)
+    _, be := aesgcm.Seal(k, gen(25, 11), ad, s)
+    println("tamper", rej, ae != nil, be != nil)
+    record()
+}
+
+// recHead は TLS の record の頭（application_data・0x0303・長さ n）
+func recHead(n int) []byte {
+    mut h := mut []byte{}
+    h = append(h, byte(23))
+    h = append(h, byte(3))
+    h = append(h, byte(3))
+    h = append(h, byte((n >> 8) & 0xff))
+    h = append(h, byte(n & 0xff))
+    return freeze(h)
+}
+
+// seqNonce は iv ⊕ seq（seq は 64 ビットの大きい端で iv の後ろ 8 バイトに — RFC 9846 5.3）
+func seqNonce(iv []byte, seq int) []byte {
+    mut n := mut []byte{}
+    for i <- iter.Range(0, 12) {
+        n = append(n, if i < 4 { iv[i] } else { byte(int(iv[i]) ^ ((seq >> (8 * (11 - i))) & 0xff)) })
+    }
+    return freeze(n)
+}
+
+// wrap は 屑 pre バイト ‖ b[from, len(b)) ‖ 屑 3 バイト（受けの切片の形）
+func wrap(b []byte, from int, pre int) []byte {
+    mut w := mut []byte{}
+    for i <- iter.Range(0, pre) {
+        w = append(w, byte(0xa5))
+    }
+    for i <- iter.Range(from, len(b)) {
+        w = append(w, b[i])
+    }
+    for i <- iter.Range(0, 3) {
+        w = append(w, byte(0x5a))
+    }
+    return freeze(w)
+}
+
+func flip(b []byte, at int, bit int) []byte {
+    mut t := mut []byte{}
+    for j <- iter.Range(0, len(b)) {
+        t = append(t, if j == at { byte(int(b[j]) ^ (1 << bit)) } else { b[j] })
+    }
+    return freeze(t)
+}
+
+func record() {
+    k, _ := aesgcm.Prepare(gen(40, 16))
+    iv := gen(41, 12)
+    mut acc := sha256.New()
+    mut rt := 0
+    for seq <- iter.Range(0, 301) {
+        n := if seq == 300 { 16384 } else { seq }
+        hd := recHead(n + aesgcm.Overhead)
+        rec, _ := aesgcm.SealTo(k, seqNonce(iv, seq), hd, gen(seq + 4000, n), hd)
+        sha256.Write(mut acc, rec)
+        w := wrap(rec, 5, seq % 5)
+        o, oe := aesgcm.OpenAt(k, seqNonce(iv, seq), hd, w, seq % 5, len(rec) - 5)
+        if oe == nil && hex.Format(o) == hex.Format(gen(seq + 4000, n)) {
+            rt = rt + 1
+        }
+    }
+    println("record", rt, hex.Format(sha256.Sum(acc)))
+    // 改竄: 切片の中（暗号文と tag）の 48 か所は Auth・切片の外（前後の屑）は通る
+    hd := recHead(100 + aesgcm.Overhead)
+    nn := seqNonce(iv, 7)
+    rec, _ := aesgcm.SealTo(k, nn, hd, gen(42, 100), hd)
+    w := wrap(rec, 5, 4)
+    span := len(rec) - 5
+    mut rej := 0
+    for i <- iter.Range(0, 48) {
+        _, te := aesgcm.OpenAt(k, nn, hd, flip(w, 4 + (i * 53) % span, i % 8), 4, span)
+        if te != nil {
+            rej = rej + 1
+        }
+    }
+    _, e0 := aesgcm.OpenAt(k, nn, hd, flip(w, 0, 1), 4, span)
+    _, e1 := aesgcm.OpenAt(k, nn, hd, flip(w, len(w) - 1, 1), 4, span)
+    println("record tamper", rej, e0 == nil, e1 == nil)
+    // 長さの検査: 切片の外へはみ出す・tag より短い・負の off・nonce の長さ違い・鍵の長さ違い
+    _, b0 := aesgcm.OpenAt(k, nn, hd, w, 8, span)
+    _, b1 := aesgcm.OpenAt(k, nn, hd, w, 4, 15)
+    _, b2 := aesgcm.OpenAt(k, nn, hd, w, -1, span)
+    _, b3 := aesgcm.SealTo(k, gen(43, 11), hd, gen(44, 3), hd)
+    _, b4 := aesgcm.Prepare(gen(45, 32))
+    println("record badsize", b0 != nil, b1 != nil, b2 != nil, b3 != nil, b4 != nil)
+}

@@ -3,7 +3,7 @@ package main
 // Count the lines of standard input in one task while another task tallies a log shard.
 // Run from the repository root (reads testdata/io_par).
 import "std/io"
-import "std/par"
+import "std/task"
 import "std/strings"
 
 func countLines() (int, error?) {
@@ -23,11 +23,11 @@ func countErrors(path string) (int, error?) {
 }
 
 func main() int {
-    r, err := par.Scope((s par.S) => {
-        lines := par.Spawn(s, () => countLines())
-        errors := par.Spawn(s, () => countErrors("testdata/io_par/access-2.log"))
-        n, ne := par.Join(lines)
-        e, ee := par.Join(errors)
+    r, err := task.Run((s task.Scope) => {
+        lines := task.Spawn(s, () => countLines())
+        errors := task.Spawn(s, () => countErrors("testdata/io_par/access-2.log"))
+        n, ne := task.Join(lines)
+        e, ee := task.Join(errors)
         if ne != nil || ee != nil { "" } else { "${n} lines on stdin, ${e} server errors in the shard" }
     })
     if err != nil || r == "" {

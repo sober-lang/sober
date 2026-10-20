@@ -1,0 +1,19 @@
+package main
+
+// 展開待ちの捕捉は借りの位置のラムダの中だけ: 欄に置く値の位置の閉包（呼び出しの外まで生きる）の中で囲む関数の仮引数を呼ぶ形は拒否
+
+type Fn func(p []byte) error?
+
+type R struct {
+    f Fn
+}
+
+func run(send func(b []byte) error?) R {
+    return R{f: (p []byte) => send(p)}
+}
+
+func main() {
+    tag := "x"
+    r := run((b []byte) => if tag == "x" { nil } else { nil })
+    println(r.f(bytes("a")) == nil)
+}

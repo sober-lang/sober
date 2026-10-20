@@ -1,0 +1,16 @@
+package main
+
+// 負例（工程 5d — 匿名の関数型の欄も値の位置: 局所に束縛した名前付き関数は入れられない。closure_bound_named_fn の匿名欄版）
+type Ord struct {
+    less func(int, int) bool
+}
+
+func asc(a int, b int) bool {
+    return a < b
+}
+
+func main() {
+    f := asc
+    o := Ord{less: f}
+    println(o.less(1, 2))
+}

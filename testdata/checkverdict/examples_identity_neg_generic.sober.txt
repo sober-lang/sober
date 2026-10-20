@@ -1,2 +1,2 @@
-sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `par.Tx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
+sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `task.Sender`, which has identity: only task.NewChannel makes one — set the field, or declare it `T?`
 exit=1

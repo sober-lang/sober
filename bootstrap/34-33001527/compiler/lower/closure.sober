@@ -1,0 +1,647 @@
+package lower
+
+// 値の位置の閉包の値形（クロージャの波 工程 5 — language.md 25 節・report-757 2.1）: 捕捉のあるラムダを持つ named fn type K の値は
+// 合成の struct {$code: 関数値 1 語, $env: U_K}（U_K = K の値の位置で作った閉包の捕捉の形の閉じた union — 1 種類ならその形の struct）。
+// 捕捉の無い K は従来どおり関数値 1 語（既存の IR は不変）。持ち上げた関数は隠れ第 1 引数 = env の番地（union なら先頭はタグ）を受け、
+// 入口で自分の形の捕捉を名前に束ねる（他の形は来ない — 作成点が形とコードを組で作る。コアの case の unreach と同じ）。
+// 形は型のレイアウトより先に要るので、lower の入口（closPrep）が loader の捕捉の表と表層型の表から集める（脱糖の前走りは走らせない）
+
+import "diag"
+import "desugar"
+import "ast"
+import "std/iter"
+import "std/table"
+
+// 閉包の型の情報（合成の struct の記録の後ろの欄）
+const CL_K = SISZ       // K（named fn type の宣言の節）
+const CL_UNION = SISZ + 1 // env が union か（0 / 1）
+const CL_FT = SISZ + 2  // 関数型 [仮引数の型の列, 結果の型の列]
+const CL_NAME = SISZ + 3 // 関数値の名前の欄（型宣言 + 1）
+const CLSZ = SISZ + 4
+
+// closPrep は捕捉の表の値の位置のラムダから、K ごとの env の形（捕捉の型の列 — 重複なし・出現順・捕捉なしは空の列）を集める。
+// 捕捉のある形を 1 つも持たない K は記録しない（関数値 1 語のまま）
+func closPrep(st mut St) error? {
+    n := desugar.CapCount(mut st.d)
+    mut any := false
+    for i <- iter.Range(0, n) {
+        if lenL(mut st, desugar.CapIdents(mut st.d, i)) > 0 {
+            any = true
+        }
+    }
+    if !any {
+        return nil
+    }
+    for i <- iter.Range(0, n) {
+        if desugar.CapFlow(mut st.d, i) {
+            // 流れの行は自分の形を持たない（持ち上げる閉包の env に平たく積まれる — closShapes）
+            continue
+        }
+        lam := desugar.CapLam(mut st.d, i)
+        // 鍵 = named fn type の宣言 K、匿名の関数型（借りの実引数・(5d) 匿名欄）は関数型の構造
+        k := desugar.LamKey(mut st.d, lam)
+        mut ft := 0
+        if k < 0 {
+            y := desugar.LamYFn(mut st.d, lam)
+            if y < 0 {
+                continue
+            }
+            yt := yLower(mut st, y, lam)?
+            if yt < 0 || !(isTag(mut st, yt, TFnv) || isTag(mut st, yt, TFunc)) {
+                return diag.Unsupported{at: posOf(mut st, lam)}
+            }
+            ft = desugar.HeapGet(mut st.d, yt + 1)
+        }
+        shs := closShapes(mut st, i, 8)?
+        r := closKOf(mut st, k, ft)
+        for s <- iter.Range(0, lenL(mut st, shs)) {
+            closAddShape(mut st, r, desugar.ListRef(latI(mut st, shs, s)))
+        }
+        // 展開待ちの捕捉を持つ鍵は平たい形が空でも閉包の struct にする（持ち上げた関数の入口で束ね直す — closBind）
+        for j <- iter.Range(0, lenL(mut st, desugar.CapIdents(mut st.d, i))) {
+            if desugar.CapPend(mut st.d, i, j) >= 0 {
+                desugar.HeapSet(mut st.d, r + 5, 1)
+            }
+        }
+    }
+    // 捕捉のある形を持たない K は外す（鎖を作り直す）
+    mut x := st.closKs - 1
+    mut keep := 0
+    while x >= 0 {
+        nx := desugar.HeapGet(mut st.d, x) - 1
+        if closHasCap(mut st, x) || desugar.HeapGet(mut st.d, x + 5) != 0 {
+            desugar.HeapSet(mut st.d, x, keep)
+            keep = x + 1
+        }
+        x = nx
+    }
+    st.closKs = keep
+    return nil
+}
+
+// closShapes は行 i の env の形の列（展開待ちの捕捉は、的へ流れる行ごとの平たい形の積 — 作成点が展開ごとに 1 つを選ぶ）
+func closShapes(st mut St, i int, fuel int) (desugar.ListRef, error?) {
+    lam := desugar.CapLam(mut st.d, i)
+    if fuel == 0 {
+        return desugar.ListRef(-1), diag.Unsupported{at: posOf(mut st, lam)}
+    }
+    ids := desugar.CapIdents(mut st.d, i)
+    mut acc := desugar.ListRef(list1(mut st, list0(mut st)))
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        id := latN(mut st, ids, j)
+        if id == -1 {
+            return desugar.ListRef(-1), diag.Unsupported{at: posOf(mut st, lam)}
+        }
+        q := desugar.CapPend(mut st.d, i, j)
+        // 1 つ前までの形 × この捕捉の選択肢（普通の捕捉は型 1 つ・展開待ちは流れる行ごとの平たい形）
+        mut alts := desugar.ListRef(list0(mut st))
+        if q < 0 {
+            alts = desugar.ListRef(list1(mut st, list1(mut st, yType(mut st, id)?)))
+        } else {
+            for r <- iter.Range(0, desugar.PendN(mut st.d, q)) {
+                alts = listCat(mut st, alts, closShapes(mut st, desugar.PendRow(mut st.d, q, r), fuel - 1)?)
+            }
+        }
+        nx := desugar.ListRef(listN(mut st, lenL(mut st, acc) * lenL(mut st, alts)))
+        for a <- iter.Range(0, lenL(mut st, acc)) {
+            for b <- iter.Range(0, lenL(mut st, alts)) {
+                lput(mut st, nx, a * lenL(mut st, alts) + b, int(listCat(mut st, desugar.ListRef(latI(mut st, acc, a)), desugar.ListRef(latI(mut st, alts, b)))))
+            }
+        }
+        acc = nx
+    }
+    return acc, nil
+}
+
+// listCat は 2 つの列を繋いだ新しい列
+func listCat(st mut St, a desugar.ListRef, b desugar.ListRef) desugar.ListRef {
+    out := desugar.ListRef(listN(mut st, lenL(mut st, a) + lenL(mut st, b)))
+    for i <- iter.Range(0, lenL(mut st, a)) {
+        lput(mut st, out, i, latI(mut st, a, i))
+    }
+    for i <- iter.Range(0, lenL(mut st, b)) {
+        lput(mut st, out, lenL(mut st, a) + i, latI(mut st, b, i))
+    }
+    return out
+}
+
+// closK は鍵の記録 [next + 1, K, 形の列（鎖 [next + 1, 形] の頭 + 1）, 閉包の型（0 = まだ）, 関数型, 展開待ちの捕捉を持つか]（K = named fn type の宣言・
+// 匿名の関数型は K = -1 で関数型の構造が鍵）。無ければ -1
+func closK(st mut St, k int, ft int) int {
+    mut x := st.closKs - 1
+    while x >= 0 {
+        xk := desugar.HeapGet(mut st.d, x + 1)
+        if k >= 0 && xk == k || k < 0 && xk < 0 && fnTypeEql(mut st, desugar.HeapGet(mut st.d, x + 4), ft) {
+            return x
+        }
+        x = desugar.HeapGet(mut st.d, x) - 1
+    }
+    return -1
+}
+
+// closKOf は鍵の記録（無ければ作る）
+func closKOf(st mut St, k int, ft int) int {
+    r := closK(mut st, k, ft)
+    if r >= 0 {
+        return r
+    }
+    x := recN(mut st, 6)
+    desugar.HeapSet(mut st.d, x, st.closKs)
+    desugar.HeapSet(mut st.d, x + 1, k)
+    desugar.HeapSet(mut st.d, x + 2, 0)
+    desugar.HeapSet(mut st.d, x + 3, 0)
+    desugar.HeapSet(mut st.d, x + 4, ft)
+    desugar.HeapSet(mut st.d, x + 5, 0)
+    st.closKs = x + 1
+    return x
+}
+
+func closAddShape(st mut St, r int, tys desugar.ListRef) {
+    if closShapeIdx(mut st, r, tys) >= 0 {
+        return
+    }
+    // 形の鎖は末尾に足す（出現順 = variant の並び）
+    cell := rec4(mut st, 0, int(tys), 0, 0)
+    mut p := r + 2
+    while desugar.HeapGet(mut st.d, p) != 0 {
+        p = desugar.HeapGet(mut st.d, p) - 1
+    }
+    desugar.HeapSet(mut st.d, p, cell + 1)
+}
+
+// closShapeIdx は K の記録 r の形の列で tys と同じ形の添字（無ければ -1）
+func closShapeIdx(st mut St, r int, tys desugar.ListRef) int {
+    mut c := desugar.HeapGet(mut st.d, r + 2) - 1
+    mut i := 0
+    while c >= 0 {
+        s := desugar.ListRef(desugar.HeapGet(mut st.d, c + 1))
+        if lenL(mut st, s) == lenL(mut st, tys) {
+            mut eq := true
+            for j <- iter.Range(0, lenL(mut st, s)) {
+                if !tEql(mut st, latI(mut st, s, j), latI(mut st, tys, j)) {
+                    eq = false
+                }
+            }
+            if eq {
+                return i
+            }
+        }
+        c = desugar.HeapGet(mut st.d, c) - 1
+        i += 1
+    }
+    return -1
+}
+
+func closNShapes(st mut St, r int) int {
+    mut c := desugar.HeapGet(mut st.d, r + 2) - 1
+    mut i := 0
+    while c >= 0 {
+        c = desugar.HeapGet(mut st.d, c) - 1
+        i += 1
+    }
+    return i
+}
+
+func closShapeAt(st mut St, r int, i int) desugar.ListRef {
+    mut c := desugar.HeapGet(mut st.d, r + 2) - 1
+    mut j := 0
+    while j < i {
+        c = desugar.HeapGet(mut st.d, c) - 1
+        j += 1
+    }
+    return desugar.ListRef(desugar.HeapGet(mut st.d, c + 1))
+}
+
+func closHasCap(st mut St, r int) bool {
+    for i <- iter.Range(0, closNShapes(mut st, r)) {
+        if lenL(mut st, closShapeAt(mut st, r, i)) > 0 {
+            return true
+        }
+    }
+    return false
+}
+
+// closFields は形 tys の欄の列（[$c0, $c1, …] — 語のオフセットつき）と語数
+func closFields(st mut St, tys desugar.ListRef) Layout {
+    n := lenL(mut st, tys)
+    out := listN(mut st, n)
+    mut off := 0
+    for j <- iter.Range(0, n) {
+        t := latI(mut st, tys, j)
+        desugar.HeapSet(mut st.d, out + 1 + j, rec4(mut st, int(strCat(mut st, strLit(mut st, "$c"), decimal(mut st, j))), t, off, 0))
+        off += tWords(mut st, t)
+    }
+    return Layout{fields: out, words: off}
+}
+
+// closInfoNew は合成の struct / union の情報（レイアウト済み — SI_DECL = -3 が閉包の印）
+func closInfoNew(st mut St, tag int, key string, n int) int {
+    info := recN(mut st, n)
+    desugar.HeapSet(mut st.d, info, tag)
+    desugar.HeapSet(mut st.d, info + SI_DECL, -3)
+    desugar.HeapSet(mut st.d, info + SI_PKG, desugar.MainPkg(mut st.d))
+    desugar.HeapSet(mut st.d, info + SI_STATE, LDone)
+    desugar.HeapSet(mut st.d, info + SI_NEXT, -1)
+    desugar.HeapSet(mut st.d, info + SI_TY, rec4(mut st, tag, info, 0, 0))
+    desugar.HeapSet(mut st.d, info + SI_KEY, int(strLit(mut st, key)))
+    desugar.HeapSet(mut st.d, info + SI_ENV, -1)
+    desugar.HeapSet(mut st.d, info + SI_TARGS, -1)
+    return info
+}
+
+// closType は named fn type K（関数型 ft・名前の欄 name — K = -1 は匿名の関数型の構造が鍵）の値の型: 捕捉のある形を持つ鍵なら
+// 閉包の struct、でなければ -1（関数値 1 語のまま）
+func closType(st mut St, k int, ft int, name int) int {
+    r := closK(mut st, k, ft)
+    if r < 0 {
+        return -1
+    }
+    if desugar.HeapGet(mut st.d, r + 3) != 0 {
+        return desugar.HeapGet(mut st.d, r + 3)
+    }
+    ns := closNShapes(mut st, r)
+    mut envT := 0
+    if ns == 1 {
+        lay := closFields(mut st, closShapeAt(mut st, r, 0))
+        ei := closInfoNew(mut st, TStruct, "$env", SISZ)
+        desugar.HeapSet(mut st.d, ei + SI_FIELDS, lay.fields)
+        desugar.HeapSet(mut st.d, ei + SI_WORDS, lay.words)
+        envT = desugar.HeapGet(mut st.d, ei + SI_TY)
+    } else {
+        ui := closInfoNew(mut st, TUnion, "$env", SISZ)
+        vs := listN(mut st, ns)
+        mut mx := 0
+        for i <- iter.Range(0, ns) {
+            lay := closFields(mut st, closShapeAt(mut st, r, i))
+            desugar.HeapSet(mut st.d, vs + 1 + i, rec4(mut st, int(strCat(mut st, strLit(mut st, "$s"), decimal(mut st, i))), i, lay.fields, 0))
+            if lay.words > mx {
+                mx = lay.words
+            }
+        }
+        desugar.HeapSet(mut st.d, ui + SI_FIELDS, vs)
+        desugar.HeapSet(mut st.d, ui + SI_WORDS, 1 + mx)
+        envT = desugar.HeapGet(mut st.d, ui + SI_TY)
+    }
+    ci := closInfoNew(mut st, TStruct, "$closure", CLSZ)
+    fs := listN(mut st, 2)
+    fnT := rec4(mut st, TFnv, ft, 0, name)
+    desugar.HeapSet(mut st.d, fs + 1, rec4(mut st, int(strLit(mut st, "$code")), fnT, 0, 0))
+    desugar.HeapSet(mut st.d, fs + 2, rec4(mut st, int(strLit(mut st, "$env")), envT, 1, 0))
+    desugar.HeapSet(mut st.d, ci + SI_FIELDS, fs)
+    desugar.HeapSet(mut st.d, ci + SI_WORDS, 1 + tWords(mut st, envT))
+    desugar.HeapSet(mut st.d, ci + CL_K, r)
+    desugar.HeapSet(mut st.d, ci + CL_UNION, if ns == 1 { 0 } else { 1 })
+    desugar.HeapSet(mut st.d, ci + CL_FT, ft)
+    desugar.HeapSet(mut st.d, ci + CL_NAME, name)
+    t := desugar.HeapGet(mut st.d, ci + SI_TY)
+    desugar.HeapSet(mut st.d, r + 3, t)
+    return t
+}
+
+// isClosT は型 t が閉包の struct か
+func isClosT(st mut St, t int) bool {
+    if !isTag(mut st, t, TStruct) {
+        return false
+    }
+    info := desugar.HeapGet(mut st.d, t + 1)
+    return desugar.HeapGet(mut st.d, info + SI_DECL) == -3 && desugar.HeapGet(mut st.d, info + SI_KEY) >= 0 && strIs(mut st, hgetS(mut st, info + SI_KEY), "$closure")
+}
+
+// closFt は閉包の型 t の関数型
+func closFt(st mut St, t int) int {
+    return desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + CL_FT)
+}
+
+// closCapIdx は値の位置のラムダ lam の捕捉の表の行（無ければ -1）
+func closCapIdx(st mut St, lam desugar.NodeRef) int {
+    for i <- iter.Range(0, desugar.CapCount(mut st.d)) {
+        if desugar.CapLam(mut st.d, i) == lam {
+            return i
+        }
+    }
+    return -1
+}
+
+// liftClosure は値の位置のラムダ lam を閉包の型 ct の値にする: 持ち上げた関数（隠れ第 1 引数 = env の番地）+ 作成点の捕捉の写し
+func liftClosure(st mut St, lam desugar.NodeRef, ct int, at desugar.NodeRef) (Val, error?) {
+    info := desugar.HeapGet(mut st.d, ct + 1)
+    r := desugar.HeapGet(mut st.d, info + CL_K)
+    brw := st.liftBrw != 0
+    st.liftBrw = 0
+    ci := closCapIdx(mut st, lam)
+    if r < 0 || ci < 0 {
+        return Val{}, diag.Unsupported{at: posOf(mut st, at)}
+    }
+    // 捕捉は平たく数える（展開待ちの捕捉は束縛の閉包の実引数のラムダの捕捉に置き換わる — 脱糖器の capFlat と同じ順）
+    nc, ng := closFlatN(mut st, ci, brw, lam, 8)?
+    names := desugar.ListRef(listN(mut st, nc))
+    tys := desugar.ListRef(listN(mut st, nc))
+    cvals := listN(mut st, nc)
+    groups := listN(mut st, ng)
+    _, _ = closFlatFill(mut st, ci, names, tys, cvals, groups, 0, 0)
+    k := closShapeIdx(mut st, r, tys)
+    if k < 0 {
+        return Val{}, diag.Mismatch{at: posOf(mut st, at)}
+    }
+    un := desugar.HeapGet(mut st.d, info + CL_UNION) == 1
+    ft := desugar.HeapGet(mut st.d, info + CL_FT)
+    fi := liftLambdaFn(mut st, lam, ft, true, at)?
+    lay := closFields(mut st, tys)
+    // 記録 [next + 1, fi, 名前の列, 欄の列, union か, 捕捉の表の行, 展開待ちの閉包の列（前順）]
+    cr := recN(mut st, 7)
+    desugar.HeapSet(mut st.d, cr, st.closFns)
+    desugar.HeapSet(mut st.d, cr + 1, fi)
+    desugar.HeapSet(mut st.d, cr + 2, int(names))
+    desugar.HeapSet(mut st.d, cr + 3, lay.fields)
+    desugar.HeapSet(mut st.d, cr + 4, if un { 1 } else { 0 })
+    desugar.HeapSet(mut st.d, cr + 5, ci)
+    desugar.HeapSet(mut st.d, cr + 6, groups)
+    st.closFns = cr + 1
+    // 閉包の値: [code, (タグ,) 捕捉…]
+    p := newAgg(mut st, ct)
+    store(mut st, p, 0, funcaddr(mut st, infoAt(mut st, fi).ir))
+    mut base := 1
+    if un {
+        store(mut st, p, 1, iconst(mut st, k))
+        base = 2
+    }
+    for j <- iter.Range(0, nc) {
+        f := latI(mut st, desugar.ListRef(lay.fields), j)
+        storeVal(mut st, p, base + desugar.HeapGet(mut st.d, f + 2), latI(mut st, tys, j), desugar.HeapGet(mut st.d, cvals + 1 + j))
+    }
+    return Val{t: ct, v: p}, nil
+}
+
+// closFnRec は持ち上げた閉包の関数 fi の捕捉の記録（無ければ -1）
+func closFnRec(st mut St, fi int) int {
+    mut x := st.closFns - 1
+    while x >= 0 {
+        if desugar.HeapGet(mut st.d, x + 1) == fi {
+            return x
+        }
+        x = desugar.HeapGet(mut st.d, x) - 1
+    }
+    return -1
+}
+
+// closBind は持ち上げた閉包の関数 fi の入口: env の番地（仮引数 env）から自分の形の捕捉を名前に束ねる
+func closBind(st mut St, fi int, env0 int) {
+    x := closFnRec(mut st, fi)
+    if x < 0 {
+        return
+    }
+    env := itop(mut st, env0)
+    ci := desugar.HeapGet(mut st.d, x + 5)
+    ids := desugar.CapIdents(mut st.d, ci)
+    // 自分の捕捉は関数の scope へ。展開待ちの捕捉は実引数のラムダの捕捉だけを見る scope で閉包に束ね直し（後順）、その名前を最後の scope に置く。
+    // 関数の鎖は束ね直しの scope を見ない（同じ名前の別の束縛が本体に漏れない）
+    pend := listN(mut st, lenL(mut st, ids))
+    mut k := 0
+    mut g := 0
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        if desugar.CapPend(mut st.d, ci, j) >= 0 {
+            c, k2, g2 := closBindGroup(mut st, x, env, k, g)
+            desugar.HeapSet(mut st.d, pend + 1 + j, c)
+            k = k2
+            g = g2
+        } else {
+            closDeclK(mut st, x, env, k)
+            desugar.HeapSet(mut st.d, pend + 1 + j, -1)
+            k += 1
+        }
+    }
+    if g > 0 {
+        pushScope(mut st)
+        for j <- iter.Range(0, lenL(mut st, ids)) {
+            c := desugar.HeapGet(mut st.d, pend + 1 + j)
+            if c >= 0 {
+                declare(mut st, sA(nodeOf(mut st, latN(mut st, ids, j))), LClosure, cloAt(mut st, c).ft, c)
+            }
+        }
+        // 鎖 = 関数の scope（0）+ 最後の scope から先
+        ch := listN(mut st, 4)
+        desugar.HeapSet(mut st.d, ch + 1, 0)
+        desugar.HeapSet(mut st.d, ch + 2, 1)
+        desugar.HeapSet(mut st.d, ch + 3, st.nscope - 1)
+        desugar.HeapSet(mut st.d, ch + 4, VOPEN)
+        st.chain = ch
+    }
+}
+
+// closDeclK は持ち上げた閉包の記録 x の平たい捕捉の k 番目を名前に束ねる（env の番地 env から読む）
+func closDeclK(st mut St, x int, env int, k int) {
+    names := desugar.ListRef(desugar.HeapGet(mut st.d, x + 2))
+    lay := desugar.HeapGet(mut st.d, x + 3)
+    base := desugar.HeapGet(mut st.d, x + 4)
+    f := latI(mut st, desugar.ListRef(lay), k)
+    t := desugar.HeapGet(mut st.d, f + 1)
+    off := base + desugar.HeapGet(mut st.d, f + 2)
+    if isScalar(mut st, t) {
+        declare(mut st, desugar.StrRef(latI(mut st, names, k)), LVal, t, load(mut st, env, off))
+    } else {
+        slot := newAgg(mut st, t)
+        storeVal(mut st, slot, 0, t, fieldPtr(mut st, env, off))
+        declare(mut st, desugar.StrRef(latI(mut st, names, k)), LVal, t, slot)
+    }
+}
+
+// closBindGroup は展開待ちの捕捉 1 つ（記録 x の展開待ちの閉包の g 番目・平たい捕捉の k 番目から）を束ね直した閉包にする: 入れ子の展開待ちを先に（後順）、
+// 次に新しい scope へ実引数のラムダの捕捉と入れ子の名前を置き、その scope だけを鎖に持つ閉包を作る。(閉包, 次の k, 次の g)
+func closBindGroup(st mut St, x int, env int, k0 int, g0 int) (int, int, int) {
+    c0 := cloAt(mut st, latI(mut st, desugar.ListRef(desugar.HeapGet(mut st.d, x + 6)), g0))
+    lr := closCapIdx(mut st, c0.lambda)
+    ids := desugar.CapIdents(mut st.d, lr)
+    at := listN(mut st, lenL(mut st, ids))
+    mut k := k0
+    mut g := g0 + 1
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        if desugar.CapPend(mut st.d, lr, j) >= 0 {
+            c, k2, g2 := closBindGroup(mut st, x, env, k, g)
+            desugar.HeapSet(mut st.d, at + 1 + j, c)
+            k = k2
+            g = g2
+        } else {
+            desugar.HeapSet(mut st.d, at + 1 + j, -2 - k)
+            k += 1
+        }
+    }
+    pushScope(mut st)
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        v := desugar.HeapGet(mut st.d, at + 1 + j)
+        if v >= 0 {
+            declare(mut st, sA(nodeOf(mut st, latN(mut st, ids, j))), LClosure, cloAt(mut st, v).ft, v)
+        } else {
+            closDeclK(mut st, x, env, -2 - v)
+        }
+    }
+    ch := list2(mut st, st.nscope - 1, st.nscope)
+    c := table.Len(mut st.closures)
+    // 宛先の深度は関数の入口の後で決まる — closDestFix が埋める
+    table.Push(mut st.closures, Closure{lambda: c0.lambda, ft: c0.ft, pkg: c0.pkg, chain: ch, ret: desugar.HeapGet(mut st.d, st.rets + 1), inl: st.inlining, env: c0.env, dest: 0})
+    return c, k, g
+}
+
+// closDestFix は入口で束ね直した閉包（c0 から）の宛先の深度を関数の宛先にする（closBind は宛先の深度が決まる前に走る）
+func closDestFix(st mut St, c0 int) {
+    for c <- iter.Range(c0, table.Len(mut st.closures)) {
+        x := cloAt(mut st, c)
+        table.Set(mut st.closures, c, Closure{lambda: x.lambda, ft: x.ft, pkg: x.pkg, chain: x.chain, ret: x.ret, inl: x.inl, env: x.env, dest: st.destDepth})
+    }
+}
+
+// closFlatN は行 ci の平たい捕捉の数と展開待ちの閉包の数（いまの鎖で引く — 展開待ちは束縛の閉包の定義の鎖へ入れ替えて実引数のラムダの行を引く）
+func closFlatN(st mut St, ci int, brw bool, lam desugar.NodeRef, fuel int) (int, int, error?) {
+    if fuel == 0 {
+        return 0, 0, diag.Unsupported{at: posOf(mut st, lam)}
+    }
+    ids := desugar.CapIdents(mut st.d, ci)
+    mut n := 0
+    mut g := 0
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        nm := sA(nodeOf(mut st, latN(mut st, ids, j)))
+        l := lookup(mut st, nm)
+        if desugar.CapPend(mut st.d, ci, j) >= 0 {
+            // 展開待ち: 借りの位置のラムダだけ・束縛が展開の閉包で、実引数のラムダに流れの行があること
+            if !brw || l < 0 || desugar.HeapGet(mut st.d, l + 2) != LClosure {
+                return 0, 0, diag.Unsupported{at: posOf(mut st, lam)}
+            }
+            c := cloAt(mut st, desugar.HeapGet(mut st.d, l + 4))
+            lr := closCapIdx(mut st, c.lambda)
+            if lr < 0 || !desugar.CapFlow(mut st.d, lr) {
+                return 0, 0, diag.Unsupported{at: posOf(mut st, lam)}
+            }
+            saved := st.chain
+            st.chain = c.chain
+            n2, g2, e := closFlatN(mut st, lr, brw, lam, fuel - 1)
+            st.chain = saved
+            if e != nil {
+                return 0, 0, e
+            }
+            n += n2
+            g += 1 + g2
+        } else {
+            if l < 0 || desugar.HeapGet(mut st.d, l + 2) != LVal {
+                return 0, 0, diag.Unsupported{at: posOf(mut st, latN(mut st, ids, j))}
+            }
+            // 捕捉の資格（借りの実引数のラムダは同一性の型も可 — 寿命は借りの呼び出しの内側。(α-L0)）。FnCap はラベルの添字が analyzer の
+            // 1 語の集合の外（TOP に倒れて lower の公開関数の @errors が導出できない）— 拒否の種類は Unsupported
+            if !closCapOk(mut st, desugar.HeapGet(mut st.d, l + 3), 16, brw) {
+                return 0, 0, diag.Unsupported{at: posOf(mut st, lam)}
+            }
+            n += 1
+        }
+    }
+    return n, g, nil
+}
+
+// closFlatFill は行 ci の平たい捕捉を k 番目から埋め、展開待ちの閉包を g 番目から前順で積む（検査は closFlatN が済ませている）。(次の k, 次の g)
+func closFlatFill(st mut St, ci int, names desugar.ListRef, tys desugar.ListRef, cvals int, groups int, k0 int, g0 int) (int, int) {
+    ids := desugar.CapIdents(mut st.d, ci)
+    mut k := k0
+    mut g := g0
+    for j <- iter.Range(0, lenL(mut st, ids)) {
+        nm := sA(nodeOf(mut st, latN(mut st, ids, j)))
+        l := lookup(mut st, nm)
+        if desugar.CapPend(mut st.d, ci, j) >= 0 {
+            cl := desugar.HeapGet(mut st.d, l + 4)
+            desugar.HeapSet(mut st.d, groups + 1 + g, cl)
+            c := cloAt(mut st, cl)
+            saved := st.chain
+            st.chain = c.chain
+            k2, g2 := closFlatFill(mut st, closCapIdx(mut st, c.lambda), names, tys, cvals, groups, k, g + 1)
+            st.chain = saved
+            k = k2
+            g = g2
+        } else {
+            lput(mut st, names, k, int(nm))
+            lput(mut st, tys, k, desugar.HeapGet(mut st.d, l + 3))
+            desugar.HeapSet(mut st.d, cvals + 1 + k, desugar.HeapGet(mut st.d, l + 4))
+            k += 1
+        }
+    }
+    return k, g
+}
+
+// isFnValT は型 t が関数値（1 語）か閉包の struct か、その option か
+func isFnValT(st mut St, t int) bool {
+    if isTag(mut st, t, TOpt) {
+        return isFnValT(mut st, desugar.HeapGet(mut st.d, t + 1))
+    }
+    return isTag(mut st, t, TFnv) || isClosT(mut st, t)
+}
+
+// closCapOk は捕捉できる型か（desugar の capTyOk + 同一性の族 idDecl の lower の型での写し — check と build が同じ形を拒否する）:
+// スカラー・string・imm の slice / map と、その struct / option / union の組。関数値・mut の器・同一性の型（par.S / Task / 端点 / Pool / Local・
+// io.File・net.Conn / Listener — 欄を通して推移的に）は不可
+func closCapOk(st mut St, t int, fuel int, idok bool) bool {
+    if fuel == 0 {
+        return false
+    }
+    k := desugar.HeapGet(mut st.d, t)
+    switch k {
+    case TInt | TBool | TByte | TFloat | TNamed: return true
+    case TOpt: return closCapOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, idok)
+    case TSlice: return desugar.HeapGet(mut st.d, t + 2) == 0 && closCapOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, idok)
+    case TMap: return desugar.HeapGet(mut st.d, t + 3) == 0 && closCapOk(mut st, desugar.HeapGet(mut st.d, t + 1), fuel - 1, idok) && closCapOk(mut st, desugar.HeapGet(mut st.d, t + 2), fuel - 1, idok)
+    case TStruct | TUnion:
+        info := desugar.HeapGet(mut st.d, t + 1)
+        if closIdInfo(mut st, info) {
+            return idok
+        }
+        if desugar.HeapGet(mut st.d, info + SI_STATE) != LDone {
+            return false
+        }
+        fs := hgetL(mut st, info + SI_FIELDS)
+        for i <- iter.Range(0, lenL(mut st, fs)) {
+            f := latI(mut st, fs, i)
+            if k == TStruct {
+                if !closCapOk(mut st, desugar.HeapGet(mut st.d, f + 1), fuel - 1, idok) {
+                    return false
+                }
+            } else {
+                vfs := hgetL(mut st, f + 2)
+                for j <- iter.Range(0, lenL(mut st, vfs)) {
+                    if !closCapOk(mut st, desugar.HeapGet(mut st.d, latI(mut st, vfs, j) + 1), fuel - 1, idok) {
+                        return false
+                    }
+                }
+            }
+        }
+        return true
+    default: return false
+    }
+}
+
+// closIdInfo は struct の情報 info が同一性の族の型宣言か（desugar の idDeclName と同じ閉じた集合）
+func closIdInfo(st mut St, info int) bool {
+    d := desugar.HeapGet(mut st.d, info + SI_DECL)
+    if d < 0 {
+        return false
+    }
+    pp := pkgPath(mut st, desugar.HeapGet(mut st.d, info + SI_PKG))
+    nm := sA(nodeOf(mut st, desugar.NodeRef(d)))
+    if strIs(mut st, pp, "std/par") {
+        return strIs(mut st, nm, "S") || strIs(mut st, nm, "Task") || strIs(mut st, nm, "Tx") || strIs(mut st, nm, "Rx") || strIs(mut st, nm, "Pool") || strIs(mut st, nm, "Local")
+    }
+    if strIs(mut st, pp, "std/io") {
+        return strIs(mut st, nm, "File")
+    }
+    if strIs(mut st, pp, "std/net") {
+        return strIs(mut st, nm, "Conn") || strIs(mut st, nm, "Listener")
+    }
+    return false
+}
+
+// closBorrowFt は関数型 ft の仮引数のうち匿名の関数型（TFunc — named fn type の借りの仮引数）を値の型へ写す（その場で書き換える）:
+// 借りの位置の構造の鍵に捕捉のある形があれば閉包の struct、なければ関数値 1 語
+func closBorrowFt(st mut St, ft int) {
+    pl := hgetL(mut st, ft)
+    for i <- iter.Range(0, lenL(mut st, pl)) {
+        p := latI(mut st, pl, i)
+        if isTag(mut st, p, TFunc) {
+            ift := desugar.HeapGet(mut st.d, p + 1)
+            ct := closType(mut st, -1, ift, 0)
+            lput(mut st, pl, i, if ct >= 0 { ct } else { rec4(mut st, TFnv, ift, 0, 0) })
+        }
+    }
+}

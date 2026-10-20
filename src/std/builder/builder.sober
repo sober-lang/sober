@@ -1,6 +1,8 @@
 package builder
 
-// Builder[T] はコピーせずに成長する可変長の列（language.md 21 節の緩和策 2）。
+// コピーせずに成長する可変長の列 Builder[T]（積んでから Build で 1 本の slice にする — 添字で読み書きする大きな表なら std/table）
+
+// コピーせずに成長する可変長の列（language.md 21 節の緩和策 2）。
 // 固定長チャンクの鎖に積み、Build で連続 slice へ 1 回だけコピーする — 同じ region で
 // 他の割り当てと交錯して成長しても、成長のコピーによるゴミが出ない（総コスト O(n)）。
 //
@@ -19,6 +21,7 @@ type Builder[T] struct {
     // 空の mut ヘッダ。ゼロ値リテラル `Builder[T]{}` が束縛の region に作る — chunk の seed はこの写しなので、
     // Push を束縛より深い位置（再帰の中・式ブロックの中）から呼んでも seed は Builder の region に乗る
     // （mut slice の append はヘッダの region へ書く。同じ空ヘッダからの 2 回目以降の append は必ずコピー — 21 節）
+
     seed mut []T
     cur int
     fill int
@@ -28,7 +31,7 @@ type Builder[T] struct {
 
 const seeds = 24
 
-// Push は x を末尾に積む
+// x を末尾に積む
 func Push[T](b mut Builder[T], x T) {
     if len(b.chunks) == 0 {
         b.cur = 0 - 1
@@ -57,7 +60,7 @@ func Push[T](b mut Builder[T], x T) {
     b.n = b.n + 1
 }
 
-// PushAll は xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが
+// xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが
 // 要素ごとでなく chunk ごと。シリアライザ・パーサの積みの絶対値の的）
 func PushAll[T](b mut Builder[T], xs []T) {
     mut i := 0
@@ -82,17 +85,17 @@ func PushAll[T](b mut Builder[T], xs []T) {
     }
 }
 
-// PushStr は s のバイト列を末尾に積む（PushAll(b, bytes(s))）
-func PushStr(b mut Builder[byte], s string) {
+// s のバイト列を末尾に積む（PushAll(b, bytes(s))）
+func PushString(b mut Builder[byte], s string) {
     PushAll(mut b, bytes(s))
 }
 
-// Len は積んだ要素の個数
+// 積んだ要素の個数
 func Len[T](b mut Builder[T]) int {
     return b.n
 }
 
-// Get は i 番目（0 起点）に積んだ要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
+// i 番目（0 起点）に積んだ要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
 func Get[T](b mut Builder[T], i int) T {
     ok := i >= 0 && i < b.n
     // 範囲外は探索を 0 番で回し（巨大な i で容量の倍々が溢れないように）、chunk の列の外を指させて境界検査に落とす
@@ -111,7 +114,7 @@ func Get[T](b mut Builder[T], i int) T {
     return c[j - base]
 }
 
-// Build は積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
+// 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
 // Builder 自体は変えない（続けて Push できる）
 func Build[T](b mut Builder[T]) []T {
     mut out := mut []T{}

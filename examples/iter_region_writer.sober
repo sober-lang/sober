@@ -1,0 +1,33 @@
+package main
+
+// 入口で region を開く関数の自分の深度での呼び出しは「確保しうる」を伝えない（report-874 — io.Writer の遅い道 writerByteSlow が
+// 枠の空け〔writerSpill の端数の写し — 自分の region への確保〕を数え、io.WriteByte を呼ぶ反復ごとに軽い enter ≈ 14 命令を払っていた）の回帰例:
+// ① 外の Writer へ 1 バイトずつ書く反復は enter が消える ② 反復の中で作る Writer（束縛が反復の region — 枠の確保は本体の確保）は enter が残り、
+// 枠が関数の region に積もらない。scripts/iterregion.sh が形（llight 後の main の enter の数 = 入口 + ② の 1 つ = 2）と RSS（N と 10N で比例しない）を見る。
+// Flush しない（書いた分は 64 KiB の枠が満ちたときだけ書き出される — 既定の N では何も書かない。RSS の網は標準出力を捨てる）
+
+import "std/convert"
+import "std/io"
+import "std/os"
+
+func main() {
+    args := os.Args() catch return
+    mut n := 2000
+    if len(args) == 2 {
+        v, _ := convert.ParseInt(args[1])
+        n = v
+    }
+    mut w := io.Writer{}
+    mut i := 0
+    while i < n {
+        io.WriteByte(mut w, byte(65 + i % 26))
+        i += 1
+    }
+    mut k := 0
+    while k < n {
+        mut v := io.Writer{}
+        io.WriteByte(mut v, byte(65 + k % 26))
+        k += 1
+    }
+    println("wrote ${i + k}")
+}

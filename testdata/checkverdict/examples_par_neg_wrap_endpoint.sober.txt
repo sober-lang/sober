@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_wrap_endpoint.sober:16:27: a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)
-exit=1

@@ -1,0 +1,54 @@
+package main
+
+// parbudget の wait × deadline の網（段 3 の ④ — language.md 28 節「デッドライン」）: wait.sober と同じ形の scope に deadline: 0 を足す。期限が来ても
+// 待ち続け、入場できたら走らせる（期限は待ちを切らない）— 網は ① 全部の子が完走して出力が W 1 / 2 / 8 で一致 ② 待ちが起きた ③ 縮退が 0
+// ④ 子の io の口は全部 Expired（期限は子へ継がれる）
+
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/task"
+
+// 1 つの子 = 約 14 MB の作業域（int 175 万個）を作って畳む
+func work(k int) int {
+    n := 1835008
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        b = append(b, (i * 7 + k) % 100)
+    }
+    mut s := 0
+    for i <- iter.Range(0, n) {
+        s += b[i]
+    }
+    // 期限の後の io の口（Expired なら 1 — 子は scope の期限を継ぐ）
+    _, e := io.ReadFile("testdata/io/hello.txt")
+    t := switch e {
+    case nil: 0
+    case io.Expired{}: 1
+    default: 0
+    }
+    return s * 2 + t
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) > 1 && args[1] == "base" {
+        println(0)
+        return 0
+    }
+    mut ks := mut []int{}
+    for k <- iter.Range(0, 32) {
+        ks = append(ks, k)
+    }
+    xs := freeze(ks)
+    r, e := task.Run((s task.Scope) => {
+        ys, me := task.Map(xs, (x) => work(x), budget: 16 * task.MB)
+        mut t := 0
+        for y <- ys {
+            t += y
+        }
+        t
+    }, budget: 64 * task.MB, wait: true, deadline: 0)
+    println(r)
+    return 0
+}

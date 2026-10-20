@@ -1,0 +1,8 @@
+OTHER	outside-fn	testdata/refs/member/a/main.sober	470	475	9:12	func other(scale int) int {
+OTHER	outside-fn	testdata/refs/member/a/main.sober	498	503	10:12	return scale + 1
+TARGET	named-arg	testdata/refs/member/a/main.sober	582	587	15:22	r := m.Handle(q, scale: 3)
+OTHER	named-arg-other	testdata/refs/member/a/main.sober	704	709	17:19	println(other(scale: 4))
+OTHER	named-arg-in-interp	testdata/refs/member/a/main.sober	643	648	16:52	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+TARGET	named-arg-in-interp	testdata/refs/member/a/main.sober	668	673	16:77	println("${r.code} ${q.code} ${r.body} ${other(scale: 1)} ${m.Handle(q, scale: 2).code}")
+TARGET	param-decl	testdata/refs/member/m/m.sober	605	610	31:22	func Handle(req Req, scale int) Resp {
+TARGET	ref	testdata/refs/member/m/m.sober	654	659	32:32	r := Resp{code: req.code * scale, body: req.path}

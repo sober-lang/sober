@@ -1,6 +1,8 @@
 examples/annot.sober	error: Unsupported at tok 24 (rule annotation): annotation
+examples/annot_neg_unknown.sober	sober: parse error
 examples/bind.sober	error: Unsupported at tok 3 (rule bind_decl): top-level declaration kind
 examples/char_lit_nonascii.sober	sober: parse error
+examples/func_neg_method.sober	sober: parse error
 examples/named_fn_type_mixed.sober	sober: parse error
 examples/scope.sober	error: Unsupported at tok 33 (rule scope_expr): primary expression kind
 examples/struct.sober	error: Unsupported at tok 44 (rule type): type other than struct, union, error, or a function type

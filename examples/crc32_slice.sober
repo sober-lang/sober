@@ -1,0 +1,23 @@
+package main
+
+// std/hash/crc32 の slicing-by-8（report-725）: 長さ 0〜599 の擬似乱数列の CRC-32 を混ぜた値（期待値は zlib.crc32 で同じ列を作って計算 — 256 未満は
+// 1 バイトずつの道・256 以上は 8 バイトの語の道 + 端の 7 バイトまで）と RFC 1952 の照合値 0xcbf43926
+
+import "std/convert"
+import "std/hash/crc32"
+import "std/iter"
+
+func main() int {
+    // 長さ 0〜600 の擬似乱数列で slicing-by-8 ≡ 1 バイトずつ（256 未満は 1 バイトずつの道・以上は語の道 + 端）
+    mut b := mut []byte{}
+    mut x := 12345
+    mut sum := 0
+    for n <- iter.Range(0, 600) {
+        sum = sum ^ (crc32.Sum(freeze(b)) * (n + 1))
+        x = x * 1103515245 + 12345
+        b = append(b, byte((x >> 16) & 0xff))
+    }
+    println(convert.FormatInt(sum))
+    println(convert.FormatInt(crc32.Sum(bytes("123456789"))))
+    return 0
+}

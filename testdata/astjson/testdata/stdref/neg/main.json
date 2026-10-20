@@ -1,0 +1,35 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/negdoc",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/negnoen",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": []
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 16
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

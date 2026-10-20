@@ -1,0 +1,14 @@
+package main
+
+// 段 6 P5-3: budget: は呼び出し・割り算を含まない整数式（diag.Par kind 20 — check の経路は捨て・build は入場にだけ使う。評価の有無で観測が割れない形に限る）
+
+import "std/task"
+
+func size() int {
+    return 4096
+}
+
+func main() {
+    r, e := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => 1, budget: size())))
+    println(r)
+}

@@ -1,0 +1,206 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "route",
+      "type_params": [],
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "p",
+                    "tok": 13
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "const",
+                        "alts": [
+                          {
+                            "k": "strlit",
+                            "value": "/stream",
+                            "tok": 16
+                          }
+                        ]
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 18
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 15
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "const",
+                        "alts": [
+                          {
+                            "k": "strlit",
+                            "value": "/json",
+                            "tok": 21
+                          }
+                        ]
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 2,
+                            "tok": 23
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 20
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 27
+                      }
+                    }
+                  ]
+                },
+                "tok": 12
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 33
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "",
+                      " ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "route",
+                          "tok": 40
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "/json",
+                            "tok": 40
+                          }
+                        ],
+                        "tok": 40
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "route",
+                          "tok": 40
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "/x",
+                            "tok": 40
+                          }
+                        ],
+                        "tok": 40
+                      }
+                    ]
+                  },
+                  "tok": 40
+                }
+              ],
+              "tok": 39
+            }
+          }
+        ]
+      },
+      "tok": 34,
+      "bodiless": false,
+      "span": {
+        "start": 33,
+        "end": 45
+      },
+      "sig_end": 37
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,37 @@
+package main
+
+// language.md 11 節「本体の `?`」: scope の本体の `?` のラベルは scope の err に行き、囲みの関数の @errors（導出）には流れない
+// （analyzer — scope の err は開いた集合。scope の err を受けて自分のラベルに包み直す関数は Bad を宣言しなくてよい）
+
+import "std/task"
+
+type Bad error {}
+
+type Other error {}
+
+@errors(Bad)
+func get(n int) (int, error?) {
+    if n < 0 {
+        return 0, Bad{}
+    }
+    return n, nil
+}
+
+@errors(Other)
+func use(n int) (int, error?) {
+    r, e := task.Run((s task.Scope) => {
+        v := get(n)?
+        v + 1
+    })
+    if e != nil {
+        return 0, Other{}
+    }
+    return r, nil
+}
+
+func main() {
+    a, ea := use(4)
+    println("${a} ${ea == nil}")
+    b, eb := use(-1)
+    println("${b} ${eb == nil}")
+}

@@ -1,7 +1,7 @@
 // check ≟ build の差分オラクル（desugar 規律スイープ ③）: fuzz/progen の生成したプログラムを `sober check` と `sober build`（+ 実行）に通し、
 // 受理 / 拒否の食い違いを拾う。食い違いは行の単位（1 行の文か、{ … } の塊）を消す縮小で最小化して out/fuzz/ に置く。
 //   node --experimental-strip-types scripts/fuzz_cb.ts [--from N] [--count M] [--size S] [--keep] [--both] [--par]（--both = both-reject も縮めて残す・
-//   --par = progen に std/par の文を混ぜる〔段 6 P3a — 捕獲の 2 実装の網〕+ 既定と --no-opt の実行の観測〔stdout・終了コード〕を照合して食い違いを opt-diff に）
+//   --par = progen に std/task の文を混ぜる〔段 6 P3a — 捕獲の 2 実装の網〕+ 既定と --no-opt の実行の観測〔stdout・終了コード〕を照合して食い違いを opt-diff に）
 // 分類: ok = 両方受理 / both-reject = 両方拒否（生成器が型の合わないものを作った — 一致）/ check-only = check だけ受理（build が拒否 — check ⊃ build）/
 //       build-only = build だけ受理（check が拒否 — check ⊂ build。F 台帳の主な型）/ run-crash = 両方受理したが実行が 0 / 101 以外で終わった
 // 縮小した結果は既知族（F 台帳）の署名で振り分け、ファイル名に族を付ける（`build-only-Ff-s7-z3.sober` / 署名に当たらなければ `-new-`）。

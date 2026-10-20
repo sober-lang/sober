@@ -81,9 +81,9 @@ par_init "$tmp"
 if [ $# -gt 0 ]; then
     for e in "$@"; do par_run one "$ROOT" "$e"; done
 else
-    while IFS= read -r e; do par_run one "$ROOT" "$e"; done < <(frozen_list load)   # 凍結コーパス（主役交代 R39）
-    bsrc=$(boot_src)   # compiler/tools の入力は起点の木（凍結の入力）
-    for e in tools/lexdump tools/parsedump tools/fmtdump tools/loaderdump; do par_run one "$bsrc/compiler" "$e/main.sober"; done
+    while IFS= read -r e; do par_run one "$ROOT" "$e"; done < <(frozen_list load | grep -vxF -f <(grep -v '^#' scripts/frozen/load-retired.list | grep -v '^$'))   # 凍結コーパス（主役交代 R39）— 退役分を除く（scripts/frozen/load-retired.list）
+    # compiler/tools の 4 本（起点の木の lexdump / parsedump / fmtdump / loaderdump）は 2026-10-20 に退役（補間の合成の import の行き先が
+    # 凍結した std に無い — scripts/frozen/load-retired.list の同じ日の注）
     if [ -d testdata/loader_neg ]; then
         for e in testdata/loader_neg/*/app; do par_run one "$ROOT" "$e"; done
     fi

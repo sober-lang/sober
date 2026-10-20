@@ -1,0 +1,32 @@
+package wk
+
+// 置き場の T を宣言する package（欄は外から書けない — 整えはこの package の関数 Prep）
+
+import "std/iter"
+import "std/pool"
+
+const Size = 32
+
+type Work struct {
+    hits int
+    tab pool.Scratch
+}
+
+// Prep は置き場の整え（容量は定数）
+func Prep(w mut Work) {
+    pool.NewScratch(mut w.tab, Size * 2)
+}
+
+// Count は data の各値の出現を数え、最多の回数 × 1000 + 数えた数（tab と hits は毎回まっさらな前提）
+func Count(w mut Work, data []int) int {
+    mut best := 0
+    for i <- iter.Range(0, len(data)) {
+        v := pool.Load(mut w.tab, data[i]) + 1
+        pool.Store(mut w.tab, data[i], v)
+        if v > best {
+            best = v
+        }
+        w.hits += 1
+    }
+    return best * 1000 + w.hits
+}

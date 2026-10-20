@@ -1,0 +1,4 @@
+parse: ok
+broken pem: bad pem
+cert as key: bad key
+no certificate: bad pem

@@ -1,0 +1,84 @@
+package main
+
+// F-be（report-784）: scope の本体のループの中で NewChannel して give: で子へ渡す。チャネルの記録は字面に囲む最も外の scope の region に置く —
+// 反復の region に置くと反復の終わりで記録が死に、次の反復の NewChannel が子の持つ記録を上書きした（W1 = Deadlock・W2 以上 = stale endpoint）
+
+import "std/task"
+
+type Job struct {
+    k int
+    body []int
+}
+
+type St struct {
+    n int
+    got mut []int
+}
+
+// pack は親の状態を進めて送る値を作る（scope の本体から mut の親の状態を触る）
+func pack(st mut St, k int) Job {
+    st.n += 1
+    return Job{k, []int{k * 10, k + 1, st.n}}
+}
+
+func work(j Job) []int {
+    return []int{j.k, len(j.body), j.body[0] + j.body[2]}
+}
+
+// stream は群ごとに「チャネルを作る → give: で子を起こす → 送る」・終わった順でなく起こした順に積み戻す
+func stream(st mut St, n int) int {
+    r, e := task.Run((s task.Scope) => {
+        mut hs := mut []task.Handle[[]int]{}
+        mut i := 0
+        while i < n {
+            tx, rx := task.NewChannel[Job](cap: 1)
+            h := task.Spawn(s, (inp) => {
+                j := task.Recv(inp)
+                if j != nil { work(j) } else { []int{} }
+            }, give: rx)
+            hs = append(hs, h)
+            task.Send(tx, pack(mut st, i))
+            i += 1
+        }
+        mut j := 0
+        while j < len(hs) {
+            o := task.Join(hs[j])
+            st.got = append(st.got, o[0] * 1000 + o[2])
+            j += 1
+        }
+        len(hs)
+    })
+    return r
+}
+
+// sums は送り端を子へ渡す形（子が送り・親が受ける）を反復ごとに
+func sums(n int) int {
+    r, e := task.Run((s task.Scope) => {
+        mut acc := 0
+        mut i := 0
+        while i < n {
+            tx, rx := task.NewChannel[int](cap: 2)
+            k := i
+            h := task.Spawn(s, (out) => {
+                task.Send(out, k)
+                task.Send(out, k * k)
+                task.Close(out)
+                0
+            }, give: tx)
+            for v <- task.Recv(rx) {
+                acc += v
+            }
+            acc += task.Join(h)
+            i += 1
+        }
+        acc
+    })
+    return r
+}
+
+func main() {
+    mut st := St{}
+    println(stream(mut st, 12))
+    println("${st.n} ${len(st.got)} ${st.got[0]} ${st.got[11]}")
+    println(sums(10))
+}

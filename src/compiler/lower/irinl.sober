@@ -25,6 +25,12 @@ const IL_CALLER = 400
 // そのまま写す（意味は全部の写しと同じ — 数えないだけ）。予算は熱い命令で IL_GROW から引く（呼ぶ側の大きさは問わない — 的は大きい関数の
 // ループの中の std/utf8.Str: 熱い 70 命令前後・冷たい 45 命令）
 const IL_HOTINS = 80
+// 戻らない利用者の関数の種（730 — report-728 A）: error を返す return 文の印（bit4）を持たない関数も、戻らない利用者の関数
+// （ラベル panic の冷たい関数 binary.outOfRange / pool.badScratch 等 — rt.panic / rt.panic_mem / rt.* は除く）を呼ぶブロックを
+// 冷たい種にして部分インラインの資格を得る（的 = flate.insert: 呼び出しの固定費 ≈ 16 命令 × 8.4K 回/要求）。閾値は種別に分ける —
+// 既存の bit4 の道（IL_HOTINS）は変えない。rt.* を除くのは rt.deadlock を呼ぶ rt.task_wait（眠りの器）が 16 か所に写る巻き添えの実測から。
+// 数えは irinl 入力時点の本体（後段の cfgclean / m2r の掃除前 — insert は判定時 97 命令・熱い 82）
+const IL_PANICHOT = 100
 // 反復の軽い enter の展開（展開の予算の配り直し便 B — report-467 / 468）: rt.region_enter_lloop（ループの反復ごとの軽い region.enter — 熱い
 // 呼び出しの固定費の席。置き場は loopLight が決めるループの体の頭だけ）は、呼ぶ側の大きさ（IL_CALLER）と予算（IL_GROW）を問わず写す。ただし呼ぶ側の元の大きさは
 // IL_LLMAX まで（json.Parse〔3,033 命令〕の 1 点の写しで jsonapi +1.35% — 冷たいループの点の写しが同じ関数の熱いループの割り当てを押す族）。
@@ -39,7 +45,7 @@ func irInlineModule(st mut St) {
     mut vp := FnRef(-1)
     while f != -1 {
         frecs = append(frecs, int(f))
-        if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/utf8.validPrefix") {
+        if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/strings.validPrefix") {
             vp = f
         }
         if strIs(mut st, desugar.StrRef(irFnName(mut st, f)), "std/utf8.Check") {
@@ -72,6 +78,9 @@ func irInlineModule(st mut St) {
     xFill(mut hot, len(fr), -2)
     mut first := mut []int{}
     xFill(mut first, len(fr), 0)
+    // 呼び先（1 段）の本体に戻らない利用者の呼び出しがある候補も先に処理する（730 — 種は pool.Load / binary.Load64 の展開の後に
+    // しか候補の本体に現れないのに、呼び手〔greedy / lazy〕が候補より先に処理されると ilHot が種を見ない）。nrc = 判定のメモ（関数 → 0/1）
+    mut nrc := mut map[int]int{}
     for i <- iter.Range(0, len(fr)) {
         g := FnRef(fr[i])
         if okf[i] == 2 && irFnBHead(mut st, g) != -1 {
@@ -79,6 +88,22 @@ func irInlineModule(st mut St) {
             while b != -1 && first[i] == 0 {
                 if irBlkLoop(mut st, b) & 4 == 4 {
                     first[i] = 1
+                }
+                mut jj := irBlkIHead(mut st, b)
+                while jj != -1 && first[i] == 0 {
+                    if irInsOp(mut st, jj) == OpCall {
+                        cg := irInsFn(mut st, jj)
+                        v := nrc[int(cg)]
+                        c := if v != nil { v } else { 0 - 1 }
+                        w := if c >= 0 { c } else if ilNonretCallee(mut st, cg) { 1 } else { 0 }
+                        if c < 0 {
+                            nrc[int(cg)] = w
+                        }
+                        if w == 1 {
+                            first[i] = 1
+                        }
+                    }
+                    jj = irInsNext(mut st, jj)
                 }
                 b = irBlkNext(mut st, b)
             }
@@ -96,7 +121,35 @@ func irInlineModule(st mut St) {
     st.fn = save
 }
 
-// ilHot は g の熱い命令の数（error を返す return 文の印が無ければ -1）: 冷たい = exit で終わる・B_LOOP のビット 2（error を返す return 文）・入口でなく前任が全部冷たい
+// ilIsRt は関数名が "rt." で始まるか（rt の関数は戻らない種にしない — rt.deadlock を呼ぶ rt.task_wait〔眠りの器〕が写る巻き添え防止・730）
+func ilIsRt(st mut St, g FnRef) bool {
+    s := desugar.StrRef(irFnName(mut st, g))
+    return slen(mut st, s) >= 3 && sat(mut st, s, 0) == 'r' && sat(mut st, s, 1) == 't' && sat(mut st, s, 2) == '.'
+}
+
+// ilNonretSeed は呼び先 cg が「戻らない利用者の関数」の種か（rt.panic / rt.panic_mem は exit のブロックが既に冷たいので数えない・rt.* は除外 — 730）
+func ilNonretSeed(st mut St, cg FnRef) bool {
+    return cg != st.rtPanic && cg != st.rtPanicMem && !ilIsRt(mut st, cg) && !llReturns(mut st, cg)
+}
+
+// ilNonretCallee は g の本体（1 段）に戻らない利用者の関数の呼び出しがあるか（第 1 パスの先読み — 730）
+func ilNonretCallee(st mut St, g FnRef) bool {
+    mut b := irFnBHead(mut st, g)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, i)) {
+                return true
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return false
+}
+
+// ilHot は g の熱い命令の数（資格が無ければ -1）: 冷たい = exit で終わる・B_LOOP のビット 2（error を返す return 文）・入口でなく前任が全部冷たい。
+// bit4 の印が無い関数は、戻らない利用者の関数を呼ぶブロックを冷たい種にして資格を得る（730 — 戻りは +100000 で種別を符号化・閾値は IL_PANICHOT）
 func ilHot(st mut St, g FnRef) int {
     nb := irFnNBlk(mut st, g)
     mut cold := mut []int{}
@@ -114,7 +167,23 @@ func ilHot(st mut St, g FnRef) int {
         }
         b = irBlkNext(mut st, b)
     }
+    // 戻らない利用者の関数の種（bit4 が無いときだけ — 既存の bit4 の道の数えは変えない）
+    mut kind2 := false
     if !any {
+        b = entry
+        while b != -1 {
+            mut ii := irBlkIHead(mut st, b)
+            while ii != -1 {
+                if irInsOp(mut st, ii) == OpCall && ilNonretSeed(mut st, irInsFn(mut st, ii)) {
+                    cold[irBlkId(mut st, b)] = 1
+                    kind2 = true
+                }
+                ii = irInsNext(mut st, ii)
+            }
+            b = irBlkNext(mut st, b)
+        }
+    }
+    if !any && !kind2 {
         return -1
     }
     // 前任が全部冷たいブロックへ広げる（変わらなくなるまで）
@@ -162,7 +231,7 @@ func ilHot(st mut St, g FnRef) int {
         }
         b = irBlkNext(mut st, b)
     }
-    return n
+    return if kind2 { n + 100000 } else { n }
 }
 
 // ilSize は関数の命令の数（死んだ命令を除く）
@@ -448,12 +517,15 @@ func ilFunc(st mut St, f FnRef, fr []int, ok []int, hot mut []int) {
                     if hot[gi] == -2 {
                         hot[gi] = ilHot(mut st, g)
                     }
-                    h := hot[gi]
-                    if h >= 0 && h <= IL_HOTINS && len(inLoop) == 0 {
+                    // +100000 = 戻らない利用者の種の資格（730）— 閾値は IL_PANICHOT・既存の bit4 の道は IL_HOTINS のまま
+                    hc := hot[gi]
+                    h := if hc >= 100000 { hc - 100000 } else { hc }
+                    lim := if hc >= 100000 { IL_PANICHOT } else { IL_HOTINS }
+                    if h >= 0 && h <= lim && len(inLoop) == 0 {
                         inLoop = ilLoops(mut st, f)
                         loopOf = if irBlkId(mut st, blk) < len(inLoop) { inLoop[irBlkId(mut st, blk)] } else { -1 }
                     }
-                    if h >= 0 && h <= IL_HOTINS && grown + h <= IL_GROW && loopOf == 1 {
+                    if h >= 0 && h <= lim && grown + h <= IL_GROW && loopOf == 1 {
                         grown = grown + h
                         blk = ilCall(mut st, f, blk, ins, g)
                     }

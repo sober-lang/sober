@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_cap.sober:10:39: task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)
+exit=1

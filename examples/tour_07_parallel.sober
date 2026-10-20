@@ -1,7 +1,7 @@
 package main
 
 import "std/iter"
-import "std/par"
+import "std/task"
 
 // Tour 7: parallelism — structured concurrency, channels (docs/guide/tour.md)
 
@@ -10,43 +10,43 @@ func fib(n int) int {
 }
 
 func main() int {
-    // par.Map: one task per element — results come back in input order
+    // task.Map: one task per element — results come back in input order
     mut ns := mut []int{}
     for i <- iter.Range(20, 26) {
         ns = append(ns, i)
     }
-    fs, err := par.Map(ns, (n) => fib(n))
+    fs, err := task.Map(ns, (n) => fib(n))
     if err != nil {
         return 1
     }
     for f <- fs {
         println(f)
     }
-    // par.Scope: child tasks always join before the scope ends
-    r, e := par.Scope((s par.S) => {
-        a := par.Spawn(s, () => fib(24))
-        b := par.Spawn(s, () => fib(25))
-        par.Join(a) + par.Join(b)
+    // task.Run: child tasks always join before the scope ends
+    r, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => fib(24))
+        b := task.Spawn(s, () => fib(25))
+        task.Join(a) + task.Join(b)
     })
     if e == nil {
         println(r)
     }
     // channels
-    r2, e2 := par.Scope((s par.S) => {
-        tx, rx := par.NewChan[int](cap: 4)
-        h := par.Spawn(s, (out) => {
+    r2, e2 := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 4)
+        h := task.Spawn(s, (out) => {
             for i <- iter.Range(1, 4) {
-                par.Send(out, i * 10)
+                task.Send(out, i * 10)
             }
-            par.Close(out)
+            task.Close(out)
             0
         }, give: tx)
         // for-Recv: receive until the channel is closed
         mut got := 0
-        for v <- par.Recv(rx) {
+        for v <- task.Recv(rx) {
             got += v
         }
-        par.Join(h) + got
+        task.Join(h) + got
     })
     if e2 == nil {
         println(r2)

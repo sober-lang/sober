@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_neg_valcap.sober:17:58: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
+exit=1

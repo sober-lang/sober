@@ -1,0 +1,7 @@
+package main
+
+func g() int {
+    mut b := 0
+    two(mut b, mut b)
+    return b
+}

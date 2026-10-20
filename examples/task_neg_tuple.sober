@@ -1,0 +1,12 @@
+package main
+
+// P3b 残穴1: 多値の型 `(T, error?)` は std/task の Task の型引数にだけ（diag.Par kind 18 — 一般の匿名タプル型は入れない）
+
+type Box[T] struct {
+    v T
+}
+
+func main() {
+    xs := mut []Box[(int, error?)]{}
+    println(len(xs))
+}

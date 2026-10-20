@@ -1,0 +1,151 @@
+package pem
+
+// PEM（RFC 7468 — "-----BEGIN <label>-----" 〜 "-----END <label>-----" の間の base64）の読み。証明書の鎖（CERTIFICATE が複数）と鍵（PRIVATE KEY）を同じ関数で読む。塊は書かれた順のまま返す（TLS の証明書の鎖は葉が先頭）。中身（der）の解釈はしない — PKCS#8 の RSA の鍵は rsa.ParsePKCS8 へ（TLS の設定は tls.Parse / tls.Load が両方をまとめて読む）
+// base64 の綴りの検査は厳格（標準の字母・'=' の詰めは末尾だけ・行の間の空白と改行は飛ばす）
+
+import "std/iter"
+
+// 1 つの PEM の塊（label = BEGIN の後ろの名前・der = 中身）
+type Block struct {
+    label string
+    der []byte
+}
+
+// PEM の形が違う（BEGIN と END が対にならない・base64 の綴りが違う）
+type Bad error
+
+// text の中の PEM の塊の全部（塊の外の行は無視 — RFC 7468 の説明文の扱い）
+@errors(Bad)
+func Parse(text string) ([]Block, error?) {
+    lines := splitLines(bytes(text))
+    mut out := mut []Block{}
+    mut i := 0
+    while i < len(lines) {
+        l := lines[i]
+        label := between(l, "-----BEGIN ", "-----")
+        if label == nil {
+            i = i + 1
+            continue
+        }
+        endLine := "-----END ${label}-----"
+        mut body := mut []byte{}
+        mut j := i + 1
+        mut found := false
+        while j < len(lines) && !found {
+            if bytesToString(lines[j]) == endLine {
+                found = true
+            } else {
+                for k <- iter.Range(0, len(lines[j])) {
+                    body = append(body, lines[j][k])
+                }
+                j = j + 1
+            }
+        }
+        if !found {
+            return []Block{}, Bad{}
+        }
+        der, e := base64(freeze(body))
+        if e {
+            return []Block{}, Bad{}
+        }
+        out = append(out, Block{label: label, der: der})
+        i = j + 1
+    }
+    return freeze(out), nil
+}
+
+// splitLines は改行で切った行（行末の CR と前後の空白は落とす）
+func splitLines(b []byte) [][]byte {
+    mut out := mut [][]byte{}
+    mut cur := mut []byte{}
+    for i <- iter.Range(0, len(b) + 1) {
+        if i == len(b) || b[i] == byte(10) {
+            out = append(out, trim(freeze(cur)))
+            cur = mut []byte{}
+        } else {
+            cur = append(cur, b[i])
+        }
+    }
+    return freeze(out)
+}
+
+func trim(b []byte) []byte {
+    mut s := 0
+    mut e := len(b)
+    while s < e && (b[s] == byte(32) || b[s] == byte(9) || b[s] == byte(13)) {
+        s = s + 1
+    }
+    while e > s && (b[e - 1] == byte(32) || b[e - 1] == byte(9) || b[e - 1] == byte(13)) {
+        e = e - 1
+    }
+    mut out := mut []byte{}
+    for i <- iter.Range(s, e) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}
+
+// between は l が pre で始まり post で終わるならその間（でなければ nil）
+func between(l []byte, pre string, post string) string? {
+    p := bytes(pre)
+    q := bytes(post)
+    if len(l) < len(p) + len(q) {
+        return nil
+    }
+    for i <- iter.Range(0, len(p)) {
+        if l[i] != p[i] {
+            return nil
+        }
+    }
+    for i <- iter.Range(0, len(q)) {
+        if l[len(l) - len(q) + i] != q[i] {
+            return nil
+        }
+    }
+    mut mid := mut []byte{}
+    for i <- iter.Range(len(p), len(l) - len(q)) {
+        mid = append(mid, l[i])
+    }
+    return bytesToString(freeze(mid))
+}
+
+// base64 は標準の字母の base64 の中身（第 2 の値 = 綴りが違う）
+func base64(s []byte) ([]byte, bool) {
+    if len(s) % 4 != 0 {
+        return []byte{}, true
+    }
+    mut out := mut []byte{}
+    for g <- iter.Range(0, len(s) / 4) {
+        mut v := 0
+        mut pad := 0
+        for k <- iter.Range(0, 4) {
+            c := int(s[4 * g + k])
+            d := sixBits(c)
+            if c == 61 {
+                // '=' は最後の組の末尾 1〜2 文字だけ
+                if g != len(s) / 4 - 1 || k < 2 {
+                    return []byte{}, true
+                }
+                pad = pad + 1
+                v = v << 6
+            } else {
+                if d < 0 || pad > 0 {
+                    return []byte{}, true
+                }
+                v = (v << 6) | d
+            }
+        }
+        out = append(out, byte((v >> 16) & 0xff))
+        if pad < 2 {
+            out = append(out, byte((v >> 8) & 0xff))
+        }
+        if pad < 1 {
+            out = append(out, byte(v & 0xff))
+        }
+    }
+    return freeze(out), false
+}
+
+func sixBits(c int) int {
+    return if c >= 65 && c <= 90 { c - 65 } else if c >= 97 && c <= 122 { c - 71 } else if c >= 48 && c <= 57 { c + 4 } else if c == 43 { 62 } else if c == 47 { 63 } else { -1 }
+}

@@ -1,8 +1,8 @@
 package main
 
-// conv.ParseFloat（Clinger の速い道つき — 仮数 ≤ 2^53・|指数| ≤ 22 は float の乗除 1 回）の差分: float_parse と同じ入力と Go の答え（scripts/oracles/float_parse.go）
+// convert.ParseFloat（Clinger の速い道つき — 仮数 ≤ 2^53・|指数| ≤ 22 は float の乗除 1 回）の差分: float_parse と同じ入力と Go の答え（scripts/oracles/float_parse.go）
 
-import "std/conv"
+import "std/convert"
 import "std/math"
 import "std/io"
 
@@ -15,11 +15,11 @@ func main() int {
             i += 1
         }
         t, terr := string(b[s:i])
-        f, err := conv.ParseFloat(t)
+        f, err := convert.ParseFloat(t)
         v := math.Bits(f)
         st := switch err {
         case nil: 0
-        case conv.InvalidFloat{}: 1
+        case convert.InvalidFloat{}: 1
         default: 2
         }
         println(if st == 1 { 0 } else { v }, st)

@@ -1,0 +1,78 @@
+package main
+
+// 段 6 P3b-4: region を持つ task の結果（境界コピー — 子の region で作った値・捕獲した親の値を scope の region へ写す。formal.md の xfer）。
+// 子が待っている間に親が block の region を開いて閉じても、Join が読む結果は scope の region にある
+
+import "std/task"
+
+type Pair struct {
+    name string
+    n int
+}
+
+func describe(p Pair) string {
+    return p.name + "${p.n}"
+}
+
+func build(n int) []int {
+    mut xs := mut []int{}
+    mut i := 0
+    while i < n {
+        xs = append(xs, i * 3)
+        i += 1
+    }
+    return xs
+}
+
+func main() {
+    tag := "par"
+    r, e := task.Run((s task.Scope) => {
+        h1 := task.Spawn(s, () => "lit")
+        h2 := task.Spawn(s, () => {
+            w := "co" + "py"
+            w + "-" + tag
+        })
+        h3 := task.Spawn(s, () => build(4))
+        h4 := task.Spawn(s, () => Pair{name: tag + "!", n: 7})
+        tx, rx := task.NewChannel[int](cap: 1)
+        // 子は受信を待ってから結果を作る — その間に親は block の region で確保して閉じる
+        h5 := {
+            junk := "tmp" + tag
+            if len(bytes(junk)) > 99 {
+                println("never")
+            }
+            task.Spawn(s, (in) => {
+                k := task.Recv(in)
+                mut out := ""
+                if k != nil {
+                    out = "got" + "-" + "late"
+                }
+                out
+            }, give: rx)
+        }
+        x := {
+            pad := "pad" + tag + tag
+            len(bytes(pad))
+        }
+        task.Send(tx, x)
+        a := task.Join(h1)
+        b := task.Join(h2)
+        xs := task.Join(h3)
+        p := describe(task.Join(h4))
+        late := task.Join(h5)
+        t := switch task.Try(h2) {
+        case task.Ok{v}: v
+        case task.Failed{}: "dead"
+        case task.Died{cause}: "dead"
+        }
+        mut sum := 0
+        for v <- xs {
+            sum += v
+        }
+        a + " " + b + " " + p + " " + late + " " + t + " " + "${sum}"
+    })
+    if e != nil {
+        println("err")
+    }
+    println(r)
+}

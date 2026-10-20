@@ -1,6 +1,6 @@
 # seq ≡ par の対（scripts/seqpar.sh — 1 行 = 並列の例と逐次の双子）
-examples/par_capture.sober examples/par_capture_seq.sober
-examples/par_def.sober examples/par_def_seq.sober
-examples/par_chan_regions.sober examples/par_chan_regions_seq.sober
-examples/par_print_chan.sober examples/par_print_chan_seq.sober
-examples/par_scope_try.sober examples/par_scope_try_seq.sober
+examples/task_capture.sober examples/task_capture_seq.sober
+examples/task_def.sober examples/task_def_seq.sober
+examples/task_chan_regions.sober examples/task_chan_regions_seq.sober
+examples/task_print_chan.sober examples/task_print_chan_seq.sober
+examples/task_scope_try.sober examples/task_scope_try_seq.sober

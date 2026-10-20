@@ -3,6 +3,7 @@ package main
 // utf8 の型つき証人（第三便 M13）: 全体を 1 回 Check し、文字境界で切った部分列は Str が検査し直さずに string にする。
 // 境界でない位置で切ると InvalidUtf8（継続バイトの位置）・不正な列は Check が拒否・証人を経ない string() は今までどおり検査
 
+import "std/strings"
 import "std/utf8"
 
 func main() int {
@@ -14,7 +15,7 @@ func main() int {
         t, err := utf8.Str(v, cuts[k], cuts[k + 1])
         if err != nil {
             switch err {
-            case utf8.InvalidUtf8{pos}: println("not a boundary at ${pos}")
+            case strings.InvalidUtf8{pos}: println("not a boundary at ${pos}")
             }
         } else {
             println("[${t}] ${len(bytes(t))}")
@@ -26,7 +27,7 @@ func main() int {
     w, err := utf8.Check(bad)
     if err != nil {
         switch err {
-        case utf8.InvalidUtf8{pos}: println("invalid at ${pos}")
+        case strings.InvalidUtf8{pos}: println("invalid at ${pos}")
         }
     }
     println(len(utf8.Bytes(w)))

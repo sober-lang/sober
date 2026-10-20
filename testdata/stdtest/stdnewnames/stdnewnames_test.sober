@@ -1,0 +1,57 @@
+package stdnewnames
+
+// 総再審 便 3 の第 1 相（2026-10-20 — report-900）で足した口の網: strings.Valid / IndexInvalid（std/utf8 の写し）・hex.Format / Parse（Encode / Decode の
+// 新しい名前）・convert.FormatInt（strings.FormatInt の写し）。表は stdutf8 の写しで、旧い口と同じ値になることも照合する（第 2 相で旧い口が消えるまで）
+
+import "std/convert"
+import "std/hex"
+import "std/iter"
+import "std/strings"
+
+type Case struct {
+    b []byte
+    at int
+}
+
+func TestStringsIndexInvalid() {
+    cases := []Case{
+        Case{b: []byte{}, at: 0 - 1},
+        Case{b: []byte{104, 105}, at: 0 - 1},
+        Case{b: []byte{195, 169}, at: 0 - 1},
+        Case{b: []byte{192, 128}, at: 0},
+        Case{b: []byte{194}, at: 0},
+        Case{b: []byte{65, 227, 129, 65}, at: 1},
+        Case{b: []byte{237, 160, 128}, at: 0},
+        Case{b: []byte{240, 159, 152, 128}, at: 0 - 1},
+        Case{b: []byte{244, 144, 128, 128}, at: 0},
+        Case{b: []byte{97, 98, 128, 99}, at: 2},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        got := strings.IndexInvalid(c.b)
+        assert(got == c.at)
+        assert(got == strings.IndexInvalid(c.b))
+        assert(strings.Valid(c.b) == (c.at < 0))
+    }
+}
+
+func TestHexFormatParse() {
+    b := []byte{0, 1, 127, 128, 254, 255}
+    s := hex.Format(b)
+    assert(s == "00017f80feff")
+    back, err := hex.Parse("00017F80FEff")
+    assert(err == nil)
+    assert(hex.Format(back) == s)
+    _, odd := hex.Parse("abc")
+    assert(odd != nil)
+    _, bad := hex.Parse("zz")
+    assert(bad != nil)
+}
+
+func TestConvertFormatInt() {
+    assert(convert.FormatInt(0) == "0")
+    assert(convert.FormatInt(1234567890) == "1234567890")
+    assert(convert.FormatInt(-9223372036854775807 - 1) == "-9223372036854775808")
+    assert(convert.FormatInt(9223372036854775807) == "9223372036854775807")
+    assert(convert.FormatInt(-42) == "-42")
+}

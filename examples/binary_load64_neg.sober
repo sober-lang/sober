@@ -1,0 +1,14 @@
+package main
+
+// std/binary の Load64 の負の添字（report-723）: i < 0 は panic(binary.OutOfRange{i, n})（exit 101 — i + 8 ≤ len(b) でも先頭より前は読まない）
+
+import "std/binary"
+
+func main() {
+    b := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+    mut i := 3
+    while i >= -1 {
+        println("${binary.Load64(b, i) & 255}")
+        i -= 2
+    }
+}

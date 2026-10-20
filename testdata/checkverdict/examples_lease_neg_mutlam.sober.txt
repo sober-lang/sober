@@ -1,0 +1,2 @@
+sober: load error at examples/lease_neg_mutlam.sober:18:32: a mut lambda parameter is written only as the window of task.Lease / task.NewLocal
+exit=1

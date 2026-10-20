@@ -1,0 +1,203 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Gen",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "n"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "R",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "g",
+            "type": {
+              "k": "name",
+              "name": "Gen"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "dbl",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 30
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 32
+                },
+                "tok": 31
+              }
+            ],
+            "tok": 29
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 36
+      },
+      "sig_end": 28
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "ident",
+                "name": "dbl",
+                "tok": 43
+              }
+            ],
+            "tok": 41
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "R",
+                "elems": [
+                  {
+                    "key": "g",
+                    "value": {
+                      "k": "ident",
+                      "name": "f",
+                      "tok": 51
+                    }
+                  }
+                ],
+                "tok": 47,
+                "type_args": []
+              }
+            ],
+            "tok": 45
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 54
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "b",
+                      "tok": 56
+                    },
+                    "field": "g",
+                    "tok": 58
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 60
+                    }
+                  ],
+                  "tok": 59
+                }
+              ],
+              "tok": 55
+            }
+          }
+        ]
+      },
+      "tok": 37,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 66
+      },
+      "sig_end": 40
+    }
+  ],
+  "consts": []
+}

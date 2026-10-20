@@ -1,0 +1,140 @@
+package lower
+
+// ワーカー局所の lease の rt（region-domain-pool.md 4d 節 — std/par・std/pool の写し先の口 lease_op / lease_view）。
+// 置き場は par.Local の imm の列 blk（NewLocal を呼んだ region に住む）で、ワーカーごとの区画 [印, 鎖, 欄ごとに (tag, 語 …)] を持つ。
+// - 印を取る（op 2）: 区画の印が 0 なら 1 にして今の task の鎖（TC_LEASE — 印の番地の列・区画の鎖の語で繋ぐ）の頭に積む。使用中なら 0（倒れ）
+// - 返す（op 3）: 印を 0 にして鎖の頭を外す（窓は字面のブロックで defer が返す — 鎖は LIFO）
+// - 死の出口: task の鎖を頭から歩いて印を外す（rt.lease_drain — fd_drain と同じ所。縮退した子は入る前の頭まで）
+// std/par を使わない（task の無い）プログラムは鎖を持たない（死 = プロセスの終わり）。区画の語の読み書き（op 4 / 5）は rt の呼び出しの中 —
+// imm の列の語を書くので、最適化から見える load / store にしない（呼び出しは不透明な境界）
+
+import "desugar"
+import "diag"
+
+const TC_LEASE = TC_DL + 1
+
+// needLease は rt.lease_op（と task のあるプログラムなら rt.lease_drain）を（初出なら）宣言する
+func needLease(st mut St) {
+    lsNeed(mut st, NEED_LEASE, 0)
+    if st.rtLeaseOp == -1 {
+        st.rtLeaseOp = addFunc(mut st, int(strLit(mut st, "rt.lease_op")), desugar.ListRef(list4(mut st, TyI64, TyI64, TyI64, TyI64)), TyI64)
+        if st.taskUse {
+            st.rtLeaseDrain = addFunc(mut st, int(strLit(mut st, "rt.lease_drain")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+        }
+    }
+}
+
+// leaseBuiltin は鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）の呼び出し（cont.sober の ioBuiltin から）
+func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
+    n := lenL(mut st, args)
+    vs := listN(mut st, n)
+    mut i := 0
+    while i < n {
+        v := expr(mut st, latN(mut st, args, i))?
+        if isTag(mut st, v.t, TNever) {
+            return -1, nil
+        }
+        // blk は仮引数の 2 番目（op）/ 1 番目（view）— []int のヘッダ。他は int
+        isBlk := (k == 29 && i == 1) || (k == 30 && i == 0)
+        if isBlk != isTag(mut st, v.t, TSlice) || (!isBlk && !isTag(mut st, v.t, TInt)) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        desugar.HeapSet(mut st.d, vs + 1 + i, v.v)
+        i += 1
+    }
+    a := leaseArg(mut st, vs, 0)
+    if k == 29 {
+        needLease(mut st)
+        blk := desugar.HeapGet(mut st.d, vs + 2)
+        return one1(mut st, tInt(mut st), call(mut st, st.rtLeaseOp, list4(mut st, a, load(mut st, blk, 0), desugar.HeapGet(mut st.d, vs + 3), desugar.HeapGet(mut st.d, vs + 4)))), nil
+    }
+    // View: ptr = blk の先頭 + off 語・長さ n・深度 = blk の深度（語は blk の住む region にある — 外への写しの判断は blk と同じ）
+    t := mkSlice(mut st, tInt(mut st), true)
+    out := newAgg(mut st, t)
+    off := desugar.HeapGet(mut st.d, vs + 2)
+    store(mut st, out, 0, bin(mut st, BAdd, load(mut st, a, 0), bin(mut st, BShl, off, iconst(mut st, 3))))
+    store(mut st, out, 1, desugar.HeapGet(mut st.d, vs + 3))
+    store(mut st, out, 2, load(mut st, a, 2))
+    return one1(mut st, t, out), nil
+}
+
+// leaseArg は値の列 vs の i 番目
+func leaseArg(st mut St, vs int, i int) int {
+    return desugar.HeapGet(mut st.d, vs + 1 + i)
+}
+
+// buildLeaseRt は rt.lease_op(op, p, off, v)・rt.lease_drain(tcb, stop)（使うプログラムだけ — lower の最後）
+func buildLeaseRt(st mut St) {
+    if st.rtLeaseOp == -1 {
+        return
+    }
+    begin(mut st, st.rtLeaseOp)
+    op := 0
+    addr := itop(mut st, bin(mut st, BAdd, 1, bin(mut st, BShl, 2, iconst(mut st, 3))))
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    // op 0: ワーカーの数・op 1: 今のワーカーの番号（task の無いプログラムは 1 本 = 0 番）
+    b0 := branchIf(mut st, cmp(mut st, CEq, op, zero))
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_N) } else { one })
+    setCur(mut st, b0)
+    b1 := branchIf(mut st, cmp(mut st, CEq, op, one))
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.wkG), WK_ID) } else { zero })
+    setCur(mut st, b1)
+    // op 4: 生の読み・op 5: 生の書き
+    b4 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 4)))
+    ret(mut st, load(mut st, addr, 0))
+    setCur(mut st, b4)
+    b5 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 5)))
+    store(mut st, addr, 0, 3)
+    ret(mut st, zero)
+    setCur(mut st, b5)
+    // op 3: 返す（印を外し、鎖の頭を区画の鎖の語へ）
+    b3 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)))
+    store(mut st, addr, 0, zero)
+    if st.taskUse {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, me, TC_LEASE, load(mut st, addr, 1))
+    }
+    ret(mut st, zero)
+    setCur(mut st, b3)
+    // op 2: 取る（使用中なら 0）。変異 15（網の自己検査 — schedfuzz）: 印を見ずに取る（窓の中で譲った task の置き場を別の窓が共有する）
+    bFree := branchIf(mut st, if st.rtMut == 15 { iconst(mut st, 0) } else { cmp(mut st, CNe, load(mut st, addr, 0), zero) })
+    ret(mut st, zero)
+    setCur(mut st, bFree)
+    store(mut st, addr, 0, one)
+    if st.taskUse {
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, addr, 1, load(mut st, me, TC_LEASE))
+        store(mut st, me, TC_LEASE, ptoi(mut st, addr))
+    }
+    ret(mut st, one)
+    if st.rtLeaseDrain == -1 {
+        return
+    }
+    // lease_drain(tcb, stop): 鎖の頭が stop になるまで印を外す（死・切られた子は stop = 0 で全部 — 窓の defer が走らない）
+    begin(mut st, st.rtLeaseDrain)
+    tcb := 0
+    stop := 1
+    loop := newBlock(mut st)
+    v := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, tcb, TC_LEASE)))
+    setCur(mut st, loop)
+    more := branchIf(mut st, cmp(mut st, CEq, v, stop))
+    br(mut st, done, -1)
+    setCur(mut st, more)
+    p := itop(mut st, v)
+    nx := load(mut st, p, 1)
+    store(mut st, p, 0, iconst(mut st, 0))
+    br(mut st, loop, list1(mut st, nx))
+    setCur(mut st, done)
+    store(mut st, tcb, TC_LEASE, stop)
+    ret(mut st, -1)
+}
+
+// leaseDrainCall は子の入口の出口で task の鎖に残った lease の印を外す（fdDrainCall から — 死・切られた子は窓の defer が走らない）
+func leaseDrainCall(st mut St) {
+    if st.rtLeaseDrain != -1 {
+        call(mut st, st.rtLeaseDrain, list2(mut st, 0, iconst(mut st, 0)))
+    }
+}

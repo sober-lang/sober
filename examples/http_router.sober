@@ -1,0 +1,123 @@
+package main
+
+// http のルーター（report-850 / 852）: ルートの表 `[]http.Route`（静的 / :name / *name のパターン）・Mount / Merge の合成・mw の before / after（外→内・内→外）・
+// short-circuit・404 / 405 / HEAD → GET・優先順は表の並びに依らない（静的 > :name > *name）。ネットの代わりに recv が決まった要求の列を 1 切片で渡し、
+// send が応答を印字する（examples/http_servewith の形 — 行末の CR は外して印字）
+
+import "std/http"
+
+// or は nil を "-" に
+func or(s string?) string {
+    return if s != nil { s } else { "-" }
+}
+
+func getUser(r http.Request) http.Response {
+    return http.Text("user ${or(http.Param(r, "id"))}\n")
+}
+
+func me(r http.Request) http.Response {
+    return http.Text("me\n")
+}
+
+func static(r http.Request) http.Response {
+    return http.Text("file [${or(http.Param(r, "rest"))}]\n")
+}
+
+func top(r http.Request) http.Response {
+    return http.Text("top ${or(http.Param(r, "name"))}\n")
+}
+
+func create(r http.Request) http.Response {
+    return http.Response{status: 201, contentType: "text/plain", body: r.body}
+}
+
+func health(r http.Request) http.Response {
+    return http.Text("ok\n")
+}
+
+// auth は X-Token の無い要求を 401 で止める（short-circuit）
+func auth(r http.Request) http.Response? {
+    println("  auth before ${r.pattern}")
+    if http.Header(r, "x-token") == nil {
+        return http.Status(401)
+    }
+    return nil
+}
+
+func authAfter(r http.Request, w http.Response) http.Response {
+    println("  auth after")
+    return w
+}
+
+func logBefore(r http.Request) http.Response? {
+    println("  log before ${r.method} ${r.path}")
+    return nil
+}
+
+func logAfter(r http.Request, w http.Response) http.Response {
+    println("  log after")
+    return w
+}
+
+func users() []http.Route {
+    return []http.Route{
+        http.Route{method: "GET", path: "/:id", handler: getUser},
+        http.Route{method: "GET", path: "/me", handler: me},
+        http.Route{method: "POST", path: "/", handler: create}}
+}
+
+func files() []http.Route {
+    return []http.Route{http.Route{method: "GET", path: "/*rest", handler: static}, http.Route{method: "GET", path: "/:name", handler: top}}
+}
+
+func app(rev bool) []http.Route {
+    am := http.Middleware{before: auth, after: authAfter}
+    lm := http.Middleware{before: logBefore, after: logAfter}
+    a := http.Mount("/users", users(), []http.Middleware{am})
+    b := http.Merge(http.Mount("/static", files(), []http.Middleware{}), []http.Route{http.Route{method: "GET", path: "/health", handler: health}})
+    rs := if rev { http.Merge(b, a) } else { http.Merge(a, b) }
+    return http.Mount("", rs, []http.Middleware{lm})
+}
+
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println(string(freeze(out)) catch "?")
+    return nil
+}
+
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    return nil
+}
+
+func serve(rs []http.Route, reqs string) {
+    e := http.ServeWith((k) => feed(reqs, k), (b) => show(b), (r) => http.Dispatch(rs, r))
+    println(e == nil)
+}
+
+func main() {
+    reqs := "GET /users/42 HTTP/1.1\r\nX-Token: t\r\n\r\n" +
+        "GET /users/me HTTP/1.1\r\nX-Token: t\r\n\r\n" +
+        "GET /users/7 HTTP/1.1\r\n\r\n" +
+        "POST /users/ HTTP/1.1\r\nX-Token: t\r\nContent-Length: 3\r\n\r\nabc" +
+        "GET /static/css/a.css HTTP/1.1\r\n\r\n" +
+        "GET /static HTTP/1.1\r\n\r\n" +
+        "GET /static/a.css HTTP/1.1\r\n\r\n" +
+        "HEAD /health HTTP/1.1\r\n\r\n" +
+        "DELETE /health HTTP/1.1\r\n\r\n" +
+        "GET /nope HTTP/1.1\r\nConnection: close\r\n\r\n"
+    rs := app(false)
+    // 表を歩く（introspect — 全ルートが見える）
+    for x <- rs {
+        println("${x.method} ${x.path} mw=${len(x.middleware)}")
+    }
+    serve(rs, reqs)
+    // 表の並びを入れ替えても同じ（優先順は並びに依らない）
+    println("-- reversed")
+    serve(app(true), reqs)
+}

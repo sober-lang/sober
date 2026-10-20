@@ -1,0 +1,19 @@
+package main
+
+// 借りの関数値は欄に入れられない（(α-L0) — 匿名の関数型の欄も・格納は借りの外）
+
+type Stream func(emit func(n int) int) int
+
+type Box struct {
+    f func(n int) int
+}
+
+type Resp struct {
+    stream Stream?
+}
+
+func main() {
+    r := Resp{stream: (emit) => len([]Box{Box{f: emit}})}
+    st := r.stream
+    if st != nil { println(st((n int) => n)) }
+}

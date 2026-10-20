@@ -12,8 +12,7 @@ import "diag"
 
 // nodeRules は規則の束の最初の拒否（無ければ nil）
 @errors(diag.CatchLhs, diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
-func nodeRules(cx Cx) error? {
-    ft := fnTab(cx)
+func nodeRules(cx Cx, ft FnTab) error? {
     sl := sealedTab(cx)
     // 同一性の項の表と、項ごとの「持つ族」の不動点（identityx.sober — 候補の列の初め = 裸の型パラメータの欄を持つ総称の項）
     es := idEntries(cx)
@@ -31,6 +30,13 @@ func nodeRules(cx Cx) error? {
         }
     }
     idHolds(cx, es, nm, mut hold)
+    // ワーカー 2 以上はファイルごとの子で（finpar.sober — 席 D の D-2）。子の死は下の直の道で検査し直す
+    if finParOn(len(cx.trees)) {
+        pe, ok := rulesPar(cx, ft, sl, es, nm, clone(hold))
+        if ok {
+            return pe
+        }
+    }
     // 規則 0〜4（多値の束縛・生成元の印・封・同一性・mut 実引数）の最初の位置: [ファイル + 1, 字句, kind] の 3 語ずつ（0 = 無し）。
     // catch の左辺は最初の規則なので、見つけたらその場で返す
     mut hit := mut []int{}
@@ -38,43 +44,17 @@ func nodeRules(cx Cx) error? {
         hit = append(hit, 0)
     }
     for f <- iter.Range(0, len(cx.trees)) {
-        t := cx.trees[f]
-        std := strings.HasPrefix(cx.pkg_path[cx.file_pkg[f]], "std/")
-        for i <- iter.Range(0, len(t.nodes)) {
-            x := t.nodes[i]
-            if x.kind == ast.SBind {
-                if isCatchBind(t, i) {
-                    if catchLhsBad(cx, ft, f, x) {
-                        return diag.CatchLhs{at: diag.Pos{file: f, tok: x.tok}}
-                    }
-                } else if hit[0] == 0 && multiBindBad(cx, ft, f, x) {
-                    noteHit(mut hit, 0, f, x.tok, 0)
-                }
-            } else if x.kind == ast.EFor {
-                if hit[3] == 0 {
-                    k, tok := forHit(cx, ft, f, x)
-                    if k > 0 {
-                        noteHit(mut hit, 1, f, tok, k)
-                    }
-                }
-            } else if x.kind == ast.EComposite {
-                if hit[6] == 0 && len(sl) > 0 && sealedLit(cx, sl, f, x) {
-                    noteHit(mut hit, 2, f, x.tok, 0)
-                }
-                if hit[9] == 0 && !std {
-                    k := idComposite(cx, es, nm, mut hold, f, x)
-                    if k > 0 {
-                        noteHit(mut hit, 3, f, x.tok, k)
-                    }
-                }
-            } else if hit[12] == 0 && (x.kind == ast.ECall || x.kind == ast.EPipe) {
-                at := aliasIn(t, if x.kind == ast.ECall { x.b } else { x.c })
-                if at >= 0 {
-                    noteHit(mut hit, 4, f, t.nodes[at].tok, 0)
-                }
-            }
+        c := nodeRulesIn(cx, ft, sl, es, nm, mut hold, f, mut hit)
+        if c >= 0 {
+            return diag.CatchLhs{at: diag.Pos{file: f, tok: c}}
         }
     }
+    return nrPick(freeze(hit))
+}
+
+// nrPick は規則 0〜4 の最初の位置の表 hit（noteHit の 3 語ずつ）から、規則の順で最初の拒否（無ければ nil）
+@errors(diag.MultiBind, diag.ForFallible, diag.Sealed, diag.Identity, diag.MutAlias)
+func nrPick(hit []int) error? {
     if hit[0] > 0 {
         return diag.MultiBind{at: diag.Pos{file: hit[0] - 1, tok: hit[1]}}
     }
@@ -98,4 +78,46 @@ func noteHit(hit mut []int, r int, f int, tok int, kind int) {
     hit[r * 3] = f + 1
     hit[r * 3 + 1] = tok
     hit[r * 3 + 2] = kind
+}
+
+// nodeRulesIn はファイル f の全節の 1 回の走査: catch の左辺の拒否はその字句を返す（以降は見ない）。他の規則は hit にまだ無いものだけ書く（無ければ -1。
+// finpar.sober の子は空の hit で同じ関数を呼ぶ — 規則ごとの最初の位置はファイルの中の節の順なので、ファイルの順に畳めば逐次と同じ）
+func nodeRulesIn(cx Cx, ft FnTab, sl []int, es []int, nm []string, hold mut []int, f int, hit mut []int) int {
+    t := cx.trees[f]
+    std := strings.HasPrefix(cx.pkg_path[cx.file_pkg[f]], "std/")
+    for i <- iter.Range(0, len(t.nodes)) {
+        x := t.nodes[i]
+        if x.kind == ast.SBind {
+            if isCatchBind(t, i) {
+                if catchLhsBad(cx, ft, f, x) {
+                    return x.tok
+                }
+            } else if hit[0] == 0 && multiBindBad(cx, ft, f, x) {
+                noteHit(mut hit, 0, f, x.tok, 0)
+            }
+        } else if x.kind == ast.EFor {
+            if hit[3] == 0 {
+                k, tok := forHit(cx, ft, f, x)
+                if k > 0 {
+                    noteHit(mut hit, 1, f, tok, k)
+                }
+            }
+        } else if x.kind == ast.EComposite {
+            if hit[6] == 0 && len(sl) > 0 && sealedLit(cx, sl, f, x) {
+                noteHit(mut hit, 2, f, x.tok, 0)
+            }
+            if hit[9] == 0 && !std {
+                k := idComposite(cx, es, nm, mut hold, f, x)
+                if k > 0 {
+                    noteHit(mut hit, 3, f, x.tok, k)
+                }
+            }
+        } else if hit[12] == 0 && (x.kind == ast.ECall || x.kind == ast.EPipe) {
+            at := aliasIn(t, if x.kind == ast.ECall { x.b } else { x.c })
+            if at >= 0 {
+                noteHit(mut hit, 4, f, t.nodes[at].tok, 0)
+            }
+        }
+    }
+    return 0 - 1
 }

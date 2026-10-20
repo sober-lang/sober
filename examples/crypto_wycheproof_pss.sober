@@ -1,0 +1,82 @@
+package main
+
+// Wycheproof（testdata/wycheproof/README.md）の RSASSA-PSS 2048・SHA-256・MGF1-SHA256 の検証（salt 32 = 108 件・salt 0）を std/crypto/rsa.VerifyPSS に通す
+// （report-795 — 署名は乱数の salt なので網は検証側で張る。署名後の自己検証も同じ検証器）。valid = 受理・invalid = 拒否。食い違った tcId を印字する
+
+import "std/crypto/rsa"
+import "std/hex"
+import "std/iter"
+import "std/json"
+
+@embed("testdata/wycheproof/rsa_pss_2048_sha256_mgf1_*_test.json")
+const Files = map[string]string{}
+
+type PssKey struct {
+    modulus string
+    publicExponent string
+}
+
+type PssTest struct {
+    tcId int
+    msg string
+    sig string
+    result string
+}
+
+type PssGroup struct {
+    sLen int
+    publicKey PssKey
+    tests []PssTest
+}
+
+type PssFile struct {
+    testGroups []PssGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func file(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func run(name string, src string) {
+    d, err := json.Parse(bytes(src))
+    if err != nil {
+        println(name, "parse error")
+        return
+    }
+    f, derr := json.Decode[PssFile](d, json.Root(d))
+    if derr != nil {
+        println(name, "decode error")
+        return
+    }
+    mut n := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        pub, ke := rsa.NewPublic(unhex(g.publicKey.modulus), unhex(g.publicKey.publicExponent))
+        for t <- g.tests {
+            n = n + 1
+            ok := ke == nil && rsa.VerifyPSS(pub, unhex(t.msg), unhex(t.sig), g.sLen)
+            if ok != (t.result == "valid") {
+                bad = append(bad, t.tcId)
+            }
+        }
+    }
+    println("${name}: ${n} tests, ${len(bad)} failed")
+    for i <- iter.Range(0, len(bad)) {
+        println("  fail tcId ${bad[i]}")
+    }
+}
+
+func main() {
+    fs := Files
+    run("rsa-pss-2048-sha256-mgf1-32", file(fs, "testdata/wycheproof/rsa_pss_2048_sha256_mgf1_32_test.json"))
+    run("rsa-pss-2048-sha256-mgf1-0", file(fs, "testdata/wycheproof/rsa_pss_2048_sha256_mgf1_0_test.json"))
+}

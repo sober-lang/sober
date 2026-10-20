@@ -1,0 +1,17 @@
+// 名前つきプールを spawn なしで使うプログラム（F-bm の網 — 2026-10-19）: NewPool / Fail / Ledger だけでも task の rt（rt.pool_new・rt.ledger の
+// 本体が読む台帳の大域）が建つ。修理前は rt.pool_new 等が空の関数のまま x86 に渡り、build が ICE（check は受理）
+package main
+
+import "std/task"
+
+func main() {
+    p := task.NewPool(4 * task.KB, nil)
+    q := task.NewPool(2 * task.KB, p)
+    task.MarkFailed(q)
+    task.MarkFailed(q)
+    l := task.Ledger()
+    println("pools ${len(l.pools)}")
+    for v <- l.pools {
+        println("pool ${v.id} parent ${v.parent} cap ${v.cap} tasks ${v.tasks} fail ${v.fail}")
+    }
+}

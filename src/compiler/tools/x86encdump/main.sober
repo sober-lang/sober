@@ -87,6 +87,34 @@ func main() {
             x86.SarRegImm(mut c, a, sh)
             line(mut c, at, "sar ${regName(a)}, ${sh}")
         }
+        for k <- iter.Range(0, 4) {
+            sh := if k == 0 { 1 } else if k == 1 { 2 } else if k == 2 { 62 } else { 63 }
+            at = x86.Here(mut c)
+            x86.ShrRegImm(mut c, a, sh)
+            line(mut c, at, "shr ${regName(a)}, ${sh}")
+        }
+        // mulx（RSA の続き — report-864）: hi × lo × src の全組（hi ≠ lo）
+        for b2 <- iter.Range(0, 16) {
+            for s2 <- iter.Range(0, 16) {
+                if b2 != a {
+                    at = x86.Here(mut c)
+                    x86.MulxRRR(mut c, a, b2, s2)
+                    line(mut c, at, "mulx ${regName(a)}, ${regName(b2)}, ${regName(s2)}")
+                }
+            }
+        }
+        // adcx / adox / sbb（RSA の続き (イ-b) — report-866）: 全組
+        for s2 <- iter.Range(0, 16) {
+            at = x86.Here(mut c)
+            x86.AdcxRR(mut c, a, s2)
+            line(mut c, at, "adcx ${regName(a)}, ${regName(s2)}")
+            at = x86.Here(mut c)
+            x86.AdoxRR(mut c, a, s2)
+            line(mut c, at, "adox ${regName(a)}, ${regName(s2)}")
+            at = x86.Here(mut c)
+            x86.SbbRegReg(mut c, a, s2)
+            line(mut c, at, "sbb ${regName(a)}, ${regName(s2)}")
+        }
         at = x86.Here(mut c)
         x86.IdivReg(mut c, a)
         line(mut c, at, "idiv ${regName(a)}")
@@ -177,6 +205,41 @@ func main() {
                 at = x86.Here(mut c)
                 x86.MovzxRegMem8(mut c, a, b, d)
                 line(mut c, at, "movzx ${regName(a)}, byte ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.AddRegMem(mut c, a, b, d)
+                line(mut c, at, "add ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.SubRegMem(mut c, a, b, d)
+                line(mut c, at, "sub ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.AndRegMem(mut c, a, b, d)
+                line(mut c, at, "and ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.OrRegMem(mut c, a, b, d)
+                line(mut c, at, "or ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.XorRegMem(mut c, a, b, d)
+                line(mut c, at, "xor ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.CmpRegMem(mut c, a, b, d)
+                line(mut c, at, "cmp ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.ImulRegMem(mut c, a, b, d)
+                line(mut c, at, "imul ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.AdcxRM(mut c, a, b, -1, 0, d)
+                line(mut c, at, "adcx ${regName(a)}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.AdoxRM(mut c, a, b, -1, 0, d)
+                line(mut c, at, "adox ${regName(a)}, qword ptr ${mem(b, d)}")
+                if a != b {
+                    at = x86.Here(mut c)
+                    x86.MulxRM(mut c, a, b, b, -1, 0, d)
+                    line(mut c, at, "mulx ${regName(a)}, ${regName(b)}, qword ptr ${mem(b, d)}")
+                    at = x86.Here(mut c)
+                    x86.MulxRM(mut c, b, a, b, -1, 0, d)
+                    line(mut c, at, "mulx ${regName(b)}, ${regName(a)}, qword ptr ${mem(b, d)}")
+                }
             }
         }
         // SIB の load / store（性能投資 第二便 M7）: reg × base × index（rsp を除く）× 倍率 1 / 8 × disp 0 / -8 / 4096
@@ -201,6 +264,18 @@ func main() {
                             at = x86.Here(mut c)
                             x86.MovMem8RegSib(mut c, b, ix, sc, d, a)
                             line(mut c, at, "mov byte ptr ${m}, ${reg8Name(a)}")
+                            at = x86.Here(mut c)
+                            x86.AdoxRM(mut c, a, b, ix, sc, d)
+                            line(mut c, at, "adox ${regName(a)}, qword ptr ${m}")
+                            at = x86.Here(mut c)
+                            x86.AdcxRM(mut c, a, b, ix, sc, d)
+                            line(mut c, at, "adcx ${regName(a)}, qword ptr ${m}")
+                            lo2 := (a + 1 + ix) % 16
+                            if lo2 != a {
+                                at = x86.Here(mut c)
+                                x86.MulxRM(mut c, a, lo2, b, ix, sc, d)
+                                line(mut c, at, "mulx ${regName(a)}, ${regName(lo2)}, qword ptr ${m}")
+                            }
                         }
                     }
                 }
@@ -245,6 +320,9 @@ func main() {
     atP := x86.Here(mut c)
     x86.Pause(mut c)
     line(mut c, atP, "pause")
+    atC := x86.Here(mut c)
+    x86.Cpuid(mut c)
+    line(mut c, atC, "cpuid")
     // SSE2（第三便のベクトル化スパイク）: xmm × xmm の 6 形・pmovmskb / movq の xmm × 汎用・movdqu の [base + index]・bsf
     for a <- iter.Range(0, 16) {
         for b <- iter.Range(0, 16) {
@@ -269,6 +347,45 @@ func main() {
             at = x86.Here(mut c)
             x86.PandnXX(mut c, a, b)
             line(mut c, at, "pandn xmm${a}, xmm${b}")
+            // CRC-32 の折り畳み（report-774）: pand・pclmulqdq の imm の 4 形
+            at = x86.Here(mut c)
+            x86.PandXX(mut c, a, b)
+            line(mut c, at, "pand xmm${a}, xmm${b}")
+            for im <- iter.Range(0, 4) {
+                imm := (im & 1) | ((im >> 1) << 4)
+                at = x86.Here(mut c)
+                x86.PclmulqdqXXI(mut c, a, b, imm)
+                line(mut c, at, "pclmulqdq xmm${a}, xmm${b}, ${imm}")
+            }
+            // AES-GCM（report-796）: aesenc / aesenclast / pshufb・aeskeygenassist と pshufd の imm・32 ビットのレーンのずらし
+            at = x86.Here(mut c)
+            x86.AesencXX(mut c, a, b)
+            line(mut c, at, "aesenc xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.AesenclastXX(mut c, a, b)
+            line(mut c, at, "aesenclast xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.PadddXX(mut c, a, b)
+            line(mut c, at, "paddd xmm${a}, xmm${b}")
+            at = x86.Here(mut c)
+            x86.PshufbXX(mut c, a, b)
+            line(mut c, at, "pshufb xmm${a}, xmm${b}")
+            rcons := []int{1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 0, 255}
+            at = x86.Here(mut c)
+            x86.AeskeygenassistXXI(mut c, a, b, rcons[b % 12])
+            line(mut c, at, "aeskeygenassist xmm${a}, xmm${b}, ${rcons[b % 12]}")
+            at = x86.Here(mut c)
+            x86.PshufdXXI(mut c, a, b, (a * 16 + b * 7) & 255)
+            line(mut c, at, "pshufd xmm${a}, xmm${b}, ${(a * 16 + b * 7) & 255}")
+            at = x86.Here(mut c)
+            x86.PslldXI(mut c, a, b * 2)
+            line(mut c, at, "pslld xmm${a}, ${b * 2}")
+            at = x86.Here(mut c)
+            x86.PsrldXI(mut c, a, b * 2 + 1)
+            line(mut c, at, "psrld xmm${a}, ${b * 2 + 1}")
+            at = x86.Here(mut c)
+            x86.PsradXI(mut c, a, b * 2)
+            line(mut c, at, "psrad xmm${a}, ${b * 2}")
             at = x86.Here(mut c)
             x86.PmovmskbRX(mut c, a, b)
             line(mut c, at, "pmovmskb ${reg32Name(a)}, xmm${b}")
@@ -349,6 +466,9 @@ func main() {
             at = x86.Here(mut c)
             x86.PsrldqXI(mut c, a, k)
             line(mut c, at, "psrldq xmm${a}, ${k}")
+            at = x86.Here(mut c)
+            x86.PsrlqXI(mut c, a, k * 4)
+            line(mut c, at, "psrlq xmm${a}, ${k * 4}")
         }
         for b <- iter.Range(0, 16) {
             for k <- iter.Range(0, len(disps)) {

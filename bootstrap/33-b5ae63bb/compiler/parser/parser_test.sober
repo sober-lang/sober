@@ -1,0 +1,72 @@
+package parser
+
+// parser の単体テスト: @layout の印と struct の欄の `[N]T`（language.md 36 節）— 受ける形・拒否する形・節の欄
+
+import "ast"
+import "lexer"
+import "std/iter"
+
+func parses(src string) bool {
+    b := bytes(src)
+    t, ok := Parse(b, lexer.Lex(b))
+    return ok
+}
+
+// kindCount は src を読んだ木の種類 k の節の数（読めなければ -1）
+func kindCount(src string, k int) int {
+    b := bytes(src)
+    t, ok := Parse(b, lexer.Lex(b))
+    if !ok {
+        return -1
+    }
+    mut n := 0
+    for i <- iter.Range(0, len(t.nodes)) {
+        if t.nodes[i].kind == k {
+            n += 1
+        }
+    }
+    return n
+}
+
+// firstOf は src を読んだ木の種類 k の最初の節（無ければ kind = 0）
+func firstOf(src string, k int) ast.Node {
+    b := bytes(src)
+    t, ok := Parse(b, lexer.Lex(b))
+    if ok {
+        for i <- iter.Range(0, len(t.nodes)) {
+            if t.nodes[i].kind == k {
+                return t.nodes[i]
+            }
+        }
+    }
+    return ast.Node{kind: 0, tok: 0, a: 0, b: 0, c: 0, d: 0, e: 0, f: 0}
+}
+
+func TestLayoutMark() {
+    src := "package main\n\n@layout\ntype H struct {\n    kind u16le\n}\n"
+    assert(parses(src))
+    assert(firstOf(src, ast.KTypeDecl).f == 1)
+    assert(firstOf("package main\n\ntype H struct {\n    kind int\n}\n", ast.KTypeDecl).f == 0)
+    // 同じ行・ほかの注釈と並べても
+    assert(parses("package main\n\n@layout type H struct {\n    kind u8\n}\n"))
+}
+
+func TestLayoutRejects() {
+    // 型宣言でないものへの @layout・引数つき（@layout(c) は範囲外）・@errors との同居
+    assert(!parses("package main\n\n@layout\nfunc f() {\n}\n"))
+    assert(!parses("package main\n\n@layout(c)\ntype H struct {\n    kind u8\n}\n"))
+    assert(!parses("package main\n\n@layout\n@errors(E)\ntype H struct {\n    kind u8\n}\n"))
+}
+
+func TestArrayField() {
+    src := "package main\n\ntype H struct {\n    ident [16]u8\n    xs [4]u32le\n}\n"
+    assert(kindCount(src, ast.TArray) == 2)
+    x := firstOf(src, ast.TArray)
+    assert(x.a == 16)
+    // 欄の型の最上段の外（仮引数・slice の要素・長さが式）は文法の拒否
+    assert(!parses("package main\n\nfunc f(x [4]u8) {\n}\n"))
+    assert(!parses("package main\n\ntype H struct {\n    xs [][4]u8\n}\n"))
+    assert(!parses("package main\n\ntype H struct {\n    xs [2 + 2]u8\n}\n"))
+    // 既存の形は変わらない
+    assert(kindCount("package main\n\ntype H struct {\n    xs []int\n}\n", ast.TArray) == 0)
+}

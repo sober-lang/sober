@@ -1,0 +1,55 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/internal/hs",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "hs",
+                    "tok": 13
+                  },
+                  "field": "Version",
+                  "tok": 15
+                }
+              ],
+              "tok": 12
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 20
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

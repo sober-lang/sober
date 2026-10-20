@@ -4,7 +4,7 @@ package main
 // 素直な形（Go の双子 bench/nbody/go と同じアルゴリズム・同じ演算の順 — float は IEEE 754 binary64 で同じビット）。
 // 天体は 7 欄（x y z vx vy vz 質量）を詰めた 1 本の mut []float（struct の slice の欄の書き換えの代わり）
 
-import "std/conv"
+import "std/convert"
 import "std/iter"
 import "std/math"
 import "std/os"
@@ -88,10 +88,10 @@ func main() int {
     b[3] = -px / solarMass
     b[4] = -py / solarMass
     b[5] = -pz / solarMass
-    println(conv.FormatFixed(energy(mut b), 9))
+    println(convert.FormatFixed(energy(mut b), 9))
     for k <- iter.Range(0, n) {
         advance(mut b, 0.01)
     }
-    println(conv.FormatFixed(energy(mut b), 9))
+    println(convert.FormatFixed(energy(mut b), 9))
     return 0
 }

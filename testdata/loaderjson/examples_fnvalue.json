@@ -35,6 +35,8 @@
           "mut_def": false,
           "has_try": false,
           "callees": [
+            "ascending",
+            "descending",
             "down.less",
             "f",
             "g",

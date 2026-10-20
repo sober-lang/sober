@@ -5,6 +5,7 @@ package main
 // 正例（畳める形 — `;` の位置・ASCII の次）も並べて、畳んだ後の値が検査を残した値と同じことを見る
 
 import "std/iter"
+import "std/strings"
 import "std/utf8"
 
 // code は Str の結果を 1 語に畳む（成功 = 長さ・失敗 = 1000 + 境界でない位置）
@@ -12,7 +13,7 @@ func code(v utf8.View, s int, i int) int {
     x, err := utf8.Str(v, s, i)
     return if err != nil {
         switch err {
-        case utf8.InvalidUtf8{pos}: 1000 + pos
+        case strings.InvalidUtf8{pos}: 1000 + pos
         }
     } else {
         len(bytes(x))

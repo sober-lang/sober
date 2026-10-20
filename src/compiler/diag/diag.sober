@@ -32,14 +32,17 @@ type UnknownName error {
     at Pos
 }
 
-// Malformed は形が不正
+// Malformed は形が不正（kind 0 = 名指しなし・1 = 呼び出しの実引数の数が仮引数の数と合わない）
 type Malformed error {
     at Pos
+    kind int
 }
 
-// TypeMismatch は型宣言の区別の違反（language.md 32 節 — 表層型の照合）
+// TypeMismatch は型の違反。kind 0 = 型宣言の区別の違反（language.md 32 節 — 表層型の照合）・1 = string の値の switch（15 節 — 単値の subject は
+// int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）
 type TypeMismatch error {
     at Pos
+    kind int
 }
 
 // PrintArg は println の実引数が印字できない型（int・byte・bool・string 以外 — `T?`・struct・多値等。check が実引数を見ていなかった F-j の修理）
@@ -188,6 +191,11 @@ type LocalImport error {
     at Pos
 }
 
+// InternalImport は std の外のファイルから `std/internal/…` を import した（std の実装の詳細 — language.md 20 節）
+type InternalImport error {
+    at Pos
+}
+
 type LocalTop error {
     at Pos
 }
@@ -259,8 +267,8 @@ type Sealed error {
     at Pos
 }
 
-// Identity は同一性を持つ型（std/par の札・handle・端点・Pool、std/io の File）のゼロ値を std の外で作る composite（loader/identityx.sober・language.md 28 節 /
-// 11 節 — 2026-10-13 の裁定 Qa1）。kind 1〜6 = 型そのもののゼロ値 `T{}`（1 par.S・2 par.Task・3 par.Tx・4 par.Rx・5 par.Pool・6 io.File）・
+// Identity は同一性を持つ型（std/task の札・handle・端点・Pool、std/io の File）のゼロ値を std の外で作る composite（loader/identityx.sober・language.md 28 節 /
+// 11 節 — 2026-10-13 の裁定 Qa1）。kind 1〜6 = 型そのもののゼロ値 `T{}`（1 task.Scope・2 task.Handle・3 task.Sender・4 task.Receiver・5 task.Pool・6 io.File）・
 // 11〜16 = その型を（欄を通して）持つ欄を省いた composite（`W{}`・部分リテラル）
 type Identity error {
     at Pos
@@ -275,8 +283,23 @@ type FileUse error {
     kind int
 }
 
+// FnArg は関数型の実引数に置いた名前付き関数を η 展開できない形（loader/eta.sober — language.md 25 節）。kind = 1 mut 仮引数を持つ関数・2 仮引数の数が関数型と違う
+type FnArg error {
+    at Pos
+    kind int
+}
+
+// FnCap は値の位置（値化可能な named fn type の struct の欄 — language.md 25 節 クロージャの波 2026-10-17）のラムダの、値になれない形
+// （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
+// 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）
+type FnCap error {
+    at Pos
+    kind int
+}
+
 // ForFallible は失敗しうる生成元（結果が `error?` の呼び出し形の生成元 — language.md 7 節）の印の誤り（loader/forfallible.sober）。
-// kind 1 = 印 `?` が無い（error を黙って捨てる形）・2 = 式の位置の for（yield 形）の生成元・3 = 印 `?` つきだが生成元の結果が `error?` 1 つでない
+// kind 1 = 印 `?` が無い（error を黙って捨てる形）・2 = 式の位置の for（yield 形）の生成元・3 = 印 `?` つきだが生成元の結果が `error?` 1 つでない・
+// 4 = 生成元の呼び先が名前付き関数型の仮引数（展開されないので生成元にならない — L-for の範囲外）
 type ForFallible error {
     at Pos
     kind int
@@ -309,7 +332,7 @@ type Intrinsic error {
     kind int
 }
 
-// Par は structured concurrency（std/par — 段 6 P3a・language.md 11 節）の呼び出し点の拒否（kind 1 = build の経路は未実装〔P3a-2 待ち〕・
+// Par は structured concurrency（std/task — 段 6 P3a・language.md 11 節）の呼び出し点の拒否（kind 1 = build の経路は未実装〔P3a-2 待ち〕・
 // 3〜17 = 呼び出し点の形 — desugar/parcheck.sober の表・18 = 多値の型の置き場 — loader/tupletype.sober）
 type Par error {
     at Pos
@@ -385,6 +408,7 @@ func At(err error?) Pos {
     case ConstExpr{at}: at
     case LocalBuiltin{at}: at
     case LocalImport{at}: at
+    case InternalImport{at}: at
     case LocalTop{at}: at
     case TParamBuiltin{at}: at
     case TParamTop{at}: at
@@ -403,6 +427,8 @@ func At(err error?) Pos {
     case MultiBind{at}: at
     case MutAlias{at}: at
     case ForFallible{at}: at
+    case FnArg{at}: at
+    case FnCap{at}: at
     case Sealed{at}: at
     case Identity{at}: at
     case Layout{at}: at
@@ -422,8 +448,12 @@ func Format(err error?, where string) string {
     case nil: "error"
     case CoreFragment{at}: "desugar error at ${where} (CoreFragment)"
     case UnknownName{at}: "desugar error at ${where} (UnknownName)"
-    case Malformed{at}: "desugar error at ${where} (Malformed)"
-    case TypeMismatch{at}: "desugar error at ${where} (TypeMismatch)"
+    case Malformed{at, kind}: if kind == 1 { "desugar error at ${where} (Malformed): the number of arguments does not match the function's parameters" } else { "desugar error at ${where} (Malformed)" }
+    case TypeMismatch{at, kind}: switch kind {
+        case 1: "desugar error at ${where} (TypeMismatch): switch on a string value is not in the language — the subject of a value switch is an int (with default), a union, an error or a T?; compare strings with if / else if"
+        case 2: "desugar error at ${where} (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, or switch with case nil); `x == nil || …` narrows x only in an if whose then exits"
+        default: "desugar error at ${where} (TypeMismatch)"
+    }
     case PrintArg{at}: "desugar error at ${where} (PrintArg): println prints int, byte, bool and string values"
     case LenString{at}: "desugar error at ${where} (LenString): len is not defined on string — use len(bytes(s)) for the byte count"
     case UntypedNil{at}: "desugar error at ${where} (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)"
@@ -457,6 +487,7 @@ func Format(err error?, where string) string {
     case ConstExpr{at}: loadLine(err, where, "const expression")
     case LocalBuiltin{at}: loadLine(err, where, "a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)")
     case LocalImport{at}: loadLine(err, where, "a local binding cannot reuse an import reference name")
+    case InternalImport{at}: loadLine(err, where, "std/internal/... is an implementation detail of std — it can be imported only from inside std")
     case LocalTop{at}: loadLine(err, where, "a local binding cannot reuse a top-level name (const, func or type)")
     case TParamBuiltin{at}: loadLine(err, where, "a type parameter cannot reuse a builtin name")
     case TParamTop{at}: loadLine(err, where, "a type parameter cannot reuse a top-level type name")
@@ -475,9 +506,22 @@ func Format(err error?, where string) string {
     } else {
         "this literal leaves a field at its zero value that holds a `${identityName(kind - 10)}`, which has identity: only ${identityMaker(kind - 10)} makes one — set the field, or declare it `T?`"
     })
+    case FnArg{at, kind}: loadLine(err, where, if kind == 1 {
+        "a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)"
+    } else {
+        "this function takes a different number of parameters than the function type expects"
+    })
+    case FnCap{at, kind}: loadLine(err, where, switch kind {
+        case 1: "a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation"
+        case 2: "a lambda in a value position (a function-typed field) cannot use return — its body is an expression; return would escape the enclosing function"
+        case 3: "a lambda in a value position (a function-typed field) cannot use `?` — the error would escape the enclosing function"
+        case 5: "a lambda in a value position (a function-typed field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container"
+        default: "a lambda in a value position (a function-typed field) cannot break or continue a loop outside the lambda"
+    })
     case ForFallible{at, kind}: loadLine(err, where, switch kind {
         case 1: "this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`"
         case 2: "a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression"
+        case 4: "only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)"
         default: "`?` on a generator needs a generator that returns error? only"
     })
     case MultiBind{at}: loadLine(err, where, "this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)")
@@ -503,37 +547,45 @@ func Format(err error?, where string) string {
         case 3: "the signature of an @intrinsic declaration does not match its key"
         default: "duplicate @intrinsic declaration in the package"
     })
-    case Par{at, kind}: if kind == 1 { "lower error at ${where}: par.Scope / Spawn / Join / Try are not lowered yet (build of structured concurrency is 段 6 P3a-2)" } else { loadLine(err, where, switch kind {
-        case 3: "par.Scope / par.Spawn take a lambda literal written at the call ((s) => … for Scope, () => … for Spawn)"
+    case Par{at, kind}: if kind == 1 { "lower error at ${where}: task.Run / Spawn / Join / Try are not lowered yet (build of structured concurrency is 段 6 P3a-2)" } else { loadLine(err, where, switch kind {
+        case 3: "task.Run / task.Spawn take a lambda literal written at the call ((s) => … for Run, () => … for Spawn)"
         case 4: "a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)"
-        case 5: "a spawned task cannot capture the scope token (par.S), also inside a struct field or T? — spawn from the scope body"
-        case 6: "a spawned task cannot capture a task handle (par.Task), also inside a struct field or T? — join it in the scope body"
-        case 7: "return and break / continue cannot leave a par.Scope / par.Spawn body, and ? cannot leave a par.Spawn body (the scope waits for its children at its end; ? in a par.Scope body fails the scope)"
-        case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, par.S, par.Task or a channel endpoint)"
-        case 9: "the result of par.Scope cannot hold a par.S or par.Task (it would outlive the scope)"
-        case 13: "par.NewChan takes its capacity as an integer literal of 1 or more (cap: 16)"
-        case 14: "par.NewChan needs its payload type written: par.NewChan[T](cap: n)"
-        case 15: "a channel endpoint (par.Tx / par.Rx) moves to a child only through give: — par.Spawn(s, (out) => …, give: tx)"
-        case 17: "an error-returning task's handle goes in a slice of par.Task[(T, error?)] (the element type says the task can fail — Join gives two values)"
-        case 18: "a multi-value type (T, error?) is written only as the type argument of par.Task — par.Task[(T, error?)] (no anonymous tuple types)"
-        case 20: "budget: is a size written without calls or division (a literal, a name, par.MB, + - *) — it is read for the admission only"
-        case 19: "a channel payload cannot hold par.S, par.Task or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them"
-        case 16: "handles (par.Task) go in a mut slice: mut hs := mut []par.Task[T]{} (an imm slice copies its elements, and a handle is not copied)"
+        case 5: "a spawned task cannot capture the scope token (task.Scope), also inside a struct field or T? — spawn from the scope body"
+        case 6: "a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body"
+        case 7: "return and break / continue cannot leave a task.Run / task.Spawn body, and ? cannot leave a task.Spawn body (the scope waits for its children at its end; ? in a task.Run body fails the scope)"
+        case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, task.Scope, task.Handle or a channel endpoint)"
+        case 9: "the result of task.Run cannot hold a task.Scope or task.Handle (it would outlive the scope)"
+        case 13: "task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)"
+        case 14: "task.NewChannel needs its payload type written: task.NewChannel[T](cap: n)"
+        case 15: "a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)"
+        case 17: "an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)"
+        case 18: "a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)"
+        case 20: "budget: is a size written without calls or division (a literal, a name, task.MB, + - *) — it is read for the admission only"
+        case 19: "a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them"
+        case 16: "handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)"
+        case 22: "wait: is written as the literal true or false — the admission policy of a scope is fixed where it is written"
+        case 23: "deadline: is a relative time written without calls or division (a literal, a name, task.MS, + - *)"
         case 21: "a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))"
+        case 24: "task.Lease / task.NewLocal take a window: a lambda with one mut parameter of a written struct type — (w mut T) => …"
+        case 25: "a mut lambda parameter is written only as the window of task.Lease / task.NewLocal"
+        case 26: "a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters"
+        case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
+        case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
         case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
-        default: "par.S and par.Task do not cross a function boundary (pass values to the function and spawn in the scope body)"
+        default: "task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)"
     }) }
     case FileUse{at, kind}: loadLine(err, where, switch kind {
         case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`"
         case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line"
         case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes"
         case 4: "this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open"
-        case 5: "an io.File cannot be copied to another binding (it has identity — keep using the name bound by io.Open)"
-        case 6: "an io.File cannot be assigned (it has identity — keep using the name bound by io.Open)"
-        case 7: "an io.File cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
-        case 8: "an io.File cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
-        case 9: "a closure cannot capture an io.File — pass it as an argument"
-        default: "an io.File cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
+        case 5: "an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
+        case 6: "an io.File, net.Conn, net.Listener or tls.Conn cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
+        case 7: "an io.File, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
+        case 8: "an io.File, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
+        case 9: "a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
+        case 11: "a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task"
+        default: "an io.File, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
     })
     case PanicLabel{at, kind}: loadLine(err, where, switch kind {
         case 1: "panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})"
@@ -572,22 +624,24 @@ func Format(err error?, where string) string {
 // identityName / identityMaker は同一性の族の番号（Identity の kind）の型の綴りと生成の口
 func identityName(k int) string {
     return switch k {
-    case 1: "par.S"
-    case 2: "par.Task"
-    case 3: "par.Tx"
-    case 4: "par.Rx"
-    case 5: "par.Pool"
+    case 1: "task.Scope"
+    case 2: "task.Handle"
+    case 3: "task.Sender"
+    case 4: "task.Receiver"
+    case 5: "task.Pool"
+    case 7: "task.Local"
     default: "io.File"
     }
 }
 
 func identityMaker(k int) string {
     return switch k {
-    case 1: "par.Scope (the body's parameter)"
-    case 2: "par.Spawn"
-    case 3: "par.NewChan"
-    case 4: "par.NewChan"
-    case 5: "par.NewPool"
+    case 1: "task.Run (the body's parameter)"
+    case 2: "task.Spawn"
+    case 3: "task.NewChannel"
+    case 4: "task.NewChannel"
+    case 5: "task.NewPool"
+    case 7: "task.NewLocal"
     default: "io.Open"
     }
 }

@@ -1,0 +1,125 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 15
+                  },
+                  "field": "Run",
+                  "tok": 17
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "task.Scope"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "if",
+                            "cond": {
+                              "k": "ident",
+                              "name": "true",
+                              "tok": 28
+                            },
+                            "then": {
+                              "stmts": [
+                                {
+                                  "k": "ret",
+                                  "values": [],
+                                  "tok": 30
+                                }
+                              ]
+                            },
+                            "else": null,
+                            "tok": 27
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 34
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 25
+                  }
+                ],
+                "tok": 18
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 39
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 41
+                }
+              ],
+              "tok": 40
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 46
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

@@ -1,0 +1,12 @@
+package main
+
+// 負例: @noinline は mut 仮引数を持つ非再帰の関数にだけ付く（language.md 26 節 — 展開しないで Def として呼ぶ指定）
+
+@noinline
+func add(a int, b int) int {
+    return a + b
+}
+
+func main() {
+    println(add(1, 2))
+}

@@ -1,0 +1,60 @@
+package main
+
+// dlserve.sh のサーバ（report-700）: bench/httparena/main.sober の Serve を期限 8 秒の scope で包んだ形（期限で切れて正常に終わる — 負荷の最中に期限が来ると
+// 数千の待ち手が一斉に切られ、ring の SQ に取り消しが溜まる）。route は main.sober と同じ
+
+import "std/convert"
+import "std/http"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/strings"
+
+// num は数でなければ 0（go-stdlib と同じ寛容さ）
+func num(s string?) int {
+    if s == nil {
+        return 0
+    }
+    v, e := convert.ParseInt(s)
+    return if e != nil { 0 } else { v }
+}
+
+func route(r http.Request) http.Response {
+    return switch {
+    case r.path == "/pipeline": http.Text("ok")
+    case r.path == "/baseline11": {
+        body := if r.method == "POST" { num(string(r.body) catch "") } else { 0 }
+        http.Text(convert.FormatInt(num(http.Query(r, "a")) + num(http.Query(r, "b")) + body))
+    }
+    case strings.HasPrefix(r.path, "/delay/"): {
+        ms := num(strings.TrimPrefix(r.path, "/delay/"))
+        os.Sleep(ms)
+        http.Text(convert.FormatInt(ms))
+    }
+    default: http.Status(404)
+    }
+}
+
+func app(c net.Conn) error? {
+    return http.ServeConn(c, route)
+}
+
+func run(port string) error? {
+    for l <- net.Listen("0.0.0.0:${port}")? {
+        println("ready ${net.Port(l)}")
+        _, _ = task.Run((s task.Scope) => {
+            _ = net.Serve(l, app, conns: 40000)
+            0
+        }, deadline: 8000 * task.MS)
+    }
+    return nil
+}
+
+func main() int {
+    args := os.Args() catch return 2
+    if len(args) > 2 {
+        return 2
+    }
+    e := run(if len(args) == 2 { args[1] } else { "8080" })
+    return if e != nil { 1 } else { 0 }
+}

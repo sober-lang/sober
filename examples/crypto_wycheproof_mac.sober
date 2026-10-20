@@ -1,0 +1,135 @@
+package main
+
+// Wycheproof（C2SP/wycheproof — testdata/wycheproof/README.md）の HMAC-SHA256 174 件・HKDF-SHA256 86 件を std/crypto に通す（report-792）。
+// valid = 値が一致・invalid = 拒否（HMAC は改竄した tag が crypto.Equal で食い違う・HKDF は長さの上限で TooLong）。食い違った tcId を印字する
+
+import "std/crypto"
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
+import "std/hex"
+import "std/iter"
+import "std/json"
+
+@embed("testdata/wycheproof/h*_sha256_test.json")
+const Files = map[string]string{}
+
+type MacTest struct {
+    tcId int
+    key string
+    msg string
+    tag string
+    result string
+}
+
+type MacGroup struct {
+    tagSize int
+    tests []MacTest
+}
+
+type MacFile struct {
+    testGroups []MacGroup
+}
+
+type KdfTest struct {
+    tcId int
+    ikm string
+    salt string
+    info string
+    size int
+    okm string
+    result string
+}
+
+type KdfGroup struct {
+    tests []KdfTest
+}
+
+type KdfFile struct {
+    testGroups []KdfGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func prefix(b []byte, n int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}
+
+func report(name string, n int, bad []int) {
+    println("${name}: ${n} tests, ${len(bad)} failed")
+    for i <- iter.Range(0, len(bad)) {
+        println("  fail tcId ${bad[i]}")
+    }
+}
+
+func macs(src string) {
+    d, err := json.Parse(bytes(src))
+    if err != nil {
+        println("hmac: parse error")
+        return
+    }
+    f, derr := json.Decode[MacFile](d, json.Root(d))
+    if derr != nil {
+        println("hmac: decode error")
+        return
+    }
+    mut n := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        for t <- g.tests {
+            n = n + 1
+            got := prefix(hmac.Sum256(unhex(t.key), unhex(t.msg)), g.tagSize / 8)
+            ok := crypto.Equal(got, unhex(t.tag))
+            if ok != (t.result == "valid") {
+                bad = append(bad, t.tcId)
+            }
+        }
+    }
+    report("hmac-sha256", n, freeze(bad))
+}
+
+func kdfs(src string) {
+    d, err := json.Parse(bytes(src))
+    if err != nil {
+        println("hkdf: parse error")
+        return
+    }
+    f, derr := json.Decode[KdfFile](d, json.Root(d))
+    if derr != nil {
+        println("hkdf: decode error")
+        return
+    }
+    mut n := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        for t <- g.tests {
+            n = n + 1
+            okm, e := hkdf.Expand(hkdf.Extract(unhex(t.salt), unhex(t.ikm)), unhex(t.info), t.size)
+            ok := e == nil && crypto.Equal(okm, unhex(t.okm))
+            if ok != (t.result == "valid") {
+                bad = append(bad, t.tcId)
+            }
+        }
+    }
+    report("hkdf-sha256", n, freeze(bad))
+}
+
+func file(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func main() {
+    fs := Files
+    macs(file(fs, "testdata/wycheproof/hmac_sha256_test.json"))
+    kdfs(file(fs, "testdata/wycheproof/hkdf_sha256_test.json"))
+}

@@ -1,0 +1,2 @@
+sober: desugar error at examples/func_neg_recursive_fnparam.sober:6:43 (CoreFragment)
+exit=1

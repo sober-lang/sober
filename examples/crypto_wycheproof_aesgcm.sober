@@ -1,0 +1,94 @@
+package main
+
+// Wycheproof（testdata/wycheproof/README.md）の AES-GCM を std/crypto/aesgcm に通す（report-796 — 鍵 128 bit × nonce 96 bit の 67 件は値の一致・
+// それ以外の鍵 / nonce の長さ〔AES-192 / 256・nonce 長違い — 範囲外〕は BadSize で拒否すること）。valid = Seal の出力が一致し Open が平文を返す・
+// invalid = Open が拒否する。塊の無い機械（SOBER_NOAES=1）では NoHardware だけを印字する形。食い違った tcId を印字する
+
+import "std/crypto/aesgcm"
+import "std/hex"
+import "std/iter"
+import "std/json"
+
+@embed("testdata/wycheproof/aes_gcm_test.json")
+const Files = map[string]string{}
+
+type AeadTest struct {
+    tcId int
+    key string
+    iv string
+    aad string
+    msg string
+    ct string
+    tag string
+    result string
+}
+
+type AeadGroup struct {
+    keySize int
+    ivSize int
+    tests []AeadTest
+}
+
+type AeadFile struct {
+    testGroups []AeadGroup
+}
+
+func unhex(s string) []byte {
+    b, _ := hex.Parse(s)
+    return b
+}
+
+func file(fs map[string]string, p string) string {
+    v := fs[p]
+    if v != nil {
+        return v
+    }
+    return ""
+}
+
+func main() {
+    if !aesgcm.Available() {
+        println("no hardware")
+        return
+    }
+    fs := Files
+    d, err := json.Parse(bytes(file(fs, "testdata/wycheproof/aes_gcm_test.json")))
+    if err != nil {
+        println("parse error")
+        return
+    }
+    f, derr := json.Decode[AeadFile](d, json.Root(d))
+    if derr != nil {
+        println("decode error")
+        return
+    }
+    mut n := 0
+    mut inScope := 0
+    mut bad := mut []int{}
+    for g <- f.testGroups {
+        sized := g.keySize == 128 && g.ivSize == 96
+        for t <- g.tests {
+            n = n + 1
+            if sized {
+                inScope = inScope + 1
+            }
+            key := unhex(t.key)
+            iv := unhex(t.iv)
+            aad := unhex(t.aad)
+            want := t.ct + t.tag
+            sealed, se := aesgcm.Seal(key, iv, aad, unhex(t.msg))
+            sealOk := se == nil && hex.Format(sealed) == want
+            pt, oe := aesgcm.Open(key, iv, aad, unhex(want))
+            openOk := oe == nil && hex.Format(pt) == t.msg
+            valid := t.result == "valid"
+            ok := if !sized { se != nil && oe != nil } else if valid { sealOk && openOk } else { oe != nil }
+            if !ok {
+                bad = append(bad, t.tcId)
+            }
+        }
+    }
+    println("aes-gcm: ${n} tests (${inScope} AES-128 / 96-bit nonce), ${len(bad)} failed")
+    for i <- iter.Range(0, len(bad)) {
+        println("  fail tcId ${bad[i]}")
+    }
+}

@@ -2,7 +2,7 @@ package main
 
 // シリアライザの双子 (b) の参考列: (b)〔../pieces〕と同じ形で、子の片の繋ぎを std の strings.Join にしたもの（計器は ../pieces のまま）。
 // (a) = ../builder（mut builder を引き回す形）。出力は (a) と同じバイト列（長さと FNV で照合）
-import "std/conv"
+import "std/convert"
 import "std/iter"
 import "std/os"
 import "std/strings"
@@ -97,7 +97,7 @@ func sN0(n N0) string {
     for i <- iter.Range(0, len(n.kids)) {
         ps = append(ps, sN1(n.kids[i]))
     }
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
 }
 
 func sN1(n N1) string {
@@ -105,7 +105,7 @@ func sN1(n N1) string {
     for i <- iter.Range(0, len(n.kids)) {
         ps = append(ps, sN2(n.kids[i]))
     }
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
 }
 
 func sN2(n N2) string {
@@ -113,7 +113,7 @@ func sN2(n N2) string {
     for i <- iter.Range(0, len(n.kids)) {
         ps = append(ps, sN3(n.kids[i]))
     }
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
 }
 
 func sN3(n N3) string {
@@ -121,7 +121,7 @@ func sN3(n N3) string {
     for i <- iter.Range(0, len(n.kids)) {
         ps = append(ps, sN4(n.kids[i]))
     }
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
 }
 
 func sN4(n N4) string {
@@ -129,11 +129,11 @@ func sN4(n N4) string {
     for i <- iter.Range(0, len(n.kids)) {
         ps = append(ps, sN5(n.kids[i]))
     }
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)},\"kids\":[${strings.Join(freeze(ps), ",")}]}"
 }
 
 func sN5(n N5) string {
-    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${conv.FormatFloat(n.score)}}"
+    return "{\"id\":${n.id},\"name\":\"${n.name}\",\"score\":${convert.FormatFloat(n.score)}}"
 }
 
 

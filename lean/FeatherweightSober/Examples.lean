@@ -908,6 +908,105 @@ example : typecheck fnΔ ∅ [] 0 0 0 [] [] (Expr.fnref 2 [])
 
 example : programFromJson 200 (programToJson fnΔ ex36) = .ok (fnΔ, ex36) := rfl
 
+/-! ## クロージャの波（案 B — 2026-10-17・language.md 25 節改訂）: 捕捉つきラムダ = 持ち上げた Def + 環境 struct の糖衣
+
+脱糖テンプレートの出力をコアの既存語彙（fnref + prod + callv の pair 鎖）で写経した証人 — コアの変更なしの検証（report-744）。
+環境が region を持つ（imm slice の捕捉）形でも、fn 型は base 座標の型スキームのまま loc-free（shiftR / relocR 恒等）で、
+region は閉包 struct 側（prod の slice 成分）が既存の規則（境界コピー R0 / R4a・sub の imm の region 共変）で運ぶ -/
+
+/-- 閉包の型（環境 = imm slice int・引数 = int）。fn の中の region 0 は Def の base 座標（呼び手空間）—
+現在の世界の region ではないので fn は loc-free のまま。struct 成分の region 0 は呼び出し規則の shiftR で現在の深さに合う -/
+def closTy : Ty := .prod (.fn (.prod (.slice false 0 .int) .int) .int) (.slice false 0 .int)
+
+/-- 関数表: 0 = 持ち上げた本体（`cap := …; f := (x) => cap[0] + x` の糖衣先 — 隠れ第 1 成分 = 環境）、
+1 = 閉包 struct を受けて呼ぶ高階 Def（http の ServeConn が Response の stream 欄を呼ぶ形） -/
+def fnΔc : Defs :=
+  [ { param := .prod (.slice false 0 .int) .int, ret := .int,
+      body := add (index (Expr.fst (var 0)) (lit 0)) (Expr.snd (var 0)) }
+  , { param := .prod closTy .int, ret := .int,
+      body := Expr.callv (Expr.fst (Expr.fst (var 0)))
+        (pair (Expr.snd (Expr.fst (var 0))) (Expr.snd (var 0))) } ]
+
+example : checkDefs fnΔc = true := rfl
+
+/-- 作成と呼び出し: `cap := freeze(append([]int{}, 40)); f := {code, env: cap}; f(2)` → 42 -/
+def ec1 : Expr :=
+  block (letE (Expr.freeze (append (mkslice true .int) (lit 40)))
+    (letE (pair (Expr.fnref 0 []) (var 0))
+      (Expr.callv (Expr.fst (var 0)) (pair (Expr.snd (var 0)) (lit 2)))))
+
+example : typecheck fnΔc ∅ [] 0 0 0 [] [] ec1 = some .int := rfl
+example : (stepN fnΔc 256 (load ec1) ∅).1 = .ret [] [] (lit 42) := by native_decide
+
+/-- region つき環境の境界越え: 閉包を内側の blockR（結果型つきの式ブロック — 境界コピー）から返す。
+fn 成分は clampR / relocate で恒等・slice 成分は既存の深い写しで呼び手最内（region 0）へ → 外で呼んで 42。
+素の block は写さない（regionsBelow の escape 検査）ので、糖衣の出力は従来どおり blockR の形 -/
+def ec2 : Expr :=
+  block (letE (Expr.blockR closTy (letE (Expr.freeze (append (mkslice true .int) (lit 40)))
+      (pair (Expr.fnref 0 []) (var 0))))
+    (Expr.callv (Expr.fst (var 0)) (pair (Expr.snd (var 0)) (lit 2))))
+
+example : typecheck fnΔc ∅ [] 0 0 0 [] [] ec2 = some .int := rfl
+example : (stepN fnΔc 256 (load ec2) ∅).1 = .ret [] [] (lit 42) := by native_decide
+
+/-- 値の位置の呼び出し: 閉包を高階 Def へ渡す（call の境界 — 環境の slice は sub の imm の region
+共変 r ≤ r' で外の region のまま渡る）→ 40 + 5 = 45 -/
+def ec3 : Expr :=
+  block (letE (Expr.freeze (append (mkslice true .int) (lit 40)))
+    (Expr.call 1 [] (pair (pair (Expr.fnref 0 []) (var 0)) (lit 5))))
+
+example : typecheck fnΔc ∅ [] 0 0 0 [] [] ec3 = some .int := rfl
+example : (stepN fnΔc 256 (load ec3) ∅).1 = .ret [] [] (lit 45) := by native_decide
+
+/-- option の閉包（`stream Fn?` の欄の形 — 15 節）: some で opt へ・ifnil の some の腕で呼ぶ → 42 -/
+def ec4 : Expr :=
+  block (letE (Expr.freeze (append (mkslice true .int) (lit 40)))
+    (block (Expr.ifnil (Expr.some (pair (Expr.fnref 0 []) (var 0)))
+      (lit 0)
+      (Expr.callv (Expr.fst (var 0)) (pair (Expr.snd (var 0)) (lit 2))))))
+
+example : typecheck fnΔc ∅ [] 0 0 0 [] [] ec4 = some .int := rfl
+example : (stepN fnΔc 256 (load ec4) ∅).1 = .ret [] [] (lit 42) := by native_decide
+
+/-- 否定例: mut の環境はブロックの境界を越えられない（素の block の regionsBelow / blockR の clamp は
+imm 限定 — 表層は loader が作成点で名指し拒否する〔25 節〕が、コアも escape の線で既に閉じている） -/
+example : typecheck fnΔc ∅ [] 0 0 0 [] []
+    (block (letE (block (letE (mkslice true .int) (pair (Expr.fnref 0 []) (var 0))))
+      (lit 0))) = none := rfl
+
+example : programFromJson 200 (programToJson fnΔc ec2) = .ok (fnΔc, ec2) := rfl
+
+/-! ## 借りの関数型仮引数（(α-L0) — 2026-10-17・language.md 25 節「借り」・report-754）: 値の閉包の匿名の関数型の仮引数 = 借りの閉包
+
+借りの閉包は env に同一性の型（io.File / net.Conn — コアでは封のデータ `prod int int`〔fd + 封の空 struct〕）と imm の値だけを持つので、
+既存の callv の paramOk（regionsBelow 1 ∧ mutFree ∧ chanFree）にそのまま乗る — コアの変更なしの検証。「格納しない」は表層の規則（filecheck）が持つ -/
+
+/-- 封のデータ（Conn の fd + 封）と借りの閉包の型（emit — 引数 int は送るバイト列の代役） -/
+def connTy : Ty := .prod .int .int
+def emitTy : Ty := .prod (.fn (.prod connTy .int) .int) connTy
+
+/-- 関数表: 0 = emit の持ち上げた本体（env = Conn — `(b) => net.Send(c, b)` の代役: fd + b）、
+1 = stream の持ち上げた本体（env = 捕捉した imm slice・借りの仮引数 emit を callv で呼ぶ — `(emit) => emit(path)` の形） -/
+def fnΔb : Defs :=
+  [ { param := .prod connTy .int, ret := .int,
+      body := add (Expr.fst (Expr.fst (var 0))) (Expr.snd (var 0)) }
+  , { param := .prod (.slice false 0 .int) emitTy, ret := .int,
+      body := Expr.callv (Expr.fst (Expr.snd (var 0)))
+        (pair (Expr.snd (Expr.snd (var 0))) (index (Expr.fst (var 0)) (lit 0))) } ]
+
+example : checkDefs fnΔb = true := rfl
+
+/-- ServeConn の形: Conn（fd 40）を捕捉した emit の閉包を、値の閉包 stream（捕捉 = slice [2]）へ借りの実引数として渡して呼ぶ → 42 -/
+def eb1 : Expr :=
+  block (letE (pair (lit 40) (lit 0))
+    (letE (pair (Expr.fnref 1 []) (Expr.freeze (append (mkslice true .int) (lit 2))))
+      (Expr.callv (Expr.fst (var 0))
+        (pair (Expr.snd (var 0)) (pair (Expr.fnref 0 []) (var 1))))))
+
+example : typecheck fnΔb ∅ [] 0 0 0 [] [] eb1 = some .int := rfl
+example : (stepN fnΔb 256 (load eb1) ∅).1 = .ret [] [] (lit 42) := by native_decide
+example : programFromJson 200 (programToJson fnΔb eb1) = .ok (fnΔb, eb1) := rfl
+
 /-! ## Def の型パラメータ（V3-2 — tvar・明示の型適用・型代入）
 
 Def の本体は tvar を抽象型のまま一度だけ型付けされ（DefsOk）、呼び出しは型引数で代入した

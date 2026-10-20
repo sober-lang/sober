@@ -11,4 +11,4 @@ A path for people using Sober for the first time. Read from top to bottom and yo
 
 Every code example in the guide is a real file in `examples/`; the compiler's verification net (`scripts/gates.sh`) builds and runs each one every time and checks the output.
 
-The "why" of the design is in the [design notes](../design-notes/), and the exact definition of the language is in the [language specification](../language.md) (for developers). Both are in Japanese.
+The "why" of the design is in the [design notes](../design-notes/), the exact definition of the language is in the [language specification](../spec/README.ja.md) (rules only), and the history of each decision is in the [decision record](../language.md) (for developers). All are in Japanese.

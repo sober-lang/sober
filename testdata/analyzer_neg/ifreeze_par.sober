@@ -2,19 +2,19 @@ package main
 
 // 子が imm を読み、親が古い別名で書く — データ競合（凍結は composite の imm の欄 — 暗黙の freeze・U2）
 
-import "std/par"
+import "std/task"
 
 type H struct {
     xs []int
 }
 
 func main() {
-    r, e := par.Scope((s par.S) => {
+    r, e := task.Run((s task.Scope) => {
         mut m := mut []int{0}
         h := H{xs: m}
-        t := par.Spawn(s, () => h.xs[0])
+        t := task.Spawn(s, () => h.xs[0])
         m[0] = 7
-        par.Join(t)
+        task.Join(t)
     })
     if e != nil {
         println("err")

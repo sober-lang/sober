@@ -1,0 +1,129 @@
+package main
+
+// http 段 4c（std/http の最小 — report-670）: HttpArena の baseline / pipelined / async の端点（/baseline11・/pipeline・/delay/{ms}）を
+// net.Serve + http.ServeConn で書き、同じバイナリの中のクライアントが生の要求を送る: Content-Length と chunked の本文・切片をまたぐ要求
+// （2 回に割って送る）・パイプライン 16 本・keep-alive の 2 要求・誤り（400 / 431 / 505）。Serve は 500 ms の期限で返る。W1 でも W8 でも同じ出力
+
+import "std/convert"
+import "std/http"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/strings"
+
+// num は数でなければ 0
+func num(s string?) int {
+    if s == nil {
+        return 0
+    }
+    v, e := convert.ParseInt(s)
+    return if e != nil { 0 } else { v }
+}
+
+func route(r http.Request) http.Response {
+    return switch {
+    case r.path == "/pipeline": http.Text("ok")
+    case r.path == "/baseline11": {
+        body := if r.method == "POST" { num(string(r.body) catch "") } else { 0 }
+        http.Text(convert.FormatInt(num(http.Query(r, "a")) + num(http.Query(r, "b")) + body))
+    }
+    case strings.HasPrefix(r.path, "/delay/"): {
+        ms := num(strings.TrimPrefix(r.path, "/delay/"))
+        os.Sleep(ms)
+        http.Text(convert.FormatInt(ms))
+    }
+    default: http.Status(404)
+    }
+}
+
+func app(c net.Conn) error? {
+    return http.ServeConn(c, route)
+}
+
+// serve は l で app を回す（Serve の結果を task.Run の本体の値に直に置くと check が def error — build は受理: F-av。名前つきの関数で包む）
+func serve(l net.Listener) error? {
+    return net.Serve(l, app, conns: 64)
+}
+
+// talk は parts を順に送り（間に 20 ms — 切片をまたぐ形）、相手が閉じるまでの応答を CR を落として返す
+func talk(port int, parts []string) (string, error?) {
+    mut got := mut []byte{}
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        mut first := true
+        for p <- parts {
+            if !first {
+                os.Sleep(20)
+            }
+            first = false
+            net.Send(c, bytes(p))?
+        }
+        for chunk <- net.Recv(c)? {
+            for x <- chunk {
+                if x != '\r' {
+                    got = append(got, x)
+                }
+            }
+        }
+    }
+    return string(freeze(got))?, nil
+}
+
+func client(port int, parts []string) string {
+    v, e := talk(port, parts)
+    return if e != nil { "client error" } else { v }
+}
+
+// okCount は応答の列の中の本文 "ok" の数（パイプラインの 16 本）
+func okCount(s string) int {
+    return strings.Count(s, "\n\nok")
+}
+
+// bigHead は 8 KiB を超える頭の要求（431）
+func bigHead() string {
+    mut b := mut []byte{}
+    for x <- bytes("GET / HTTP/1.1\r\nX-Big: ") {
+        b = append(b, x)
+    }
+    mut i := 0
+    while i < 9000 {
+        b = append(b, 'a')
+        i += 1
+    }
+    for x <- bytes("\r\n\r\n") {
+        b = append(b, x)
+    }
+    return string(freeze(b)) catch ""
+}
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            h := "Host: x\r\n"
+            get := task.Spawn(s, () => client(port, []string{"GET /baseline11?a=13&b=42 HTTP/1.1\r\n${h}Connection: close\r\n\r\n"}))
+            post := task.Spawn(s, () => client(port, []string{"POST /baseline11?a=13&b=42 HTTP/1.1\r\n${h}Content-Length: 2\r\nConnection: close\r\n\r\n20"}))
+            chunked := task.Spawn(s, () => client(port, []string{"POST /baseline11?a=1&b=2 HTTP/1.1\r\n${h}transfer-encoding: chunked\r\nconnection: close\r\n\r\n1\r", "\n7\r\n0\r\n\r\n"}))
+            frag := task.Spawn(s, () => client(port, []string{"GET /basel", "ine11?a=100&b=23 HTTP/1.1\r\n${h}Connection: cl", "ose\r\n\r\n"}))
+            pipe := task.Spawn(s, () => client(port, []string{strings.Join([]string{"GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n",
+                "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n",
+                "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n",
+                "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}\r\n", "GET /pipeline HTTP/1.1\r\n${h}Connection: close\r\n\r\n"}, "")}))
+            keep := task.Spawn(s, () => client(port, []string{"GET /baseline11?a=1&b=1 HTTP/1.1\r\n${h}\r\n", "HEAD /pipeline HTTP/1.0\r\n\r\n"}))
+            bad := task.Spawn(s, () => client(port, []string{"HELLO\r\n\r\n"}))
+            ver := task.Spawn(s, () => client(port, []string{"GET / HTTP/2.0\r\n\r\n"}))
+            big := task.Spawn(s, () => client(port, []string{bigHead()}))
+            dl := task.Spawn(s, () => client(port, []string{"GET /delay/30 HTTP/1.1\r\n${h}Connection: close\r\n\r\n"}))
+            nf := task.Spawn(s, () => client(port, []string{"GET /nope HTTP/1.1\r\n${h}Connection: close\r\n\r\n"}))
+            _, _ = task.Run((s2 task.Scope) => serve(l), deadline: 500 * task.MS)
+            p := task.Join(pipe)
+            "${task.Join(get)}\n--\n${task.Join(post)}\n--\n${task.Join(chunked)}\n--\n${task.Join(frag)}\n--\npipelined ok: ${okCount(p)}\n--\n${task.Join(keep)}\n--\n${task.Join(bad)}\n--\n${task.Join(ver)}\n--\n${task.Join(big)}\n--\n${task.Join(dl)}\n--\n${task.Join(nf)}"
+        }, deadline: 10000 * task.MS)
+        out = r
+    }
+    return out, nil
+}

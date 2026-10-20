@@ -1,0 +1,100 @@
+package main
+
+// std/crypto の sha256（逐次）・hmac・hkdf（report-792）: RFC 4231 の HMAC-SHA256 の 7 例・RFC 5869 の HKDF-SHA256 の 3 例・逐次の SHA-256 の
+// 切り方の全部（長さ 0〜200 を 1〜70 バイトずつ書いて一回の口と一致）と途中の Sum が状態を変えないこと。Go の双子 = scripts/oracles/crypto_hmac_hkdf.go
+// （crypto/hmac・crypto/hkdf・crypto/sha256 の値 + RFC の期待値の照合）
+
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
+import "std/crypto/sha256"
+import "std/hex"
+import "std/iter"
+
+func rep(b int, n int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte(b))
+    }
+    return freeze(out)
+}
+
+func seq(from int, to int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(from, to + 1) {
+        out = append(out, byte(i))
+    }
+    return freeze(out)
+}
+
+func pattern(n int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, n) {
+        out = append(out, byte((i * 31 + 7) % 256))
+    }
+    return freeze(out)
+}
+
+func sub(b []byte, from int, to int) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(from, to) {
+        out = append(out, b[i])
+    }
+    return freeze(out)
+}
+
+func main() {
+    println("hmac 1", hex.Format(hmac.Sum256(rep(0x0b, 20), bytes("Hi There"))))
+    println("hmac 2", hex.Format(hmac.Sum256(bytes("Jefe"), bytes("what do ya want for nothing?"))))
+    println("hmac 3", hex.Format(hmac.Sum256(rep(0xaa, 20), rep(0xdd, 50))))
+    println("hmac 4", hex.Format(hmac.Sum256(seq(1, 25), rep(0xcd, 50))))
+    println("hmac 5", hex.Format(sub(hmac.Sum256(rep(0x0c, 20), bytes("Test With Truncation")), 0, 16)))
+    println("hmac 6", hex.Format(hmac.Sum256(rep(0xaa, 131), bytes("Test Using Larger Than Block-Size Key - Hash Key First"))))
+    println("hmac 7", hex.Format(hmac.Sum256(rep(0xaa, 131), bytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm."))))
+    // RFC 5869 A.1〜A.3
+    p1 := hkdf.Extract(seq(0, 12), rep(0x0b, 22))
+    println("hkdf 1 prk", hex.Format(p1))
+    o1, _ := hkdf.Expand(p1, seq(0xf0, 0xf9), 42)
+    println("hkdf 1 okm", hex.Format(o1))
+    p2 := hkdf.Extract(seq(0x60, 0xaf), seq(0, 0x4f))
+    println("hkdf 2 prk", hex.Format(p2))
+    o2, _ := hkdf.Expand(p2, seq(0xb0, 0xff), 82)
+    println("hkdf 2 okm", hex.Format(o2))
+    p3 := hkdf.Extract(bytes(""), rep(0x0b, 22))
+    println("hkdf 3 prk", hex.Format(p3))
+    o3, _ := hkdf.Expand(p3, bytes(""), 42)
+    println("hkdf 3 okm", hex.Format(o3))
+    om, em := hkdf.Expand(p1, bytes(""), 8160)
+    println("hkdf max", len(om), em == nil)
+    _, eo := hkdf.Expand(p1, bytes(""), 8161)
+    println("hkdf over", eo != nil)
+    // 逐次: 長さ 0〜200 × 切り幅 1〜70 が一回の口と一致した数
+    mut ok := 0
+    mut bad := 0
+    for n <- iter.Range(0, 201) {
+        d := pattern(n)
+        want := hex.Format(sha256.Sum256(d))
+        for step <- iter.Range(1, 71) {
+            mut s := sha256.New()
+            mut off := 0
+            while off < n {
+                e := if off + step < n { off + step } else { n }
+                sha256.Write(mut s, sub(d, off, e))
+                off = e
+            }
+            if hex.Format(sha256.Sum(s)) == want {
+                ok = ok + 1
+            } else {
+                bad = bad + 1
+            }
+        }
+    }
+    println("incremental", ok, bad)
+    // 途中の Sum は状態を変えない（transcript hash の形）
+    mut t := sha256.New()
+    sha256.Write(mut t, bytes("abc"))
+    h1 := sha256.Sum(t)
+    h1b := sha256.Sum(t)
+    sha256.Write(mut t, pattern(100))
+    println("snapshot", hex.Format(h1), hex.Format(h1) == hex.Format(h1b))
+    println("snapshot2", hex.Format(sha256.Sum(t)))
+}

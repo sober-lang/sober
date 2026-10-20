@@ -1428,7 +1428,7 @@
       "sig_end": 275
     },
     {
-      "name": "PushStr",
+      "name": "PushString",
       "type_params": [],
       "params": [
         {

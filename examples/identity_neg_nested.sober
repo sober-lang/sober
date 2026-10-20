@@ -1,11 +1,11 @@
 package main
 
-// 負例: 同一性を持つ型（par.Pool）を欄の欄に持つ struct のゼロ値 `Tenant{}`（欄を推移的に辿って拒否 — diag.Identity）
+// 負例: 同一性を持つ型（task.Pool）を欄の欄に持つ struct のゼロ値 `Tenant{}`（欄を推移的に辿って拒否 — diag.Identity）
 
-import "std/par"
+import "std/task"
 
 type Quota struct {
-    pool par.Pool
+    pool task.Pool
 }
 
 type Tenant struct {

@@ -1,5 +1,6 @@
 import FeatherweightSober.Gen
 import FeatherweightSober.TyVec
+import FeatherweightSober.Tls
 
 /-!
 # sober-gen: 差分テストベクタ生成バイナリ
@@ -12,6 +13,12 @@ import FeatherweightSober.TyVec
 golden セットの再生成と照合は scripts/corevec.sh。
 -/
 def main (args : List String) : IO UInt32 := do
+  -- `sober-gen --tlsfsm`: TLS の handshake の状態機械の遷移表（FeatherweightSober/Tls.lean — testdata/tls/fsm.golden・scripts/tlsfsm.sh）
+  if args.head? == some "--tlsfsm" then
+    let stdout ← IO.getStdout
+    for line in FS.Tls.table do
+      stdout.putStrLn line
+    return 0
   -- `sober-gen --tyvec <seed> <count>`: 型の関数の差分ベクタ（FeatherweightSober/TyVec.lean — 抽出器 E1b）
   if args.head? == some "--tyvec" then
     let seed := (args[1]?.bind String.toNat?).getD 42

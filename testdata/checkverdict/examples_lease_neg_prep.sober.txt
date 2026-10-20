@@ -1,0 +1,2 @@
+sober: load error at examples/lease_neg_prep.sober:15:56: the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else
+exit=1

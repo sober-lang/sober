@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 7
     },
     {
@@ -17,8 +17,8 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     }
   ],
@@ -452,7 +452,7 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 141
                   },
                   "field": "Map",

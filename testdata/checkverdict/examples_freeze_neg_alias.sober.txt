@@ -1,0 +1,3 @@
+examples/freeze_neg_alias.sober:9:7: error: this writes through `ys[…]`, which may hold the contents frozen by `freeze(xs)` — the frozen value would change. Build the value through one binding only, or copy it before freezing (Analyzer)
+examples/freeze_neg_alias.sober:7:5: error: (note) the contents are shared from here — the binding written above and the frozen one may hold the same buffer (Analyzer)
+exit=1

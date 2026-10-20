@@ -1,0 +1,29 @@
+package hmac
+
+// hmac（TLS 便 — report-790 / 792）: HMAC-SHA256（RFC 2104 / FIPS 198-1）。公開の名前と署名は仮決め（0.6.0 の API 総再審に同席）。
+// 鍵の長さだけが分岐に効く（公開の値）— 中身は SHA-256 の圧縮関数を通るだけで定数時間。tag の照合は crypto.Equal で
+//
+//     tag := hmac.Sum256(key, msg)
+
+import "std/crypto/sha256"
+import "std/iter"
+
+// Sum256 は key で msg の HMAC-SHA256（32 バイト）。鍵が 64 バイトを超えれば SHA-256 で縮めてから使う
+func Sum256(key []byte, msg []byte) []byte {
+    k := if len(key) > sha256.BlockSize { sha256.Sum256(key) } else { key }
+    mut ip := mut []byte{}
+    mut op := mut []byte{}
+    for i <- iter.Range(0, sha256.BlockSize) {
+        b := if i < len(k) { int(k[i]) } else { 0 }
+        ip = append(ip, byte(b ^ 0x36))
+        op = append(op, byte(b ^ 0x5c))
+    }
+    mut s := sha256.New()
+    sha256.Write(mut s, freeze(ip))
+    sha256.Write(mut s, msg)
+    inner := sha256.Sum(s)
+    mut o := sha256.New()
+    sha256.Write(mut o, freeze(op))
+    sha256.Write(mut o, inner)
+    return sha256.Sum(o)
+}

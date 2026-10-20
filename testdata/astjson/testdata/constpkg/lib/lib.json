@@ -16,6 +16,34 @@
         "start": 3,
         "end": 8
       }
+    },
+    {
+      "name": "Min",
+      "expr": {
+        "k": "binary",
+        "op": "-",
+        "lhs": {
+          "k": "unary",
+          "op": "-",
+          "operand": {
+            "k": "int",
+            "value": 9223372036854775807,
+            "tok": 12
+          },
+          "tok": 11
+        },
+        "rhs": {
+          "k": "int",
+          "value": 1,
+          "tok": 14
+        },
+        "tok": 13
+      },
+      "tok": 9,
+      "span": {
+        "start": 8,
+        "end": 16
+      }
     }
   ]
 }

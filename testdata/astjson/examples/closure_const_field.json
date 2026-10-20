@@ -1,0 +1,257 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Gen",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "n"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "R",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "g",
+            "type": {
+              "k": "name",
+              "name": "Gen"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "int",
+                "value": 7,
+                "tok": 45
+              }
+            ],
+            "tok": 43
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "R",
+                "elems": [
+                  {
+                    "key": "g",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "n",
+                          "type": {
+                            "k": "name",
+                            "name": "int"
+                          }
+                        }
+                      ],
+                      "body": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "n",
+                          "tok": 58
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "k",
+                          "tok": 60
+                        },
+                        "tok": 59
+                      },
+                      "tok": 57
+                    }
+                  }
+                ],
+                "tok": 49,
+                "type_args": []
+              }
+            ],
+            "tok": 47
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 63
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "a",
+                      "tok": 65
+                    },
+                    "field": "g",
+                    "tok": 67
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 69
+                    }
+                  ],
+                  "tok": 68
+                }
+              ],
+              "tok": 64
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 73
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "Twice",
+                      "tok": 75
+                    },
+                    "field": "g",
+                    "tok": 77
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 79
+                    }
+                  ],
+                  "tok": 78
+                }
+              ],
+              "tok": 74
+            }
+          }
+        ]
+      },
+      "tok": 39,
+      "bodiless": false,
+      "span": {
+        "start": 38,
+        "end": 85
+      },
+      "sig_end": 42
+    }
+  ],
+  "consts": [
+    {
+      "name": "Twice",
+      "expr": {
+        "k": "composite",
+        "type_name": "R",
+        "elems": [
+          {
+            "key": "g",
+            "value": {
+              "k": "lambda",
+              "params": [
+                {
+                  "name": "n",
+                  "type": {
+                    "k": "name",
+                    "name": "int"
+                  }
+                }
+              ],
+              "body": {
+                "k": "binary",
+                "op": "*",
+                "lhs": {
+                  "k": "ident",
+                  "name": "n",
+                  "tok": 33
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 2,
+                  "tok": 35
+                },
+                "tok": 34
+              },
+              "tok": 32
+            }
+          }
+        ],
+        "tok": 24,
+        "type_args": []
+      },
+      "tok": 22,
+      "span": {
+        "start": 21,
+        "end": 38
+      }
+    }
+  ]
+}

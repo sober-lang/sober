@@ -1,0 +1,123 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "bump",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "ident",
+                "name": "n",
+                "tok": 11
+              }
+            ],
+            "op": "+=",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 17
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "k"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 25
+              }
+            ],
+            "tok": 22
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "bump",
+                "tok": 27
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 29
+                }
+              ],
+              "tok": 28
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 32
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "k",
+                  "tok": 34
+                }
+              ],
+              "tok": 33
+            }
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 39
+      },
+      "sig_end": 21
+    }
+  ],
+  "consts": []
+}

@@ -5,7 +5,7 @@ package main
 // The same numbers as examples/io_par (which reads each shard whole). Run from the repository root.
 import "std/io"
 import "std/iter"
-import "std/par"
+import "std/task"
 
 type Tally struct {
     requests int
@@ -60,8 +60,8 @@ func readBytes(shard int) (int, error?) {
 
 func main() int {
     shards := []int{1, 2, 3, 4}
-    ts, err := par.Map(shards, (k) => summarize(k))
-    ns, err2 := par.Map(shards, (k) => readBytes(k))
+    ts, err := task.Map(shards, (k) => summarize(k))
+    ns, err2 := task.Map(shards, (k) => readBytes(k))
     if err != nil || err2 != nil {
         println("cannot summarize the logs")
         return 1
@@ -75,7 +75,7 @@ func main() int {
         total.sent += t.sent
     }
     println("total: ${total.requests} requests, ${total.errors} errors, ${total.sent} bytes")
-    _, miss := par.Map([]int{1, 9}, (k) => summarize(k))
+    _, miss := task.Map([]int{1, 9}, (k) => summarize(k))
     if miss != nil {
         println(switch miss {
         case io.NotFound{}: "a log shard is missing"

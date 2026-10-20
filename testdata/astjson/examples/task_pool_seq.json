@@ -1,0 +1,373 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "p"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 13
+                  },
+                  "field": "NewPool",
+                  "tok": 15
+                },
+                "args": [
+                  {
+                    "k": "binary",
+                    "op": "*",
+                    "lhs": {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 17
+                    },
+                    "rhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "task",
+                        "tok": 19
+                      },
+                      "field": "KB",
+                      "tok": 21
+                    },
+                    "tok": 18
+                  },
+                  {
+                    "k": "nil",
+                    "tok": 23
+                  }
+                ],
+                "tok": 16
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "q"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 28
+                  },
+                  "field": "NewPool",
+                  "tok": 30
+                },
+                "args": [
+                  {
+                    "k": "binary",
+                    "op": "*",
+                    "lhs": {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 32
+                    },
+                    "rhs": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "task",
+                        "tok": 34
+                      },
+                      "field": "KB",
+                      "tok": 36
+                    },
+                    "tok": 33
+                  },
+                  {
+                    "k": "ident",
+                    "name": "p",
+                    "tok": 38
+                  }
+                ],
+                "tok": 31
+              }
+            ],
+            "tok": 26
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "task",
+                  "tok": 41
+                },
+                "field": "MarkFailed",
+                "tok": 43
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "q",
+                  "tok": 45
+                }
+              ],
+              "tok": 44
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "task",
+                  "tok": 48
+                },
+                "field": "MarkFailed",
+                "tok": 50
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "q",
+                  "tok": 52
+                }
+              ],
+              "tok": 51
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "l"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 57
+                  },
+                  "field": "Ledger",
+                  "tok": 59
+                },
+                "args": [],
+                "tok": 60
+              }
+            ],
+            "tok": 55
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 63
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "pools ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 65
+                        },
+                        "args": [
+                          {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "l",
+                              "tok": 65
+                            },
+                            "field": "pools",
+                            "tok": 65
+                          }
+                        ],
+                        "tok": 65
+                      }
+                    ]
+                  },
+                  "tok": 65
+                }
+              ],
+              "tok": 64
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "v"
+                  ],
+                  "src": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "l",
+                      "tok": 71
+                    },
+                    "field": "pools",
+                    "tok": 73
+                  },
+                  "guards": [],
+                  "tok": 69
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 75
+                      },
+                      "args": [
+                        {
+                          "k": "interp",
+                          "tmpl": {
+                            "lits": [
+                              "pool ",
+                              " parent ",
+                              " cap ",
+                              " tasks ",
+                              " fail ",
+                              ""
+                            ],
+                            "holes": [
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 77
+                                },
+                                "field": "id",
+                                "tok": 77
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 77
+                                },
+                                "field": "parent",
+                                "tok": 77
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 77
+                                },
+                                "field": "cap",
+                                "tok": 77
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 77
+                                },
+                                "field": "tasks",
+                                "tok": 77
+                              },
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "v",
+                                  "tok": 77
+                                },
+                                "field": "fail",
+                                "tok": 77
+                              }
+                            ]
+                          },
+                          "tok": 77
+                        }
+                      ],
+                      "tok": 76
+                    }
+                  }
+                ]
+              },
+              "tok": 68
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 84
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

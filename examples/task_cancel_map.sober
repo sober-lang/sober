@@ -1,0 +1,33 @@
+package main
+
+// 段 6 P4-5: task.Map の子が 1 つ死ぬと、後ろの純な子は切られる（Map は死を見たら残りを Try しない — 走らせ直さない）。値 = ChildDied で結果は空
+// （切らないときと同じ）。切られなければ後ろの 12 個がそれぞれ 1 千万回回る
+import "std/task"
+
+func work(x int) int {
+    if x == 3 {
+        xs := []int{1}
+        return xs[x]
+    }
+    mut s := 0
+    mut i := 0
+    mut n := 1000
+    if x > 3 {
+        n = 10000000
+    }
+    while i < n {
+        s = (s + i * x) % 1000003
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    xs := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+    r, e := task.Map(xs, (x) => work(x))
+    switch e {
+    case nil: println("ok ${len(r)}")
+    case task.ChildDied{cause}: println("map died, ${len(r)}")
+    default: println("other")
+    }
+}

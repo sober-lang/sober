@@ -1,0 +1,30 @@
+package main
+
+// 借りの値の使い方の受理の形（(α-L0)）: 呼ぶ・展開の仮引数へ転送（η）・文形 for の本体と借りの位置のラムダへの捕捉。
+// 借りの閉包の捕捉は imm（string）— env は借りの位置ごとの閉じた union
+
+type Stream func(emit func(n int) int) int
+
+type Resp struct {
+    stream Stream?
+}
+
+func sum3(k func(n int) int) int {
+    mut t := 0
+    xs := []int{1, 2, 3}
+    for i <- xs { t += k(i) }
+    return t
+}
+
+func apply(n int, k func(n int) int) int { return k(n) }
+
+func run(r Resp, base string) int {
+    st := r.stream
+    return if st != nil { st((n int) => n * len(bytes(base))) } else { 0 }
+}
+
+func main() {
+    tag := "xy"
+    r := Resp{stream: (emit) => sum3(emit) + apply(10, (m int) => emit(m)) + len(bytes(tag))}
+    println(run(r, "abc"))
+}

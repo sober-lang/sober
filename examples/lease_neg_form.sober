@@ -1,0 +1,16 @@
+package main
+
+// 窓は型を書いた mut 仮引数 1 つのラムダ（diag.Par kind 24）
+
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    head pool.Scratch
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.head, 8))
+    println(task.Lease(lw, (w Work) => w.n))
+}

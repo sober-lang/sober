@@ -4,10 +4,9 @@ package main
 // 深さ d（2 / 4 / 6 — 入れ子の型 N0〜N5 の下から d 段）の木を作って JSON に書く。(b) = ../pieces（各節が文字列片を返して親が繋ぐ素直な形）
 
 import "std/builder"
-import "std/conv"
+import "std/convert"
 import "std/iter"
 import "std/os"
-import "std/strings"
 
 type N0 struct {
     id int
@@ -96,11 +95,11 @@ func mkN5(id int, f int) N5 {
 
 func wN0(o mut builder.Builder[byte], n N0) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     put(mut o, ",\"kids\":[")
     for i <- iter.Range(0, len(n.kids)) {
         if i > 0 {
@@ -114,11 +113,11 @@ func wN0(o mut builder.Builder[byte], n N0) {
 
 func wN1(o mut builder.Builder[byte], n N1) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     put(mut o, ",\"kids\":[")
     for i <- iter.Range(0, len(n.kids)) {
         if i > 0 {
@@ -132,11 +131,11 @@ func wN1(o mut builder.Builder[byte], n N1) {
 
 func wN2(o mut builder.Builder[byte], n N2) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     put(mut o, ",\"kids\":[")
     for i <- iter.Range(0, len(n.kids)) {
         if i > 0 {
@@ -150,11 +149,11 @@ func wN2(o mut builder.Builder[byte], n N2) {
 
 func wN3(o mut builder.Builder[byte], n N3) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     put(mut o, ",\"kids\":[")
     for i <- iter.Range(0, len(n.kids)) {
         if i > 0 {
@@ -168,11 +167,11 @@ func wN3(o mut builder.Builder[byte], n N3) {
 
 func wN4(o mut builder.Builder[byte], n N4) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     put(mut o, ",\"kids\":[")
     for i <- iter.Range(0, len(n.kids)) {
         if i > 0 {
@@ -186,16 +185,16 @@ func wN4(o mut builder.Builder[byte], n N4) {
 
 func wN5(o mut builder.Builder[byte], n N5) {
     put(mut o, "{\"id\":")
-    put(mut o, strings.FormatInt(n.id))
+    put(mut o, convert.FormatInt(n.id))
     put(mut o, ",\"name\":\"")
     put(mut o, n.name)
     put(mut o, "\",\"score\":")
-    put(mut o, conv.FormatFloat(n.score))
+    put(mut o, convert.FormatFloat(n.score))
     builder.Push(mut o, '}')
 }
 
 func put(o mut builder.Builder[byte], s string) {
-    builder.PushStr(mut o, s)
+    builder.PushString(mut o, s)
 }
 
 func topN0(f int) string {

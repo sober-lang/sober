@@ -1,26 +1,26 @@
 package desugar
 
-// std/par の呼び出し点の写し（段 6 P3a-1c — language.md 11 節・p3a-draft 1.2）: par.Scope / Spawn / Join / Try をコアの
+// std/task の呼び出し点の写し（段 6 P3a-1c — language.md 11 節・p3a-draft 1.2）: task.Run / Spawn / Join / Try をコアの
 // scope / spawn / join / tryJ へ。P3a の範囲 = error を返さない task（g : func() T・T は loc-free）
 
 import "diag"
 import "ast"
 import "std/iter"
 
-// parEpParam は package pk の型式 pt が std/par の端点の型（Tx[T] / Rx[T]）なら型引数の型式（でなければ -1）。端点のコアの型は own で
-// 宣言の struct の欄の形ではないので、std/par の展開される口（RecvAll — for-Recv の写し先）の仮引数は実引数の型をそのまま使う
+// parEpParam は package pk の型式 pt が std/task の端点の型（Tx[T] / Rx[T]）なら型引数の型式（でなければ -1）。端点のコアの型は own で
+// 宣言の struct の欄の形ではないので、std/task の展開される口（RecvAll — for-Recv の写し先）の仮引数は実引数の型をそのまま使う
 func parEpParam(st mut S, pk int, pt NodeRef) NodeRef {
-    if !strIs(mut st, PkgPath(mut st, pk), "std/par") || kindN(mut st, pt) != ast.TGeneric || lenL(mut st, lB(nodeOf(mut st, pt))) != 1 {
+    if !strIs(mut st, PkgPath(mut st, pk), "std/task") || kindN(mut st, pt) != ast.TGeneric || lenL(mut st, lB(nodeOf(mut st, pt))) != 1 {
         return -1
     }
     nm := sA(nodeOf(mut st, pt))
-    return if strIs(mut st, nm, "Tx") || strIs(mut st, nm, "Rx") { latN(mut st, lB(nodeOf(mut st, pt)), 0) } else { NodeRef(-1) }
+    return if strIs(mut st, nm, "Sender") || strIs(mut st, nm, "Receiver") { latN(mut st, lB(nodeOf(mut st, pt)), 0) } else { NodeRef(-1) }
 }
 
-// parCall は std/par の鍵 key の呼び出し（実引数 args）のコア
+// parCall は std/task の鍵 key の呼び出し（実引数 args）のコア
 func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     na := lenL(mut st, args)
-    // チャネル（段 6 P3b — language.md 11 節「チャネル」— 形の名指し〔kind 13 / 14 / 15〕は ParCheck が先に出す）: NewChan = newch r cap t（家 = 今の最内の region・cap は字面）・Send = send・
+    // チャネル（段 6 P3b — language.md 11 節「チャネル」— 形の名指し〔kind 13 / 14 / 15〕は ParCheck が先に出す）: NewChannel = newch r cap t（家 = 今の最内の region・cap は字面）・Send = send・
     // Recv = recv rx（型は T? — 閉じて空なら nil。P3b-4 ③）・Close = close tx・SpawnGive = let ep in spawn（ep を子の仮引数に束ねて閉包変換 —
     // 端点は渡す値の組に入り、spawn が持ち主を子へ移す）
     if key == PAR_NEWCHAN {
@@ -71,7 +71,7 @@ func parCall(st mut S, key int, fi int, args ListRef, at NodeRef, eb int, ef int
         return cLet(mut st, ep, sp), nil
     }
     if key == PAR_SCOPE {
-        if na != 2 {
+        if na != 4 {
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         return parScope(mut st, fi, latN(mut st, args, 0), at, eb, ef, depth)
@@ -225,12 +225,12 @@ func ParTaskTupleY(st mut S, y int, i int) int {
     return if parFallibleY(mut st, a) { latI(mut st, yLa(YAt(mut st, a)), i) } else { -1 }
 }
 
-// ParSpawnInY は par.SpawnIn の呼び出しの表層型 y（(Task[T]?, error?)）の i 番目（でなければ -1 — lower の読み口・段 6 P5-4）
+// ParSpawnInY は task.SpawnIn の呼び出しの表層型 y（(Task[T]?, error?)）の i 番目（でなければ -1 — lower の読み口・段 6 P5-4）
 func ParSpawnInY(st mut S, y int, i int) int {
     return if parFallibleY(mut st, y) { latI(mut st, yLa(YAt(mut st, y)), i) } else { -1 }
 }
 
-// ParSpawnInTaskY は par.SpawnIn の呼び出しの表層型 y の handle の表層型 Task[T]（でなければ -1）
+// ParSpawnInTaskY は task.SpawnIn の呼び出しの表層型 y の handle の表層型 Task[T]（でなければ -1）
 func ParSpawnInTaskY(st mut S, y int) int {
     h := ParSpawnInY(mut st, y, 0)
     return if h >= 0 && yk(mut st, h) == YOpt { YAt(mut st, h).a } else { -1 }
@@ -285,7 +285,7 @@ func giveBind(st mut S, lam NodeRef, eb int, depth int, t TyRef) int {
     return bind(mut st, eb, sA(nodeOf(mut st, p)), depth, false, -1, t, -1, tRegion(mut st, t), -1, false, SUNK)
 }
 
-// parTypeArg は呼び出し at の明示の型引数 `f[T](…)` のコアの型（無ければ名指しの拒否 — NewChan[T] は型引数を書く）
+// parTypeArg は呼び出し at の明示の型引数 `f[T](…)` のコアの型（無ければ名指しの拒否 — NewChannel[T] は型引数を書く）
 func parTypeArg(st mut S, at NodeRef) (TyRef, error?) {
     callee := nA(nodeOf(mut st, at))
     if kindN(mut st, callee) != ast.EIndex {
@@ -306,7 +306,7 @@ func scopeBind(st mut S, lam NodeRef, eb int, depth int) int {
     return bind(mut st, eb, sA(nodeOf(mut st, p)), depth, false, -1, tOwn(mut st, OWN_SCOPE, r, eps), -1, r, -1, false, SUNK)
 }
 
-// parScope は `par.Scope((s) => body)`: `case (scope t body') (pair (var 0) nil) (pair zero (some TaskDied{…}))`
+// parScope は `task.Run((s) => body)`: `case (scope t body') (pair (var 0) nil) (pair zero (some ChildDied{…}))`
 // （`(T, error?)` をテンプレートが直に組む — 総称の多値の戻り F-d を踏まない）。本体は 1 段深い region・札 = var 0・ラベルを越えない
 func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     lam := parLambda(mut st, arg, 1)
@@ -362,7 +362,7 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     }
     t := if tyRegionAbove(mut st, tb, kk) { tyClamp(mut st, tb, kk) } else { tb }
     zv := zeroOf(mut st, t, at)?
-    td := variantIn(mut st, fnPkg(mut st, fi), strLit(mut st, "TaskDied"), 0)
+    td := variantIn(mut st, fnPkg(mut st, fi), strLit(mut st, "ChildDied"), 0)
     if td.decl != NodeRef(ERRS) {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
@@ -384,7 +384,7 @@ func parScope(st mut S, fi int, arg NodeRef, at NodeRef, eb int, ef int, depth i
     return c3(mut st, CCase, cScope(mut st, st_t, eps, body), live, c3(mut st, CCase, cVar(mut st, 0), dead, failed)), nil
 }
 
-// parInTaskTy は `par.SpawnIn(s, pool, () => g)` の handle の型（Spawn と同じ — 分からなければ -1）
+// parInTaskTy は `task.SpawnIn(s, pool, () => g)` の handle の型（Spawn と同じ — 分からなければ -1）
 func parInTaskTy(st mut S, args ListRef, eb int, ef int) TyRef {
     stt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
     lam := parLambda(mut st, latN(mut st, args, 2), 0)
@@ -397,7 +397,7 @@ func parInTaskTy(st mut S, args ListRef, eb int, ef int) TyRef {
     return if t == -1 { TyRef(-1) } else { tOwn(mut st, OWN_TASK, tRegion(mut st, stt), tyRelocAll(mut st, t, tRegion(mut st, stt))) }
 }
 
-// parSpawnIn は `par.SpawnIn(s, pool, () => g)`（段 6 P5-4）: `let p = pool in ite tt (pair (some (spawn s a g')) nil) (pair nil (some Shed{}))` —
+// parSpawnIn は `task.SpawnIn(s, pool, () => g)`（段 6 P5-4）: `let p = pool in ite tt (pair (some (spawn s a g')) nil) (pair nil (some Shed{}))` —
 // 入場の問い合わせは io（コアの近似は io の intrinsic と同じく値を持たない — 両方の腕が型を持つ）。budget: は運ばない（Spawn と同じ）
 func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     ht := parInTaskTy(mut st, args, eb, ef)
@@ -425,7 +425,7 @@ func parSpawnIn(st mut S, fi int, args ListRef, at NodeRef, eb int, ef int, dept
     return cLet(mut st, p, cIte(mut st, cTT(mut st), ok, shed)), nil
 }
 
-// parSpawn は `par.Spawn(s, () => g)`: `spawn s a g'` — 閉包変換（コアの上 — p3a-draft 1.2）: g を親の環境・1 段深い region（子自前の region）で
+// parSpawn は `task.Spawn(s, () => g)`: `spawn s a g'` — 閉包変換（コアの上 — p3a-draft 1.2）: g を親の環境・1 段深い region（子自前の region）で
 // 脱糖し、コアの自由変数（親の束縛）を組 a に詰めて、本体の参照を var 0 の射影へ置き換える
 func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, depth int, np int) (CoreRef, error?) {
     lam := parLambda(mut st, arg, np)
@@ -467,7 +467,7 @@ func parSpawn(st mut S, sc CoreRef, arg NodeRef, at NodeRef, eb int, ef int, dep
     return cSpawn(mut st, sc, pairChain(mut st, vs), kid), nil
 }
 
-// parTy は std/par の鍵 key の呼び出しの結果のコアの型（分からなければ -1 — computeTy の写し）
+// parTy は std/task の鍵 key の呼び出しの結果のコアの型（分からなければ -1 — computeTy の写し）
 func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef) TyRef {
     na := lenL(mut st, args)
     if key == PAR_NEWCHAN {
@@ -532,7 +532,7 @@ func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef)
         return if t == -1 { TyRef(-1) } else { tOwn(mut st, OWN_TASK, tRegion(mut st, stt), tyRelocAll(mut st, t, tRegion(mut st, stt))) }
     }
     if key == PAR_SCOPE {
-        if na != 2 {
+        if na != 4 {
             return -1
         }
         lam := parLambda(mut st, latN(mut st, args, 0), 1)
@@ -671,20 +671,20 @@ func coreCapture(st mut S, e CoreRef, k int, fv []int) CoreRef {
     return ce(mut st, x.tag, a, b, c, x.d)
 }
 
-// parTaskDecl は型の表の dr が std/par の Task か
+// parTaskDecl は型の表の dr が std/task の Task か
 func parTaskDecl(st mut S, dr int) bool {
-    return strIs(mut st, PkgPath(mut st, hget(mut st, dr + 1)), "std/par") && strIs(mut st, sA(nodeOf(mut st, hgetN(mut st, dr))), "Task")
+    return strIs(mut st, PkgPath(mut st, hget(mut st, dr + 1)), "std/task") && strIs(mut st, sA(nodeOf(mut st, hgetN(mut st, dr))), "Handle")
 }
 
-// parTaskTy は型式 `par.Task[T]`（handle の slice の要素 — 段 6 P3b-5）のコアの型: 囲む par.Scope の region rs の
-// `own task rs (prod T (opt eps))`（Spawn の結果と同じ形 — error を返す task の handle `par.Task[(T, error?)]` も同じ形）。scope の外は宣言の struct のまま
-// （std/par の宣言の署名 — 呼び出し点で写すので値は作られない）
+// parTaskTy は型式 `task.Handle[T]`（handle の slice の要素 — 段 6 P3b-5）のコアの型: 囲む task.Run の region rs の
+// `own task rs (prod T (opt eps))`（Spawn の結果と同じ形 — error を返す task の handle `task.Handle[(T, error?)]` も同じ形）。scope の外は宣言の struct のまま
+// （std/task の宣言の署名 — 呼び出し点で写すので値は作られない）
 func parTaskTy(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
     if lenL(mut st, lB(nodeOf(mut st, te))) != 1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }
     r := st.parScope1 - 1
-    // error を返す task の handle（`par.Task[(T, error?)]` — P3b 残穴1）: コアの形は同じ（1b' (A) — 全 task が `(T, error?)` の組）。区別は表層型
+    // error を返す task の handle（`task.Handle[(T, error?)]` — P3b 残穴1）: コアの形は同じ（1b' (A) — 全 task が `(T, error?)` の組）。区別は表層型
     a0 := latN(mut st, lB(nodeOf(mut st, te)), 0)
     te0 := if kindN(mut st, a0) == ast.TTuple { latN(mut st, lA(nodeOf(mut st, a0)), 0) } else { a0 }
     t := tyOf(mut st, pk, te0, at, fuel - 1)?
@@ -692,27 +692,27 @@ func parTaskTy(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error
     return tOwn(mut st, OWN_TASK, r, tyRelocAll(mut st, tProd(mut st, t, tOpt(mut st, et)), r)), nil
 }
 
-// ParHandlesParam は package pk の型式 pt が std/par の handle の slice（`[]Task[T]` — Gather の仮引数）か。端点と同じく実引数の型のまま束ねる
+// ParHandlesParam は package pk の型式 pt が std/task の handle の slice（`[]Task[T]` — Gather の仮引数）か。端点と同じく実引数の型のまま束ねる
 // （handle の slice は scope の本体の mut slice — 宣言の型式からは region も可変性も決まらない）
 func ParHandlesParam(st mut S, pk int, pt NodeRef) bool {
-    if !strIs(mut st, PkgPath(mut st, pk), "std/par") || kindN(mut st, pt) != ast.TSlice {
+    if !strIs(mut st, PkgPath(mut st, pk), "std/task") || kindN(mut st, pt) != ast.TSlice {
         return false
     }
     e := nA(nodeOf(mut st, pt))
-    return kindN(mut st, e) == ast.TGeneric && strIs(mut st, sA(nodeOf(mut st, e)), "Task")
+    return kindN(mut st, e) == ast.TGeneric && strIs(mut st, sA(nodeOf(mut st, e)), "Handle")
 }
 
 // ── error を返す task の Gather / Map の振り分け（P3b 残穴1）──
-// 呼び手は par.Gather / par.Map と書き、表層型検査器が handle の slice の要素の型（Task[(T, error?)]）・ラムダの結果の型（`(U, error?)`）を見て
-// std/par の非公開の gatherE / mapE へ振り分ける。決めた先は callee の節の別キー（0 - PREDIR - 節）に記録し、脱糖器（findFn）と lower が同じ表を引く
+// 呼び手は task.Gather / task.Map と書き、表層型検査器が handle の slice の要素の型（Task[(T, error?)]）・ラムダの結果の型（`(U, error?)`）を見て
+// std/task の非公開の gatherE / mapE へ振り分ける。決めた先は callee の節の別キー（0 - PREDIR - 節）に記録し、脱糖器（findFn）と lower が同じ表を引く
 // （判定は 1 か所 — check と build で割れない）
 
 const PREDIR = 1125899906842624   // 2^50（節の参照 < 2^43・型引数の別キー 0 - 1 - 節 と重ならない）
 
-// parRedirectY は std/par の関数 fi の呼び出し（実引数の表層型 at・決まった型引数 env）の振り分け先（無ければ -1）
+// parRedirectY は std/task の関数 fi の呼び出し（実引数の表層型 at・決まった型引数 env）の振り分け先（無ければ -1）
 func parRedirectY(st mut S, fi int, at ListRef, env ListRef) int {
     pk := fnPkg(mut st, fi)
-    if !strIs(mut st, PkgPath(mut st, pk), "std/par") {
+    if !strIs(mut st, PkgPath(mut st, pk), "std/task") {
         return -1
     }
     n := fnName(mut st, fi)

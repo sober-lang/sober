@@ -1,0 +1,17 @@
+package main
+
+// 借りの位置でない匿名の関数型の仮引数に置いたラムダは同一性の型を捕捉できない（(α-L0)）: net.Serve の h は本体が接続ごとの子 task へ渡す
+// （借りの位置の安全は呼び先の本体で決まる）— 外の Conn を捕捉した h は子 task から同じ Conn を叩く形になる
+
+import "std/net"
+
+func run() error? {
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            net.Serve(l, (d net.Conn) => net.Send(c, bytes("x")))?
+        }
+    }
+    return nil
+}
+
+func main() { _ = run() }

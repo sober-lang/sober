@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/utf8",
+      "path": "std/strings",
       "tok": 7
     },
     {
@@ -22,8 +22,13 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],
@@ -651,7 +656,7 @@
                           "k": "selector",
                           "base": {
                             "k": "ident",
-                            "name": "utf8",
+                            "name": "strings",
                             "tok": 261
                           },
                           "field": "IndexInvalid",
@@ -727,7 +732,7 @@
                               "k": "selector",
                               "base": {
                                 "k": "ident",
-                                "name": "utf8",
+                                "name": "strings",
                                 "tok": 281
                               },
                               "field": "Valid",
@@ -809,11 +814,11 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "utf8",
+                    "name": "$utf8",
                     "tok": 312
                   },
                   "field": "Parse",
-                  "tok": 314
+                  "tok": 312
                 },
                 "args": [
                   {
@@ -826,19 +831,19 @@
                       {
                         "k": "int",
                         "value": 104,
-                        "tok": 320
+                        "tok": 318
                       },
                       {
                         "k": "int",
                         "value": 105,
-                        "tok": 322
+                        "tok": 320
                       }
                     ],
                     "mut": false,
-                    "tok": 316
+                    "tok": 314
                   }
                 ],
-                "tok": 315
+                "tok": 313
               }
             ],
             "tok": 308
@@ -850,7 +855,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 326
+                "tok": 324
               },
               "args": [
                 {
@@ -859,16 +864,16 @@
                   "lhs": {
                     "k": "ident",
                     "name": "err",
-                    "tok": 328
+                    "tok": 326
                   },
                   "rhs": {
                     "k": "nil",
-                    "tok": 330
+                    "tok": 328
                   },
-                  "tok": 329
+                  "tok": 327
                 }
               ],
-              "tok": 327
+              "tok": 325
             }
           },
           {
@@ -878,7 +883,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 333
+                "tok": 331
               },
               "args": [
                 {
@@ -887,17 +892,17 @@
                   "lhs": {
                     "k": "ident",
                     "name": "s",
-                    "tok": 335
+                    "tok": 333
                   },
                   "rhs": {
                     "k": "strlit",
                     "value": "hi",
-                    "tok": 337
+                    "tok": 335
                   },
-                  "tok": 336
+                  "tok": 334
                 }
               ],
-              "tok": 334
+              "tok": 332
             }
           },
           {
@@ -914,11 +919,11 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "utf8",
-                    "tok": 344
+                    "name": "$utf8",
+                    "tok": 342
                   },
                   "field": "Parse",
-                  "tok": 346
+                  "tok": 342
                 },
                 "args": [
                   {
@@ -931,22 +936,22 @@
                       {
                         "k": "int",
                         "value": 97,
-                        "tok": 352
+                        "tok": 348
                       },
                       {
                         "k": "int",
                         "value": 255,
-                        "tok": 354
+                        "tok": 350
                       }
                     ],
                     "mut": false,
-                    "tok": 348
+                    "tok": 344
                   }
                 ],
-                "tok": 347
+                "tok": 343
               }
             ],
-            "tok": 340
+            "tok": 338
           },
           {
             "k": "expr",
@@ -955,7 +960,7 @@
               "callee": {
                 "k": "ident",
                 "name": "assert",
-                "tok": 358
+                "tok": 354
               },
               "args": [
                 {
@@ -964,16 +969,16 @@
                   "lhs": {
                     "k": "ident",
                     "name": "bad",
-                    "tok": 360
+                    "tok": 356
                   },
                   "rhs": {
                     "k": "nil",
-                    "tok": 362
+                    "tok": 358
                   },
-                  "tok": 361
+                  "tok": 357
                 }
               ],
-              "tok": 359
+              "tok": 355
             }
           }
         ]
@@ -982,7 +987,7 @@
       "bodiless": false,
       "span": {
         "start": 303,
-        "end": 367
+        "end": 363
       },
       "sig_end": 307
     }

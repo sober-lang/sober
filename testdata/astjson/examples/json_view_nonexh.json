@@ -144,7 +144,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Arr",
+                      "variant": "json.Array",
                       "fields": [
                         {
                           "name": "items",
@@ -196,7 +196,7 @@
                     {
                       "k": "type",
                       "bind": null,
-                      "variant": "json.Num",
+                      "variant": "json.Number",
                       "fields": [
                         {
                           "name": "lit",

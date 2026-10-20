@@ -1,2 +1,0 @@
-sober: load error at examples/par_neg_handles_err.sober:15:34: an error-returning task's handle goes in a slice of par.Task[(T, error?)] (the element type says the task can fail — Join gives two values)
-exit=1

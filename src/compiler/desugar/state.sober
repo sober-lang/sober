@@ -36,6 +36,9 @@ type S struct {
     // 区間（段 6 P6-3 — 脱糖 + 検査を区間ごとに子 task で: core_out.sober の DefRng）: rangeSet なら関数表の添字 [rlo, rhi) の Def だけ本体つき・
     // 他の Def は署名だけ（部分検査の視点の外と同じ形）。根の式は rangeRoot のときだけ
     rangeSet bool
+    // 名前付き関数型の写し（namedval.sober — NamedValueArgs）: nvSet なら名前付きの実引数を含む関数（nvMark の印）だけに表層型を付ける
+    nvSet bool
+    nvMark ListRef
     rlo int
     rhi int
     rangeRoot bool
@@ -90,15 +93,23 @@ type S struct {
     dictConst int
     dictLifts int
     liftHint int
+    // 次の liftLambdaCap が借りの閉包の持ち上げか（(α-L0) — 同一性の型の捕捉を許す。1 回で消費）
+    liftBrw int
+    // 値の位置のラムダごとの借りの仮引数のビット（loader の Program.cap_brw — capFile と同じ並び）
+    capBrw []int
     rdepth int
-    // task の床（段 6 P3a — par.Spawn の子の本体の中では子自前の region の番号・外では 0）: 呼び手空間の上界に置く値（Def 呼び出しの実引数の string リテラル）を
+    // task の床（段 6 P3a — task.Spawn の子の本体の中では子自前の region の番号・外では 0）: 呼び手空間の上界に置く値（Def 呼び出しの実引数の string リテラル）を
     // 子の世界で書ける最も外の region へ（子は共有の接頭〔親の region〕に確保できない — コアの spawn の本体は b = 子の region で型付く）
     taskFloor int
-    // 囲む par.Scope の region + 1（0 = 無し — 段 6 P3b-5）: 型式 `par.Task[T]`（handle の slice の要素）をその region の own task へ写す
+    // 囲む task.Run の region + 1（0 = 無し — 段 6 P3b-5）: 型式 `task.Handle[T]`（handle の slice の要素）をその region の own task へ写す
     parScope1 int
     // 外の mut 場所へ格納する値の行き先の region + 1（0 = 無し — 宛先構築レーン M4）。値の式の最上段の mut のリテラルだけが消費する
     // （mksliceAt / mkmapAt で行き先に作る — mut は copyTo で写せない）。expr の入口で必ず落とす（部分式へ漏らさない）
     mutDest int
+    // struct リテラルの行き先の region + 1（0 = 無し — F-bb）: expr が消費した mutDest を struct リテラル（composite）が欄の値へ引き継ぐための受け渡し。
+    // composite が読んで fvDest に移し、fieldValuesIn の入口で必ず落とす（入れ子の欄の値へは mutDest として 1 欄ずつ渡し直す）
+    compDest int
+    fvDest int
     // mut を含む値を外の region から普通の関数へ渡す呼び出しを展開している関数の積み（再帰の守り — M4 mutValInline）
     mvInl table.Table[int]
     mvInlN int
@@ -128,6 +139,13 @@ type S struct {
     pslots table.Table[int]      // 手の値の枠 → レベル（生成中に決まる）
     // 表層型検査器（typer.sober — C1 B1）: 型の表・局所の束縛・節 → 型の表（鎖つきハッシュ）と、検査中の関数の文脈
     ytys table.Table[YT]
+    // 値の位置のラムダの鍵（クロージャの波 工程 5 — lower が env の形を F ごとに集める口）: yLambda が期待型の named fn type の宣言を記録する
+    ylamN table.Table[int]
+    ylamK table.Table[int]
+    ylamY table.Table[int]
+    // 借りの位置の構造の鍵（closure.sober の brwKey — 関数型の核の型 → 最初の型式の節）
+    bkSig table.Table[int]
+    bkNode table.Table[int]
     ybinds table.Table[YBind]
     yents table.Table[YEnt]
     ybucket table.Table[int]
@@ -193,6 +211,25 @@ type S struct {
     fnNamed table.Table[int]     // 名前付き関数型の展開の結果 → 型宣言（対 [te, td]…— surface.sober の noteNamedFn）
     curRes ListRef                   // 今の関数の結果の型式の列（表層型の照合用 — -1 = 無し）
     curResPkg int
+    // 値の位置（クロージャの波 工程 3b — closure.sober）: loader の判定の口（loader.FnValDecl — check と build が同じ判定を読む）と、
+    // 値の位置のラムダの捕捉の表（loader.Program の cap_* の写し — ラムダは [ファイル, 節] で引き、名前は capNames[capLo, capHi)）
+    fvcx loader.Cx
+    // 値の位置の匿名の関数型の欄の型式の節（工程 5d — loader.FnValAnonFields。欄の型の読みを閉包の型にする印）
+    anonFT []int
+    capFile []int
+    capNode []int
+    capLo []int
+    capHi []int
+    capNames []string
+    // 展開待ちの捕捉（loader.Program の cap_pend — 詰めた列。読みは closure.sober の capPkAt / capFlowAt / PendN / PendRow）
+    capPend []int
+    // env の形（クロージャの波 工程 4 B1 — closure.sober）: shRecDecl / shRecTy = この脱糖で持ち上げた閉包の形の記録（named fn type の宣言 →
+    // env の型・重複なし — 前走りが shapesFor で読む）、shDecl / shTy = 前走りが集めた形（入口が loadShapes で積む — U_F はこれの閉じた union）
+    shRecDecl table.Table[int]
+    shRecTy table.Table[int]
+    shDecl table.Table[int]
+    shTy table.Table[int]
+    shBuf table.Table[int]
 }
 
 // ── ヒープの読み書き（st.h = std/table の Table）──

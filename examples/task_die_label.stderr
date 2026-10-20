@@ -1,0 +1,2 @@
+panic: ChildDied{cause: Boom{…}} at task_die_label.sober:22:18
+  cause at task_die_label.sober:17:22

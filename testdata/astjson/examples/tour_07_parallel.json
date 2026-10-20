@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 7
     },
     {
@@ -280,7 +280,7 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 87
                   },
                   "field": "Map",
@@ -420,10 +420,10 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 129
                   },
-                  "field": "Scope",
+                  "field": "Run",
                   "tok": 131
                 },
                 "args": [
@@ -434,7 +434,7 @@
                         "name": "s",
                         "type": {
                           "k": "name",
-                          "name": "par.S"
+                          "name": "task.Scope"
                         }
                       }
                     ],
@@ -454,7 +454,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 143
                                 },
                                 "field": "Spawn",
@@ -506,7 +506,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 160
                                 },
                                 "field": "Spawn",
@@ -556,7 +556,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 175
                                 },
                                 "field": "Join",
@@ -577,7 +577,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 182
                                 },
                                 "field": "Join",
@@ -664,10 +664,10 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 208
                   },
-                  "field": "Scope",
+                  "field": "Run",
                   "tok": 210
                 },
                 "args": [
@@ -678,7 +678,7 @@
                         "name": "s",
                         "type": {
                           "k": "name",
-                          "name": "par.S"
+                          "name": "task.Scope"
                         }
                       }
                     ],
@@ -701,10 +701,10 @@
                                   "k": "selector",
                                   "base": {
                                     "k": "ident",
-                                    "name": "par",
+                                    "name": "task",
                                     "tok": 224
                                   },
-                                  "field": "NewChan",
+                                  "field": "NewChannel",
                                   "tok": 226
                                 },
                                 "idx": {
@@ -744,7 +744,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 238
                                 },
                                 "field": "Spawn",
@@ -817,7 +817,7 @@
                                                     "k": "selector",
                                                     "base": {
                                                       "k": "ident",
-                                                      "name": "par",
+                                                      "name": "task",
                                                       "tok": 261
                                                     },
                                                     "field": "Send",
@@ -861,7 +861,7 @@
                                             "k": "selector",
                                             "base": {
                                               "k": "ident",
-                                              "name": "par",
+                                              "name": "task",
                                               "tok": 274
                                             },
                                             "field": "Close",
@@ -935,7 +935,7 @@
                                     "k": "selector",
                                     "base": {
                                       "k": "ident",
-                                      "name": "par",
+                                      "name": "task",
                                       "tok": 298
                                     },
                                     "field": "Recv",
@@ -992,7 +992,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 311
                                 },
                                 "field": "Join",

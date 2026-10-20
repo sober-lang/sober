@@ -1,11 +1,13 @@
 package iter
 
-// Iter[T] は push 型の生産者（Go 1.23 の iter.Seq と同形 — language.md 7 節）。
-// 値でなく関数型の引数としてだけ現れ、呼び出し点で展開する（escape する Iter は断片外）。
-// for 式 `for x <- xs if g yield e` はこの型の引数になる
+// push 型の生産者 Iter[T] と、for 式の生成元（Slice・Range）・消費（Each・Count・Sum）
+
+// push 型の生産者（Go 1.23 の iter.Seq と同形 — language.md 7 節）。変数に入れず、`Iter[T]` の仮引数の位置で消費する（呼び出し点で展開する）。
+// for 式 `for x <- xs if g yield e` はこの型の引数になる: `iter.Sum(for …)`・`for v <- xs if v % 2 == 0 yield v |> iter.Sum`
+// 例: examples/tour_03_collections.sober
 type Iter[T] func(func(T))
 
-// Slice は slice の走査。for 式の生成元 `x <- xs`（slice の特例）の実体
+// slice の走査。for 式の生成元 `x <- xs`（slice の特例）の実体
 func Slice[T](xs []T, k func(T)) {
     mut i := 0
     while i < len(xs) {
@@ -14,7 +16,7 @@ func Slice[T](xs []T, k func(T)) {
     }
 }
 
-// Range は整数の半開区間 [lo, hi) を昇順に回す。呼び出し形の生成元 `for i <- iter.Range(0, n)` の実体
+// 整数の半開区間 [lo, hi) を昇順に回す。呼び出し形の生成元 `for i <- iter.Range(0, n)` の実体
 // （継続 k は for が末尾の実引数に足す — language.md 7 節）
 func Range(lo int, hi int, k func(int)) {
     mut i := lo
@@ -24,12 +26,12 @@ func Range(lo int, hi int, k func(int)) {
     }
 }
 
-// Each は要素ごとに f を呼ぶ
+// 要素ごとに f を呼ぶ
 func Each[T](it Iter[T], f func(T)) {
     it(f)
 }
 
-// Count は要素の個数
+// 要素の個数
 func Count[T](it Iter[T]) int {
     mut n := 0
     it((x) => {
@@ -38,7 +40,7 @@ func Count[T](it Iter[T]) int {
     return n
 }
 
-// Sum は int の要素の和
+// int の要素の和
 func Sum(it Iter[int]) int {
     mut s := 0
     it((x) => {

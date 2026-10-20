@@ -1,0 +1,2 @@
+sober: load error at examples/for_closure_gen_unmarked.sober:15:18: this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`
+exit=1

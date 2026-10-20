@@ -1,0 +1,2 @@
+sober: load error at examples/task_neg_fnparam.sober:8:70: a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)
+exit=1

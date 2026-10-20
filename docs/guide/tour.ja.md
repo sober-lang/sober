@@ -338,7 +338,7 @@ func main() int {
 - 呼び手の変数を書き換える関数は、仮引数に `mut` と書き、呼び出しの場所でも `f(mut x)` と書きます。どこで何が書き換わるかがソースに見えます。
 - ポインタはありません。寿命の注釈も借用の規則もありません — 書き換えは `mut` の印のある場所だけで起き、共有するときは `freeze` した不変の値を渡します。
 - `freeze` できるのは、他に別名の無い値だけです（`mut a := xs` のように同じ中身を別の名前でも持っていると拒否されます）。`freeze` した後は、元の変数から書き換えることも `mut` で渡すこともできません。コンパイラが確かめるので、凍結した値は変わりません。
-- 不変の値を受ける場所（不変の仮引数・`return`・不変の欄など）に mut の変数をそのまま書くと、そこで `freeze` されます（7 節の `par.Map(ns, …)` の `ns`）。その後の規則は `freeze` と同じです — 書き終えてから渡すか、写し（`clone(xs)` — 浅い写しを mut で返す）を渡します。束縛 `ys := xs` では凍りません（`ys` も同じ中身の mut）。不変の写しを束縛に取るときは `ys := freeze(xs)` と書きます。
+- 不変の値を受ける場所（不変の仮引数・`return`・不変の欄など）に mut の変数をそのまま書くと、そこで `freeze` されます（7 節の `task.Map(ns, …)` の `ns`）。その後の規則は `freeze` と同じです — 書き終えてから渡すか、写し（`clone(xs)` — 浅い写しを mut で返す）を渡します。束縛 `ys := xs` では凍りません（`ys` も同じ中身の mut）。不変の写しを束縛に取るときは `ys := freeze(xs)` と書きます。
 
 Go との違い: `*T` と `&x` の代わりに `mut` の引数を使います。値の意味は Go と同じ「ただの値」です。
 
@@ -349,7 +349,7 @@ Go との違い: `*T` と `&x` の代わりに `mut` の引数を使います。
 package main
 
 import "std/iter"
-import "std/par"
+import "std/task"
 
 // Tour 7: parallelism — structured concurrency, channels (docs/guide/tour.md)
 
@@ -358,43 +358,43 @@ func fib(n int) int {
 }
 
 func main() int {
-    // par.Map: one task per element — results come back in input order
+    // task.Map: one task per element — results come back in input order
     mut ns := mut []int{}
     for i <- iter.Range(20, 26) {
         ns = append(ns, i)
     }
-    fs, err := par.Map(ns, (n) => fib(n))
+    fs, err := task.Map(ns, (n) => fib(n))
     if err != nil {
         return 1
     }
     for f <- fs {
         println(f)
     }
-    // par.Scope: child tasks always join before the scope ends
-    r, e := par.Scope((s par.S) => {
-        a := par.Spawn(s, () => fib(24))
-        b := par.Spawn(s, () => fib(25))
-        par.Join(a) + par.Join(b)
+    // task.Run: child tasks always join before the scope ends
+    r, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => fib(24))
+        b := task.Spawn(s, () => fib(25))
+        task.Join(a) + task.Join(b)
     })
     if e == nil {
         println(r)
     }
     // channels
-    r2, e2 := par.Scope((s par.S) => {
-        tx, rx := par.NewChan[int](cap: 4)
-        h := par.Spawn(s, (out) => {
+    r2, e2 := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 4)
+        h := task.Spawn(s, (out) => {
             for i <- iter.Range(1, 4) {
-                par.Send(out, i * 10)
+                task.Send(out, i * 10)
             }
-            par.Close(out)
+            task.Close(out)
             0
         }, give: tx)
         // for-Recv: receive until the channel is closed
         mut got := 0
-        for v <- par.Recv(rx) {
+        for v <- task.Recv(rx) {
             got += v
         }
-        par.Join(h) + got
+        task.Join(h) + got
     })
     if e2 == nil {
         println(r2)
@@ -416,13 +416,13 @@ func main() int {
 60
 ```
 
-- `par.Map` は要素ごとに task を作り、結果は入力の順で返ります。
-- `par.Scope` の中で `par.Spawn` した子は、scope の終わりまでに必ず合流します（置き去りの goroutine はありません）。
+- `task.Map` は要素ごとに task を作り、結果は入力の順で返ります。
+- `task.Run` の中で `task.Spawn` した子は、scope の終わりまでに必ず合流します（置き去りの goroutine はありません）。
 - 子に渡せるのは不変の値かチャネルだけです。データ競合は書けません。
 - 出力は決定的です: ワーカー数（`SOBER_WORKERS`）を変えても、標準出力は同じバイトになります。
-- チャネルは `par.NewChan` で作り、送り端を `give:` で子に渡します。`for v <- par.Recv(rx)` は閉じるまで受けます。
+- チャネルは `task.NewChannel` で作り、送り端を `give:` で子に渡します。`for v <- task.Recv(rx)` は閉じるまで受けます。
 
-Go との違い: `go f()` と `sync.WaitGroup` の代わりに `par.Scope` + `par.Spawn` + `par.Join` を使います。`GOMAXPROCS` を変えても出力の順は変わりません。
+Go との違い: `go f()` と `sync.WaitGroup` の代わりに `task.Run` + `task.Spawn` + `task.Join` を使います。`GOMAXPROCS` を変えても出力の順は変わりません。
 
 ## 8. テスト
 
@@ -432,4 +432,4 @@ package の中の `*_test.sober` の `func TestXxx()` がテストです。`sobe
 
 - 標準ライブラリの地図: [標準ライブラリの案内](std.ja.md)
 - なぜこういう形なのか: [設計ノート](../design-notes/)
-- 正確な定義: [言語仕様](../language.md)・[構文](../syntax.md)（開発者向け）
+- 正確な定義: [言語仕様](../spec/README.ja.md)・[構文](../syntax.md)（決定の経緯は [決定の記録](../language.md) — 開発者向け）

@@ -1,0 +1,31 @@
+package main
+
+// 値の位置の閉包の option の欄（`Fn?` — ゼロ値は nil。部分リテラルで欄を省ける）
+
+type Emit func(n int) int
+
+type Resp struct {
+    status int
+    stream Emit?
+}
+
+func send(r Resp) int {
+    s := r.stream
+    if s != nil {
+        return s(r.status)
+    }
+    return 0 - 1
+}
+
+func main() {
+    k := 7
+    a := Resp{status: 204}
+    b := Resp{status: 200, stream: (n int) => n + k}
+    c := Resp{status: 201, stream: nil}
+    println(send(a))
+    println(send(c))
+    s := b.stream
+    if s != nil {
+        println(s(1))
+    }
+}

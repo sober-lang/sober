@@ -1,2 +1,2 @@
-sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `par.Pool`, which has identity: only par.NewPool makes one — set the field, or declare it `T?`
+sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `task.Pool`, which has identity: only task.NewPool makes one — set the field, or declare it `T?`
 exit=1

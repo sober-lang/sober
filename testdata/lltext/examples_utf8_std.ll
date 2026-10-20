@@ -21,83 +21,97 @@ attributes #0 = { nounwind "no-builtins" "frame-pointer"="all" }
 @"str.3" = internal constant [4 x i64] [i64 5917794109009846640, i64 7167555147578042213, i64 7017588315501389157, i64 138418680693]
 @"str.4" = internal constant [2 x i64] [i64 7596551573701944676, i64 7629165]
 @"str.5" = internal constant [2 x i64] [i64 8097862866615364723, i64 521644106593]
-@"str.6" = internal constant [2 x i64] [i64 4208741877863948332, i64 32]
-@"str.7" = internal constant [1 x i64] [i64 2685]
-@"str.8" = internal constant [2 x i64] [i64 7957694959391481888, i64 2322283407174100091]
-@"str.9" = internal constant [2 x i64] [i64 8601708606660288556, i64 35435399443553]
-@"str.10" = internal constant [1 x i64] [i64 35899498962976]
-@"str.11" = internal constant [5 x i64] [i64 7309940765259427104, i64 7599578576357124455, i64 6874858533597243508, i64 2323330133470241143, i64 2608]
-@"str.12" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
-@"rt.psites" = internal constant [9 x i64] [i64 2533274958168071, i64 8444250140180737, i64 5348025530581249, i64 16607024615784705, i64 19984724403421441, i64 28428973704741121, i64 4222125019758849, i64 8725724563243265, i64 14073749120745729]
-@"str.13" = internal constant [1 x i64] [i64 9071397899755888]
-@"str.14" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
-@"str.15" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
-@"str.16" = internal constant [4 x i64] [i64 8462017844986274166, i64 7953763900396085364, i64 7070777237752014183, i64 6648953]
-@"str.17" = internal constant [3 x i64] [i64 7311146993653867886, i64 6998721804137689888, i64 500069396333]
-@"str.18" = internal constant [3 x i64] [i64 2338042651316874857, i64 7070762896912181604, i64 122537119457401]
-@"str.19" = internal constant [2 x i64] [i64 8388345085396285541, i64 2965729659098066976]
-@"str.20" = internal constant [3 x i64] [i64 7018969289221893749, i64 7306086967037750370, i64 7234303152485659168]
-@"str.21" = internal constant [1 x i64] [i64 544497952]
-@"str.22" = internal constant [2 x i64] [i64 7238537353896555637, i64 125779768734510]
-@"str.23" = internal constant [3 x i64] [i64 4064063760403559539, i64 8030813380303680815, i64 7497058]
+@"str.6" = internal constant [2 x i64] [i64 8458156441484616054, i64 1684370547]
+@"str.7" = internal constant [2 x i64] [i64 4208741877863948332, i64 32]
+@"str.8" = internal constant [1 x i64] [i64 2685]
+@"str.9" = internal constant [2 x i64] [i64 7957694959391481888, i64 2322283407174100091]
+@"str.10" = internal constant [2 x i64] [i64 8601708606660288556, i64 35435399443553]
+@"str.11" = internal constant [1 x i64] [i64 35899498962976]
+@"str.12" = internal constant [5 x i64] [i64 7309940765259427104, i64 7599578576357124455, i64 6874858533597243508, i64 2323330133470241143, i64 2608]
+@"str.13" = internal constant [3 x i64] [i64 7232620951369114994, i64 8674334734093152357, i64 8250]
+@"rt.psites" = internal constant [8 x i64] [i64 8444253344628737, i64 5348028735029249, i64 16607027820232705, i64 19984727607869441, i64 28428976909189121, i64 4222128224206849, i64 8725727767691265, i64 14073752325193729]
+@"str.14" = internal constant [1 x i64] [i64 9071397899755888]
+@"str.15" = internal constant [3 x i64] [i64 8462017926321696361, i64 7953763900396085364, i64 25959]
+@"str.16" = internal constant [4 x i64] [i64 8026013105759284339, i64 8391735665840385653, i64 7453001576142499616, i64 101]
+@"str.17" = internal constant [4 x i64] [i64 8462017844986274166, i64 7953763900396085364, i64 7070777237752014183, i64 6648953]
+@"str.18" = internal constant [3 x i64] [i64 7311146993653867886, i64 6998721804137689888, i64 500069396333]
+@"str.19" = internal constant [3 x i64] [i64 2338042651316874857, i64 7070762896912181604, i64 122537119457401]
+@"str.20" = internal constant [2 x i64] [i64 8388345085396285541, i64 2965729659098066976]
+@"str.21" = internal constant [3 x i64] [i64 7018969289221893749, i64 7306086967037750370, i64 7234303152485659168]
+@"str.22" = internal constant [1 x i64] [i64 544497952]
+@"str.23" = internal constant [4 x i64] [i64 7598263559392621683, i64 7598263559393601390, i64 7305524086039603054, i64 114]
 
 define internal void @"rt.flush"() #0 {
 b0:
   %v0 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v1.p = getelementptr i64, ptr %v0, i64 1028
+  %v1 = load i64, ptr %v1.p
   %v2 = add i64 0, 0
+  %v3.c = icmp eq i64 %v1, %v2
+  %v3 = zext i1 %v3.c to i64
+  %c.b0 = icmp ne i64 %v3, 0
+  br i1 %c.b0, label %b0.t1, label %b0.e2
+b0.t1:
+  br label %b2
+b0.e2:
   br label %b1
 b1:
-  %v1 = phi i64 [ %v2, %b0 ], [ %v1, %b4 ], [ %v18, %b6 ]
-  %v3.p = getelementptr i64, ptr %v0, i64 1028
-  %v3 = load i64, ptr %v3.p
-  %v4 = sub i64 %v3, %v1
   %v5 = add i64 0, 0
-  %v6.c = icmp sgt i64 %v4, %v5
-  %v6 = zext i1 %v6.c to i64
-  %c.b1 = icmp ne i64 %v6, 0
-  br i1 %c.b1, label %b1.t1, label %b1.e2
-b1.t1:
-  br label %b2
-b1.e2:
   br label %b3
 b2:
-  %v7 = add i64 0, 8248
-  %v8 = add i64 %v7, %v1
-  %v9 = getelementptr i8, ptr %v0, i64 %v8
-  %v10 = ptrtoint ptr %v9 to i64
-  %v11.p = getelementptr i64, ptr %v0, i64 1026
-  %v11 = load i64, ptr %v11.p
-  %v12 = add i64 0, 1
-  %v13 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 %v12, i64 %v11, i64 %v10, i64 %v4)
-  %v14 = add i64 0, -4
-  %v15.c = icmp eq i64 %v13, %v14
-  %v15 = zext i1 %v15.c to i64
-  %c.b2 = icmp ne i64 %v15, 0
-  br i1 %c.b2, label %b2.t3, label %b2.e4
-b2.t3:
-  br label %b4
-b2.e4:
-  br label %b5
-b3:
-  %v19 = add i64 0, 0
-  %st4 = getelementptr i64, ptr %v0, i64 1028
-  store i64 %v19, ptr %st4
   ret void
+b3:
+  %v4 = phi i64 [ %v5, %b1 ], [ %v4, %b6 ], [ %v21, %b8 ]
+  %v6.p = getelementptr i64, ptr %v0, i64 1028
+  %v6 = load i64, ptr %v6.p
+  %v7 = sub i64 %v6, %v4
+  %v8 = add i64 0, 0
+  %v9.c = icmp sgt i64 %v7, %v8
+  %v9 = zext i1 %v9.c to i64
+  %c.b3 = icmp ne i64 %v9, 0
+  br i1 %c.b3, label %b3.t3, label %b3.e4
+b3.t3:
+  br label %b4
+b3.e4:
+  br label %b5
 b4:
-  br label %b1
-b5:
-  %v16 = add i64 0, 0
-  %v17.c = icmp sle i64 %v13, %v16
-  %v17 = zext i1 %v17.c to i64
-  %c.b5 = icmp ne i64 %v17, 0
-  br i1 %c.b5, label %b5.t6, label %b5.e7
-b5.t6:
-  br label %b3
-b5.e7:
+  %v10 = add i64 0, 8248
+  %v11 = add i64 %v10, %v4
+  %v12 = getelementptr i8, ptr %v0, i64 %v11
+  %v13 = ptrtoint ptr %v12 to i64
+  %v14.p = getelementptr i64, ptr %v0, i64 1026
+  %v14 = load i64, ptr %v14.p
+  %v15 = add i64 0, 1
+  %v16 = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 %v15, i64 %v14, i64 %v13, i64 %v7)
+  %v17 = add i64 0, -4
+  %v18.c = icmp eq i64 %v16, %v17
+  %v18 = zext i1 %v18.c to i64
+  %c.b4 = icmp ne i64 %v18, 0
+  br i1 %c.b4, label %b4.t5, label %b4.e6
+b4.t5:
   br label %b6
+b4.e6:
+  br label %b7
+b5:
+  %v22 = add i64 0, 0
+  %st6 = getelementptr i64, ptr %v0, i64 1028
+  store i64 %v22, ptr %st6
+  ret void
 b6:
-  %v18 = add i64 %v1, %v13
-  br label %b1
+  br label %b3
+b7:
+  %v19 = add i64 0, 0
+  %v20.c = icmp sle i64 %v16, %v19
+  %v20 = zext i1 %v20.c to i64
+  %c.b7 = icmp ne i64 %v20, 0
+  br i1 %c.b7, label %b7.t8, label %b7.e9
+b7.t8:
+  br label %b5
+b7.e9:
+  br label %b8
+b8:
+  %v21 = add i64 %v4, %v16
+  br label %b3
 }
 
 define internal void @"rt.print_char"(i64 %v0) #0 {
@@ -450,10 +464,10 @@ b2.e4:
 b3:
   %v15 = getelementptr i8, ptr %v4, i64 %v7
   %v16.p = getelementptr i64, ptr %v15, i64 0
-  %v16 = load i64, ptr %v16.p
+  %v16 = load i64, ptr %v16.p, align 1
   %v17 = getelementptr i8, ptr %v6, i64 %v7
   %v18.p = getelementptr i64, ptr %v17, i64 0
-  %v18 = load i64, ptr %v18.p
+  %v18 = load i64, ptr %v18.p, align 1
   %v19.c = icmp ne i64 %v16, %v18
   %v19 = zext i1 %v19.c to i64
   %c.b3 = icmp ne i64 %v19, 0
@@ -483,10 +497,10 @@ b7:
   %v50 = sub i64 %v2, %v49
   %v51 = getelementptr i8, ptr %v4, i64 %v50
   %v52.p = getelementptr i64, ptr %v51, i64 0
-  %v52 = load i64, ptr %v52.p
+  %v52 = load i64, ptr %v52.p, align 1
   %v53 = getelementptr i8, ptr %v6, i64 %v50
   %v54.p = getelementptr i64, ptr %v53, i64 0
-  %v54 = load i64, ptr %v54.p
+  %v54 = load i64, ptr %v54.p, align 1
   %v55.c = icmp ne i64 %v52, %v54
   %v55 = zext i1 %v55.c to i64
   %c.b7 = icmp ne i64 %v55, 0
@@ -627,7 +641,7 @@ b3.e4:
 b4:
   %v22 = getelementptr i8, ptr %v11, i64 %v13
   %v23.p = getelementptr i64, ptr %v22, i64 0
-  %v23 = load i64, ptr %v23.p
+  %v23 = load i64, ptr %v23.p, align 1
   %v24 = xor i64 %v14, %v23
   %v25 = add i64 0, 8
   %v26 = add i64 %v13, %v25
@@ -768,6 +782,13 @@ b0:
   store i64 0, ptr %s9.z1
   %s9.z2 = getelementptr i64, ptr %s9, i64 2
   store i64 0, ptr %s9.z2
+  %s10 = alloca [3 x i64], align 8
+  %s10.z0 = getelementptr i64, ptr %s10, i64 0
+  store i64 0, ptr %s10.z0
+  %s10.z1 = getelementptr i64, ptr %s10, i64 1
+  store i64 0, ptr %s10.z1
+  %s10.z2 = getelementptr i64, ptr %s10, i64 2
+  store i64 0, ptr %s10.z2
   %v1 = getelementptr i64, ptr @"rt.meta", i64 0
   call void @"rt.flush"()
   %v2 = add i64 0, 2
@@ -795,40 +816,40 @@ b0.t5:
 b0.e6:
   br label %b3
 b1:
-  %v22 = getelementptr i64, ptr @"str.6", i64 0
-  %v23 = add i64 0, 9
-  %v24 = add i64 0, 0
-  %v25 = getelementptr i64, ptr %s3, i64 0
-  %v26 = ptrtoint ptr %v22 to i64
-  %st6 = getelementptr i64, ptr %v25, i64 0
-  store i64 %v26, ptr %st6
-  %st7 = getelementptr i64, ptr %v25, i64 1
-  store i64 %v23, ptr %st7
-  %st8 = getelementptr i64, ptr %v25, i64 2
-  store i64 %v24, ptr %st8
-  call void @"rt.print_str"(ptr %v25)
-  %v27.p = getelementptr i64, ptr %v1, i64 0
-  %v27 = load i64, ptr %v27.p
-  call void @"rt.print_int"(i64 %v27)
-  %v28 = getelementptr i64, ptr @"str.7", i64 0
-  %v29 = add i64 0, 2
-  %v30 = add i64 0, 0
-  %v31 = getelementptr i64, ptr %s4, i64 0
-  %v32 = ptrtoint ptr %v28 to i64
-  %st9 = getelementptr i64, ptr %v31, i64 0
-  store i64 %v32, ptr %st9
-  %st10 = getelementptr i64, ptr %v31, i64 1
-  store i64 %v29, ptr %st10
-  %st11 = getelementptr i64, ptr %v31, i64 2
-  store i64 %v30, ptr %st11
-  call void @"rt.print_str"(ptr %v31)
-  %v33.p = getelementptr i64, ptr %v1, i64 1029
-  %v33 = load i64, ptr %v33.p
-  %v34.p = getelementptr i64, ptr %v1, i64 1030
+  %v29 = getelementptr i64, ptr @"str.7", i64 0
+  %v30 = add i64 0, 9
+  %v31 = add i64 0, 0
+  %v32 = getelementptr i64, ptr %s4, i64 0
+  %v33 = ptrtoint ptr %v29 to i64
+  %st6 = getelementptr i64, ptr %v32, i64 0
+  store i64 %v33, ptr %st6
+  %st7 = getelementptr i64, ptr %v32, i64 1
+  store i64 %v30, ptr %st7
+  %st8 = getelementptr i64, ptr %v32, i64 2
+  store i64 %v31, ptr %st8
+  call void @"rt.print_str"(ptr %v32)
+  %v34.p = getelementptr i64, ptr %v1, i64 0
   %v34 = load i64, ptr %v34.p
-  %v39 = add i64 0, 1
-  %v40 = add i64 0, 0
-  br label %b6
+  call void @"rt.print_int"(i64 %v34)
+  %v35 = getelementptr i64, ptr @"str.8", i64 0
+  %v36 = add i64 0, 2
+  %v37 = add i64 0, 0
+  %v38 = getelementptr i64, ptr %s5, i64 0
+  %v39 = ptrtoint ptr %v35 to i64
+  %st9 = getelementptr i64, ptr %v38, i64 0
+  store i64 %v39, ptr %st9
+  %st10 = getelementptr i64, ptr %v38, i64 1
+  store i64 %v36, ptr %st10
+  %st11 = getelementptr i64, ptr %v38, i64 2
+  store i64 %v37, ptr %st11
+  call void @"rt.print_str"(ptr %v38)
+  %v40.p = getelementptr i64, ptr %v1, i64 1029
+  %v40 = load i64, ptr %v40.p
+  %v41.p = getelementptr i64, ptr %v1, i64 1030
+  %v41 = load i64, ptr %v41.p
+  %v46 = add i64 0, 1
+  %v47 = add i64 0, 0
+  br label %b8
 b2:
   %v10 = getelementptr i64, ptr @"str.4", i64 0
   %v11 = add i64 0, 11
@@ -868,134 +889,158 @@ b4:
   call void @"rt.print_str"(ptr %v20)
   br label %b1
 b5:
-  br label %b1
-b6:
-  %v35 = phi i64 [ %v39, %b1 ], [ %v71, %b10 ]
-  %v36 = phi i64 [ %v40, %b1 ], [ %v37, %b10 ]
-  %v41.c = icmp sle i64 %v35, %v27
-  %v41 = zext i1 %v41.c to i64
-  %c.b6 = icmp ne i64 %v41, 0
-  br i1 %c.b6, label %b6.t21, label %b6.e22
-b6.t21:
-  br label %b7
-b6.e22:
-  br label %b11
-b7:
-  %v42 = getelementptr i64, ptr %v1, i64 %v35
-  %v43.p = getelementptr i64, ptr %v42, i64 1
-  %v43 = load i64, ptr %v43.p
-  %v44 = mul i64 %v35, %v34
-  %v45 = add i64 %v33, %v44
-  %v46 = sub i64 %v43, %v45
-  %v47 = add i64 0, 0
-  %v48.c = icmp sgt i64 %v46, %v47
-  %v48 = zext i1 %v48.c to i64
-  %c.b7 = icmp ne i64 %v48, 0
-  br i1 %c.b7, label %b7.t23, label %b7.e24
-b7.t23:
-  br label %b8
-b7.e24:
-  br label %b10
-b8:
-  %v49 = add i64 0, 16
-  %v50.c = icmp slt i64 %v36, %v49
-  %v50 = zext i1 %v50.c to i64
-  %v51 = add i64 0, 1
-  %v52 = add i64 %v36, %v51
-  %c.b8 = icmp ne i64 %v50, 0
-  br i1 %c.b8, label %b8.t25, label %b8.e26
-b8.t25:
-  br label %b9
-b8.e26:
-  br label %b10
-b9:
-  %v53 = getelementptr i64, ptr @"str.8", i64 0
-  %v54 = add i64 0, 16
-  %v55 = add i64 0, 0
-  %v56 = getelementptr i64, ptr %s5, i64 0
-  %v57 = ptrtoint ptr %v53 to i64
-  %st26 = getelementptr i64, ptr %v56, i64 0
-  store i64 %v57, ptr %st26
-  %st27 = getelementptr i64, ptr %v56, i64 1
-  store i64 %v54, ptr %st27
-  %st28 = getelementptr i64, ptr %v56, i64 2
-  store i64 %v55, ptr %st28
-  call void @"rt.print_str"(ptr %v56)
-  call void @"rt.print_int"(i64 %v35)
-  %v58 = getelementptr i64, ptr @"str.9", i64 0
-  %v59 = add i64 0, 14
-  %v60 = add i64 0, 0
-  %v61 = getelementptr i64, ptr %s6, i64 0
-  %v62 = ptrtoint ptr %v58 to i64
-  %st29 = getelementptr i64, ptr %v61, i64 0
-  store i64 %v62, ptr %st29
-  %st30 = getelementptr i64, ptr %v61, i64 1
-  store i64 %v59, ptr %st30
-  %st31 = getelementptr i64, ptr %v61, i64 2
-  store i64 %v60, ptr %st31
-  call void @"rt.print_str"(ptr %v61)
-  call void @"rt.print_int"(i64 %v46)
-  %v63 = getelementptr i64, ptr @"str.7", i64 0
-  %v64 = add i64 0, 2
-  %v65 = add i64 0, 0
-  %v66 = getelementptr i64, ptr %s7, i64 0
-  %v67 = ptrtoint ptr %v63 to i64
-  %st32 = getelementptr i64, ptr %v66, i64 0
-  store i64 %v67, ptr %st32
-  %st33 = getelementptr i64, ptr %v66, i64 1
-  store i64 %v64, ptr %st33
-  %st34 = getelementptr i64, ptr %v66, i64 2
-  store i64 %v65, ptr %st34
-  call void @"rt.print_str"(ptr %v66)
-  %v68 = add i64 0, 1
-  %v69 = add i64 %v36, %v68
-  br label %b10
-b10:
-  %v37 = phi i64 [ %v36, %b7.e24 ], [ %v52, %b8.e26 ], [ %v69, %b9 ]
-  %v70 = add i64 0, 1
-  %v71 = add i64 %v35, %v70
+  %v22 = add i64 0, 3
+  %v23.c = icmp eq i64 %v0, %v22
+  %v23 = zext i1 %v23.c to i64
+  %c.b5 = icmp ne i64 %v23, 0
+  br i1 %c.b5, label %b5.t21, label %b5.e22
+b5.t21:
   br label %b6
-b11:
-  %v38 = phi i64 [ %v36, %b6.e22 ]
-  %v72 = add i64 0, 16
-  %v73.c = icmp sgt i64 %v38, %v72
-  %v73 = zext i1 %v73.c to i64
-  %c.b11 = icmp ne i64 %v73, 0
-  br i1 %c.b11, label %b11.t36, label %b11.e37
-b11.t36:
-  br label %b12
-b11.e37:
+b5.e22:
+  br label %b7
+b6:
+  %v24 = getelementptr i64, ptr @"str.6", i64 0
+  %v25 = add i64 0, 12
+  %v26 = add i64 0, 0
+  %v27 = getelementptr i64, ptr %s3, i64 0
+  %v28 = ptrtoint ptr %v24 to i64
+  %st22 = getelementptr i64, ptr %v27, i64 0
+  store i64 %v28, ptr %st22
+  %st23 = getelementptr i64, ptr %v27, i64 1
+  store i64 %v25, ptr %st23
+  %st24 = getelementptr i64, ptr %v27, i64 2
+  store i64 %v26, ptr %st24
+  call void @"rt.print_str"(ptr %v27)
+  br label %b1
+b7:
+  br label %b1
+b8:
+  %v42 = phi i64 [ %v46, %b1 ], [ %v78, %b12 ]
+  %v43 = phi i64 [ %v47, %b1 ], [ %v44, %b12 ]
+  %v48.c = icmp sle i64 %v42, %v34
+  %v48 = zext i1 %v48.c to i64
+  %c.b8 = icmp ne i64 %v48, 0
+  br i1 %c.b8, label %b8.t26, label %b8.e27
+b8.t26:
+  br label %b9
+b8.e27:
   br label %b13
+b9:
+  %v49 = getelementptr i64, ptr %v1, i64 %v42
+  %v50.p = getelementptr i64, ptr %v49, i64 1
+  %v50 = load i64, ptr %v50.p
+  %v51 = mul i64 %v42, %v41
+  %v52 = add i64 %v40, %v51
+  %v53 = sub i64 %v50, %v52
+  %v54 = add i64 0, 0
+  %v55.c = icmp sgt i64 %v53, %v54
+  %v55 = zext i1 %v55.c to i64
+  %c.b9 = icmp ne i64 %v55, 0
+  br i1 %c.b9, label %b9.t28, label %b9.e29
+b9.t28:
+  br label %b10
+b9.e29:
+  br label %b12
+b10:
+  %v56 = add i64 0, 16
+  %v57.c = icmp slt i64 %v43, %v56
+  %v57 = zext i1 %v57.c to i64
+  %v58 = add i64 0, 1
+  %v59 = add i64 %v43, %v58
+  %c.b10 = icmp ne i64 %v57, 0
+  br i1 %c.b10, label %b10.t30, label %b10.e31
+b10.t30:
+  br label %b11
+b10.e31:
+  br label %b12
+b11:
+  %v60 = getelementptr i64, ptr @"str.9", i64 0
+  %v61 = add i64 0, 16
+  %v62 = add i64 0, 0
+  %v63 = getelementptr i64, ptr %s6, i64 0
+  %v64 = ptrtoint ptr %v60 to i64
+  %st31 = getelementptr i64, ptr %v63, i64 0
+  store i64 %v64, ptr %st31
+  %st32 = getelementptr i64, ptr %v63, i64 1
+  store i64 %v61, ptr %st32
+  %st33 = getelementptr i64, ptr %v63, i64 2
+  store i64 %v62, ptr %st33
+  call void @"rt.print_str"(ptr %v63)
+  call void @"rt.print_int"(i64 %v42)
+  %v65 = getelementptr i64, ptr @"str.10", i64 0
+  %v66 = add i64 0, 14
+  %v67 = add i64 0, 0
+  %v68 = getelementptr i64, ptr %s7, i64 0
+  %v69 = ptrtoint ptr %v65 to i64
+  %st34 = getelementptr i64, ptr %v68, i64 0
+  store i64 %v69, ptr %st34
+  %st35 = getelementptr i64, ptr %v68, i64 1
+  store i64 %v66, ptr %st35
+  %st36 = getelementptr i64, ptr %v68, i64 2
+  store i64 %v67, ptr %st36
+  call void @"rt.print_str"(ptr %v68)
+  call void @"rt.print_int"(i64 %v53)
+  %v70 = getelementptr i64, ptr @"str.8", i64 0
+  %v71 = add i64 0, 2
+  %v72 = add i64 0, 0
+  %v73 = getelementptr i64, ptr %s8, i64 0
+  %v74 = ptrtoint ptr %v70 to i64
+  %st37 = getelementptr i64, ptr %v73, i64 0
+  store i64 %v74, ptr %st37
+  %st38 = getelementptr i64, ptr %v73, i64 1
+  store i64 %v71, ptr %st38
+  %st39 = getelementptr i64, ptr %v73, i64 2
+  store i64 %v72, ptr %st39
+  call void @"rt.print_str"(ptr %v73)
+  %v75 = add i64 0, 1
+  %v76 = add i64 %v43, %v75
+  br label %b12
 b12:
-  %v74 = getelementptr i64, ptr @"str.10", i64 0
-  %v75 = add i64 0, 6
-  %v76 = add i64 0, 0
-  %v77 = getelementptr i64, ptr %s8, i64 0
-  %v78 = ptrtoint ptr %v74 to i64
-  %st37 = getelementptr i64, ptr %v77, i64 0
-  store i64 %v78, ptr %st37
-  %st38 = getelementptr i64, ptr %v77, i64 1
-  store i64 %v75, ptr %st38
-  %st39 = getelementptr i64, ptr %v77, i64 2
-  store i64 %v76, ptr %st39
-  call void @"rt.print_str"(ptr %v77)
+  %v44 = phi i64 [ %v43, %b9.e29 ], [ %v59, %b10.e31 ], [ %v76, %b11 ]
+  %v77 = add i64 0, 1
+  %v78 = add i64 %v42, %v77
+  br label %b8
+b13:
+  %v45 = phi i64 [ %v43, %b8.e27 ]
   %v79 = add i64 0, 16
-  %v80 = sub i64 %v38, %v79
-  call void @"rt.print_int"(i64 %v80)
+  %v80.c = icmp sgt i64 %v45, %v79
+  %v80 = zext i1 %v80.c to i64
+  %c.b13 = icmp ne i64 %v80, 0
+  br i1 %c.b13, label %b13.t41, label %b13.e42
+b13.t41:
+  br label %b14
+b13.e42:
+  br label %b15
+b14:
   %v81 = getelementptr i64, ptr @"str.11", i64 0
-  %v82 = add i64 0, 34
+  %v82 = add i64 0, 6
   %v83 = add i64 0, 0
   %v84 = getelementptr i64, ptr %s9, i64 0
   %v85 = ptrtoint ptr %v81 to i64
-  %st40 = getelementptr i64, ptr %v84, i64 0
-  store i64 %v85, ptr %st40
-  %st41 = getelementptr i64, ptr %v84, i64 1
-  store i64 %v82, ptr %st41
-  %st42 = getelementptr i64, ptr %v84, i64 2
-  store i64 %v83, ptr %st42
+  %st42 = getelementptr i64, ptr %v84, i64 0
+  store i64 %v85, ptr %st42
+  %st43 = getelementptr i64, ptr %v84, i64 1
+  store i64 %v82, ptr %st43
+  %st44 = getelementptr i64, ptr %v84, i64 2
+  store i64 %v83, ptr %st44
   call void @"rt.print_str"(ptr %v84)
-  br label %b13
-b13:
+  %v86 = add i64 0, 16
+  %v87 = sub i64 %v45, %v86
+  call void @"rt.print_int"(i64 %v87)
+  %v88 = getelementptr i64, ptr @"str.12", i64 0
+  %v89 = add i64 0, 34
+  %v90 = add i64 0, 0
+  %v91 = getelementptr i64, ptr %s10, i64 0
+  %v92 = ptrtoint ptr %v88 to i64
+  %st45 = getelementptr i64, ptr %v91, i64 0
+  store i64 %v92, ptr %st45
+  %st46 = getelementptr i64, ptr %v91, i64 1
+  store i64 %v89, ptr %st46
+  %st47 = getelementptr i64, ptr %v91, i64 2
+  store i64 %v90, ptr %st47
+  call void @"rt.print_str"(ptr %v91)
+  br label %b15
+b15:
   call void @"rt.flush"()
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 102)
   unreachable
@@ -1067,7 +1112,7 @@ b5:
   %v16 = add i64 0, 2
   %st6 = getelementptr i64, ptr %v0, i64 1026
   store i64 %v16, ptr %st6
-  %v17 = getelementptr i64, ptr @"str.12", i64 0
+  %v17 = getelementptr i64, ptr @"str.13", i64 0
   %v18 = add i64 0, 18
   %v19 = add i64 0, 0
   %v20 = getelementptr i64, ptr %s0, i64 0
@@ -1080,7 +1125,7 @@ b5:
   store i64 %v19, ptr %st9
   call void @"rt.print_str"(ptr %v20)
   call void @"rt.print_int"(i64 %v5)
-  %v22 = getelementptr i64, ptr @"str.7", i64 0
+  %v22 = getelementptr i64, ptr @"str.8", i64 0
   %v23 = add i64 0, 2
   %v24 = add i64 0, 0
   %v25 = getelementptr i64, ptr %s1, i64 0
@@ -1830,18 +1875,18 @@ b0.t1:
 b0.e2:
   br label %b5
 b1:
-  %v5 = phi ptr [ %v12, %b4 ], [ %v18, %b6 ], [ %v62, %b18 ]
-  %v6 = phi ptr [ %v14, %b4 ], [ %v21, %b6 ], [ %v68, %b18 ]
+  %v5 = phi ptr [ %v12, %b4 ], [ %v18, %b6 ], [ %v70, %b21 ]
+  %v6 = phi ptr [ %v14, %b4 ], [ %v21, %b6 ], [ %v76, %b21 ]
   ret ptr %v5
 b2:
-  %v61 = mul i64 %v3, %v1
-  %v62 = call ptr @"rt.slice_grow"(i64 %v2, i64 %v3, i64 %v1, i64 %v4, i64 %v38)
+  %v69 = mul i64 %v3, %v1
+  %v70 = call ptr @"rt.slice_grow"(i64 %v2, i64 %v3, i64 %v1, i64 %v4, i64 %v38)
   %c.b2 = icmp ne i64 %v38, 0
   br i1 %c.b2, label %b2.t3, label %b2.e4
 b2.t3:
-  br label %b18
+  br label %b21
 b2.e4:
-  br label %b19
+  br label %b22
 b3:
   %v42 = add i64 0, 16
   br label %b11
@@ -1900,9 +1945,9 @@ b9:
   %v31 = add i64 0, 8
   %v32 = mul i64 %v30, %v31
   %v33 = add i64 %v22, %v32
-  %v69 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v70 = getelementptr i64, ptr %v69, i64 %v4
-  %v34.p = getelementptr i64, ptr %v70, i64 1
+  %v77 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v78 = getelementptr i64, ptr %v77, i64 %v4
+  %v34.p = getelementptr i64, ptr %v78, i64 1
   %v34 = load ptr, ptr %v34.p
   %v35 = ptrtoint ptr %v34 to i64
   %v36.c = icmp eq i64 %v35, %v33
@@ -1941,55 +1986,75 @@ b13:
   %v51 = getelementptr i64, ptr %v50, i64 %v4
   %st14 = getelementptr i64, ptr %v51, i64 1
   store i64 %v22, ptr %st14
-  %v52 = call ptr @"rt.region_alloc"(i64 %v4, i64 %v49)
-  %v54 = add i64 0, 0
-  br label %b14
-b14:
-  %v53 = phi i64 [ %v54, %b13 ], [ %v59, %b15 ]
-  %v55.c = icmp slt i64 %v53, %v49
-  %v55 = zext i1 %v55.c to i64
-  %c.b14 = icmp ne i64 %v55, 0
-  br i1 %c.b14, label %b14.t16, label %b14.e17
-b14.t16:
+  %v52 = add i64 0, 16
+  %v53 = mul i64 %v41, %v52
+  %v54 = add i64 0, 2097152
+  %v55 = add i64 %v41, %v54
+  %v57.c = icmp slt i64 %v53, %v55
+  %v57 = zext i1 %v57.c to i64
+  %c.b13 = icmp ne i64 %v57, 0
+  br i1 %c.b13, label %b13.t16, label %b13.e17
+b13.t16:
   br label %b15
-b14.e17:
+b13.e17:
   br label %b16
+b14:
+  %v56 = phi i64 [ %v53, %b15 ], [ %v55, %b16 ]
+  %v58 = add i64 0, 3
+  %v59 = add i64 %v56, %v58
+  %v60 = call ptr @"rt.region_alloc"(i64 %v4, i64 %v59)
+  %v62 = add i64 0, 0
+  br label %b17
 b15:
-  %v56 = getelementptr i64, ptr %v52, i64 %v53
-  %v57 = add i64 0, 0
-  %st17 = getelementptr i64, ptr %v56, i64 0
-  store i64 %v57, ptr %st17
-  %v58 = add i64 0, 1
-  %v59 = add i64 %v53, %v58
   br label %b14
 b16:
-  %st18 = getelementptr i64, ptr %v52, i64 2
-  store i64 %v41, ptr %st18
-  %v60 = ptrtoint ptr %v52 to i64
-  %st19 = getelementptr i64, ptr %v0, i64 3
-  store i64 %v60, ptr %st19
-  br label %b2
+  br label %b14
 b17:
-  %v65.p = getelementptr i64, ptr %v0, i64 3
-  %v65 = load i64, ptr %v65.p
-  %v66 = inttoptr i64 %v65 to ptr
-  %v67 = ptrtoint ptr %v62 to i64
-  %st20 = getelementptr i64, ptr %v66, i64 0
-  store i64 %v67, ptr %st20
+  %v61 = phi i64 [ %v62, %b14 ], [ %v67, %b18 ]
+  %v63.c = icmp slt i64 %v61, %v49
+  %v63 = zext i1 %v63.c to i64
+  %c.b17 = icmp ne i64 %v63, 0
+  br i1 %c.b17, label %b17.t18, label %b17.e19
+b17.t18:
   br label %b18
+b17.e19:
+  br label %b19
 b18:
-  %v68 = getelementptr i64, ptr %v62, i64 %v61
-  br label %b1
-b19:
-  %v63 = add i64 0, 8
-  %v64.c = icmp slt i64 %v8, %v63
-  %v64 = zext i1 %v64.c to i64
-  %c.b19 = icmp ne i64 %v64, 0
-  br i1 %c.b19, label %b19.t22, label %b19.e23
-b19.t22:
-  br label %b18
-b19.e23:
+  %v64 = getelementptr i64, ptr %v60, i64 %v61
+  %v65 = add i64 0, 0
+  %st19 = getelementptr i64, ptr %v64, i64 0
+  store i64 %v65, ptr %st19
+  %v66 = add i64 0, 1
+  %v67 = add i64 %v61, %v66
   br label %b17
+b19:
+  %st20 = getelementptr i64, ptr %v60, i64 2
+  store i64 %v41, ptr %st20
+  %v68 = ptrtoint ptr %v60 to i64
+  %st21 = getelementptr i64, ptr %v0, i64 3
+  store i64 %v68, ptr %st21
+  br label %b2
+b20:
+  %v73.p = getelementptr i64, ptr %v0, i64 3
+  %v73 = load i64, ptr %v73.p
+  %v74 = inttoptr i64 %v73 to ptr
+  %v75 = ptrtoint ptr %v70 to i64
+  %st22 = getelementptr i64, ptr %v74, i64 0
+  store i64 %v75, ptr %st22
+  br label %b21
+b21:
+  %v76 = getelementptr i64, ptr %v70, i64 %v69
+  br label %b1
+b22:
+  %v71 = add i64 0, 8
+  %v72.c = icmp slt i64 %v8, %v71
+  %v72 = zext i1 %v72.c to i64
+  %c.b22 = icmp ne i64 %v72, 0
+  br i1 %c.b22, label %b22.t24, label %b22.e25
+b22.t24:
+  br label %b21
+b22.e25:
+  br label %b20
 }
 
 define internal i64 @"rt.grow_try"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
@@ -2789,7 +2854,7 @@ b0:
   %v8 = load i64, ptr %v8.p
   %v9.p = getelementptr i64, ptr %v5, i64 2
   %v9 = load i64, ptr %v9.p
-  %v10 = call i64 @"std/utf8.IndexInvalid"(i64 %v7, i64 %v8, i64 %v9)
+  %v10 = call i64 @"std/strings.IndexInvalid"(i64 %v7, i64 %v8, i64 %v9)
   %v93067 = getelementptr i64, ptr @"rt.meta", i64 0
   %v11.p = getelementptr i64, ptr %v93067, i64 0
   %v11 = load i64, ptr %v11.p
@@ -2810,7 +2875,7 @@ b0:
   %v18 = load i64, ptr %v18.p
   %v19.p = getelementptr i64, ptr %v15, i64 2
   %v19 = load i64, ptr %v19.p
-  %v20 = call i64 @"std/utf8.Valid"(i64 %v17, i64 %v18, i64 %v19)
+  %v20 = call i64 @"std/strings.Valid"(i64 %v17, i64 %v18, i64 %v19)
   call void @"rt.print_int"(i64 %v10)
   %v21 = add i64 0, 32
   call void @"rt.print_char"(i64 %v21)
@@ -2898,7 +2963,7 @@ b3:
   %v54 = load i64, ptr %v54.p
   %v55.p = getelementptr i64, ptr %v51, i64 2
   %v55 = load i64, ptr %v55.p
-  %v56 = call i64 @"std/utf8.IndexInvalid"(i64 %v53, i64 %v54, i64 %v55)
+  %v56 = call i64 @"std/strings.IndexInvalid"(i64 %v53, i64 %v54, i64 %v55)
   %v57 = add i64 0, 104
   %v58 = add i64 0, 105
   %v93070 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -2931,7 +2996,7 @@ b3:
   %v70 = load i64, ptr %v70.p
   %v71.p = getelementptr i64, ptr %v67, i64 2
   %v71 = load i64, ptr %v71.p
-  %v72 = call i64 @"std/utf8.Valid"(i64 %v69, i64 %v70, i64 %v71)
+  %v72 = call i64 @"std/strings.Valid"(i64 %v69, i64 %v70, i64 %v71)
   call void @"rt.print_int"(i64 %v56)
   %v73 = add i64 0, 32
   call void @"rt.print_char"(i64 %v73)
@@ -3025,7 +3090,7 @@ b6:
   %v109 = load i64, ptr %v109.p
   %v110.p = getelementptr i64, ptr %v106, i64 2
   %v110 = load i64, ptr %v110.p
-  %v111 = call i64 @"std/utf8.IndexInvalid"(i64 %v108, i64 %v109, i64 %v110)
+  %v111 = call i64 @"std/strings.IndexInvalid"(i64 %v108, i64 %v109, i64 %v110)
   %v112 = add i64 0, 0
   %v93073 = getelementptr i64, ptr @"rt.meta", i64 0
   %v113.p = getelementptr i64, ptr %v93073, i64 0
@@ -3052,7 +3117,7 @@ b6:
   %v122 = load i64, ptr %v122.p
   %v123.p = getelementptr i64, ptr %v119, i64 2
   %v123 = load i64, ptr %v123.p
-  %v124 = call i64 @"std/utf8.Valid"(i64 %v121, i64 %v122, i64 %v123)
+  %v124 = call i64 @"std/strings.Valid"(i64 %v121, i64 %v122, i64 %v123)
   call void @"rt.print_int"(i64 %v111)
   %v125 = add i64 0, 32
   call void @"rt.print_char"(i64 %v125)
@@ -3140,7 +3205,7 @@ b9:
   %v158 = load i64, ptr %v158.p
   %v159.p = getelementptr i64, ptr %v155, i64 2
   %v159 = load i64, ptr %v159.p
-  %v160 = call i64 @"std/utf8.IndexInvalid"(i64 %v157, i64 %v158, i64 %v159)
+  %v160 = call i64 @"std/strings.IndexInvalid"(i64 %v157, i64 %v158, i64 %v159)
   %v161 = add i64 0, 127
   %v93076 = getelementptr i64, ptr @"rt.meta", i64 0
   %v162.p = getelementptr i64, ptr %v93076, i64 0
@@ -3167,7 +3232,7 @@ b9:
   %v171 = load i64, ptr %v171.p
   %v172.p = getelementptr i64, ptr %v168, i64 2
   %v172 = load i64, ptr %v172.p
-  %v173 = call i64 @"std/utf8.Valid"(i64 %v170, i64 %v171, i64 %v172)
+  %v173 = call i64 @"std/strings.Valid"(i64 %v170, i64 %v171, i64 %v172)
   call void @"rt.print_int"(i64 %v160)
   %v174 = add i64 0, 32
   call void @"rt.print_char"(i64 %v174)
@@ -3261,7 +3326,7 @@ b12:
   %v210 = load i64, ptr %v210.p
   %v211.p = getelementptr i64, ptr %v207, i64 2
   %v211 = load i64, ptr %v211.p
-  %v212 = call i64 @"std/utf8.IndexInvalid"(i64 %v209, i64 %v210, i64 %v211)
+  %v212 = call i64 @"std/strings.IndexInvalid"(i64 %v209, i64 %v210, i64 %v211)
   %v213 = add i64 0, 195
   %v214 = add i64 0, 169
   %v93079 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3294,7 +3359,7 @@ b12:
   %v226 = load i64, ptr %v226.p
   %v227.p = getelementptr i64, ptr %v223, i64 2
   %v227 = load i64, ptr %v227.p
-  %v228 = call i64 @"std/utf8.Valid"(i64 %v225, i64 %v226, i64 %v227)
+  %v228 = call i64 @"std/strings.Valid"(i64 %v225, i64 %v226, i64 %v227)
   call void @"rt.print_int"(i64 %v212)
   %v229 = add i64 0, 32
   call void @"rt.print_char"(i64 %v229)
@@ -3394,7 +3459,7 @@ b15:
   %v268 = load i64, ptr %v268.p
   %v269.p = getelementptr i64, ptr %v265, i64 2
   %v269 = load i64, ptr %v269.p
-  %v270 = call i64 @"std/utf8.IndexInvalid"(i64 %v267, i64 %v268, i64 %v269)
+  %v270 = call i64 @"std/strings.IndexInvalid"(i64 %v267, i64 %v268, i64 %v269)
   %v271 = add i64 0, 194
   %v272 = add i64 0, 128
   %v93082 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3427,7 +3492,7 @@ b15:
   %v284 = load i64, ptr %v284.p
   %v285.p = getelementptr i64, ptr %v281, i64 2
   %v285 = load i64, ptr %v285.p
-  %v286 = call i64 @"std/utf8.Valid"(i64 %v283, i64 %v284, i64 %v285)
+  %v286 = call i64 @"std/strings.Valid"(i64 %v283, i64 %v284, i64 %v285)
   call void @"rt.print_int"(i64 %v270)
   %v287 = add i64 0, 32
   call void @"rt.print_char"(i64 %v287)
@@ -3527,7 +3592,7 @@ b18:
   %v326 = load i64, ptr %v326.p
   %v327.p = getelementptr i64, ptr %v323, i64 2
   %v327 = load i64, ptr %v327.p
-  %v328 = call i64 @"std/utf8.IndexInvalid"(i64 %v325, i64 %v326, i64 %v327)
+  %v328 = call i64 @"std/strings.IndexInvalid"(i64 %v325, i64 %v326, i64 %v327)
   %v329 = add i64 0, 223
   %v330 = add i64 0, 191
   %v93085 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3560,7 +3625,7 @@ b18:
   %v342 = load i64, ptr %v342.p
   %v343.p = getelementptr i64, ptr %v339, i64 2
   %v343 = load i64, ptr %v343.p
-  %v344 = call i64 @"std/utf8.Valid"(i64 %v341, i64 %v342, i64 %v343)
+  %v344 = call i64 @"std/strings.Valid"(i64 %v341, i64 %v342, i64 %v343)
   call void @"rt.print_int"(i64 %v328)
   %v345 = add i64 0, 32
   call void @"rt.print_char"(i64 %v345)
@@ -3660,7 +3725,7 @@ b21:
   %v384 = load i64, ptr %v384.p
   %v385.p = getelementptr i64, ptr %v381, i64 2
   %v385 = load i64, ptr %v385.p
-  %v386 = call i64 @"std/utf8.IndexInvalid"(i64 %v383, i64 %v384, i64 %v385)
+  %v386 = call i64 @"std/strings.IndexInvalid"(i64 %v383, i64 %v384, i64 %v385)
   %v387 = add i64 0, 192
   %v388 = add i64 0, 128
   %v93088 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3693,7 +3758,7 @@ b21:
   %v400 = load i64, ptr %v400.p
   %v401.p = getelementptr i64, ptr %v397, i64 2
   %v401 = load i64, ptr %v401.p
-  %v402 = call i64 @"std/utf8.Valid"(i64 %v399, i64 %v400, i64 %v401)
+  %v402 = call i64 @"std/strings.Valid"(i64 %v399, i64 %v400, i64 %v401)
   call void @"rt.print_int"(i64 %v386)
   %v403 = add i64 0, 32
   call void @"rt.print_char"(i64 %v403)
@@ -3793,7 +3858,7 @@ b24:
   %v442 = load i64, ptr %v442.p
   %v443.p = getelementptr i64, ptr %v439, i64 2
   %v443 = load i64, ptr %v443.p
-  %v444 = call i64 @"std/utf8.IndexInvalid"(i64 %v441, i64 %v442, i64 %v443)
+  %v444 = call i64 @"std/strings.IndexInvalid"(i64 %v441, i64 %v442, i64 %v443)
   %v445 = add i64 0, 193
   %v446 = add i64 0, 191
   %v93091 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -3826,7 +3891,7 @@ b24:
   %v458 = load i64, ptr %v458.p
   %v459.p = getelementptr i64, ptr %v455, i64 2
   %v459 = load i64, ptr %v459.p
-  %v460 = call i64 @"std/utf8.Valid"(i64 %v457, i64 %v458, i64 %v459)
+  %v460 = call i64 @"std/strings.Valid"(i64 %v457, i64 %v458, i64 %v459)
   call void @"rt.print_int"(i64 %v444)
   %v461 = add i64 0, 32
   call void @"rt.print_char"(i64 %v461)
@@ -3920,7 +3985,7 @@ b27:
   %v497 = load i64, ptr %v497.p
   %v498.p = getelementptr i64, ptr %v494, i64 2
   %v498 = load i64, ptr %v498.p
-  %v499 = call i64 @"std/utf8.IndexInvalid"(i64 %v496, i64 %v497, i64 %v498)
+  %v499 = call i64 @"std/strings.IndexInvalid"(i64 %v496, i64 %v497, i64 %v498)
   %v500 = add i64 0, 194
   %v93094 = getelementptr i64, ptr @"rt.meta", i64 0
   %v501.p = getelementptr i64, ptr %v93094, i64 0
@@ -3947,7 +4012,7 @@ b27:
   %v510 = load i64, ptr %v510.p
   %v511.p = getelementptr i64, ptr %v507, i64 2
   %v511 = load i64, ptr %v511.p
-  %v512 = call i64 @"std/utf8.Valid"(i64 %v509, i64 %v510, i64 %v511)
+  %v512 = call i64 @"std/strings.Valid"(i64 %v509, i64 %v510, i64 %v511)
   call void @"rt.print_int"(i64 %v499)
   %v513 = add i64 0, 32
   call void @"rt.print_char"(i64 %v513)
@@ -4041,7 +4106,7 @@ b30:
   %v549 = load i64, ptr %v549.p
   %v550.p = getelementptr i64, ptr %v546, i64 2
   %v550 = load i64, ptr %v550.p
-  %v551 = call i64 @"std/utf8.IndexInvalid"(i64 %v548, i64 %v549, i64 %v550)
+  %v551 = call i64 @"std/strings.IndexInvalid"(i64 %v548, i64 %v549, i64 %v550)
   %v552 = add i64 0, 194
   %v553 = add i64 0, 65
   %v93097 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -4074,7 +4139,7 @@ b30:
   %v565 = load i64, ptr %v565.p
   %v566.p = getelementptr i64, ptr %v562, i64 2
   %v566 = load i64, ptr %v566.p
-  %v567 = call i64 @"std/utf8.Valid"(i64 %v564, i64 %v565, i64 %v566)
+  %v567 = call i64 @"std/strings.Valid"(i64 %v564, i64 %v565, i64 %v566)
   call void @"rt.print_int"(i64 %v551)
   %v568 = add i64 0, 32
   call void @"rt.print_char"(i64 %v568)
@@ -4180,7 +4245,7 @@ b33:
   %v610 = load i64, ptr %v610.p
   %v611.p = getelementptr i64, ptr %v607, i64 2
   %v611 = load i64, ptr %v611.p
-  %v612 = call i64 @"std/utf8.IndexInvalid"(i64 %v609, i64 %v610, i64 %v611)
+  %v612 = call i64 @"std/strings.IndexInvalid"(i64 %v609, i64 %v610, i64 %v611)
   %v613 = add i64 0, 224
   %v614 = add i64 0, 160
   %v615 = add i64 0, 128
@@ -4219,7 +4284,7 @@ b33:
   %v629 = load i64, ptr %v629.p
   %v630.p = getelementptr i64, ptr %v626, i64 2
   %v630 = load i64, ptr %v630.p
-  %v631 = call i64 @"std/utf8.Valid"(i64 %v628, i64 %v629, i64 %v630)
+  %v631 = call i64 @"std/strings.Valid"(i64 %v628, i64 %v629, i64 %v630)
   call void @"rt.print_int"(i64 %v612)
   %v632 = add i64 0, 32
   call void @"rt.print_char"(i64 %v632)
@@ -4331,7 +4396,7 @@ b36:
   %v677 = load i64, ptr %v677.p
   %v678.p = getelementptr i64, ptr %v674, i64 2
   %v678 = load i64, ptr %v678.p
-  %v679 = call i64 @"std/utf8.IndexInvalid"(i64 %v676, i64 %v677, i64 %v678)
+  %v679 = call i64 @"std/strings.IndexInvalid"(i64 %v676, i64 %v677, i64 %v678)
   %v680 = add i64 0, 224
   %v681 = add i64 0, 159
   %v682 = add i64 0, 191
@@ -4370,7 +4435,7 @@ b36:
   %v696 = load i64, ptr %v696.p
   %v697.p = getelementptr i64, ptr %v693, i64 2
   %v697 = load i64, ptr %v697.p
-  %v698 = call i64 @"std/utf8.Valid"(i64 %v695, i64 %v696, i64 %v697)
+  %v698 = call i64 @"std/strings.Valid"(i64 %v695, i64 %v696, i64 %v697)
   call void @"rt.print_int"(i64 %v679)
   %v699 = add i64 0, 32
   call void @"rt.print_char"(i64 %v699)
@@ -4482,7 +4547,7 @@ b39:
   %v744 = load i64, ptr %v744.p
   %v745.p = getelementptr i64, ptr %v741, i64 2
   %v745 = load i64, ptr %v745.p
-  %v746 = call i64 @"std/utf8.IndexInvalid"(i64 %v743, i64 %v744, i64 %v745)
+  %v746 = call i64 @"std/strings.IndexInvalid"(i64 %v743, i64 %v744, i64 %v745)
   %v747 = add i64 0, 227
   %v748 = add i64 0, 129
   %v749 = add i64 0, 130
@@ -4521,7 +4586,7 @@ b39:
   %v763 = load i64, ptr %v763.p
   %v764.p = getelementptr i64, ptr %v760, i64 2
   %v764 = load i64, ptr %v764.p
-  %v765 = call i64 @"std/utf8.Valid"(i64 %v762, i64 %v763, i64 %v764)
+  %v765 = call i64 @"std/strings.Valid"(i64 %v762, i64 %v763, i64 %v764)
   call void @"rt.print_int"(i64 %v746)
   %v766 = add i64 0, 32
   call void @"rt.print_char"(i64 %v766)
@@ -4633,7 +4698,7 @@ b42:
   %v811 = load i64, ptr %v811.p
   %v812.p = getelementptr i64, ptr %v808, i64 2
   %v812 = load i64, ptr %v812.p
-  %v813 = call i64 @"std/utf8.IndexInvalid"(i64 %v810, i64 %v811, i64 %v812)
+  %v813 = call i64 @"std/strings.IndexInvalid"(i64 %v810, i64 %v811, i64 %v812)
   %v814 = add i64 0, 237
   %v815 = add i64 0, 159
   %v816 = add i64 0, 191
@@ -4672,7 +4737,7 @@ b42:
   %v830 = load i64, ptr %v830.p
   %v831.p = getelementptr i64, ptr %v827, i64 2
   %v831 = load i64, ptr %v831.p
-  %v832 = call i64 @"std/utf8.Valid"(i64 %v829, i64 %v830, i64 %v831)
+  %v832 = call i64 @"std/strings.Valid"(i64 %v829, i64 %v830, i64 %v831)
   call void @"rt.print_int"(i64 %v813)
   %v833 = add i64 0, 32
   call void @"rt.print_char"(i64 %v833)
@@ -4784,7 +4849,7 @@ b45:
   %v878 = load i64, ptr %v878.p
   %v879.p = getelementptr i64, ptr %v875, i64 2
   %v879 = load i64, ptr %v879.p
-  %v880 = call i64 @"std/utf8.IndexInvalid"(i64 %v877, i64 %v878, i64 %v879)
+  %v880 = call i64 @"std/strings.IndexInvalid"(i64 %v877, i64 %v878, i64 %v879)
   %v881 = add i64 0, 237
   %v882 = add i64 0, 160
   %v883 = add i64 0, 128
@@ -4823,7 +4888,7 @@ b45:
   %v897 = load i64, ptr %v897.p
   %v898.p = getelementptr i64, ptr %v894, i64 2
   %v898 = load i64, ptr %v898.p
-  %v899 = call i64 @"std/utf8.Valid"(i64 %v896, i64 %v897, i64 %v898)
+  %v899 = call i64 @"std/strings.Valid"(i64 %v896, i64 %v897, i64 %v898)
   call void @"rt.print_int"(i64 %v880)
   %v900 = add i64 0, 32
   call void @"rt.print_char"(i64 %v900)
@@ -4935,7 +5000,7 @@ b48:
   %v945 = load i64, ptr %v945.p
   %v946.p = getelementptr i64, ptr %v942, i64 2
   %v946 = load i64, ptr %v946.p
-  %v947 = call i64 @"std/utf8.IndexInvalid"(i64 %v944, i64 %v945, i64 %v946)
+  %v947 = call i64 @"std/strings.IndexInvalid"(i64 %v944, i64 %v945, i64 %v946)
   %v948 = add i64 0, 238
   %v949 = add i64 0, 128
   %v950 = add i64 0, 128
@@ -4974,7 +5039,7 @@ b48:
   %v964 = load i64, ptr %v964.p
   %v965.p = getelementptr i64, ptr %v961, i64 2
   %v965 = load i64, ptr %v965.p
-  %v966 = call i64 @"std/utf8.Valid"(i64 %v963, i64 %v964, i64 %v965)
+  %v966 = call i64 @"std/strings.Valid"(i64 %v963, i64 %v964, i64 %v965)
   call void @"rt.print_int"(i64 %v947)
   %v967 = add i64 0, 32
   call void @"rt.print_char"(i64 %v967)
@@ -5086,7 +5151,7 @@ b51:
   %v1012 = load i64, ptr %v1012.p
   %v1013.p = getelementptr i64, ptr %v1009, i64 2
   %v1013 = load i64, ptr %v1013.p
-  %v1014 = call i64 @"std/utf8.IndexInvalid"(i64 %v1011, i64 %v1012, i64 %v1013)
+  %v1014 = call i64 @"std/strings.IndexInvalid"(i64 %v1011, i64 %v1012, i64 %v1013)
   %v1015 = add i64 0, 239
   %v1016 = add i64 0, 191
   %v1017 = add i64 0, 191
@@ -5125,7 +5190,7 @@ b51:
   %v1031 = load i64, ptr %v1031.p
   %v1032.p = getelementptr i64, ptr %v1028, i64 2
   %v1032 = load i64, ptr %v1032.p
-  %v1033 = call i64 @"std/utf8.Valid"(i64 %v1030, i64 %v1031, i64 %v1032)
+  %v1033 = call i64 @"std/strings.Valid"(i64 %v1030, i64 %v1031, i64 %v1032)
   call void @"rt.print_int"(i64 %v1014)
   %v1034 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1034)
@@ -5237,7 +5302,7 @@ b54:
   %v1079 = load i64, ptr %v1079.p
   %v1080.p = getelementptr i64, ptr %v1076, i64 2
   %v1080 = load i64, ptr %v1080.p
-  %v1081 = call i64 @"std/utf8.IndexInvalid"(i64 %v1078, i64 %v1079, i64 %v1080)
+  %v1081 = call i64 @"std/strings.IndexInvalid"(i64 %v1078, i64 %v1079, i64 %v1080)
   %v1082 = add i64 0, 239
   %v1083 = add i64 0, 191
   %v1084 = add i64 0, 189
@@ -5276,7 +5341,7 @@ b54:
   %v1098 = load i64, ptr %v1098.p
   %v1099.p = getelementptr i64, ptr %v1095, i64 2
   %v1099 = load i64, ptr %v1099.p
-  %v1100 = call i64 @"std/utf8.Valid"(i64 %v1097, i64 %v1098, i64 %v1099)
+  %v1100 = call i64 @"std/strings.Valid"(i64 %v1097, i64 %v1098, i64 %v1099)
   call void @"rt.print_int"(i64 %v1081)
   %v1101 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1101)
@@ -5382,7 +5447,7 @@ b57:
   %v1143 = load i64, ptr %v1143.p
   %v1144.p = getelementptr i64, ptr %v1140, i64 2
   %v1144 = load i64, ptr %v1144.p
-  %v1145 = call i64 @"std/utf8.IndexInvalid"(i64 %v1142, i64 %v1143, i64 %v1144)
+  %v1145 = call i64 @"std/strings.IndexInvalid"(i64 %v1142, i64 %v1143, i64 %v1144)
   %v1146 = add i64 0, 227
   %v1147 = add i64 0, 129
   %v93124 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -5415,7 +5480,7 @@ b57:
   %v1159 = load i64, ptr %v1159.p
   %v1160.p = getelementptr i64, ptr %v1156, i64 2
   %v1160 = load i64, ptr %v1160.p
-  %v1161 = call i64 @"std/utf8.Valid"(i64 %v1158, i64 %v1159, i64 %v1160)
+  %v1161 = call i64 @"std/strings.Valid"(i64 %v1158, i64 %v1159, i64 %v1160)
   call void @"rt.print_int"(i64 %v1145)
   %v1162 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1162)
@@ -5527,7 +5592,7 @@ b60:
   %v1207 = load i64, ptr %v1207.p
   %v1208.p = getelementptr i64, ptr %v1204, i64 2
   %v1208 = load i64, ptr %v1208.p
-  %v1209 = call i64 @"std/utf8.IndexInvalid"(i64 %v1206, i64 %v1207, i64 %v1208)
+  %v1209 = call i64 @"std/strings.IndexInvalid"(i64 %v1206, i64 %v1207, i64 %v1208)
   %v1210 = add i64 0, 65
   %v1211 = add i64 0, 227
   %v1212 = add i64 0, 129
@@ -5572,7 +5637,7 @@ b60:
   %v1229 = load i64, ptr %v1229.p
   %v1230.p = getelementptr i64, ptr %v1226, i64 2
   %v1230 = load i64, ptr %v1230.p
-  %v1231 = call i64 @"std/utf8.Valid"(i64 %v1228, i64 %v1229, i64 %v1230)
+  %v1231 = call i64 @"std/strings.Valid"(i64 %v1228, i64 %v1229, i64 %v1230)
   call void @"rt.print_int"(i64 %v1209)
   %v1232 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1232)
@@ -5696,7 +5761,7 @@ b63:
   %v1283 = load i64, ptr %v1283.p
   %v1284.p = getelementptr i64, ptr %v1280, i64 2
   %v1284 = load i64, ptr %v1284.p
-  %v1285 = call i64 @"std/utf8.IndexInvalid"(i64 %v1282, i64 %v1283, i64 %v1284)
+  %v1285 = call i64 @"std/strings.IndexInvalid"(i64 %v1282, i64 %v1283, i64 %v1284)
   %v1286 = add i64 0, 240
   %v1287 = add i64 0, 144
   %v1288 = add i64 0, 128
@@ -5741,7 +5806,7 @@ b63:
   %v1305 = load i64, ptr %v1305.p
   %v1306.p = getelementptr i64, ptr %v1302, i64 2
   %v1306 = load i64, ptr %v1306.p
-  %v1307 = call i64 @"std/utf8.Valid"(i64 %v1304, i64 %v1305, i64 %v1306)
+  %v1307 = call i64 @"std/strings.Valid"(i64 %v1304, i64 %v1305, i64 %v1306)
   call void @"rt.print_int"(i64 %v1285)
   %v1308 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1308)
@@ -5865,7 +5930,7 @@ b66:
   %v1359 = load i64, ptr %v1359.p
   %v1360.p = getelementptr i64, ptr %v1356, i64 2
   %v1360 = load i64, ptr %v1360.p
-  %v1361 = call i64 @"std/utf8.IndexInvalid"(i64 %v1358, i64 %v1359, i64 %v1360)
+  %v1361 = call i64 @"std/strings.IndexInvalid"(i64 %v1358, i64 %v1359, i64 %v1360)
   %v1362 = add i64 0, 240
   %v1363 = add i64 0, 143
   %v1364 = add i64 0, 191
@@ -5910,7 +5975,7 @@ b66:
   %v1381 = load i64, ptr %v1381.p
   %v1382.p = getelementptr i64, ptr %v1378, i64 2
   %v1382 = load i64, ptr %v1382.p
-  %v1383 = call i64 @"std/utf8.Valid"(i64 %v1380, i64 %v1381, i64 %v1382)
+  %v1383 = call i64 @"std/strings.Valid"(i64 %v1380, i64 %v1381, i64 %v1382)
   call void @"rt.print_int"(i64 %v1361)
   %v1384 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1384)
@@ -6034,7 +6099,7 @@ b69:
   %v1435 = load i64, ptr %v1435.p
   %v1436.p = getelementptr i64, ptr %v1432, i64 2
   %v1436 = load i64, ptr %v1436.p
-  %v1437 = call i64 @"std/utf8.IndexInvalid"(i64 %v1434, i64 %v1435, i64 %v1436)
+  %v1437 = call i64 @"std/strings.IndexInvalid"(i64 %v1434, i64 %v1435, i64 %v1436)
   %v1438 = add i64 0, 240
   %v1439 = add i64 0, 159
   %v1440 = add i64 0, 152
@@ -6079,7 +6144,7 @@ b69:
   %v1457 = load i64, ptr %v1457.p
   %v1458.p = getelementptr i64, ptr %v1454, i64 2
   %v1458 = load i64, ptr %v1458.p
-  %v1459 = call i64 @"std/utf8.Valid"(i64 %v1456, i64 %v1457, i64 %v1458)
+  %v1459 = call i64 @"std/strings.Valid"(i64 %v1456, i64 %v1457, i64 %v1458)
   call void @"rt.print_int"(i64 %v1437)
   %v1460 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1460)
@@ -6203,7 +6268,7 @@ b72:
   %v1511 = load i64, ptr %v1511.p
   %v1512.p = getelementptr i64, ptr %v1508, i64 2
   %v1512 = load i64, ptr %v1512.p
-  %v1513 = call i64 @"std/utf8.IndexInvalid"(i64 %v1510, i64 %v1511, i64 %v1512)
+  %v1513 = call i64 @"std/strings.IndexInvalid"(i64 %v1510, i64 %v1511, i64 %v1512)
   %v1514 = add i64 0, 244
   %v1515 = add i64 0, 143
   %v1516 = add i64 0, 191
@@ -6248,7 +6313,7 @@ b72:
   %v1533 = load i64, ptr %v1533.p
   %v1534.p = getelementptr i64, ptr %v1530, i64 2
   %v1534 = load i64, ptr %v1534.p
-  %v1535 = call i64 @"std/utf8.Valid"(i64 %v1532, i64 %v1533, i64 %v1534)
+  %v1535 = call i64 @"std/strings.Valid"(i64 %v1532, i64 %v1533, i64 %v1534)
   call void @"rt.print_int"(i64 %v1513)
   %v1536 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1536)
@@ -6372,7 +6437,7 @@ b75:
   %v1587 = load i64, ptr %v1587.p
   %v1588.p = getelementptr i64, ptr %v1584, i64 2
   %v1588 = load i64, ptr %v1588.p
-  %v1589 = call i64 @"std/utf8.IndexInvalid"(i64 %v1586, i64 %v1587, i64 %v1588)
+  %v1589 = call i64 @"std/strings.IndexInvalid"(i64 %v1586, i64 %v1587, i64 %v1588)
   %v1590 = add i64 0, 244
   %v1591 = add i64 0, 144
   %v1592 = add i64 0, 128
@@ -6417,7 +6482,7 @@ b75:
   %v1609 = load i64, ptr %v1609.p
   %v1610.p = getelementptr i64, ptr %v1606, i64 2
   %v1610 = load i64, ptr %v1610.p
-  %v1611 = call i64 @"std/utf8.Valid"(i64 %v1608, i64 %v1609, i64 %v1610)
+  %v1611 = call i64 @"std/strings.Valid"(i64 %v1608, i64 %v1609, i64 %v1610)
   call void @"rt.print_int"(i64 %v1589)
   %v1612 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1612)
@@ -6541,7 +6606,7 @@ b78:
   %v1663 = load i64, ptr %v1663.p
   %v1664.p = getelementptr i64, ptr %v1660, i64 2
   %v1664 = load i64, ptr %v1664.p
-  %v1665 = call i64 @"std/utf8.IndexInvalid"(i64 %v1662, i64 %v1663, i64 %v1664)
+  %v1665 = call i64 @"std/strings.IndexInvalid"(i64 %v1662, i64 %v1663, i64 %v1664)
   %v1666 = add i64 0, 245
   %v1667 = add i64 0, 128
   %v1668 = add i64 0, 128
@@ -6586,7 +6651,7 @@ b78:
   %v1685 = load i64, ptr %v1685.p
   %v1686.p = getelementptr i64, ptr %v1682, i64 2
   %v1686 = load i64, ptr %v1686.p
-  %v1687 = call i64 @"std/utf8.Valid"(i64 %v1684, i64 %v1685, i64 %v1686)
+  %v1687 = call i64 @"std/strings.Valid"(i64 %v1684, i64 %v1685, i64 %v1686)
   call void @"rt.print_int"(i64 %v1665)
   %v1688 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1688)
@@ -6704,7 +6769,7 @@ b81:
   %v1736 = load i64, ptr %v1736.p
   %v1737.p = getelementptr i64, ptr %v1733, i64 2
   %v1737 = load i64, ptr %v1737.p
-  %v1738 = call i64 @"std/utf8.IndexInvalid"(i64 %v1735, i64 %v1736, i64 %v1737)
+  %v1738 = call i64 @"std/strings.IndexInvalid"(i64 %v1735, i64 %v1736, i64 %v1737)
   %v1739 = add i64 0, 240
   %v1740 = add i64 0, 159
   %v1741 = add i64 0, 152
@@ -6743,7 +6808,7 @@ b81:
   %v1755 = load i64, ptr %v1755.p
   %v1756.p = getelementptr i64, ptr %v1752, i64 2
   %v1756 = load i64, ptr %v1756.p
-  %v1757 = call i64 @"std/utf8.Valid"(i64 %v1754, i64 %v1755, i64 %v1756)
+  %v1757 = call i64 @"std/strings.Valid"(i64 %v1754, i64 %v1755, i64 %v1756)
   call void @"rt.print_int"(i64 %v1738)
   %v1758 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1758)
@@ -6843,7 +6908,7 @@ b84:
   %v1797 = load i64, ptr %v1797.p
   %v1798.p = getelementptr i64, ptr %v1794, i64 2
   %v1798 = load i64, ptr %v1798.p
-  %v1799 = call i64 @"std/utf8.IndexInvalid"(i64 %v1796, i64 %v1797, i64 %v1798)
+  %v1799 = call i64 @"std/strings.IndexInvalid"(i64 %v1796, i64 %v1797, i64 %v1798)
   %v1800 = add i64 0, 255
   %v93151 = getelementptr i64, ptr @"rt.meta", i64 0
   %v1801.p = getelementptr i64, ptr %v93151, i64 0
@@ -6870,7 +6935,7 @@ b84:
   %v1810 = load i64, ptr %v1810.p
   %v1811.p = getelementptr i64, ptr %v1807, i64 2
   %v1811 = load i64, ptr %v1811.p
-  %v1812 = call i64 @"std/utf8.Valid"(i64 %v1809, i64 %v1810, i64 %v1811)
+  %v1812 = call i64 @"std/strings.Valid"(i64 %v1809, i64 %v1810, i64 %v1811)
   call void @"rt.print_int"(i64 %v1799)
   %v1813 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1813)
@@ -6958,7 +7023,7 @@ b87:
   %v1846 = load i64, ptr %v1846.p
   %v1847.p = getelementptr i64, ptr %v1843, i64 2
   %v1847 = load i64, ptr %v1847.p
-  %v1848 = call i64 @"std/utf8.IndexInvalid"(i64 %v1845, i64 %v1846, i64 %v1847)
+  %v1848 = call i64 @"std/strings.IndexInvalid"(i64 %v1845, i64 %v1846, i64 %v1847)
   %v1849 = add i64 0, 254
   %v93154 = getelementptr i64, ptr @"rt.meta", i64 0
   %v1850.p = getelementptr i64, ptr %v93154, i64 0
@@ -6985,7 +7050,7 @@ b87:
   %v1859 = load i64, ptr %v1859.p
   %v1860.p = getelementptr i64, ptr %v1856, i64 2
   %v1860 = load i64, ptr %v1860.p
-  %v1861 = call i64 @"std/utf8.Valid"(i64 %v1858, i64 %v1859, i64 %v1860)
+  %v1861 = call i64 @"std/strings.Valid"(i64 %v1858, i64 %v1859, i64 %v1860)
   call void @"rt.print_int"(i64 %v1848)
   %v1862 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1862)
@@ -7073,7 +7138,7 @@ b90:
   %v1895 = load i64, ptr %v1895.p
   %v1896.p = getelementptr i64, ptr %v1892, i64 2
   %v1896 = load i64, ptr %v1896.p
-  %v1897 = call i64 @"std/utf8.IndexInvalid"(i64 %v1894, i64 %v1895, i64 %v1896)
+  %v1897 = call i64 @"std/strings.IndexInvalid"(i64 %v1894, i64 %v1895, i64 %v1896)
   %v1898 = add i64 0, 128
   %v93157 = getelementptr i64, ptr @"rt.meta", i64 0
   %v1899.p = getelementptr i64, ptr %v93157, i64 0
@@ -7100,7 +7165,7 @@ b90:
   %v1908 = load i64, ptr %v1908.p
   %v1909.p = getelementptr i64, ptr %v1905, i64 2
   %v1909 = load i64, ptr %v1909.p
-  %v1910 = call i64 @"std/utf8.Valid"(i64 %v1907, i64 %v1908, i64 %v1909)
+  %v1910 = call i64 @"std/strings.Valid"(i64 %v1907, i64 %v1908, i64 %v1909)
   call void @"rt.print_int"(i64 %v1897)
   %v1911 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1911)
@@ -7188,7 +7253,7 @@ b93:
   %v1944 = load i64, ptr %v1944.p
   %v1945.p = getelementptr i64, ptr %v1941, i64 2
   %v1945 = load i64, ptr %v1945.p
-  %v1946 = call i64 @"std/utf8.IndexInvalid"(i64 %v1943, i64 %v1944, i64 %v1945)
+  %v1946 = call i64 @"std/strings.IndexInvalid"(i64 %v1943, i64 %v1944, i64 %v1945)
   %v1947 = add i64 0, 191
   %v93160 = getelementptr i64, ptr @"rt.meta", i64 0
   %v1948.p = getelementptr i64, ptr %v93160, i64 0
@@ -7215,7 +7280,7 @@ b93:
   %v1957 = load i64, ptr %v1957.p
   %v1958.p = getelementptr i64, ptr %v1954, i64 2
   %v1958 = load i64, ptr %v1958.p
-  %v1959 = call i64 @"std/utf8.Valid"(i64 %v1956, i64 %v1957, i64 %v1958)
+  %v1959 = call i64 @"std/strings.Valid"(i64 %v1956, i64 %v1957, i64 %v1958)
   call void @"rt.print_int"(i64 %v1946)
   %v1960 = add i64 0, 32
   call void @"rt.print_char"(i64 %v1960)
@@ -7357,7 +7422,7 @@ b96:
   %v2020 = load i64, ptr %v2020.p
   %v2021.p = getelementptr i64, ptr %v2017, i64 2
   %v2021 = load i64, ptr %v2021.p
-  %v2022 = call i64 @"std/utf8.IndexInvalid"(i64 %v2019, i64 %v2020, i64 %v2021)
+  %v2022 = call i64 @"std/strings.IndexInvalid"(i64 %v2019, i64 %v2020, i64 %v2021)
   %v2023 = add i64 0, 97
   %v2024 = add i64 0, 195
   %v2025 = add i64 0, 169
@@ -7438,7 +7503,7 @@ b96:
   %v2060 = load i64, ptr %v2060.p
   %v2061.p = getelementptr i64, ptr %v2057, i64 2
   %v2061 = load i64, ptr %v2061.p
-  %v2062 = call i64 @"std/utf8.Valid"(i64 %v2059, i64 %v2060, i64 %v2061)
+  %v2062 = call i64 @"std/strings.Valid"(i64 %v2059, i64 %v2060, i64 %v2061)
   call void @"rt.print_int"(i64 %v2022)
   %v2063 = add i64 0, 32
   call void @"rt.print_char"(i64 %v2063)
@@ -7598,7 +7663,7 @@ b99:
   %v2132 = load i64, ptr %v2132.p
   %v2133.p = getelementptr i64, ptr %v2129, i64 2
   %v2133 = load i64, ptr %v2133.p
-  %v2134 = call i64 @"std/utf8.IndexInvalid"(i64 %v2131, i64 %v2132, i64 %v2133)
+  %v2134 = call i64 @"std/strings.IndexInvalid"(i64 %v2131, i64 %v2132, i64 %v2133)
   %v2135 = add i64 0, 97
   %v2136 = add i64 0, 98
   %v2137 = add i64 0, 128
@@ -7643,7 +7708,7 @@ b99:
   %v2154 = load i64, ptr %v2154.p
   %v2155.p = getelementptr i64, ptr %v2151, i64 2
   %v2155 = load i64, ptr %v2155.p
-  %v2156 = call i64 @"std/utf8.Valid"(i64 %v2153, i64 %v2154, i64 %v2155)
+  %v2156 = call i64 @"std/strings.Valid"(i64 %v2153, i64 %v2154, i64 %v2155)
   call void @"rt.print_int"(i64 %v2134)
   %v2157 = add i64 0, 32
   call void @"rt.print_char"(i64 %v2157)
@@ -7983,7 +8048,7 @@ b102:
   %v2316 = load i64, ptr %v2316.p
   %v2317.p = getelementptr i64, ptr %v2313, i64 2
   %v2317 = load i64, ptr %v2317.p
-  %v2318 = call i64 @"std/utf8.IndexInvalid"(i64 %v2315, i64 %v2316, i64 %v2317)
+  %v2318 = call i64 @"std/strings.IndexInvalid"(i64 %v2315, i64 %v2316, i64 %v2317)
   %v2319 = add i64 0, 97
   %v2320 = add i64 0, 97
   %v2321 = add i64 0, 97
@@ -8244,7 +8309,7 @@ b102:
   %v2446 = load i64, ptr %v2446.p
   %v2447.p = getelementptr i64, ptr %v2443, i64 2
   %v2447 = load i64, ptr %v2447.p
-  %v2448 = call i64 @"std/utf8.Valid"(i64 %v2445, i64 %v2446, i64 %v2447)
+  %v2448 = call i64 @"std/strings.Valid"(i64 %v2445, i64 %v2446, i64 %v2447)
   call void @"rt.print_int"(i64 %v2318)
   %v2449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v2449)
@@ -8800,7 +8865,7 @@ b105:
   %v2716 = load i64, ptr %v2716.p
   %v2717.p = getelementptr i64, ptr %v2713, i64 2
   %v2717 = load i64, ptr %v2717.p
-  %v2718 = call i64 @"std/utf8.IndexInvalid"(i64 %v2715, i64 %v2716, i64 %v2717)
+  %v2718 = call i64 @"std/strings.IndexInvalid"(i64 %v2715, i64 %v2716, i64 %v2717)
   %v2719 = add i64 0, 97
   %v2720 = add i64 0, 97
   %v2721 = add i64 0, 97
@@ -9061,7 +9126,7 @@ b105:
   %v2846 = load i64, ptr %v2846.p
   %v2847.p = getelementptr i64, ptr %v2843, i64 2
   %v2847 = load i64, ptr %v2847.p
-  %v2848 = call i64 @"std/utf8.Valid"(i64 %v2845, i64 %v2846, i64 %v2847)
+  %v2848 = call i64 @"std/strings.Valid"(i64 %v2845, i64 %v2846, i64 %v2847)
   call void @"rt.print_int"(i64 %v2718)
   %v2849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v2849)
@@ -9617,7 +9682,7 @@ b108:
   %v3116 = load i64, ptr %v3116.p
   %v3117.p = getelementptr i64, ptr %v3113, i64 2
   %v3117 = load i64, ptr %v3117.p
-  %v3118 = call i64 @"std/utf8.IndexInvalid"(i64 %v3115, i64 %v3116, i64 %v3117)
+  %v3118 = call i64 @"std/strings.IndexInvalid"(i64 %v3115, i64 %v3116, i64 %v3117)
   %v3119 = add i64 0, 97
   %v3120 = add i64 0, 97
   %v3121 = add i64 0, 97
@@ -9878,7 +9943,7 @@ b108:
   %v3246 = load i64, ptr %v3246.p
   %v3247.p = getelementptr i64, ptr %v3243, i64 2
   %v3247 = load i64, ptr %v3247.p
-  %v3248 = call i64 @"std/utf8.Valid"(i64 %v3245, i64 %v3246, i64 %v3247)
+  %v3248 = call i64 @"std/strings.Valid"(i64 %v3245, i64 %v3246, i64 %v3247)
   call void @"rt.print_int"(i64 %v3118)
   %v3249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v3249)
@@ -10434,7 +10499,7 @@ b111:
   %v3516 = load i64, ptr %v3516.p
   %v3517.p = getelementptr i64, ptr %v3513, i64 2
   %v3517 = load i64, ptr %v3517.p
-  %v3518 = call i64 @"std/utf8.IndexInvalid"(i64 %v3515, i64 %v3516, i64 %v3517)
+  %v3518 = call i64 @"std/strings.IndexInvalid"(i64 %v3515, i64 %v3516, i64 %v3517)
   %v3519 = add i64 0, 97
   %v3520 = add i64 0, 97
   %v3521 = add i64 0, 97
@@ -10695,7 +10760,7 @@ b111:
   %v3646 = load i64, ptr %v3646.p
   %v3647.p = getelementptr i64, ptr %v3643, i64 2
   %v3647 = load i64, ptr %v3647.p
-  %v3648 = call i64 @"std/utf8.Valid"(i64 %v3645, i64 %v3646, i64 %v3647)
+  %v3648 = call i64 @"std/strings.Valid"(i64 %v3645, i64 %v3646, i64 %v3647)
   call void @"rt.print_int"(i64 %v3518)
   %v3649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v3649)
@@ -11251,7 +11316,7 @@ b114:
   %v3916 = load i64, ptr %v3916.p
   %v3917.p = getelementptr i64, ptr %v3913, i64 2
   %v3917 = load i64, ptr %v3917.p
-  %v3918 = call i64 @"std/utf8.IndexInvalid"(i64 %v3915, i64 %v3916, i64 %v3917)
+  %v3918 = call i64 @"std/strings.IndexInvalid"(i64 %v3915, i64 %v3916, i64 %v3917)
   %v3919 = add i64 0, 97
   %v3920 = add i64 0, 97
   %v3921 = add i64 0, 97
@@ -11512,7 +11577,7 @@ b114:
   %v4046 = load i64, ptr %v4046.p
   %v4047.p = getelementptr i64, ptr %v4043, i64 2
   %v4047 = load i64, ptr %v4047.p
-  %v4048 = call i64 @"std/utf8.Valid"(i64 %v4045, i64 %v4046, i64 %v4047)
+  %v4048 = call i64 @"std/strings.Valid"(i64 %v4045, i64 %v4046, i64 %v4047)
   call void @"rt.print_int"(i64 %v3918)
   %v4049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v4049)
@@ -12068,7 +12133,7 @@ b117:
   %v4316 = load i64, ptr %v4316.p
   %v4317.p = getelementptr i64, ptr %v4313, i64 2
   %v4317 = load i64, ptr %v4317.p
-  %v4318 = call i64 @"std/utf8.IndexInvalid"(i64 %v4315, i64 %v4316, i64 %v4317)
+  %v4318 = call i64 @"std/strings.IndexInvalid"(i64 %v4315, i64 %v4316, i64 %v4317)
   %v4319 = add i64 0, 97
   %v4320 = add i64 0, 97
   %v4321 = add i64 0, 97
@@ -12329,7 +12394,7 @@ b117:
   %v4446 = load i64, ptr %v4446.p
   %v4447.p = getelementptr i64, ptr %v4443, i64 2
   %v4447 = load i64, ptr %v4447.p
-  %v4448 = call i64 @"std/utf8.Valid"(i64 %v4445, i64 %v4446, i64 %v4447)
+  %v4448 = call i64 @"std/strings.Valid"(i64 %v4445, i64 %v4446, i64 %v4447)
   call void @"rt.print_int"(i64 %v4318)
   %v4449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v4449)
@@ -12885,7 +12950,7 @@ b120:
   %v4716 = load i64, ptr %v4716.p
   %v4717.p = getelementptr i64, ptr %v4713, i64 2
   %v4717 = load i64, ptr %v4717.p
-  %v4718 = call i64 @"std/utf8.IndexInvalid"(i64 %v4715, i64 %v4716, i64 %v4717)
+  %v4718 = call i64 @"std/strings.IndexInvalid"(i64 %v4715, i64 %v4716, i64 %v4717)
   %v4719 = add i64 0, 97
   %v4720 = add i64 0, 97
   %v4721 = add i64 0, 97
@@ -13146,7 +13211,7 @@ b120:
   %v4846 = load i64, ptr %v4846.p
   %v4847.p = getelementptr i64, ptr %v4843, i64 2
   %v4847 = load i64, ptr %v4847.p
-  %v4848 = call i64 @"std/utf8.Valid"(i64 %v4845, i64 %v4846, i64 %v4847)
+  %v4848 = call i64 @"std/strings.Valid"(i64 %v4845, i64 %v4846, i64 %v4847)
   call void @"rt.print_int"(i64 %v4718)
   %v4849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v4849)
@@ -13702,7 +13767,7 @@ b123:
   %v5116 = load i64, ptr %v5116.p
   %v5117.p = getelementptr i64, ptr %v5113, i64 2
   %v5117 = load i64, ptr %v5117.p
-  %v5118 = call i64 @"std/utf8.IndexInvalid"(i64 %v5115, i64 %v5116, i64 %v5117)
+  %v5118 = call i64 @"std/strings.IndexInvalid"(i64 %v5115, i64 %v5116, i64 %v5117)
   %v5119 = add i64 0, 97
   %v5120 = add i64 0, 97
   %v5121 = add i64 0, 97
@@ -13963,7 +14028,7 @@ b123:
   %v5246 = load i64, ptr %v5246.p
   %v5247.p = getelementptr i64, ptr %v5243, i64 2
   %v5247 = load i64, ptr %v5247.p
-  %v5248 = call i64 @"std/utf8.Valid"(i64 %v5245, i64 %v5246, i64 %v5247)
+  %v5248 = call i64 @"std/strings.Valid"(i64 %v5245, i64 %v5246, i64 %v5247)
   call void @"rt.print_int"(i64 %v5118)
   %v5249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v5249)
@@ -14519,7 +14584,7 @@ b126:
   %v5516 = load i64, ptr %v5516.p
   %v5517.p = getelementptr i64, ptr %v5513, i64 2
   %v5517 = load i64, ptr %v5517.p
-  %v5518 = call i64 @"std/utf8.IndexInvalid"(i64 %v5515, i64 %v5516, i64 %v5517)
+  %v5518 = call i64 @"std/strings.IndexInvalid"(i64 %v5515, i64 %v5516, i64 %v5517)
   %v5519 = add i64 0, 97
   %v5520 = add i64 0, 97
   %v5521 = add i64 0, 97
@@ -14780,7 +14845,7 @@ b126:
   %v5646 = load i64, ptr %v5646.p
   %v5647.p = getelementptr i64, ptr %v5643, i64 2
   %v5647 = load i64, ptr %v5647.p
-  %v5648 = call i64 @"std/utf8.Valid"(i64 %v5645, i64 %v5646, i64 %v5647)
+  %v5648 = call i64 @"std/strings.Valid"(i64 %v5645, i64 %v5646, i64 %v5647)
   call void @"rt.print_int"(i64 %v5518)
   %v5649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v5649)
@@ -15336,7 +15401,7 @@ b129:
   %v5916 = load i64, ptr %v5916.p
   %v5917.p = getelementptr i64, ptr %v5913, i64 2
   %v5917 = load i64, ptr %v5917.p
-  %v5918 = call i64 @"std/utf8.IndexInvalid"(i64 %v5915, i64 %v5916, i64 %v5917)
+  %v5918 = call i64 @"std/strings.IndexInvalid"(i64 %v5915, i64 %v5916, i64 %v5917)
   %v5919 = add i64 0, 97
   %v5920 = add i64 0, 97
   %v5921 = add i64 0, 97
@@ -15597,7 +15662,7 @@ b129:
   %v6046 = load i64, ptr %v6046.p
   %v6047.p = getelementptr i64, ptr %v6043, i64 2
   %v6047 = load i64, ptr %v6047.p
-  %v6048 = call i64 @"std/utf8.Valid"(i64 %v6045, i64 %v6046, i64 %v6047)
+  %v6048 = call i64 @"std/strings.Valid"(i64 %v6045, i64 %v6046, i64 %v6047)
   call void @"rt.print_int"(i64 %v5918)
   %v6049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v6049)
@@ -16153,7 +16218,7 @@ b132:
   %v6316 = load i64, ptr %v6316.p
   %v6317.p = getelementptr i64, ptr %v6313, i64 2
   %v6317 = load i64, ptr %v6317.p
-  %v6318 = call i64 @"std/utf8.IndexInvalid"(i64 %v6315, i64 %v6316, i64 %v6317)
+  %v6318 = call i64 @"std/strings.IndexInvalid"(i64 %v6315, i64 %v6316, i64 %v6317)
   %v6319 = add i64 0, 97
   %v6320 = add i64 0, 97
   %v6321 = add i64 0, 97
@@ -16414,7 +16479,7 @@ b132:
   %v6446 = load i64, ptr %v6446.p
   %v6447.p = getelementptr i64, ptr %v6443, i64 2
   %v6447 = load i64, ptr %v6447.p
-  %v6448 = call i64 @"std/utf8.Valid"(i64 %v6445, i64 %v6446, i64 %v6447)
+  %v6448 = call i64 @"std/strings.Valid"(i64 %v6445, i64 %v6446, i64 %v6447)
   call void @"rt.print_int"(i64 %v6318)
   %v6449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v6449)
@@ -16970,7 +17035,7 @@ b135:
   %v6716 = load i64, ptr %v6716.p
   %v6717.p = getelementptr i64, ptr %v6713, i64 2
   %v6717 = load i64, ptr %v6717.p
-  %v6718 = call i64 @"std/utf8.IndexInvalid"(i64 %v6715, i64 %v6716, i64 %v6717)
+  %v6718 = call i64 @"std/strings.IndexInvalid"(i64 %v6715, i64 %v6716, i64 %v6717)
   %v6719 = add i64 0, 97
   %v6720 = add i64 0, 97
   %v6721 = add i64 0, 97
@@ -17231,7 +17296,7 @@ b135:
   %v6846 = load i64, ptr %v6846.p
   %v6847.p = getelementptr i64, ptr %v6843, i64 2
   %v6847 = load i64, ptr %v6847.p
-  %v6848 = call i64 @"std/utf8.Valid"(i64 %v6845, i64 %v6846, i64 %v6847)
+  %v6848 = call i64 @"std/strings.Valid"(i64 %v6845, i64 %v6846, i64 %v6847)
   call void @"rt.print_int"(i64 %v6718)
   %v6849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v6849)
@@ -17787,7 +17852,7 @@ b138:
   %v7116 = load i64, ptr %v7116.p
   %v7117.p = getelementptr i64, ptr %v7113, i64 2
   %v7117 = load i64, ptr %v7117.p
-  %v7118 = call i64 @"std/utf8.IndexInvalid"(i64 %v7115, i64 %v7116, i64 %v7117)
+  %v7118 = call i64 @"std/strings.IndexInvalid"(i64 %v7115, i64 %v7116, i64 %v7117)
   %v7119 = add i64 0, 97
   %v7120 = add i64 0, 97
   %v7121 = add i64 0, 97
@@ -18048,7 +18113,7 @@ b138:
   %v7246 = load i64, ptr %v7246.p
   %v7247.p = getelementptr i64, ptr %v7243, i64 2
   %v7247 = load i64, ptr %v7247.p
-  %v7248 = call i64 @"std/utf8.Valid"(i64 %v7245, i64 %v7246, i64 %v7247)
+  %v7248 = call i64 @"std/strings.Valid"(i64 %v7245, i64 %v7246, i64 %v7247)
   call void @"rt.print_int"(i64 %v7118)
   %v7249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v7249)
@@ -18604,7 +18669,7 @@ b141:
   %v7516 = load i64, ptr %v7516.p
   %v7517.p = getelementptr i64, ptr %v7513, i64 2
   %v7517 = load i64, ptr %v7517.p
-  %v7518 = call i64 @"std/utf8.IndexInvalid"(i64 %v7515, i64 %v7516, i64 %v7517)
+  %v7518 = call i64 @"std/strings.IndexInvalid"(i64 %v7515, i64 %v7516, i64 %v7517)
   %v7519 = add i64 0, 97
   %v7520 = add i64 0, 97
   %v7521 = add i64 0, 97
@@ -18865,7 +18930,7 @@ b141:
   %v7646 = load i64, ptr %v7646.p
   %v7647.p = getelementptr i64, ptr %v7643, i64 2
   %v7647 = load i64, ptr %v7647.p
-  %v7648 = call i64 @"std/utf8.Valid"(i64 %v7645, i64 %v7646, i64 %v7647)
+  %v7648 = call i64 @"std/strings.Valid"(i64 %v7645, i64 %v7646, i64 %v7647)
   call void @"rt.print_int"(i64 %v7518)
   %v7649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v7649)
@@ -19421,7 +19486,7 @@ b144:
   %v7916 = load i64, ptr %v7916.p
   %v7917.p = getelementptr i64, ptr %v7913, i64 2
   %v7917 = load i64, ptr %v7917.p
-  %v7918 = call i64 @"std/utf8.IndexInvalid"(i64 %v7915, i64 %v7916, i64 %v7917)
+  %v7918 = call i64 @"std/strings.IndexInvalid"(i64 %v7915, i64 %v7916, i64 %v7917)
   %v7919 = add i64 0, 97
   %v7920 = add i64 0, 97
   %v7921 = add i64 0, 97
@@ -19682,7 +19747,7 @@ b144:
   %v8046 = load i64, ptr %v8046.p
   %v8047.p = getelementptr i64, ptr %v8043, i64 2
   %v8047 = load i64, ptr %v8047.p
-  %v8048 = call i64 @"std/utf8.Valid"(i64 %v8045, i64 %v8046, i64 %v8047)
+  %v8048 = call i64 @"std/strings.Valid"(i64 %v8045, i64 %v8046, i64 %v8047)
   call void @"rt.print_int"(i64 %v7918)
   %v8049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v8049)
@@ -20238,7 +20303,7 @@ b147:
   %v8316 = load i64, ptr %v8316.p
   %v8317.p = getelementptr i64, ptr %v8313, i64 2
   %v8317 = load i64, ptr %v8317.p
-  %v8318 = call i64 @"std/utf8.IndexInvalid"(i64 %v8315, i64 %v8316, i64 %v8317)
+  %v8318 = call i64 @"std/strings.IndexInvalid"(i64 %v8315, i64 %v8316, i64 %v8317)
   %v8319 = add i64 0, 97
   %v8320 = add i64 0, 97
   %v8321 = add i64 0, 97
@@ -20499,7 +20564,7 @@ b147:
   %v8446 = load i64, ptr %v8446.p
   %v8447.p = getelementptr i64, ptr %v8443, i64 2
   %v8447 = load i64, ptr %v8447.p
-  %v8448 = call i64 @"std/utf8.Valid"(i64 %v8445, i64 %v8446, i64 %v8447)
+  %v8448 = call i64 @"std/strings.Valid"(i64 %v8445, i64 %v8446, i64 %v8447)
   call void @"rt.print_int"(i64 %v8318)
   %v8449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v8449)
@@ -21055,7 +21120,7 @@ b150:
   %v8716 = load i64, ptr %v8716.p
   %v8717.p = getelementptr i64, ptr %v8713, i64 2
   %v8717 = load i64, ptr %v8717.p
-  %v8718 = call i64 @"std/utf8.IndexInvalid"(i64 %v8715, i64 %v8716, i64 %v8717)
+  %v8718 = call i64 @"std/strings.IndexInvalid"(i64 %v8715, i64 %v8716, i64 %v8717)
   %v8719 = add i64 0, 97
   %v8720 = add i64 0, 97
   %v8721 = add i64 0, 97
@@ -21316,7 +21381,7 @@ b150:
   %v8846 = load i64, ptr %v8846.p
   %v8847.p = getelementptr i64, ptr %v8843, i64 2
   %v8847 = load i64, ptr %v8847.p
-  %v8848 = call i64 @"std/utf8.Valid"(i64 %v8845, i64 %v8846, i64 %v8847)
+  %v8848 = call i64 @"std/strings.Valid"(i64 %v8845, i64 %v8846, i64 %v8847)
   call void @"rt.print_int"(i64 %v8718)
   %v8849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v8849)
@@ -21872,7 +21937,7 @@ b153:
   %v9116 = load i64, ptr %v9116.p
   %v9117.p = getelementptr i64, ptr %v9113, i64 2
   %v9117 = load i64, ptr %v9117.p
-  %v9118 = call i64 @"std/utf8.IndexInvalid"(i64 %v9115, i64 %v9116, i64 %v9117)
+  %v9118 = call i64 @"std/strings.IndexInvalid"(i64 %v9115, i64 %v9116, i64 %v9117)
   %v9119 = add i64 0, 97
   %v9120 = add i64 0, 97
   %v9121 = add i64 0, 97
@@ -22133,7 +22198,7 @@ b153:
   %v9246 = load i64, ptr %v9246.p
   %v9247.p = getelementptr i64, ptr %v9243, i64 2
   %v9247 = load i64, ptr %v9247.p
-  %v9248 = call i64 @"std/utf8.Valid"(i64 %v9245, i64 %v9246, i64 %v9247)
+  %v9248 = call i64 @"std/strings.Valid"(i64 %v9245, i64 %v9246, i64 %v9247)
   call void @"rt.print_int"(i64 %v9118)
   %v9249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v9249)
@@ -22689,7 +22754,7 @@ b156:
   %v9516 = load i64, ptr %v9516.p
   %v9517.p = getelementptr i64, ptr %v9513, i64 2
   %v9517 = load i64, ptr %v9517.p
-  %v9518 = call i64 @"std/utf8.IndexInvalid"(i64 %v9515, i64 %v9516, i64 %v9517)
+  %v9518 = call i64 @"std/strings.IndexInvalid"(i64 %v9515, i64 %v9516, i64 %v9517)
   %v9519 = add i64 0, 97
   %v9520 = add i64 0, 97
   %v9521 = add i64 0, 97
@@ -22950,7 +23015,7 @@ b156:
   %v9646 = load i64, ptr %v9646.p
   %v9647.p = getelementptr i64, ptr %v9643, i64 2
   %v9647 = load i64, ptr %v9647.p
-  %v9648 = call i64 @"std/utf8.Valid"(i64 %v9645, i64 %v9646, i64 %v9647)
+  %v9648 = call i64 @"std/strings.Valid"(i64 %v9645, i64 %v9646, i64 %v9647)
   call void @"rt.print_int"(i64 %v9518)
   %v9649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v9649)
@@ -23506,7 +23571,7 @@ b159:
   %v9916 = load i64, ptr %v9916.p
   %v9917.p = getelementptr i64, ptr %v9913, i64 2
   %v9917 = load i64, ptr %v9917.p
-  %v9918 = call i64 @"std/utf8.IndexInvalid"(i64 %v9915, i64 %v9916, i64 %v9917)
+  %v9918 = call i64 @"std/strings.IndexInvalid"(i64 %v9915, i64 %v9916, i64 %v9917)
   %v9919 = add i64 0, 97
   %v9920 = add i64 0, 97
   %v9921 = add i64 0, 97
@@ -23767,7 +23832,7 @@ b159:
   %v10046 = load i64, ptr %v10046.p
   %v10047.p = getelementptr i64, ptr %v10043, i64 2
   %v10047 = load i64, ptr %v10047.p
-  %v10048 = call i64 @"std/utf8.Valid"(i64 %v10045, i64 %v10046, i64 %v10047)
+  %v10048 = call i64 @"std/strings.Valid"(i64 %v10045, i64 %v10046, i64 %v10047)
   call void @"rt.print_int"(i64 %v9918)
   %v10049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v10049)
@@ -24323,7 +24388,7 @@ b162:
   %v10316 = load i64, ptr %v10316.p
   %v10317.p = getelementptr i64, ptr %v10313, i64 2
   %v10317 = load i64, ptr %v10317.p
-  %v10318 = call i64 @"std/utf8.IndexInvalid"(i64 %v10315, i64 %v10316, i64 %v10317)
+  %v10318 = call i64 @"std/strings.IndexInvalid"(i64 %v10315, i64 %v10316, i64 %v10317)
   %v10319 = add i64 0, 97
   %v10320 = add i64 0, 97
   %v10321 = add i64 0, 97
@@ -24584,7 +24649,7 @@ b162:
   %v10446 = load i64, ptr %v10446.p
   %v10447.p = getelementptr i64, ptr %v10443, i64 2
   %v10447 = load i64, ptr %v10447.p
-  %v10448 = call i64 @"std/utf8.Valid"(i64 %v10445, i64 %v10446, i64 %v10447)
+  %v10448 = call i64 @"std/strings.Valid"(i64 %v10445, i64 %v10446, i64 %v10447)
   call void @"rt.print_int"(i64 %v10318)
   %v10449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v10449)
@@ -25140,7 +25205,7 @@ b165:
   %v10716 = load i64, ptr %v10716.p
   %v10717.p = getelementptr i64, ptr %v10713, i64 2
   %v10717 = load i64, ptr %v10717.p
-  %v10718 = call i64 @"std/utf8.IndexInvalid"(i64 %v10715, i64 %v10716, i64 %v10717)
+  %v10718 = call i64 @"std/strings.IndexInvalid"(i64 %v10715, i64 %v10716, i64 %v10717)
   %v10719 = add i64 0, 97
   %v10720 = add i64 0, 97
   %v10721 = add i64 0, 97
@@ -25401,7 +25466,7 @@ b165:
   %v10846 = load i64, ptr %v10846.p
   %v10847.p = getelementptr i64, ptr %v10843, i64 2
   %v10847 = load i64, ptr %v10847.p
-  %v10848 = call i64 @"std/utf8.Valid"(i64 %v10845, i64 %v10846, i64 %v10847)
+  %v10848 = call i64 @"std/strings.Valid"(i64 %v10845, i64 %v10846, i64 %v10847)
   call void @"rt.print_int"(i64 %v10718)
   %v10849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v10849)
@@ -25957,7 +26022,7 @@ b168:
   %v11116 = load i64, ptr %v11116.p
   %v11117.p = getelementptr i64, ptr %v11113, i64 2
   %v11117 = load i64, ptr %v11117.p
-  %v11118 = call i64 @"std/utf8.IndexInvalid"(i64 %v11115, i64 %v11116, i64 %v11117)
+  %v11118 = call i64 @"std/strings.IndexInvalid"(i64 %v11115, i64 %v11116, i64 %v11117)
   %v11119 = add i64 0, 97
   %v11120 = add i64 0, 97
   %v11121 = add i64 0, 97
@@ -26218,7 +26283,7 @@ b168:
   %v11246 = load i64, ptr %v11246.p
   %v11247.p = getelementptr i64, ptr %v11243, i64 2
   %v11247 = load i64, ptr %v11247.p
-  %v11248 = call i64 @"std/utf8.Valid"(i64 %v11245, i64 %v11246, i64 %v11247)
+  %v11248 = call i64 @"std/strings.Valid"(i64 %v11245, i64 %v11246, i64 %v11247)
   call void @"rt.print_int"(i64 %v11118)
   %v11249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v11249)
@@ -26774,7 +26839,7 @@ b171:
   %v11516 = load i64, ptr %v11516.p
   %v11517.p = getelementptr i64, ptr %v11513, i64 2
   %v11517 = load i64, ptr %v11517.p
-  %v11518 = call i64 @"std/utf8.IndexInvalid"(i64 %v11515, i64 %v11516, i64 %v11517)
+  %v11518 = call i64 @"std/strings.IndexInvalid"(i64 %v11515, i64 %v11516, i64 %v11517)
   %v11519 = add i64 0, 97
   %v11520 = add i64 0, 97
   %v11521 = add i64 0, 97
@@ -27035,7 +27100,7 @@ b171:
   %v11646 = load i64, ptr %v11646.p
   %v11647.p = getelementptr i64, ptr %v11643, i64 2
   %v11647 = load i64, ptr %v11647.p
-  %v11648 = call i64 @"std/utf8.Valid"(i64 %v11645, i64 %v11646, i64 %v11647)
+  %v11648 = call i64 @"std/strings.Valid"(i64 %v11645, i64 %v11646, i64 %v11647)
   call void @"rt.print_int"(i64 %v11518)
   %v11649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v11649)
@@ -27591,7 +27656,7 @@ b174:
   %v11916 = load i64, ptr %v11916.p
   %v11917.p = getelementptr i64, ptr %v11913, i64 2
   %v11917 = load i64, ptr %v11917.p
-  %v11918 = call i64 @"std/utf8.IndexInvalid"(i64 %v11915, i64 %v11916, i64 %v11917)
+  %v11918 = call i64 @"std/strings.IndexInvalid"(i64 %v11915, i64 %v11916, i64 %v11917)
   %v11919 = add i64 0, 97
   %v11920 = add i64 0, 97
   %v11921 = add i64 0, 97
@@ -27852,7 +27917,7 @@ b174:
   %v12046 = load i64, ptr %v12046.p
   %v12047.p = getelementptr i64, ptr %v12043, i64 2
   %v12047 = load i64, ptr %v12047.p
-  %v12048 = call i64 @"std/utf8.Valid"(i64 %v12045, i64 %v12046, i64 %v12047)
+  %v12048 = call i64 @"std/strings.Valid"(i64 %v12045, i64 %v12046, i64 %v12047)
   call void @"rt.print_int"(i64 %v11918)
   %v12049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v12049)
@@ -28408,7 +28473,7 @@ b177:
   %v12316 = load i64, ptr %v12316.p
   %v12317.p = getelementptr i64, ptr %v12313, i64 2
   %v12317 = load i64, ptr %v12317.p
-  %v12318 = call i64 @"std/utf8.IndexInvalid"(i64 %v12315, i64 %v12316, i64 %v12317)
+  %v12318 = call i64 @"std/strings.IndexInvalid"(i64 %v12315, i64 %v12316, i64 %v12317)
   %v12319 = add i64 0, 97
   %v12320 = add i64 0, 97
   %v12321 = add i64 0, 97
@@ -28669,7 +28734,7 @@ b177:
   %v12446 = load i64, ptr %v12446.p
   %v12447.p = getelementptr i64, ptr %v12443, i64 2
   %v12447 = load i64, ptr %v12447.p
-  %v12448 = call i64 @"std/utf8.Valid"(i64 %v12445, i64 %v12446, i64 %v12447)
+  %v12448 = call i64 @"std/strings.Valid"(i64 %v12445, i64 %v12446, i64 %v12447)
   call void @"rt.print_int"(i64 %v12318)
   %v12449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v12449)
@@ -29225,7 +29290,7 @@ b180:
   %v12716 = load i64, ptr %v12716.p
   %v12717.p = getelementptr i64, ptr %v12713, i64 2
   %v12717 = load i64, ptr %v12717.p
-  %v12718 = call i64 @"std/utf8.IndexInvalid"(i64 %v12715, i64 %v12716, i64 %v12717)
+  %v12718 = call i64 @"std/strings.IndexInvalid"(i64 %v12715, i64 %v12716, i64 %v12717)
   %v12719 = add i64 0, 97
   %v12720 = add i64 0, 97
   %v12721 = add i64 0, 97
@@ -29486,7 +29551,7 @@ b180:
   %v12846 = load i64, ptr %v12846.p
   %v12847.p = getelementptr i64, ptr %v12843, i64 2
   %v12847 = load i64, ptr %v12847.p
-  %v12848 = call i64 @"std/utf8.Valid"(i64 %v12845, i64 %v12846, i64 %v12847)
+  %v12848 = call i64 @"std/strings.Valid"(i64 %v12845, i64 %v12846, i64 %v12847)
   call void @"rt.print_int"(i64 %v12718)
   %v12849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v12849)
@@ -30042,7 +30107,7 @@ b183:
   %v13116 = load i64, ptr %v13116.p
   %v13117.p = getelementptr i64, ptr %v13113, i64 2
   %v13117 = load i64, ptr %v13117.p
-  %v13118 = call i64 @"std/utf8.IndexInvalid"(i64 %v13115, i64 %v13116, i64 %v13117)
+  %v13118 = call i64 @"std/strings.IndexInvalid"(i64 %v13115, i64 %v13116, i64 %v13117)
   %v13119 = add i64 0, 97
   %v13120 = add i64 0, 97
   %v13121 = add i64 0, 97
@@ -30303,7 +30368,7 @@ b183:
   %v13246 = load i64, ptr %v13246.p
   %v13247.p = getelementptr i64, ptr %v13243, i64 2
   %v13247 = load i64, ptr %v13247.p
-  %v13248 = call i64 @"std/utf8.Valid"(i64 %v13245, i64 %v13246, i64 %v13247)
+  %v13248 = call i64 @"std/strings.Valid"(i64 %v13245, i64 %v13246, i64 %v13247)
   call void @"rt.print_int"(i64 %v13118)
   %v13249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v13249)
@@ -30859,7 +30924,7 @@ b186:
   %v13516 = load i64, ptr %v13516.p
   %v13517.p = getelementptr i64, ptr %v13513, i64 2
   %v13517 = load i64, ptr %v13517.p
-  %v13518 = call i64 @"std/utf8.IndexInvalid"(i64 %v13515, i64 %v13516, i64 %v13517)
+  %v13518 = call i64 @"std/strings.IndexInvalid"(i64 %v13515, i64 %v13516, i64 %v13517)
   %v13519 = add i64 0, 97
   %v13520 = add i64 0, 97
   %v13521 = add i64 0, 97
@@ -31120,7 +31185,7 @@ b186:
   %v13646 = load i64, ptr %v13646.p
   %v13647.p = getelementptr i64, ptr %v13643, i64 2
   %v13647 = load i64, ptr %v13647.p
-  %v13648 = call i64 @"std/utf8.Valid"(i64 %v13645, i64 %v13646, i64 %v13647)
+  %v13648 = call i64 @"std/strings.Valid"(i64 %v13645, i64 %v13646, i64 %v13647)
   call void @"rt.print_int"(i64 %v13518)
   %v13649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v13649)
@@ -31676,7 +31741,7 @@ b189:
   %v13916 = load i64, ptr %v13916.p
   %v13917.p = getelementptr i64, ptr %v13913, i64 2
   %v13917 = load i64, ptr %v13917.p
-  %v13918 = call i64 @"std/utf8.IndexInvalid"(i64 %v13915, i64 %v13916, i64 %v13917)
+  %v13918 = call i64 @"std/strings.IndexInvalid"(i64 %v13915, i64 %v13916, i64 %v13917)
   %v13919 = add i64 0, 97
   %v13920 = add i64 0, 97
   %v13921 = add i64 0, 97
@@ -31937,7 +32002,7 @@ b189:
   %v14046 = load i64, ptr %v14046.p
   %v14047.p = getelementptr i64, ptr %v14043, i64 2
   %v14047 = load i64, ptr %v14047.p
-  %v14048 = call i64 @"std/utf8.Valid"(i64 %v14045, i64 %v14046, i64 %v14047)
+  %v14048 = call i64 @"std/strings.Valid"(i64 %v14045, i64 %v14046, i64 %v14047)
   call void @"rt.print_int"(i64 %v13918)
   %v14049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v14049)
@@ -32493,7 +32558,7 @@ b192:
   %v14316 = load i64, ptr %v14316.p
   %v14317.p = getelementptr i64, ptr %v14313, i64 2
   %v14317 = load i64, ptr %v14317.p
-  %v14318 = call i64 @"std/utf8.IndexInvalid"(i64 %v14315, i64 %v14316, i64 %v14317)
+  %v14318 = call i64 @"std/strings.IndexInvalid"(i64 %v14315, i64 %v14316, i64 %v14317)
   %v14319 = add i64 0, 97
   %v14320 = add i64 0, 97
   %v14321 = add i64 0, 97
@@ -32754,7 +32819,7 @@ b192:
   %v14446 = load i64, ptr %v14446.p
   %v14447.p = getelementptr i64, ptr %v14443, i64 2
   %v14447 = load i64, ptr %v14447.p
-  %v14448 = call i64 @"std/utf8.Valid"(i64 %v14445, i64 %v14446, i64 %v14447)
+  %v14448 = call i64 @"std/strings.Valid"(i64 %v14445, i64 %v14446, i64 %v14447)
   call void @"rt.print_int"(i64 %v14318)
   %v14449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v14449)
@@ -33310,7 +33375,7 @@ b195:
   %v14716 = load i64, ptr %v14716.p
   %v14717.p = getelementptr i64, ptr %v14713, i64 2
   %v14717 = load i64, ptr %v14717.p
-  %v14718 = call i64 @"std/utf8.IndexInvalid"(i64 %v14715, i64 %v14716, i64 %v14717)
+  %v14718 = call i64 @"std/strings.IndexInvalid"(i64 %v14715, i64 %v14716, i64 %v14717)
   %v14719 = add i64 0, 97
   %v14720 = add i64 0, 97
   %v14721 = add i64 0, 97
@@ -33571,7 +33636,7 @@ b195:
   %v14846 = load i64, ptr %v14846.p
   %v14847.p = getelementptr i64, ptr %v14843, i64 2
   %v14847 = load i64, ptr %v14847.p
-  %v14848 = call i64 @"std/utf8.Valid"(i64 %v14845, i64 %v14846, i64 %v14847)
+  %v14848 = call i64 @"std/strings.Valid"(i64 %v14845, i64 %v14846, i64 %v14847)
   call void @"rt.print_int"(i64 %v14718)
   %v14849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v14849)
@@ -34127,7 +34192,7 @@ b198:
   %v15116 = load i64, ptr %v15116.p
   %v15117.p = getelementptr i64, ptr %v15113, i64 2
   %v15117 = load i64, ptr %v15117.p
-  %v15118 = call i64 @"std/utf8.IndexInvalid"(i64 %v15115, i64 %v15116, i64 %v15117)
+  %v15118 = call i64 @"std/strings.IndexInvalid"(i64 %v15115, i64 %v15116, i64 %v15117)
   %v15119 = add i64 0, 97
   %v15120 = add i64 0, 97
   %v15121 = add i64 0, 97
@@ -34388,7 +34453,7 @@ b198:
   %v15246 = load i64, ptr %v15246.p
   %v15247.p = getelementptr i64, ptr %v15243, i64 2
   %v15247 = load i64, ptr %v15247.p
-  %v15248 = call i64 @"std/utf8.Valid"(i64 %v15245, i64 %v15246, i64 %v15247)
+  %v15248 = call i64 @"std/strings.Valid"(i64 %v15245, i64 %v15246, i64 %v15247)
   call void @"rt.print_int"(i64 %v15118)
   %v15249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v15249)
@@ -34944,7 +35009,7 @@ b201:
   %v15516 = load i64, ptr %v15516.p
   %v15517.p = getelementptr i64, ptr %v15513, i64 2
   %v15517 = load i64, ptr %v15517.p
-  %v15518 = call i64 @"std/utf8.IndexInvalid"(i64 %v15515, i64 %v15516, i64 %v15517)
+  %v15518 = call i64 @"std/strings.IndexInvalid"(i64 %v15515, i64 %v15516, i64 %v15517)
   %v15519 = add i64 0, 97
   %v15520 = add i64 0, 97
   %v15521 = add i64 0, 97
@@ -35205,7 +35270,7 @@ b201:
   %v15646 = load i64, ptr %v15646.p
   %v15647.p = getelementptr i64, ptr %v15643, i64 2
   %v15647 = load i64, ptr %v15647.p
-  %v15648 = call i64 @"std/utf8.Valid"(i64 %v15645, i64 %v15646, i64 %v15647)
+  %v15648 = call i64 @"std/strings.Valid"(i64 %v15645, i64 %v15646, i64 %v15647)
   call void @"rt.print_int"(i64 %v15518)
   %v15649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v15649)
@@ -35761,7 +35826,7 @@ b204:
   %v15916 = load i64, ptr %v15916.p
   %v15917.p = getelementptr i64, ptr %v15913, i64 2
   %v15917 = load i64, ptr %v15917.p
-  %v15918 = call i64 @"std/utf8.IndexInvalid"(i64 %v15915, i64 %v15916, i64 %v15917)
+  %v15918 = call i64 @"std/strings.IndexInvalid"(i64 %v15915, i64 %v15916, i64 %v15917)
   %v15919 = add i64 0, 97
   %v15920 = add i64 0, 97
   %v15921 = add i64 0, 97
@@ -36022,7 +36087,7 @@ b204:
   %v16046 = load i64, ptr %v16046.p
   %v16047.p = getelementptr i64, ptr %v16043, i64 2
   %v16047 = load i64, ptr %v16047.p
-  %v16048 = call i64 @"std/utf8.Valid"(i64 %v16045, i64 %v16046, i64 %v16047)
+  %v16048 = call i64 @"std/strings.Valid"(i64 %v16045, i64 %v16046, i64 %v16047)
   call void @"rt.print_int"(i64 %v15918)
   %v16049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v16049)
@@ -36578,7 +36643,7 @@ b207:
   %v16316 = load i64, ptr %v16316.p
   %v16317.p = getelementptr i64, ptr %v16313, i64 2
   %v16317 = load i64, ptr %v16317.p
-  %v16318 = call i64 @"std/utf8.IndexInvalid"(i64 %v16315, i64 %v16316, i64 %v16317)
+  %v16318 = call i64 @"std/strings.IndexInvalid"(i64 %v16315, i64 %v16316, i64 %v16317)
   %v16319 = add i64 0, 97
   %v16320 = add i64 0, 97
   %v16321 = add i64 0, 97
@@ -36839,7 +36904,7 @@ b207:
   %v16446 = load i64, ptr %v16446.p
   %v16447.p = getelementptr i64, ptr %v16443, i64 2
   %v16447 = load i64, ptr %v16447.p
-  %v16448 = call i64 @"std/utf8.Valid"(i64 %v16445, i64 %v16446, i64 %v16447)
+  %v16448 = call i64 @"std/strings.Valid"(i64 %v16445, i64 %v16446, i64 %v16447)
   call void @"rt.print_int"(i64 %v16318)
   %v16449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v16449)
@@ -37395,7 +37460,7 @@ b210:
   %v16716 = load i64, ptr %v16716.p
   %v16717.p = getelementptr i64, ptr %v16713, i64 2
   %v16717 = load i64, ptr %v16717.p
-  %v16718 = call i64 @"std/utf8.IndexInvalid"(i64 %v16715, i64 %v16716, i64 %v16717)
+  %v16718 = call i64 @"std/strings.IndexInvalid"(i64 %v16715, i64 %v16716, i64 %v16717)
   %v16719 = add i64 0, 97
   %v16720 = add i64 0, 97
   %v16721 = add i64 0, 97
@@ -37656,7 +37721,7 @@ b210:
   %v16846 = load i64, ptr %v16846.p
   %v16847.p = getelementptr i64, ptr %v16843, i64 2
   %v16847 = load i64, ptr %v16847.p
-  %v16848 = call i64 @"std/utf8.Valid"(i64 %v16845, i64 %v16846, i64 %v16847)
+  %v16848 = call i64 @"std/strings.Valid"(i64 %v16845, i64 %v16846, i64 %v16847)
   call void @"rt.print_int"(i64 %v16718)
   %v16849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v16849)
@@ -38212,7 +38277,7 @@ b213:
   %v17116 = load i64, ptr %v17116.p
   %v17117.p = getelementptr i64, ptr %v17113, i64 2
   %v17117 = load i64, ptr %v17117.p
-  %v17118 = call i64 @"std/utf8.IndexInvalid"(i64 %v17115, i64 %v17116, i64 %v17117)
+  %v17118 = call i64 @"std/strings.IndexInvalid"(i64 %v17115, i64 %v17116, i64 %v17117)
   %v17119 = add i64 0, 97
   %v17120 = add i64 0, 97
   %v17121 = add i64 0, 97
@@ -38473,7 +38538,7 @@ b213:
   %v17246 = load i64, ptr %v17246.p
   %v17247.p = getelementptr i64, ptr %v17243, i64 2
   %v17247 = load i64, ptr %v17247.p
-  %v17248 = call i64 @"std/utf8.Valid"(i64 %v17245, i64 %v17246, i64 %v17247)
+  %v17248 = call i64 @"std/strings.Valid"(i64 %v17245, i64 %v17246, i64 %v17247)
   call void @"rt.print_int"(i64 %v17118)
   %v17249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v17249)
@@ -39029,7 +39094,7 @@ b216:
   %v17516 = load i64, ptr %v17516.p
   %v17517.p = getelementptr i64, ptr %v17513, i64 2
   %v17517 = load i64, ptr %v17517.p
-  %v17518 = call i64 @"std/utf8.IndexInvalid"(i64 %v17515, i64 %v17516, i64 %v17517)
+  %v17518 = call i64 @"std/strings.IndexInvalid"(i64 %v17515, i64 %v17516, i64 %v17517)
   %v17519 = add i64 0, 97
   %v17520 = add i64 0, 97
   %v17521 = add i64 0, 97
@@ -39290,7 +39355,7 @@ b216:
   %v17646 = load i64, ptr %v17646.p
   %v17647.p = getelementptr i64, ptr %v17643, i64 2
   %v17647 = load i64, ptr %v17647.p
-  %v17648 = call i64 @"std/utf8.Valid"(i64 %v17645, i64 %v17646, i64 %v17647)
+  %v17648 = call i64 @"std/strings.Valid"(i64 %v17645, i64 %v17646, i64 %v17647)
   call void @"rt.print_int"(i64 %v17518)
   %v17649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v17649)
@@ -39846,7 +39911,7 @@ b219:
   %v17916 = load i64, ptr %v17916.p
   %v17917.p = getelementptr i64, ptr %v17913, i64 2
   %v17917 = load i64, ptr %v17917.p
-  %v17918 = call i64 @"std/utf8.IndexInvalid"(i64 %v17915, i64 %v17916, i64 %v17917)
+  %v17918 = call i64 @"std/strings.IndexInvalid"(i64 %v17915, i64 %v17916, i64 %v17917)
   %v17919 = add i64 0, 97
   %v17920 = add i64 0, 97
   %v17921 = add i64 0, 97
@@ -40107,7 +40172,7 @@ b219:
   %v18046 = load i64, ptr %v18046.p
   %v18047.p = getelementptr i64, ptr %v18043, i64 2
   %v18047 = load i64, ptr %v18047.p
-  %v18048 = call i64 @"std/utf8.Valid"(i64 %v18045, i64 %v18046, i64 %v18047)
+  %v18048 = call i64 @"std/strings.Valid"(i64 %v18045, i64 %v18046, i64 %v18047)
   call void @"rt.print_int"(i64 %v17918)
   %v18049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v18049)
@@ -40663,7 +40728,7 @@ b222:
   %v18316 = load i64, ptr %v18316.p
   %v18317.p = getelementptr i64, ptr %v18313, i64 2
   %v18317 = load i64, ptr %v18317.p
-  %v18318 = call i64 @"std/utf8.IndexInvalid"(i64 %v18315, i64 %v18316, i64 %v18317)
+  %v18318 = call i64 @"std/strings.IndexInvalid"(i64 %v18315, i64 %v18316, i64 %v18317)
   %v18319 = add i64 0, 97
   %v18320 = add i64 0, 97
   %v18321 = add i64 0, 97
@@ -40924,7 +40989,7 @@ b222:
   %v18446 = load i64, ptr %v18446.p
   %v18447.p = getelementptr i64, ptr %v18443, i64 2
   %v18447 = load i64, ptr %v18447.p
-  %v18448 = call i64 @"std/utf8.Valid"(i64 %v18445, i64 %v18446, i64 %v18447)
+  %v18448 = call i64 @"std/strings.Valid"(i64 %v18445, i64 %v18446, i64 %v18447)
   call void @"rt.print_int"(i64 %v18318)
   %v18449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v18449)
@@ -41480,7 +41545,7 @@ b225:
   %v18716 = load i64, ptr %v18716.p
   %v18717.p = getelementptr i64, ptr %v18713, i64 2
   %v18717 = load i64, ptr %v18717.p
-  %v18718 = call i64 @"std/utf8.IndexInvalid"(i64 %v18715, i64 %v18716, i64 %v18717)
+  %v18718 = call i64 @"std/strings.IndexInvalid"(i64 %v18715, i64 %v18716, i64 %v18717)
   %v18719 = add i64 0, 97
   %v18720 = add i64 0, 97
   %v18721 = add i64 0, 97
@@ -41741,7 +41806,7 @@ b225:
   %v18846 = load i64, ptr %v18846.p
   %v18847.p = getelementptr i64, ptr %v18843, i64 2
   %v18847 = load i64, ptr %v18847.p
-  %v18848 = call i64 @"std/utf8.Valid"(i64 %v18845, i64 %v18846, i64 %v18847)
+  %v18848 = call i64 @"std/strings.Valid"(i64 %v18845, i64 %v18846, i64 %v18847)
   call void @"rt.print_int"(i64 %v18718)
   %v18849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v18849)
@@ -42297,7 +42362,7 @@ b228:
   %v19116 = load i64, ptr %v19116.p
   %v19117.p = getelementptr i64, ptr %v19113, i64 2
   %v19117 = load i64, ptr %v19117.p
-  %v19118 = call i64 @"std/utf8.IndexInvalid"(i64 %v19115, i64 %v19116, i64 %v19117)
+  %v19118 = call i64 @"std/strings.IndexInvalid"(i64 %v19115, i64 %v19116, i64 %v19117)
   %v19119 = add i64 0, 97
   %v19120 = add i64 0, 97
   %v19121 = add i64 0, 97
@@ -42558,7 +42623,7 @@ b228:
   %v19246 = load i64, ptr %v19246.p
   %v19247.p = getelementptr i64, ptr %v19243, i64 2
   %v19247 = load i64, ptr %v19247.p
-  %v19248 = call i64 @"std/utf8.Valid"(i64 %v19245, i64 %v19246, i64 %v19247)
+  %v19248 = call i64 @"std/strings.Valid"(i64 %v19245, i64 %v19246, i64 %v19247)
   call void @"rt.print_int"(i64 %v19118)
   %v19249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v19249)
@@ -43114,7 +43179,7 @@ b231:
   %v19516 = load i64, ptr %v19516.p
   %v19517.p = getelementptr i64, ptr %v19513, i64 2
   %v19517 = load i64, ptr %v19517.p
-  %v19518 = call i64 @"std/utf8.IndexInvalid"(i64 %v19515, i64 %v19516, i64 %v19517)
+  %v19518 = call i64 @"std/strings.IndexInvalid"(i64 %v19515, i64 %v19516, i64 %v19517)
   %v19519 = add i64 0, 97
   %v19520 = add i64 0, 97
   %v19521 = add i64 0, 97
@@ -43375,7 +43440,7 @@ b231:
   %v19646 = load i64, ptr %v19646.p
   %v19647.p = getelementptr i64, ptr %v19643, i64 2
   %v19647 = load i64, ptr %v19647.p
-  %v19648 = call i64 @"std/utf8.Valid"(i64 %v19645, i64 %v19646, i64 %v19647)
+  %v19648 = call i64 @"std/strings.Valid"(i64 %v19645, i64 %v19646, i64 %v19647)
   call void @"rt.print_int"(i64 %v19518)
   %v19649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v19649)
@@ -43931,7 +43996,7 @@ b234:
   %v19916 = load i64, ptr %v19916.p
   %v19917.p = getelementptr i64, ptr %v19913, i64 2
   %v19917 = load i64, ptr %v19917.p
-  %v19918 = call i64 @"std/utf8.IndexInvalid"(i64 %v19915, i64 %v19916, i64 %v19917)
+  %v19918 = call i64 @"std/strings.IndexInvalid"(i64 %v19915, i64 %v19916, i64 %v19917)
   %v19919 = add i64 0, 97
   %v19920 = add i64 0, 97
   %v19921 = add i64 0, 97
@@ -44192,7 +44257,7 @@ b234:
   %v20046 = load i64, ptr %v20046.p
   %v20047.p = getelementptr i64, ptr %v20043, i64 2
   %v20047 = load i64, ptr %v20047.p
-  %v20048 = call i64 @"std/utf8.Valid"(i64 %v20045, i64 %v20046, i64 %v20047)
+  %v20048 = call i64 @"std/strings.Valid"(i64 %v20045, i64 %v20046, i64 %v20047)
   call void @"rt.print_int"(i64 %v19918)
   %v20049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v20049)
@@ -44748,7 +44813,7 @@ b237:
   %v20316 = load i64, ptr %v20316.p
   %v20317.p = getelementptr i64, ptr %v20313, i64 2
   %v20317 = load i64, ptr %v20317.p
-  %v20318 = call i64 @"std/utf8.IndexInvalid"(i64 %v20315, i64 %v20316, i64 %v20317)
+  %v20318 = call i64 @"std/strings.IndexInvalid"(i64 %v20315, i64 %v20316, i64 %v20317)
   %v20319 = add i64 0, 97
   %v20320 = add i64 0, 97
   %v20321 = add i64 0, 97
@@ -45009,7 +45074,7 @@ b237:
   %v20446 = load i64, ptr %v20446.p
   %v20447.p = getelementptr i64, ptr %v20443, i64 2
   %v20447 = load i64, ptr %v20447.p
-  %v20448 = call i64 @"std/utf8.Valid"(i64 %v20445, i64 %v20446, i64 %v20447)
+  %v20448 = call i64 @"std/strings.Valid"(i64 %v20445, i64 %v20446, i64 %v20447)
   call void @"rt.print_int"(i64 %v20318)
   %v20449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v20449)
@@ -45565,7 +45630,7 @@ b240:
   %v20716 = load i64, ptr %v20716.p
   %v20717.p = getelementptr i64, ptr %v20713, i64 2
   %v20717 = load i64, ptr %v20717.p
-  %v20718 = call i64 @"std/utf8.IndexInvalid"(i64 %v20715, i64 %v20716, i64 %v20717)
+  %v20718 = call i64 @"std/strings.IndexInvalid"(i64 %v20715, i64 %v20716, i64 %v20717)
   %v20719 = add i64 0, 97
   %v20720 = add i64 0, 97
   %v20721 = add i64 0, 97
@@ -45826,7 +45891,7 @@ b240:
   %v20846 = load i64, ptr %v20846.p
   %v20847.p = getelementptr i64, ptr %v20843, i64 2
   %v20847 = load i64, ptr %v20847.p
-  %v20848 = call i64 @"std/utf8.Valid"(i64 %v20845, i64 %v20846, i64 %v20847)
+  %v20848 = call i64 @"std/strings.Valid"(i64 %v20845, i64 %v20846, i64 %v20847)
   call void @"rt.print_int"(i64 %v20718)
   %v20849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v20849)
@@ -46382,7 +46447,7 @@ b243:
   %v21116 = load i64, ptr %v21116.p
   %v21117.p = getelementptr i64, ptr %v21113, i64 2
   %v21117 = load i64, ptr %v21117.p
-  %v21118 = call i64 @"std/utf8.IndexInvalid"(i64 %v21115, i64 %v21116, i64 %v21117)
+  %v21118 = call i64 @"std/strings.IndexInvalid"(i64 %v21115, i64 %v21116, i64 %v21117)
   %v21119 = add i64 0, 97
   %v21120 = add i64 0, 97
   %v21121 = add i64 0, 97
@@ -46643,7 +46708,7 @@ b243:
   %v21246 = load i64, ptr %v21246.p
   %v21247.p = getelementptr i64, ptr %v21243, i64 2
   %v21247 = load i64, ptr %v21247.p
-  %v21248 = call i64 @"std/utf8.Valid"(i64 %v21245, i64 %v21246, i64 %v21247)
+  %v21248 = call i64 @"std/strings.Valid"(i64 %v21245, i64 %v21246, i64 %v21247)
   call void @"rt.print_int"(i64 %v21118)
   %v21249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v21249)
@@ -47199,7 +47264,7 @@ b246:
   %v21516 = load i64, ptr %v21516.p
   %v21517.p = getelementptr i64, ptr %v21513, i64 2
   %v21517 = load i64, ptr %v21517.p
-  %v21518 = call i64 @"std/utf8.IndexInvalid"(i64 %v21515, i64 %v21516, i64 %v21517)
+  %v21518 = call i64 @"std/strings.IndexInvalid"(i64 %v21515, i64 %v21516, i64 %v21517)
   %v21519 = add i64 0, 97
   %v21520 = add i64 0, 97
   %v21521 = add i64 0, 97
@@ -47460,7 +47525,7 @@ b246:
   %v21646 = load i64, ptr %v21646.p
   %v21647.p = getelementptr i64, ptr %v21643, i64 2
   %v21647 = load i64, ptr %v21647.p
-  %v21648 = call i64 @"std/utf8.Valid"(i64 %v21645, i64 %v21646, i64 %v21647)
+  %v21648 = call i64 @"std/strings.Valid"(i64 %v21645, i64 %v21646, i64 %v21647)
   call void @"rt.print_int"(i64 %v21518)
   %v21649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v21649)
@@ -48016,7 +48081,7 @@ b249:
   %v21916 = load i64, ptr %v21916.p
   %v21917.p = getelementptr i64, ptr %v21913, i64 2
   %v21917 = load i64, ptr %v21917.p
-  %v21918 = call i64 @"std/utf8.IndexInvalid"(i64 %v21915, i64 %v21916, i64 %v21917)
+  %v21918 = call i64 @"std/strings.IndexInvalid"(i64 %v21915, i64 %v21916, i64 %v21917)
   %v21919 = add i64 0, 97
   %v21920 = add i64 0, 97
   %v21921 = add i64 0, 97
@@ -48277,7 +48342,7 @@ b249:
   %v22046 = load i64, ptr %v22046.p
   %v22047.p = getelementptr i64, ptr %v22043, i64 2
   %v22047 = load i64, ptr %v22047.p
-  %v22048 = call i64 @"std/utf8.Valid"(i64 %v22045, i64 %v22046, i64 %v22047)
+  %v22048 = call i64 @"std/strings.Valid"(i64 %v22045, i64 %v22046, i64 %v22047)
   call void @"rt.print_int"(i64 %v21918)
   %v22049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v22049)
@@ -48833,7 +48898,7 @@ b252:
   %v22316 = load i64, ptr %v22316.p
   %v22317.p = getelementptr i64, ptr %v22313, i64 2
   %v22317 = load i64, ptr %v22317.p
-  %v22318 = call i64 @"std/utf8.IndexInvalid"(i64 %v22315, i64 %v22316, i64 %v22317)
+  %v22318 = call i64 @"std/strings.IndexInvalid"(i64 %v22315, i64 %v22316, i64 %v22317)
   %v22319 = add i64 0, 97
   %v22320 = add i64 0, 97
   %v22321 = add i64 0, 97
@@ -49094,7 +49159,7 @@ b252:
   %v22446 = load i64, ptr %v22446.p
   %v22447.p = getelementptr i64, ptr %v22443, i64 2
   %v22447 = load i64, ptr %v22447.p
-  %v22448 = call i64 @"std/utf8.Valid"(i64 %v22445, i64 %v22446, i64 %v22447)
+  %v22448 = call i64 @"std/strings.Valid"(i64 %v22445, i64 %v22446, i64 %v22447)
   call void @"rt.print_int"(i64 %v22318)
   %v22449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v22449)
@@ -49650,7 +49715,7 @@ b255:
   %v22716 = load i64, ptr %v22716.p
   %v22717.p = getelementptr i64, ptr %v22713, i64 2
   %v22717 = load i64, ptr %v22717.p
-  %v22718 = call i64 @"std/utf8.IndexInvalid"(i64 %v22715, i64 %v22716, i64 %v22717)
+  %v22718 = call i64 @"std/strings.IndexInvalid"(i64 %v22715, i64 %v22716, i64 %v22717)
   %v22719 = add i64 0, 97
   %v22720 = add i64 0, 97
   %v22721 = add i64 0, 97
@@ -49911,7 +49976,7 @@ b255:
   %v22846 = load i64, ptr %v22846.p
   %v22847.p = getelementptr i64, ptr %v22843, i64 2
   %v22847 = load i64, ptr %v22847.p
-  %v22848 = call i64 @"std/utf8.Valid"(i64 %v22845, i64 %v22846, i64 %v22847)
+  %v22848 = call i64 @"std/strings.Valid"(i64 %v22845, i64 %v22846, i64 %v22847)
   call void @"rt.print_int"(i64 %v22718)
   %v22849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v22849)
@@ -50467,7 +50532,7 @@ b258:
   %v23116 = load i64, ptr %v23116.p
   %v23117.p = getelementptr i64, ptr %v23113, i64 2
   %v23117 = load i64, ptr %v23117.p
-  %v23118 = call i64 @"std/utf8.IndexInvalid"(i64 %v23115, i64 %v23116, i64 %v23117)
+  %v23118 = call i64 @"std/strings.IndexInvalid"(i64 %v23115, i64 %v23116, i64 %v23117)
   %v23119 = add i64 0, 97
   %v23120 = add i64 0, 97
   %v23121 = add i64 0, 97
@@ -50728,7 +50793,7 @@ b258:
   %v23246 = load i64, ptr %v23246.p
   %v23247.p = getelementptr i64, ptr %v23243, i64 2
   %v23247 = load i64, ptr %v23247.p
-  %v23248 = call i64 @"std/utf8.Valid"(i64 %v23245, i64 %v23246, i64 %v23247)
+  %v23248 = call i64 @"std/strings.Valid"(i64 %v23245, i64 %v23246, i64 %v23247)
   call void @"rt.print_int"(i64 %v23118)
   %v23249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v23249)
@@ -51284,7 +51349,7 @@ b261:
   %v23516 = load i64, ptr %v23516.p
   %v23517.p = getelementptr i64, ptr %v23513, i64 2
   %v23517 = load i64, ptr %v23517.p
-  %v23518 = call i64 @"std/utf8.IndexInvalid"(i64 %v23515, i64 %v23516, i64 %v23517)
+  %v23518 = call i64 @"std/strings.IndexInvalid"(i64 %v23515, i64 %v23516, i64 %v23517)
   %v23519 = add i64 0, 97
   %v23520 = add i64 0, 97
   %v23521 = add i64 0, 97
@@ -51545,7 +51610,7 @@ b261:
   %v23646 = load i64, ptr %v23646.p
   %v23647.p = getelementptr i64, ptr %v23643, i64 2
   %v23647 = load i64, ptr %v23647.p
-  %v23648 = call i64 @"std/utf8.Valid"(i64 %v23645, i64 %v23646, i64 %v23647)
+  %v23648 = call i64 @"std/strings.Valid"(i64 %v23645, i64 %v23646, i64 %v23647)
   call void @"rt.print_int"(i64 %v23518)
   %v23649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v23649)
@@ -52101,7 +52166,7 @@ b264:
   %v23916 = load i64, ptr %v23916.p
   %v23917.p = getelementptr i64, ptr %v23913, i64 2
   %v23917 = load i64, ptr %v23917.p
-  %v23918 = call i64 @"std/utf8.IndexInvalid"(i64 %v23915, i64 %v23916, i64 %v23917)
+  %v23918 = call i64 @"std/strings.IndexInvalid"(i64 %v23915, i64 %v23916, i64 %v23917)
   %v23919 = add i64 0, 97
   %v23920 = add i64 0, 97
   %v23921 = add i64 0, 97
@@ -52362,7 +52427,7 @@ b264:
   %v24046 = load i64, ptr %v24046.p
   %v24047.p = getelementptr i64, ptr %v24043, i64 2
   %v24047 = load i64, ptr %v24047.p
-  %v24048 = call i64 @"std/utf8.Valid"(i64 %v24045, i64 %v24046, i64 %v24047)
+  %v24048 = call i64 @"std/strings.Valid"(i64 %v24045, i64 %v24046, i64 %v24047)
   call void @"rt.print_int"(i64 %v23918)
   %v24049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v24049)
@@ -52918,7 +52983,7 @@ b267:
   %v24316 = load i64, ptr %v24316.p
   %v24317.p = getelementptr i64, ptr %v24313, i64 2
   %v24317 = load i64, ptr %v24317.p
-  %v24318 = call i64 @"std/utf8.IndexInvalid"(i64 %v24315, i64 %v24316, i64 %v24317)
+  %v24318 = call i64 @"std/strings.IndexInvalid"(i64 %v24315, i64 %v24316, i64 %v24317)
   %v24319 = add i64 0, 97
   %v24320 = add i64 0, 97
   %v24321 = add i64 0, 97
@@ -53179,7 +53244,7 @@ b267:
   %v24446 = load i64, ptr %v24446.p
   %v24447.p = getelementptr i64, ptr %v24443, i64 2
   %v24447 = load i64, ptr %v24447.p
-  %v24448 = call i64 @"std/utf8.Valid"(i64 %v24445, i64 %v24446, i64 %v24447)
+  %v24448 = call i64 @"std/strings.Valid"(i64 %v24445, i64 %v24446, i64 %v24447)
   call void @"rt.print_int"(i64 %v24318)
   %v24449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v24449)
@@ -53735,7 +53800,7 @@ b270:
   %v24716 = load i64, ptr %v24716.p
   %v24717.p = getelementptr i64, ptr %v24713, i64 2
   %v24717 = load i64, ptr %v24717.p
-  %v24718 = call i64 @"std/utf8.IndexInvalid"(i64 %v24715, i64 %v24716, i64 %v24717)
+  %v24718 = call i64 @"std/strings.IndexInvalid"(i64 %v24715, i64 %v24716, i64 %v24717)
   %v24719 = add i64 0, 97
   %v24720 = add i64 0, 97
   %v24721 = add i64 0, 97
@@ -53996,7 +54061,7 @@ b270:
   %v24846 = load i64, ptr %v24846.p
   %v24847.p = getelementptr i64, ptr %v24843, i64 2
   %v24847 = load i64, ptr %v24847.p
-  %v24848 = call i64 @"std/utf8.Valid"(i64 %v24845, i64 %v24846, i64 %v24847)
+  %v24848 = call i64 @"std/strings.Valid"(i64 %v24845, i64 %v24846, i64 %v24847)
   call void @"rt.print_int"(i64 %v24718)
   %v24849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v24849)
@@ -54552,7 +54617,7 @@ b273:
   %v25116 = load i64, ptr %v25116.p
   %v25117.p = getelementptr i64, ptr %v25113, i64 2
   %v25117 = load i64, ptr %v25117.p
-  %v25118 = call i64 @"std/utf8.IndexInvalid"(i64 %v25115, i64 %v25116, i64 %v25117)
+  %v25118 = call i64 @"std/strings.IndexInvalid"(i64 %v25115, i64 %v25116, i64 %v25117)
   %v25119 = add i64 0, 97
   %v25120 = add i64 0, 97
   %v25121 = add i64 0, 97
@@ -54813,7 +54878,7 @@ b273:
   %v25246 = load i64, ptr %v25246.p
   %v25247.p = getelementptr i64, ptr %v25243, i64 2
   %v25247 = load i64, ptr %v25247.p
-  %v25248 = call i64 @"std/utf8.Valid"(i64 %v25245, i64 %v25246, i64 %v25247)
+  %v25248 = call i64 @"std/strings.Valid"(i64 %v25245, i64 %v25246, i64 %v25247)
   call void @"rt.print_int"(i64 %v25118)
   %v25249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v25249)
@@ -55369,7 +55434,7 @@ b276:
   %v25516 = load i64, ptr %v25516.p
   %v25517.p = getelementptr i64, ptr %v25513, i64 2
   %v25517 = load i64, ptr %v25517.p
-  %v25518 = call i64 @"std/utf8.IndexInvalid"(i64 %v25515, i64 %v25516, i64 %v25517)
+  %v25518 = call i64 @"std/strings.IndexInvalid"(i64 %v25515, i64 %v25516, i64 %v25517)
   %v25519 = add i64 0, 97
   %v25520 = add i64 0, 97
   %v25521 = add i64 0, 97
@@ -55630,7 +55695,7 @@ b276:
   %v25646 = load i64, ptr %v25646.p
   %v25647.p = getelementptr i64, ptr %v25643, i64 2
   %v25647 = load i64, ptr %v25647.p
-  %v25648 = call i64 @"std/utf8.Valid"(i64 %v25645, i64 %v25646, i64 %v25647)
+  %v25648 = call i64 @"std/strings.Valid"(i64 %v25645, i64 %v25646, i64 %v25647)
   call void @"rt.print_int"(i64 %v25518)
   %v25649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v25649)
@@ -56186,7 +56251,7 @@ b279:
   %v25916 = load i64, ptr %v25916.p
   %v25917.p = getelementptr i64, ptr %v25913, i64 2
   %v25917 = load i64, ptr %v25917.p
-  %v25918 = call i64 @"std/utf8.IndexInvalid"(i64 %v25915, i64 %v25916, i64 %v25917)
+  %v25918 = call i64 @"std/strings.IndexInvalid"(i64 %v25915, i64 %v25916, i64 %v25917)
   %v25919 = add i64 0, 97
   %v25920 = add i64 0, 97
   %v25921 = add i64 0, 97
@@ -56447,7 +56512,7 @@ b279:
   %v26046 = load i64, ptr %v26046.p
   %v26047.p = getelementptr i64, ptr %v26043, i64 2
   %v26047 = load i64, ptr %v26047.p
-  %v26048 = call i64 @"std/utf8.Valid"(i64 %v26045, i64 %v26046, i64 %v26047)
+  %v26048 = call i64 @"std/strings.Valid"(i64 %v26045, i64 %v26046, i64 %v26047)
   call void @"rt.print_int"(i64 %v25918)
   %v26049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v26049)
@@ -57003,7 +57068,7 @@ b282:
   %v26316 = load i64, ptr %v26316.p
   %v26317.p = getelementptr i64, ptr %v26313, i64 2
   %v26317 = load i64, ptr %v26317.p
-  %v26318 = call i64 @"std/utf8.IndexInvalid"(i64 %v26315, i64 %v26316, i64 %v26317)
+  %v26318 = call i64 @"std/strings.IndexInvalid"(i64 %v26315, i64 %v26316, i64 %v26317)
   %v26319 = add i64 0, 97
   %v26320 = add i64 0, 97
   %v26321 = add i64 0, 97
@@ -57264,7 +57329,7 @@ b282:
   %v26446 = load i64, ptr %v26446.p
   %v26447.p = getelementptr i64, ptr %v26443, i64 2
   %v26447 = load i64, ptr %v26447.p
-  %v26448 = call i64 @"std/utf8.Valid"(i64 %v26445, i64 %v26446, i64 %v26447)
+  %v26448 = call i64 @"std/strings.Valid"(i64 %v26445, i64 %v26446, i64 %v26447)
   call void @"rt.print_int"(i64 %v26318)
   %v26449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v26449)
@@ -57820,7 +57885,7 @@ b285:
   %v26716 = load i64, ptr %v26716.p
   %v26717.p = getelementptr i64, ptr %v26713, i64 2
   %v26717 = load i64, ptr %v26717.p
-  %v26718 = call i64 @"std/utf8.IndexInvalid"(i64 %v26715, i64 %v26716, i64 %v26717)
+  %v26718 = call i64 @"std/strings.IndexInvalid"(i64 %v26715, i64 %v26716, i64 %v26717)
   %v26719 = add i64 0, 97
   %v26720 = add i64 0, 97
   %v26721 = add i64 0, 97
@@ -58081,7 +58146,7 @@ b285:
   %v26846 = load i64, ptr %v26846.p
   %v26847.p = getelementptr i64, ptr %v26843, i64 2
   %v26847 = load i64, ptr %v26847.p
-  %v26848 = call i64 @"std/utf8.Valid"(i64 %v26845, i64 %v26846, i64 %v26847)
+  %v26848 = call i64 @"std/strings.Valid"(i64 %v26845, i64 %v26846, i64 %v26847)
   call void @"rt.print_int"(i64 %v26718)
   %v26849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v26849)
@@ -58637,7 +58702,7 @@ b288:
   %v27116 = load i64, ptr %v27116.p
   %v27117.p = getelementptr i64, ptr %v27113, i64 2
   %v27117 = load i64, ptr %v27117.p
-  %v27118 = call i64 @"std/utf8.IndexInvalid"(i64 %v27115, i64 %v27116, i64 %v27117)
+  %v27118 = call i64 @"std/strings.IndexInvalid"(i64 %v27115, i64 %v27116, i64 %v27117)
   %v27119 = add i64 0, 97
   %v27120 = add i64 0, 97
   %v27121 = add i64 0, 97
@@ -58898,7 +58963,7 @@ b288:
   %v27246 = load i64, ptr %v27246.p
   %v27247.p = getelementptr i64, ptr %v27243, i64 2
   %v27247 = load i64, ptr %v27247.p
-  %v27248 = call i64 @"std/utf8.Valid"(i64 %v27245, i64 %v27246, i64 %v27247)
+  %v27248 = call i64 @"std/strings.Valid"(i64 %v27245, i64 %v27246, i64 %v27247)
   call void @"rt.print_int"(i64 %v27118)
   %v27249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v27249)
@@ -59454,7 +59519,7 @@ b291:
   %v27516 = load i64, ptr %v27516.p
   %v27517.p = getelementptr i64, ptr %v27513, i64 2
   %v27517 = load i64, ptr %v27517.p
-  %v27518 = call i64 @"std/utf8.IndexInvalid"(i64 %v27515, i64 %v27516, i64 %v27517)
+  %v27518 = call i64 @"std/strings.IndexInvalid"(i64 %v27515, i64 %v27516, i64 %v27517)
   %v27519 = add i64 0, 97
   %v27520 = add i64 0, 97
   %v27521 = add i64 0, 97
@@ -59715,7 +59780,7 @@ b291:
   %v27646 = load i64, ptr %v27646.p
   %v27647.p = getelementptr i64, ptr %v27643, i64 2
   %v27647 = load i64, ptr %v27647.p
-  %v27648 = call i64 @"std/utf8.Valid"(i64 %v27645, i64 %v27646, i64 %v27647)
+  %v27648 = call i64 @"std/strings.Valid"(i64 %v27645, i64 %v27646, i64 %v27647)
   call void @"rt.print_int"(i64 %v27518)
   %v27649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v27649)
@@ -60271,7 +60336,7 @@ b294:
   %v27916 = load i64, ptr %v27916.p
   %v27917.p = getelementptr i64, ptr %v27913, i64 2
   %v27917 = load i64, ptr %v27917.p
-  %v27918 = call i64 @"std/utf8.IndexInvalid"(i64 %v27915, i64 %v27916, i64 %v27917)
+  %v27918 = call i64 @"std/strings.IndexInvalid"(i64 %v27915, i64 %v27916, i64 %v27917)
   %v27919 = add i64 0, 97
   %v27920 = add i64 0, 97
   %v27921 = add i64 0, 97
@@ -60532,7 +60597,7 @@ b294:
   %v28046 = load i64, ptr %v28046.p
   %v28047.p = getelementptr i64, ptr %v28043, i64 2
   %v28047 = load i64, ptr %v28047.p
-  %v28048 = call i64 @"std/utf8.Valid"(i64 %v28045, i64 %v28046, i64 %v28047)
+  %v28048 = call i64 @"std/strings.Valid"(i64 %v28045, i64 %v28046, i64 %v28047)
   call void @"rt.print_int"(i64 %v27918)
   %v28049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v28049)
@@ -61088,7 +61153,7 @@ b297:
   %v28316 = load i64, ptr %v28316.p
   %v28317.p = getelementptr i64, ptr %v28313, i64 2
   %v28317 = load i64, ptr %v28317.p
-  %v28318 = call i64 @"std/utf8.IndexInvalid"(i64 %v28315, i64 %v28316, i64 %v28317)
+  %v28318 = call i64 @"std/strings.IndexInvalid"(i64 %v28315, i64 %v28316, i64 %v28317)
   %v28319 = add i64 0, 97
   %v28320 = add i64 0, 97
   %v28321 = add i64 0, 97
@@ -61349,7 +61414,7 @@ b297:
   %v28446 = load i64, ptr %v28446.p
   %v28447.p = getelementptr i64, ptr %v28443, i64 2
   %v28447 = load i64, ptr %v28447.p
-  %v28448 = call i64 @"std/utf8.Valid"(i64 %v28445, i64 %v28446, i64 %v28447)
+  %v28448 = call i64 @"std/strings.Valid"(i64 %v28445, i64 %v28446, i64 %v28447)
   call void @"rt.print_int"(i64 %v28318)
   %v28449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v28449)
@@ -61905,7 +61970,7 @@ b300:
   %v28716 = load i64, ptr %v28716.p
   %v28717.p = getelementptr i64, ptr %v28713, i64 2
   %v28717 = load i64, ptr %v28717.p
-  %v28718 = call i64 @"std/utf8.IndexInvalid"(i64 %v28715, i64 %v28716, i64 %v28717)
+  %v28718 = call i64 @"std/strings.IndexInvalid"(i64 %v28715, i64 %v28716, i64 %v28717)
   %v28719 = add i64 0, 97
   %v28720 = add i64 0, 97
   %v28721 = add i64 0, 97
@@ -62166,7 +62231,7 @@ b300:
   %v28846 = load i64, ptr %v28846.p
   %v28847.p = getelementptr i64, ptr %v28843, i64 2
   %v28847 = load i64, ptr %v28847.p
-  %v28848 = call i64 @"std/utf8.Valid"(i64 %v28845, i64 %v28846, i64 %v28847)
+  %v28848 = call i64 @"std/strings.Valid"(i64 %v28845, i64 %v28846, i64 %v28847)
   call void @"rt.print_int"(i64 %v28718)
   %v28849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v28849)
@@ -62722,7 +62787,7 @@ b303:
   %v29116 = load i64, ptr %v29116.p
   %v29117.p = getelementptr i64, ptr %v29113, i64 2
   %v29117 = load i64, ptr %v29117.p
-  %v29118 = call i64 @"std/utf8.IndexInvalid"(i64 %v29115, i64 %v29116, i64 %v29117)
+  %v29118 = call i64 @"std/strings.IndexInvalid"(i64 %v29115, i64 %v29116, i64 %v29117)
   %v29119 = add i64 0, 97
   %v29120 = add i64 0, 97
   %v29121 = add i64 0, 97
@@ -62983,7 +63048,7 @@ b303:
   %v29246 = load i64, ptr %v29246.p
   %v29247.p = getelementptr i64, ptr %v29243, i64 2
   %v29247 = load i64, ptr %v29247.p
-  %v29248 = call i64 @"std/utf8.Valid"(i64 %v29245, i64 %v29246, i64 %v29247)
+  %v29248 = call i64 @"std/strings.Valid"(i64 %v29245, i64 %v29246, i64 %v29247)
   call void @"rt.print_int"(i64 %v29118)
   %v29249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v29249)
@@ -63539,7 +63604,7 @@ b306:
   %v29516 = load i64, ptr %v29516.p
   %v29517.p = getelementptr i64, ptr %v29513, i64 2
   %v29517 = load i64, ptr %v29517.p
-  %v29518 = call i64 @"std/utf8.IndexInvalid"(i64 %v29515, i64 %v29516, i64 %v29517)
+  %v29518 = call i64 @"std/strings.IndexInvalid"(i64 %v29515, i64 %v29516, i64 %v29517)
   %v29519 = add i64 0, 97
   %v29520 = add i64 0, 97
   %v29521 = add i64 0, 97
@@ -63800,7 +63865,7 @@ b306:
   %v29646 = load i64, ptr %v29646.p
   %v29647.p = getelementptr i64, ptr %v29643, i64 2
   %v29647 = load i64, ptr %v29647.p
-  %v29648 = call i64 @"std/utf8.Valid"(i64 %v29645, i64 %v29646, i64 %v29647)
+  %v29648 = call i64 @"std/strings.Valid"(i64 %v29645, i64 %v29646, i64 %v29647)
   call void @"rt.print_int"(i64 %v29518)
   %v29649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v29649)
@@ -64356,7 +64421,7 @@ b309:
   %v29916 = load i64, ptr %v29916.p
   %v29917.p = getelementptr i64, ptr %v29913, i64 2
   %v29917 = load i64, ptr %v29917.p
-  %v29918 = call i64 @"std/utf8.IndexInvalid"(i64 %v29915, i64 %v29916, i64 %v29917)
+  %v29918 = call i64 @"std/strings.IndexInvalid"(i64 %v29915, i64 %v29916, i64 %v29917)
   %v29919 = add i64 0, 97
   %v29920 = add i64 0, 97
   %v29921 = add i64 0, 97
@@ -64617,7 +64682,7 @@ b309:
   %v30046 = load i64, ptr %v30046.p
   %v30047.p = getelementptr i64, ptr %v30043, i64 2
   %v30047 = load i64, ptr %v30047.p
-  %v30048 = call i64 @"std/utf8.Valid"(i64 %v30045, i64 %v30046, i64 %v30047)
+  %v30048 = call i64 @"std/strings.Valid"(i64 %v30045, i64 %v30046, i64 %v30047)
   call void @"rt.print_int"(i64 %v29918)
   %v30049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v30049)
@@ -65173,7 +65238,7 @@ b312:
   %v30316 = load i64, ptr %v30316.p
   %v30317.p = getelementptr i64, ptr %v30313, i64 2
   %v30317 = load i64, ptr %v30317.p
-  %v30318 = call i64 @"std/utf8.IndexInvalid"(i64 %v30315, i64 %v30316, i64 %v30317)
+  %v30318 = call i64 @"std/strings.IndexInvalid"(i64 %v30315, i64 %v30316, i64 %v30317)
   %v30319 = add i64 0, 97
   %v30320 = add i64 0, 97
   %v30321 = add i64 0, 97
@@ -65434,7 +65499,7 @@ b312:
   %v30446 = load i64, ptr %v30446.p
   %v30447.p = getelementptr i64, ptr %v30443, i64 2
   %v30447 = load i64, ptr %v30447.p
-  %v30448 = call i64 @"std/utf8.Valid"(i64 %v30445, i64 %v30446, i64 %v30447)
+  %v30448 = call i64 @"std/strings.Valid"(i64 %v30445, i64 %v30446, i64 %v30447)
   call void @"rt.print_int"(i64 %v30318)
   %v30449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v30449)
@@ -65990,7 +66055,7 @@ b315:
   %v30716 = load i64, ptr %v30716.p
   %v30717.p = getelementptr i64, ptr %v30713, i64 2
   %v30717 = load i64, ptr %v30717.p
-  %v30718 = call i64 @"std/utf8.IndexInvalid"(i64 %v30715, i64 %v30716, i64 %v30717)
+  %v30718 = call i64 @"std/strings.IndexInvalid"(i64 %v30715, i64 %v30716, i64 %v30717)
   %v30719 = add i64 0, 97
   %v30720 = add i64 0, 97
   %v30721 = add i64 0, 97
@@ -66251,7 +66316,7 @@ b315:
   %v30846 = load i64, ptr %v30846.p
   %v30847.p = getelementptr i64, ptr %v30843, i64 2
   %v30847 = load i64, ptr %v30847.p
-  %v30848 = call i64 @"std/utf8.Valid"(i64 %v30845, i64 %v30846, i64 %v30847)
+  %v30848 = call i64 @"std/strings.Valid"(i64 %v30845, i64 %v30846, i64 %v30847)
   call void @"rt.print_int"(i64 %v30718)
   %v30849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v30849)
@@ -66807,7 +66872,7 @@ b318:
   %v31116 = load i64, ptr %v31116.p
   %v31117.p = getelementptr i64, ptr %v31113, i64 2
   %v31117 = load i64, ptr %v31117.p
-  %v31118 = call i64 @"std/utf8.IndexInvalid"(i64 %v31115, i64 %v31116, i64 %v31117)
+  %v31118 = call i64 @"std/strings.IndexInvalid"(i64 %v31115, i64 %v31116, i64 %v31117)
   %v31119 = add i64 0, 97
   %v31120 = add i64 0, 97
   %v31121 = add i64 0, 97
@@ -67068,7 +67133,7 @@ b318:
   %v31246 = load i64, ptr %v31246.p
   %v31247.p = getelementptr i64, ptr %v31243, i64 2
   %v31247 = load i64, ptr %v31247.p
-  %v31248 = call i64 @"std/utf8.Valid"(i64 %v31245, i64 %v31246, i64 %v31247)
+  %v31248 = call i64 @"std/strings.Valid"(i64 %v31245, i64 %v31246, i64 %v31247)
   call void @"rt.print_int"(i64 %v31118)
   %v31249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v31249)
@@ -67624,7 +67689,7 @@ b321:
   %v31516 = load i64, ptr %v31516.p
   %v31517.p = getelementptr i64, ptr %v31513, i64 2
   %v31517 = load i64, ptr %v31517.p
-  %v31518 = call i64 @"std/utf8.IndexInvalid"(i64 %v31515, i64 %v31516, i64 %v31517)
+  %v31518 = call i64 @"std/strings.IndexInvalid"(i64 %v31515, i64 %v31516, i64 %v31517)
   %v31519 = add i64 0, 97
   %v31520 = add i64 0, 97
   %v31521 = add i64 0, 97
@@ -67885,7 +67950,7 @@ b321:
   %v31646 = load i64, ptr %v31646.p
   %v31647.p = getelementptr i64, ptr %v31643, i64 2
   %v31647 = load i64, ptr %v31647.p
-  %v31648 = call i64 @"std/utf8.Valid"(i64 %v31645, i64 %v31646, i64 %v31647)
+  %v31648 = call i64 @"std/strings.Valid"(i64 %v31645, i64 %v31646, i64 %v31647)
   call void @"rt.print_int"(i64 %v31518)
   %v31649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v31649)
@@ -68441,7 +68506,7 @@ b324:
   %v31916 = load i64, ptr %v31916.p
   %v31917.p = getelementptr i64, ptr %v31913, i64 2
   %v31917 = load i64, ptr %v31917.p
-  %v31918 = call i64 @"std/utf8.IndexInvalid"(i64 %v31915, i64 %v31916, i64 %v31917)
+  %v31918 = call i64 @"std/strings.IndexInvalid"(i64 %v31915, i64 %v31916, i64 %v31917)
   %v31919 = add i64 0, 97
   %v31920 = add i64 0, 97
   %v31921 = add i64 0, 97
@@ -68702,7 +68767,7 @@ b324:
   %v32046 = load i64, ptr %v32046.p
   %v32047.p = getelementptr i64, ptr %v32043, i64 2
   %v32047 = load i64, ptr %v32047.p
-  %v32048 = call i64 @"std/utf8.Valid"(i64 %v32045, i64 %v32046, i64 %v32047)
+  %v32048 = call i64 @"std/strings.Valid"(i64 %v32045, i64 %v32046, i64 %v32047)
   call void @"rt.print_int"(i64 %v31918)
   %v32049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v32049)
@@ -69258,7 +69323,7 @@ b327:
   %v32316 = load i64, ptr %v32316.p
   %v32317.p = getelementptr i64, ptr %v32313, i64 2
   %v32317 = load i64, ptr %v32317.p
-  %v32318 = call i64 @"std/utf8.IndexInvalid"(i64 %v32315, i64 %v32316, i64 %v32317)
+  %v32318 = call i64 @"std/strings.IndexInvalid"(i64 %v32315, i64 %v32316, i64 %v32317)
   %v32319 = add i64 0, 97
   %v32320 = add i64 0, 97
   %v32321 = add i64 0, 97
@@ -69519,7 +69584,7 @@ b327:
   %v32446 = load i64, ptr %v32446.p
   %v32447.p = getelementptr i64, ptr %v32443, i64 2
   %v32447 = load i64, ptr %v32447.p
-  %v32448 = call i64 @"std/utf8.Valid"(i64 %v32445, i64 %v32446, i64 %v32447)
+  %v32448 = call i64 @"std/strings.Valid"(i64 %v32445, i64 %v32446, i64 %v32447)
   call void @"rt.print_int"(i64 %v32318)
   %v32449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v32449)
@@ -70075,7 +70140,7 @@ b330:
   %v32716 = load i64, ptr %v32716.p
   %v32717.p = getelementptr i64, ptr %v32713, i64 2
   %v32717 = load i64, ptr %v32717.p
-  %v32718 = call i64 @"std/utf8.IndexInvalid"(i64 %v32715, i64 %v32716, i64 %v32717)
+  %v32718 = call i64 @"std/strings.IndexInvalid"(i64 %v32715, i64 %v32716, i64 %v32717)
   %v32719 = add i64 0, 97
   %v32720 = add i64 0, 97
   %v32721 = add i64 0, 97
@@ -70336,7 +70401,7 @@ b330:
   %v32846 = load i64, ptr %v32846.p
   %v32847.p = getelementptr i64, ptr %v32843, i64 2
   %v32847 = load i64, ptr %v32847.p
-  %v32848 = call i64 @"std/utf8.Valid"(i64 %v32845, i64 %v32846, i64 %v32847)
+  %v32848 = call i64 @"std/strings.Valid"(i64 %v32845, i64 %v32846, i64 %v32847)
   call void @"rt.print_int"(i64 %v32718)
   %v32849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v32849)
@@ -70892,7 +70957,7 @@ b333:
   %v33116 = load i64, ptr %v33116.p
   %v33117.p = getelementptr i64, ptr %v33113, i64 2
   %v33117 = load i64, ptr %v33117.p
-  %v33118 = call i64 @"std/utf8.IndexInvalid"(i64 %v33115, i64 %v33116, i64 %v33117)
+  %v33118 = call i64 @"std/strings.IndexInvalid"(i64 %v33115, i64 %v33116, i64 %v33117)
   %v33119 = add i64 0, 97
   %v33120 = add i64 0, 97
   %v33121 = add i64 0, 97
@@ -71153,7 +71218,7 @@ b333:
   %v33246 = load i64, ptr %v33246.p
   %v33247.p = getelementptr i64, ptr %v33243, i64 2
   %v33247 = load i64, ptr %v33247.p
-  %v33248 = call i64 @"std/utf8.Valid"(i64 %v33245, i64 %v33246, i64 %v33247)
+  %v33248 = call i64 @"std/strings.Valid"(i64 %v33245, i64 %v33246, i64 %v33247)
   call void @"rt.print_int"(i64 %v33118)
   %v33249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v33249)
@@ -71709,7 +71774,7 @@ b336:
   %v33516 = load i64, ptr %v33516.p
   %v33517.p = getelementptr i64, ptr %v33513, i64 2
   %v33517 = load i64, ptr %v33517.p
-  %v33518 = call i64 @"std/utf8.IndexInvalid"(i64 %v33515, i64 %v33516, i64 %v33517)
+  %v33518 = call i64 @"std/strings.IndexInvalid"(i64 %v33515, i64 %v33516, i64 %v33517)
   %v33519 = add i64 0, 97
   %v33520 = add i64 0, 97
   %v33521 = add i64 0, 97
@@ -71970,7 +72035,7 @@ b336:
   %v33646 = load i64, ptr %v33646.p
   %v33647.p = getelementptr i64, ptr %v33643, i64 2
   %v33647 = load i64, ptr %v33647.p
-  %v33648 = call i64 @"std/utf8.Valid"(i64 %v33645, i64 %v33646, i64 %v33647)
+  %v33648 = call i64 @"std/strings.Valid"(i64 %v33645, i64 %v33646, i64 %v33647)
   call void @"rt.print_int"(i64 %v33518)
   %v33649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v33649)
@@ -72526,7 +72591,7 @@ b339:
   %v33916 = load i64, ptr %v33916.p
   %v33917.p = getelementptr i64, ptr %v33913, i64 2
   %v33917 = load i64, ptr %v33917.p
-  %v33918 = call i64 @"std/utf8.IndexInvalid"(i64 %v33915, i64 %v33916, i64 %v33917)
+  %v33918 = call i64 @"std/strings.IndexInvalid"(i64 %v33915, i64 %v33916, i64 %v33917)
   %v33919 = add i64 0, 97
   %v33920 = add i64 0, 97
   %v33921 = add i64 0, 97
@@ -72787,7 +72852,7 @@ b339:
   %v34046 = load i64, ptr %v34046.p
   %v34047.p = getelementptr i64, ptr %v34043, i64 2
   %v34047 = load i64, ptr %v34047.p
-  %v34048 = call i64 @"std/utf8.Valid"(i64 %v34045, i64 %v34046, i64 %v34047)
+  %v34048 = call i64 @"std/strings.Valid"(i64 %v34045, i64 %v34046, i64 %v34047)
   call void @"rt.print_int"(i64 %v33918)
   %v34049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v34049)
@@ -73343,7 +73408,7 @@ b342:
   %v34316 = load i64, ptr %v34316.p
   %v34317.p = getelementptr i64, ptr %v34313, i64 2
   %v34317 = load i64, ptr %v34317.p
-  %v34318 = call i64 @"std/utf8.IndexInvalid"(i64 %v34315, i64 %v34316, i64 %v34317)
+  %v34318 = call i64 @"std/strings.IndexInvalid"(i64 %v34315, i64 %v34316, i64 %v34317)
   %v34319 = add i64 0, 97
   %v34320 = add i64 0, 97
   %v34321 = add i64 0, 97
@@ -73604,7 +73669,7 @@ b342:
   %v34446 = load i64, ptr %v34446.p
   %v34447.p = getelementptr i64, ptr %v34443, i64 2
   %v34447 = load i64, ptr %v34447.p
-  %v34448 = call i64 @"std/utf8.Valid"(i64 %v34445, i64 %v34446, i64 %v34447)
+  %v34448 = call i64 @"std/strings.Valid"(i64 %v34445, i64 %v34446, i64 %v34447)
   call void @"rt.print_int"(i64 %v34318)
   %v34449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v34449)
@@ -74160,7 +74225,7 @@ b345:
   %v34716 = load i64, ptr %v34716.p
   %v34717.p = getelementptr i64, ptr %v34713, i64 2
   %v34717 = load i64, ptr %v34717.p
-  %v34718 = call i64 @"std/utf8.IndexInvalid"(i64 %v34715, i64 %v34716, i64 %v34717)
+  %v34718 = call i64 @"std/strings.IndexInvalid"(i64 %v34715, i64 %v34716, i64 %v34717)
   %v34719 = add i64 0, 97
   %v34720 = add i64 0, 97
   %v34721 = add i64 0, 97
@@ -74421,7 +74486,7 @@ b345:
   %v34846 = load i64, ptr %v34846.p
   %v34847.p = getelementptr i64, ptr %v34843, i64 2
   %v34847 = load i64, ptr %v34847.p
-  %v34848 = call i64 @"std/utf8.Valid"(i64 %v34845, i64 %v34846, i64 %v34847)
+  %v34848 = call i64 @"std/strings.Valid"(i64 %v34845, i64 %v34846, i64 %v34847)
   call void @"rt.print_int"(i64 %v34718)
   %v34849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v34849)
@@ -74977,7 +75042,7 @@ b348:
   %v35116 = load i64, ptr %v35116.p
   %v35117.p = getelementptr i64, ptr %v35113, i64 2
   %v35117 = load i64, ptr %v35117.p
-  %v35118 = call i64 @"std/utf8.IndexInvalid"(i64 %v35115, i64 %v35116, i64 %v35117)
+  %v35118 = call i64 @"std/strings.IndexInvalid"(i64 %v35115, i64 %v35116, i64 %v35117)
   %v35119 = add i64 0, 97
   %v35120 = add i64 0, 97
   %v35121 = add i64 0, 97
@@ -75238,7 +75303,7 @@ b348:
   %v35246 = load i64, ptr %v35246.p
   %v35247.p = getelementptr i64, ptr %v35243, i64 2
   %v35247 = load i64, ptr %v35247.p
-  %v35248 = call i64 @"std/utf8.Valid"(i64 %v35245, i64 %v35246, i64 %v35247)
+  %v35248 = call i64 @"std/strings.Valid"(i64 %v35245, i64 %v35246, i64 %v35247)
   call void @"rt.print_int"(i64 %v35118)
   %v35249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v35249)
@@ -75794,7 +75859,7 @@ b351:
   %v35516 = load i64, ptr %v35516.p
   %v35517.p = getelementptr i64, ptr %v35513, i64 2
   %v35517 = load i64, ptr %v35517.p
-  %v35518 = call i64 @"std/utf8.IndexInvalid"(i64 %v35515, i64 %v35516, i64 %v35517)
+  %v35518 = call i64 @"std/strings.IndexInvalid"(i64 %v35515, i64 %v35516, i64 %v35517)
   %v35519 = add i64 0, 97
   %v35520 = add i64 0, 97
   %v35521 = add i64 0, 97
@@ -76055,7 +76120,7 @@ b351:
   %v35646 = load i64, ptr %v35646.p
   %v35647.p = getelementptr i64, ptr %v35643, i64 2
   %v35647 = load i64, ptr %v35647.p
-  %v35648 = call i64 @"std/utf8.Valid"(i64 %v35645, i64 %v35646, i64 %v35647)
+  %v35648 = call i64 @"std/strings.Valid"(i64 %v35645, i64 %v35646, i64 %v35647)
   call void @"rt.print_int"(i64 %v35518)
   %v35649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v35649)
@@ -76611,7 +76676,7 @@ b354:
   %v35916 = load i64, ptr %v35916.p
   %v35917.p = getelementptr i64, ptr %v35913, i64 2
   %v35917 = load i64, ptr %v35917.p
-  %v35918 = call i64 @"std/utf8.IndexInvalid"(i64 %v35915, i64 %v35916, i64 %v35917)
+  %v35918 = call i64 @"std/strings.IndexInvalid"(i64 %v35915, i64 %v35916, i64 %v35917)
   %v35919 = add i64 0, 97
   %v35920 = add i64 0, 97
   %v35921 = add i64 0, 97
@@ -76872,7 +76937,7 @@ b354:
   %v36046 = load i64, ptr %v36046.p
   %v36047.p = getelementptr i64, ptr %v36043, i64 2
   %v36047 = load i64, ptr %v36047.p
-  %v36048 = call i64 @"std/utf8.Valid"(i64 %v36045, i64 %v36046, i64 %v36047)
+  %v36048 = call i64 @"std/strings.Valid"(i64 %v36045, i64 %v36046, i64 %v36047)
   call void @"rt.print_int"(i64 %v35918)
   %v36049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v36049)
@@ -77428,7 +77493,7 @@ b357:
   %v36316 = load i64, ptr %v36316.p
   %v36317.p = getelementptr i64, ptr %v36313, i64 2
   %v36317 = load i64, ptr %v36317.p
-  %v36318 = call i64 @"std/utf8.IndexInvalid"(i64 %v36315, i64 %v36316, i64 %v36317)
+  %v36318 = call i64 @"std/strings.IndexInvalid"(i64 %v36315, i64 %v36316, i64 %v36317)
   %v36319 = add i64 0, 97
   %v36320 = add i64 0, 97
   %v36321 = add i64 0, 97
@@ -77689,7 +77754,7 @@ b357:
   %v36446 = load i64, ptr %v36446.p
   %v36447.p = getelementptr i64, ptr %v36443, i64 2
   %v36447 = load i64, ptr %v36447.p
-  %v36448 = call i64 @"std/utf8.Valid"(i64 %v36445, i64 %v36446, i64 %v36447)
+  %v36448 = call i64 @"std/strings.Valid"(i64 %v36445, i64 %v36446, i64 %v36447)
   call void @"rt.print_int"(i64 %v36318)
   %v36449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v36449)
@@ -78245,7 +78310,7 @@ b360:
   %v36716 = load i64, ptr %v36716.p
   %v36717.p = getelementptr i64, ptr %v36713, i64 2
   %v36717 = load i64, ptr %v36717.p
-  %v36718 = call i64 @"std/utf8.IndexInvalid"(i64 %v36715, i64 %v36716, i64 %v36717)
+  %v36718 = call i64 @"std/strings.IndexInvalid"(i64 %v36715, i64 %v36716, i64 %v36717)
   %v36719 = add i64 0, 97
   %v36720 = add i64 0, 97
   %v36721 = add i64 0, 97
@@ -78506,7 +78571,7 @@ b360:
   %v36846 = load i64, ptr %v36846.p
   %v36847.p = getelementptr i64, ptr %v36843, i64 2
   %v36847 = load i64, ptr %v36847.p
-  %v36848 = call i64 @"std/utf8.Valid"(i64 %v36845, i64 %v36846, i64 %v36847)
+  %v36848 = call i64 @"std/strings.Valid"(i64 %v36845, i64 %v36846, i64 %v36847)
   call void @"rt.print_int"(i64 %v36718)
   %v36849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v36849)
@@ -79062,7 +79127,7 @@ b363:
   %v37116 = load i64, ptr %v37116.p
   %v37117.p = getelementptr i64, ptr %v37113, i64 2
   %v37117 = load i64, ptr %v37117.p
-  %v37118 = call i64 @"std/utf8.IndexInvalid"(i64 %v37115, i64 %v37116, i64 %v37117)
+  %v37118 = call i64 @"std/strings.IndexInvalid"(i64 %v37115, i64 %v37116, i64 %v37117)
   %v37119 = add i64 0, 97
   %v37120 = add i64 0, 97
   %v37121 = add i64 0, 97
@@ -79323,7 +79388,7 @@ b363:
   %v37246 = load i64, ptr %v37246.p
   %v37247.p = getelementptr i64, ptr %v37243, i64 2
   %v37247 = load i64, ptr %v37247.p
-  %v37248 = call i64 @"std/utf8.Valid"(i64 %v37245, i64 %v37246, i64 %v37247)
+  %v37248 = call i64 @"std/strings.Valid"(i64 %v37245, i64 %v37246, i64 %v37247)
   call void @"rt.print_int"(i64 %v37118)
   %v37249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v37249)
@@ -79879,7 +79944,7 @@ b366:
   %v37516 = load i64, ptr %v37516.p
   %v37517.p = getelementptr i64, ptr %v37513, i64 2
   %v37517 = load i64, ptr %v37517.p
-  %v37518 = call i64 @"std/utf8.IndexInvalid"(i64 %v37515, i64 %v37516, i64 %v37517)
+  %v37518 = call i64 @"std/strings.IndexInvalid"(i64 %v37515, i64 %v37516, i64 %v37517)
   %v37519 = add i64 0, 97
   %v37520 = add i64 0, 97
   %v37521 = add i64 0, 97
@@ -80140,7 +80205,7 @@ b366:
   %v37646 = load i64, ptr %v37646.p
   %v37647.p = getelementptr i64, ptr %v37643, i64 2
   %v37647 = load i64, ptr %v37647.p
-  %v37648 = call i64 @"std/utf8.Valid"(i64 %v37645, i64 %v37646, i64 %v37647)
+  %v37648 = call i64 @"std/strings.Valid"(i64 %v37645, i64 %v37646, i64 %v37647)
   call void @"rt.print_int"(i64 %v37518)
   %v37649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v37649)
@@ -80696,7 +80761,7 @@ b369:
   %v37916 = load i64, ptr %v37916.p
   %v37917.p = getelementptr i64, ptr %v37913, i64 2
   %v37917 = load i64, ptr %v37917.p
-  %v37918 = call i64 @"std/utf8.IndexInvalid"(i64 %v37915, i64 %v37916, i64 %v37917)
+  %v37918 = call i64 @"std/strings.IndexInvalid"(i64 %v37915, i64 %v37916, i64 %v37917)
   %v37919 = add i64 0, 97
   %v37920 = add i64 0, 97
   %v37921 = add i64 0, 97
@@ -80957,7 +81022,7 @@ b369:
   %v38046 = load i64, ptr %v38046.p
   %v38047.p = getelementptr i64, ptr %v38043, i64 2
   %v38047 = load i64, ptr %v38047.p
-  %v38048 = call i64 @"std/utf8.Valid"(i64 %v38045, i64 %v38046, i64 %v38047)
+  %v38048 = call i64 @"std/strings.Valid"(i64 %v38045, i64 %v38046, i64 %v38047)
   call void @"rt.print_int"(i64 %v37918)
   %v38049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v38049)
@@ -81513,7 +81578,7 @@ b372:
   %v38316 = load i64, ptr %v38316.p
   %v38317.p = getelementptr i64, ptr %v38313, i64 2
   %v38317 = load i64, ptr %v38317.p
-  %v38318 = call i64 @"std/utf8.IndexInvalid"(i64 %v38315, i64 %v38316, i64 %v38317)
+  %v38318 = call i64 @"std/strings.IndexInvalid"(i64 %v38315, i64 %v38316, i64 %v38317)
   %v38319 = add i64 0, 97
   %v38320 = add i64 0, 97
   %v38321 = add i64 0, 97
@@ -81774,7 +81839,7 @@ b372:
   %v38446 = load i64, ptr %v38446.p
   %v38447.p = getelementptr i64, ptr %v38443, i64 2
   %v38447 = load i64, ptr %v38447.p
-  %v38448 = call i64 @"std/utf8.Valid"(i64 %v38445, i64 %v38446, i64 %v38447)
+  %v38448 = call i64 @"std/strings.Valid"(i64 %v38445, i64 %v38446, i64 %v38447)
   call void @"rt.print_int"(i64 %v38318)
   %v38449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v38449)
@@ -82330,7 +82395,7 @@ b375:
   %v38716 = load i64, ptr %v38716.p
   %v38717.p = getelementptr i64, ptr %v38713, i64 2
   %v38717 = load i64, ptr %v38717.p
-  %v38718 = call i64 @"std/utf8.IndexInvalid"(i64 %v38715, i64 %v38716, i64 %v38717)
+  %v38718 = call i64 @"std/strings.IndexInvalid"(i64 %v38715, i64 %v38716, i64 %v38717)
   %v38719 = add i64 0, 97
   %v38720 = add i64 0, 97
   %v38721 = add i64 0, 97
@@ -82591,7 +82656,7 @@ b375:
   %v38846 = load i64, ptr %v38846.p
   %v38847.p = getelementptr i64, ptr %v38843, i64 2
   %v38847 = load i64, ptr %v38847.p
-  %v38848 = call i64 @"std/utf8.Valid"(i64 %v38845, i64 %v38846, i64 %v38847)
+  %v38848 = call i64 @"std/strings.Valid"(i64 %v38845, i64 %v38846, i64 %v38847)
   call void @"rt.print_int"(i64 %v38718)
   %v38849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v38849)
@@ -83147,7 +83212,7 @@ b378:
   %v39116 = load i64, ptr %v39116.p
   %v39117.p = getelementptr i64, ptr %v39113, i64 2
   %v39117 = load i64, ptr %v39117.p
-  %v39118 = call i64 @"std/utf8.IndexInvalid"(i64 %v39115, i64 %v39116, i64 %v39117)
+  %v39118 = call i64 @"std/strings.IndexInvalid"(i64 %v39115, i64 %v39116, i64 %v39117)
   %v39119 = add i64 0, 97
   %v39120 = add i64 0, 97
   %v39121 = add i64 0, 97
@@ -83408,7 +83473,7 @@ b378:
   %v39246 = load i64, ptr %v39246.p
   %v39247.p = getelementptr i64, ptr %v39243, i64 2
   %v39247 = load i64, ptr %v39247.p
-  %v39248 = call i64 @"std/utf8.Valid"(i64 %v39245, i64 %v39246, i64 %v39247)
+  %v39248 = call i64 @"std/strings.Valid"(i64 %v39245, i64 %v39246, i64 %v39247)
   call void @"rt.print_int"(i64 %v39118)
   %v39249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v39249)
@@ -83964,7 +84029,7 @@ b381:
   %v39516 = load i64, ptr %v39516.p
   %v39517.p = getelementptr i64, ptr %v39513, i64 2
   %v39517 = load i64, ptr %v39517.p
-  %v39518 = call i64 @"std/utf8.IndexInvalid"(i64 %v39515, i64 %v39516, i64 %v39517)
+  %v39518 = call i64 @"std/strings.IndexInvalid"(i64 %v39515, i64 %v39516, i64 %v39517)
   %v39519 = add i64 0, 97
   %v39520 = add i64 0, 97
   %v39521 = add i64 0, 97
@@ -84225,7 +84290,7 @@ b381:
   %v39646 = load i64, ptr %v39646.p
   %v39647.p = getelementptr i64, ptr %v39643, i64 2
   %v39647 = load i64, ptr %v39647.p
-  %v39648 = call i64 @"std/utf8.Valid"(i64 %v39645, i64 %v39646, i64 %v39647)
+  %v39648 = call i64 @"std/strings.Valid"(i64 %v39645, i64 %v39646, i64 %v39647)
   call void @"rt.print_int"(i64 %v39518)
   %v39649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v39649)
@@ -84781,7 +84846,7 @@ b384:
   %v39916 = load i64, ptr %v39916.p
   %v39917.p = getelementptr i64, ptr %v39913, i64 2
   %v39917 = load i64, ptr %v39917.p
-  %v39918 = call i64 @"std/utf8.IndexInvalid"(i64 %v39915, i64 %v39916, i64 %v39917)
+  %v39918 = call i64 @"std/strings.IndexInvalid"(i64 %v39915, i64 %v39916, i64 %v39917)
   %v39919 = add i64 0, 97
   %v39920 = add i64 0, 97
   %v39921 = add i64 0, 97
@@ -85042,7 +85107,7 @@ b384:
   %v40046 = load i64, ptr %v40046.p
   %v40047.p = getelementptr i64, ptr %v40043, i64 2
   %v40047 = load i64, ptr %v40047.p
-  %v40048 = call i64 @"std/utf8.Valid"(i64 %v40045, i64 %v40046, i64 %v40047)
+  %v40048 = call i64 @"std/strings.Valid"(i64 %v40045, i64 %v40046, i64 %v40047)
   call void @"rt.print_int"(i64 %v39918)
   %v40049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v40049)
@@ -85598,7 +85663,7 @@ b387:
   %v40316 = load i64, ptr %v40316.p
   %v40317.p = getelementptr i64, ptr %v40313, i64 2
   %v40317 = load i64, ptr %v40317.p
-  %v40318 = call i64 @"std/utf8.IndexInvalid"(i64 %v40315, i64 %v40316, i64 %v40317)
+  %v40318 = call i64 @"std/strings.IndexInvalid"(i64 %v40315, i64 %v40316, i64 %v40317)
   %v40319 = add i64 0, 97
   %v40320 = add i64 0, 97
   %v40321 = add i64 0, 97
@@ -85859,7 +85924,7 @@ b387:
   %v40446 = load i64, ptr %v40446.p
   %v40447.p = getelementptr i64, ptr %v40443, i64 2
   %v40447 = load i64, ptr %v40447.p
-  %v40448 = call i64 @"std/utf8.Valid"(i64 %v40445, i64 %v40446, i64 %v40447)
+  %v40448 = call i64 @"std/strings.Valid"(i64 %v40445, i64 %v40446, i64 %v40447)
   call void @"rt.print_int"(i64 %v40318)
   %v40449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v40449)
@@ -86415,7 +86480,7 @@ b390:
   %v40716 = load i64, ptr %v40716.p
   %v40717.p = getelementptr i64, ptr %v40713, i64 2
   %v40717 = load i64, ptr %v40717.p
-  %v40718 = call i64 @"std/utf8.IndexInvalid"(i64 %v40715, i64 %v40716, i64 %v40717)
+  %v40718 = call i64 @"std/strings.IndexInvalid"(i64 %v40715, i64 %v40716, i64 %v40717)
   %v40719 = add i64 0, 97
   %v40720 = add i64 0, 97
   %v40721 = add i64 0, 97
@@ -86676,7 +86741,7 @@ b390:
   %v40846 = load i64, ptr %v40846.p
   %v40847.p = getelementptr i64, ptr %v40843, i64 2
   %v40847 = load i64, ptr %v40847.p
-  %v40848 = call i64 @"std/utf8.Valid"(i64 %v40845, i64 %v40846, i64 %v40847)
+  %v40848 = call i64 @"std/strings.Valid"(i64 %v40845, i64 %v40846, i64 %v40847)
   call void @"rt.print_int"(i64 %v40718)
   %v40849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v40849)
@@ -87232,7 +87297,7 @@ b393:
   %v41116 = load i64, ptr %v41116.p
   %v41117.p = getelementptr i64, ptr %v41113, i64 2
   %v41117 = load i64, ptr %v41117.p
-  %v41118 = call i64 @"std/utf8.IndexInvalid"(i64 %v41115, i64 %v41116, i64 %v41117)
+  %v41118 = call i64 @"std/strings.IndexInvalid"(i64 %v41115, i64 %v41116, i64 %v41117)
   %v41119 = add i64 0, 97
   %v41120 = add i64 0, 97
   %v41121 = add i64 0, 97
@@ -87493,7 +87558,7 @@ b393:
   %v41246 = load i64, ptr %v41246.p
   %v41247.p = getelementptr i64, ptr %v41243, i64 2
   %v41247 = load i64, ptr %v41247.p
-  %v41248 = call i64 @"std/utf8.Valid"(i64 %v41245, i64 %v41246, i64 %v41247)
+  %v41248 = call i64 @"std/strings.Valid"(i64 %v41245, i64 %v41246, i64 %v41247)
   call void @"rt.print_int"(i64 %v41118)
   %v41249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v41249)
@@ -88049,7 +88114,7 @@ b396:
   %v41516 = load i64, ptr %v41516.p
   %v41517.p = getelementptr i64, ptr %v41513, i64 2
   %v41517 = load i64, ptr %v41517.p
-  %v41518 = call i64 @"std/utf8.IndexInvalid"(i64 %v41515, i64 %v41516, i64 %v41517)
+  %v41518 = call i64 @"std/strings.IndexInvalid"(i64 %v41515, i64 %v41516, i64 %v41517)
   %v41519 = add i64 0, 97
   %v41520 = add i64 0, 97
   %v41521 = add i64 0, 97
@@ -88310,7 +88375,7 @@ b396:
   %v41646 = load i64, ptr %v41646.p
   %v41647.p = getelementptr i64, ptr %v41643, i64 2
   %v41647 = load i64, ptr %v41647.p
-  %v41648 = call i64 @"std/utf8.Valid"(i64 %v41645, i64 %v41646, i64 %v41647)
+  %v41648 = call i64 @"std/strings.Valid"(i64 %v41645, i64 %v41646, i64 %v41647)
   call void @"rt.print_int"(i64 %v41518)
   %v41649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v41649)
@@ -88866,7 +88931,7 @@ b399:
   %v41916 = load i64, ptr %v41916.p
   %v41917.p = getelementptr i64, ptr %v41913, i64 2
   %v41917 = load i64, ptr %v41917.p
-  %v41918 = call i64 @"std/utf8.IndexInvalid"(i64 %v41915, i64 %v41916, i64 %v41917)
+  %v41918 = call i64 @"std/strings.IndexInvalid"(i64 %v41915, i64 %v41916, i64 %v41917)
   %v41919 = add i64 0, 97
   %v41920 = add i64 0, 97
   %v41921 = add i64 0, 97
@@ -89127,7 +89192,7 @@ b399:
   %v42046 = load i64, ptr %v42046.p
   %v42047.p = getelementptr i64, ptr %v42043, i64 2
   %v42047 = load i64, ptr %v42047.p
-  %v42048 = call i64 @"std/utf8.Valid"(i64 %v42045, i64 %v42046, i64 %v42047)
+  %v42048 = call i64 @"std/strings.Valid"(i64 %v42045, i64 %v42046, i64 %v42047)
   call void @"rt.print_int"(i64 %v41918)
   %v42049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v42049)
@@ -89683,7 +89748,7 @@ b402:
   %v42316 = load i64, ptr %v42316.p
   %v42317.p = getelementptr i64, ptr %v42313, i64 2
   %v42317 = load i64, ptr %v42317.p
-  %v42318 = call i64 @"std/utf8.IndexInvalid"(i64 %v42315, i64 %v42316, i64 %v42317)
+  %v42318 = call i64 @"std/strings.IndexInvalid"(i64 %v42315, i64 %v42316, i64 %v42317)
   %v42319 = add i64 0, 97
   %v42320 = add i64 0, 97
   %v42321 = add i64 0, 97
@@ -89944,7 +90009,7 @@ b402:
   %v42446 = load i64, ptr %v42446.p
   %v42447.p = getelementptr i64, ptr %v42443, i64 2
   %v42447 = load i64, ptr %v42447.p
-  %v42448 = call i64 @"std/utf8.Valid"(i64 %v42445, i64 %v42446, i64 %v42447)
+  %v42448 = call i64 @"std/strings.Valid"(i64 %v42445, i64 %v42446, i64 %v42447)
   call void @"rt.print_int"(i64 %v42318)
   %v42449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v42449)
@@ -90500,7 +90565,7 @@ b405:
   %v42716 = load i64, ptr %v42716.p
   %v42717.p = getelementptr i64, ptr %v42713, i64 2
   %v42717 = load i64, ptr %v42717.p
-  %v42718 = call i64 @"std/utf8.IndexInvalid"(i64 %v42715, i64 %v42716, i64 %v42717)
+  %v42718 = call i64 @"std/strings.IndexInvalid"(i64 %v42715, i64 %v42716, i64 %v42717)
   %v42719 = add i64 0, 97
   %v42720 = add i64 0, 97
   %v42721 = add i64 0, 97
@@ -90761,7 +90826,7 @@ b405:
   %v42846 = load i64, ptr %v42846.p
   %v42847.p = getelementptr i64, ptr %v42843, i64 2
   %v42847 = load i64, ptr %v42847.p
-  %v42848 = call i64 @"std/utf8.Valid"(i64 %v42845, i64 %v42846, i64 %v42847)
+  %v42848 = call i64 @"std/strings.Valid"(i64 %v42845, i64 %v42846, i64 %v42847)
   call void @"rt.print_int"(i64 %v42718)
   %v42849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v42849)
@@ -91317,7 +91382,7 @@ b408:
   %v43116 = load i64, ptr %v43116.p
   %v43117.p = getelementptr i64, ptr %v43113, i64 2
   %v43117 = load i64, ptr %v43117.p
-  %v43118 = call i64 @"std/utf8.IndexInvalid"(i64 %v43115, i64 %v43116, i64 %v43117)
+  %v43118 = call i64 @"std/strings.IndexInvalid"(i64 %v43115, i64 %v43116, i64 %v43117)
   %v43119 = add i64 0, 97
   %v43120 = add i64 0, 97
   %v43121 = add i64 0, 97
@@ -91578,7 +91643,7 @@ b408:
   %v43246 = load i64, ptr %v43246.p
   %v43247.p = getelementptr i64, ptr %v43243, i64 2
   %v43247 = load i64, ptr %v43247.p
-  %v43248 = call i64 @"std/utf8.Valid"(i64 %v43245, i64 %v43246, i64 %v43247)
+  %v43248 = call i64 @"std/strings.Valid"(i64 %v43245, i64 %v43246, i64 %v43247)
   call void @"rt.print_int"(i64 %v43118)
   %v43249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v43249)
@@ -92134,7 +92199,7 @@ b411:
   %v43516 = load i64, ptr %v43516.p
   %v43517.p = getelementptr i64, ptr %v43513, i64 2
   %v43517 = load i64, ptr %v43517.p
-  %v43518 = call i64 @"std/utf8.IndexInvalid"(i64 %v43515, i64 %v43516, i64 %v43517)
+  %v43518 = call i64 @"std/strings.IndexInvalid"(i64 %v43515, i64 %v43516, i64 %v43517)
   %v43519 = add i64 0, 97
   %v43520 = add i64 0, 97
   %v43521 = add i64 0, 97
@@ -92395,7 +92460,7 @@ b411:
   %v43646 = load i64, ptr %v43646.p
   %v43647.p = getelementptr i64, ptr %v43643, i64 2
   %v43647 = load i64, ptr %v43647.p
-  %v43648 = call i64 @"std/utf8.Valid"(i64 %v43645, i64 %v43646, i64 %v43647)
+  %v43648 = call i64 @"std/strings.Valid"(i64 %v43645, i64 %v43646, i64 %v43647)
   call void @"rt.print_int"(i64 %v43518)
   %v43649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v43649)
@@ -92951,7 +93016,7 @@ b414:
   %v43916 = load i64, ptr %v43916.p
   %v43917.p = getelementptr i64, ptr %v43913, i64 2
   %v43917 = load i64, ptr %v43917.p
-  %v43918 = call i64 @"std/utf8.IndexInvalid"(i64 %v43915, i64 %v43916, i64 %v43917)
+  %v43918 = call i64 @"std/strings.IndexInvalid"(i64 %v43915, i64 %v43916, i64 %v43917)
   %v43919 = add i64 0, 97
   %v43920 = add i64 0, 97
   %v43921 = add i64 0, 97
@@ -93212,7 +93277,7 @@ b414:
   %v44046 = load i64, ptr %v44046.p
   %v44047.p = getelementptr i64, ptr %v44043, i64 2
   %v44047 = load i64, ptr %v44047.p
-  %v44048 = call i64 @"std/utf8.Valid"(i64 %v44045, i64 %v44046, i64 %v44047)
+  %v44048 = call i64 @"std/strings.Valid"(i64 %v44045, i64 %v44046, i64 %v44047)
   call void @"rt.print_int"(i64 %v43918)
   %v44049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v44049)
@@ -93768,7 +93833,7 @@ b417:
   %v44316 = load i64, ptr %v44316.p
   %v44317.p = getelementptr i64, ptr %v44313, i64 2
   %v44317 = load i64, ptr %v44317.p
-  %v44318 = call i64 @"std/utf8.IndexInvalid"(i64 %v44315, i64 %v44316, i64 %v44317)
+  %v44318 = call i64 @"std/strings.IndexInvalid"(i64 %v44315, i64 %v44316, i64 %v44317)
   %v44319 = add i64 0, 97
   %v44320 = add i64 0, 97
   %v44321 = add i64 0, 97
@@ -94029,7 +94094,7 @@ b417:
   %v44446 = load i64, ptr %v44446.p
   %v44447.p = getelementptr i64, ptr %v44443, i64 2
   %v44447 = load i64, ptr %v44447.p
-  %v44448 = call i64 @"std/utf8.Valid"(i64 %v44445, i64 %v44446, i64 %v44447)
+  %v44448 = call i64 @"std/strings.Valid"(i64 %v44445, i64 %v44446, i64 %v44447)
   call void @"rt.print_int"(i64 %v44318)
   %v44449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v44449)
@@ -94585,7 +94650,7 @@ b420:
   %v44716 = load i64, ptr %v44716.p
   %v44717.p = getelementptr i64, ptr %v44713, i64 2
   %v44717 = load i64, ptr %v44717.p
-  %v44718 = call i64 @"std/utf8.IndexInvalid"(i64 %v44715, i64 %v44716, i64 %v44717)
+  %v44718 = call i64 @"std/strings.IndexInvalid"(i64 %v44715, i64 %v44716, i64 %v44717)
   %v44719 = add i64 0, 97
   %v44720 = add i64 0, 97
   %v44721 = add i64 0, 97
@@ -94846,7 +94911,7 @@ b420:
   %v44846 = load i64, ptr %v44846.p
   %v44847.p = getelementptr i64, ptr %v44843, i64 2
   %v44847 = load i64, ptr %v44847.p
-  %v44848 = call i64 @"std/utf8.Valid"(i64 %v44845, i64 %v44846, i64 %v44847)
+  %v44848 = call i64 @"std/strings.Valid"(i64 %v44845, i64 %v44846, i64 %v44847)
   call void @"rt.print_int"(i64 %v44718)
   %v44849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v44849)
@@ -95402,7 +95467,7 @@ b423:
   %v45116 = load i64, ptr %v45116.p
   %v45117.p = getelementptr i64, ptr %v45113, i64 2
   %v45117 = load i64, ptr %v45117.p
-  %v45118 = call i64 @"std/utf8.IndexInvalid"(i64 %v45115, i64 %v45116, i64 %v45117)
+  %v45118 = call i64 @"std/strings.IndexInvalid"(i64 %v45115, i64 %v45116, i64 %v45117)
   %v45119 = add i64 0, 97
   %v45120 = add i64 0, 97
   %v45121 = add i64 0, 97
@@ -95663,7 +95728,7 @@ b423:
   %v45246 = load i64, ptr %v45246.p
   %v45247.p = getelementptr i64, ptr %v45243, i64 2
   %v45247 = load i64, ptr %v45247.p
-  %v45248 = call i64 @"std/utf8.Valid"(i64 %v45245, i64 %v45246, i64 %v45247)
+  %v45248 = call i64 @"std/strings.Valid"(i64 %v45245, i64 %v45246, i64 %v45247)
   call void @"rt.print_int"(i64 %v45118)
   %v45249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v45249)
@@ -96219,7 +96284,7 @@ b426:
   %v45516 = load i64, ptr %v45516.p
   %v45517.p = getelementptr i64, ptr %v45513, i64 2
   %v45517 = load i64, ptr %v45517.p
-  %v45518 = call i64 @"std/utf8.IndexInvalid"(i64 %v45515, i64 %v45516, i64 %v45517)
+  %v45518 = call i64 @"std/strings.IndexInvalid"(i64 %v45515, i64 %v45516, i64 %v45517)
   %v45519 = add i64 0, 97
   %v45520 = add i64 0, 97
   %v45521 = add i64 0, 97
@@ -96480,7 +96545,7 @@ b426:
   %v45646 = load i64, ptr %v45646.p
   %v45647.p = getelementptr i64, ptr %v45643, i64 2
   %v45647 = load i64, ptr %v45647.p
-  %v45648 = call i64 @"std/utf8.Valid"(i64 %v45645, i64 %v45646, i64 %v45647)
+  %v45648 = call i64 @"std/strings.Valid"(i64 %v45645, i64 %v45646, i64 %v45647)
   call void @"rt.print_int"(i64 %v45518)
   %v45649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v45649)
@@ -97036,7 +97101,7 @@ b429:
   %v45916 = load i64, ptr %v45916.p
   %v45917.p = getelementptr i64, ptr %v45913, i64 2
   %v45917 = load i64, ptr %v45917.p
-  %v45918 = call i64 @"std/utf8.IndexInvalid"(i64 %v45915, i64 %v45916, i64 %v45917)
+  %v45918 = call i64 @"std/strings.IndexInvalid"(i64 %v45915, i64 %v45916, i64 %v45917)
   %v45919 = add i64 0, 97
   %v45920 = add i64 0, 97
   %v45921 = add i64 0, 97
@@ -97297,7 +97362,7 @@ b429:
   %v46046 = load i64, ptr %v46046.p
   %v46047.p = getelementptr i64, ptr %v46043, i64 2
   %v46047 = load i64, ptr %v46047.p
-  %v46048 = call i64 @"std/utf8.Valid"(i64 %v46045, i64 %v46046, i64 %v46047)
+  %v46048 = call i64 @"std/strings.Valid"(i64 %v46045, i64 %v46046, i64 %v46047)
   call void @"rt.print_int"(i64 %v45918)
   %v46049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v46049)
@@ -97853,7 +97918,7 @@ b432:
   %v46316 = load i64, ptr %v46316.p
   %v46317.p = getelementptr i64, ptr %v46313, i64 2
   %v46317 = load i64, ptr %v46317.p
-  %v46318 = call i64 @"std/utf8.IndexInvalid"(i64 %v46315, i64 %v46316, i64 %v46317)
+  %v46318 = call i64 @"std/strings.IndexInvalid"(i64 %v46315, i64 %v46316, i64 %v46317)
   %v46319 = add i64 0, 97
   %v46320 = add i64 0, 97
   %v46321 = add i64 0, 97
@@ -98114,7 +98179,7 @@ b432:
   %v46446 = load i64, ptr %v46446.p
   %v46447.p = getelementptr i64, ptr %v46443, i64 2
   %v46447 = load i64, ptr %v46447.p
-  %v46448 = call i64 @"std/utf8.Valid"(i64 %v46445, i64 %v46446, i64 %v46447)
+  %v46448 = call i64 @"std/strings.Valid"(i64 %v46445, i64 %v46446, i64 %v46447)
   call void @"rt.print_int"(i64 %v46318)
   %v46449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v46449)
@@ -98670,7 +98735,7 @@ b435:
   %v46716 = load i64, ptr %v46716.p
   %v46717.p = getelementptr i64, ptr %v46713, i64 2
   %v46717 = load i64, ptr %v46717.p
-  %v46718 = call i64 @"std/utf8.IndexInvalid"(i64 %v46715, i64 %v46716, i64 %v46717)
+  %v46718 = call i64 @"std/strings.IndexInvalid"(i64 %v46715, i64 %v46716, i64 %v46717)
   %v46719 = add i64 0, 97
   %v46720 = add i64 0, 97
   %v46721 = add i64 0, 97
@@ -98931,7 +98996,7 @@ b435:
   %v46846 = load i64, ptr %v46846.p
   %v46847.p = getelementptr i64, ptr %v46843, i64 2
   %v46847 = load i64, ptr %v46847.p
-  %v46848 = call i64 @"std/utf8.Valid"(i64 %v46845, i64 %v46846, i64 %v46847)
+  %v46848 = call i64 @"std/strings.Valid"(i64 %v46845, i64 %v46846, i64 %v46847)
   call void @"rt.print_int"(i64 %v46718)
   %v46849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v46849)
@@ -99487,7 +99552,7 @@ b438:
   %v47116 = load i64, ptr %v47116.p
   %v47117.p = getelementptr i64, ptr %v47113, i64 2
   %v47117 = load i64, ptr %v47117.p
-  %v47118 = call i64 @"std/utf8.IndexInvalid"(i64 %v47115, i64 %v47116, i64 %v47117)
+  %v47118 = call i64 @"std/strings.IndexInvalid"(i64 %v47115, i64 %v47116, i64 %v47117)
   %v47119 = add i64 0, 97
   %v47120 = add i64 0, 97
   %v47121 = add i64 0, 97
@@ -99748,7 +99813,7 @@ b438:
   %v47246 = load i64, ptr %v47246.p
   %v47247.p = getelementptr i64, ptr %v47243, i64 2
   %v47247 = load i64, ptr %v47247.p
-  %v47248 = call i64 @"std/utf8.Valid"(i64 %v47245, i64 %v47246, i64 %v47247)
+  %v47248 = call i64 @"std/strings.Valid"(i64 %v47245, i64 %v47246, i64 %v47247)
   call void @"rt.print_int"(i64 %v47118)
   %v47249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v47249)
@@ -100304,7 +100369,7 @@ b441:
   %v47516 = load i64, ptr %v47516.p
   %v47517.p = getelementptr i64, ptr %v47513, i64 2
   %v47517 = load i64, ptr %v47517.p
-  %v47518 = call i64 @"std/utf8.IndexInvalid"(i64 %v47515, i64 %v47516, i64 %v47517)
+  %v47518 = call i64 @"std/strings.IndexInvalid"(i64 %v47515, i64 %v47516, i64 %v47517)
   %v47519 = add i64 0, 97
   %v47520 = add i64 0, 97
   %v47521 = add i64 0, 97
@@ -100565,7 +100630,7 @@ b441:
   %v47646 = load i64, ptr %v47646.p
   %v47647.p = getelementptr i64, ptr %v47643, i64 2
   %v47647 = load i64, ptr %v47647.p
-  %v47648 = call i64 @"std/utf8.Valid"(i64 %v47645, i64 %v47646, i64 %v47647)
+  %v47648 = call i64 @"std/strings.Valid"(i64 %v47645, i64 %v47646, i64 %v47647)
   call void @"rt.print_int"(i64 %v47518)
   %v47649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v47649)
@@ -101121,7 +101186,7 @@ b444:
   %v47916 = load i64, ptr %v47916.p
   %v47917.p = getelementptr i64, ptr %v47913, i64 2
   %v47917 = load i64, ptr %v47917.p
-  %v47918 = call i64 @"std/utf8.IndexInvalid"(i64 %v47915, i64 %v47916, i64 %v47917)
+  %v47918 = call i64 @"std/strings.IndexInvalid"(i64 %v47915, i64 %v47916, i64 %v47917)
   %v47919 = add i64 0, 97
   %v47920 = add i64 0, 97
   %v47921 = add i64 0, 97
@@ -101382,7 +101447,7 @@ b444:
   %v48046 = load i64, ptr %v48046.p
   %v48047.p = getelementptr i64, ptr %v48043, i64 2
   %v48047 = load i64, ptr %v48047.p
-  %v48048 = call i64 @"std/utf8.Valid"(i64 %v48045, i64 %v48046, i64 %v48047)
+  %v48048 = call i64 @"std/strings.Valid"(i64 %v48045, i64 %v48046, i64 %v48047)
   call void @"rt.print_int"(i64 %v47918)
   %v48049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v48049)
@@ -101938,7 +102003,7 @@ b447:
   %v48316 = load i64, ptr %v48316.p
   %v48317.p = getelementptr i64, ptr %v48313, i64 2
   %v48317 = load i64, ptr %v48317.p
-  %v48318 = call i64 @"std/utf8.IndexInvalid"(i64 %v48315, i64 %v48316, i64 %v48317)
+  %v48318 = call i64 @"std/strings.IndexInvalid"(i64 %v48315, i64 %v48316, i64 %v48317)
   %v48319 = add i64 0, 97
   %v48320 = add i64 0, 97
   %v48321 = add i64 0, 97
@@ -102199,7 +102264,7 @@ b447:
   %v48446 = load i64, ptr %v48446.p
   %v48447.p = getelementptr i64, ptr %v48443, i64 2
   %v48447 = load i64, ptr %v48447.p
-  %v48448 = call i64 @"std/utf8.Valid"(i64 %v48445, i64 %v48446, i64 %v48447)
+  %v48448 = call i64 @"std/strings.Valid"(i64 %v48445, i64 %v48446, i64 %v48447)
   call void @"rt.print_int"(i64 %v48318)
   %v48449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v48449)
@@ -102755,7 +102820,7 @@ b450:
   %v48716 = load i64, ptr %v48716.p
   %v48717.p = getelementptr i64, ptr %v48713, i64 2
   %v48717 = load i64, ptr %v48717.p
-  %v48718 = call i64 @"std/utf8.IndexInvalid"(i64 %v48715, i64 %v48716, i64 %v48717)
+  %v48718 = call i64 @"std/strings.IndexInvalid"(i64 %v48715, i64 %v48716, i64 %v48717)
   %v48719 = add i64 0, 97
   %v48720 = add i64 0, 97
   %v48721 = add i64 0, 97
@@ -103016,7 +103081,7 @@ b450:
   %v48846 = load i64, ptr %v48846.p
   %v48847.p = getelementptr i64, ptr %v48843, i64 2
   %v48847 = load i64, ptr %v48847.p
-  %v48848 = call i64 @"std/utf8.Valid"(i64 %v48845, i64 %v48846, i64 %v48847)
+  %v48848 = call i64 @"std/strings.Valid"(i64 %v48845, i64 %v48846, i64 %v48847)
   call void @"rt.print_int"(i64 %v48718)
   %v48849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v48849)
@@ -103572,7 +103637,7 @@ b453:
   %v49116 = load i64, ptr %v49116.p
   %v49117.p = getelementptr i64, ptr %v49113, i64 2
   %v49117 = load i64, ptr %v49117.p
-  %v49118 = call i64 @"std/utf8.IndexInvalid"(i64 %v49115, i64 %v49116, i64 %v49117)
+  %v49118 = call i64 @"std/strings.IndexInvalid"(i64 %v49115, i64 %v49116, i64 %v49117)
   %v49119 = add i64 0, 97
   %v49120 = add i64 0, 97
   %v49121 = add i64 0, 97
@@ -103833,7 +103898,7 @@ b453:
   %v49246 = load i64, ptr %v49246.p
   %v49247.p = getelementptr i64, ptr %v49243, i64 2
   %v49247 = load i64, ptr %v49247.p
-  %v49248 = call i64 @"std/utf8.Valid"(i64 %v49245, i64 %v49246, i64 %v49247)
+  %v49248 = call i64 @"std/strings.Valid"(i64 %v49245, i64 %v49246, i64 %v49247)
   call void @"rt.print_int"(i64 %v49118)
   %v49249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v49249)
@@ -104389,7 +104454,7 @@ b456:
   %v49516 = load i64, ptr %v49516.p
   %v49517.p = getelementptr i64, ptr %v49513, i64 2
   %v49517 = load i64, ptr %v49517.p
-  %v49518 = call i64 @"std/utf8.IndexInvalid"(i64 %v49515, i64 %v49516, i64 %v49517)
+  %v49518 = call i64 @"std/strings.IndexInvalid"(i64 %v49515, i64 %v49516, i64 %v49517)
   %v49519 = add i64 0, 97
   %v49520 = add i64 0, 97
   %v49521 = add i64 0, 97
@@ -104650,7 +104715,7 @@ b456:
   %v49646 = load i64, ptr %v49646.p
   %v49647.p = getelementptr i64, ptr %v49643, i64 2
   %v49647 = load i64, ptr %v49647.p
-  %v49648 = call i64 @"std/utf8.Valid"(i64 %v49645, i64 %v49646, i64 %v49647)
+  %v49648 = call i64 @"std/strings.Valid"(i64 %v49645, i64 %v49646, i64 %v49647)
   call void @"rt.print_int"(i64 %v49518)
   %v49649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v49649)
@@ -105206,7 +105271,7 @@ b459:
   %v49916 = load i64, ptr %v49916.p
   %v49917.p = getelementptr i64, ptr %v49913, i64 2
   %v49917 = load i64, ptr %v49917.p
-  %v49918 = call i64 @"std/utf8.IndexInvalid"(i64 %v49915, i64 %v49916, i64 %v49917)
+  %v49918 = call i64 @"std/strings.IndexInvalid"(i64 %v49915, i64 %v49916, i64 %v49917)
   %v49919 = add i64 0, 97
   %v49920 = add i64 0, 97
   %v49921 = add i64 0, 97
@@ -105467,7 +105532,7 @@ b459:
   %v50046 = load i64, ptr %v50046.p
   %v50047.p = getelementptr i64, ptr %v50043, i64 2
   %v50047 = load i64, ptr %v50047.p
-  %v50048 = call i64 @"std/utf8.Valid"(i64 %v50045, i64 %v50046, i64 %v50047)
+  %v50048 = call i64 @"std/strings.Valid"(i64 %v50045, i64 %v50046, i64 %v50047)
   call void @"rt.print_int"(i64 %v49918)
   %v50049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v50049)
@@ -106023,7 +106088,7 @@ b462:
   %v50316 = load i64, ptr %v50316.p
   %v50317.p = getelementptr i64, ptr %v50313, i64 2
   %v50317 = load i64, ptr %v50317.p
-  %v50318 = call i64 @"std/utf8.IndexInvalid"(i64 %v50315, i64 %v50316, i64 %v50317)
+  %v50318 = call i64 @"std/strings.IndexInvalid"(i64 %v50315, i64 %v50316, i64 %v50317)
   %v50319 = add i64 0, 97
   %v50320 = add i64 0, 97
   %v50321 = add i64 0, 97
@@ -106284,7 +106349,7 @@ b462:
   %v50446 = load i64, ptr %v50446.p
   %v50447.p = getelementptr i64, ptr %v50443, i64 2
   %v50447 = load i64, ptr %v50447.p
-  %v50448 = call i64 @"std/utf8.Valid"(i64 %v50445, i64 %v50446, i64 %v50447)
+  %v50448 = call i64 @"std/strings.Valid"(i64 %v50445, i64 %v50446, i64 %v50447)
   call void @"rt.print_int"(i64 %v50318)
   %v50449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v50449)
@@ -106840,7 +106905,7 @@ b465:
   %v50716 = load i64, ptr %v50716.p
   %v50717.p = getelementptr i64, ptr %v50713, i64 2
   %v50717 = load i64, ptr %v50717.p
-  %v50718 = call i64 @"std/utf8.IndexInvalid"(i64 %v50715, i64 %v50716, i64 %v50717)
+  %v50718 = call i64 @"std/strings.IndexInvalid"(i64 %v50715, i64 %v50716, i64 %v50717)
   %v50719 = add i64 0, 97
   %v50720 = add i64 0, 97
   %v50721 = add i64 0, 97
@@ -107101,7 +107166,7 @@ b465:
   %v50846 = load i64, ptr %v50846.p
   %v50847.p = getelementptr i64, ptr %v50843, i64 2
   %v50847 = load i64, ptr %v50847.p
-  %v50848 = call i64 @"std/utf8.Valid"(i64 %v50845, i64 %v50846, i64 %v50847)
+  %v50848 = call i64 @"std/strings.Valid"(i64 %v50845, i64 %v50846, i64 %v50847)
   call void @"rt.print_int"(i64 %v50718)
   %v50849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v50849)
@@ -107657,7 +107722,7 @@ b468:
   %v51116 = load i64, ptr %v51116.p
   %v51117.p = getelementptr i64, ptr %v51113, i64 2
   %v51117 = load i64, ptr %v51117.p
-  %v51118 = call i64 @"std/utf8.IndexInvalid"(i64 %v51115, i64 %v51116, i64 %v51117)
+  %v51118 = call i64 @"std/strings.IndexInvalid"(i64 %v51115, i64 %v51116, i64 %v51117)
   %v51119 = add i64 0, 97
   %v51120 = add i64 0, 97
   %v51121 = add i64 0, 97
@@ -107918,7 +107983,7 @@ b468:
   %v51246 = load i64, ptr %v51246.p
   %v51247.p = getelementptr i64, ptr %v51243, i64 2
   %v51247 = load i64, ptr %v51247.p
-  %v51248 = call i64 @"std/utf8.Valid"(i64 %v51245, i64 %v51246, i64 %v51247)
+  %v51248 = call i64 @"std/strings.Valid"(i64 %v51245, i64 %v51246, i64 %v51247)
   call void @"rt.print_int"(i64 %v51118)
   %v51249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v51249)
@@ -108474,7 +108539,7 @@ b471:
   %v51516 = load i64, ptr %v51516.p
   %v51517.p = getelementptr i64, ptr %v51513, i64 2
   %v51517 = load i64, ptr %v51517.p
-  %v51518 = call i64 @"std/utf8.IndexInvalid"(i64 %v51515, i64 %v51516, i64 %v51517)
+  %v51518 = call i64 @"std/strings.IndexInvalid"(i64 %v51515, i64 %v51516, i64 %v51517)
   %v51519 = add i64 0, 97
   %v51520 = add i64 0, 97
   %v51521 = add i64 0, 97
@@ -108735,7 +108800,7 @@ b471:
   %v51646 = load i64, ptr %v51646.p
   %v51647.p = getelementptr i64, ptr %v51643, i64 2
   %v51647 = load i64, ptr %v51647.p
-  %v51648 = call i64 @"std/utf8.Valid"(i64 %v51645, i64 %v51646, i64 %v51647)
+  %v51648 = call i64 @"std/strings.Valid"(i64 %v51645, i64 %v51646, i64 %v51647)
   call void @"rt.print_int"(i64 %v51518)
   %v51649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v51649)
@@ -109291,7 +109356,7 @@ b474:
   %v51916 = load i64, ptr %v51916.p
   %v51917.p = getelementptr i64, ptr %v51913, i64 2
   %v51917 = load i64, ptr %v51917.p
-  %v51918 = call i64 @"std/utf8.IndexInvalid"(i64 %v51915, i64 %v51916, i64 %v51917)
+  %v51918 = call i64 @"std/strings.IndexInvalid"(i64 %v51915, i64 %v51916, i64 %v51917)
   %v51919 = add i64 0, 97
   %v51920 = add i64 0, 97
   %v51921 = add i64 0, 97
@@ -109552,7 +109617,7 @@ b474:
   %v52046 = load i64, ptr %v52046.p
   %v52047.p = getelementptr i64, ptr %v52043, i64 2
   %v52047 = load i64, ptr %v52047.p
-  %v52048 = call i64 @"std/utf8.Valid"(i64 %v52045, i64 %v52046, i64 %v52047)
+  %v52048 = call i64 @"std/strings.Valid"(i64 %v52045, i64 %v52046, i64 %v52047)
   call void @"rt.print_int"(i64 %v51918)
   %v52049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v52049)
@@ -110108,7 +110173,7 @@ b477:
   %v52316 = load i64, ptr %v52316.p
   %v52317.p = getelementptr i64, ptr %v52313, i64 2
   %v52317 = load i64, ptr %v52317.p
-  %v52318 = call i64 @"std/utf8.IndexInvalid"(i64 %v52315, i64 %v52316, i64 %v52317)
+  %v52318 = call i64 @"std/strings.IndexInvalid"(i64 %v52315, i64 %v52316, i64 %v52317)
   %v52319 = add i64 0, 97
   %v52320 = add i64 0, 97
   %v52321 = add i64 0, 97
@@ -110369,7 +110434,7 @@ b477:
   %v52446 = load i64, ptr %v52446.p
   %v52447.p = getelementptr i64, ptr %v52443, i64 2
   %v52447 = load i64, ptr %v52447.p
-  %v52448 = call i64 @"std/utf8.Valid"(i64 %v52445, i64 %v52446, i64 %v52447)
+  %v52448 = call i64 @"std/strings.Valid"(i64 %v52445, i64 %v52446, i64 %v52447)
   call void @"rt.print_int"(i64 %v52318)
   %v52449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v52449)
@@ -110925,7 +110990,7 @@ b480:
   %v52716 = load i64, ptr %v52716.p
   %v52717.p = getelementptr i64, ptr %v52713, i64 2
   %v52717 = load i64, ptr %v52717.p
-  %v52718 = call i64 @"std/utf8.IndexInvalid"(i64 %v52715, i64 %v52716, i64 %v52717)
+  %v52718 = call i64 @"std/strings.IndexInvalid"(i64 %v52715, i64 %v52716, i64 %v52717)
   %v52719 = add i64 0, 97
   %v52720 = add i64 0, 97
   %v52721 = add i64 0, 97
@@ -111186,7 +111251,7 @@ b480:
   %v52846 = load i64, ptr %v52846.p
   %v52847.p = getelementptr i64, ptr %v52843, i64 2
   %v52847 = load i64, ptr %v52847.p
-  %v52848 = call i64 @"std/utf8.Valid"(i64 %v52845, i64 %v52846, i64 %v52847)
+  %v52848 = call i64 @"std/strings.Valid"(i64 %v52845, i64 %v52846, i64 %v52847)
   call void @"rt.print_int"(i64 %v52718)
   %v52849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v52849)
@@ -111742,7 +111807,7 @@ b483:
   %v53116 = load i64, ptr %v53116.p
   %v53117.p = getelementptr i64, ptr %v53113, i64 2
   %v53117 = load i64, ptr %v53117.p
-  %v53118 = call i64 @"std/utf8.IndexInvalid"(i64 %v53115, i64 %v53116, i64 %v53117)
+  %v53118 = call i64 @"std/strings.IndexInvalid"(i64 %v53115, i64 %v53116, i64 %v53117)
   %v53119 = add i64 0, 97
   %v53120 = add i64 0, 97
   %v53121 = add i64 0, 97
@@ -112003,7 +112068,7 @@ b483:
   %v53246 = load i64, ptr %v53246.p
   %v53247.p = getelementptr i64, ptr %v53243, i64 2
   %v53247 = load i64, ptr %v53247.p
-  %v53248 = call i64 @"std/utf8.Valid"(i64 %v53245, i64 %v53246, i64 %v53247)
+  %v53248 = call i64 @"std/strings.Valid"(i64 %v53245, i64 %v53246, i64 %v53247)
   call void @"rt.print_int"(i64 %v53118)
   %v53249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v53249)
@@ -112559,7 +112624,7 @@ b486:
   %v53516 = load i64, ptr %v53516.p
   %v53517.p = getelementptr i64, ptr %v53513, i64 2
   %v53517 = load i64, ptr %v53517.p
-  %v53518 = call i64 @"std/utf8.IndexInvalid"(i64 %v53515, i64 %v53516, i64 %v53517)
+  %v53518 = call i64 @"std/strings.IndexInvalid"(i64 %v53515, i64 %v53516, i64 %v53517)
   %v53519 = add i64 0, 97
   %v53520 = add i64 0, 97
   %v53521 = add i64 0, 97
@@ -112820,7 +112885,7 @@ b486:
   %v53646 = load i64, ptr %v53646.p
   %v53647.p = getelementptr i64, ptr %v53643, i64 2
   %v53647 = load i64, ptr %v53647.p
-  %v53648 = call i64 @"std/utf8.Valid"(i64 %v53645, i64 %v53646, i64 %v53647)
+  %v53648 = call i64 @"std/strings.Valid"(i64 %v53645, i64 %v53646, i64 %v53647)
   call void @"rt.print_int"(i64 %v53518)
   %v53649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v53649)
@@ -113376,7 +113441,7 @@ b489:
   %v53916 = load i64, ptr %v53916.p
   %v53917.p = getelementptr i64, ptr %v53913, i64 2
   %v53917 = load i64, ptr %v53917.p
-  %v53918 = call i64 @"std/utf8.IndexInvalid"(i64 %v53915, i64 %v53916, i64 %v53917)
+  %v53918 = call i64 @"std/strings.IndexInvalid"(i64 %v53915, i64 %v53916, i64 %v53917)
   %v53919 = add i64 0, 97
   %v53920 = add i64 0, 97
   %v53921 = add i64 0, 97
@@ -113637,7 +113702,7 @@ b489:
   %v54046 = load i64, ptr %v54046.p
   %v54047.p = getelementptr i64, ptr %v54043, i64 2
   %v54047 = load i64, ptr %v54047.p
-  %v54048 = call i64 @"std/utf8.Valid"(i64 %v54045, i64 %v54046, i64 %v54047)
+  %v54048 = call i64 @"std/strings.Valid"(i64 %v54045, i64 %v54046, i64 %v54047)
   call void @"rt.print_int"(i64 %v53918)
   %v54049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v54049)
@@ -114193,7 +114258,7 @@ b492:
   %v54316 = load i64, ptr %v54316.p
   %v54317.p = getelementptr i64, ptr %v54313, i64 2
   %v54317 = load i64, ptr %v54317.p
-  %v54318 = call i64 @"std/utf8.IndexInvalid"(i64 %v54315, i64 %v54316, i64 %v54317)
+  %v54318 = call i64 @"std/strings.IndexInvalid"(i64 %v54315, i64 %v54316, i64 %v54317)
   %v54319 = add i64 0, 97
   %v54320 = add i64 0, 97
   %v54321 = add i64 0, 97
@@ -114454,7 +114519,7 @@ b492:
   %v54446 = load i64, ptr %v54446.p
   %v54447.p = getelementptr i64, ptr %v54443, i64 2
   %v54447 = load i64, ptr %v54447.p
-  %v54448 = call i64 @"std/utf8.Valid"(i64 %v54445, i64 %v54446, i64 %v54447)
+  %v54448 = call i64 @"std/strings.Valid"(i64 %v54445, i64 %v54446, i64 %v54447)
   call void @"rt.print_int"(i64 %v54318)
   %v54449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v54449)
@@ -115010,7 +115075,7 @@ b495:
   %v54716 = load i64, ptr %v54716.p
   %v54717.p = getelementptr i64, ptr %v54713, i64 2
   %v54717 = load i64, ptr %v54717.p
-  %v54718 = call i64 @"std/utf8.IndexInvalid"(i64 %v54715, i64 %v54716, i64 %v54717)
+  %v54718 = call i64 @"std/strings.IndexInvalid"(i64 %v54715, i64 %v54716, i64 %v54717)
   %v54719 = add i64 0, 97
   %v54720 = add i64 0, 97
   %v54721 = add i64 0, 97
@@ -115271,7 +115336,7 @@ b495:
   %v54846 = load i64, ptr %v54846.p
   %v54847.p = getelementptr i64, ptr %v54843, i64 2
   %v54847 = load i64, ptr %v54847.p
-  %v54848 = call i64 @"std/utf8.Valid"(i64 %v54845, i64 %v54846, i64 %v54847)
+  %v54848 = call i64 @"std/strings.Valid"(i64 %v54845, i64 %v54846, i64 %v54847)
   call void @"rt.print_int"(i64 %v54718)
   %v54849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v54849)
@@ -115827,7 +115892,7 @@ b498:
   %v55116 = load i64, ptr %v55116.p
   %v55117.p = getelementptr i64, ptr %v55113, i64 2
   %v55117 = load i64, ptr %v55117.p
-  %v55118 = call i64 @"std/utf8.IndexInvalid"(i64 %v55115, i64 %v55116, i64 %v55117)
+  %v55118 = call i64 @"std/strings.IndexInvalid"(i64 %v55115, i64 %v55116, i64 %v55117)
   %v55119 = add i64 0, 97
   %v55120 = add i64 0, 97
   %v55121 = add i64 0, 97
@@ -116088,7 +116153,7 @@ b498:
   %v55246 = load i64, ptr %v55246.p
   %v55247.p = getelementptr i64, ptr %v55243, i64 2
   %v55247 = load i64, ptr %v55247.p
-  %v55248 = call i64 @"std/utf8.Valid"(i64 %v55245, i64 %v55246, i64 %v55247)
+  %v55248 = call i64 @"std/strings.Valid"(i64 %v55245, i64 %v55246, i64 %v55247)
   call void @"rt.print_int"(i64 %v55118)
   %v55249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v55249)
@@ -116644,7 +116709,7 @@ b501:
   %v55516 = load i64, ptr %v55516.p
   %v55517.p = getelementptr i64, ptr %v55513, i64 2
   %v55517 = load i64, ptr %v55517.p
-  %v55518 = call i64 @"std/utf8.IndexInvalid"(i64 %v55515, i64 %v55516, i64 %v55517)
+  %v55518 = call i64 @"std/strings.IndexInvalid"(i64 %v55515, i64 %v55516, i64 %v55517)
   %v55519 = add i64 0, 97
   %v55520 = add i64 0, 97
   %v55521 = add i64 0, 97
@@ -116905,7 +116970,7 @@ b501:
   %v55646 = load i64, ptr %v55646.p
   %v55647.p = getelementptr i64, ptr %v55643, i64 2
   %v55647 = load i64, ptr %v55647.p
-  %v55648 = call i64 @"std/utf8.Valid"(i64 %v55645, i64 %v55646, i64 %v55647)
+  %v55648 = call i64 @"std/strings.Valid"(i64 %v55645, i64 %v55646, i64 %v55647)
   call void @"rt.print_int"(i64 %v55518)
   %v55649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v55649)
@@ -117461,7 +117526,7 @@ b504:
   %v55916 = load i64, ptr %v55916.p
   %v55917.p = getelementptr i64, ptr %v55913, i64 2
   %v55917 = load i64, ptr %v55917.p
-  %v55918 = call i64 @"std/utf8.IndexInvalid"(i64 %v55915, i64 %v55916, i64 %v55917)
+  %v55918 = call i64 @"std/strings.IndexInvalid"(i64 %v55915, i64 %v55916, i64 %v55917)
   %v55919 = add i64 0, 97
   %v55920 = add i64 0, 97
   %v55921 = add i64 0, 97
@@ -117722,7 +117787,7 @@ b504:
   %v56046 = load i64, ptr %v56046.p
   %v56047.p = getelementptr i64, ptr %v56043, i64 2
   %v56047 = load i64, ptr %v56047.p
-  %v56048 = call i64 @"std/utf8.Valid"(i64 %v56045, i64 %v56046, i64 %v56047)
+  %v56048 = call i64 @"std/strings.Valid"(i64 %v56045, i64 %v56046, i64 %v56047)
   call void @"rt.print_int"(i64 %v55918)
   %v56049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v56049)
@@ -118278,7 +118343,7 @@ b507:
   %v56316 = load i64, ptr %v56316.p
   %v56317.p = getelementptr i64, ptr %v56313, i64 2
   %v56317 = load i64, ptr %v56317.p
-  %v56318 = call i64 @"std/utf8.IndexInvalid"(i64 %v56315, i64 %v56316, i64 %v56317)
+  %v56318 = call i64 @"std/strings.IndexInvalid"(i64 %v56315, i64 %v56316, i64 %v56317)
   %v56319 = add i64 0, 97
   %v56320 = add i64 0, 97
   %v56321 = add i64 0, 97
@@ -118539,7 +118604,7 @@ b507:
   %v56446 = load i64, ptr %v56446.p
   %v56447.p = getelementptr i64, ptr %v56443, i64 2
   %v56447 = load i64, ptr %v56447.p
-  %v56448 = call i64 @"std/utf8.Valid"(i64 %v56445, i64 %v56446, i64 %v56447)
+  %v56448 = call i64 @"std/strings.Valid"(i64 %v56445, i64 %v56446, i64 %v56447)
   call void @"rt.print_int"(i64 %v56318)
   %v56449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v56449)
@@ -119095,7 +119160,7 @@ b510:
   %v56716 = load i64, ptr %v56716.p
   %v56717.p = getelementptr i64, ptr %v56713, i64 2
   %v56717 = load i64, ptr %v56717.p
-  %v56718 = call i64 @"std/utf8.IndexInvalid"(i64 %v56715, i64 %v56716, i64 %v56717)
+  %v56718 = call i64 @"std/strings.IndexInvalid"(i64 %v56715, i64 %v56716, i64 %v56717)
   %v56719 = add i64 0, 97
   %v56720 = add i64 0, 97
   %v56721 = add i64 0, 97
@@ -119356,7 +119421,7 @@ b510:
   %v56846 = load i64, ptr %v56846.p
   %v56847.p = getelementptr i64, ptr %v56843, i64 2
   %v56847 = load i64, ptr %v56847.p
-  %v56848 = call i64 @"std/utf8.Valid"(i64 %v56845, i64 %v56846, i64 %v56847)
+  %v56848 = call i64 @"std/strings.Valid"(i64 %v56845, i64 %v56846, i64 %v56847)
   call void @"rt.print_int"(i64 %v56718)
   %v56849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v56849)
@@ -119912,7 +119977,7 @@ b513:
   %v57116 = load i64, ptr %v57116.p
   %v57117.p = getelementptr i64, ptr %v57113, i64 2
   %v57117 = load i64, ptr %v57117.p
-  %v57118 = call i64 @"std/utf8.IndexInvalid"(i64 %v57115, i64 %v57116, i64 %v57117)
+  %v57118 = call i64 @"std/strings.IndexInvalid"(i64 %v57115, i64 %v57116, i64 %v57117)
   %v57119 = add i64 0, 97
   %v57120 = add i64 0, 97
   %v57121 = add i64 0, 97
@@ -120173,7 +120238,7 @@ b513:
   %v57246 = load i64, ptr %v57246.p
   %v57247.p = getelementptr i64, ptr %v57243, i64 2
   %v57247 = load i64, ptr %v57247.p
-  %v57248 = call i64 @"std/utf8.Valid"(i64 %v57245, i64 %v57246, i64 %v57247)
+  %v57248 = call i64 @"std/strings.Valid"(i64 %v57245, i64 %v57246, i64 %v57247)
   call void @"rt.print_int"(i64 %v57118)
   %v57249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v57249)
@@ -120729,7 +120794,7 @@ b516:
   %v57516 = load i64, ptr %v57516.p
   %v57517.p = getelementptr i64, ptr %v57513, i64 2
   %v57517 = load i64, ptr %v57517.p
-  %v57518 = call i64 @"std/utf8.IndexInvalid"(i64 %v57515, i64 %v57516, i64 %v57517)
+  %v57518 = call i64 @"std/strings.IndexInvalid"(i64 %v57515, i64 %v57516, i64 %v57517)
   %v57519 = add i64 0, 97
   %v57520 = add i64 0, 97
   %v57521 = add i64 0, 97
@@ -120990,7 +121055,7 @@ b516:
   %v57646 = load i64, ptr %v57646.p
   %v57647.p = getelementptr i64, ptr %v57643, i64 2
   %v57647 = load i64, ptr %v57647.p
-  %v57648 = call i64 @"std/utf8.Valid"(i64 %v57645, i64 %v57646, i64 %v57647)
+  %v57648 = call i64 @"std/strings.Valid"(i64 %v57645, i64 %v57646, i64 %v57647)
   call void @"rt.print_int"(i64 %v57518)
   %v57649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v57649)
@@ -121546,7 +121611,7 @@ b519:
   %v57916 = load i64, ptr %v57916.p
   %v57917.p = getelementptr i64, ptr %v57913, i64 2
   %v57917 = load i64, ptr %v57917.p
-  %v57918 = call i64 @"std/utf8.IndexInvalid"(i64 %v57915, i64 %v57916, i64 %v57917)
+  %v57918 = call i64 @"std/strings.IndexInvalid"(i64 %v57915, i64 %v57916, i64 %v57917)
   %v57919 = add i64 0, 97
   %v57920 = add i64 0, 97
   %v57921 = add i64 0, 97
@@ -121807,7 +121872,7 @@ b519:
   %v58046 = load i64, ptr %v58046.p
   %v58047.p = getelementptr i64, ptr %v58043, i64 2
   %v58047 = load i64, ptr %v58047.p
-  %v58048 = call i64 @"std/utf8.Valid"(i64 %v58045, i64 %v58046, i64 %v58047)
+  %v58048 = call i64 @"std/strings.Valid"(i64 %v58045, i64 %v58046, i64 %v58047)
   call void @"rt.print_int"(i64 %v57918)
   %v58049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v58049)
@@ -122363,7 +122428,7 @@ b522:
   %v58316 = load i64, ptr %v58316.p
   %v58317.p = getelementptr i64, ptr %v58313, i64 2
   %v58317 = load i64, ptr %v58317.p
-  %v58318 = call i64 @"std/utf8.IndexInvalid"(i64 %v58315, i64 %v58316, i64 %v58317)
+  %v58318 = call i64 @"std/strings.IndexInvalid"(i64 %v58315, i64 %v58316, i64 %v58317)
   %v58319 = add i64 0, 97
   %v58320 = add i64 0, 97
   %v58321 = add i64 0, 97
@@ -122624,7 +122689,7 @@ b522:
   %v58446 = load i64, ptr %v58446.p
   %v58447.p = getelementptr i64, ptr %v58443, i64 2
   %v58447 = load i64, ptr %v58447.p
-  %v58448 = call i64 @"std/utf8.Valid"(i64 %v58445, i64 %v58446, i64 %v58447)
+  %v58448 = call i64 @"std/strings.Valid"(i64 %v58445, i64 %v58446, i64 %v58447)
   call void @"rt.print_int"(i64 %v58318)
   %v58449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v58449)
@@ -123180,7 +123245,7 @@ b525:
   %v58716 = load i64, ptr %v58716.p
   %v58717.p = getelementptr i64, ptr %v58713, i64 2
   %v58717 = load i64, ptr %v58717.p
-  %v58718 = call i64 @"std/utf8.IndexInvalid"(i64 %v58715, i64 %v58716, i64 %v58717)
+  %v58718 = call i64 @"std/strings.IndexInvalid"(i64 %v58715, i64 %v58716, i64 %v58717)
   %v58719 = add i64 0, 97
   %v58720 = add i64 0, 97
   %v58721 = add i64 0, 97
@@ -123441,7 +123506,7 @@ b525:
   %v58846 = load i64, ptr %v58846.p
   %v58847.p = getelementptr i64, ptr %v58843, i64 2
   %v58847 = load i64, ptr %v58847.p
-  %v58848 = call i64 @"std/utf8.Valid"(i64 %v58845, i64 %v58846, i64 %v58847)
+  %v58848 = call i64 @"std/strings.Valid"(i64 %v58845, i64 %v58846, i64 %v58847)
   call void @"rt.print_int"(i64 %v58718)
   %v58849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v58849)
@@ -123997,7 +124062,7 @@ b528:
   %v59116 = load i64, ptr %v59116.p
   %v59117.p = getelementptr i64, ptr %v59113, i64 2
   %v59117 = load i64, ptr %v59117.p
-  %v59118 = call i64 @"std/utf8.IndexInvalid"(i64 %v59115, i64 %v59116, i64 %v59117)
+  %v59118 = call i64 @"std/strings.IndexInvalid"(i64 %v59115, i64 %v59116, i64 %v59117)
   %v59119 = add i64 0, 97
   %v59120 = add i64 0, 97
   %v59121 = add i64 0, 97
@@ -124258,7 +124323,7 @@ b528:
   %v59246 = load i64, ptr %v59246.p
   %v59247.p = getelementptr i64, ptr %v59243, i64 2
   %v59247 = load i64, ptr %v59247.p
-  %v59248 = call i64 @"std/utf8.Valid"(i64 %v59245, i64 %v59246, i64 %v59247)
+  %v59248 = call i64 @"std/strings.Valid"(i64 %v59245, i64 %v59246, i64 %v59247)
   call void @"rt.print_int"(i64 %v59118)
   %v59249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v59249)
@@ -124814,7 +124879,7 @@ b531:
   %v59516 = load i64, ptr %v59516.p
   %v59517.p = getelementptr i64, ptr %v59513, i64 2
   %v59517 = load i64, ptr %v59517.p
-  %v59518 = call i64 @"std/utf8.IndexInvalid"(i64 %v59515, i64 %v59516, i64 %v59517)
+  %v59518 = call i64 @"std/strings.IndexInvalid"(i64 %v59515, i64 %v59516, i64 %v59517)
   %v59519 = add i64 0, 97
   %v59520 = add i64 0, 97
   %v59521 = add i64 0, 97
@@ -125075,7 +125140,7 @@ b531:
   %v59646 = load i64, ptr %v59646.p
   %v59647.p = getelementptr i64, ptr %v59643, i64 2
   %v59647 = load i64, ptr %v59647.p
-  %v59648 = call i64 @"std/utf8.Valid"(i64 %v59645, i64 %v59646, i64 %v59647)
+  %v59648 = call i64 @"std/strings.Valid"(i64 %v59645, i64 %v59646, i64 %v59647)
   call void @"rt.print_int"(i64 %v59518)
   %v59649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v59649)
@@ -125631,7 +125696,7 @@ b534:
   %v59916 = load i64, ptr %v59916.p
   %v59917.p = getelementptr i64, ptr %v59913, i64 2
   %v59917 = load i64, ptr %v59917.p
-  %v59918 = call i64 @"std/utf8.IndexInvalid"(i64 %v59915, i64 %v59916, i64 %v59917)
+  %v59918 = call i64 @"std/strings.IndexInvalid"(i64 %v59915, i64 %v59916, i64 %v59917)
   %v59919 = add i64 0, 97
   %v59920 = add i64 0, 97
   %v59921 = add i64 0, 97
@@ -125892,7 +125957,7 @@ b534:
   %v60046 = load i64, ptr %v60046.p
   %v60047.p = getelementptr i64, ptr %v60043, i64 2
   %v60047 = load i64, ptr %v60047.p
-  %v60048 = call i64 @"std/utf8.Valid"(i64 %v60045, i64 %v60046, i64 %v60047)
+  %v60048 = call i64 @"std/strings.Valid"(i64 %v60045, i64 %v60046, i64 %v60047)
   call void @"rt.print_int"(i64 %v59918)
   %v60049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v60049)
@@ -126448,7 +126513,7 @@ b537:
   %v60316 = load i64, ptr %v60316.p
   %v60317.p = getelementptr i64, ptr %v60313, i64 2
   %v60317 = load i64, ptr %v60317.p
-  %v60318 = call i64 @"std/utf8.IndexInvalid"(i64 %v60315, i64 %v60316, i64 %v60317)
+  %v60318 = call i64 @"std/strings.IndexInvalid"(i64 %v60315, i64 %v60316, i64 %v60317)
   %v60319 = add i64 0, 97
   %v60320 = add i64 0, 97
   %v60321 = add i64 0, 97
@@ -126709,7 +126774,7 @@ b537:
   %v60446 = load i64, ptr %v60446.p
   %v60447.p = getelementptr i64, ptr %v60443, i64 2
   %v60447 = load i64, ptr %v60447.p
-  %v60448 = call i64 @"std/utf8.Valid"(i64 %v60445, i64 %v60446, i64 %v60447)
+  %v60448 = call i64 @"std/strings.Valid"(i64 %v60445, i64 %v60446, i64 %v60447)
   call void @"rt.print_int"(i64 %v60318)
   %v60449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v60449)
@@ -127265,7 +127330,7 @@ b540:
   %v60716 = load i64, ptr %v60716.p
   %v60717.p = getelementptr i64, ptr %v60713, i64 2
   %v60717 = load i64, ptr %v60717.p
-  %v60718 = call i64 @"std/utf8.IndexInvalid"(i64 %v60715, i64 %v60716, i64 %v60717)
+  %v60718 = call i64 @"std/strings.IndexInvalid"(i64 %v60715, i64 %v60716, i64 %v60717)
   %v60719 = add i64 0, 97
   %v60720 = add i64 0, 97
   %v60721 = add i64 0, 97
@@ -127526,7 +127591,7 @@ b540:
   %v60846 = load i64, ptr %v60846.p
   %v60847.p = getelementptr i64, ptr %v60843, i64 2
   %v60847 = load i64, ptr %v60847.p
-  %v60848 = call i64 @"std/utf8.Valid"(i64 %v60845, i64 %v60846, i64 %v60847)
+  %v60848 = call i64 @"std/strings.Valid"(i64 %v60845, i64 %v60846, i64 %v60847)
   call void @"rt.print_int"(i64 %v60718)
   %v60849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v60849)
@@ -128082,7 +128147,7 @@ b543:
   %v61116 = load i64, ptr %v61116.p
   %v61117.p = getelementptr i64, ptr %v61113, i64 2
   %v61117 = load i64, ptr %v61117.p
-  %v61118 = call i64 @"std/utf8.IndexInvalid"(i64 %v61115, i64 %v61116, i64 %v61117)
+  %v61118 = call i64 @"std/strings.IndexInvalid"(i64 %v61115, i64 %v61116, i64 %v61117)
   %v61119 = add i64 0, 97
   %v61120 = add i64 0, 97
   %v61121 = add i64 0, 97
@@ -128343,7 +128408,7 @@ b543:
   %v61246 = load i64, ptr %v61246.p
   %v61247.p = getelementptr i64, ptr %v61243, i64 2
   %v61247 = load i64, ptr %v61247.p
-  %v61248 = call i64 @"std/utf8.Valid"(i64 %v61245, i64 %v61246, i64 %v61247)
+  %v61248 = call i64 @"std/strings.Valid"(i64 %v61245, i64 %v61246, i64 %v61247)
   call void @"rt.print_int"(i64 %v61118)
   %v61249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v61249)
@@ -128899,7 +128964,7 @@ b546:
   %v61516 = load i64, ptr %v61516.p
   %v61517.p = getelementptr i64, ptr %v61513, i64 2
   %v61517 = load i64, ptr %v61517.p
-  %v61518 = call i64 @"std/utf8.IndexInvalid"(i64 %v61515, i64 %v61516, i64 %v61517)
+  %v61518 = call i64 @"std/strings.IndexInvalid"(i64 %v61515, i64 %v61516, i64 %v61517)
   %v61519 = add i64 0, 97
   %v61520 = add i64 0, 97
   %v61521 = add i64 0, 97
@@ -129160,7 +129225,7 @@ b546:
   %v61646 = load i64, ptr %v61646.p
   %v61647.p = getelementptr i64, ptr %v61643, i64 2
   %v61647 = load i64, ptr %v61647.p
-  %v61648 = call i64 @"std/utf8.Valid"(i64 %v61645, i64 %v61646, i64 %v61647)
+  %v61648 = call i64 @"std/strings.Valid"(i64 %v61645, i64 %v61646, i64 %v61647)
   call void @"rt.print_int"(i64 %v61518)
   %v61649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v61649)
@@ -129716,7 +129781,7 @@ b549:
   %v61916 = load i64, ptr %v61916.p
   %v61917.p = getelementptr i64, ptr %v61913, i64 2
   %v61917 = load i64, ptr %v61917.p
-  %v61918 = call i64 @"std/utf8.IndexInvalid"(i64 %v61915, i64 %v61916, i64 %v61917)
+  %v61918 = call i64 @"std/strings.IndexInvalid"(i64 %v61915, i64 %v61916, i64 %v61917)
   %v61919 = add i64 0, 97
   %v61920 = add i64 0, 97
   %v61921 = add i64 0, 97
@@ -129977,7 +130042,7 @@ b549:
   %v62046 = load i64, ptr %v62046.p
   %v62047.p = getelementptr i64, ptr %v62043, i64 2
   %v62047 = load i64, ptr %v62047.p
-  %v62048 = call i64 @"std/utf8.Valid"(i64 %v62045, i64 %v62046, i64 %v62047)
+  %v62048 = call i64 @"std/strings.Valid"(i64 %v62045, i64 %v62046, i64 %v62047)
   call void @"rt.print_int"(i64 %v61918)
   %v62049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v62049)
@@ -130533,7 +130598,7 @@ b552:
   %v62316 = load i64, ptr %v62316.p
   %v62317.p = getelementptr i64, ptr %v62313, i64 2
   %v62317 = load i64, ptr %v62317.p
-  %v62318 = call i64 @"std/utf8.IndexInvalid"(i64 %v62315, i64 %v62316, i64 %v62317)
+  %v62318 = call i64 @"std/strings.IndexInvalid"(i64 %v62315, i64 %v62316, i64 %v62317)
   %v62319 = add i64 0, 195
   %v62320 = add i64 0, 169
   %v62321 = add i64 0, 195
@@ -130794,7 +130859,7 @@ b552:
   %v62446 = load i64, ptr %v62446.p
   %v62447.p = getelementptr i64, ptr %v62443, i64 2
   %v62447 = load i64, ptr %v62447.p
-  %v62448 = call i64 @"std/utf8.Valid"(i64 %v62445, i64 %v62446, i64 %v62447)
+  %v62448 = call i64 @"std/strings.Valid"(i64 %v62445, i64 %v62446, i64 %v62447)
   call void @"rt.print_int"(i64 %v62318)
   %v62449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v62449)
@@ -131350,7 +131415,7 @@ b555:
   %v62716 = load i64, ptr %v62716.p
   %v62717.p = getelementptr i64, ptr %v62713, i64 2
   %v62717 = load i64, ptr %v62717.p
-  %v62718 = call i64 @"std/utf8.IndexInvalid"(i64 %v62715, i64 %v62716, i64 %v62717)
+  %v62718 = call i64 @"std/strings.IndexInvalid"(i64 %v62715, i64 %v62716, i64 %v62717)
   %v62719 = add i64 0, 195
   %v62720 = add i64 0, 169
   %v62721 = add i64 0, 195
@@ -131611,7 +131676,7 @@ b555:
   %v62846 = load i64, ptr %v62846.p
   %v62847.p = getelementptr i64, ptr %v62843, i64 2
   %v62847 = load i64, ptr %v62847.p
-  %v62848 = call i64 @"std/utf8.Valid"(i64 %v62845, i64 %v62846, i64 %v62847)
+  %v62848 = call i64 @"std/strings.Valid"(i64 %v62845, i64 %v62846, i64 %v62847)
   call void @"rt.print_int"(i64 %v62718)
   %v62849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v62849)
@@ -132167,7 +132232,7 @@ b558:
   %v63116 = load i64, ptr %v63116.p
   %v63117.p = getelementptr i64, ptr %v63113, i64 2
   %v63117 = load i64, ptr %v63117.p
-  %v63118 = call i64 @"std/utf8.IndexInvalid"(i64 %v63115, i64 %v63116, i64 %v63117)
+  %v63118 = call i64 @"std/strings.IndexInvalid"(i64 %v63115, i64 %v63116, i64 %v63117)
   %v63119 = add i64 0, 195
   %v63120 = add i64 0, 169
   %v63121 = add i64 0, 195
@@ -132428,7 +132493,7 @@ b558:
   %v63246 = load i64, ptr %v63246.p
   %v63247.p = getelementptr i64, ptr %v63243, i64 2
   %v63247 = load i64, ptr %v63247.p
-  %v63248 = call i64 @"std/utf8.Valid"(i64 %v63245, i64 %v63246, i64 %v63247)
+  %v63248 = call i64 @"std/strings.Valid"(i64 %v63245, i64 %v63246, i64 %v63247)
   call void @"rt.print_int"(i64 %v63118)
   %v63249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v63249)
@@ -132984,7 +133049,7 @@ b561:
   %v63516 = load i64, ptr %v63516.p
   %v63517.p = getelementptr i64, ptr %v63513, i64 2
   %v63517 = load i64, ptr %v63517.p
-  %v63518 = call i64 @"std/utf8.IndexInvalid"(i64 %v63515, i64 %v63516, i64 %v63517)
+  %v63518 = call i64 @"std/strings.IndexInvalid"(i64 %v63515, i64 %v63516, i64 %v63517)
   %v63519 = add i64 0, 195
   %v63520 = add i64 0, 169
   %v63521 = add i64 0, 195
@@ -133245,7 +133310,7 @@ b561:
   %v63646 = load i64, ptr %v63646.p
   %v63647.p = getelementptr i64, ptr %v63643, i64 2
   %v63647 = load i64, ptr %v63647.p
-  %v63648 = call i64 @"std/utf8.Valid"(i64 %v63645, i64 %v63646, i64 %v63647)
+  %v63648 = call i64 @"std/strings.Valid"(i64 %v63645, i64 %v63646, i64 %v63647)
   call void @"rt.print_int"(i64 %v63518)
   %v63649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v63649)
@@ -133801,7 +133866,7 @@ b564:
   %v63916 = load i64, ptr %v63916.p
   %v63917.p = getelementptr i64, ptr %v63913, i64 2
   %v63917 = load i64, ptr %v63917.p
-  %v63918 = call i64 @"std/utf8.IndexInvalid"(i64 %v63915, i64 %v63916, i64 %v63917)
+  %v63918 = call i64 @"std/strings.IndexInvalid"(i64 %v63915, i64 %v63916, i64 %v63917)
   %v63919 = add i64 0, 195
   %v63920 = add i64 0, 169
   %v63921 = add i64 0, 195
@@ -134062,7 +134127,7 @@ b564:
   %v64046 = load i64, ptr %v64046.p
   %v64047.p = getelementptr i64, ptr %v64043, i64 2
   %v64047 = load i64, ptr %v64047.p
-  %v64048 = call i64 @"std/utf8.Valid"(i64 %v64045, i64 %v64046, i64 %v64047)
+  %v64048 = call i64 @"std/strings.Valid"(i64 %v64045, i64 %v64046, i64 %v64047)
   call void @"rt.print_int"(i64 %v63918)
   %v64049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v64049)
@@ -134618,7 +134683,7 @@ b567:
   %v64316 = load i64, ptr %v64316.p
   %v64317.p = getelementptr i64, ptr %v64313, i64 2
   %v64317 = load i64, ptr %v64317.p
-  %v64318 = call i64 @"std/utf8.IndexInvalid"(i64 %v64315, i64 %v64316, i64 %v64317)
+  %v64318 = call i64 @"std/strings.IndexInvalid"(i64 %v64315, i64 %v64316, i64 %v64317)
   %v64319 = add i64 0, 195
   %v64320 = add i64 0, 169
   %v64321 = add i64 0, 195
@@ -134879,7 +134944,7 @@ b567:
   %v64446 = load i64, ptr %v64446.p
   %v64447.p = getelementptr i64, ptr %v64443, i64 2
   %v64447 = load i64, ptr %v64447.p
-  %v64448 = call i64 @"std/utf8.Valid"(i64 %v64445, i64 %v64446, i64 %v64447)
+  %v64448 = call i64 @"std/strings.Valid"(i64 %v64445, i64 %v64446, i64 %v64447)
   call void @"rt.print_int"(i64 %v64318)
   %v64449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v64449)
@@ -135435,7 +135500,7 @@ b570:
   %v64716 = load i64, ptr %v64716.p
   %v64717.p = getelementptr i64, ptr %v64713, i64 2
   %v64717 = load i64, ptr %v64717.p
-  %v64718 = call i64 @"std/utf8.IndexInvalid"(i64 %v64715, i64 %v64716, i64 %v64717)
+  %v64718 = call i64 @"std/strings.IndexInvalid"(i64 %v64715, i64 %v64716, i64 %v64717)
   %v64719 = add i64 0, 195
   %v64720 = add i64 0, 169
   %v64721 = add i64 0, 195
@@ -135696,7 +135761,7 @@ b570:
   %v64846 = load i64, ptr %v64846.p
   %v64847.p = getelementptr i64, ptr %v64843, i64 2
   %v64847 = load i64, ptr %v64847.p
-  %v64848 = call i64 @"std/utf8.Valid"(i64 %v64845, i64 %v64846, i64 %v64847)
+  %v64848 = call i64 @"std/strings.Valid"(i64 %v64845, i64 %v64846, i64 %v64847)
   call void @"rt.print_int"(i64 %v64718)
   %v64849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v64849)
@@ -136252,7 +136317,7 @@ b573:
   %v65116 = load i64, ptr %v65116.p
   %v65117.p = getelementptr i64, ptr %v65113, i64 2
   %v65117 = load i64, ptr %v65117.p
-  %v65118 = call i64 @"std/utf8.IndexInvalid"(i64 %v65115, i64 %v65116, i64 %v65117)
+  %v65118 = call i64 @"std/strings.IndexInvalid"(i64 %v65115, i64 %v65116, i64 %v65117)
   %v65119 = add i64 0, 195
   %v65120 = add i64 0, 169
   %v65121 = add i64 0, 195
@@ -136513,7 +136578,7 @@ b573:
   %v65246 = load i64, ptr %v65246.p
   %v65247.p = getelementptr i64, ptr %v65243, i64 2
   %v65247 = load i64, ptr %v65247.p
-  %v65248 = call i64 @"std/utf8.Valid"(i64 %v65245, i64 %v65246, i64 %v65247)
+  %v65248 = call i64 @"std/strings.Valid"(i64 %v65245, i64 %v65246, i64 %v65247)
   call void @"rt.print_int"(i64 %v65118)
   %v65249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v65249)
@@ -137069,7 +137134,7 @@ b576:
   %v65516 = load i64, ptr %v65516.p
   %v65517.p = getelementptr i64, ptr %v65513, i64 2
   %v65517 = load i64, ptr %v65517.p
-  %v65518 = call i64 @"std/utf8.IndexInvalid"(i64 %v65515, i64 %v65516, i64 %v65517)
+  %v65518 = call i64 @"std/strings.IndexInvalid"(i64 %v65515, i64 %v65516, i64 %v65517)
   %v65519 = add i64 0, 195
   %v65520 = add i64 0, 169
   %v65521 = add i64 0, 195
@@ -137330,7 +137395,7 @@ b576:
   %v65646 = load i64, ptr %v65646.p
   %v65647.p = getelementptr i64, ptr %v65643, i64 2
   %v65647 = load i64, ptr %v65647.p
-  %v65648 = call i64 @"std/utf8.Valid"(i64 %v65645, i64 %v65646, i64 %v65647)
+  %v65648 = call i64 @"std/strings.Valid"(i64 %v65645, i64 %v65646, i64 %v65647)
   call void @"rt.print_int"(i64 %v65518)
   %v65649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v65649)
@@ -137886,7 +137951,7 @@ b579:
   %v65916 = load i64, ptr %v65916.p
   %v65917.p = getelementptr i64, ptr %v65913, i64 2
   %v65917 = load i64, ptr %v65917.p
-  %v65918 = call i64 @"std/utf8.IndexInvalid"(i64 %v65915, i64 %v65916, i64 %v65917)
+  %v65918 = call i64 @"std/strings.IndexInvalid"(i64 %v65915, i64 %v65916, i64 %v65917)
   %v65919 = add i64 0, 195
   %v65920 = add i64 0, 169
   %v65921 = add i64 0, 195
@@ -138147,7 +138212,7 @@ b579:
   %v66046 = load i64, ptr %v66046.p
   %v66047.p = getelementptr i64, ptr %v66043, i64 2
   %v66047 = load i64, ptr %v66047.p
-  %v66048 = call i64 @"std/utf8.Valid"(i64 %v66045, i64 %v66046, i64 %v66047)
+  %v66048 = call i64 @"std/strings.Valid"(i64 %v66045, i64 %v66046, i64 %v66047)
   call void @"rt.print_int"(i64 %v65918)
   %v66049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v66049)
@@ -138703,7 +138768,7 @@ b582:
   %v66316 = load i64, ptr %v66316.p
   %v66317.p = getelementptr i64, ptr %v66313, i64 2
   %v66317 = load i64, ptr %v66317.p
-  %v66318 = call i64 @"std/utf8.IndexInvalid"(i64 %v66315, i64 %v66316, i64 %v66317)
+  %v66318 = call i64 @"std/strings.IndexInvalid"(i64 %v66315, i64 %v66316, i64 %v66317)
   %v66319 = add i64 0, 195
   %v66320 = add i64 0, 169
   %v66321 = add i64 0, 195
@@ -138964,7 +139029,7 @@ b582:
   %v66446 = load i64, ptr %v66446.p
   %v66447.p = getelementptr i64, ptr %v66443, i64 2
   %v66447 = load i64, ptr %v66447.p
-  %v66448 = call i64 @"std/utf8.Valid"(i64 %v66445, i64 %v66446, i64 %v66447)
+  %v66448 = call i64 @"std/strings.Valid"(i64 %v66445, i64 %v66446, i64 %v66447)
   call void @"rt.print_int"(i64 %v66318)
   %v66449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v66449)
@@ -139520,7 +139585,7 @@ b585:
   %v66716 = load i64, ptr %v66716.p
   %v66717.p = getelementptr i64, ptr %v66713, i64 2
   %v66717 = load i64, ptr %v66717.p
-  %v66718 = call i64 @"std/utf8.IndexInvalid"(i64 %v66715, i64 %v66716, i64 %v66717)
+  %v66718 = call i64 @"std/strings.IndexInvalid"(i64 %v66715, i64 %v66716, i64 %v66717)
   %v66719 = add i64 0, 195
   %v66720 = add i64 0, 169
   %v66721 = add i64 0, 195
@@ -139781,7 +139846,7 @@ b585:
   %v66846 = load i64, ptr %v66846.p
   %v66847.p = getelementptr i64, ptr %v66843, i64 2
   %v66847 = load i64, ptr %v66847.p
-  %v66848 = call i64 @"std/utf8.Valid"(i64 %v66845, i64 %v66846, i64 %v66847)
+  %v66848 = call i64 @"std/strings.Valid"(i64 %v66845, i64 %v66846, i64 %v66847)
   call void @"rt.print_int"(i64 %v66718)
   %v66849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v66849)
@@ -140337,7 +140402,7 @@ b588:
   %v67116 = load i64, ptr %v67116.p
   %v67117.p = getelementptr i64, ptr %v67113, i64 2
   %v67117 = load i64, ptr %v67117.p
-  %v67118 = call i64 @"std/utf8.IndexInvalid"(i64 %v67115, i64 %v67116, i64 %v67117)
+  %v67118 = call i64 @"std/strings.IndexInvalid"(i64 %v67115, i64 %v67116, i64 %v67117)
   %v67119 = add i64 0, 195
   %v67120 = add i64 0, 169
   %v67121 = add i64 0, 195
@@ -140598,7 +140663,7 @@ b588:
   %v67246 = load i64, ptr %v67246.p
   %v67247.p = getelementptr i64, ptr %v67243, i64 2
   %v67247 = load i64, ptr %v67247.p
-  %v67248 = call i64 @"std/utf8.Valid"(i64 %v67245, i64 %v67246, i64 %v67247)
+  %v67248 = call i64 @"std/strings.Valid"(i64 %v67245, i64 %v67246, i64 %v67247)
   call void @"rt.print_int"(i64 %v67118)
   %v67249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v67249)
@@ -141154,7 +141219,7 @@ b591:
   %v67516 = load i64, ptr %v67516.p
   %v67517.p = getelementptr i64, ptr %v67513, i64 2
   %v67517 = load i64, ptr %v67517.p
-  %v67518 = call i64 @"std/utf8.IndexInvalid"(i64 %v67515, i64 %v67516, i64 %v67517)
+  %v67518 = call i64 @"std/strings.IndexInvalid"(i64 %v67515, i64 %v67516, i64 %v67517)
   %v67519 = add i64 0, 195
   %v67520 = add i64 0, 169
   %v67521 = add i64 0, 195
@@ -141415,7 +141480,7 @@ b591:
   %v67646 = load i64, ptr %v67646.p
   %v67647.p = getelementptr i64, ptr %v67643, i64 2
   %v67647 = load i64, ptr %v67647.p
-  %v67648 = call i64 @"std/utf8.Valid"(i64 %v67645, i64 %v67646, i64 %v67647)
+  %v67648 = call i64 @"std/strings.Valid"(i64 %v67645, i64 %v67646, i64 %v67647)
   call void @"rt.print_int"(i64 %v67518)
   %v67649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v67649)
@@ -141971,7 +142036,7 @@ b594:
   %v67916 = load i64, ptr %v67916.p
   %v67917.p = getelementptr i64, ptr %v67913, i64 2
   %v67917 = load i64, ptr %v67917.p
-  %v67918 = call i64 @"std/utf8.IndexInvalid"(i64 %v67915, i64 %v67916, i64 %v67917)
+  %v67918 = call i64 @"std/strings.IndexInvalid"(i64 %v67915, i64 %v67916, i64 %v67917)
   %v67919 = add i64 0, 195
   %v67920 = add i64 0, 169
   %v67921 = add i64 0, 195
@@ -142232,7 +142297,7 @@ b594:
   %v68046 = load i64, ptr %v68046.p
   %v68047.p = getelementptr i64, ptr %v68043, i64 2
   %v68047 = load i64, ptr %v68047.p
-  %v68048 = call i64 @"std/utf8.Valid"(i64 %v68045, i64 %v68046, i64 %v68047)
+  %v68048 = call i64 @"std/strings.Valid"(i64 %v68045, i64 %v68046, i64 %v68047)
   call void @"rt.print_int"(i64 %v67918)
   %v68049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v68049)
@@ -142788,7 +142853,7 @@ b597:
   %v68316 = load i64, ptr %v68316.p
   %v68317.p = getelementptr i64, ptr %v68313, i64 2
   %v68317 = load i64, ptr %v68317.p
-  %v68318 = call i64 @"std/utf8.IndexInvalid"(i64 %v68315, i64 %v68316, i64 %v68317)
+  %v68318 = call i64 @"std/strings.IndexInvalid"(i64 %v68315, i64 %v68316, i64 %v68317)
   %v68319 = add i64 0, 195
   %v68320 = add i64 0, 169
   %v68321 = add i64 0, 195
@@ -143049,7 +143114,7 @@ b597:
   %v68446 = load i64, ptr %v68446.p
   %v68447.p = getelementptr i64, ptr %v68443, i64 2
   %v68447 = load i64, ptr %v68447.p
-  %v68448 = call i64 @"std/utf8.Valid"(i64 %v68445, i64 %v68446, i64 %v68447)
+  %v68448 = call i64 @"std/strings.Valid"(i64 %v68445, i64 %v68446, i64 %v68447)
   call void @"rt.print_int"(i64 %v68318)
   %v68449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v68449)
@@ -143605,7 +143670,7 @@ b600:
   %v68716 = load i64, ptr %v68716.p
   %v68717.p = getelementptr i64, ptr %v68713, i64 2
   %v68717 = load i64, ptr %v68717.p
-  %v68718 = call i64 @"std/utf8.IndexInvalid"(i64 %v68715, i64 %v68716, i64 %v68717)
+  %v68718 = call i64 @"std/strings.IndexInvalid"(i64 %v68715, i64 %v68716, i64 %v68717)
   %v68719 = add i64 0, 195
   %v68720 = add i64 0, 169
   %v68721 = add i64 0, 195
@@ -143866,7 +143931,7 @@ b600:
   %v68846 = load i64, ptr %v68846.p
   %v68847.p = getelementptr i64, ptr %v68843, i64 2
   %v68847 = load i64, ptr %v68847.p
-  %v68848 = call i64 @"std/utf8.Valid"(i64 %v68845, i64 %v68846, i64 %v68847)
+  %v68848 = call i64 @"std/strings.Valid"(i64 %v68845, i64 %v68846, i64 %v68847)
   call void @"rt.print_int"(i64 %v68718)
   %v68849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v68849)
@@ -144422,7 +144487,7 @@ b603:
   %v69116 = load i64, ptr %v69116.p
   %v69117.p = getelementptr i64, ptr %v69113, i64 2
   %v69117 = load i64, ptr %v69117.p
-  %v69118 = call i64 @"std/utf8.IndexInvalid"(i64 %v69115, i64 %v69116, i64 %v69117)
+  %v69118 = call i64 @"std/strings.IndexInvalid"(i64 %v69115, i64 %v69116, i64 %v69117)
   %v69119 = add i64 0, 195
   %v69120 = add i64 0, 169
   %v69121 = add i64 0, 195
@@ -144683,7 +144748,7 @@ b603:
   %v69246 = load i64, ptr %v69246.p
   %v69247.p = getelementptr i64, ptr %v69243, i64 2
   %v69247 = load i64, ptr %v69247.p
-  %v69248 = call i64 @"std/utf8.Valid"(i64 %v69245, i64 %v69246, i64 %v69247)
+  %v69248 = call i64 @"std/strings.Valid"(i64 %v69245, i64 %v69246, i64 %v69247)
   call void @"rt.print_int"(i64 %v69118)
   %v69249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v69249)
@@ -145239,7 +145304,7 @@ b606:
   %v69516 = load i64, ptr %v69516.p
   %v69517.p = getelementptr i64, ptr %v69513, i64 2
   %v69517 = load i64, ptr %v69517.p
-  %v69518 = call i64 @"std/utf8.IndexInvalid"(i64 %v69515, i64 %v69516, i64 %v69517)
+  %v69518 = call i64 @"std/strings.IndexInvalid"(i64 %v69515, i64 %v69516, i64 %v69517)
   %v69519 = add i64 0, 195
   %v69520 = add i64 0, 169
   %v69521 = add i64 0, 195
@@ -145500,7 +145565,7 @@ b606:
   %v69646 = load i64, ptr %v69646.p
   %v69647.p = getelementptr i64, ptr %v69643, i64 2
   %v69647 = load i64, ptr %v69647.p
-  %v69648 = call i64 @"std/utf8.Valid"(i64 %v69645, i64 %v69646, i64 %v69647)
+  %v69648 = call i64 @"std/strings.Valid"(i64 %v69645, i64 %v69646, i64 %v69647)
   call void @"rt.print_int"(i64 %v69518)
   %v69649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v69649)
@@ -146056,7 +146121,7 @@ b609:
   %v69916 = load i64, ptr %v69916.p
   %v69917.p = getelementptr i64, ptr %v69913, i64 2
   %v69917 = load i64, ptr %v69917.p
-  %v69918 = call i64 @"std/utf8.IndexInvalid"(i64 %v69915, i64 %v69916, i64 %v69917)
+  %v69918 = call i64 @"std/strings.IndexInvalid"(i64 %v69915, i64 %v69916, i64 %v69917)
   %v69919 = add i64 0, 195
   %v69920 = add i64 0, 169
   %v69921 = add i64 0, 195
@@ -146317,7 +146382,7 @@ b609:
   %v70046 = load i64, ptr %v70046.p
   %v70047.p = getelementptr i64, ptr %v70043, i64 2
   %v70047 = load i64, ptr %v70047.p
-  %v70048 = call i64 @"std/utf8.Valid"(i64 %v70045, i64 %v70046, i64 %v70047)
+  %v70048 = call i64 @"std/strings.Valid"(i64 %v70045, i64 %v70046, i64 %v70047)
   call void @"rt.print_int"(i64 %v69918)
   %v70049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v70049)
@@ -146873,7 +146938,7 @@ b612:
   %v70316 = load i64, ptr %v70316.p
   %v70317.p = getelementptr i64, ptr %v70313, i64 2
   %v70317 = load i64, ptr %v70317.p
-  %v70318 = call i64 @"std/utf8.IndexInvalid"(i64 %v70315, i64 %v70316, i64 %v70317)
+  %v70318 = call i64 @"std/strings.IndexInvalid"(i64 %v70315, i64 %v70316, i64 %v70317)
   %v70319 = add i64 0, 195
   %v70320 = add i64 0, 169
   %v70321 = add i64 0, 195
@@ -147134,7 +147199,7 @@ b612:
   %v70446 = load i64, ptr %v70446.p
   %v70447.p = getelementptr i64, ptr %v70443, i64 2
   %v70447 = load i64, ptr %v70447.p
-  %v70448 = call i64 @"std/utf8.Valid"(i64 %v70445, i64 %v70446, i64 %v70447)
+  %v70448 = call i64 @"std/strings.Valid"(i64 %v70445, i64 %v70446, i64 %v70447)
   call void @"rt.print_int"(i64 %v70318)
   %v70449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v70449)
@@ -147690,7 +147755,7 @@ b615:
   %v70716 = load i64, ptr %v70716.p
   %v70717.p = getelementptr i64, ptr %v70713, i64 2
   %v70717 = load i64, ptr %v70717.p
-  %v70718 = call i64 @"std/utf8.IndexInvalid"(i64 %v70715, i64 %v70716, i64 %v70717)
+  %v70718 = call i64 @"std/strings.IndexInvalid"(i64 %v70715, i64 %v70716, i64 %v70717)
   %v70719 = add i64 0, 195
   %v70720 = add i64 0, 169
   %v70721 = add i64 0, 195
@@ -147951,7 +148016,7 @@ b615:
   %v70846 = load i64, ptr %v70846.p
   %v70847.p = getelementptr i64, ptr %v70843, i64 2
   %v70847 = load i64, ptr %v70847.p
-  %v70848 = call i64 @"std/utf8.Valid"(i64 %v70845, i64 %v70846, i64 %v70847)
+  %v70848 = call i64 @"std/strings.Valid"(i64 %v70845, i64 %v70846, i64 %v70847)
   call void @"rt.print_int"(i64 %v70718)
   %v70849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v70849)
@@ -148507,7 +148572,7 @@ b618:
   %v71116 = load i64, ptr %v71116.p
   %v71117.p = getelementptr i64, ptr %v71113, i64 2
   %v71117 = load i64, ptr %v71117.p
-  %v71118 = call i64 @"std/utf8.IndexInvalid"(i64 %v71115, i64 %v71116, i64 %v71117)
+  %v71118 = call i64 @"std/strings.IndexInvalid"(i64 %v71115, i64 %v71116, i64 %v71117)
   %v71119 = add i64 0, 195
   %v71120 = add i64 0, 169
   %v71121 = add i64 0, 195
@@ -148768,7 +148833,7 @@ b618:
   %v71246 = load i64, ptr %v71246.p
   %v71247.p = getelementptr i64, ptr %v71243, i64 2
   %v71247 = load i64, ptr %v71247.p
-  %v71248 = call i64 @"std/utf8.Valid"(i64 %v71245, i64 %v71246, i64 %v71247)
+  %v71248 = call i64 @"std/strings.Valid"(i64 %v71245, i64 %v71246, i64 %v71247)
   call void @"rt.print_int"(i64 %v71118)
   %v71249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v71249)
@@ -149324,7 +149389,7 @@ b621:
   %v71516 = load i64, ptr %v71516.p
   %v71517.p = getelementptr i64, ptr %v71513, i64 2
   %v71517 = load i64, ptr %v71517.p
-  %v71518 = call i64 @"std/utf8.IndexInvalid"(i64 %v71515, i64 %v71516, i64 %v71517)
+  %v71518 = call i64 @"std/strings.IndexInvalid"(i64 %v71515, i64 %v71516, i64 %v71517)
   %v71519 = add i64 0, 195
   %v71520 = add i64 0, 169
   %v71521 = add i64 0, 195
@@ -149585,7 +149650,7 @@ b621:
   %v71646 = load i64, ptr %v71646.p
   %v71647.p = getelementptr i64, ptr %v71643, i64 2
   %v71647 = load i64, ptr %v71647.p
-  %v71648 = call i64 @"std/utf8.Valid"(i64 %v71645, i64 %v71646, i64 %v71647)
+  %v71648 = call i64 @"std/strings.Valid"(i64 %v71645, i64 %v71646, i64 %v71647)
   call void @"rt.print_int"(i64 %v71518)
   %v71649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v71649)
@@ -150141,7 +150206,7 @@ b624:
   %v71916 = load i64, ptr %v71916.p
   %v71917.p = getelementptr i64, ptr %v71913, i64 2
   %v71917 = load i64, ptr %v71917.p
-  %v71918 = call i64 @"std/utf8.IndexInvalid"(i64 %v71915, i64 %v71916, i64 %v71917)
+  %v71918 = call i64 @"std/strings.IndexInvalid"(i64 %v71915, i64 %v71916, i64 %v71917)
   %v71919 = add i64 0, 195
   %v71920 = add i64 0, 169
   %v71921 = add i64 0, 195
@@ -150402,7 +150467,7 @@ b624:
   %v72046 = load i64, ptr %v72046.p
   %v72047.p = getelementptr i64, ptr %v72043, i64 2
   %v72047 = load i64, ptr %v72047.p
-  %v72048 = call i64 @"std/utf8.Valid"(i64 %v72045, i64 %v72046, i64 %v72047)
+  %v72048 = call i64 @"std/strings.Valid"(i64 %v72045, i64 %v72046, i64 %v72047)
   call void @"rt.print_int"(i64 %v71918)
   %v72049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v72049)
@@ -150958,7 +151023,7 @@ b627:
   %v72316 = load i64, ptr %v72316.p
   %v72317.p = getelementptr i64, ptr %v72313, i64 2
   %v72317 = load i64, ptr %v72317.p
-  %v72318 = call i64 @"std/utf8.IndexInvalid"(i64 %v72315, i64 %v72316, i64 %v72317)
+  %v72318 = call i64 @"std/strings.IndexInvalid"(i64 %v72315, i64 %v72316, i64 %v72317)
   %v72319 = add i64 0, 195
   %v72320 = add i64 0, 169
   %v72321 = add i64 0, 195
@@ -151219,7 +151284,7 @@ b627:
   %v72446 = load i64, ptr %v72446.p
   %v72447.p = getelementptr i64, ptr %v72443, i64 2
   %v72447 = load i64, ptr %v72447.p
-  %v72448 = call i64 @"std/utf8.Valid"(i64 %v72445, i64 %v72446, i64 %v72447)
+  %v72448 = call i64 @"std/strings.Valid"(i64 %v72445, i64 %v72446, i64 %v72447)
   call void @"rt.print_int"(i64 %v72318)
   %v72449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v72449)
@@ -151775,7 +151840,7 @@ b630:
   %v72716 = load i64, ptr %v72716.p
   %v72717.p = getelementptr i64, ptr %v72713, i64 2
   %v72717 = load i64, ptr %v72717.p
-  %v72718 = call i64 @"std/utf8.IndexInvalid"(i64 %v72715, i64 %v72716, i64 %v72717)
+  %v72718 = call i64 @"std/strings.IndexInvalid"(i64 %v72715, i64 %v72716, i64 %v72717)
   %v72719 = add i64 0, 195
   %v72720 = add i64 0, 169
   %v72721 = add i64 0, 195
@@ -152036,7 +152101,7 @@ b630:
   %v72846 = load i64, ptr %v72846.p
   %v72847.p = getelementptr i64, ptr %v72843, i64 2
   %v72847 = load i64, ptr %v72847.p
-  %v72848 = call i64 @"std/utf8.Valid"(i64 %v72845, i64 %v72846, i64 %v72847)
+  %v72848 = call i64 @"std/strings.Valid"(i64 %v72845, i64 %v72846, i64 %v72847)
   call void @"rt.print_int"(i64 %v72718)
   %v72849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v72849)
@@ -152592,7 +152657,7 @@ b633:
   %v73116 = load i64, ptr %v73116.p
   %v73117.p = getelementptr i64, ptr %v73113, i64 2
   %v73117 = load i64, ptr %v73117.p
-  %v73118 = call i64 @"std/utf8.IndexInvalid"(i64 %v73115, i64 %v73116, i64 %v73117)
+  %v73118 = call i64 @"std/strings.IndexInvalid"(i64 %v73115, i64 %v73116, i64 %v73117)
   %v73119 = add i64 0, 195
   %v73120 = add i64 0, 169
   %v73121 = add i64 0, 195
@@ -152853,7 +152918,7 @@ b633:
   %v73246 = load i64, ptr %v73246.p
   %v73247.p = getelementptr i64, ptr %v73243, i64 2
   %v73247 = load i64, ptr %v73247.p
-  %v73248 = call i64 @"std/utf8.Valid"(i64 %v73245, i64 %v73246, i64 %v73247)
+  %v73248 = call i64 @"std/strings.Valid"(i64 %v73245, i64 %v73246, i64 %v73247)
   call void @"rt.print_int"(i64 %v73118)
   %v73249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v73249)
@@ -153409,7 +153474,7 @@ b636:
   %v73516 = load i64, ptr %v73516.p
   %v73517.p = getelementptr i64, ptr %v73513, i64 2
   %v73517 = load i64, ptr %v73517.p
-  %v73518 = call i64 @"std/utf8.IndexInvalid"(i64 %v73515, i64 %v73516, i64 %v73517)
+  %v73518 = call i64 @"std/strings.IndexInvalid"(i64 %v73515, i64 %v73516, i64 %v73517)
   %v73519 = add i64 0, 195
   %v73520 = add i64 0, 169
   %v73521 = add i64 0, 195
@@ -153670,7 +153735,7 @@ b636:
   %v73646 = load i64, ptr %v73646.p
   %v73647.p = getelementptr i64, ptr %v73643, i64 2
   %v73647 = load i64, ptr %v73647.p
-  %v73648 = call i64 @"std/utf8.Valid"(i64 %v73645, i64 %v73646, i64 %v73647)
+  %v73648 = call i64 @"std/strings.Valid"(i64 %v73645, i64 %v73646, i64 %v73647)
   call void @"rt.print_int"(i64 %v73518)
   %v73649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v73649)
@@ -154226,7 +154291,7 @@ b639:
   %v73916 = load i64, ptr %v73916.p
   %v73917.p = getelementptr i64, ptr %v73913, i64 2
   %v73917 = load i64, ptr %v73917.p
-  %v73918 = call i64 @"std/utf8.IndexInvalid"(i64 %v73915, i64 %v73916, i64 %v73917)
+  %v73918 = call i64 @"std/strings.IndexInvalid"(i64 %v73915, i64 %v73916, i64 %v73917)
   %v73919 = add i64 0, 195
   %v73920 = add i64 0, 169
   %v73921 = add i64 0, 195
@@ -154487,7 +154552,7 @@ b639:
   %v74046 = load i64, ptr %v74046.p
   %v74047.p = getelementptr i64, ptr %v74043, i64 2
   %v74047 = load i64, ptr %v74047.p
-  %v74048 = call i64 @"std/utf8.Valid"(i64 %v74045, i64 %v74046, i64 %v74047)
+  %v74048 = call i64 @"std/strings.Valid"(i64 %v74045, i64 %v74046, i64 %v74047)
   call void @"rt.print_int"(i64 %v73918)
   %v74049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v74049)
@@ -155043,7 +155108,7 @@ b642:
   %v74316 = load i64, ptr %v74316.p
   %v74317.p = getelementptr i64, ptr %v74313, i64 2
   %v74317 = load i64, ptr %v74317.p
-  %v74318 = call i64 @"std/utf8.IndexInvalid"(i64 %v74315, i64 %v74316, i64 %v74317)
+  %v74318 = call i64 @"std/strings.IndexInvalid"(i64 %v74315, i64 %v74316, i64 %v74317)
   %v74319 = add i64 0, 195
   %v74320 = add i64 0, 169
   %v74321 = add i64 0, 195
@@ -155304,7 +155369,7 @@ b642:
   %v74446 = load i64, ptr %v74446.p
   %v74447.p = getelementptr i64, ptr %v74443, i64 2
   %v74447 = load i64, ptr %v74447.p
-  %v74448 = call i64 @"std/utf8.Valid"(i64 %v74445, i64 %v74446, i64 %v74447)
+  %v74448 = call i64 @"std/strings.Valid"(i64 %v74445, i64 %v74446, i64 %v74447)
   call void @"rt.print_int"(i64 %v74318)
   %v74449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v74449)
@@ -155860,7 +155925,7 @@ b645:
   %v74716 = load i64, ptr %v74716.p
   %v74717.p = getelementptr i64, ptr %v74713, i64 2
   %v74717 = load i64, ptr %v74717.p
-  %v74718 = call i64 @"std/utf8.IndexInvalid"(i64 %v74715, i64 %v74716, i64 %v74717)
+  %v74718 = call i64 @"std/strings.IndexInvalid"(i64 %v74715, i64 %v74716, i64 %v74717)
   %v74719 = add i64 0, 195
   %v74720 = add i64 0, 169
   %v74721 = add i64 0, 195
@@ -156121,7 +156186,7 @@ b645:
   %v74846 = load i64, ptr %v74846.p
   %v74847.p = getelementptr i64, ptr %v74843, i64 2
   %v74847 = load i64, ptr %v74847.p
-  %v74848 = call i64 @"std/utf8.Valid"(i64 %v74845, i64 %v74846, i64 %v74847)
+  %v74848 = call i64 @"std/strings.Valid"(i64 %v74845, i64 %v74846, i64 %v74847)
   call void @"rt.print_int"(i64 %v74718)
   %v74849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v74849)
@@ -156677,7 +156742,7 @@ b648:
   %v75116 = load i64, ptr %v75116.p
   %v75117.p = getelementptr i64, ptr %v75113, i64 2
   %v75117 = load i64, ptr %v75117.p
-  %v75118 = call i64 @"std/utf8.IndexInvalid"(i64 %v75115, i64 %v75116, i64 %v75117)
+  %v75118 = call i64 @"std/strings.IndexInvalid"(i64 %v75115, i64 %v75116, i64 %v75117)
   %v75119 = add i64 0, 195
   %v75120 = add i64 0, 169
   %v75121 = add i64 0, 195
@@ -156938,7 +157003,7 @@ b648:
   %v75246 = load i64, ptr %v75246.p
   %v75247.p = getelementptr i64, ptr %v75243, i64 2
   %v75247 = load i64, ptr %v75247.p
-  %v75248 = call i64 @"std/utf8.Valid"(i64 %v75245, i64 %v75246, i64 %v75247)
+  %v75248 = call i64 @"std/strings.Valid"(i64 %v75245, i64 %v75246, i64 %v75247)
   call void @"rt.print_int"(i64 %v75118)
   %v75249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v75249)
@@ -157494,7 +157559,7 @@ b651:
   %v75516 = load i64, ptr %v75516.p
   %v75517.p = getelementptr i64, ptr %v75513, i64 2
   %v75517 = load i64, ptr %v75517.p
-  %v75518 = call i64 @"std/utf8.IndexInvalid"(i64 %v75515, i64 %v75516, i64 %v75517)
+  %v75518 = call i64 @"std/strings.IndexInvalid"(i64 %v75515, i64 %v75516, i64 %v75517)
   %v75519 = add i64 0, 195
   %v75520 = add i64 0, 169
   %v75521 = add i64 0, 195
@@ -157755,7 +157820,7 @@ b651:
   %v75646 = load i64, ptr %v75646.p
   %v75647.p = getelementptr i64, ptr %v75643, i64 2
   %v75647 = load i64, ptr %v75647.p
-  %v75648 = call i64 @"std/utf8.Valid"(i64 %v75645, i64 %v75646, i64 %v75647)
+  %v75648 = call i64 @"std/strings.Valid"(i64 %v75645, i64 %v75646, i64 %v75647)
   call void @"rt.print_int"(i64 %v75518)
   %v75649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v75649)
@@ -158311,7 +158376,7 @@ b654:
   %v75916 = load i64, ptr %v75916.p
   %v75917.p = getelementptr i64, ptr %v75913, i64 2
   %v75917 = load i64, ptr %v75917.p
-  %v75918 = call i64 @"std/utf8.IndexInvalid"(i64 %v75915, i64 %v75916, i64 %v75917)
+  %v75918 = call i64 @"std/strings.IndexInvalid"(i64 %v75915, i64 %v75916, i64 %v75917)
   %v75919 = add i64 0, 195
   %v75920 = add i64 0, 169
   %v75921 = add i64 0, 195
@@ -158572,7 +158637,7 @@ b654:
   %v76046 = load i64, ptr %v76046.p
   %v76047.p = getelementptr i64, ptr %v76043, i64 2
   %v76047 = load i64, ptr %v76047.p
-  %v76048 = call i64 @"std/utf8.Valid"(i64 %v76045, i64 %v76046, i64 %v76047)
+  %v76048 = call i64 @"std/strings.Valid"(i64 %v76045, i64 %v76046, i64 %v76047)
   call void @"rt.print_int"(i64 %v75918)
   %v76049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v76049)
@@ -159128,7 +159193,7 @@ b657:
   %v76316 = load i64, ptr %v76316.p
   %v76317.p = getelementptr i64, ptr %v76313, i64 2
   %v76317 = load i64, ptr %v76317.p
-  %v76318 = call i64 @"std/utf8.IndexInvalid"(i64 %v76315, i64 %v76316, i64 %v76317)
+  %v76318 = call i64 @"std/strings.IndexInvalid"(i64 %v76315, i64 %v76316, i64 %v76317)
   %v76319 = add i64 0, 195
   %v76320 = add i64 0, 169
   %v76321 = add i64 0, 195
@@ -159389,7 +159454,7 @@ b657:
   %v76446 = load i64, ptr %v76446.p
   %v76447.p = getelementptr i64, ptr %v76443, i64 2
   %v76447 = load i64, ptr %v76447.p
-  %v76448 = call i64 @"std/utf8.Valid"(i64 %v76445, i64 %v76446, i64 %v76447)
+  %v76448 = call i64 @"std/strings.Valid"(i64 %v76445, i64 %v76446, i64 %v76447)
   call void @"rt.print_int"(i64 %v76318)
   %v76449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v76449)
@@ -159945,7 +160010,7 @@ b660:
   %v76716 = load i64, ptr %v76716.p
   %v76717.p = getelementptr i64, ptr %v76713, i64 2
   %v76717 = load i64, ptr %v76717.p
-  %v76718 = call i64 @"std/utf8.IndexInvalid"(i64 %v76715, i64 %v76716, i64 %v76717)
+  %v76718 = call i64 @"std/strings.IndexInvalid"(i64 %v76715, i64 %v76716, i64 %v76717)
   %v76719 = add i64 0, 195
   %v76720 = add i64 0, 169
   %v76721 = add i64 0, 195
@@ -160206,7 +160271,7 @@ b660:
   %v76846 = load i64, ptr %v76846.p
   %v76847.p = getelementptr i64, ptr %v76843, i64 2
   %v76847 = load i64, ptr %v76847.p
-  %v76848 = call i64 @"std/utf8.Valid"(i64 %v76845, i64 %v76846, i64 %v76847)
+  %v76848 = call i64 @"std/strings.Valid"(i64 %v76845, i64 %v76846, i64 %v76847)
   call void @"rt.print_int"(i64 %v76718)
   %v76849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v76849)
@@ -160762,7 +160827,7 @@ b663:
   %v77116 = load i64, ptr %v77116.p
   %v77117.p = getelementptr i64, ptr %v77113, i64 2
   %v77117 = load i64, ptr %v77117.p
-  %v77118 = call i64 @"std/utf8.IndexInvalid"(i64 %v77115, i64 %v77116, i64 %v77117)
+  %v77118 = call i64 @"std/strings.IndexInvalid"(i64 %v77115, i64 %v77116, i64 %v77117)
   %v77119 = add i64 0, 195
   %v77120 = add i64 0, 169
   %v77121 = add i64 0, 195
@@ -161023,7 +161088,7 @@ b663:
   %v77246 = load i64, ptr %v77246.p
   %v77247.p = getelementptr i64, ptr %v77243, i64 2
   %v77247 = load i64, ptr %v77247.p
-  %v77248 = call i64 @"std/utf8.Valid"(i64 %v77245, i64 %v77246, i64 %v77247)
+  %v77248 = call i64 @"std/strings.Valid"(i64 %v77245, i64 %v77246, i64 %v77247)
   call void @"rt.print_int"(i64 %v77118)
   %v77249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v77249)
@@ -161579,7 +161644,7 @@ b666:
   %v77516 = load i64, ptr %v77516.p
   %v77517.p = getelementptr i64, ptr %v77513, i64 2
   %v77517 = load i64, ptr %v77517.p
-  %v77518 = call i64 @"std/utf8.IndexInvalid"(i64 %v77515, i64 %v77516, i64 %v77517)
+  %v77518 = call i64 @"std/strings.IndexInvalid"(i64 %v77515, i64 %v77516, i64 %v77517)
   %v77519 = add i64 0, 195
   %v77520 = add i64 0, 169
   %v77521 = add i64 0, 195
@@ -161840,7 +161905,7 @@ b666:
   %v77646 = load i64, ptr %v77646.p
   %v77647.p = getelementptr i64, ptr %v77643, i64 2
   %v77647 = load i64, ptr %v77647.p
-  %v77648 = call i64 @"std/utf8.Valid"(i64 %v77645, i64 %v77646, i64 %v77647)
+  %v77648 = call i64 @"std/strings.Valid"(i64 %v77645, i64 %v77646, i64 %v77647)
   call void @"rt.print_int"(i64 %v77518)
   %v77649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v77649)
@@ -162396,7 +162461,7 @@ b669:
   %v77916 = load i64, ptr %v77916.p
   %v77917.p = getelementptr i64, ptr %v77913, i64 2
   %v77917 = load i64, ptr %v77917.p
-  %v77918 = call i64 @"std/utf8.IndexInvalid"(i64 %v77915, i64 %v77916, i64 %v77917)
+  %v77918 = call i64 @"std/strings.IndexInvalid"(i64 %v77915, i64 %v77916, i64 %v77917)
   %v77919 = add i64 0, 195
   %v77920 = add i64 0, 169
   %v77921 = add i64 0, 195
@@ -162657,7 +162722,7 @@ b669:
   %v78046 = load i64, ptr %v78046.p
   %v78047.p = getelementptr i64, ptr %v78043, i64 2
   %v78047 = load i64, ptr %v78047.p
-  %v78048 = call i64 @"std/utf8.Valid"(i64 %v78045, i64 %v78046, i64 %v78047)
+  %v78048 = call i64 @"std/strings.Valid"(i64 %v78045, i64 %v78046, i64 %v78047)
   call void @"rt.print_int"(i64 %v77918)
   %v78049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v78049)
@@ -163213,7 +163278,7 @@ b672:
   %v78316 = load i64, ptr %v78316.p
   %v78317.p = getelementptr i64, ptr %v78313, i64 2
   %v78317 = load i64, ptr %v78317.p
-  %v78318 = call i64 @"std/utf8.IndexInvalid"(i64 %v78315, i64 %v78316, i64 %v78317)
+  %v78318 = call i64 @"std/strings.IndexInvalid"(i64 %v78315, i64 %v78316, i64 %v78317)
   %v78319 = add i64 0, 195
   %v78320 = add i64 0, 169
   %v78321 = add i64 0, 195
@@ -163474,7 +163539,7 @@ b672:
   %v78446 = load i64, ptr %v78446.p
   %v78447.p = getelementptr i64, ptr %v78443, i64 2
   %v78447 = load i64, ptr %v78447.p
-  %v78448 = call i64 @"std/utf8.Valid"(i64 %v78445, i64 %v78446, i64 %v78447)
+  %v78448 = call i64 @"std/strings.Valid"(i64 %v78445, i64 %v78446, i64 %v78447)
   call void @"rt.print_int"(i64 %v78318)
   %v78449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v78449)
@@ -164030,7 +164095,7 @@ b675:
   %v78716 = load i64, ptr %v78716.p
   %v78717.p = getelementptr i64, ptr %v78713, i64 2
   %v78717 = load i64, ptr %v78717.p
-  %v78718 = call i64 @"std/utf8.IndexInvalid"(i64 %v78715, i64 %v78716, i64 %v78717)
+  %v78718 = call i64 @"std/strings.IndexInvalid"(i64 %v78715, i64 %v78716, i64 %v78717)
   %v78719 = add i64 0, 195
   %v78720 = add i64 0, 169
   %v78721 = add i64 0, 195
@@ -164291,7 +164356,7 @@ b675:
   %v78846 = load i64, ptr %v78846.p
   %v78847.p = getelementptr i64, ptr %v78843, i64 2
   %v78847 = load i64, ptr %v78847.p
-  %v78848 = call i64 @"std/utf8.Valid"(i64 %v78845, i64 %v78846, i64 %v78847)
+  %v78848 = call i64 @"std/strings.Valid"(i64 %v78845, i64 %v78846, i64 %v78847)
   call void @"rt.print_int"(i64 %v78718)
   %v78849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v78849)
@@ -164847,7 +164912,7 @@ b678:
   %v79116 = load i64, ptr %v79116.p
   %v79117.p = getelementptr i64, ptr %v79113, i64 2
   %v79117 = load i64, ptr %v79117.p
-  %v79118 = call i64 @"std/utf8.IndexInvalid"(i64 %v79115, i64 %v79116, i64 %v79117)
+  %v79118 = call i64 @"std/strings.IndexInvalid"(i64 %v79115, i64 %v79116, i64 %v79117)
   %v79119 = add i64 0, 195
   %v79120 = add i64 0, 169
   %v79121 = add i64 0, 195
@@ -165108,7 +165173,7 @@ b678:
   %v79246 = load i64, ptr %v79246.p
   %v79247.p = getelementptr i64, ptr %v79243, i64 2
   %v79247 = load i64, ptr %v79247.p
-  %v79248 = call i64 @"std/utf8.Valid"(i64 %v79245, i64 %v79246, i64 %v79247)
+  %v79248 = call i64 @"std/strings.Valid"(i64 %v79245, i64 %v79246, i64 %v79247)
   call void @"rt.print_int"(i64 %v79118)
   %v79249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v79249)
@@ -165664,7 +165729,7 @@ b681:
   %v79516 = load i64, ptr %v79516.p
   %v79517.p = getelementptr i64, ptr %v79513, i64 2
   %v79517 = load i64, ptr %v79517.p
-  %v79518 = call i64 @"std/utf8.IndexInvalid"(i64 %v79515, i64 %v79516, i64 %v79517)
+  %v79518 = call i64 @"std/strings.IndexInvalid"(i64 %v79515, i64 %v79516, i64 %v79517)
   %v79519 = add i64 0, 195
   %v79520 = add i64 0, 169
   %v79521 = add i64 0, 195
@@ -165925,7 +165990,7 @@ b681:
   %v79646 = load i64, ptr %v79646.p
   %v79647.p = getelementptr i64, ptr %v79643, i64 2
   %v79647 = load i64, ptr %v79647.p
-  %v79648 = call i64 @"std/utf8.Valid"(i64 %v79645, i64 %v79646, i64 %v79647)
+  %v79648 = call i64 @"std/strings.Valid"(i64 %v79645, i64 %v79646, i64 %v79647)
   call void @"rt.print_int"(i64 %v79518)
   %v79649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v79649)
@@ -166481,7 +166546,7 @@ b684:
   %v79916 = load i64, ptr %v79916.p
   %v79917.p = getelementptr i64, ptr %v79913, i64 2
   %v79917 = load i64, ptr %v79917.p
-  %v79918 = call i64 @"std/utf8.IndexInvalid"(i64 %v79915, i64 %v79916, i64 %v79917)
+  %v79918 = call i64 @"std/strings.IndexInvalid"(i64 %v79915, i64 %v79916, i64 %v79917)
   %v79919 = add i64 0, 195
   %v79920 = add i64 0, 169
   %v79921 = add i64 0, 195
@@ -166742,7 +166807,7 @@ b684:
   %v80046 = load i64, ptr %v80046.p
   %v80047.p = getelementptr i64, ptr %v80043, i64 2
   %v80047 = load i64, ptr %v80047.p
-  %v80048 = call i64 @"std/utf8.Valid"(i64 %v80045, i64 %v80046, i64 %v80047)
+  %v80048 = call i64 @"std/strings.Valid"(i64 %v80045, i64 %v80046, i64 %v80047)
   call void @"rt.print_int"(i64 %v79918)
   %v80049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v80049)
@@ -167298,7 +167363,7 @@ b687:
   %v80316 = load i64, ptr %v80316.p
   %v80317.p = getelementptr i64, ptr %v80313, i64 2
   %v80317 = load i64, ptr %v80317.p
-  %v80318 = call i64 @"std/utf8.IndexInvalid"(i64 %v80315, i64 %v80316, i64 %v80317)
+  %v80318 = call i64 @"std/strings.IndexInvalid"(i64 %v80315, i64 %v80316, i64 %v80317)
   %v80319 = add i64 0, 195
   %v80320 = add i64 0, 169
   %v80321 = add i64 0, 195
@@ -167559,7 +167624,7 @@ b687:
   %v80446 = load i64, ptr %v80446.p
   %v80447.p = getelementptr i64, ptr %v80443, i64 2
   %v80447 = load i64, ptr %v80447.p
-  %v80448 = call i64 @"std/utf8.Valid"(i64 %v80445, i64 %v80446, i64 %v80447)
+  %v80448 = call i64 @"std/strings.Valid"(i64 %v80445, i64 %v80446, i64 %v80447)
   call void @"rt.print_int"(i64 %v80318)
   %v80449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v80449)
@@ -168115,7 +168180,7 @@ b690:
   %v80716 = load i64, ptr %v80716.p
   %v80717.p = getelementptr i64, ptr %v80713, i64 2
   %v80717 = load i64, ptr %v80717.p
-  %v80718 = call i64 @"std/utf8.IndexInvalid"(i64 %v80715, i64 %v80716, i64 %v80717)
+  %v80718 = call i64 @"std/strings.IndexInvalid"(i64 %v80715, i64 %v80716, i64 %v80717)
   %v80719 = add i64 0, 195
   %v80720 = add i64 0, 169
   %v80721 = add i64 0, 195
@@ -168376,7 +168441,7 @@ b690:
   %v80846 = load i64, ptr %v80846.p
   %v80847.p = getelementptr i64, ptr %v80843, i64 2
   %v80847 = load i64, ptr %v80847.p
-  %v80848 = call i64 @"std/utf8.Valid"(i64 %v80845, i64 %v80846, i64 %v80847)
+  %v80848 = call i64 @"std/strings.Valid"(i64 %v80845, i64 %v80846, i64 %v80847)
   call void @"rt.print_int"(i64 %v80718)
   %v80849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v80849)
@@ -168932,7 +168997,7 @@ b693:
   %v81116 = load i64, ptr %v81116.p
   %v81117.p = getelementptr i64, ptr %v81113, i64 2
   %v81117 = load i64, ptr %v81117.p
-  %v81118 = call i64 @"std/utf8.IndexInvalid"(i64 %v81115, i64 %v81116, i64 %v81117)
+  %v81118 = call i64 @"std/strings.IndexInvalid"(i64 %v81115, i64 %v81116, i64 %v81117)
   %v81119 = add i64 0, 195
   %v81120 = add i64 0, 169
   %v81121 = add i64 0, 195
@@ -169193,7 +169258,7 @@ b693:
   %v81246 = load i64, ptr %v81246.p
   %v81247.p = getelementptr i64, ptr %v81243, i64 2
   %v81247 = load i64, ptr %v81247.p
-  %v81248 = call i64 @"std/utf8.Valid"(i64 %v81245, i64 %v81246, i64 %v81247)
+  %v81248 = call i64 @"std/strings.Valid"(i64 %v81245, i64 %v81246, i64 %v81247)
   call void @"rt.print_int"(i64 %v81118)
   %v81249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v81249)
@@ -169749,7 +169814,7 @@ b696:
   %v81516 = load i64, ptr %v81516.p
   %v81517.p = getelementptr i64, ptr %v81513, i64 2
   %v81517 = load i64, ptr %v81517.p
-  %v81518 = call i64 @"std/utf8.IndexInvalid"(i64 %v81515, i64 %v81516, i64 %v81517)
+  %v81518 = call i64 @"std/strings.IndexInvalid"(i64 %v81515, i64 %v81516, i64 %v81517)
   %v81519 = add i64 0, 195
   %v81520 = add i64 0, 169
   %v81521 = add i64 0, 195
@@ -170010,7 +170075,7 @@ b696:
   %v81646 = load i64, ptr %v81646.p
   %v81647.p = getelementptr i64, ptr %v81643, i64 2
   %v81647 = load i64, ptr %v81647.p
-  %v81648 = call i64 @"std/utf8.Valid"(i64 %v81645, i64 %v81646, i64 %v81647)
+  %v81648 = call i64 @"std/strings.Valid"(i64 %v81645, i64 %v81646, i64 %v81647)
   call void @"rt.print_int"(i64 %v81518)
   %v81649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v81649)
@@ -170566,7 +170631,7 @@ b699:
   %v81916 = load i64, ptr %v81916.p
   %v81917.p = getelementptr i64, ptr %v81913, i64 2
   %v81917 = load i64, ptr %v81917.p
-  %v81918 = call i64 @"std/utf8.IndexInvalid"(i64 %v81915, i64 %v81916, i64 %v81917)
+  %v81918 = call i64 @"std/strings.IndexInvalid"(i64 %v81915, i64 %v81916, i64 %v81917)
   %v81919 = add i64 0, 195
   %v81920 = add i64 0, 169
   %v81921 = add i64 0, 195
@@ -170827,7 +170892,7 @@ b699:
   %v82046 = load i64, ptr %v82046.p
   %v82047.p = getelementptr i64, ptr %v82043, i64 2
   %v82047 = load i64, ptr %v82047.p
-  %v82048 = call i64 @"std/utf8.Valid"(i64 %v82045, i64 %v82046, i64 %v82047)
+  %v82048 = call i64 @"std/strings.Valid"(i64 %v82045, i64 %v82046, i64 %v82047)
   call void @"rt.print_int"(i64 %v81918)
   %v82049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v82049)
@@ -171383,7 +171448,7 @@ b702:
   %v82316 = load i64, ptr %v82316.p
   %v82317.p = getelementptr i64, ptr %v82313, i64 2
   %v82317 = load i64, ptr %v82317.p
-  %v82318 = call i64 @"std/utf8.IndexInvalid"(i64 %v82315, i64 %v82316, i64 %v82317)
+  %v82318 = call i64 @"std/strings.IndexInvalid"(i64 %v82315, i64 %v82316, i64 %v82317)
   %v82319 = add i64 0, 195
   %v82320 = add i64 0, 169
   %v82321 = add i64 0, 195
@@ -171644,7 +171709,7 @@ b702:
   %v82446 = load i64, ptr %v82446.p
   %v82447.p = getelementptr i64, ptr %v82443, i64 2
   %v82447 = load i64, ptr %v82447.p
-  %v82448 = call i64 @"std/utf8.Valid"(i64 %v82445, i64 %v82446, i64 %v82447)
+  %v82448 = call i64 @"std/strings.Valid"(i64 %v82445, i64 %v82446, i64 %v82447)
   call void @"rt.print_int"(i64 %v82318)
   %v82449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v82449)
@@ -172200,7 +172265,7 @@ b705:
   %v82716 = load i64, ptr %v82716.p
   %v82717.p = getelementptr i64, ptr %v82713, i64 2
   %v82717 = load i64, ptr %v82717.p
-  %v82718 = call i64 @"std/utf8.IndexInvalid"(i64 %v82715, i64 %v82716, i64 %v82717)
+  %v82718 = call i64 @"std/strings.IndexInvalid"(i64 %v82715, i64 %v82716, i64 %v82717)
   %v82719 = add i64 0, 195
   %v82720 = add i64 0, 169
   %v82721 = add i64 0, 195
@@ -172461,7 +172526,7 @@ b705:
   %v82846 = load i64, ptr %v82846.p
   %v82847.p = getelementptr i64, ptr %v82843, i64 2
   %v82847 = load i64, ptr %v82847.p
-  %v82848 = call i64 @"std/utf8.Valid"(i64 %v82845, i64 %v82846, i64 %v82847)
+  %v82848 = call i64 @"std/strings.Valid"(i64 %v82845, i64 %v82846, i64 %v82847)
   call void @"rt.print_int"(i64 %v82718)
   %v82849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v82849)
@@ -173017,7 +173082,7 @@ b708:
   %v83116 = load i64, ptr %v83116.p
   %v83117.p = getelementptr i64, ptr %v83113, i64 2
   %v83117 = load i64, ptr %v83117.p
-  %v83118 = call i64 @"std/utf8.IndexInvalid"(i64 %v83115, i64 %v83116, i64 %v83117)
+  %v83118 = call i64 @"std/strings.IndexInvalid"(i64 %v83115, i64 %v83116, i64 %v83117)
   %v83119 = add i64 0, 195
   %v83120 = add i64 0, 169
   %v83121 = add i64 0, 195
@@ -173278,7 +173343,7 @@ b708:
   %v83246 = load i64, ptr %v83246.p
   %v83247.p = getelementptr i64, ptr %v83243, i64 2
   %v83247 = load i64, ptr %v83247.p
-  %v83248 = call i64 @"std/utf8.Valid"(i64 %v83245, i64 %v83246, i64 %v83247)
+  %v83248 = call i64 @"std/strings.Valid"(i64 %v83245, i64 %v83246, i64 %v83247)
   call void @"rt.print_int"(i64 %v83118)
   %v83249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v83249)
@@ -173834,7 +173899,7 @@ b711:
   %v83516 = load i64, ptr %v83516.p
   %v83517.p = getelementptr i64, ptr %v83513, i64 2
   %v83517 = load i64, ptr %v83517.p
-  %v83518 = call i64 @"std/utf8.IndexInvalid"(i64 %v83515, i64 %v83516, i64 %v83517)
+  %v83518 = call i64 @"std/strings.IndexInvalid"(i64 %v83515, i64 %v83516, i64 %v83517)
   %v83519 = add i64 0, 195
   %v83520 = add i64 0, 169
   %v83521 = add i64 0, 195
@@ -174095,7 +174160,7 @@ b711:
   %v83646 = load i64, ptr %v83646.p
   %v83647.p = getelementptr i64, ptr %v83643, i64 2
   %v83647 = load i64, ptr %v83647.p
-  %v83648 = call i64 @"std/utf8.Valid"(i64 %v83645, i64 %v83646, i64 %v83647)
+  %v83648 = call i64 @"std/strings.Valid"(i64 %v83645, i64 %v83646, i64 %v83647)
   call void @"rt.print_int"(i64 %v83518)
   %v83649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v83649)
@@ -174651,7 +174716,7 @@ b714:
   %v83916 = load i64, ptr %v83916.p
   %v83917.p = getelementptr i64, ptr %v83913, i64 2
   %v83917 = load i64, ptr %v83917.p
-  %v83918 = call i64 @"std/utf8.IndexInvalid"(i64 %v83915, i64 %v83916, i64 %v83917)
+  %v83918 = call i64 @"std/strings.IndexInvalid"(i64 %v83915, i64 %v83916, i64 %v83917)
   %v83919 = add i64 0, 195
   %v83920 = add i64 0, 169
   %v83921 = add i64 0, 195
@@ -174912,7 +174977,7 @@ b714:
   %v84046 = load i64, ptr %v84046.p
   %v84047.p = getelementptr i64, ptr %v84043, i64 2
   %v84047 = load i64, ptr %v84047.p
-  %v84048 = call i64 @"std/utf8.Valid"(i64 %v84045, i64 %v84046, i64 %v84047)
+  %v84048 = call i64 @"std/strings.Valid"(i64 %v84045, i64 %v84046, i64 %v84047)
   call void @"rt.print_int"(i64 %v83918)
   %v84049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v84049)
@@ -175468,7 +175533,7 @@ b717:
   %v84316 = load i64, ptr %v84316.p
   %v84317.p = getelementptr i64, ptr %v84313, i64 2
   %v84317 = load i64, ptr %v84317.p
-  %v84318 = call i64 @"std/utf8.IndexInvalid"(i64 %v84315, i64 %v84316, i64 %v84317)
+  %v84318 = call i64 @"std/strings.IndexInvalid"(i64 %v84315, i64 %v84316, i64 %v84317)
   %v84319 = add i64 0, 195
   %v84320 = add i64 0, 169
   %v84321 = add i64 0, 195
@@ -175729,7 +175794,7 @@ b717:
   %v84446 = load i64, ptr %v84446.p
   %v84447.p = getelementptr i64, ptr %v84443, i64 2
   %v84447 = load i64, ptr %v84447.p
-  %v84448 = call i64 @"std/utf8.Valid"(i64 %v84445, i64 %v84446, i64 %v84447)
+  %v84448 = call i64 @"std/strings.Valid"(i64 %v84445, i64 %v84446, i64 %v84447)
   call void @"rt.print_int"(i64 %v84318)
   %v84449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v84449)
@@ -176285,7 +176350,7 @@ b720:
   %v84716 = load i64, ptr %v84716.p
   %v84717.p = getelementptr i64, ptr %v84713, i64 2
   %v84717 = load i64, ptr %v84717.p
-  %v84718 = call i64 @"std/utf8.IndexInvalid"(i64 %v84715, i64 %v84716, i64 %v84717)
+  %v84718 = call i64 @"std/strings.IndexInvalid"(i64 %v84715, i64 %v84716, i64 %v84717)
   %v84719 = add i64 0, 195
   %v84720 = add i64 0, 169
   %v84721 = add i64 0, 195
@@ -176546,7 +176611,7 @@ b720:
   %v84846 = load i64, ptr %v84846.p
   %v84847.p = getelementptr i64, ptr %v84843, i64 2
   %v84847 = load i64, ptr %v84847.p
-  %v84848 = call i64 @"std/utf8.Valid"(i64 %v84845, i64 %v84846, i64 %v84847)
+  %v84848 = call i64 @"std/strings.Valid"(i64 %v84845, i64 %v84846, i64 %v84847)
   call void @"rt.print_int"(i64 %v84718)
   %v84849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v84849)
@@ -177102,7 +177167,7 @@ b723:
   %v85116 = load i64, ptr %v85116.p
   %v85117.p = getelementptr i64, ptr %v85113, i64 2
   %v85117 = load i64, ptr %v85117.p
-  %v85118 = call i64 @"std/utf8.IndexInvalid"(i64 %v85115, i64 %v85116, i64 %v85117)
+  %v85118 = call i64 @"std/strings.IndexInvalid"(i64 %v85115, i64 %v85116, i64 %v85117)
   %v85119 = add i64 0, 195
   %v85120 = add i64 0, 169
   %v85121 = add i64 0, 195
@@ -177363,7 +177428,7 @@ b723:
   %v85246 = load i64, ptr %v85246.p
   %v85247.p = getelementptr i64, ptr %v85243, i64 2
   %v85247 = load i64, ptr %v85247.p
-  %v85248 = call i64 @"std/utf8.Valid"(i64 %v85245, i64 %v85246, i64 %v85247)
+  %v85248 = call i64 @"std/strings.Valid"(i64 %v85245, i64 %v85246, i64 %v85247)
   call void @"rt.print_int"(i64 %v85118)
   %v85249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v85249)
@@ -177919,7 +177984,7 @@ b726:
   %v85516 = load i64, ptr %v85516.p
   %v85517.p = getelementptr i64, ptr %v85513, i64 2
   %v85517 = load i64, ptr %v85517.p
-  %v85518 = call i64 @"std/utf8.IndexInvalid"(i64 %v85515, i64 %v85516, i64 %v85517)
+  %v85518 = call i64 @"std/strings.IndexInvalid"(i64 %v85515, i64 %v85516, i64 %v85517)
   %v85519 = add i64 0, 195
   %v85520 = add i64 0, 169
   %v85521 = add i64 0, 195
@@ -178180,7 +178245,7 @@ b726:
   %v85646 = load i64, ptr %v85646.p
   %v85647.p = getelementptr i64, ptr %v85643, i64 2
   %v85647 = load i64, ptr %v85647.p
-  %v85648 = call i64 @"std/utf8.Valid"(i64 %v85645, i64 %v85646, i64 %v85647)
+  %v85648 = call i64 @"std/strings.Valid"(i64 %v85645, i64 %v85646, i64 %v85647)
   call void @"rt.print_int"(i64 %v85518)
   %v85649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v85649)
@@ -178736,7 +178801,7 @@ b729:
   %v85916 = load i64, ptr %v85916.p
   %v85917.p = getelementptr i64, ptr %v85913, i64 2
   %v85917 = load i64, ptr %v85917.p
-  %v85918 = call i64 @"std/utf8.IndexInvalid"(i64 %v85915, i64 %v85916, i64 %v85917)
+  %v85918 = call i64 @"std/strings.IndexInvalid"(i64 %v85915, i64 %v85916, i64 %v85917)
   %v85919 = add i64 0, 195
   %v85920 = add i64 0, 169
   %v85921 = add i64 0, 195
@@ -178997,7 +179062,7 @@ b729:
   %v86046 = load i64, ptr %v86046.p
   %v86047.p = getelementptr i64, ptr %v86043, i64 2
   %v86047 = load i64, ptr %v86047.p
-  %v86048 = call i64 @"std/utf8.Valid"(i64 %v86045, i64 %v86046, i64 %v86047)
+  %v86048 = call i64 @"std/strings.Valid"(i64 %v86045, i64 %v86046, i64 %v86047)
   call void @"rt.print_int"(i64 %v85918)
   %v86049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v86049)
@@ -179553,7 +179618,7 @@ b732:
   %v86316 = load i64, ptr %v86316.p
   %v86317.p = getelementptr i64, ptr %v86313, i64 2
   %v86317 = load i64, ptr %v86317.p
-  %v86318 = call i64 @"std/utf8.IndexInvalid"(i64 %v86315, i64 %v86316, i64 %v86317)
+  %v86318 = call i64 @"std/strings.IndexInvalid"(i64 %v86315, i64 %v86316, i64 %v86317)
   %v86319 = add i64 0, 227
   %v86320 = add i64 0, 129
   %v86321 = add i64 0, 130
@@ -179814,7 +179879,7 @@ b732:
   %v86446 = load i64, ptr %v86446.p
   %v86447.p = getelementptr i64, ptr %v86443, i64 2
   %v86447 = load i64, ptr %v86447.p
-  %v86448 = call i64 @"std/utf8.Valid"(i64 %v86445, i64 %v86446, i64 %v86447)
+  %v86448 = call i64 @"std/strings.Valid"(i64 %v86445, i64 %v86446, i64 %v86447)
   call void @"rt.print_int"(i64 %v86318)
   %v86449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v86449)
@@ -180370,7 +180435,7 @@ b735:
   %v86716 = load i64, ptr %v86716.p
   %v86717.p = getelementptr i64, ptr %v86713, i64 2
   %v86717 = load i64, ptr %v86717.p
-  %v86718 = call i64 @"std/utf8.IndexInvalid"(i64 %v86715, i64 %v86716, i64 %v86717)
+  %v86718 = call i64 @"std/strings.IndexInvalid"(i64 %v86715, i64 %v86716, i64 %v86717)
   %v86719 = add i64 0, 227
   %v86720 = add i64 0, 129
   %v86721 = add i64 0, 130
@@ -180631,7 +180696,7 @@ b735:
   %v86846 = load i64, ptr %v86846.p
   %v86847.p = getelementptr i64, ptr %v86843, i64 2
   %v86847 = load i64, ptr %v86847.p
-  %v86848 = call i64 @"std/utf8.Valid"(i64 %v86845, i64 %v86846, i64 %v86847)
+  %v86848 = call i64 @"std/strings.Valid"(i64 %v86845, i64 %v86846, i64 %v86847)
   call void @"rt.print_int"(i64 %v86718)
   %v86849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v86849)
@@ -181187,7 +181252,7 @@ b738:
   %v87116 = load i64, ptr %v87116.p
   %v87117.p = getelementptr i64, ptr %v87113, i64 2
   %v87117 = load i64, ptr %v87117.p
-  %v87118 = call i64 @"std/utf8.IndexInvalid"(i64 %v87115, i64 %v87116, i64 %v87117)
+  %v87118 = call i64 @"std/strings.IndexInvalid"(i64 %v87115, i64 %v87116, i64 %v87117)
   %v87119 = add i64 0, 227
   %v87120 = add i64 0, 129
   %v87121 = add i64 0, 130
@@ -181448,7 +181513,7 @@ b738:
   %v87246 = load i64, ptr %v87246.p
   %v87247.p = getelementptr i64, ptr %v87243, i64 2
   %v87247 = load i64, ptr %v87247.p
-  %v87248 = call i64 @"std/utf8.Valid"(i64 %v87245, i64 %v87246, i64 %v87247)
+  %v87248 = call i64 @"std/strings.Valid"(i64 %v87245, i64 %v87246, i64 %v87247)
   call void @"rt.print_int"(i64 %v87118)
   %v87249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v87249)
@@ -182004,7 +182069,7 @@ b741:
   %v87516 = load i64, ptr %v87516.p
   %v87517.p = getelementptr i64, ptr %v87513, i64 2
   %v87517 = load i64, ptr %v87517.p
-  %v87518 = call i64 @"std/utf8.IndexInvalid"(i64 %v87515, i64 %v87516, i64 %v87517)
+  %v87518 = call i64 @"std/strings.IndexInvalid"(i64 %v87515, i64 %v87516, i64 %v87517)
   %v87519 = add i64 0, 227
   %v87520 = add i64 0, 129
   %v87521 = add i64 0, 130
@@ -182265,7 +182330,7 @@ b741:
   %v87646 = load i64, ptr %v87646.p
   %v87647.p = getelementptr i64, ptr %v87643, i64 2
   %v87647 = load i64, ptr %v87647.p
-  %v87648 = call i64 @"std/utf8.Valid"(i64 %v87645, i64 %v87646, i64 %v87647)
+  %v87648 = call i64 @"std/strings.Valid"(i64 %v87645, i64 %v87646, i64 %v87647)
   call void @"rt.print_int"(i64 %v87518)
   %v87649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v87649)
@@ -182821,7 +182886,7 @@ b744:
   %v87916 = load i64, ptr %v87916.p
   %v87917.p = getelementptr i64, ptr %v87913, i64 2
   %v87917 = load i64, ptr %v87917.p
-  %v87918 = call i64 @"std/utf8.IndexInvalid"(i64 %v87915, i64 %v87916, i64 %v87917)
+  %v87918 = call i64 @"std/strings.IndexInvalid"(i64 %v87915, i64 %v87916, i64 %v87917)
   %v87919 = add i64 0, 227
   %v87920 = add i64 0, 129
   %v87921 = add i64 0, 130
@@ -183082,7 +183147,7 @@ b744:
   %v88046 = load i64, ptr %v88046.p
   %v88047.p = getelementptr i64, ptr %v88043, i64 2
   %v88047 = load i64, ptr %v88047.p
-  %v88048 = call i64 @"std/utf8.Valid"(i64 %v88045, i64 %v88046, i64 %v88047)
+  %v88048 = call i64 @"std/strings.Valid"(i64 %v88045, i64 %v88046, i64 %v88047)
   call void @"rt.print_int"(i64 %v87918)
   %v88049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v88049)
@@ -183638,7 +183703,7 @@ b747:
   %v88316 = load i64, ptr %v88316.p
   %v88317.p = getelementptr i64, ptr %v88313, i64 2
   %v88317 = load i64, ptr %v88317.p
-  %v88318 = call i64 @"std/utf8.IndexInvalid"(i64 %v88315, i64 %v88316, i64 %v88317)
+  %v88318 = call i64 @"std/strings.IndexInvalid"(i64 %v88315, i64 %v88316, i64 %v88317)
   %v88319 = add i64 0, 227
   %v88320 = add i64 0, 129
   %v88321 = add i64 0, 130
@@ -183899,7 +183964,7 @@ b747:
   %v88446 = load i64, ptr %v88446.p
   %v88447.p = getelementptr i64, ptr %v88443, i64 2
   %v88447 = load i64, ptr %v88447.p
-  %v88448 = call i64 @"std/utf8.Valid"(i64 %v88445, i64 %v88446, i64 %v88447)
+  %v88448 = call i64 @"std/strings.Valid"(i64 %v88445, i64 %v88446, i64 %v88447)
   call void @"rt.print_int"(i64 %v88318)
   %v88449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v88449)
@@ -184455,7 +184520,7 @@ b750:
   %v88716 = load i64, ptr %v88716.p
   %v88717.p = getelementptr i64, ptr %v88713, i64 2
   %v88717 = load i64, ptr %v88717.p
-  %v88718 = call i64 @"std/utf8.IndexInvalid"(i64 %v88715, i64 %v88716, i64 %v88717)
+  %v88718 = call i64 @"std/strings.IndexInvalid"(i64 %v88715, i64 %v88716, i64 %v88717)
   %v88719 = add i64 0, 227
   %v88720 = add i64 0, 129
   %v88721 = add i64 0, 130
@@ -184716,7 +184781,7 @@ b750:
   %v88846 = load i64, ptr %v88846.p
   %v88847.p = getelementptr i64, ptr %v88843, i64 2
   %v88847 = load i64, ptr %v88847.p
-  %v88848 = call i64 @"std/utf8.Valid"(i64 %v88845, i64 %v88846, i64 %v88847)
+  %v88848 = call i64 @"std/strings.Valid"(i64 %v88845, i64 %v88846, i64 %v88847)
   call void @"rt.print_int"(i64 %v88718)
   %v88849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v88849)
@@ -185272,7 +185337,7 @@ b753:
   %v89116 = load i64, ptr %v89116.p
   %v89117.p = getelementptr i64, ptr %v89113, i64 2
   %v89117 = load i64, ptr %v89117.p
-  %v89118 = call i64 @"std/utf8.IndexInvalid"(i64 %v89115, i64 %v89116, i64 %v89117)
+  %v89118 = call i64 @"std/strings.IndexInvalid"(i64 %v89115, i64 %v89116, i64 %v89117)
   %v89119 = add i64 0, 227
   %v89120 = add i64 0, 129
   %v89121 = add i64 0, 130
@@ -185533,7 +185598,7 @@ b753:
   %v89246 = load i64, ptr %v89246.p
   %v89247.p = getelementptr i64, ptr %v89243, i64 2
   %v89247 = load i64, ptr %v89247.p
-  %v89248 = call i64 @"std/utf8.Valid"(i64 %v89245, i64 %v89246, i64 %v89247)
+  %v89248 = call i64 @"std/strings.Valid"(i64 %v89245, i64 %v89246, i64 %v89247)
   call void @"rt.print_int"(i64 %v89118)
   %v89249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v89249)
@@ -186089,7 +186154,7 @@ b756:
   %v89516 = load i64, ptr %v89516.p
   %v89517.p = getelementptr i64, ptr %v89513, i64 2
   %v89517 = load i64, ptr %v89517.p
-  %v89518 = call i64 @"std/utf8.IndexInvalid"(i64 %v89515, i64 %v89516, i64 %v89517)
+  %v89518 = call i64 @"std/strings.IndexInvalid"(i64 %v89515, i64 %v89516, i64 %v89517)
   %v89519 = add i64 0, 227
   %v89520 = add i64 0, 129
   %v89521 = add i64 0, 130
@@ -186350,7 +186415,7 @@ b756:
   %v89646 = load i64, ptr %v89646.p
   %v89647.p = getelementptr i64, ptr %v89643, i64 2
   %v89647 = load i64, ptr %v89647.p
-  %v89648 = call i64 @"std/utf8.Valid"(i64 %v89645, i64 %v89646, i64 %v89647)
+  %v89648 = call i64 @"std/strings.Valid"(i64 %v89645, i64 %v89646, i64 %v89647)
   call void @"rt.print_int"(i64 %v89518)
   %v89649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v89649)
@@ -186906,7 +186971,7 @@ b759:
   %v89916 = load i64, ptr %v89916.p
   %v89917.p = getelementptr i64, ptr %v89913, i64 2
   %v89917 = load i64, ptr %v89917.p
-  %v89918 = call i64 @"std/utf8.IndexInvalid"(i64 %v89915, i64 %v89916, i64 %v89917)
+  %v89918 = call i64 @"std/strings.IndexInvalid"(i64 %v89915, i64 %v89916, i64 %v89917)
   %v89919 = add i64 0, 227
   %v89920 = add i64 0, 129
   %v89921 = add i64 0, 130
@@ -187167,7 +187232,7 @@ b759:
   %v90046 = load i64, ptr %v90046.p
   %v90047.p = getelementptr i64, ptr %v90043, i64 2
   %v90047 = load i64, ptr %v90047.p
-  %v90048 = call i64 @"std/utf8.Valid"(i64 %v90045, i64 %v90046, i64 %v90047)
+  %v90048 = call i64 @"std/strings.Valid"(i64 %v90045, i64 %v90046, i64 %v90047)
   call void @"rt.print_int"(i64 %v89918)
   %v90049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v90049)
@@ -187723,7 +187788,7 @@ b762:
   %v90316 = load i64, ptr %v90316.p
   %v90317.p = getelementptr i64, ptr %v90313, i64 2
   %v90317 = load i64, ptr %v90317.p
-  %v90318 = call i64 @"std/utf8.IndexInvalid"(i64 %v90315, i64 %v90316, i64 %v90317)
+  %v90318 = call i64 @"std/strings.IndexInvalid"(i64 %v90315, i64 %v90316, i64 %v90317)
   %v90319 = add i64 0, 227
   %v90320 = add i64 0, 129
   %v90321 = add i64 0, 130
@@ -187984,7 +188049,7 @@ b762:
   %v90446 = load i64, ptr %v90446.p
   %v90447.p = getelementptr i64, ptr %v90443, i64 2
   %v90447 = load i64, ptr %v90447.p
-  %v90448 = call i64 @"std/utf8.Valid"(i64 %v90445, i64 %v90446, i64 %v90447)
+  %v90448 = call i64 @"std/strings.Valid"(i64 %v90445, i64 %v90446, i64 %v90447)
   call void @"rt.print_int"(i64 %v90318)
   %v90449 = add i64 0, 32
   call void @"rt.print_char"(i64 %v90449)
@@ -188540,7 +188605,7 @@ b765:
   %v90716 = load i64, ptr %v90716.p
   %v90717.p = getelementptr i64, ptr %v90713, i64 2
   %v90717 = load i64, ptr %v90717.p
-  %v90718 = call i64 @"std/utf8.IndexInvalid"(i64 %v90715, i64 %v90716, i64 %v90717)
+  %v90718 = call i64 @"std/strings.IndexInvalid"(i64 %v90715, i64 %v90716, i64 %v90717)
   %v90719 = add i64 0, 227
   %v90720 = add i64 0, 129
   %v90721 = add i64 0, 130
@@ -188801,7 +188866,7 @@ b765:
   %v90846 = load i64, ptr %v90846.p
   %v90847.p = getelementptr i64, ptr %v90843, i64 2
   %v90847 = load i64, ptr %v90847.p
-  %v90848 = call i64 @"std/utf8.Valid"(i64 %v90845, i64 %v90846, i64 %v90847)
+  %v90848 = call i64 @"std/strings.Valid"(i64 %v90845, i64 %v90846, i64 %v90847)
   call void @"rt.print_int"(i64 %v90718)
   %v90849 = add i64 0, 32
   call void @"rt.print_char"(i64 %v90849)
@@ -189357,7 +189422,7 @@ b768:
   %v91116 = load i64, ptr %v91116.p
   %v91117.p = getelementptr i64, ptr %v91113, i64 2
   %v91117 = load i64, ptr %v91117.p
-  %v91118 = call i64 @"std/utf8.IndexInvalid"(i64 %v91115, i64 %v91116, i64 %v91117)
+  %v91118 = call i64 @"std/strings.IndexInvalid"(i64 %v91115, i64 %v91116, i64 %v91117)
   %v91119 = add i64 0, 227
   %v91120 = add i64 0, 129
   %v91121 = add i64 0, 130
@@ -189618,7 +189683,7 @@ b768:
   %v91246 = load i64, ptr %v91246.p
   %v91247.p = getelementptr i64, ptr %v91243, i64 2
   %v91247 = load i64, ptr %v91247.p
-  %v91248 = call i64 @"std/utf8.Valid"(i64 %v91245, i64 %v91246, i64 %v91247)
+  %v91248 = call i64 @"std/strings.Valid"(i64 %v91245, i64 %v91246, i64 %v91247)
   call void @"rt.print_int"(i64 %v91118)
   %v91249 = add i64 0, 32
   call void @"rt.print_char"(i64 %v91249)
@@ -190174,7 +190239,7 @@ b771:
   %v91516 = load i64, ptr %v91516.p
   %v91517.p = getelementptr i64, ptr %v91513, i64 2
   %v91517 = load i64, ptr %v91517.p
-  %v91518 = call i64 @"std/utf8.IndexInvalid"(i64 %v91515, i64 %v91516, i64 %v91517)
+  %v91518 = call i64 @"std/strings.IndexInvalid"(i64 %v91515, i64 %v91516, i64 %v91517)
   %v91519 = add i64 0, 227
   %v91520 = add i64 0, 129
   %v91521 = add i64 0, 130
@@ -190435,7 +190500,7 @@ b771:
   %v91646 = load i64, ptr %v91646.p
   %v91647.p = getelementptr i64, ptr %v91643, i64 2
   %v91647 = load i64, ptr %v91647.p
-  %v91648 = call i64 @"std/utf8.Valid"(i64 %v91645, i64 %v91646, i64 %v91647)
+  %v91648 = call i64 @"std/strings.Valid"(i64 %v91645, i64 %v91646, i64 %v91647)
   call void @"rt.print_int"(i64 %v91518)
   %v91649 = add i64 0, 32
   call void @"rt.print_char"(i64 %v91649)
@@ -190991,7 +191056,7 @@ b774:
   %v91916 = load i64, ptr %v91916.p
   %v91917.p = getelementptr i64, ptr %v91913, i64 2
   %v91917 = load i64, ptr %v91917.p
-  %v91918 = call i64 @"std/utf8.IndexInvalid"(i64 %v91915, i64 %v91916, i64 %v91917)
+  %v91918 = call i64 @"std/strings.IndexInvalid"(i64 %v91915, i64 %v91916, i64 %v91917)
   %v91919 = add i64 0, 227
   %v91920 = add i64 0, 129
   %v91921 = add i64 0, 130
@@ -191252,7 +191317,7 @@ b774:
   %v92046 = load i64, ptr %v92046.p
   %v92047.p = getelementptr i64, ptr %v92043, i64 2
   %v92047 = load i64, ptr %v92047.p
-  %v92048 = call i64 @"std/utf8.Valid"(i64 %v92045, i64 %v92046, i64 %v92047)
+  %v92048 = call i64 @"std/strings.Valid"(i64 %v92045, i64 %v92046, i64 %v92047)
   call void @"rt.print_int"(i64 %v91918)
   %v92049 = add i64 0, 32
   call void @"rt.print_char"(i64 %v92049)
@@ -191760,7 +191825,7 @@ b777:
   %v92292 = load i64, ptr %v92292.p
   %v92293.p = getelementptr i64, ptr %v92289, i64 2
   %v92293 = load i64, ptr %v92293.p
-  %v92294 = call i64 @"std/utf8.IndexInvalid"(i64 %v92291, i64 %v92292, i64 %v92293)
+  %v92294 = call i64 @"std/strings.IndexInvalid"(i64 %v92291, i64 %v92292, i64 %v92293)
   %v92295 = add i64 0, 97
   %v92296 = add i64 0, 97
   %v92297 = add i64 0, 97
@@ -191973,7 +192038,7 @@ b777:
   %v92398 = load i64, ptr %v92398.p
   %v92399.p = getelementptr i64, ptr %v92395, i64 2
   %v92399 = load i64, ptr %v92399.p
-  %v92400 = call i64 @"std/utf8.Valid"(i64 %v92397, i64 %v92398, i64 %v92399)
+  %v92400 = call i64 @"std/strings.Valid"(i64 %v92397, i64 %v92398, i64 %v92399)
   call void @"rt.print_int"(i64 %v92294)
   %v92401 = add i64 0, 32
   call void @"rt.print_char"(i64 %v92401)
@@ -192337,7 +192402,7 @@ b780:
   %v92572 = load i64, ptr %v92572.p
   %v92573.p = getelementptr i64, ptr %v92569, i64 2
   %v92573 = load i64, ptr %v92573.p
-  %v92574 = call i64 @"std/utf8.IndexInvalid"(i64 %v92571, i64 %v92572, i64 %v92573)
+  %v92574 = call i64 @"std/strings.IndexInvalid"(i64 %v92571, i64 %v92572, i64 %v92573)
   %v92575 = add i64 0, 97
   %v92576 = add i64 0, 97
   %v92577 = add i64 0, 97
@@ -192454,7 +192519,7 @@ b780:
   %v92630 = load i64, ptr %v92630.p
   %v92631.p = getelementptr i64, ptr %v92627, i64 2
   %v92631 = load i64, ptr %v92631.p
-  %v92632 = call i64 @"std/utf8.Valid"(i64 %v92629, i64 %v92630, i64 %v92631)
+  %v92632 = call i64 @"std/strings.Valid"(i64 %v92629, i64 %v92630, i64 %v92631)
   call void @"rt.print_int"(i64 %v92574)
   %v92633 = add i64 0, 32
   call void @"rt.print_char"(i64 %v92633)
@@ -192842,7 +192907,7 @@ b783:
   %v92816 = load i64, ptr %v92816.p
   %v92817.p = getelementptr i64, ptr %v92813, i64 2
   %v92817 = load i64, ptr %v92817.p
-  %v92818 = call i64 @"std/utf8.IndexInvalid"(i64 %v92815, i64 %v92816, i64 %v92817)
+  %v92818 = call i64 @"std/strings.IndexInvalid"(i64 %v92815, i64 %v92816, i64 %v92817)
   %v92819 = add i64 0, 227
   %v92820 = add i64 0, 129
   %v92821 = add i64 0, 130
@@ -193079,7 +193144,7 @@ b783:
   %v92934 = load i64, ptr %v92934.p
   %v92935.p = getelementptr i64, ptr %v92931, i64 2
   %v92935 = load i64, ptr %v92935.p
-  %v92936 = call i64 @"std/utf8.Valid"(i64 %v92933, i64 %v92934, i64 %v92935)
+  %v92936 = call i64 @"std/strings.Valid"(i64 %v92933, i64 %v92934, i64 %v92935)
   call void @"rt.print_int"(i64 %v92818)
   %v92937 = add i64 0, 32
   call void @"rt.print_char"(i64 %v92937)
@@ -194471,7 +194536,7 @@ b89:
   br label %b83
 }
 
-define internal i64 @"std/utf8.IndexInvalid"(i64 %v0, i64 %v1, i64 %v2) #0 {
+define internal i64 @"std/strings.IndexInvalid"(i64 %v0, i64 %v1, i64 %v2) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -194541,7 +194606,7 @@ b2:
   %v24 = load i64, ptr %v24.p
   %v25.p = getelementptr i64, ptr %v6, i64 0
   %v25 = load i64, ptr %v25.p
-  %v26 = call i64 @"std/utf8.validPrefix"(i64 %v22, i64 %v23, i64 %v24, i64 %v25)
+  %v26 = call i64 @"std/strings.validPrefix"(i64 %v22, i64 %v23, i64 %v24, i64 %v25)
   %st8 = getelementptr i64, ptr %v6, i64 0
   store i64 %v26, ptr %st8
   %v150 = getelementptr i64, ptr @"rt.meta", i64 0
@@ -194640,7 +194705,7 @@ b10.t23:
 b10.e24:
   br label %b8
 b11:
-  %v35 = add i64 0, 1
+  %v35 = add i64 0, 0
   call void @"rt.panic"(i64 %v35)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -194674,7 +194739,7 @@ b15.t25:
 b15.e26:
   br label %b17
 b16:
-  %v52 = add i64 0, 2
+  %v52 = add i64 0, 1
   call void @"rt.panic"(i64 %v52)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -194750,7 +194815,7 @@ b23.t35:
 b23.e36:
   br label %b27
 b24:
-  %v74 = add i64 0, 3
+  %v74 = add i64 0, 2
   call void @"rt.panic"(i64 %v74)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -194856,7 +194921,7 @@ b36.t48:
 b36.e49:
   br label %b40
 b37:
-  %v106 = add i64 0, 4
+  %v106 = add i64 0, 3
   call void @"rt.panic"(i64 %v106)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -194898,7 +194963,7 @@ b40.t52:
 b40.e53:
   br label %b44
 b41:
-  %v121 = add i64 0, 5
+  %v121 = add i64 0, 4
   call void @"rt.panic"(i64 %v121)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -194935,7 +195000,7 @@ b45:
   %v135 = load i64, ptr %v135.p
   %v136.p = getelementptr i64, ptr %v6, i64 0
   %v136 = load i64, ptr %v136.p
-  %v137 = call i64 @"std/utf8.seqLen"(i64 %v133, i64 %v134, i64 %v135, i64 %v136)
+  %v137 = call i64 @"std/strings.seqLen"(i64 %v133, i64 %v134, i64 %v135, i64 %v136)
   %v138 = add i64 0, 0
   %v139.c = icmp eq i64 %v137, %v138
   %v139 = zext i1 %v139.c to i64
@@ -194964,7 +195029,7 @@ b48:
   br label %b1
 }
 
-define internal i64 @"std/utf8.Valid"(i64 %v0, i64 %v1, i64 %v2) #0 {
+define internal i64 @"std/strings.Valid"(i64 %v0, i64 %v1, i64 %v2) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -194990,7 +195055,7 @@ b0:
   %v6 = load i64, ptr %v6.p
   %v7.p = getelementptr i64, ptr %v3, i64 2
   %v7 = load i64, ptr %v7.p
-  %v8 = call i64 @"std/utf8.IndexInvalid"(i64 %v5, i64 %v6, i64 %v7)
+  %v8 = call i64 @"std/strings.IndexInvalid"(i64 %v5, i64 %v6, i64 %v7)
   %v9 = add i64 0, 0
   %v10.c = icmp slt i64 %v8, %v9
   %v10 = zext i1 %v10.c to i64
@@ -195080,8 +195145,8 @@ b0:
   store i64 %v1, ptr %st1
   %st2 = getelementptr i64, ptr %v3, i64 2
   store i64 %v2, ptr %st2
-  %v52 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v4.p = getelementptr i64, ptr %v52, i64 0
+  %v51 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v4.p = getelementptr i64, ptr %v51, i64 0
   %v4 = load i64, ptr %v4.p
   call void @"rt.region_enter"()
   %v5 = getelementptr i64, ptr %s1, i64 0
@@ -195091,7 +195156,7 @@ b0:
   %v7 = load i64, ptr %v7.p
   %v8.p = getelementptr i64, ptr %v3, i64 2
   %v8 = load i64, ptr %v8.p
-  call void @"std/utf8.Parse"(ptr %v5, i64 %v6, i64 %v7, i64 %v8)
+  call void @"std/internal/utf8.Parse"(ptr %v5, i64 %v6, i64 %v7, i64 %v8)
   %v9 = add i64 0, 3
   %v10 = getelementptr i64, ptr %v5, i64 %v9
   %v11 = getelementptr i64, ptr %s2, i64 0
@@ -195179,29 +195244,26 @@ b1.t20:
 b1.e21:
   br label %b3
 b2:
-  %v45 = getelementptr i64, ptr @"str.1", i64 0
-  %v46 = add i64 0, 2
-  %v47 = add i64 0, 0
-  %v48 = getelementptr i64, ptr %s6, i64 0
-  %v49 = ptrtoint ptr %v45 to i64
-  %st21 = getelementptr i64, ptr %v48, i64 0
-  store i64 %v49, ptr %st21
-  %st22 = getelementptr i64, ptr %v48, i64 1
-  store i64 %v46, ptr %st22
-  %st23 = getelementptr i64, ptr %v48, i64 2
-  store i64 %v47, ptr %st23
-  call void @"rt.print_str"(ptr %v48)
-  %v50 = add i64 0, 32
-  call void @"rt.print_char"(i64 %v50)
+  %v44 = getelementptr i64, ptr @"str.1", i64 0
+  %v45 = add i64 0, 2
+  %v46 = add i64 0, 0
+  %v47 = getelementptr i64, ptr %s6, i64 0
+  %v48 = ptrtoint ptr %v44 to i64
+  %st21 = getelementptr i64, ptr %v47, i64 0
+  store i64 %v48, ptr %st21
+  %st22 = getelementptr i64, ptr %v47, i64 1
+  store i64 %v45, ptr %st22
+  %st23 = getelementptr i64, ptr %v47, i64 2
+  store i64 %v46, ptr %st23
+  call void @"rt.print_str"(ptr %v47)
+  %v49 = add i64 0, 32
+  call void @"rt.print_char"(i64 %v49)
   call void @"rt.print_str"(ptr %v11)
-  %v51 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v51)
+  %v50 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v50)
   br label %b6
 b3:
-  %v44 = add i64 0, 0
-  call void @"rt.panic"(i64 %v44)
-  call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
-  unreachable
+  br label %b5
 b4:
   %v36.p = getelementptr i64, ptr %v27, i64 1
   %v36 = load i64, ptr %v36.p
@@ -195226,13 +195288,13 @@ b4:
 b5:
   br label %b6
 b6:
-  %v53 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st27 = getelementptr i64, ptr %v53, i64 0
+  %v52 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st27 = getelementptr i64, ptr %v52, i64 0
   store i64 %v4, ptr %st27
   ret void
 }
 
-define internal void @"std/utf8.Parse"(ptr %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
+define internal void @"std/internal/utf8.Parse"(ptr %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -195294,7 +195356,7 @@ b0:
   %v7 = load i64, ptr %v7.p
   %v8.p = getelementptr i64, ptr %v4, i64 2
   %v8 = load i64, ptr %v8.p
-  %v9 = call i64 @"std/utf8.IndexInvalid"(i64 %v6, i64 %v7, i64 %v8)
+  %v9 = call i64 @"std/strings.IndexInvalid"(i64 %v6, i64 %v7, i64 %v8)
   %v10 = add i64 0, 0
   %v11.c = icmp sge i64 %v9, %v10
   %v11 = zext i1 %v11.c to i64
@@ -195507,6 +195569,32 @@ b7:
   ret void
 }
 
+define internal i64 @"std/strings.validPrefix"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
+b0:
+  %s0 = alloca [3 x i64], align 8
+  %s0.z0 = getelementptr i64, ptr %s0, i64 0
+  store i64 0, ptr %s0.z0
+  %s0.z1 = getelementptr i64, ptr %s0, i64 1
+  store i64 0, ptr %s0.z1
+  %s0.z2 = getelementptr i64, ptr %s0, i64 2
+  store i64 0, ptr %s0.z2
+  %v4 = getelementptr i64, ptr %s0, i64 0
+  %st0 = getelementptr i64, ptr %v4, i64 0
+  store i64 %v0, ptr %st0
+  %st1 = getelementptr i64, ptr %v4, i64 1
+  store i64 %v1, ptr %st1
+  %st2 = getelementptr i64, ptr %v4, i64 2
+  store i64 %v2, ptr %st2
+  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
+  %v5.p = getelementptr i64, ptr %v6, i64 0
+  %v5 = load i64, ptr %v5.p
+  call void @"rt.region_enter"()
+  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
+  %st3 = getelementptr i64, ptr %v7, i64 0
+  store i64 %v5, ptr %st3
+  ret i64 %v3
+}
+
 define internal void @"rt.panic"(i64 %v0) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
@@ -195579,13 +195667,6 @@ b0:
   store i64 0, ptr %s9.z1
   %s9.z2 = getelementptr i64, ptr %s9, i64 2
   store i64 0, ptr %s9.z2
-  %s10 = alloca [3 x i64], align 8
-  %s10.z0 = getelementptr i64, ptr %s10, i64 0
-  store i64 0, ptr %s10.z0
-  %s10.z1 = getelementptr i64, ptr %s10, i64 1
-  store i64 0, ptr %s10.z1
-  %s10.z2 = getelementptr i64, ptr %s10, i64 2
-  store i64 0, ptr %s10.z2
   %v1 = getelementptr i64, ptr @"rt.meta", i64 0
   %v2 = getelementptr i64, ptr @"rt.psites", i64 0
   %v3 = getelementptr i64, ptr %v2, i64 %v0
@@ -195612,7 +195693,7 @@ b0:
   %v19 = add i64 0, 2
   %st0 = getelementptr i64, ptr %v1, i64 1026
   store i64 %v19, ptr %st0
-  %v20 = getelementptr i64, ptr @"str.13", i64 0
+  %v20 = getelementptr i64, ptr @"str.14", i64 0
   %v21 = add i64 0, 7
   %v22 = add i64 0, 0
   %v23 = getelementptr i64, ptr %s0, i64 0
@@ -195634,7 +195715,7 @@ b0.t5:
 b0.e6:
   br label %b3
 b1:
-  %v74 = getelementptr i64, ptr @"str.21", i64 0
+  %v74 = getelementptr i64, ptr @"str.22", i64 0
   %v75 = add i64 0, 4
   %v76 = add i64 0, 0
   %v77 = getelementptr i64, ptr %s8, i64 0
@@ -195656,7 +195737,7 @@ b1.t10:
 b1.e11:
   br label %b18
 b2:
-  %v27 = getelementptr i64, ptr @"str.14", i64 0
+  %v27 = getelementptr i64, ptr @"str.15", i64 0
   %v28 = add i64 0, 18
   %v29 = add i64 0, 0
   %v30 = getelementptr i64, ptr %s1, i64 0
@@ -195680,7 +195761,7 @@ b3.t15:
 b3.e16:
   br label %b5
 b4:
-  %v34 = getelementptr i64, ptr @"str.15", i64 0
+  %v34 = getelementptr i64, ptr @"str.16", i64 0
   %v35 = add i64 0, 25
   %v36 = add i64 0, 0
   %v37 = getelementptr i64, ptr %s2, i64 0
@@ -195704,7 +195785,7 @@ b5.t20:
 b5.e21:
   br label %b7
 b6:
-  %v41 = getelementptr i64, ptr @"str.16", i64 0
+  %v41 = getelementptr i64, ptr @"str.17", i64 0
   %v42 = add i64 0, 27
   %v43 = add i64 0, 0
   %v44 = getelementptr i64, ptr %s3, i64 0
@@ -195728,7 +195809,7 @@ b7.t25:
 b7.e26:
   br label %b9
 b8:
-  %v48 = getelementptr i64, ptr @"str.17", i64 0
+  %v48 = getelementptr i64, ptr @"str.18", i64 0
   %v49 = add i64 0, 21
   %v50 = add i64 0, 0
   %v51 = getelementptr i64, ptr %s4, i64 0
@@ -195752,7 +195833,7 @@ b9.t30:
 b9.e31:
   br label %b11
 b10:
-  %v55 = getelementptr i64, ptr @"str.18", i64 0
+  %v55 = getelementptr i64, ptr @"str.19", i64 0
   %v56 = add i64 0, 22
   %v57 = add i64 0, 0
   %v58 = getelementptr i64, ptr %s5, i64 0
@@ -195776,7 +195857,7 @@ b11.t35:
 b11.e36:
   br label %b13
 b12:
-  %v62 = getelementptr i64, ptr @"str.19", i64 0
+  %v62 = getelementptr i64, ptr @"str.20", i64 0
   %v63 = add i64 0, 16
   %v64 = add i64 0, 0
   %v65 = getelementptr i64, ptr %s6, i64 0
@@ -195800,7 +195881,7 @@ b13.t40:
 b13.e41:
   br label %b15
 b14:
-  %v69 = getelementptr i64, ptr @"str.20", i64 0
+  %v69 = getelementptr i64, ptr @"str.21", i64 0
   %v70 = add i64 0, 24
   %v71 = add i64 0, 0
   %v72 = getelementptr i64, ptr %s7, i64 0
@@ -195816,20 +195897,20 @@ b14:
 b15:
   br label %b1
 b16:
-  %v93 = add i64 0, 58
-  call void @"rt.print_char"(i64 %v93)
+  %v86 = add i64 0, 58
+  call void @"rt.print_char"(i64 %v86)
   call void @"rt.print_int"(i64 %v14)
-  %v94 = add i64 0, 58
-  call void @"rt.print_char"(i64 %v94)
+  %v87 = add i64 0, 58
+  call void @"rt.print_char"(i64 %v87)
   call void @"rt.print_int"(i64 %v18)
-  %v95 = add i64 0, 10
-  call void @"rt.print_char"(i64 %v95)
+  %v88 = add i64 0, 10
+  call void @"rt.print_char"(i64 %v88)
   call void @"rt.flush"()
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
 b17:
-  %v81 = getelementptr i64, ptr @"str.22", i64 0
-  %v82 = add i64 0, 14
+  %v81 = getelementptr i64, ptr @"str.23", i64 0
+  %v82 = add i64 0, 25
   %v83 = add i64 0, 0
   %v84 = getelementptr i64, ptr %s9, i64 0
   %v85 = ptrtoint ptr %v81 to i64
@@ -195842,60 +195923,10 @@ b17:
   call void @"rt.print_str"(ptr %v84)
   br label %b16
 b18:
-  %v86 = add i64 0, 1
-  %v87.c = icmp eq i64 %v10, %v86
-  %v87 = zext i1 %v87.c to i64
-  %c.b18 = icmp ne i64 %v87, 0
-  br i1 %c.b18, label %b18.t48, label %b18.e49
-b18.t48:
-  br label %b19
-b18.e49:
-  br label %b20
-b19:
-  %v88 = getelementptr i64, ptr @"str.23", i64 0
-  %v89 = add i64 0, 19
-  %v90 = add i64 0, 0
-  %v91 = getelementptr i64, ptr %s10, i64 0
-  %v92 = ptrtoint ptr %v88 to i64
-  %st49 = getelementptr i64, ptr %v91, i64 0
-  store i64 %v92, ptr %st49
-  %st50 = getelementptr i64, ptr %v91, i64 1
-  store i64 %v89, ptr %st50
-  %st51 = getelementptr i64, ptr %v91, i64 2
-  store i64 %v90, ptr %st51
-  call void @"rt.print_str"(ptr %v91)
-  br label %b16
-b20:
   br label %b16
 }
 
-define internal i64 @"std/utf8.validPrefix"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
-b0:
-  %s0 = alloca [3 x i64], align 8
-  %s0.z0 = getelementptr i64, ptr %s0, i64 0
-  store i64 0, ptr %s0.z0
-  %s0.z1 = getelementptr i64, ptr %s0, i64 1
-  store i64 0, ptr %s0.z1
-  %s0.z2 = getelementptr i64, ptr %s0, i64 2
-  store i64 0, ptr %s0.z2
-  %v4 = getelementptr i64, ptr %s0, i64 0
-  %st0 = getelementptr i64, ptr %v4, i64 0
-  store i64 %v0, ptr %st0
-  %st1 = getelementptr i64, ptr %v4, i64 1
-  store i64 %v1, ptr %st1
-  %st2 = getelementptr i64, ptr %v4, i64 2
-  store i64 %v2, ptr %st2
-  %v6 = getelementptr i64, ptr @"rt.meta", i64 0
-  %v5.p = getelementptr i64, ptr %v6, i64 0
-  %v5 = load i64, ptr %v5.p
-  call void @"rt.region_enter"()
-  %v7 = getelementptr i64, ptr @"rt.meta", i64 0
-  %st3 = getelementptr i64, ptr %v7, i64 0
-  store i64 %v5, ptr %st3
-  ret i64 %v3
-}
-
-define internal i64 @"std/utf8.seqLen"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
+define internal i64 @"std/strings.seqLen"(i64 %v0, i64 %v1, i64 %v2, i64 %v3) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -195926,7 +195957,7 @@ b0.t4:
 b0.e5:
   br label %b2
 b1:
-  %v8 = add i64 0, 6
+  %v8 = add i64 0, 5
   call void @"rt.panic"(i64 %v8)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -196002,7 +196033,7 @@ b10:
   %v28 = add i64 %v3, %v27
   %v29 = add i64 0, 128
   %v30 = add i64 0, 191
-  %v31 = call i64 @"std/utf8.cont"(i64 %v24, i64 %v25, i64 %v26, i64 %v28, i64 %v29, i64 %v30)
+  %v31 = call i64 @"std/strings.cont"(i64 %v24, i64 %v25, i64 %v26, i64 %v28, i64 %v29, i64 %v30)
   %c.b10 = icmp ne i64 %v31, 0
   br i1 %c.b10, label %b10.t15, label %b10.e16
 b10.t15:
@@ -196091,7 +196122,7 @@ b25:
   %v52 = load i64, ptr %v52.p
   %v53 = add i64 0, 1
   %v54 = add i64 %v3, %v53
-  %v55 = call i64 @"std/utf8.cont"(i64 %v50, i64 %v51, i64 %v52, i64 %v54, i64 %v44, i64 %v49)
+  %v55 = call i64 @"std/strings.cont"(i64 %v50, i64 %v51, i64 %v52, i64 %v54, i64 %v44, i64 %v49)
   %c.b25 = icmp ne i64 %v55, 0
   br i1 %c.b25, label %b25.t26, label %b25.e27
 b25.t26:
@@ -196109,7 +196140,7 @@ b26:
   %v61 = add i64 %v3, %v60
   %v62 = add i64 0, 128
   %v63 = add i64 0, 191
-  %v64 = call i64 @"std/utf8.cont"(i64 %v57, i64 %v58, i64 %v59, i64 %v61, i64 %v62, i64 %v63)
+  %v64 = call i64 @"std/strings.cont"(i64 %v57, i64 %v58, i64 %v59, i64 %v61, i64 %v62, i64 %v63)
   br label %b27
 b27:
   %v56 = phi i64 [ %v55, %b25.e27 ], [ %v64, %b26 ]
@@ -196199,7 +196230,7 @@ b41:
   %v85 = load i64, ptr %v85.p
   %v86 = add i64 0, 1
   %v87 = add i64 %v3, %v86
-  %v88 = call i64 @"std/utf8.cont"(i64 %v83, i64 %v84, i64 %v85, i64 %v87, i64 %v77, i64 %v82)
+  %v88 = call i64 @"std/strings.cont"(i64 %v83, i64 %v84, i64 %v85, i64 %v87, i64 %v77, i64 %v82)
   %c.b41 = icmp ne i64 %v88, 0
   br i1 %c.b41, label %b41.t39, label %b41.e40
 b41.t39:
@@ -196217,7 +196248,7 @@ b42:
   %v94 = add i64 %v3, %v93
   %v95 = add i64 0, 128
   %v96 = add i64 0, 191
-  %v97 = call i64 @"std/utf8.cont"(i64 %v90, i64 %v91, i64 %v92, i64 %v94, i64 %v95, i64 %v96)
+  %v97 = call i64 @"std/strings.cont"(i64 %v90, i64 %v91, i64 %v92, i64 %v94, i64 %v95, i64 %v96)
   br label %b43
 b43:
   %v89 = phi i64 [ %v88, %b41.e40 ], [ %v97, %b42 ]
@@ -196238,7 +196269,7 @@ b44:
   %v103 = add i64 %v3, %v102
   %v104 = add i64 0, 128
   %v105 = add i64 0, 191
-  %v106 = call i64 @"std/utf8.cont"(i64 %v99, i64 %v100, i64 %v101, i64 %v103, i64 %v104, i64 %v105)
+  %v106 = call i64 @"std/strings.cont"(i64 %v99, i64 %v100, i64 %v101, i64 %v103, i64 %v104, i64 %v105)
   br label %b45
 b45:
   %v98 = phi i64 [ %v89, %b43.e42 ], [ %v106, %b44 ]
@@ -196268,7 +196299,7 @@ b49:
   ret i64 %v110
 }
 
-define internal i64 @"std/utf8.cont"(i64 %v0, i64 %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5) #0 {
+define internal i64 @"std/strings.cont"(i64 %v0, i64 %v1, i64 %v2, i64 %v3, i64 %v4, i64 %v5) #0 {
 b0:
   %s0 = alloca [3 x i64], align 8
   %s0.z0 = getelementptr i64, ptr %s0, i64 0
@@ -196318,7 +196349,7 @@ b2.t8:
 b2.e9:
   br label %b6
 b3:
-  %v13 = add i64 0, 7
+  %v13 = add i64 0, 6
   call void @"rt.panic"(i64 %v13)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable
@@ -196351,7 +196382,7 @@ b6:
   store i64 %v7, ptr %st11
   ret i64 %v19
 b7:
-  %v22 = add i64 0, 8
+  %v22 = add i64 0, 7
   call void @"rt.panic"(i64 %v22)
   call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},~{rcx},~{r11},~{memory}"(i64 60, i64 101)
   unreachable

@@ -1,0 +1,57 @@
+package main
+
+// lease の窓の性能 lint（警告 — 受理は変えない。analyzer/lease.sober）: 窓の中の待ち（block 効果の導出 — 推移的に）と、同じ Local の入れ子の窓。
+// 鳴らない形: 純な窓・違う Local の入れ子・窓の中で spawn した子の待ち（別の task）・窓の外の待ち
+
+import "std/iter"
+import "std/os"
+import "std/task"
+import "std/pool"
+
+type Work struct {
+    n int
+    tab pool.Scratch
+}
+
+func sum(w mut Work) int {
+    mut t := 0
+    for i <- iter.Range(0, 8) {
+        pool.Store(mut w.tab, i, i)
+        t += pool.Load(mut w.tab, i)
+    }
+    return t
+}
+
+// nap は推移的に待つ（os.Sleep → rt の sleep）
+func nap(ms int) int {
+    os.Sleep(ms)
+    return ms
+}
+
+func main() {
+    lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 8))
+    lv := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 8))
+    // 鳴る: 直の待ち
+    a := task.Lease(lw, (w mut Work) => {
+        os.Sleep(0)
+        sum(mut w)
+    })
+    // 鳴る: 推移的な待ち（1 つの窓に 1 回だけ）
+    b := task.Lease(lw, (w mut Work) => sum(mut w) + nap(0) + nap(0))
+    // 鳴る: 同じ Local の入れ子
+    c := task.Lease(lw, (w mut Work) => sum(mut w) + task.Lease(lw, (u mut Work) => sum(mut u)))
+    // 鳴らない: 違う Local の入れ子・純な窓・窓の外の待ち
+    d := task.Lease(lw, (w mut Work) => sum(mut w) + task.Lease(lv, (u mut Work) => sum(mut u)))
+    os.Sleep(0)
+    // 鳴らない: 窓の中で spawn した子の待ち（scope は窓の外）
+    r, err := task.Run((s) => {
+        task.Lease(lw, (w mut Work) => {
+            _ = task.Spawn(s, () => nap(0))
+            sum(mut w)
+        })
+    })
+    println(a + b + c + d + r)
+    if err != nil {
+        println(-1)
+    }
+}

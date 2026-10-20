@@ -39,11 +39,11 @@ design-dev.md「層の線引き」のうち コンパイラ層（健全必須）
 
 段 6 P3b-4b — チャネルのペイロードの境界コピー（2026-10-06）: ペイロードの条件を loc-free から imm・chan なしへ（newch は加えて注釈が今の世界で整形 `t.regionsBelow d`）。端点の型のペイロードの region は意味を持たない — 型の表 Ξ.ep は region を全部 0 へ締めた形（`t.relocR 0`）を持ち、epTx / epRx はそれと引く。sendE = 送る値の型 te とペイロード型 t が region を除いて一致（`Ty.payOk` — どちらも imm・chan なしで relocR 0 が等しい）・recvE の型 = `t.relocR (d - 1)`（受けた値は今の最内の region へ）。機械: 項目 EpEnt にペイロード型（注釈の relocR 0）を持たせ、キューの要素を 梱包 `Pkt`（値・1 region の小さなヒープのセル列・歩いた型）に。send = `packV`（`xfer 0` で送り手のヒープから小さなヒープへ）・recv = 梱包を `xfer (H.length - 1)` で受け手の最内へ。どちらも失敗は none（型付きなら起きない — progress が pack_ok / unpack_ok で示す）。ChanOk.eptyped = 型は relocR 0 で不動・imm・chan なし・項目の型と一致・待機中の梱包は `PktOk`（小さなヒープが共有境界 0・空の型環境で型付き、値は深さ 1 で型付く）。補題: `pack_ok`・`unpack_ok`・`xfer_take`（写しは region k より下に触れない — 共有プレフィクスの不変の受けの腕）・`Ty.payOk_renR` ほか。Kahn.lean は言明・証明の骨格とも無変更（Op.run の結果を梱包 Pkt に・send は送り手のヒープを運び packV・recv の展開は mainCont〔K に依らない続き〕へ — 葉の局所の歩）。公理 propext / Quot.sound のみ。反証探索 = 乱択の反例探索 strchanfuzz（spscfuzz の string 版 — 3 seed × 1,500 本・割れ 0）
 
-段 6 P3b-4 ③ — close と `T?` の受け（2026-10-06 — 裁定 = language.md 11 節 P3b の仮採用 ③「Close / `T?` nil / for-Recv はコア拡張 — P3b-4 の Lean 便に同梱」）: 式 `close c`（`c : own tx r t` → unit）を足し、recvE の型を `.opt (t.relocR (d - 1))` に（表層の Recv は最初から `T?` — 脱糖は `some (recv c)` をやめて `recv c` をそのまま出す）。機械: 項目 EpEnt に `closed : Bool`・フレーム `closeK`。close = 持ち主で開いていれば `closed := true`・それ以外（持ち主違い・二度目）は定義された panic。send = 持ち主の確認の後、閉じていれば panic・梱包は `some v` を型 `.opt ent.ty` で（キューの要素は `T?` の値 — 受けは一様に xfer で写して `some v'`）。recv = キューが空で閉じていれば `nil (ent.ty.relocR (H.length - 1))`（何度受けても nil・K は不変）・空で開いていれば待つ。task の外の closeK は panic（recvK と同じ柵）。型付けの不変: ChanOk.eptyped の待機中の梱包は `PktOk Δ (.opt t) w`・Blocked の famSnd / famRcv に `ent.closed = false`（閉じた送りは待たずに死ぬ・閉じて空の受けは待たない）。補題: `pack_ok_opt`（pack_ok を `.opt` / `some v` で呼ぶだけ — payOk は opt で保たれる）。unpack_ok は `.opt t0` で呼ぶ（relocR は opt と可換）。Kahn.lean は言明・骨格とも無変更（Op / Mini に close の操作・send の closed 検査・recv の閉じた空 = 空の小さなヒープの梱包 `⟨nil ty, [], .opt ty⟩` を返し mainCont の xfer が nil へ写す — famMain と一致・mainOp / mainCont に closeK の腕。close は同じ鍵の送りと同じ持ち主の操作なので、閉じた後の送りの有無はプログラム順で決まり、閉じて空の受けは閉じる前の送りが全部キューに入った後でしか起きない — 1 鍵の可換の議論〔Mini.f〕に乗る）。公理 propext / Quot.sound のみ・sorry なし。反証探索 = 乱択の反例探索 closefuzz（strchanfuzz に close と nil の受けを混ぜた版 — 3 seed × 1,500 本・割れ 0。規律の逸脱: 証明の後に回した）。for-Recv（`for l <- par.Recv(rx) { … }`）はコアに足さない — loader が生成元の呼び先を std/par の `RecvAll(rx, k)`（普通の Sober の while + ifnil — 呼び出し形の生成元）へ付け替える
+段 6 P3b-4 ③ — close と `T?` の受け（2026-10-06 — 裁定 = language.md 11 節 P3b の仮採用 ③「Close / `T?` nil / for-Recv はコア拡張 — P3b-4 の Lean 便に同梱」）: 式 `close c`（`c : own tx r t` → unit）を足し、recvE の型を `.opt (t.relocR (d - 1))` に（表層の Recv は最初から `T?` — 脱糖は `some (recv c)` をやめて `recv c` をそのまま出す）。機械: 項目 EpEnt に `closed : Bool`・フレーム `closeK`。close = 持ち主で開いていれば `closed := true`・それ以外（持ち主違い・二度目）は定義された panic。send = 持ち主の確認の後、閉じていれば panic・梱包は `some v` を型 `.opt ent.ty` で（キューの要素は `T?` の値 — 受けは一様に xfer で写して `some v'`）。recv = キューが空で閉じていれば `nil (ent.ty.relocR (H.length - 1))`（何度受けても nil・K は不変）・空で開いていれば待つ。task の外の closeK は panic（recvK と同じ柵）。型付けの不変: ChanOk.eptyped の待機中の梱包は `PktOk Δ (.opt t) w`・Blocked の famSnd / famRcv に `ent.closed = false`（閉じた送りは待たずに死ぬ・閉じて空の受けは待たない）。補題: `pack_ok_opt`（pack_ok を `.opt` / `some v` で呼ぶだけ — payOk は opt で保たれる）。unpack_ok は `.opt t0` で呼ぶ（relocR は opt と可換）。Kahn.lean は言明・骨格とも無変更（Op / Mini に close の操作・send の closed 検査・recv の閉じた空 = 空の小さなヒープの梱包 `⟨nil ty, [], .opt ty⟩` を返し mainCont の xfer が nil へ写す — famMain と一致・mainOp / mainCont に closeK の腕。close は同じ鍵の送りと同じ持ち主の操作なので、閉じた後の送りの有無はプログラム順で決まり、閉じて空の受けは閉じる前の送りが全部キューに入った後でしか起きない — 1 鍵の可換の議論〔Mini.f〕に乗る）。公理 propext / Quot.sound のみ・sorry なし。反証探索 = 乱択の反例探索 closefuzz（strchanfuzz に close と nil の受けを混ぜた版 — 3 seed × 1,500 本・割れ 0。規律の逸脱: 証明の後に回した）。for-Recv（`for l <- task.Recv(rx) { … }`）はコアに足さない — loader が生成元の呼び先を std/task の `RecvAll(rx, k)`（普通の Sober の while + ifnil — 呼び出し形の生成元）へ付け替える
 
 段 6 P3b-4 1b' — error を返す task・未回収の失敗の集約（2026-10-06 — 裁定 = p3b-draft 揉みどころ 7 + 決定 (A)〔コアでは全 task を fallible に一様化〕）: 式 `scope t ε e`（ε = err の型の注釈）・札 `scopeV rs ε : own scope rs ε`。scope の型 = `union t (union unit (ε.relocR (d - 1)))`（inr (inl triv) = 子の死・inr (inr e) = 未回収の失敗）・前提に ε は imm・chan なし・b < d（失敗の err を写す親の最内 d - 1 が共有境界より上 — task の本体と関数の本体は常に満たす。根の scope は block の中に置く）。spawn の本体の型は常に組 `prod t (opt ε0)`・`Ty.payOk ε0 ε`（札の ε と region を除いて一致）。機械: 子の表 Kids の各子に札 `(ε.relocR 0, 回収済み)`（spawn が札の値 scopeV の ε から立てる・join / try が結果を受けたら `Kids.mark` で回収済みに — 親のプログラム順だけで決まる）。scope の出口: 子が全部決着したら、死があれば死・無ければ `Kids.failAt`（生んだ順で最初の「region rs の子・未回収・結果 = pair v (some e)」）の err を子のヒープから親の最内へ `xfer (H.length - 2) (ε.relocR …)` で写して pop。札の err の型が注釈と食い違えば定義された panic（型付きなら起きない — preservation は panic で閉じるので、札と frame を結ぶ大域の不変条件を足さずに済む）。型付けの不変: fam に `∀ i tg, ks.tag? i = some tg → ∃ t ε0, tcs i = prod t (opt ε0) ∧ ε0.relocR 0 = tg.1`。補題: `fail_exit`（reloc_exit の xfer 版）・`Kids.failAt_spec` / `failAt_typed`・`famTy_rebase_mark`・Kids の mark / tag? の補題（Fam）。Kahn.lean は言明・骨格とも無変更（mainCont の join / try が `ks.mark`・scope の出口に failAt の腕・`Kids.failAt_set`〔歩ける子の置き換えの下で決着した scope の failAt は不変〕・`KidsOk.mark`）。公理 propext / Quot.sound のみ・sorry なし。反証探索 = 乱択の反例探索 failfuzz（子は送ってから成功 / 失敗 / 死を乱択・親は Join / Try / 放置を乱択 — 3 seed × 1,500 本・割れ 0・ok / died / failed / dead が全部出る — 言明の前に実施）
 
-段 6 P4 — 約束の範囲と stdout の順（非形式・2026-10-06）: コア（Lean の Machine）に println は無く、kahn_schedule が約束するのは scope の値・panic・デッドロックの有無まで（言明は無変更）。stdout の順は実装の約束でコアの外: P4 の実装は出力を spawn の木の先行順で合流させる（language.md 11 節 P4 (O1)）ので、stdout もスケジュール・ワーカー数に依らない — これは定理でなく実装の網（seq ≡ par のバイト一致・schedfuzz）が見る。同じく scope の err の死因（TaskDied の cause — コアの died は unit で cause は実行時の値）・未回収の失敗の選び方は正準順（spawn の順で最小）を実装が守る（コアの failAt は元から生んだ順で最初 — 実装をそれに揃える）。キャンセルはコアに無い（死んだ task の子孫も走り切る意味論のまま — 実装の打ち切りは scope の値を変えない最適化）。物理共有・原子の op（ir.md 4.7）の正しさ = rt の点の列がコアの 1 歩を原子的に実現していること — 模倣定理は E4（Machine 参照実行器）の席に積み、P4 は seq ≡ par + schedfuzz（+ 変異の自己検査）で見る
+段 6 P4 — 約束の範囲と stdout の順（非形式・2026-10-06）: コア（Lean の Machine）に println は無く、kahn_schedule が約束するのは scope の値・panic・デッドロックの有無まで（言明は無変更）。stdout の順は実装の約束でコアの外: P4 の実装は出力を spawn の木の先行順で合流させる（language.md 11 節 P4 (O1)）ので、stdout もスケジュール・ワーカー数に依らない — これは定理でなく実装の網（seq ≡ par のバイト一致・schedfuzz）が見る。同じく scope の err の死因（ChildDied の cause — コアの died は unit で cause は実行時の値）・未回収の失敗の選び方は正準順（spawn の順で最小）を実装が守る（コアの failAt は元から生んだ順で最初 — 実装をそれに揃える）。キャンセルはコアに無い（死んだ task の子孫も走り切る意味論のまま — 実装の打ち切りは scope の値を変えない最適化）。物理共有・原子の op（ir.md 4.7）の正しさ = rt の点の列がコアの 1 歩を原子的に実現していること — 模倣定理は E4（Machine 参照実行器）の席に積み、P4 は seq ≡ par + schedfuzz（+ 変異の自己検査）で見る
 
 Handle は動的検査なので定理 1 の対象外。Handle についての主張は「`get(h)` は UB ではなく `nil` を返す」で、これはランタイムの世代比較の正しさとして別に小さく述べる。
 
@@ -1518,7 +1518,7 @@ check ⊂ build の穴 6 つ（F-f / F-l / F-m / F-n / F-o / F-p）は全部「�
 ann・型の読みを 1 つの経路に足すときは、同じ表に並ぶ経路を同じ変更で揃えるか、揃えない理由を書く
 
 - 文字列補間 `${}`（2026-09-27、随時回収 R7）: 固定テンプレート — テンプレート正規形（定数部 n+1 + 穴 n）を
-  左から `+` の連鎖に畳み、穴は型で包む（string はそのまま、int は `strings.Itoa(e)`（2026-10-01 に std 命名規則で `strings.FormatInt` へ改名）、bool は
+  左から `+` の連鎖に畳み、穴は型で包む（string はそのまま、int は `strings.Itoa(e)`（2026-10-01 に std 命名規則で `strings.FormatInt` へ改名・2026-10-20 に `convert.FormatInt` へ移動）、bool は
   `if e { "true" } else { "false" }`、他は拒否）。型判定だけが各層の持ち物で、組み立ては src/stage1/interp.zig 1 箇所
   （desugar は computeTy + struct 判定、codegen は穴を合成名のローカルへ束縛して型を得てから同じ関数を呼ぶ —
   Itoa は純粋なので変換の位置の違いは観測されない）。コア・証明・JSON は変更ゼロ。
@@ -1597,6 +1597,17 @@ selfhost（compiler/ を Sober で書く）で、手で書けば通る形が脱�
   残る食い違いは 1 か所: Def 呼び出しの実引数に直接書いた文字列リテラルはコアが region 0（call.sober — F-6）だが、その節の computeTy を引く経路が無い
   （呼び出しの型は署名から・型引数は region を持てない）ので観測されない。黄金: コア 54 本が変わり、差分は ann の包みだけ（54 本すべてで ann が減る —
   882 → 677・EXCLUDED 不変・全 entry で stage2 の check と Lean の判定が一致 150/150）。回帰例 examples/block_region_value・examples/block_return
+
+- 同族の 3 項（F-ba・F-bb・F-bc — 2026-10-17・report-746 / 767）: どれも既存の規則の書き漏らしで、check が誤拒否・build は正しく走っていた。
+  Lean 無変更（手で直したコアを sober-check が受理することを 3 件とも確認 — report-767 2 節）。
+  - mut 束縛の初期値が struct リテラル（F-ba）: mutInitAnn（F-q / F-af）の形の門が名前・欄読み・添字だけで、`mut w := W{xs: xs}`（仮引数の slice の欄）の
+    セルが r0 のまま残り、callM の呼び出し点で anchor（= 束縛点）の写しと不変の位置で合わなかった（下の「check の callM の段」の (ii)）。門に struct リテラルを足す。
+    棄てた案: 形を問わず全ての初期値に掛ける（前例の無い形にも ann が付く — 要るまで入れない）・callM に渡る mut 局所だけ締める（mutInitAnn は要るときだけ付くので不要）
+  - 外の場所へ代入される struct リテラル（F-bb）: M4 の行き先構築（language.md 21 節 — 新しい mut のコンテナは行き先の region に作る）が素の slice / map リテラルにしか
+    届かず、ループの中の `w.in = In{}`・`w = W{…}`・`w.eh = builder.Builder[int]{}`（省いた欄のゼロ値の mut slice）が反復の region に作られていた。
+    行き先を struct リテラルの欄（入れ子のリテラル・省いた欄のゼロ値）へ引き継ぎ、行き先より深い imm の欄の値は写す（slice リテラルの要素と同じ）
+  - 関数型の仮引数の呼び出しの結果の座標（F-bc）: 展開されたラムダの結果は呼び出し点の最内に作られるが、computeTy がその座標で読めず、ループの中から
+    外の mut 束縛への代入に境界コピー（storeCopy）が付かなかった。展開される関数の結果（F-ay の plainResult）と同じく最内で読む
 
 ### mut struct の欄ごとのセルの段（2026-09-28、reaudit round 5 — F-17 案 2α）
 
@@ -1727,8 +1738,14 @@ region 1 = 自分のフレーム、Γ = [param]）で型付いている（defsOk
 
 → check（callM）が受理するプログラムは、展開でも受理される。展開で型付いたプログラムの build（δ）が展開と観測同値に走ることは
 上の段の論証（展開 ≡ 透過関数）が与えるので、E2-S の check の受理は build の実行の健全性に繋がる。逆向き（展開で型付くが callM で
-落ちる — 例: フレームで組んだ値を mut 仮引数の欄へ入れる）は条件 6 の逃げが展開へ戻すので、受理集合は E2 の前と同じ（網 = 受理集合の
-照合ゲート）。
+落ちる）には 2 つの場所がある。(i) 上げた関数自身の本体が落ちる（例: フレームで組んだ値を mut 仮引数の欄へ入れる）— 条件 6 の逃げが展開へ戻す
+（網 = 受理集合の照合ゲート）。(ii) 呼び手の Def が callM の呼び出し点で落ちる — callM は mut 実引数のセル型を仮引数型の anchor への写し
+（renR a d — 仮引数の region は全部 a へ）と不変の位置で合わせるので、セルの中に a より古い region が残ると合わない。(ii) は逃げでは拾えない
+（逃げは呼び先の本体だけを見る — F-ba・2026-10-17）。(ii) を閉じるのは「mut 束縛のセル型は束縛点の点座標」の不変条件（上の脱糖器の座標精度の段 —
+mutInitAnn・fieldValueAnn・M4 の行き先構築）: anchor = セルの region = 束縛点で、セルの中の imm の region も全部束縛点へ緩めてあるので、仮引数型の写しと
+セル型が一致する。残るのはセルの中の mut の成分（mut は緩められない）が束縛点より古い形だけ（ループの中で `mut w := W{buf: s}`〔s = 外の mut slice〕を
+callM へ — .pair/fx/r767-ba-residual-mutfield）で、language.md 21 節の但し書き (β)（anchor 1 slot）と同じ根 — 拒否のまま記帳（実需なし・裁定 2026-10-17）。
+棄てた案: 呼び手の落ちも逃げの周回で拾う（再帰の呼び先は展開できず救えない）・呼び出し点の静的な門で展開へ倒す（残りに実需が出たら再訪）。
 
 残る義務（後追い — 別段）: (a)(b) の Lean の補題（`ren_typing` の単調な写像への一般化 + 展開の形の型付け）。それまでは上の非形式の論証と
 受理集合の照合ゲートが網。

@@ -1,0 +1,705 @@
+package lower
+
+// 席 A（report-801 / 802）: lower の頭（program の本体の作業列）の関数単位化。
+// - 子は自前の St で build の前段（buildPre + programTypes）を走らせ直し（複製 — check の P6-3 の形）、受け持ちの関数を下ろして、関数ごとに
+//   「署名・詰めた本体（mvPack）・事象の列」を返す。事象 = 大域の番号・並びに効く操作（関数の初出〔ヒットも〕・インスタンス・ラムダ・子の関数・
+//   rt の need*・文字列の rodata・panic の点・spawn の点・チャネルの印・打ち切りの印）。型は子の外へ出さない（IR は lower の型を持たない）
+// - 親は今の LIFO の作業列を事象の上で模擬して記録を作り（番号・名前・並びが今の直の道と同じになる）、本体の関数・グローバルの参照（K_FN・K_GLOB）を
+//   子の番地から親の番地へ付け替えて積む。出力は直の道とバイト一致（網）・群の割り方にも W にも依らない
+// - 計画（desugar.PlanMarks — 参照の辺の閉包）は割り振りだけ: 漏れは見つけた子が派生として下ろし（重複は模擬が 1 つ採る）、余分は模擬が取り出さない
+// - 子は task.Map の群の子（A-2）: 分割は SOBER_LOWER_SPLIT の口があるときだけ（既定は直の道 — 今の子は前段と型付けを子ごとに走らせ直す税で
+//   W8 の wall が直の道より遅い〔report-813〕。A-3 で子の型付けを絞って得を確かめてから既定を切り替える）。子の死は直の道で下ろし直す
+// 開発の口: SOBER_LOWER_SPLIT=k（群の数 — 0 / 1 = 直の道・W1 でも逐次の子で回る）・SOBER_LOWER_REV=1（子が受け持ちを逆順に下ろす — 事象の列の純性の網）・
+//   SOBER_LOWER_DIE=g（g 番の群の子が頭で死ぬ — 子の死 → 直の道の網）。証人 = SOBER_PAR_STATS=1 で `#lower split groups=k fallback=none|died|rejected`
+
+import "desugar"
+import "loader"
+import "std/io"
+import "std/iter"
+import "std/os"
+import "std/task"
+import "std/table"
+
+// LSplit は席 A の子の状態（St の欄 1 つ）
+type LSplit struct {
+    on bool                // 子: 下ろし中の関数の事象を記録する
+    ev table.Table[int]    // 事象 [種類, a, b, c, d]…
+    dict int               // 次の liftLambdaFn が辞書 const のラムダか（ラムダの節 + 1・0 = 違う — liftLambda が立てる）
+    groups int             // 群の数（0 = まだ読んでいない — lsGroups）
+}
+
+const EV_FN = 1      // a = 関数表の添字, b = 子の記録
+const EV_INST = 2    // a = 子の記録（名前 = インスタンスの鍵）
+const EV_LAM = 3     // a = 子の記録, b = 辞書 const のラムダの節（-1 = 違う）
+const EV_KID = 4     // a = 子の記録
+const EV_NEED = 5    // a = NEED_*, b = 引数
+const EV_STR = 6     // a = 子のグローバル
+const EV_PSITE = 7   // a = 即値の命令, b = 種類, c = ファイル, d = 字句
+const EV_PLAB = 8    // a = ラベルの名前（木の文字列）
+const EV_SITEN = 9   // spawn の点の番号を 1 つ進めた
+const EV_SITE = 10   // a = spawn の点の即値の命令（番号 × 4 + 下 2 ビット）
+const EV_CHAN = 11   // 下ろし中の関数がチャネルに触る
+const EV_CUT = 12    // a = 打ち切りの印の即値の命令, b = 子の関数の子の記録
+const EVW = 5
+
+const NEED_ADMIT = 1
+const NEED_POOL = 2
+const NEED_MAPPRE = 3
+const NEED_MN = 4
+const NEED_NET = 5
+const NEED_PSTAT = 6
+const NEED_CPU = 7
+const NEED_URING = 8
+const NEED_LEASE = 9
+const NEED_GROW = 10
+const NEED_OUT = 11
+const NEED_ORPH = 12
+const NEED_QSTR = 13
+const NEED_PANIC = 14
+const NEED_NETOP = 15
+const NEED_BYTE = 16
+const NEED_CHUNK = 17
+const NEED_TASK = 18
+const NEED_FRAME = 19
+const NEED_RUN = 20
+const NEED_WMODE = 21
+const NEED_MKDIR = 22
+const NEED_RENAME = 23
+const NEED_ENV = 24
+const NEED_STAT = 25
+const NEED_READFD = 26
+const NEED_SLEEP = 27
+const NEED_OPEN = 28
+const NEED_DEADLINE = 29
+const NEED_MAPFIND = 30
+const NEED_ADMITW = 31
+
+// lsEv は事象を 1 つ記録する（子が関数を下ろしている間だけ）
+func lsEv(st mut St, code int, a int, b int, c int, d int) {
+    if st.ls.on {
+        table.Push(mut st.ls.ev, code)
+        table.Push(mut st.ls.ev, a)
+        table.Push(mut st.ls.ev, b)
+        table.Push(mut st.ls.ev, c)
+        table.Push(mut st.ls.ev, d)
+    }
+}
+
+func lsNeed(st mut St, id int, arg int) {
+    lsEv(mut st, EV_NEED, id, arg, 0, 0)
+}
+
+// lsGroups は群の数（SOBER_LOWER_SPLIT の口 — 無ければ 1 = 直の道。罠の試し・表層型の突き合わせも直の道）
+func lsGroups(st mut St) int {
+    if st.ls.groups == 0 {
+        k := lsEnvInt("SOBER_LOWER_SPLIT")
+        st.ls.groups = if st.trapProbe || st.ymode != 0 { 1 } else if k >= 0 { k } else { 1 }
+        if st.ls.groups < 1 {
+            st.ls.groups = 1
+        }
+    }
+    return st.ls.groups
+}
+
+// lsEnvInt は環境変数の数（無ければ -1）
+func lsEnvInt(name string) int {
+    v, err := os.Getenv(name)
+    if err != nil || v == nil {
+        return -1
+    }
+    b := bytes(v)
+    mut n := 0
+    for i <- iter.Range(0, len(b)) {
+        if int(b[i]) >= 48 && int(b[i]) <= 57 {
+            n = n * 10 + int(b[i]) - 48
+        }
+    }
+    return n
+}
+
+// lsCfg は子の St に写す口（lowerWith が立てる欄のうち program の下ろし方に効くもの）
+func lsCfg(st mut St) []int {
+    return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }}
+}
+
+func lsCfgSet(st mut St, c []int) {
+    st.transparent = c[0] == 1
+    st.traceErrs = c[1] == 1
+    st.rtMut = c[2]
+    st.csSite = c[3] == 1
+    st.callStat = c[4] == 1
+    st.hwFold = c[5] == 1
+    st.cutStat = c[6] == 1
+    st.noVec = c[7] == 1
+    st.noSpec = c[8] == 1
+    st.slotPoison = c[9] == 1
+    st.ls.groups = 1
+}
+
+// ── 子 ──
+
+// lsChild は群の子: 前段を走らせ直し、受け持ち own（関数表の添字）と見つけた派生を下ろして、関数ごとの記録と記号の表（最後の要素）を返す。
+// role = 関数表の添字ごと（0 = 派生・1 = この子・2 = 他の子）。失敗（拒否）は空を返す — 親は直の道へ戻る
+func lsChild(p loader.Program, cfg []int, role []int, own []int, rev bool, die bool) [][]int {
+    if die {
+        panic(InvariantBroken{})
+    }
+    mut st := St{}
+    lsCfgSet(mut st, cfg)
+    e0 := buildPre(mut st, p)
+    if e0 != nil {
+        return [][]int{}
+    }
+    e1 := programTypes(mut st)
+    if e1 != nil {
+        return [][]int{}
+    }
+    for k <- iter.Range(0, len(own)) {
+        i := if rev { own[len(own) - 1 - k] } else { own[k] }
+        _, e2 := funcByKey(mut st, i)
+        if e2 != nil {
+            return [][]int{}
+        }
+    }
+    mut out := mut [][]int{}
+    while st.work >= 0 {
+        fi := st.work
+        x := infoAt(mut st, fi)
+        st.work = x.next
+        if !(x.fn >= 0 && role[x.fn] == 2) {
+            s0 := table.Len(mut st.ls.ev)
+            st.ls.on = true
+            e3 := funcBody(mut st, fi)
+            st.ls.on = false
+            if e3 != nil {
+                return [][]int{}
+            }
+            out = append(out, lsEntry(mut st, fi, s0))
+        }
+    }
+    out = append(out, lsSyms(mut st))
+    return freeze(out)
+}
+
+// lsEntry は下ろした関数 1 つの記録: [関数表の添字, 子の記録, 名前の長さ, 名前…, 引数の型の数, 型…, 戻り, mut の印, 事象の数, 事象…, 詰めた本体…]
+// （事象の命令の番地は詰めた本体の中の番地へ）
+func lsEntry(st mut St, fi int, s0 int) []int {
+    x := infoAt(mut st, fi)
+    f := x.ir
+    mut o := mut []int{}
+    o = append(o, x.fn)
+    o = append(o, int(f))
+    lsPutStr(mut st, mut o, desugar.StrRef(irFnName(mut st, f)))
+    pt := irFnPtys(mut st, f)
+    n := desugar.HeapGet(mut st.d, pt)
+    o = append(o, n)
+    for q <- iter.Range(0, n) {
+        o = append(o, desugar.HeapGet(mut st.d, pt + 1 + q))
+    }
+    o = append(o, irFnRet(mut st, f))
+    o = append(o, desugar.HeapGet(mut st.d, int(f) + F_MUTP))
+    body := mvPack(mut st, f, false)
+    ne := (table.Len(mut st.ls.ev) - s0) / EVW
+    o = append(o, ne)
+    for k <- iter.Range(0, ne) {
+        at := s0 + k * EVW
+        c := table.Get(mut st.ls.ev, at)
+        o = append(o, c)
+        a := table.Get(mut st.ls.ev, at + 1)
+        o = append(o, if c == EV_PSITE || c == EV_SITE || c == EV_CUT { mvFwd(mut st, f, a) } else { a })
+        o = append(o, table.Get(mut st.ls.ev, at + 2))
+        o = append(o, table.Get(mut st.ls.ev, at + 3))
+        o = append(o, table.Get(mut st.ls.ev, at + 4))
+    }
+    for k <- iter.Range(0, len(body)) {
+        o = append(o, body[k])
+    }
+    return freeze(o)
+}
+
+func lsPutStr(st mut St, o mut []int, s desugar.StrRef) {
+    n := slen(mut st, s)
+    o = append(o, n)
+    for i <- iter.Range(0, n) {
+        o = append(o, sat(mut st, s, i))
+    }
+}
+
+// lsSyms は子の記号の表: [番地, 種類（0 = 関数・1 = グローバル・2 = 文字列の rodata）, 長さ, 名前か綴り…]…
+func lsSyms(st mut St) []int {
+    mut o := mut []int{}
+    mut f := st.fhead
+    while f != -1 {
+        o = append(o, int(f))
+        o = append(o, 0)
+        lsPutStr(mut st, mut o, desugar.StrRef(irFnName(mut st, f)))
+        f = irFnNext(mut st, f)
+    }
+    mut g := st.ghead
+    while g >= 0 {
+        mut s := -1
+        mut x := st.strs
+        while x >= 0 && s < 0 {
+            if desugar.HeapGet(mut st.d, x + 2) == g {
+                s = desugar.HeapGet(mut st.d, x + 1)
+            }
+            x = desugar.HeapGet(mut st.d, x)
+        }
+        o = append(o, g)
+        o = append(o, if s >= 0 { 2 } else { 1 })
+        lsPutStr(mut st, mut o, desugar.StrRef(if s >= 0 { s } else { desugar.HeapGet(mut st.d, g + G_NAME) }))
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+    return freeze(o)
+}
+
+// ── 親 ──
+
+// LsOut は子の結果（handle の型引数・関数の結果に [][]int を直に書けない綴りの都合で包む）
+type LsOut struct {
+    es [][]int
+}
+
+const LS_C = 4294967296  // 子の番号の桁（子 × LS_C + 子の中の番地 / 記録の添字）
+
+// LsIn は群の子の入力（role = 関数表の添字ごと〔0 = 派生・1 = この子・2 = 他の子〕・own = 受け持ち・die = 頭で死ぬ〔SOBER_LOWER_DIE の網〕）
+type LsIn struct {
+    role []int
+    own []int
+    die bool
+}
+
+// lsProgram は program の席 A の形: 計画 → 群の子（task.Map — 全部 Join）→ LIFO の模擬で積み戻す（模擬は任意の子の記録を任意の順で引く）。
+// false = 分けない・子の失敗（拒否・死）— 呼び手（build）が直の道（program）で下ろす。子は親の状態に触らない — 親は計画の辺を読んだだけなので、
+// 拒否の診断は直の道と同じものが出る。program の呼び出しを build の 1 か所に置く（--passes の無い build は呼び出し点ごとに展開する — report-891）
+func lsProgram(st mut St, p loader.Program) (bool, error?) {
+    marks := desugar.PlanMarks(mut st.d)
+    mut plan := mut []int{}
+    for i <- iter.Range(0, nfn(mut st)) {
+        if marks[i] == 1 && !fnBodiless(mut st, i) && lenL(mut st, fnTParams(mut st, i)) == 0 && (!fnExpands(mut st, i) || fnTransparent(mut st, i)) {
+            plan = append(plan, i)
+        }
+    }
+    mut k := lsGroups(mut st)
+    if k > len(plan) {
+        k = len(plan)
+    }
+    if k <= 1 {
+        return false, nil
+    }
+    cfg := lsCfg(mut st)
+    rev := lsEnvInt("SOBER_LOWER_REV") == 1
+    die := lsEnvInt("SOBER_LOWER_DIE")
+    mut ins := mut []LsIn{}
+    for g <- iter.Range(0, k) {
+        lo := len(plan) * g / k
+        hi := len(plan) * (g + 1) / k
+        mut role := mut []int{}
+        for i <- iter.Range(0, nfn(mut st)) {
+            role = append(role, 0)
+        }
+        for j <- iter.Range(0, len(plan)) {
+            role[plan[j]] = if j >= lo && j < hi { 1 } else { 2 }
+        }
+        mut own := mut []int{}
+        for j <- iter.Range(lo, hi) {
+            own = append(own, plan[j])
+        }
+        ins = append(ins, LsIn{role: freeze(role), own: freeze(own), die: g == die})
+    }
+    // budget: = 子の固定 + 下ろした取り分 / k（校正: 自己 build の子の peak ≈ 40 MB + 270 MB / k — 前段の作業域を含む・report-805）
+    bud := 48 * task.MB + 320 * task.MB / k
+    outs, serr := task.Map(freeze(ins), (x) => LsOut{es: lsChild(p, cfg, x.role, x.own, rev, x.die)}, budget: bud)
+    if serr != nil {
+        lsStat(k, "died")
+        return false, nil
+    }
+    for g <- iter.Range(0, len(outs)) {
+        if len(outs[g].es) == 0 {
+            lsStat(k, "rejected")
+            return false, nil
+        }
+    }
+    lsStat(k, "none")
+    lsReplay(mut st, outs)?
+    return true, nil
+}
+
+// lsStat は分割の道の証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行 — #par の行と同じ扱い・ELF に出ない）
+func lsStat(k int, why string) {
+    if lsEnvInt("SOBER_PAR_STATS") == 1 {
+        _ = io.WriteStderr(bytes("#lower split groups=${k} fallback=${why}\n"))
+    }
+}
+
+// lsReplay は子の記録の上で今の LIFO の作業列を模擬する
+func lsReplay(st mut St, outs []LsOut) error? {
+    // 子 × 記録の番地 → 記録の添字・関数表の添字 → 下ろした記録（最初の子）・名前 → 記録（インスタンス）
+    mut byRec := mut map[int]int{}
+    mut byFn := mut map[int]int{}
+    mut symAt := mut map[int]int{}
+    for c <- iter.Range(0, len(outs)) {
+        es := outs[c].es
+        for e <- iter.Range(0, len(es) - 1) {
+            byRec[c * LS_C + es[e][1]] = e
+            if es[e][0] >= 0 && byFn[es[e][0]] == nil {
+                byFn[es[e][0]] = c * LS_C + e
+            }
+        }
+        sy := es[len(es) - 1]
+        mut q := 0
+        while q < len(sy) {
+            symAt[(c * LS_C + sy[q]) * 2 + (if sy[q + 1] == 0 { 0 } else { 1 })] = q
+            q += 3 + sy[q + 2]
+        }
+    }
+    byRecF := freeze(byRec)
+    byFnF := freeze(byFn)
+    symF := freeze(symAt)
+    // 親の名前の表（関数・グローバル — 前段と模擬が作った記録を名前で引く）
+    mut pfn := mut map[string]int{}
+    mut pgl := mut map[string]int{}
+    mut fcur := -1
+    mut gcur := -1
+    // 子 × 子の番地 → 親の番地（関数・グローバル）・辞書 const のラムダ → 親の記録・インスタンスの名前 → 親の記録
+    mut fmap := mut map[int]int{}
+    mut gmap := mut map[int]int{}
+    mut dl := mut map[int]int{}
+    mut pinst := mut map[string]int{}
+    // 模擬の作業列: [子 × LS_C + 記録の添字, 親の記録]…
+    mut stk := mut []int{}
+    mut sp := 0
+    mfi := programMain(mut st)?
+    mx := infoAt(mut st, mfi)
+    mo := byFnF[mx.fn]
+    if mo == nil {
+        return panic(InvariantBroken{})
+    }
+    stk = append(stk, mo)
+    stk = append(stk, int(mx.ir))
+    sp = 2
+    while sp > 0 {
+        prec := stk[sp - 1]
+        ce := stk[sp - 2]
+        sp -= 2
+        c := ce / LS_C
+        es := outs[c].es
+        en := es[ce % LS_C]
+        sy := es[len(es) - 1]
+        mut at := 2 + 1 + en[2]
+        at = at + 1 + en[at]
+        at += 2
+        ne := en[at]
+        at += 1
+        ev0 := at
+        body0 := at + ne * EVW
+        // 1 周目: 記録を作る（今の直の道と同じ順）
+        for k <- iter.Range(0, ne) {
+            x := ev0 + k * EVW
+            code := en[x]
+            a := en[x + 1]
+            b := en[x + 2]
+            switch code {
+            case EV_FN:
+                had := desugar.HeapGet(mut st.d, st.fninfo + 1 + a) >= 0
+                fi := funcByKey(mut st, a)?
+                r := int(infoAt(mut st, fi).ir)
+                fmap[c * LS_C + b] = r
+                if !had {
+                    bo := lsBody(byRecF, byFnF, c, b, a)
+                    if sp == len(stk) {
+                        stk = append(stk, bo)
+                        stk = append(stk, r)
+                    } else {
+                        stk[sp] = bo
+                        stk[sp + 1] = r
+                    }
+                    sp += 2
+                }
+            case EV_INST:
+                nm := lsName(sy, symF, c, a, 0)
+                y := pinst[nm]
+                if y != nil {
+                    fmap[c * LS_C + a] = y
+                } else {
+                    r := lsMkFn(mut st, lsStrOf(mut st, sy, symF, c, a, 0), outs, byRecF, c, a)
+                    pinst[nm] = r
+                    fmap[c * LS_C + a] = r
+                    bo := lsBody(byRecF, byFnF, c, a, -1)
+                    if sp == len(stk) {
+                        stk = append(stk, bo)
+                        stk = append(stk, r)
+                    } else {
+                        stk[sp] = bo
+                        stk[sp + 1] = r
+                    }
+                    sp += 2
+                }
+            case EV_LAM:
+                y := dl[if b >= 0 { b } else { -2 }]
+                if y != nil {
+                    fmap[c * LS_C + a] = y
+                } else {
+                    n := st.nlambda
+                    st.nlambda = n + 1
+                    r := lsMkFn(mut st, int(strCat(mut st, strLit(mut st, "lambda#"), decimal(mut st, n))), outs, byRecF, c, a)
+                    if b >= 0 {
+                        dl[b] = r
+                    }
+                    fmap[c * LS_C + a] = r
+                    bo := lsBody(byRecF, byFnF, c, a, -1)
+                    if sp == len(stk) {
+                        stk = append(stk, bo)
+                        stk = append(stk, r)
+                    } else {
+                        stk[sp] = bo
+                        stk[sp + 1] = r
+                    }
+                    sp += 2
+                }
+            case EV_KID:
+                n := st.nkid
+                st.nkid = n + 1
+                r := lsMkFn(mut st, int(strCat(mut st, strLit(mut st, "kid#"), decimal(mut st, n))), outs, byRecF, c, a)
+                fmap[c * LS_C + a] = r
+                bo := lsBody(byRecF, byFnF, c, a, -1)
+                if sp == len(stk) {
+                    stk = append(stk, bo)
+                    stk = append(stk, r)
+                } else {
+                    stk[sp] = bo
+                    stk[sp + 1] = r
+                }
+                sp += 2
+            case EV_NEED:
+                lsReplayNeed(mut st, a, b)
+            case EV_STR:
+                gp := strGlobal(mut st, desugar.StrRef(lsStrOf(mut st, sy, symF, c, a, 1)))
+                gmap[c * LS_C + a] = gp
+            case EV_PSITE:
+                table.Push(mut st.psites, b)
+                table.Push(mut st.psites, en[x + 3])
+                table.Push(mut st.psites, en[x + 4])
+            case EV_PLAB:
+                st.plabs = rec4(mut st, st.plabs, table.Len(mut st.psites) / 3, a, 0)
+            case EV_SITEN:
+                st.nsite += 1
+            case EV_CHAN:
+                st.chanFns = rec4(mut st, st.chanFns, prec, 0, 0)
+            }
+        }
+        // 本体: K_FN・K_GLOB を親の番地へ付け替えて積む
+        mut q := mut []int{}
+        for w <- iter.Range(body0, len(en)) {
+            q = append(q, en[w])
+        }
+        iOff := MV_HDR + q[MV_NS] * MV_SLOT + q[MV_NB] * BSZ + q[MV_NP] * MV_PAR
+        for k <- iter.Range(0, q[MV_NI]) {
+            ia := iOff + k * ISZ
+            mut r := st.opk[q[ia + I_OP]]
+            mut fa := ia + I_A
+            while r != 0 {
+                kind := r & 15
+                if kind == K_FN {
+                    y := fmap[c * LS_C + q[fa]]
+                    if y != nil {
+                        q[fa] = y
+                    } else {
+                        fcur = lsScanFns(mut st, mut pfn, fcur)
+                        z := pfn[lsName(sy, symF, c, q[fa], 0)]
+                        if z == nil {
+                            return panic(InvariantBroken{})
+                        }
+                        fmap[c * LS_C + q[fa]] = z
+                        q[fa] = z
+                    }
+                } else if kind == K_GLOB {
+                    y := gmap[c * LS_C + q[fa]]
+                    if y != nil {
+                        q[fa] = y
+                    } else {
+                        gcur = lsScanGlobs(mut st, mut pgl, gcur)
+                        z := pgl[lsName(sy, symF, c, q[fa], 1)]
+                        if z == nil {
+                            return panic(InvariantBroken{})
+                        }
+                        gmap[c * LS_C + q[fa]] = z
+                        q[fa] = z
+                    }
+                }
+                r = r >> 4
+                fa += 1
+            }
+        }
+        base := desugar.HeapLen(mut st.d)
+        mvUnpack(mut st, FnRef(prec), freeze(q))
+        // 2 周目: 命令の即値（panic の点・spawn の点）と打ち切りの印の置き場
+        mut pn := table.Len(mut st.psites) / 3
+        mut npsite := 0
+        for k <- iter.Range(0, ne) {
+            if en[ev0 + k * EVW] == EV_PSITE {
+                npsite += 1
+            }
+        }
+        pn = pn - npsite
+        mut site := st.nsite
+        mut nsn := 0
+        for k <- iter.Range(0, ne) {
+            if en[ev0 + k * EVW] == EV_SITEN {
+                nsn += 1
+            }
+        }
+        site = site - nsn
+        for k <- iter.Range(0, ne) {
+            x := ev0 + k * EVW
+            code := en[x]
+            ins := InsRef(base + en[x + 1])
+            switch code {
+            case EV_PSITE:
+                irSetInsA(mut st, ins, pn)
+                pn += 1
+            case EV_SITEN:
+                site += 1
+            case EV_SITE:
+                irSetInsA(mut st, ins, site * 4 + (irInsA(mut st, ins) & 3))
+            case EV_CUT:
+                kr := fmap[c * LS_C + en[x + 2]]
+                if kr == nil {
+                    return panic(InvariantBroken{})
+                }
+                st.cutSites = rec4(mut st, st.cutSites, int(ins), kr, 0)
+            }
+        }
+    }
+    return nil
+}
+
+// lsBody は子 c の記録 crec を本体に持つ記録（無ければ関数表の添字 fn の受け持ちの子の記録）
+func lsBody(byRec map[int]int, byFn map[int]int, c int, crec int, fn int) int {
+    e := byRec[c * LS_C + crec]
+    if e != nil {
+        return c * LS_C + e
+    }
+    if fn >= 0 {
+        y := byFn[fn]
+        if y != nil {
+            return y
+        }
+    }
+    return panic(InvariantBroken{})
+}
+
+// lsMkFn は子 c の記録 crec の署名で親の関数の記録を足す（名前 name）
+func lsMkFn(st mut St, name int, outs []LsOut, byRec map[int]int, c int, crec int) int {
+    e := byRec[c * LS_C + crec]
+    if e == nil {
+        return panic(InvariantBroken{})
+    }
+    en := outs[c].es[e]
+    mut at := 2 + 1 + en[2]
+    n := en[at]
+    pl := listN(mut st, n)
+    for j <- iter.Range(0, n) {
+        desugar.HeapSet(mut st.d, pl + 1 + j, en[at + 1 + j])
+    }
+    at = at + 1 + n
+    f := addFunc(mut st, name, desugar.ListRef(pl), en[at])
+    desugar.HeapSet(mut st.d, int(f) + F_MUTP, en[at + 1])
+    return int(f)
+}
+
+// lsName は子 c の記号（番地 a・関数 = 0 / グローバル = 1）の名前（綴り）
+func lsName(sy []int, symAt map[int]int, c int, a int, g int) string {
+    q := symAt[(c * LS_C + a) * 2 + g]
+    if q == nil {
+        return panic(InvariantBroken{})
+    }
+    mut b := mut []byte{}
+    for i <- iter.Range(0, sy[q + 2]) {
+        b = append(b, byte(sy[q + 3 + i]))
+    }
+    return string(freeze(b)) catch panic(InvariantBroken{})
+}
+
+// lsStrOf は子 c の記号の名前（綴り）を親のヒープの文字列にする
+func lsStrOf(st mut St, sy []int, symAt map[int]int, c int, a int, g int) int {
+    q := symAt[(c * LS_C + a) * 2 + g]
+    if q == nil {
+        return panic(InvariantBroken{})
+    }
+    at := desugar.HeapLen(mut st.d)
+    n := sy[q + 2]
+    desugar.HeapPush(mut st.d, n)
+    for i <- iter.Range(0, n) {
+        desugar.HeapPush(mut st.d, sy[q + 3 + i])
+    }
+    return at
+}
+
+// lsScanFns は親の関数の鎖の cur の後ろを名前の表へ足す（最後の記録を返す）
+func lsScanFns(st mut St, m mut map[string]int, from int) int {
+    mut f := if from == -1 { st.fhead } else { irFnNext(mut st, FnRef(from)) }
+    mut last := from
+    while f != -1 {
+        m[lsHeapName(mut st, irFnName(mut st, f))] = int(f)
+        last = int(f)
+        f = irFnNext(mut st, f)
+    }
+    return last
+}
+
+func lsScanGlobs(st mut St, m mut map[string]int, from int) int {
+    mut g := if from == -1 { st.ghead } else { desugar.HeapGet(mut st.d, from + G_NEXT) }
+    mut last := from
+    while g >= 0 {
+        m[lsHeapName(mut st, desugar.HeapGet(mut st.d, g + G_NAME))] = g
+        last = g
+        g = desugar.HeapGet(mut st.d, g + G_NEXT)
+    }
+    return last
+}
+
+func lsHeapName(st mut St, s int) string {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, slen(mut st, desugar.StrRef(s))) {
+        b = append(b, byte(sat(mut st, desugar.StrRef(s), i)))
+    }
+    return string(freeze(b)) catch panic(InvariantBroken{})
+}
+
+// lsReplayNeed は子の need* を親で同じ順に呼ぶ
+func lsReplayNeed(st mut St, id int, arg int) {
+    switch id {
+    case NEED_ADMIT: needAdmitRt(mut st)
+    case NEED_POOL: needPoolRt(mut st)
+    case NEED_MAPPRE: _ = needMapPrefix(mut st)
+    case NEED_MN: needMnRt(mut st)
+    case NEED_NET: _ = needNet(mut st)
+    case NEED_PSTAT: needPstatRt(mut st)
+    case NEED_CPU: needCpu(mut st)
+    case NEED_URING: needUringRt(mut st)
+    case NEED_LEASE: needLease(mut st)
+    case NEED_GROW: needGrowRt(mut st)
+    case NEED_OUT: needOutRt(mut st)
+    case NEED_ORPH: needOrph(mut st)
+    case NEED_QSTR: needQstr(mut st)
+    case NEED_PANIC: needPanic(mut st)
+    case NEED_NETOP: _ = needNetOp(mut st)
+    case NEED_BYTE: needByteRt(mut st)
+    case NEED_CHUNK: needChunk(mut st)
+    case NEED_TASK: needTaskRt(mut st)
+    case NEED_FRAME: needFrameRt(mut st)
+    case NEED_RUN: needRun(mut st)
+    case NEED_WMODE: needWriteMode(mut st)
+    case NEED_MKDIR: needMkdir(mut st)
+    case NEED_RENAME: needRename(mut st)
+    case NEED_ENV: needEnviron(mut st)
+    case NEED_STAT: needStat(mut st)
+    case NEED_READFD: needReadFd(mut st)
+    case NEED_SLEEP: needSleep(mut st)
+    case NEED_OPEN: needOpen(mut st)
+    case NEED_DEADLINE: needDeadline(mut st)
+    case NEED_MAPFIND: _ = needMapFind(mut st, MapRepr{kt: 0, vt: 0, rk: arg / 10000000 % 10, kw: 0, tagOff: 0, valOff: 0, cellw: arg % 1000000, sk: arg / 1000000 % 10, hk: arg / 100000000})
+    case NEED_ADMITW: needAdmitWake(mut st)
+    }
+}

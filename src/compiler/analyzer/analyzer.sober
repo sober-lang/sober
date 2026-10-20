@@ -17,6 +17,7 @@ import "std/table"
 type Finding struct {
     at diag.Pos
     what string
+    warn bool  // 警告（性能の lint — 受理は変えない。lease.sober）
 }
 
 // Az は走査の状態（Init 済みの脱糖器の表・今の package・指摘の記録 [種類, 位置の節, 付帯の節]…・規則どおりの位置にある呼び出しの節 — 表（std/table — 成長しても動かない）。数は Acquire / Release の数なので列で足りる）
@@ -48,7 +49,14 @@ type Az struct {
     swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
     swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
     lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
-    trySink int              // par.Scope の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
+    wins table.Table[int]    // lease の窓の列 [Local の名前（-1 = 字面の名前でない）, 指摘済み]…（lease.sober — [winBase, winN) が今の task の窓）
+    winN int
+    winBase int
+    blk table.Table[int]     // 関数ごとの block 効果の印（desugar.MayBlock — 最初の窓の中の呼び出しで作る）
+    flowBase int             // Flow のスロットの基底（関数 fi の Flow = スロット flowBase + fi — ビット j = 匿名の関数型の仮引数 j の呼び出しの失敗が漏れうる）
+    cand table.Table[int]    // 関数が呼んだ Flow の対象の仮引数（ビット j — FLOW が戻りに届けば Flow になる）
+    dflow table.Table[int]   // 関数の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j）— package をまたぐ呼び出しは Flow でなくこれを読む
+    trySink int              // task.Run の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
 }
 
 
@@ -63,7 +71,7 @@ func runAz(p loader.Program, only bool) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, trySink: 0}
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0}
     desugar.Typed(mut az.d, p)
     mut z := Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
         esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
@@ -100,26 +108,28 @@ func runAz(p loader.Program, only bool) []Finding {
     // 他の package の struct の欄の書き / mut の中身を持つ欄の読み（表層型検査器の表 — fieldwrite.sober。build も同じ表から数える）
     for j <- iter.Range(0, desugar.FieldViolations(mut az.d)) {
         k, at, f, decl, pk := desugar.FieldViolation(mut az.d, j)
-        fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: fieldMessage(mut az, k, f, decl, pk)})
+        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: fieldMessage(mut az, k, f, decl, pk)})
     }
     for i <- iter.Range(0, table.Len(mut az.out) / 3) {
         k := table.Get(mut az.out, i * 3)
         at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
         x := desugar.NodeRef(table.Get(mut az.out, i * 3 + 2))
-        if k == MSwGap || k == MSwDeadDefault {
-            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
+        if k == MLeaseBlock || k == MLeaseNest {
+            fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: leaseMessage(mut az, k, at, x)})
+        } else if k == MSwGap || k == MSwDeadDefault {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
         } else if k == MSwDeadArm || k == MSwDeadCase {
-            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: armMessage(mut az, k, int(x))})
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: armMessage(mut az, k, int(x))})
         } else if k >= MErrMissing {
-            fs = append(fs, Finding{at: errPos(mut az, int(x)), what: errMessage(mut az, k, int(x))})
+            fs = append(fs, Finding{warn: false, at: errPos(mut az, int(x)), what: errMessage(mut az, k, int(x))})
         } else if k >= MAnnUnknown {
             // 注釈の指摘: 位置は関数宣言のファイルの `@` の字句
             pos := desugar.PosOf(mut az.d, at)
-            fs = append(fs, Finding{at: diag.Pos{file: pos.file, tok: errsTok(mut az, node(mut az, at))}, what: annMessage(mut az, k, at, int(x))})
+            fs = append(fs, Finding{warn: false, at: diag.Pos{file: pos.file, tok: errsTok(mut az, node(mut az, at))}, what: annMessage(mut az, k, at, int(x))})
         } else if k == MTomb {
-            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: tombMessage()})
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: tombMessage()})
         } else {
-            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: poolMessage(mut az, k, x)})
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: poolMessage(mut az, k, x)})
         }
     }
     // freeze の規則の指摘（規則は最後に走る — 順は以前の az.out の末尾と同じ）
@@ -127,7 +137,7 @@ func runAz(p loader.Program, only bool) []Finding {
         k := table.Get(mut z.out, i * 3)
         at := desugar.NodeRef(table.Get(mut z.out, i * 3 + 1))
         x := desugar.NodeRef(table.Get(mut z.out, i * 3 + 2))
-        fs = append(fs, Finding{at: desugar.PosOf(mut az.d, at), what: fzMessage(mut z, mut az.d, k, at, x)})
+        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: fzMessage(mut z, mut az.d, k, at, x)})
     }
     return freeze(fs)
 }
@@ -218,7 +228,11 @@ func exprs(az mut Az, l desugar.ListRef) {
 // block はブロックの節（ast.KBlock / ast.EBlock）の文の列を歩く
 func block(az mut Az, b desugar.NodeRef) {
     if b != -1 {
-        stmtList(mut az, desugar.ListRef(node(mut az, b).a))
+        if kind(mut az, b) == ast.EBlock {
+            leaseBlock(mut az, b)
+        } else {
+            stmtList(mut az, desugar.ListRef(node(mut az, b).a))
+        }
     }
 }
 
@@ -254,10 +268,20 @@ func expr(az mut Az, e desugar.NodeRef) {
         expr(mut az, desugar.NodeRef(x.b))
     } else if k == ast.ECall {
         callSite(mut az, e, desugar.NodeRef(x.a))
+        leaseCall(mut az, e, desugar.NodeRef(x.a))
         expr(mut az, desugar.NodeRef(x.a))
-        exprs(mut az, desugar.ListRef(x.b))
+        if az.winN > az.winBase && spawnsChild(mut az, desugar.NodeRef(x.a)) {
+            // 子のラムダは別の task — 窓の外として歩く
+            b0 := az.winBase
+            az.winBase = az.winN
+            exprs(mut az, desugar.ListRef(x.b))
+            az.winBase = b0
+        } else {
+            exprs(mut az, desugar.ListRef(x.b))
+        }
     } else if k == ast.EPipe {
         pipeSite(mut az, e, desugar.NodeRef(x.b))
+        leaseCall(mut az, e, desugar.NodeRef(x.b))
         expr(mut az, desugar.NodeRef(x.a))
         expr(mut az, desugar.NodeRef(x.b))
         exprs(mut az, desugar.ListRef(x.c))
@@ -353,7 +377,7 @@ func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
         rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
         ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, trySink: 0}
+        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0}
     desugar.Init(mut az.d, p)
     errInit(mut az)
     errSolve(mut az)
@@ -362,12 +386,14 @@ func ErrorsDump(p loader.Program) []Finding {
     mut nerrfn := 0
     for fi <- iter.Range(0, az.nfn) {
         if table.Get(mut az.errfn, fi) != 0 && desugar.NodeRef(fnDecl(mut az, fi).e) != -1 {
-            m := table.Get(mut az.sets, fi)
+            // Flow のある関数（展開される — 匿名の関数型の仮引数の失敗は呼び出し点ごとに実引数のラベル）は関数の集合として言えない: TOP（errtrace の観測 ⊆ 導出の側）
+            fl := if table.Get(mut az.sets, az.flowBase + fi) != 0 { TOP } else { 0 }
+            m := (table.Get(mut az.sets, fi) & ^flowBit()) | fl
             nerrfn += 1
             if (m & TOP) != 0 {
                 ntop += 1
             }
-            fs = append(fs, Finding{at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node), what: "errors ${fnName(mut az, fi)} fi=${fi} tags=${tagList(mut az, m)} ${setStr(mut az, m)}"})
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node), what: "errors ${fnName(mut az, fi)} fi=${fi} tags=${tagList(mut az, m)} ${setStr(mut az, m)}"})
         }
     }
     mut nsw := 0
@@ -396,9 +422,9 @@ func ErrorsDump(p loader.Program) []Finding {
         }
         verdict := if byS { if def { "covered-by-S default-unreachable" } else { "covered-by-S" } } else { if def { "not-covered default-needed" } else { "not-covered" } }
         pos := desugar.PosOf(mut az.d, at)
-        fs = append(fs, Finding{at: pos, what: "switch at=${pos.file}:${pos.tok} tags=${tagList(mut az, S)} S=${setStr(mut az, S)} covered=${setStr(mut az, cov)} default=${def} ${verdict}${if (S & TOP) == 0 && dead != 0 { " dead-arms=" + setStr(mut az, dead) } else { "" }}"})
+        fs = append(fs, Finding{warn: false, at: pos, what: "switch at=${pos.file}:${pos.tok} tags=${tagList(mut az, S)} S=${setStr(mut az, S)} covered=${setStr(mut az, cov)} default=${def} ${verdict}${if (S & TOP) == 0 && dead != 0 { " dead-arms=" + setStr(mut az, dead) } else { "" }}"})
     }
-    fs = append(fs, Finding{at: diag.None(), what: "summary labels=${az.nerr} errfns=${nerrfn} top=${ntop} switches=${nsw} not-covered=${nnot} default-unreachable=${nunr} dead-arms=${ndead} unknown-calls=${az.unknown} walks=${az.walks}"})
+    fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary labels=${az.nerr} errfns=${nerrfn} top=${ntop} switches=${nsw} not-covered=${nnot} default-unreachable=${nunr} dead-arms=${ndead} unknown-calls=${az.unknown} walks=${az.walks}"})
     return freeze(fs)
 }
 

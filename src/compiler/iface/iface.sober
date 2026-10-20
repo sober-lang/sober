@@ -64,7 +64,12 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
                 obuf.Lit(mut out, "const ")
                 obuf.Lit(mut out, items[i].name)
                 obuf.Lit(mut out, " = ")
-                obuf.Int(mut out, q.c_value[ci])
+                // min int は字句で書けない（-9223372036854775808 は単項 − と溢れるリテラル — 読み戻しの check --split が grammar error）ので式の形で
+                if q.c_value[ci] == minInt {
+                    obuf.Lit(mut out, "-9223372036854775807 - 1")
+                } else {
+                    obuf.Int(mut out, q.c_value[ci])
+                }
             } else {
                 appendB(mut out, printer.ConstText(q.trees[items[i].file], items[i].node))
             }
@@ -88,6 +93,8 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
     }
     return freeze(out)
 }
+
+const minInt = -9223372036854775807 - 1
 
 // Link はリンク集合（package のパスをロード順に 1 行ずつ — link.txt）
 func Link(p loader.Program) []byte {
@@ -200,10 +207,10 @@ func isLabel(p loader.Program, it Item) bool {
     return it.kind == 0 && t.nodes[t.nodes[it.node].c].kind == ast.BError
 }
 
-// isParRedirect は std/par の非公開の振り分け先（gatherE / mapE — 表層型検査器が par.Gather / par.Map の呼び出しをここへ振り分ける。
-// 公開の本体からは参照されないので根に入れる — desugar/par.sober の PREDIR）
+// isParRedirect は std/task の非公開の振り分け先（gatherE / mapE — 表層型検査器が task.Gather / task.Map の呼び出しをここへ振り分ける。
+// 公開の本体からは参照されないので根に入れる — desugar/task.sober の PREDIR）
 func isParRedirect(p loader.Program, it Item) bool {
-    return p.pkg_path[p.file_pkg[it.file]] == "std/par" && (it.name == "gatherE" || it.name == "mapE")
+    return p.pkg_path[p.file_pkg[it.file]] == "std/task" && (it.name == "gatherE" || it.name == "mapE")
 }
 
 // closure は載せる項目の印（根 = 公開 + error ラベル・リンク可視の閉包）

@@ -1,0 +1,52 @@
+package main
+
+// 展開待ちの捕捉（language.md 25 節 (α-L0)）: 借りの位置のラムダの中で囲む展開される関数の匿名の関数型の仮引数 send を呼ぶ。
+// 持ち上げの時に send の実引数のラムダの捕捉を env に平たく積み、本体では send を実引数のラムダに束ね直して展開する。
+// 転送（outer → inner）・2 つの呼び出し点で env の形が違う（union）・自分の捕捉 c と実引数のラムダの捕捉 c が別の束縛・名前付き関数の η
+
+type Bad error {
+    n int
+}
+
+type Sink func(emit func([]byte) error?) error?
+
+func put(tag string, b []byte) error? {
+    println("${tag}${len(b)}")
+    return if len(b) > 3 { Bad{n: len(b)} } else { nil }
+}
+
+func putN(k int, w string, b []byte) error? {
+    println("${w}${k + len(b)}")
+    return nil
+}
+
+func quiet(b []byte) error? {
+    println("quiet ${len(b)}")
+    return nil
+}
+
+func inner(send func(b []byte) error?, st Sink, c string) error? {
+    return st((p []byte) => if c != "" { send(p) } else { nil })
+}
+
+func outer(send func(b []byte) error?, m string) error? {
+    return inner(send, (emit) => emit(bytes(m)), "y")
+}
+
+func show(e error?) {
+    switch e {
+    case Bad{n}: println("bad ${n}")
+    case nil: println("ok")
+    default: println("other")
+    }
+}
+
+func main() {
+    c := "x"
+    show(outer((b []byte) => put(c, b), "abc"))
+    show(outer((b []byte) => put(c, b), "abcd"))
+    k := 40
+    show(outer((b []byte) => putN(k, c, b), "ab"))
+    show(inner((b []byte) => put(c, b), (emit) => emit(bytes("abcde")), ""))
+    show(outer(quiet, "z"))
+}

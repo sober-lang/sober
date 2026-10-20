@@ -95,6 +95,15 @@ func panicIf(st mut St, c int, kind int, at desugar.NodeRef) {
 
 // strlit は文字列リテラル（同じ綴りの rodata は 1 つ — 名前は str.<出現順>）
 func strlit(st mut St, s desugar.StrRef) int {
+    g := strGlobal(mut st, s)
+    lsEv(mut st, EV_STR, g, int(s), 0, 0)
+    ga := globaladdr(mut st, g)
+    ln := iconst(mut st, slen(mut st, s))
+    return newHeader(mut st, mkString(mut st), ga, ln, iconst(mut st, 0))
+}
+
+// strGlobal は綴り s の rodata のグローバル（同じ綴りは 1 つ — 初出で str.<出現順> を足す。席 A の親の模擬も同じ口 — split.sober）
+func strGlobal(st mut St, s desugar.StrRef) int {
     mut x := st.strs
     mut g := -1
     while x >= 0 && g < 0 {
@@ -127,9 +136,7 @@ func strlit(st mut St, s desugar.StrRef) int {
         st.strs = en
         st.nstr = n + 1
     }
-    ga := globaladdr(mut st, g)
-    ln := iconst(mut st, slen(mut st, s))
-    return newHeader(mut st, mkString(mut st), ga, ln, iconst(mut st, 0))
+    return g
 }
 
 // decimal は n の 10 進の文字列（n ≥ 0）
@@ -258,8 +265,11 @@ func maplit(st mut St, e desugar.NodeRef) (Val, error?) {
     }
     t := mkMap(mut st, kt, vt, nodeOf(mut st, e).d != 0)
     h := newAgg(mut st, t)
-    // 宛先構築（slicelit と同じ — キーも値も参照を持たない map だけ）
-    if destHere(mut st, e) && !containsSlice(mut st, kt) && !containsSlice(mut st, vt) {
+    // 宛先構築: キーも値もスカラーか string の map（string の中身は挿入のときにヘッダの深度へ写す — mapSet の relocKey / relocVal。
+    // 下のリテラルの要素も宛先に作るときは写す。索引はセル列と同じ深度〔rt.sober の M0〕なので宛先に作られる）。
+    // knucleotide の frequencies の map[string]int が戻りで呼び手の region へ写り、写した map の索引を呼び手の読みで作り直していた（report-875）
+    dest := destHere(mut st, e) && mapDestOk(mut st, kt) && mapDestOk(mut st, vt)
+    if dest {
         emptyAtDepth(mut st, h, true, st.destDepth)
     } else {
         emptyAt(mut st, h, true)
@@ -277,9 +287,14 @@ func maplit(st mut St, e desugar.NodeRef) (Val, error?) {
             return ex, nil
         }
         ev := copyVal(mut st, ex.t, ex.v)
-        mapSet(mut st, h, kp, ex.t, ev, t, false, false)
+        mapSet(mut st, h, kp, ex.t, ev, t, dest && containsSlice(mut st, kt), dest && containsSlice(mut st, ex.t))
     }
     return Val{t: t, v: h}, nil
+}
+
+// mapDestOk は map のキー / 値の型 t が宛先構築を許すか（スカラーか string — 中身を持つ型は string のバイトだけ）
+func mapDestOk(st mut St, t int) bool {
+    return isString(mut st, t) || !containsSlice(mut st, t)
 }
 
 // keyPtr はキーの置き場（int は 1 語のスロット、string はヘッダのコピー）。到達しなければ -1
@@ -717,11 +732,11 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // sysRun(argv []byte) int（子プロセスの終了コード / 負の errno — rt.run）・sysWriteMode(path, mode int) int（errno — rt.write_mode）・
 // sysMkdir(path) int（errno — rt.mkdir）・sysRename(from, to) int（errno — rt.rename）・sysEnviron() []byte（環境変数の「NAME=値 + 0」の連結 — rt.environ）・
 // sysStat(path) int（更新時刻 ns / 負の errno — rt.stat）・sysSleep(ms) int（errno — rt.sleep）・sysReadFd(fd, n) []byte（rt.read_fd — n < 0 = 全量）・
-// sysOpen(path) int（fd / 負の errno — rt.open）・sysClose(fd) int（errno — rt.close。std/par のプログラムは task の登録簿に積む / 外す — rt.sober の needOpen）。
+// sysOpen(path) int（fd / 負の errno — rt.open）・sysClose(fd) int（errno — rt.close。std/task のプログラムは task の登録簿に積む / 外す — rt.sober の needOpen）。
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -729,27 +744,139 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     if lenL(mut st, args) != arity {
         return 0, diag.Mismatch{at: posOf(mut st, at)}
     }
-    if k >= 19 {
+    if k >= 19 && k <= 21 {
         return chunkBuiltin(mut st, k, args, at)
     }
+    if k == 29 || k == 30 {
+        return leaseBuiltin(mut st, k, args, at)
+    }
+    if k == 15 || k == 23 || k == 25 || k == 26 || k == 27 || k == 28 || k == 35 || k == 36 || k == 37 || k == 41 {
+        // 引数が全部 int の口（+ AES-GCM の塊 — aes.sober・report-796）: std/task の名前つきプールの節（段 6 P5-4 — admit.sober）・std 専用の生の syscall（net 段 4a — 28 節の囲い:
+        // rt を通らずその場で syscall）・fd の readiness の待ち（net 段 4a-2 — netpoll.sober）・fd の登録（4a-3）
+        vs := listN(mut st, arity)
+        mut i := 0
+        while i < arity {
+            v := expr(mut st, latN(mut st, args, i))?
+            if isTag(mut st, v.t, TNever) {
+                return -1, nil
+            }
+            if !isTag(mut st, v.t, TInt) {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            desugar.HeapSet(mut st.d, vs + 1 + i, v.v)
+            i += 1
+        }
+        if k == 15 || k == 27 {
+            needPoolRt(mut st)
+        }
+        if k == 27 {
+            // 名前つきプールの節の失敗の数（handler の失敗 — std/net の Serve が数える・Ledger の fail）
+            atomicXadd(mut st, itop(mut st, desugar.HeapGet(mut st.d, vs + 1)), PL_FAIL, iconst(mut st, 1))
+            return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
+        }
+        if k == 26 {
+            // fd を今の task の登録簿の鎖へ（rt.open と同じ積み方 — std/task のプログラムだけ・fd < FD_CAP は std/net が見る）
+            needOpen(mut st)
+            if st.taskUse {
+                fd := desugar.HeapGet(mut st.d, vs + 1)
+                me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+                store(mut st, gepWord(mut st, globaladdr(mut st, st.fdregG), fd), 0, load(mut st, me, TC_FDS))
+                store(mut st, me, TC_FDS, urAdd(mut st, fd, 1))
+            }
+            return one1(mut st, tInt(mut st), iconst(mut st, 0)), nil
+        }
+        if k == 41 {
+            return one1(mut st, tInt(mut st), mmOp(mut st, MK_MUL, vs)), nil
+        }
+        if k >= 35 {
+            return one1(mut st, tInt(mut st), aesOp(mut st, k - 34, vs)), nil
+        }
+        return one1(mut st, tInt(mut st), if k == 23 { syscall(mut st, vs) } else { call(mut st, if k == 15 { st.rtPoolNew } else if k == 28 { needNetOp(mut st) } else { needNet(mut st) }, vs) }), nil
+    }
     switch k {
-    case 15:
-        // std/par の名前つきプールの節（段 6 P5-4 — admit.sober）
+    case 40:
+        return one1(mut st, tInt(mut st), cpuMulx(mut st)), nil
+    case 39:
+        // []int の先頭の番地（ヘッダの 0 語目 — addr の []int 版）
         b := expr(mut st, latN(mut st, args, 0))?
         if isTag(mut st, b.t, TNever) {
             return -1, nil
         }
-        pa := expr(mut st, latN(mut st, args, 1))?
-        if isTag(mut st, pa.t, TNever) {
-            return -1, nil
-        }
-        if !isTag(mut st, b.t, TInt) || !isTag(mut st, pa.t, TInt) {
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TInt) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
-        needPoolRt(mut st)
-        return one1(mut st, tInt(mut st), call(mut st, st.rtPoolNew, list2(mut st, b.v, pa.v))), nil
+        return one1(mut st, tInt(mut st), load(mut st, b.v, 0)), nil
+    case 38:
+        // 64 × 64 → 128 の積の上位語（符号なし — 全部の出力が BMulHi を持つ〔x86 の MUL・.ll の i128・IR テキストの mulhi〕ので倒れ先は要らない）
+        a := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, a.t, TNever) {
+            return -1, nil
+        }
+        b := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, a.t, TInt) || !isTag(mut st, b.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), bin(mut st, BMulHi, a.v, b.v)), nil
+    case 34:
+        return one1(mut st, tInt(mut st), cpuAes(mut st)), nil
+    case 32:
+        return one1(mut st, tInt(mut st), cpuClmul(mut st)), nil
+    case 33:
+        // b[0:k] の CRC-32 の折り畳み（clmul.sober — k と境界は呼び手の std/hash/crc32 が見た）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        x := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        c := expr(mut st, latN(mut st, args, 2))?
+        if isTag(mut st, c.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, x.t, TInt) || !isTag(mut st, c.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), crcFold(mut st, itop(mut st, load(mut st, b.v, 0)), x.v, c.v)), nil
+    case 31:
+        // b[i:i+8] の 8 バイトの読み（境界は呼び手の std/binary.Load64 が見た — ここは gep.byte + 語の load 1 本。x86 の mov は番地の揃いを問わない）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        x := expr(mut st, latN(mut st, args, 1))?
+        if isTag(mut st, x.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, x.t, TInt) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), load(mut st, gepByte(mut st, itop(mut st, load(mut st, b.v, 0)), x.v), 0)), nil
+    case 24:
+        // バイト列の先頭の番地（ヘッダの 0 語目）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        return one1(mut st, tInt(mut st), load(mut st, b.v, 0)), nil
+    case 22:
+        // io の口の頭の期限の判定（段 3 の ④ — deadline.sober）。deadline: を書かないプログラムは 0（判定ごと畳まれる）
+        return one1(mut st, tInt(mut st), if dlFn(st.rtD3) != 0 { call(mut st, dlFn(st.rtD3), list0(mut st)) } else { iconst(mut st, 0) }), nil
     case 16:
-        // std/par の台帳の 1 語（段 6 P5-4 — io）
+        // std/task の台帳の 1 語（段 6 P5-4 — io）
         x := expr(mut st, latN(mut st, args, 0))?
         if isTag(mut st, x.t, TNever) {
             return -1, nil

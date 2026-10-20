@@ -1,0 +1,185 @@
+package lower
+
+// デッドライン（段 3 の ④ — language.md 28 節「デッドライン」・11 節「キャンセル」）: `par.Scope(body, deadline: 500 * par.MS)` の scope の中
+// （子孫の task も）では、期限が過ぎた後の io の口が io.Timeout を返す。走っている仕事は切らない（待ちの上限であって実行時間の上限ではない）。
+// 実効の期限 = task の語 TC_DL（CLOCK_MONOTONIC の絶対時刻 ns・0 = 期限なし）: scope の開きで min(今の値, 今 + 宣言) を入れて出口で戻す・
+// spawn の子は生まれるときに親の値を写す（子の寿命は scope の中なので、根までの期限を歩く代わりに min を写しで運ぶ — 同じ値）。
+// io の口の頭（std/io の sysDeadline）が rt.dl_expired で今の時刻と比べる。deadline: を書かないプログラムは組まない（判定は定数 0 — IR 不変）
+
+import "desugar"
+
+// 期限の語（開いた fd の鎖 TC_FDS・ストリームの鎖 TC_CHS の次 — 記録の先頭の頁・task.sober の TC_SAVE の手前）
+const TC_DL = TC_WORDS + 2
+
+// needDeadline は rt.dl_expired を宣言する（lower の入口で毎回呼ぶ — std/par に届き、deadline: を書いた Scope があるプログラムだけ — ParCheckTyped の印・lower の入口から）
+func needDeadline(st mut St) {
+    // 判定はこの def の中で 1 回（呼び手の build は展開されるので、そこに書くと desugar.DeadlineUse の表の読みが展開の数だけ複製される — report-642）
+    if st.taskUse && desugar.DeadlineUse(mut st.d) {
+        st.rtD3 = st.rtD3 | int(addFunc(mut st, int(strLit(mut st, "rt.dl_expired")), desugar.ListRef(list0(mut st)), TyI64)) << 32
+    }
+}
+
+// awFn / dlFn は St の rtD3 の 2 つの FnRef（state.sober — 0 = 組まない）
+func awFn(x int) FnRef {
+    return FnRef(x & 4294967295)
+}
+
+func dlFn(x int) FnRef {
+    return FnRef(x >> 32)
+}
+
+// clockNs は CLOCK_MONOTONIC の今の時刻（ns — clock_gettime(1, &ts)）。deadline: を書くプログラムは vDSO の __vdso_clock_gettime（起動で引いた番地 —
+// meta の W_VDSO・見つからなければ 0 で生の syscall へ）を呼ぶ（期限の検査は io の口ごと — report-653: 期限つきの echo で clock_gettime 2 / 往復の syscall だった）
+func clockNs(st mut St) int {
+    ts := newSlotAddr(mut st, 2)
+    if dlFn(st.rtD3) != 0 {
+        fp := load(mut st, globaladdr(mut st, st.meta), W_VDSO)
+        bSys := newBlock(mut st)
+        bV := newBlock(mut st)
+        bGo := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, fp, iconst(mut st, 0)), bV, -1, bSys, -1)
+        setCur(mut st, bV)
+        vdsoCall(mut st, list3(mut st, fp, iconst(mut st, 1), ptoi(mut st, ts)))
+        br(mut st, bGo, -1)
+        setCur(mut st, bSys)
+        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, 1), ptoi(mut st, ts)))
+        br(mut st, bGo, -1)
+        setCur(mut st, bGo)
+    } else {
+        syscall(mut st, list3(mut st, iconst(mut st, 228), iconst(mut st, 1), ptoi(mut st, ts)))
+    }
+    return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
+}
+
+// vdLd は番地 a + off（i64 の値・バイト）の 8 バイト
+func vdLd(st mut St, a int, off int) int {
+    return load(mut st, itop(mut st, bin(mut st, BAdd, a, off)), 0)
+}
+
+// vdsoInit は起動（taskInitMain — ワーカーの meta の写しより前）で auxv の AT_SYSINFO_EHDR（33）から vDSO の ELF を歩き、__vdso_clock_gettime の番地を
+// meta の W_VDSO へ（見つからない・DT_HASH が無い等は 0 = 生の syscall）。歩き方: 最初の PT_LOAD で偏り（基底 + p_offset − p_vaddr）・PT_DYNAMIC の
+// DT_HASH（記号の数 = nchain）/ DT_SYMTAB / DT_STRTAB・記号を線形に名前（20 バイト + NUL を 3 語で）照合（定義済み = st_shndx ≠ 0）
+func vdsoInit(st mut St, sp int) {
+    meta := globaladdr(mut st, st.meta)
+    store(mut st, meta, W_VDSO, vdsoWalk(mut st, sp))
+}
+
+// vdsoWalk は vdsoInit の歩き（sp = _start の初期 rsp）: __vdso_clock_gettime の番地（見つからなければ 0）を返す（sleep の ring の道の遅延の引き — sleepClock も使う）
+func vdsoWalk(st mut St, sp int) int {
+    zero := iconst(mut st, 0)
+    done := newBlock(mut st)
+    fn := param(mut st, done, TyI64)
+    // envp の終わり（NULL）の次が auxv
+    argc := load(mut st, sp, 0)
+    le := newBlock(mut st)
+    p := param(mut st, le, TyI64)
+    la := newBlock(mut st)
+    q := param(mut st, la, TyI64)
+    br(mut st, le, list1(mut st, ptoi(mut st, gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 1))))))
+    setCur(mut st, le)
+    p8 := bin(mut st, BAdd, p, iconst(mut st, 8))
+    condbr(mut st, cmp(mut st, CEq, vdLd(mut st, p8, zero), zero), la, list1(mut st, bin(mut st, BAdd, p8, iconst(mut st, 8))), le, list1(mut st, p8))
+    setCur(mut st, la)
+    t := vdLd(mut st, q, zero)
+    chk := newBlock(mut st)
+    found := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, t, zero), done, list1(mut st, zero), chk, -1)
+    setCur(mut st, chk)
+    condbr(mut st, cmp(mut st, CEq, t, iconst(mut st, 33)), found, -1, la, list1(mut st, bin(mut st, BAdd, q, iconst(mut st, 16))))
+    setCur(mut st, found)
+    base := vdLd(mut st, q, iconst(mut st, 8))
+    phoff := vdLd(mut st, base, iconst(mut st, 32))
+    phnum := bin(mut st, BAnd, vdLd(mut st, base, iconst(mut st, 56)), iconst(mut st, 65535))
+    m32 := iconst(mut st, 4294967295)
+    // プログラムヘッダ: 偏り（最初の PT_LOAD）・PT_DYNAMIC の p_vaddr
+    lp := newBlock(mut st)
+    i := param(mut st, lp, TyI64)
+    bias := param(mut st, lp, TyI64)
+    haveL := param(mut st, lp, TyI64)
+    dynv := param(mut st, lp, TyI64)
+    pb := newBlock(mut st)
+    pe := newBlock(mut st)
+    br(mut st, lp, list4(mut st, zero, zero, zero, zero))
+    setCur(mut st, lp)
+    condbr(mut st, cmp(mut st, CLt, i, phnum), pb, -1, pe, -1)
+    setCur(mut st, pb)
+    ph := bin(mut st, BAdd, bin(mut st, BAdd, base, phoff), bin(mut st, BMul, i, iconst(mut st, 56)))
+    pt := bin(mut st, BAnd, vdLd(mut st, ph, zero), m32)
+    pva := vdLd(mut st, ph, iconst(mut st, 16))
+    isL := bin(mut st, BAnd, cmp(mut st, CEq, pt, iconst(mut st, 1)), cmp(mut st, CEq, haveL, zero))
+    nb := bin(mut st, BSub, bin(mut st, BAdd, base, vdLd(mut st, ph, iconst(mut st, 8))), pva)
+    isD := cmp(mut st, CEq, pt, iconst(mut st, 2))
+    br(mut st, lp, list4(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BAdd, bias, bin(mut st, BMul, isL, bin(mut st, BSub, nb, bias))),
+        bin(mut st, BOr, haveL, isL), bin(mut st, BAdd, dynv, bin(mut st, BMul, isD, bin(mut st, BSub, pva, dynv)))))
+    setCur(mut st, pe)
+    dyOk := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, haveL, zero), cmp(mut st, CNe, dynv, zero)), dyOk, -1, done, list1(mut st, zero))
+    // 動的節: DT_HASH 4・DT_STRTAB 5・DT_SYMTAB 6（値 = p_vaddr の座標）
+    setCur(mut st, dyOk)
+    ld := newBlock(mut st)
+    d := param(mut st, ld, TyI64)
+    hs := param(mut st, ld, TyI64)
+    sy := param(mut st, ld, TyI64)
+    sr := param(mut st, ld, TyI64)
+    db := newBlock(mut st)
+    de := newBlock(mut st)
+    br(mut st, ld, list4(mut st, bin(mut st, BAdd, bias, dynv), zero, zero, zero))
+    setCur(mut st, ld)
+    tag := vdLd(mut st, d, zero)
+    condbr(mut st, cmp(mut st, CEq, tag, zero), de, -1, db, -1)
+    setCur(mut st, db)
+    dv := vdLd(mut st, d, iconst(mut st, 8))
+    br(mut st, ld, list4(mut st, bin(mut st, BAdd, d, iconst(mut st, 16)),
+        bin(mut st, BAdd, hs, bin(mut st, BMul, cmp(mut st, CEq, tag, iconst(mut st, 4)), bin(mut st, BSub, dv, hs))),
+        bin(mut st, BAdd, sy, bin(mut st, BMul, cmp(mut st, CEq, tag, iconst(mut st, 6)), bin(mut st, BSub, dv, sy))),
+        bin(mut st, BAdd, sr, bin(mut st, BMul, cmp(mut st, CEq, tag, iconst(mut st, 5)), bin(mut st, BSub, dv, sr)))))
+    setCur(mut st, de)
+    tbOk := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CNe, hs, zero), cmp(mut st, CNe, sy, zero)), cmp(mut st, CNe, sr, zero)), tbOk, -1, done, list1(mut st, zero))
+    // 記号: 名前の 3 語（"__vdso_c" "lock_get" "time\0" — 3 語目は下 5 バイト）
+    setCur(mut st, tbOk)
+    nsym := bin(mut st, BAnd, vdLd(mut st, bin(mut st, BAdd, bias, hs), iconst(mut st, 4)), m32)
+    ls := newBlock(mut st)
+    k := param(mut st, ls, TyI64)
+    sb := newBlock(mut st)
+    hit := newBlock(mut st)
+    br(mut st, ls, list1(mut st, zero))
+    setCur(mut st, ls)
+    condbr(mut st, cmp(mut st, CLt, k, nsym), sb, -1, done, list1(mut st, zero))
+    setCur(mut st, sb)
+    s := bin(mut st, BAdd, bin(mut st, BAdd, bias, sy), bin(mut st, BMul, k, iconst(mut st, 24)))
+    nm := bin(mut st, BAdd, bin(mut st, BAdd, bias, sr), bin(mut st, BAnd, vdLd(mut st, s, zero), m32))
+    w0 := cmp(mut st, CEq, vdLd(mut st, nm, zero), iconst(mut st, 7160564473939779423))
+    w1 := cmp(mut st, CEq, vdLd(mut st, nm, iconst(mut st, 8)), iconst(mut st, 8387223540568649580))
+    w2 := cmp(mut st, CEq, bin(mut st, BAnd, vdLd(mut st, nm, iconst(mut st, 16)), iconst(mut st, 1099511627775)), iconst(mut st, 1701669236))
+    def := cmp(mut st, CNe, bin(mut st, BAnd, vdLd(mut st, s, iconst(mut st, 6)), iconst(mut st, 65535)), zero)
+    condbr(mut st, bin(mut st, BAnd, bin(mut st, BAnd, w0, w1), bin(mut st, BAnd, w2, def)), hit, -1, ls, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, hit)
+    br(mut st, done, list1(mut st, bin(mut st, BAdd, bias, vdLd(mut st, s, iconst(mut st, 8)))))
+    setCur(mut st, done)
+    return fn
+}
+
+// dlOpen は scope の開き（parScope）: 今の task tk の期限を min(今の値, 今 + d)（今の値 0 = なし）にし、戻すための元の値を返す
+func dlOpen(st mut St, tk int, d int) int {
+    old := load(mut st, tk, TC_DL)
+    abs := bin(mut st, BAdd, clockNs(mut st), d)
+    // m = min(old, abs)・old = 0 なら abs
+    m := bin(mut st, BAdd, abs, bin(mut st, BMul, cmp(mut st, CLt, old, abs), bin(mut st, BSub, old, abs)))
+    store(mut st, tk, TC_DL, bin(mut st, BAdd, m, bin(mut st, BMul, cmp(mut st, CEq, old, iconst(mut st, 0)), bin(mut st, BSub, abs, m))))
+    return old
+}
+
+// buildDeadlineRt は rt.dl_expired(): 今の task の期限が過ぎていれば 1（期限なし = 0）。時刻を読むのは期限があるときだけ
+func buildDeadlineRt(st mut St) {
+    if dlFn(st.rtD3) == 0 {
+        return
+    }
+    begin(mut st, dlFn(st.rtD3))
+    me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    dl := load(mut st, me, TC_DL)
+    has := branchIf(mut st, cmp(mut st, CEq, dl, iconst(mut st, 0)))
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, has)
+    ret(mut st, cmp(mut st, CGe, clockNs(mut st), dl))
+}

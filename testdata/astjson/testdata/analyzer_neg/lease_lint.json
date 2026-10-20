@@ -1,0 +1,1191 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/os",
+      "tok": 7
+    },
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 10
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 13
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 19
+          },
+          {
+            "name": "tab",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 22
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 29
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "sum",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 41
+              }
+            ],
+            "tok": 38
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 46
+                      },
+                      "field": "Range",
+                      "tok": 48
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 50
+                      },
+                      {
+                        "k": "int",
+                        "value": 8,
+                        "tok": 52
+                      }
+                    ],
+                    "tok": 49
+                  },
+                  "guards": [],
+                  "tok": 44
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 55
+                        },
+                        "field": "Store",
+                        "tok": 57
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.tab",
+                          "tok": 60
+                        },
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 64
+                        },
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 66
+                        }
+                      ],
+                      "tok": 58
+                    }
+                  },
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "t",
+                        "tok": 69
+                      }
+                    ],
+                    "op": "+=",
+                    "values": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 71
+                          },
+                          "field": "Load",
+                          "tok": 73
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w.tab",
+                            "tok": 76
+                          },
+                          {
+                            "k": "ident",
+                            "name": "i",
+                            "tok": 80
+                          }
+                        ],
+                        "tok": 74
+                      }
+                    ],
+                    "tok": 69
+                  }
+                ]
+              },
+              "tok": 43
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "t",
+                "tok": 86
+              }
+            ],
+            "tok": 85
+          }
+        ]
+      },
+      "tok": 30,
+      "bodiless": false,
+      "span": {
+        "start": 29,
+        "end": 90
+      },
+      "sig_end": 37
+    },
+    {
+      "name": "nap",
+      "type_params": [],
+      "params": [
+        {
+          "name": "ms",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "os",
+                  "tok": 98
+                },
+                "field": "Sleep",
+                "tok": 100
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "ms",
+                  "tok": 102
+                }
+              ],
+              "tok": 101
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "ms",
+                "tok": 106
+              }
+            ],
+            "tok": 105
+          }
+        ]
+      },
+      "tok": 91,
+      "bodiless": false,
+      "span": {
+        "start": 90,
+        "end": 110
+      },
+      "sig_end": 97
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 117
+                  },
+                  "field": "NewLocal",
+                  "tok": 119
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 127
+                        },
+                        "field": "NewScratch",
+                        "tok": 129
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.tab",
+                          "tok": 132
+                        },
+                        {
+                          "k": "int",
+                          "value": 8,
+                          "tok": 136
+                        }
+                      ],
+                      "tok": 130
+                    },
+                    "tok": 126
+                  }
+                ],
+                "tok": 120
+              }
+            ],
+            "tok": 115
+          },
+          {
+            "k": "bind",
+            "names": [
+              "lv"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 142
+                  },
+                  "field": "NewLocal",
+                  "tok": 144
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 152
+                        },
+                        "field": "NewScratch",
+                        "tok": 154
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.tab",
+                          "tok": 157
+                        },
+                        {
+                          "k": "int",
+                          "value": 8,
+                          "tok": 161
+                        }
+                      ],
+                      "tok": 155
+                    },
+                    "tok": 151
+                  }
+                ],
+                "tok": 145
+              }
+            ],
+            "tok": 140
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 167
+                  },
+                  "field": "Lease",
+                  "tok": 169
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 171
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "os",
+                                "tok": 180
+                              },
+                              "field": "Sleep",
+                              "tok": 182
+                            },
+                            "args": [
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 184
+                              }
+                            ],
+                            "tok": 183
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "sum",
+                              "tok": 187
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "w",
+                                "tok": 190
+                              }
+                            ],
+                            "tok": 188
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 178
+                  }
+                ],
+                "tok": 170
+              }
+            ],
+            "tok": 165
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 198
+                  },
+                  "field": "Lease",
+                  "tok": 200
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 202
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "sum",
+                            "tok": 210
+                          },
+                          "args": [
+                            {
+                              "k": "mut_arg",
+                              "name": "w",
+                              "tok": 213
+                            }
+                          ],
+                          "tok": 211
+                        },
+                        "rhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "nap",
+                            "tok": 216
+                          },
+                          "args": [
+                            {
+                              "k": "int",
+                              "value": 0,
+                              "tok": 218
+                            }
+                          ],
+                          "tok": 217
+                        },
+                        "tok": 215
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "nap",
+                          "tok": 221
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 223
+                          }
+                        ],
+                        "tok": 222
+                      },
+                      "tok": 220
+                    },
+                    "tok": 209
+                  }
+                ],
+                "tok": 201
+              }
+            ],
+            "tok": 196
+          },
+          {
+            "k": "bind",
+            "names": [
+              "c"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 229
+                  },
+                  "field": "Lease",
+                  "tok": 231
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 233
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "sum",
+                          "tok": 241
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w",
+                            "tok": 244
+                          }
+                        ],
+                        "tok": 242
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "task",
+                            "tok": 247
+                          },
+                          "field": "Lease",
+                          "tok": 249
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "lw",
+                            "tok": 251
+                          },
+                          {
+                            "k": "lambda",
+                            "params": [
+                              {
+                                "name": "u",
+                                "type": {
+                                  "k": "name",
+                                  "name": "Work"
+                                },
+                                "mutable": true
+                              }
+                            ],
+                            "body": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "sum",
+                                "tok": 259
+                              },
+                              "args": [
+                                {
+                                  "k": "mut_arg",
+                                  "name": "u",
+                                  "tok": 262
+                                }
+                              ],
+                              "tok": 260
+                            },
+                            "tok": 258
+                          }
+                        ],
+                        "tok": 250
+                      },
+                      "tok": 246
+                    },
+                    "tok": 240
+                  }
+                ],
+                "tok": 232
+              }
+            ],
+            "tok": 227
+          },
+          {
+            "k": "bind",
+            "names": [
+              "d"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 269
+                  },
+                  "field": "Lease",
+                  "tok": 271
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 273
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "sum",
+                          "tok": 281
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w",
+                            "tok": 284
+                          }
+                        ],
+                        "tok": 282
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "task",
+                            "tok": 287
+                          },
+                          "field": "Lease",
+                          "tok": 289
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "lv",
+                            "tok": 291
+                          },
+                          {
+                            "k": "lambda",
+                            "params": [
+                              {
+                                "name": "u",
+                                "type": {
+                                  "k": "name",
+                                  "name": "Work"
+                                },
+                                "mutable": true
+                              }
+                            ],
+                            "body": {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "sum",
+                                "tok": 299
+                              },
+                              "args": [
+                                {
+                                  "k": "mut_arg",
+                                  "name": "u",
+                                  "tok": 302
+                                }
+                              ],
+                              "tok": 300
+                            },
+                            "tok": 298
+                          }
+                        ],
+                        "tok": 290
+                      },
+                      "tok": 286
+                    },
+                    "tok": 280
+                  }
+                ],
+                "tok": 272
+              }
+            ],
+            "tok": 267
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "os",
+                  "tok": 307
+                },
+                "field": "Sleep",
+                "tok": 309
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 311
+                }
+              ],
+              "tok": 310
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 318
+                  },
+                  "field": "Run",
+                  "tok": 320
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": null
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "task",
+                                "tok": 327
+                              },
+                              "field": "Lease",
+                              "tok": 329
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "lw",
+                                "tok": 331
+                              },
+                              {
+                                "k": "lambda",
+                                "params": [
+                                  {
+                                    "name": "w",
+                                    "type": {
+                                      "k": "name",
+                                      "name": "Work"
+                                    },
+                                    "mutable": true
+                                  }
+                                ],
+                                "body": {
+                                  "k": "block",
+                                  "stmts": [
+                                    {
+                                      "k": "assign",
+                                      "targets": [
+                                        {
+                                          "k": "ident",
+                                          "name": "_",
+                                          "tok": 340
+                                        }
+                                      ],
+                                      "op": "=",
+                                      "values": [
+                                        {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "task",
+                                              "tok": 342
+                                            },
+                                            "field": "Spawn",
+                                            "tok": 344
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "ident",
+                                              "name": "s",
+                                              "tok": 346
+                                            },
+                                            {
+                                              "k": "lambda",
+                                              "params": [],
+                                              "body": {
+                                                "k": "call",
+                                                "callee": {
+                                                  "k": "ident",
+                                                  "name": "nap",
+                                                  "tok": 351
+                                                },
+                                                "args": [
+                                                  {
+                                                    "k": "int",
+                                                    "value": 0,
+                                                    "tok": 353
+                                                  }
+                                                ],
+                                                "tok": 352
+                                              },
+                                              "tok": 350
+                                            }
+                                          ],
+                                          "tok": 345
+                                        }
+                                      ],
+                                      "tok": 340
+                                    },
+                                    {
+                                      "k": "expr",
+                                      "expr": {
+                                        "k": "call",
+                                        "callee": {
+                                          "k": "ident",
+                                          "name": "sum",
+                                          "tok": 357
+                                        },
+                                        "args": [
+                                          {
+                                            "k": "mut_arg",
+                                            "name": "w",
+                                            "tok": 360
+                                          }
+                                        ],
+                                        "tok": 358
+                                      }
+                                    }
+                                  ]
+                                },
+                                "tok": 338
+                              }
+                            ],
+                            "tok": 330
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 325
+                  }
+                ],
+                "tok": 321
+              }
+            ],
+            "tok": 314
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 369
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "+",
+                  "lhs": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "a",
+                          "tok": 371
+                        },
+                        "rhs": {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 373
+                        },
+                        "tok": 372
+                      },
+                      "rhs": {
+                        "k": "ident",
+                        "name": "c",
+                        "tok": 375
+                      },
+                      "tok": 374
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "d",
+                      "tok": 377
+                    },
+                    "tok": 376
+                  },
+                  "rhs": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 379
+                  },
+                  "tok": 378
+                }
+              ],
+              "tok": 370
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 383
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 385
+                },
+                "tok": 384
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "println",
+                        "tok": 387
+                      },
+                      "args": [
+                        {
+                          "k": "unary",
+                          "op": "-",
+                          "operand": {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 390
+                          },
+                          "tok": 389
+                        }
+                      ],
+                      "tok": 388
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 382
+            }
+          }
+        ]
+      },
+      "tok": 111,
+      "bodiless": false,
+      "span": {
+        "start": 110,
+        "end": 397
+      },
+      "sig_end": 114
+    }
+  ],
+  "consts": []
+}

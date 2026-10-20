@@ -29,6 +29,7 @@ type Binding struct {
     split bool    // 割った mut 束縛（split.sober）
     sty int       // 表層型（surface.sober — SUNK = 不明）
     fres ListRef      // 関数値の結果の型式の列（名前付き関数から束縛した imm の関数値 — 後置 `?` の形。-1 = 不明）
+    brw int       // 借りの閉包の仮引数なら借りの位置の型式（値化可能な named fn type の匿名の関数型の仮引数の節）+ 1（0 = 借りでない — (α-L0)）
 }
 
 // bind は束縛を積む。split = 割る場所か（呼び手の判定）— 宣言が struct のときだけ割った束縛になる
@@ -76,12 +77,32 @@ func lookup(st mut S, eb int, name StrRef) int {
 }
 
 func bindF(st mut S, ef int, name int, cl int, sty int) int {
+    return bindFT(mut st, ef, name, cl, sty, NodeRef(-1), 0, -1)
+}
+
+// bindFT は bindF に仮引数の関数型の型式 te（package pk・型環境 tenv — 無ければ -1）を添えたもの（呼び出しの結果の型宣言を引く — declOfExpr。F-au）
+func bindFT(st mut S, ef int, name int, cl int, sty int, te NodeRef, pk int, tenv int) int {
     at := top(mut st)
     put(mut st, ef)
     put(mut st, name)
     put(mut st, cl)
     put(mut st, sty)
+    put(mut st, int(te))
+    put(mut st, pk)
+    put(mut st, tenv)
     return at
+}
+
+// lookupFRec は閉包の束縛 name の記録（無ければ -1）
+func lookupFRec(st mut S, ef int, name StrRef) int {
+    mut b := ef
+    while b >= 0 {
+        if strEq(mut st, hgetS(mut st, b + 1), name) {
+            return b
+        }
+        b = hget(mut st, b)
+    }
+    return -1
 }
 
 // lookupFSty は閉包の束縛 name の表層型（無ければ SUNK — 名前付き関数型の仮引数に束縛した閉包はその型、ラムダ・for 式は SFREE）
@@ -290,6 +311,23 @@ func typeIn(st mut S, pk int, name StrRef, lo int) NodeRef {
     return -1
 }
 
+// refreshTypeIndex は組み済みの型宣言の索引の節を今のファイルの根の型宣言へ差し替える（並びは buildTypeIndex と同じ — 名前は変わらないので鎖はそのまま）
+func refreshTypeIndex(st mut S) {
+    if table.Len(mut st.tyIdxNode) == 0 {
+        return
+    }
+    mut ti := 0
+    for pk <- iter.Range(0, st.npkg) {
+        for f <- iter.Range(PkgFlo(mut st, pk), PkgFhi(mut st, pk)) {
+            tys := lC(nodeOf(mut st, FileRoot(mut st, f)))
+            for i <- iter.Range(0, lenL(mut st, tys)) {
+                table.Set(mut st.tyIdxNode, ti, latI(mut st, tys, i))
+                ti += 1
+            }
+        }
+    }
+}
+
 // buildTypeIndex は型宣言の索引を組む（型宣言は init の後は変わらない）。宣言を順に並べ、鎖の先頭が前の宣言になるよう後ろから積む
 func buildTypeIndex(st mut S) {
     for _ <- iter.Range(0, FNBUCKETS) {
@@ -400,7 +438,7 @@ func findFn(st mut S, callee NodeRef, eb int) int {
     } else {
         return -1
     }
-    // error を返す task の Gather / Map の振り分け（表層型検査器が決めた先 — desugar/par.sober の PREDIR）
+    // error を返す task の Gather / Map の振り分け（表層型検査器が決めた先 — desugar/task.sober の PREDIR）
     rd := ParRedirectOf(mut st, callee)
     if rd >= 0 {
         return rd
@@ -687,6 +725,10 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
             }
             return if u == 0 { st.tInt } else { st.tBool }, nil
         case ast.BFunc:
+            // 値化可能な named fn type は閉包の型（closure.sober — クロージャの波 工程 3b）。それ以外は値にならない
+            if fnValDeclNode(mut st, decl) {
+                return closTyOf(mut st, dpk, decl, at, fuel)
+            }
             return 0, diag.CoreFragment{at: posOf(mut st, at)}
         }
         return 0, diag.Malformed{at: posOf(mut st, at)}
@@ -729,6 +771,10 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         memoPut(mut st, int(decl), env, fuel, t)
         return t, nil
     case ast.TFunc:
+        // 値の位置の匿名の関数型の欄（工程 5d）は閉包の型（env の鍵 = 関数型の構造 — 借りと同じ寄せ方）
+        if anonFieldTE(mut st, te) {
+            return closTyOfKey(mut st, pk, te, brwKey(mut st, pk, te, at, fuel)?, at, fuel)
+        }
         pl := lA(nodeOf(mut st, te))
         ps := ListRef(listN(mut st, lenL(mut st, pl)))
         for i <- iter.Range(0, lenL(mut st, pl)) {
@@ -754,7 +800,7 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         v := tyOf(mut st, pk, nB(nodeOf(mut st, te)), at, fuel - 1)?
         return tMap(mut st, nodeOf(mut st, te).c != 0, 0, key, v), nil
     case ast.TTuple:
-        // 多値の型（型引数の位置だけ — par.Task[(T, error?)]・P3b 残穴1）: 右結合の prod の鎖（多値の戻りと同じ形）
+        // 多値の型（型引数の位置だけ — task.Handle[(T, error?)]・P3b 残穴1）: 右結合の prod の鎖（多値の戻りと同じ形）
         l := lA(nodeOf(mut st, te))
         n := lenL(mut st, l)
         ts := ListRef(listN(mut st, n))

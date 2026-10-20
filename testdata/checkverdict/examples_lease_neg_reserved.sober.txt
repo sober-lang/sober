@@ -1,0 +1,2 @@
+sober: load error at examples/lease_neg_reserved.sober:14:16: LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead
+exit=1

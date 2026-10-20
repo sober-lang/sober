@@ -1,0 +1,90 @@
+package json
+
+// T→JSON の裏方（shape[T] の逆向き — language.md 16 節 2）: 利用者は `json.Encode[T](v)`（欄名の対応つきは `json.EncodeWith[T](v, map[string]string{"欄": "キー"})`）を書き、
+// loader の固定テンプレート（compiler/loader/jsonshape.sober）が型ごとの写しの関数（mut の builder に書く普通の Sober）を合成する。ここは部品だけ。
+// 綴り: 空白なし・欄は宣言の順・`U?` の nil は null・数は int の 10 進と float の最短の往復表現（conv.FormatFloat）・文字列は Format と同じエスケープ
+// （`"` `\` と制御文字だけ — Go の Marshal と違い < > & は素のまま）。NaN / ±Inf は JSON に無いので panic（NotFinite）
+
+import "std/builder"
+import "std/conv"
+
+// NotFinite は JSON に書けない float（NaN・±Inf）を Encode に渡した
+type NotFinite panic {
+    field string
+}
+
+// KeyOf は欄 field の JSON のキー（rename の対応が無ければ欄名のまま。rename は省略可能な引数〔map[K]V?〕にしない — map の T? は
+// 実引数に map を渡すと build が拒否・絞って使うと check が拒否する言語の穴 F-ag。対応なしは空の map）
+func KeyOf(rename map[string]string, field string) string {
+    // 対応なし（Decode / Encode — 空の辞書）は引かない（欄ごとの map の引きがデコードの +3% だった）
+    if len(rename) == 0 {
+        return field
+    }
+    k := rename[field]
+    if k != nil {
+        return k
+    }
+    return field
+}
+
+// Put は s のバイト列をそのまま積む
+func Put(o mut builder.Builder[byte], s string) {
+    builder.PushStr(mut o, s)
+}
+
+// PutKey は欄の頭（2 つ目以降は ','・キーの文字列・':'）
+func PutKey(o mut builder.Builder[byte], key string, first bool) {
+    if !first {
+        builder.Push(mut o, ',')
+    }
+    quote(mut o, bytes(key))
+    builder.Push(mut o, ':')
+}
+
+func PutString(o mut builder.Builder[byte], s string) {
+    quote(mut o, bytes(s))
+}
+
+// PutInt は n の 10 進を builder へ直に積む（FormatInt の string を経ない — 上の桁から: 桁の数の 10 の冪 p を求めて n / p の桁を順に）
+func PutInt(o mut builder.Builder[byte], n int) {
+    if n < 0 {
+        builder.Push(mut o, '-')
+        if n == -9223372036854775807 - 1 {
+            builder.PushStr(mut o, "9223372036854775808")
+            return
+        }
+    }
+    v := if n < 0 { 0 - n } else { n }
+    if v < 10 {
+        builder.Push(mut o, byte(48 + v))
+        return
+    }
+    mut p := 10
+    while p <= v / 10 {
+        p = p * 10
+    }
+    mut r := v
+    while p > 0 {
+        d := r / p
+        builder.Push(mut o, byte(48 + d))
+        r = r - d * p
+        p = p / 10
+    }
+}
+
+func PutBool(o mut builder.Builder[byte], b bool) {
+    Put(mut o, if b { "true" } else { "false" })
+}
+
+// PutFloat は f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
+func PutFloat(o mut builder.Builder[byte], f float, field string) {
+    if f != f || f - f != 0.0 {
+        panic(NotFinite{field: field})
+    }
+    Put(mut o, conv.FormatFloat(f))
+}
+
+// Done は積んだバイト列の string
+func Done(o mut builder.Builder[byte]) string {
+    return bytesToString(builder.Build(mut o))
+}

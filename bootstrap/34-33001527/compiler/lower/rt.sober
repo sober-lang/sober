@@ -1,0 +1,1733 @@
+package lower
+
+// IR で書いたランタイム（src/stage1/ir_rt.zig・src/stage1/ir_rt_io.zig の写しが起点。byte の段 C（string = imm []byte）で str_eq・print_str・io を
+// バイトのセルに切り替えたので、Zig 版とのバイト一致は終わった — 凍結コーパスの lower 側の照合は退役 scripts/frozen/lower-retired.list）。
+// メタ領域 @rt.meta の配置（語）: [0] 深度、[1 + d] 深度 d の bump、FD、ERRNO、LINE_LEN、SLOTS、SLOT_SIZE、LINE（行バッファ）、ACC + d、ARGV（入口の初期 rsp）。
+// --mem-trace（rt.memtrace）は写していない（Zig 版の既定の出力と同じ形だけ）。
+// builder の小道具（ir.sober の push / newBlock 等）は以前 @noinline だった — 呼び出し点ごとに展開されると、このファイルだけで lowerdump のビルドが
+// 3 分・4GB を超えた（F-29）。今は --passes の build が δ（region 透過の実体関数）で、check が E2-S（callM の Def）で下ろすので外した（2026-10-02）
+
+import "desugar"
+import "std/iter"
+
+const MAX_DEPTH = 1024
+const DEFAULT_SLOT_MB = 4096
+const MAX_SLOT_MB = 65536
+// 子 task の region のスロットの既定（MiB — net 4a-4 の直し 案 C・report-655）: 宣言（budget:）の無い子の深度ごとの region 1 つの上限。
+// 宣言があればそれ以上の 2 の冪（既定より小さくはしない — 宣言の超過は記帳だけの約束〔11 節〕を変えない）。main は SOBER_REGION_MB（4 GiB）のまま。
+// 512 = 自己 check-par の子の region の高水位 217 MB の 2.4 倍（64 MiB ではコンパイラ自身が死ぬ・256 は余白 1.23 倍で薄い — ユーザー裁定 2026-10-14）・
+// C10k の VA = 16k 接続 × 5 深度 × 512 MiB = 40 TiB（VA_BUDGET 64 TiB の中）。
+// 環境変数 SOBER_TASK_REGION_MB で上書き（main のスロットより大きくはしない）
+const DEFAULT_TASK_SLOT_MB = 512
+// 捨てた region のページを OS へ返す閾値（MiB — スロットの先頭からこの量は触れたまま残す。環境変数 SOBER_MADV_MB で上書き・0 = 全部返す）。
+// 既定は自己適用の check の計測で決めた→ huge page を止めた後に 4 → 1 MiB（RSS 回収便 自己 build の RSS 232 → 216 MB・
+// wall / sys は揺れの範囲。0 = 全部返すは 203 MB。題材の peak は閾値に依らず同じ — 全部が生きたデータ）。コンパイラ導出は要否の材料待ち（同 report）
+const DEFAULT_MADV_MB = 1
+const LINE_CAP = 4096
+// メタ領域の語の番地（上の配置を const 式で — bump と ACC は深度 0..MAX_DEPTH の 1 語ずつ、LINE は LINE_CAP バイト）
+const W_DEPTH = 0
+const W_BUMP = 1
+const W_FD = W_BUMP + MAX_DEPTH + 1
+const W_ERRNO = W_FD + 1
+const W_LINE_LEN = W_ERRNO + 1
+const W_SLOTS = W_LINE_LEN + 1
+const W_SLOT_SIZE = W_SLOTS + 1
+const W_LINE = W_SLOT_SIZE + 1
+const W_ACC = W_LINE + LINE_CAP / 8
+const W_ARGV = W_ACC + MAX_DEPTH + 1
+const W_MADV = W_ARGV + 1   // スロットの先頭から残す量（バイト — これを超えて触れた範囲は region_enter が OS へ返す）
+const W_MAXD = W_MADV + 1   // 前回の region_enter 以降に入った最深の深度（ここまでのスロットに返す候補が残る）
+// 宛先構築の深度のレジスタ（宛先構築レーン M1c — lower の emitCall が印のある呼び出しの直前に呼び手の宛先の深度を書き、印を持つ関数が入口で読んで 0 に戻す。
+// 0 = 無し〔深度 0 は確保の場所にならない〕）
+const W_DEST = W_MAXD + 1
+// mut 実引数の行き先の深度（宛先構築レーン M5 — 呼び手が mut 実引数の束縛の深度の最小を書き、呼ばれた側が入口で読む。0 = 無し）
+const W_ANCHOR = W_DEST + 1
+// 深度の計測口の旗（宛先構築レーン M5c — 入口が環境変数 SOBER_DEPTH_REPORT を読んで置く。真なら main の正常終了で rt.depth_report が
+// 到達した最深の深度を stderr へ）
+const W_DREP = W_ANCHOR + 1
+const META_WORDS = W_DREP + 1
+// 子 task のスロットの既定の大きさ（バイト — std/par を使うプログラムだけが meta をこの 1 語伸ばして書く・task.sober。使わないプログラムの出力を変えない）。
+// W_SLOT_SIZE は今の task のスロットの大きさ（切替で task の記録 TC_SLOTSZ から置き直す — main は起動の値）
+const W_SLOT_DEF = META_WORDS
+// vDSO の __vdso_clock_gettime の番地（0 = 無し — deadline: を書くプログラムだけが meta をさらに 1 語伸ばして起動で書く・deadline.sober vdsoInit）
+const W_VDSO = META_WORDS + 1
+const PANIC = 101
+const PANIC_MEM = 102
+const IO_BUF = 4096
+const READ_CHUNK = 1048576 // read_file が 1 回の read(2) で region の先端へ直に読む上限（第三便 M12）
+
+// installRt はランタイムのグローバルと関数を足して本体を組む（ir_rt.install と同じ順）
+func installRt(st mut St) {
+    // 変異 13（--map-stat）は meta の後ろに map の成長の計数を置く（panic.sober の msAdd）
+    st.meta = addWorkerGlobal(mut st, int(strLit(mut st, "rt.meta")), META_WORDS + (if st.rtMut == 13 { 2 + MS_N } else if dlFn(st.rtD3) != 0 { 2 } else if st.taskUse { 1 } else { 0 }))
+    if st.trapUse {
+        st.trapG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.trap")), TRAP_WORDS)
+    }
+    if st.taskUse {
+        needTaskRt(mut st)
+    }
+    st.rtFlush = addFunc(mut st, int(strLit(mut st, "rt.flush")), desugar.ListRef(list0(mut st)), -1)
+    st.rtPchar = addFunc(mut st, int(strLit(mut st, "rt.print_char")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    st.rtPint = addFunc(mut st, int(strLit(mut st, "rt.print_int")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    st.rtRenter = addFunc(mut st, int(strLit(mut st, "rt.region_enter")), desugar.ListRef(list0(mut st)), -1)
+    st.rtRalloc = addFunc(mut st, int(strLit(mut st, "rt.region_alloc")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyPtr)
+    st.rtReloc = addFunc(mut st, int(strLit(mut st, "rt.region_relocate")), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), -1)
+    st.rtCopy = addFunc(mut st, int(strLit(mut st, "rt.copy")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
+    st.rtStreq = addFunc(mut st, int(strLit(mut st, "rt.str_eq")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
+    st.rtMaphash = addFunc(mut st, int(strLit(mut st, "rt.map_hash")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyI64)
+    st.rtPstr = addFunc(mut st, int(strLit(mut st, "rt.print_str")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    // region の超過の死亡ダンプ（panic.sober — 本体は program の最後に組む: 文字列の大域の番号を利用者のコードの分とずらさない）
+    st.rtPanicMem = addFunc(mut st, int(strLit(mut st, "rt.panic_mem")), desugar.ListRef(list1(mut st, TyI64)), -1)
+    // 深度の計測口（M5c — 本体は rt.panic_mem と同じく program の最後に組む）
+    st.rtDrep = addFunc(mut st, int(strLit(mut st, "rt.depth_report")), desugar.ListRef(list0(mut st)), -1)
+    // byte の列のランタイム（rt8.sober — 段 C で string = imm []byte になったので常に要る。本体は program の最後に組む）
+    needByteRt(mut st)
+    needGrowRt(mut st)
+    buildFlush(mut st)
+    buildPrintChar(mut st)
+    buildPrintInt(mut st)
+    buildRegionEnter(mut st)
+    buildRegionAlloc(mut st)
+    buildCopy(mut st)
+    buildRelocate(mut st)
+    buildStrEq(mut st)
+    buildMapHash(mut st)
+    buildPrintStr(mut st)
+    installIo(mut st)
+}
+
+// buildEntry は入口 sober_entry(sp): アリーナを予約し、深度 0・出力 fd 1 で main を呼び、exit(0)（ir_rt.buildEntry）。
+// main_int（`func main() int`）なら戻り値が終了コード（0〜255 の外は panic 101 — exit_group(code)）。
+// sp は _start の初期 rsp — 環境変数 SOBER_REGION_MB を読み、W_ARGV に置く（read_args が読む）。予約の失敗（1MiB でも断られる）は exit 102
+func buildEntry(st mut St, main_fn FnRef, main_int bool) {
+    f := addFunc(mut st, int(strLit(mut st, "sober_entry")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    irSetFnExport(mut st, f, 1)
+    st.entryFn = int(f)
+    begin(mut st, f)
+    sp := 0
+    // ワーカー 0 の記録を %fs へ（段 6 P4-3 — 以降の rt の表は fsaddr で引く）
+    if st.taskUse {
+        call(mut st, st.rtWorkerInit, list0(mut st))
+    }
+    meta := globaladdr(mut st, st.meta)
+    mb := envMb(mut st, sp, "SOBER_REGION_MB=", DEFAULT_SLOT_MB, false)
+    // reserve(mb): mmap(NULL, mb MiB * MAX_DEPTH, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0)
+    reserve := newBlock(mut st)
+    c := param(mut st, reserve, TyI64)
+    shrink := newBlock(mut st)
+    fail := newBlock(mut st)
+    ok := newBlock(mut st)
+    br(mut st, reserve, list1(mut st, mb))
+    setCur(mut st, reserve)
+    slot := bin(mut st, BShl, c, iconst(mut st, 20))
+    a0 := iconst(mut st, 9)
+    a1 := iconst(mut st, 0)
+    a2 := bin(mut st, BMul, slot, iconst(mut st, MAX_DEPTH))
+    a3 := iconst(mut st, 3)
+    a4 := iconst(mut st, 16418)
+    a5 := iconst(mut st, -1)
+    a6 := iconst(mut st, 0)
+    args := listN(mut st, 7)
+    desugar.HeapSet(mut st.d, args + 1, a0)
+    desugar.HeapSet(mut st.d, args + 2, a1)
+    desugar.HeapSet(mut st.d, args + 3, a2)
+    desugar.HeapSet(mut st.d, args + 4, a3)
+    desugar.HeapSet(mut st.d, args + 5, a4)
+    desugar.HeapSet(mut st.d, args + 6, a5)
+    desugar.HeapSet(mut st.d, args + 7, a6)
+    bs := syscall(mut st, args)
+    // 失敗は -4095..-1（符号なしで最上位の 4095 個）
+    condbr(mut st, cmp(mut st, CUge, bs, iconst(mut st, -4095)), shrink, -1, ok, -1)
+    setCur(mut st, shrink)
+    condbr(mut st, cmp(mut st, CGt, c, iconst(mut st, 1)), reserve, list1(mut st, bin(mut st, BSar, c, iconst(mut st, 1))), fail, -1)
+    setCur(mut st, fail)
+    exit(mut st, PANIC_MEM)
+    setCur(mut st, ok)
+    // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE)（RSS 回収便）: 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
+    // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
+    store(mut st, meta, W_SLOTS, bs)
+    store(mut st, meta, W_SLOT_SIZE, slot)
+    store(mut st, meta, W_DEPTH, iconst(mut st, 0))
+    store(mut st, meta, W_FD, iconst(mut st, 1))
+    store(mut st, meta, W_ARGV, ptoi(mut st, sp))
+    madv := envMb(mut st, sp, "SOBER_MADV_MB=", DEFAULT_MADV_MB, true)
+    store(mut st, meta, W_MADV, bin(mut st, BShl, madv, iconst(mut st, 20)))
+    store(mut st, meta, W_MAXD, iconst(mut st, 0))
+    drep := envMb(mut st, sp, "SOBER_DEPTH_REPORT=", 0, true)
+    store(mut st, meta, W_DREP, drep)
+    if st.taskUse {
+        taskInitMain(mut st, sp)
+    }
+    code := call(mut st, main_fn, list0(mut st))
+    call(mut st, st.rtDrep, list0(mut st))
+    if st.taskUse {
+        call(mut st, st.rtOutDrain, list0(mut st))
+        call(mut st, st.rtPstatDump, list0(mut st))
+    }
+    if main_int {
+        bad := newBlock(mut st)
+        good := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CUge, code, iconst(mut st, 256)), bad, -1, good, -1)
+        setCur(mut st, bad)
+        exit(mut st, PANIC)
+        setCur(mut st, good)
+        syscall(mut st, list2(mut st, iconst(mut st, 231), code))
+    }
+    exit(mut st, 0)
+}
+
+// envMb は環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
+// 戻ると cur は値が決まったブロック
+func envMb(st mut St, sp int, keyS string, dflt0 int, zeroOk bool) int {
+    argc := load(mut st, sp, 0)
+    envp := gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))
+    scan := newBlock(mut st)
+    e := param(mut st, scan, TyPtr)
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    got := newBlock(mut st)
+    next := newBlock(mut st)
+    br(mut st, scan, list1(mut st, envp))
+    // scan(e): *e == 0 なら既定、そうでなければ鍵の接頭辞を 1 バイトずつ照合（鍵は定数なので展開）
+    setCur(mut st, scan)
+    sv := load(mut st, e, 0)
+    chk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, sv, iconst(mut st, 0)), done, list1(mut st, iconst(mut st, dflt0)), chk, -1)
+    setCur(mut st, chk)
+    s := itop(mut st, sv)
+    key := bytes(keyS)
+    for i <- iter.Range(0, len(key)) {
+        c_ok := newBlock(mut st)
+        ch := load8(mut st, gepByte(mut st, s, iconst(mut st, i)), 0)
+        condbr(mut st, cmp(mut st, CEq, ch, iconst(mut st, int(key[i]))), c_ok, -1, next, -1)
+        setCur(mut st, c_ok)
+    }
+    br(mut st, got, -1)
+    // next: 次の環境変数
+    setCur(mut st, next)
+    br(mut st, scan, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
+    // got: 値の 10 進（val(n, i)）。終わり（NUL）で n が 1〜MAX_SLOT_MB なら採用、それ以外は既定
+    setCur(mut st, got)
+    vb := newBlock(mut st)
+    n := param(mut st, vb, TyI64)
+    iv := param(mut st, vb, TyI64)
+    br(mut st, vb, list2(mut st, iconst(mut st, 0), iconst(mut st, len(key))))
+    setCur(mut st, vb)
+    ch := load8(mut st, gepByte(mut st, s, iv), 0)
+    end := newBlock(mut st)
+    dig := newBlock(mut st)
+    dig2 := newBlock(mut st)
+    acc := newBlock(mut st)
+    use := newBlock(mut st)
+    dflt := iconst(mut st, dflt0)
+    condbr(mut st, cmp(mut st, CEq, ch, iconst(mut st, 0)), end, -1, dig, -1)
+    setCur(mut st, end)
+    // 採る条件: zeroOk でなければ n > 0（空・0 は既定）。zeroOk なら値が空でない（`NAME=` は既定・`NAME=0` は 0）
+    gate := if zeroOk { cmp(mut st, CGt, iv, iconst(mut st, len(key))) } else { cmp(mut st, CGt, n, iconst(mut st, 0)) }
+    condbr(mut st, gate, use, -1, done, list1(mut st, dflt))
+    setCur(mut st, use)
+    br(mut st, done, list1(mut st, n))
+    setCur(mut st, dig)
+    condbr(mut st, cmp(mut st, CGe, ch, iconst(mut st, 48)), dig2, -1, done, list1(mut st, dflt))
+    setCur(mut st, dig2)
+    condbr(mut st, cmp(mut st, CLe, ch, iconst(mut st, 57)), acc, -1, done, list1(mut st, dflt))
+    setCur(mut st, acc)
+    n2 := bin(mut st, BAdd, bin(mut st, BMul, n, iconst(mut st, 10)), bin(mut st, BSub, ch, iconst(mut st, 48)))
+    more := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, n2, iconst(mut st, MAX_SLOT_MB)), done, list1(mut st, dflt), more, -1)
+    setCur(mut st, more)
+    br(mut st, vb, list2(mut st, n2, bin(mut st, BAdd, iv, iconst(mut st, 1))))
+    setCur(mut st, done)
+    return res
+}
+
+// buildFlush は write(fd, LINE, len)。短い書き込みは続きから、EINTR は再試行、失敗は捨てる。最後に len = 0
+func buildFlush(st mut St) {
+    begin(mut st, st.rtFlush)
+    meta := globaladdr(mut st, st.meta)
+    e1go := newBlock(mut st)
+    e1ret := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, meta, W_LINE_LEN), iconst(mut st, 0)), e1ret, -1, e1go, -1)
+    setCur(mut st, e1ret)
+    ret(mut st, -1)
+    setCur(mut st, e1go)
+    // std/par を使うプログラム: フロンティアの task でなければ行を区間の溜めへ（段 6 P4-2 (O1) — out.sober）
+    if st.taskUse {
+        outRoute(mut st, meta)
+    }
+    loop := newBlock(mut st)
+    done_w := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    ln := load(mut st, meta, W_LINE_LEN)
+    rest := bin(mut st, BSub, ln, done_w)
+    condbr(mut st, cmp(mut st, CGt, rest, iconst(mut st, 0)), body, -1, done, -1)
+    setCur(mut st, body)
+    off := bin(mut st, BAdd, iconst(mut st, W_LINE * 8), done_w)
+    buf := ptoi(mut st, gepByte(mut st, meta, off))
+    fd := load(mut st, meta, W_FD)
+    r := syscall(mut st, list4(mut st, iconst(mut st, 1), fd, buf, rest))
+    retry := newBlock(mut st)
+    not_intr := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)), retry, -1, not_intr, -1)
+    setCur(mut st, retry)
+    br(mut st, loop, list1(mut st, done_w))
+    setCur(mut st, not_intr)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, r, iconst(mut st, 0)), done, -1, ok, -1)
+    setCur(mut st, ok)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, done_w, r)))
+    setCur(mut st, done)
+    store(mut st, meta, W_LINE_LEN, iconst(mut st, 0))
+    ret(mut st, -1)
+}
+
+// buildPrintChar は行バッファへ 1 バイト積む。改行か満杯で flush
+func buildPrintChar(st mut St) {
+    begin(mut st, st.rtPchar)
+    c := 0
+    meta := globaladdr(mut st, st.meta)
+    ln := load(mut st, meta, W_LINE_LEN)
+    p := gepByte(mut st, meta, bin(mut st, BAdd, iconst(mut st, W_LINE * 8), ln))
+    store8(mut st, p, 0, c)
+    len1 := bin(mut st, BAdd, ln, iconst(mut st, 1))
+    store(mut st, meta, W_LINE_LEN, len1)
+    do_flush := newBlock(mut st)
+    check_full := newBlock(mut st)
+    done := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 10)), do_flush, -1, check_full, -1)
+    setCur(mut st, check_full)
+    condbr(mut st, cmp(mut st, CGe, len1, iconst(mut st, LINE_CAP)), do_flush, -1, done, -1)
+    setCur(mut st, do_flush)
+    call(mut st, st.rtFlush, list0(mut st))
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildPrintInt は 10 進で書く。負数は剰余を負のまま扱う（|最小値| を作らない）
+func buildPrintInt(st mut St) {
+    begin(mut st, st.rtPint)
+    v := 0
+    buf := newSlotAddr(mut st, 4)
+    neg := cmp(mut st, CLt, v, iconst(mut st, 0))
+    // sgn = 1 - 2*neg（剰余 d に掛けて桁の絶対値にする）
+    sgn := bin(mut st, BSub, iconst(mut st, 1), bin(mut st, BMul, iconst(mut st, 2), neg))
+    ten := iconst(mut st, 10)
+    loop := newBlock(mut st)
+    x := param(mut st, loop, TyI64)
+    pos := param(mut st, loop, TyI64)
+    br(mut st, loop, list2(mut st, v, iconst(mut st, 32)))
+    setCur(mut st, loop)
+    digit := bin(mut st, BAdd, iconst(mut st, 48), bin(mut st, BMul, bin(mut st, BRem, x, ten), sgn))
+    pos1 := bin(mut st, BSub, pos, iconst(mut st, 1))
+    store8(mut st, gepByte(mut st, buf, pos1), 0, digit)
+    q := bin(mut st, BDiv, x, ten)
+    after := newBlock(mut st)
+    start := param(mut st, after, TyI64)
+    condbr(mut st, cmp(mut st, CNe, q, iconst(mut st, 0)), loop, list2(mut st, q, pos1), after, list1(mut st, pos1))
+    setCur(mut st, after)
+    minus := newBlock(mut st)
+    emit := newBlock(mut st)
+    i := param(mut st, emit, TyI64)
+    condbr(mut st, neg, minus, -1, emit, list1(mut st, start))
+    setCur(mut st, minus)
+    s1 := bin(mut st, BSub, start, iconst(mut st, 1))
+    store8(mut st, gepByte(mut st, buf, s1), 0, iconst(mut st, 45))
+    br(mut st, emit, list1(mut st, s1))
+    setCur(mut st, emit)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, i, iconst(mut st, 32)), body, -1, done, -1)
+    setCur(mut st, body)
+    call(mut st, st.rtPchar, list1(mut st, load8(mut st, gepByte(mut st, buf, i), 0)))
+    br(mut st, emit, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildRegionEnter は深度 + 1（上限で exit 102）、その深度の bump をスロット先頭へ。あわせて、捨てた region のページを OS へ返す:
+// 入る深度 d 以上のスロットは死んでいる（d は新しい命・それより深いのは前の命の残り）。前回の enter 以降に入った最深 W_MAXD までの各スロット k について、
+// 前の命の高水位（leave の後もメタに残る bump — 命の間は増えるだけ）がスロット先頭 + W_MADV を超えていれば、その超えた範囲を madvise(MADV_DONTNEED)。
+// 返したスロットは W_MAXD を d に下げて二度見ない。leave（region.setdepth）は IR の op のまま触らない — 返すのは次の enter まで遅れる
+func buildRegionEnter(st mut St) {
+    begin(mut st, st.rtRenter)
+    meta := globaladdr(mut st, st.meta)
+    d := bin(mut st, BAdd, load(mut st, meta, W_DEPTH), iconst(mut st, 1))
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, d, iconst(mut st, MAX_DEPTH)), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_DEPTH)
+    setCur(mut st, ok)
+    store(mut st, meta, W_DEPTH, d)
+    bs := load(mut st, meta, W_SLOTS)
+    size := load(mut st, meta, W_SLOT_SIZE)
+    keep := load(mut st, meta, W_MADV)
+    maxd := load(mut st, meta, W_MAXD)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    rel := newBlock(mut st)
+    nxt := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, d))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, maxd), body, -1, done, -1)
+    setCur(mut st, body)
+    start := if st.taskUse { slotBase(mut st, meta, k) } else { bin(mut st, BAdd, bs, bin(mut st, BMul, k, size)) }
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), start)
+    condbr(mut st, cmp(mut st, CGt, used, keep), rel, -1, nxt, -1)
+    setCur(mut st, rel)
+    // madvise(start + keep, used - keep, MADV_DONTNEED = 4)。失敗は無視（返せなくても意味は変わらない）
+    syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, start, keep), bin(mut st, BSub, used, keep), iconst(mut st, 4)))
+    br(mut st, nxt, -1)
+    setCur(mut st, nxt)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+    store(mut st, meta, W_MAXD, d)
+    bump := if st.taskUse { slotEnter(mut st, meta, d) } else { bin(mut st, BAdd, bs, bin(mut st, BMul, d, size)) }
+    dp := gepWord(mut st, meta, d)
+    store(mut st, dp, W_BUMP, bump)
+    genBump(mut st, d)
+    ret(mut st, -1)
+}
+
+// buildRegionAlloc は region_alloc(d, n): 深度 d の bump を n 語進め、旧 bump を返す。スロット末尾を超えたら exit 102
+func buildRegionAlloc(st mut St) {
+    begin(mut st, st.rtRalloc)
+    d := 0
+    n := 1
+    meta := globaladdr(mut st, st.meta)
+    bp := gepWord(mut st, meta, d)
+    old := load(mut st, bp, W_BUMP)
+    nw := bin(mut st, BAdd, old, bin(mut st, BMul, n, iconst(mut st, 8)))
+    limit := if st.taskUse { bin(mut st, BAdd, slotBase(mut st, meta, d), load(mut st, meta, W_SLOT_SIZE)) } else { bin(mut st, BAdd, load(mut st, meta, W_SLOTS), bin(mut st, BMul, bin(mut st, BAdd, d, iconst(mut st, 1)), load(mut st, meta, W_SLOT_SIZE))) }
+    over := newBlock(mut st)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, nw, limit), over, -1, ok, -1)
+    setCur(mut st, over)
+    memPanic(mut st, PM_SLOT)
+    setCur(mut st, ok)
+    store(mut st, bp, W_BUMP, nw)
+    ret(mut st, itop(mut st, old))
+}
+
+func buildCopy(st mut St) {
+    begin(mut st, st.rtCopy)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, 2), body, -1, done, -1)
+    setCur(mut st, body)
+    dst := gepWord(mut st, 0, i)
+    store(mut st, dst, 0, load(mut st, gepWord(mut st, 1, i), 0))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildRelocate は region_relocate(hdr, cellw, floor): ヘッダの depth が floor より深ければ、len * cellw 語を深度 floor の先端へ写して付け替える
+func buildRelocate(st mut St) {
+    begin(mut st, st.rtReloc)
+    hdr := 0
+    floor := 2
+    move := newBlock(mut st)
+    done := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, load(mut st, hdr, 2), floor), move, -1, done, -1)
+    setCur(mut st, move)
+    n := bin(mut st, BMul, load(mut st, hdr, 1), 1)
+    dst := call(mut st, st.rtRalloc, list2(mut st, floor, n))
+    call(mut st, st.rtCopy, list3(mut st, dst, itop(mut st, load(mut st, hdr, 0)), n))
+    store(mut st, hdr, 0, ptoi(mut st, dst))
+    store(mut st, hdr, 2, relocLabel(mut st, floor))
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+func buildStrEq(st mut St) {
+    begin(mut st, st.rtStreq)
+    n := load(mut st, 0, 1)
+    pa := itop(mut st, load(mut st, 0, 0))
+    pb := itop(mut st, load(mut st, 1, 0))
+    ne := newBlock(mut st)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    condbr(mut st, cmp(mut st, CNe, n, load(mut st, 1, 1)), ne, -1, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, ne)
+    ret(mut st, iconst(mut st, 0))
+    // 語の環（1.0× アタック便 — map のキーの比較が 1 バイトずつで 1BRC の map_find の半分だった）: i + 8 ≤ n の間 8 バイトずつ比べ、
+    // 端数（n ≥ 8 なら最後の 8 バイトを重ねて 1 語・n < 8 ならバイトの環）
+    setCur(mut st, loop)
+    wbody := newBlock(mut st)
+    wnext := newBlock(mut st)
+    tail := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, bin(mut st, BAdd, i, iconst(mut st, 8)), n), wbody, -1, tail, -1)
+    setCur(mut st, wbody)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, gepByte(mut st, pa, i), 0), load(mut st, gepByte(mut st, pb, i), 0)), ne, -1, wnext, -1)
+    setCur(mut st, wnext)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 8))))
+    setCur(mut st, tail)
+    eq := newBlock(mut st)
+    lastw := newBlock(mut st)
+    small := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, i, n), eq, -1, small, -1)
+    setCur(mut st, small)
+    bl := newBlock(mut st)
+    bi := param(mut st, bl, TyI64)
+    short := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, n, iconst(mut st, 8)), lastw, -1, short, -1)
+    // 1 ≤ n ≤ 7（ここでは i = 0・n = 0 は上で eq へ抜けている）: 両方の番地から 8 バイトを 1 回ずつ読み、下位 n バイトだけ比べる
+    // （little-endian — 差の語を 64 − 8n ビット左へずらして余分を捨てる）。8 バイトの load は同じページの中ならフォルトしない — ページの末尾 7 バイトに
+    // 掛かる番地（(p & 4095) > 4088）のときだけバイトの環へ。開発用 --rt-mutant=12 は常にバイトの環（短い等値の速い道の差分オラクル — scripts/streq.sh）
+    setCur(mut st, short)
+    if st.rtMut == 12 {
+        br(mut st, bl, list1(mut st, i))
+    } else {
+        // 両方のページ内の位置から 4089 を引いた値の AND が負 ⇔ 両方とも 4088 以下（符号ビットの積 — 比較の真偽を値にしない）
+        word := newBlock(mut st)
+        xa := bin(mut st, BSub, bin(mut st, BAnd, ptoi(mut st, pa), iconst(mut st, 4095)), iconst(mut st, 4089))
+        xb := bin(mut st, BSub, bin(mut st, BAnd, ptoi(mut st, pb), iconst(mut st, 4095)), iconst(mut st, 4089))
+        condbr(mut st, cmp(mut st, CLt, bin(mut st, BAnd, xa, xb), iconst(mut st, 0)), word, -1, bl, list1(mut st, i))
+        setCur(mut st, word)
+        d := bin(mut st, BXor, load(mut st, pa, 0), load(mut st, pb, 0))
+        sh := bin(mut st, BShl, bin(mut st, BSub, iconst(mut st, 8), n), iconst(mut st, 3))
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BShl, d, sh), iconst(mut st, 0)), eq, -1, ne, -1)
+    }
+    setCur(mut st, lastw)
+    last := bin(mut st, BSub, n, iconst(mut st, 8))
+    condbr(mut st, cmp(mut st, CNe, load(mut st, gepByte(mut st, pa, last), 0), load(mut st, gepByte(mut st, pb, last), 0)), ne, -1, eq, -1)
+    setCur(mut st, bl)
+    body := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, bi, n), body, -1, eq, -1)
+    setCur(mut st, body)
+    next := newBlock(mut st)
+    x := load8(mut st, gepByte(mut st, pa, bi), 0)
+    y := load8(mut st, gepByte(mut st, pb, bi), 0)
+    condbr(mut st, cmp(mut st, CNe, x, y), ne, -1, next, -1)
+    setCur(mut st, next)
+    br(mut st, bl, list1(mut st, bin(mut st, BAdd, bi, iconst(mut st, 1))))
+    setCur(mut st, eq)
+    ret(mut st, iconst(mut st, 1))
+}
+
+// map の索引（M0）: 挿入列（セル [key][tag][value] の並び — language.md 22 節の挿入順・墓石はそのまま）は変えず、
+// 長さ MAP_IDX_MIN 以上の map にだけ開番地法の索引を横に置く。ヘッダの 4 語目が索引の番地（0 = 無し）。索引 = [持ち主のセル列の番地, 索引済みの数, 容量, 枠…]
+// （枠 = 下位 32 ビットがセルの位置 + 1〔0 = 空き〕・上位 32 ビットがキーのハッシュの上位 32 ビット — 第三便 M14: 候補のハッシュの上位が違えばセルとキーを読まずに飛ばす）。索引はセル列と同じ深度の region に確保する（セル列が生きている間は索引も生きている）。
+// 妥当性: 索引の持ち主 ≠ ヘッダの ptr（全コピーの成長・relocate の後）なら作り直す。同じ ptr を共有するヘッダは長さだけが違い、ある位置のキーは
+// ptr ごとに 1 つに決まる（先端の伸長は先端に接したヘッダだけ — 2 つ目は全コピーになる）ので、索引は共有してよい — 候補の位置 < ヘッダの長さで絞り、
+// キーを比べて当てる。値の在り方（ヘッダは値・旧ヘッダは旧テーブルを見る — 22 節）は変わらない
+const MAP_IDX_MIN = 8
+// 索引の予約（rtgrow.sober の rt.map_grow — K1b report-877）: 容量の 16 倍・上限は容量 + 2^21 枠（16 MiB — 大きい map で region の容量を食わない）
+const MAP_IDX_RES = 16
+const MAP_IDX_RESMAX = 2097152
+const MAP_SLOT_HI = -4294967296
+const MAP_SLOT_LO = 4294967295
+
+// buildMapFind は map_find(hdr, key) → 一致するセルの番地（不在は 0）: 短い map は挿入列を先頭から走査、長い map は索引を引く
+// （墓石のセルも一致する。値の有無はタグで見る）。表現（maprepr.sober）ごとに単相化 — セルの語数と string 鍵かは定数
+func buildMapFind(st mut St, f FnRef, r MapRepr) {
+    begin(mut st, f)
+    hdr := 0
+    key := 1
+    cellw := iconst(mut st, r.cellw)
+    sk := iconst(mut st, r.sk)
+    // MR_PRE: 問い合わせの鍵を入口で 1 回詰める（走査・引きの比較とハッシュが使う）
+    q := if r.rk == MR_PRE { mrPack(mut st, key) } else { MQ{q0: -1, q1: -1, n: -1, p: -1} }
+    n := load(mut st, hdr, 1)
+    long := branchIf(mut st, cmp(mut st, CLt, n, iconst(mut st, MAP_IDX_MIN)))
+    mapScan(mut st, hdr, key, cellw, sk, r, q)
+    setCur(mut st, long)
+    bs := load(mut st, hdr, 0)
+    step := bin(mut st, BMul, cellw, iconst(mut st, 8))
+    idx0 := load(mut st, hdr, 3)
+    // 引く（look の仮引数 = 索引の番地・mask）
+    look := newBlock(mut st)
+    lip := param(mut st, look, TyPtr)
+    lmask := param(mut st, look, TyI64)
+    // 速い道（第三便 M13 — 妥当性の検査の償却）: 索引があって持ち主が同じで、索引済みの数がちょうど長さなら（書き換えの後の最初の引きが
+    // 下の遅い道で作り直し・追いつきを済ませている — 容量はそのとき確かめた）そのまま引く。比べるのは 2 語だけ
+    slow := newBlock(mut st)
+    f1 := newBlock(mut st)
+    f2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, idx0, iconst(mut st, 0)), slow, -1, f1, -1)
+    setCur(mut st, f1)
+    fp := itop(mut st, idx0)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, fp, 0), bs), slow, -1, f2, -1)
+    setCur(mut st, f2)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, fp, 1), n), slow, -1, look, list2(mut st, fp, bin(mut st, BSub, load(mut st, fp, 2), iconst(mut st, 1))))
+    setCur(mut st, slow)
+    // 索引が使えるか（あって・持ち主が同じ・容量が足りる）
+    have := newBlock(mut st)
+    hv := param(mut st, have, TyI64)
+    mkIdx := newBlock(mut st)
+    chk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, idx0, iconst(mut st, 0)), mkIdx, -1, chk, -1)
+    setCur(mut st, chk)
+    ip0 := itop(mut st, idx0)
+    chk2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, ip0, 0), bs), mkIdx, -1, chk2, -1)
+    setCur(mut st, chk2)
+    condbr(mut st, cmp(mut st, CGt, bin(mut st, BMul, n, iconst(mut st, 2)), load(mut st, ip0, 2)), mkIdx, -1, have, list1(mut st, idx0))
+    // 作る: 容量 = n × 4 以上の 2 の冪（16 から）。セル列の深度へ確保して枠を 0 で埋める
+    setCur(mut st, mkIdx)
+    cl := newBlock(mut st)
+    cap := param(mut st, cl, TyI64)
+    br(mut st, cl, list1(mut st, iconst(mut st, 16)))
+    setCur(mut st, cl)
+    capUp := newBlock(mut st)
+    alloc := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, cap, bin(mut st, BMul, n, iconst(mut st, 4))), capUp, -1, alloc, -1)
+    setCur(mut st, capUp)
+    br(mut st, cl, list1(mut st, bin(mut st, BMul, cap, iconst(mut st, 2))))
+    setCur(mut st, alloc)
+    words := bin(mut st, BAdd, cap, iconst(mut st, 3))
+    // 置き場（K1b — report-877）: 索引の記憶は索引にだけ使い回す（旧ヘッダ〔22 節〕は持ち主の照合で古い索引を読む — 0 語目に索引以外の値が来ると
+    // 偶然の一致がありうる）。① 予約の中で作り直す: 持ち主が今のセル列で索引がセル列より前なら [索引, セル列の頭) は rt.map_grow が索引のために
+    // 取った予約（その並びを作るのは map_grow の索引を先に作る道だけ — セル列はその直後に写す）② 先端に居る自分の索引は巻き戻してその場に
+    // ③ どちらでもなければ先端に新しく
+    zj := newBlock(mut st)
+    np := param(mut st, zj, TyPtr)
+    d := load(mut st, hdr, 2)
+    fresh := newBlock(mut st)
+    q1 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, idx0, iconst(mut st, 0)), fresh, -1, q1, -1)
+    setCur(mut st, q1)
+    ipx := itop(mut st, idx0)
+    q2 := newBlock(mut st)
+    tipQ := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, ipx, 0), bs), cmp(mut st, CLt, idx0, bs)), q2, -1, tipQ, -1)
+    setCur(mut st, q2)
+    inP := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, bin(mut st, BSub, bs, idx0), bin(mut st, BMul, words, iconst(mut st, 8))), inP, -1, tipQ, -1)
+    setCur(mut st, inP)
+    br(mut st, zj, list1(mut st, ipx))
+    setCur(mut st, tipQ)
+    rw := newBlock(mut st)
+    ixEnd := bin(mut st, BAdd, idx0, bin(mut st, BMul, bin(mut st, BAdd, load(mut st, ipx, 2), iconst(mut st, 3)), iconst(mut st, 8)))
+    // 先端は meta の語を直に読む（regionBump の命令を置くと map_find が「region を使わない関数」〔opt.sober の P0 — rfLocal〕から外れ、
+    // map を引くだけの葉の関数の入口の enter が消えなくなる — jsonapi の KeyOf で命令 +1.7%）
+    bw := gepWord(mut st, globaladdr(mut st, st.meta), d)
+    condbr(mut st, cmp(mut st, CEq, load(mut st, bw, W_BUMP), ixEnd), rw, -1, fresh, -1)
+    setCur(mut st, rw)
+    store(mut st, bw, W_BUMP, idx0)
+    br(mut st, fresh, -1)
+    setCur(mut st, fresh)
+    na := call(mut st, st.rtRalloc, list2(mut st, d, words))
+    if st.rtMut == 13 {
+        msAdd(mut st, MS_IDXB, bin(mut st, BMul, words, iconst(mut st, 8)))
+    }
+    br(mut st, zj, list1(mut st, na))
+    setCur(mut st, zj)
+    zl := newBlock(mut st)
+    zi := param(mut st, zl, TyI64)
+    zb := newBlock(mut st)
+    zd := newBlock(mut st)
+    br(mut st, zl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, zl)
+    condbr(mut st, cmp(mut st, CLt, zi, words), zb, -1, zd, -1)
+    setCur(mut st, zb)
+    store(mut st, gepWord(mut st, np, zi), 0, iconst(mut st, 0))
+    br(mut st, zl, list1(mut st, bin(mut st, BAdd, zi, iconst(mut st, 1))))
+    setCur(mut st, zd)
+    store(mut st, np, 0, bs)
+    store(mut st, np, 2, cap)
+    store(mut st, hdr, 3, ptoi(mut st, np))
+    br(mut st, have, list1(mut st, ptoi(mut st, np)))
+    // 索引済みの先から n までを足す（同じ ptr の長いヘッダが先に足していれば何もしない）
+    setCur(mut st, have)
+    ip := itop(mut st, hv)
+    mask := bin(mut st, BSub, load(mut st, ip, 2), iconst(mut st, 1))
+    xl := newBlock(mut st)
+    xp := param(mut st, xl, TyI64)
+    xb := newBlock(mut st)
+    xd := newBlock(mut st)
+    br(mut st, xl, list1(mut st, load(mut st, ip, 1)))
+    setCur(mut st, xl)
+    condbr(mut st, cmp(mut st, CLt, xp, n), xb, -1, xd, -1)
+    setCur(mut st, xb)
+    xc := gepWord(mut st, itop(mut st, bs), bin(mut st, BMul, xp, cellw))
+    h := if r.rk == MR_PRE { mrHash(mut st, mrCellQ(mut st, xc), mrSeeds(mut st)) } else if r.hk == HK_MUM { mrHashInt(mut st, load(mut st, xc, 0), mrSeeds(mut st)) } else { call(mut st, st.rtMaphash, list2(mut st, xc, sk)) }
+    pl := newBlock(mut st)
+    pj := param(mut st, pl, TyI64)
+    pb := newBlock(mut st)
+    pd := newBlock(mut st)
+    br(mut st, pl, list1(mut st, bin(mut st, BAnd, h, mask)))
+    setCur(mut st, pl)
+    slot := gepWord(mut st, ip, bin(mut st, BAdd, pj, iconst(mut st, 3)))
+    condbr(mut st, cmp(mut st, CNe, load(mut st, slot, 0), iconst(mut st, 0)), pb, -1, pd, -1)
+    setCur(mut st, pb)
+    br(mut st, pl, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, pj, iconst(mut st, 1)), mask)))
+    setCur(mut st, pd)
+    store(mut st, slot, 0, bin(mut st, BOr, bin(mut st, BAnd, h, iconst(mut st, MAP_SLOT_HI)), bin(mut st, BAdd, xp, iconst(mut st, 1))))
+    br(mut st, xl, list1(mut st, bin(mut st, BAdd, xp, iconst(mut st, 1))))
+    setCur(mut st, xd)
+    upd := newBlock(mut st)
+    noUpd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, load(mut st, ip, 1), n), upd, -1, noUpd, -1)
+    setCur(mut st, upd)
+    store(mut st, ip, 1, n)
+    br(mut st, look, list2(mut st, ip, mask))
+    setCur(mut st, noUpd)
+    br(mut st, look, list2(mut st, ip, mask))
+    // 引く: 空きの枠で不在。候補の位置がヘッダの長さ以上（同じ ptr の長いヘッダが足した位置）とキーの違うセルは飛ばす
+    setCur(mut st, look)
+    kh := if r.rk == MR_PRE { mrHash(mut st, q, mrSeeds(mut st)) } else if r.hk == HK_MUM { mrHashInt(mut st, load(mut st, key, 0), mrSeeds(mut st)) } else { call(mut st, st.rtMaphash, list2(mut st, key, sk)) }
+    khi := bin(mut st, BAnd, kh, iconst(mut st, MAP_SLOT_HI))
+    ll := newBlock(mut st)
+    lj := param(mut st, ll, TyI64)
+    br(mut st, ll, list1(mut st, bin(mut st, BAnd, kh, lmask)))
+    setCur(mut st, ll)
+    s := load(mut st, gepWord(mut st, lip, bin(mut st, BAdd, lj, iconst(mut st, 3))), 0)
+    absent := branchIf(mut st, cmp(mut st, CEq, s, iconst(mut st, 0)))
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, absent)
+    next := newBlock(mut st)
+    tagOk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, s, iconst(mut st, MAP_SLOT_HI)), khi), next, -1, tagOk, -1)
+    setCur(mut st, tagOk)
+    pos := bin(mut st, BSub, bin(mut st, BAnd, s, iconst(mut st, MAP_SLOT_LO)), iconst(mut st, 1))
+    cand := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, pos, n), next, -1, cand, -1)
+    setCur(mut st, cand)
+    c := bin(mut st, BAdd, bs, bin(mut st, BMul, pos, step))
+    hit := mapKeyEqR(mut st, itop(mut st, c), key, sk, r, q)
+    found := newBlock(mut st)
+    condbr(mut st, hit, found, -1, next, -1)
+    setCur(mut st, found)
+    ret(mut st, c)
+    setCur(mut st, next)
+    br(mut st, ll, list1(mut st, bin(mut st, BAnd, bin(mut st, BAdd, lj, iconst(mut st, 1)), lmask)))
+}
+
+// mapKeyEq はセル cp のキーと key の一致（sk = 1 なら string — rt.str_eq・でなければ 1 語の比較）。i64 の真偽
+func mapKeyEq(st mut St, cp int, key int, sk int) int {
+    str_b := newBlock(mut st)
+    int_b := newBlock(mut st)
+    test_b := newBlock(mut st)
+    hit := param(mut st, test_b, TyI64)
+    condbr(mut st, sk, str_b, -1, int_b, -1)
+    setCur(mut st, str_b)
+    br(mut st, test_b, list1(mut st, call(mut st, st.rtStreq, list2(mut st, cp, key))))
+    setCur(mut st, int_b)
+    br(mut st, test_b, list1(mut st, cmp(mut st, CEq, load(mut st, cp, 0), load(mut st, key, 0))))
+    setCur(mut st, test_b)
+    return hit
+}
+
+// mapKeyEqR は表現ごとの鍵の一致（MR_PRE は詰めた形 q と比べる）
+func mapKeyEqR(st mut St, cp int, key int, sk int, r MapRepr, q MQ) int {
+    if r.rk == MR_PRE {
+        return mrEq(mut st, cp, q)
+    }
+    return mapKeyEq(mut st, cp, key, sk)
+}
+
+// mapScan は挿入列を先頭から走査する（短い map — 索引を作らない）
+func mapScan(st mut St, hdr int, key int, cellw int, sk int, r MapRepr, q MQ) {
+    bs := load(mut st, hdr, 0)
+    step := bin(mut st, BMul, cellw, iconst(mut st, 8))
+    end := bin(mut st, BAdd, bs, bin(mut st, BMul, load(mut st, hdr, 1), step))
+    loop := newBlock(mut st)
+    c := param(mut st, loop, TyI64)
+    br(mut st, loop, list1(mut st, bs))
+    setCur(mut st, loop)
+    body := newBlock(mut st)
+    absent := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, c, end), absent, -1, body, -1)
+    setCur(mut st, absent)
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, body)
+    hit := mapKeyEqR(mut st, itop(mut st, c), key, sk, r, q)
+    found := newBlock(mut st)
+    condbr(mut st, hit, found, -1, loop, list1(mut st, bin(mut st, BAdd, c, step)))
+    setCur(mut st, found)
+    ret(mut st, c)
+}
+
+// buildMapHash は map_hash(kp, sk) → キーのハッシュ（sk = 1 なら string のバイト列・でなければ 1 語に黄金比の乗算と上位の畳み込み）。
+// string は 8 バイトの語ずつ（h = (h ^ 語) * 黄金比 — 第三便 M12。バイトずつの FNV-1a は 1BRC の map_find の 27% だった）・端数はバイトずつ FNV-1a。
+// 値は索引の配置にだけ使う（keys の順は挿入順 — 観測に出ない）
+func buildMapHash(st mut St) {
+    begin(mut st, st.rtMaphash)
+    kp := 0
+    sk := 1
+    str_b := branchIf(mut st, cmp(mut st, CEq, sk, iconst(mut st, 0)))
+    m := bin(mut st, BMul, load(mut st, kp, 0), iconst(mut st, -7046029254386353131))
+    ret(mut st, bin(mut st, BXor, m, bin(mut st, BSar, m, iconst(mut st, 29))))
+    setCur(mut st, str_b)
+    p := itop(mut st, load(mut st, kp, 0))
+    n := load(mut st, kp, 1)
+    // 語の環: i + 8 ≤ n の間 8 バイトずつ
+    wl := newBlock(mut st)
+    wi := param(mut st, wl, TyI64)
+    wh := param(mut st, wl, TyI64)
+    wb := newBlock(mut st)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    h := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, wl, list2(mut st, iconst(mut st, 0), iconst(mut st, -3750763034065230579)))
+    setCur(mut st, wl)
+    condbr(mut st, cmp(mut st, CLe, bin(mut st, BAdd, wi, iconst(mut st, 8)), n), wb, -1, loop, list2(mut st, wi, wh))
+    setCur(mut st, wb)
+    wx := bin(mut st, BXor, wh, load(mut st, gepByte(mut st, p, wi), 0))
+    br(mut st, wl, list2(mut st, bin(mut st, BAdd, wi, iconst(mut st, 8)), bin(mut st, BMul, wx, iconst(mut st, -7046029254386353131))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    x := bin(mut st, BXor, h, load8(mut st, gepByte(mut st, p, i), 0))
+    br(mut st, loop, list2(mut st, bin(mut st, BAdd, i, iconst(mut st, 1)), bin(mut st, BMul, x, iconst(mut st, 1099511628211))))
+    setCur(mut st, done)
+    ret(mut st, bin(mut st, BXor, h, bin(mut st, BSar, h, iconst(mut st, 29))))
+}
+
+func buildPrintStr(st mut St) {
+    begin(mut st, st.rtPstr)
+    p := itop(mut st, load(mut st, 0, 0))
+    n := load(mut st, 0, 1)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, -1)
+    setCur(mut st, body)
+    call(mut st, st.rtPchar, list1(mut st, load8(mut st, gepByte(mut st, p, i), 0)))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// ── io（ir_rt_io.zig — std/ の sys* 組み込みの下ろし先）──
+
+func installIo(st mut St) {
+    st.iobuf = addWorkerGlobal(mut st, int(strLit(mut st, "rt.iobuf")), IO_BUF / 8)
+    cstr := addFunc(mut st, int(strLit(mut st, "rt.cstr")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
+    st.rtCstr = cstr
+    wall := addFunc(mut st, int(strLit(mut st, "rt.write_all")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
+    // std/par を使うプログラムの write_file は ring を通る写し（IO 便 段 1 — write_fd〔標準出力・標準エラー〕は同期のまま）
+    mut wallF := wall
+    if st.taskUse {
+        wallF = addFunc(mut st, int(strLit(mut st, "rt.write_all_u")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
+    }
+    st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+    st.rtWrite = addFunc(mut st, int(strLit(mut st, "rt.write_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
+    st.rtArgs = addFunc(mut st, int(strLit(mut st, "rt.read_args")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtDir = addFunc(mut st, int(strLit(mut st, "rt.read_dir")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+    st.rtWfd = addFunc(mut st, int(strLit(mut st, "rt.write_fd")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
+    buildCstr(mut st, cstr)
+    buildWriteAll(mut st, wall, false)
+    if st.taskUse {
+        buildWriteAll(mut st, wallF, true)
+    }
+    buildReadFile(mut st, cstr)
+    buildWriteFile(mut st, cstr, wallF)
+    buildReadArgs(mut st)
+    buildReadDir(mut st, cstr)
+    buildWriteFd(mut st, wall)
+}
+
+// needRun は rt.run を（初出なら）宣言する — sysRun を使うプログラムでだけ足す（他の出力はバイト不変）。本体は program の最後（buildRun）
+func needRun(st mut St) {
+    lsNeed(mut st, NEED_RUN, 0)
+    if st.rtRun == -1 {
+        st.rtRun = addFunc(mut st, int(strLit(mut st, "rt.run")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+    }
+}
+
+// needWriteMode は rt.write_mode を（初出なら）宣言する — sysWriteMode を使うプログラムでだけ足す（他の出力はバイト不変 — needRun と同じ）
+func needWriteMode(st mut St) {
+    lsNeed(mut st, NEED_WMODE, 0)
+    if st.rtMode == -1 {
+        st.rtMode = addFunc(mut st, int(strLit(mut st, "rt.write_mode")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyI64)
+    }
+}
+
+// buildWriteMode は write_mode(path, mode) → errno（std/os の sysWriteMode）: path を C 文字列にして chmod（90）。本体は program の最後
+func buildWriteMode(st mut St) {
+    if st.rtMode == -1 {
+        return
+    }
+    begin(mut st, st.rtMode)
+    path := 0
+    mode := 1
+    buf := globaladdr(mut st, st.iobuf)
+    e := call(mut st, st.rtCstr, list2(mut st, path, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, e)
+    setCur(mut st, named)
+    r := syscall(mut st, list3(mut st, iconst(mut st, 90), ptoi(mut st, buf), mode))
+    good := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
+    re := bin(mut st, BSub, iconst(mut st, 0), r)
+    setErrno(mut st, re)
+    ret(mut st, re)
+    setCur(mut st, good)
+    ok := iconst(mut st, 0)
+    setErrno(mut st, ok)
+    ret(mut st, ok)
+}
+
+// needMkdir / needRename / needEnviron は rt.mkdir / rt.rename / rt.environ を（初出なら）宣言する — 使うプログラムでだけ足す（needWriteMode と同じ）
+func needMkdir(st mut St) {
+    lsNeed(mut st, NEED_MKDIR, 0)
+    if st.rtMkdir == -1 {
+        st.rtMkdir = addFunc(mut st, int(strLit(mut st, "rt.mkdir")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+    }
+}
+
+func needRename(st mut St) {
+    lsNeed(mut st, NEED_RENAME, 0)
+    if st.rtRename == -1 {
+        st.rtRename = addFunc(mut st, int(strLit(mut st, "rt.rename")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
+        st.iobuf2 = addWorkerGlobal(mut st, int(strLit(mut st, "rt.iobuf2")), IO_BUF / 8)
+    }
+}
+
+func needEnviron(st mut St) {
+    lsNeed(mut st, NEED_ENV, 0)
+    if st.rtEnv == -1 {
+        st.rtEnv = addFunc(mut st, int(strLit(mut st, "rt.environ")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    }
+}
+
+// needStat / needSleep は rt.stat / rt.sleep を（初出なら）宣言する — 使うプログラムでだけ足す（needMkdir と同じ）
+func needStat(st mut St) {
+    lsNeed(mut st, NEED_STAT, 0)
+    if st.rtStat == -1 {
+        st.rtStat = addFunc(mut st, int(strLit(mut st, "rt.stat")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+        st.statbuf = addWorkerGlobal(mut st, int(strLit(mut st, "rt.statbuf")), 18)
+    }
+}
+
+// needReadFd は rt.read_fd を（初出なら）宣言する — sysReadFd を使うプログラムでだけ足す
+func needReadFd(st mut St) {
+    lsNeed(mut st, NEED_READFD, 0)
+    if st.rtRfd == -1 {
+        st.rtRfd = addFunc(mut st, int(strLit(mut st, "rt.read_fd")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyPtr)), -1)
+    }
+}
+
+// buildReadFd は read_fd(fd, n, out): fd から読んだバイト列を out に置く（現在深度の region 先端から — read_file と同じ置き方）。
+// n ≥ 0 = read(2) 1 回分（min(n, IO_BUF) バイトまで — 短い読みあり・空 = EOF か n = 0）・n < 0 = EOF まで全量。失敗は errno（読めた分は残す）。
+// 先に println の行バッファを flush（プロンプトを出してから読む形の順を保つ）。EINTR は再試行
+func buildReadFd(st mut St) {
+    if st.rtRfd == -1 {
+        return
+    }
+    begin(mut st, st.rtRfd)
+    fd := 0
+    // net を使うプログラム: n の上位の印 RFD_DIRECT = ring を通さずその場の read（非ブロックの socket — ring の READ は内部の poll で待ち、期限で切れない。netpoll.sober）
+    net := chF(mut st, NETF_WAIT) != -1 && st.taskUse
+    limit := if net { bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT - 1)) } else { 1 }
+    direct := if net { cmp(mut st, CNe, bin(mut st, BAnd, 1, iconst(mut st, RFD_DIRECT)), iconst(mut st, 0)) } else { -1 }
+    out := 2
+    call(mut st, st.rtFlush, list0(mut st))
+    depth := initOut(mut st, out)
+    buf := globaladdr(mut st, st.iobuf)
+    setErrno(mut st, iconst(mut st, 0))
+    loop := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    useWant := bin(mut st, BAnd, cmp(mut st, CLt, limit, iconst(mut st, IO_BUF)), cmp(mut st, CGe, limit, iconst(mut st, 0)))
+    cb := newBlock(mut st)
+    c := param(mut st, cb, TyI64)
+    wb := newBlock(mut st)
+    ib := newBlock(mut st)
+    condbr(mut st, useWant, wb, -1, ib, -1)
+    setCur(mut st, wb)
+    br(mut st, cb, list1(mut st, limit))
+    setCur(mut st, ib)
+    br(mut st, cb, list1(mut st, iconst(mut st, IO_BUF)))
+    setCur(mut st, cb)
+    nonzero := branchIf(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)))
+    br(mut st, done, -1)
+    setCur(mut st, nonzero)
+    // std/par を使うプログラムは region の先端へ直に読む（read_file と同じ — 読みの間に task が切り替わるので、ワーカーごとの iobuf は使えない）
+    r := if st.taskUse { rfdDirect(mut st, depth, bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1)), fd, c, direct) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, ptoi(mut st, buf), c)) }
+    if st.taskUse {
+        // 読みの中で task が待つ（ring の読み・net の受け）間に、同じワーカーの他の task が errno の語を書く — 待ちの後で置き直す（失敗は下で上書き）
+        setErrno(mut st, iconst(mut st, 0))
+    }
+    notIntr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
+    br(mut st, loop, -1)
+    setCur(mut st, notIntr)
+    notEof := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, 0)))
+    br(mut st, done, -1)
+    setCur(mut st, notEof)
+    got := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), r))
+    br(mut st, done, -1)
+    setCur(mut st, got)
+    if !st.taskUse {
+        end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+        call(mut st, st.rtExtend8, list3(mut st, depth, end, r))
+        call(mut st, st.rtCopy8, list3(mut st, itop(mut st, end), buf, r))
+    }
+    store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), r))
+    more := branchIf(mut st, cmp(mut st, CLt, limit, iconst(mut st, 0)))
+    br(mut st, loop, -1)
+    setCur(mut st, more)
+    br(mut st, done, -1)
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// rfdDirect は read_fd の 1 回の読み（std/par を使うプログラム）: 先端 end を c バイト仮に伸ばして rt.uio で読み、読めた分（失敗・EOF は 0）に詰め直す
+func rfdDirect(st mut St, depth int, end int, fd int, c int, direct int) int {
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, c))
+    mut r := 0
+    if direct < 0 {
+        r = ioRw(mut st, 0, fd, end, c)
+    } else {
+        bS := newBlock(mut st)
+        bR := newBlock(mut st)
+        bJ := newBlock(mut st)
+        r = param(mut st, bJ, TyI64)
+        condbr(mut st, direct, bS, -1, bR, -1)
+        setCur(mut st, bS)
+        // net の ring の受け（netring.sober の rt.netrecv — 宣言されていれば。ring の道でなければ中で read）
+        nrv := chF(mut st, NETF_RECV)
+        br(mut st, bJ, list1(mut st, if nrv != -1 { call(mut st, nrv, list3(mut st, fd, end, c)) } else { syscall(mut st, list4(mut st, iconst(mut st, 0), fd, end, c)) }))
+        setCur(mut st, bR)
+        br(mut st, bJ, list1(mut st, ioRw(mut st, 0, fd, end, c)))
+        setCur(mut st, bJ)
+    }
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, imax(mut st, r, iconst(mut st, 0))))
+    return r
+}
+
+func needSleep(st mut St) {
+    lsNeed(mut st, NEED_SLEEP, 0)
+    if st.rtSleep == -1 {
+        st.rtSleep = addFunc(mut st, int(strLit(mut st, "rt.sleep")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+        if st.taskUse {
+            // std/par のプログラムは fd の無い期限つき待ち（ring の道 = OP_TIMEOUT・epoll の道 = timerfd を rt.fdwait で待つ — buildSleep）
+            _ = needNet(mut st)
+            if dlFn(st.rtD3) == 0 {
+                // ABS の目標に今の時刻が要る — deadline: の無いプログラムは vDSO を起動で引かない（エントリは関数本体より先に組む）ので初回の sleep で引く
+                st.vdsoG = addGlobalInit(mut st, int(strLit(mut st, "rt.vdso")), 1, -1)
+            }
+        }
+    }
+}
+
+// buildStat は stat(path) → 更新時刻（ns — st_mtim の秒 × 10^9 + ns）/ 負の errno（std/os の sysStat）: path を C 文字列にして stat（4）。
+// struct stat（x86_64）の st_mtim は 88 バイト目（秒）・96 バイト目（ns）
+func buildStat(st mut St) {
+    if st.rtStat == -1 {
+        return
+    }
+    begin(mut st, st.rtStat)
+    buf := globaladdr(mut st, st.iobuf)
+    sb := globaladdr(mut st, st.statbuf)
+    e := call(mut st, st.rtCstr, list2(mut st, 0, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, bin(mut st, BSub, iconst(mut st, 0), e))
+    setCur(mut st, named)
+    r := syscall(mut st, list3(mut st, iconst(mut st, 4), ptoi(mut st, buf), ptoi(mut st, sb)))
+    good := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), r))
+    ret(mut st, r)
+    setCur(mut st, good)
+    setErrno(mut st, iconst(mut st, 0))
+    ret(mut st, bin(mut st, BAdd, bin(mut st, BMul, load(mut st, sb, 11), iconst(mut st, 1000000000)), load(mut st, sb, 12)))
+}
+
+// buildSleep は sleep(ms) → errno（std/os の sysSleep）。std/par のプログラム（net 4a — ユーザー裁定 2026-10-14 (a)）: net の ring のワーカーは IORING_OP_TIMEOUT
+// （netpoll.sober の sleepRing — report-691）・他（epoll の道）は timerfd（283 — 非ブロック）に ms を仕掛けて rt.fdwait で待つ — 眠る間はワーカーを譲り（旧 nanosleep はワーカーごと塞いだ — report-645）、期限つき scope の中なら期限が待ちを切って
+// 早く返る（110 = 期限で切れた・エラーではない — std/os は見ない。起きた時刻は io の入力）。ms ≤ 0 は待たない（timerfd の 0 は止めるの意味）。
+// std/par を使わないプログラムは nanosleep（35 — 期限も他の task も無い）。時間指定は 2 語 / itimerspec 4 語（スタックの一時スロット）
+func buildSleep(st mut St) {
+    if st.rtSleep == -1 {
+        return
+    }
+    begin(mut st, st.rtSleep)
+    ms := 0
+    if st.taskUse {
+        zero := iconst(mut st, 0)
+        bGo := branchIf(mut st, cmp(mut st, CLe, ms, zero))
+        ret(mut st, zero)
+        setCur(mut st, bGo)
+        // net の ring（UR_NET）のワーカーは IORING_OP_TIMEOUT（fd も syscall も無い — sleepRing）。他は timerfd を rt.fdwait で（epoll の道）
+        wk := globaladdr(mut st, st.wkG)
+        rg := load(mut st, wk, WK_RING)
+        bR0 := newBlock(mut st)
+        bRing := newBlock(mut st)
+        bTfd := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, rg, zero), bR0, -1, bTfd, -1)
+        setCur(mut st, bR0)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, itop(mut st, rg), UR_NET), zero), bRing, -1, bTfd, -1)
+        setCur(mut st, bRing)
+        sleepRing(mut st, rg, ms)
+        setCur(mut st, bTfd)
+        tfd := syscall(mut st, list3(mut st, iconst(mut st, 283), iconst(mut st, 1), iconst(mut st, 526336)))
+        bOk := branchIf(mut st, cmp(mut st, CLt, tfd, zero))
+        ret(mut st, bin(mut st, BSub, zero, tfd))
+        setCur(mut st, bOk)
+        its := newSlotAddr(mut st, 4)
+        store(mut st, its, 0, zero)
+        store(mut st, its, 1, zero)
+        store(mut st, its, 2, bin(mut st, BDiv, ms, iconst(mut st, 1000)))
+        store(mut st, its, 3, bin(mut st, BMul, bin(mut st, BRem, ms, iconst(mut st, 1000)), iconst(mut st, 1000000)))
+        syscall(mut st, list5(mut st, iconst(mut st, 286), tfd, zero, ptoi(mut st, its), zero))
+        r := call(mut st, chF(mut st, NETF_WAIT), list2(mut st, tfd, iconst(mut st, 1)))
+        syscall(mut st, list2(mut st, iconst(mut st, 3), tfd))
+        ret(mut st, bin(mut st, BSub, zero, r))
+        return
+    }
+    ts := newSlotAddr(mut st, 2)
+    store(mut st, ts, 0, bin(mut st, BDiv, ms, iconst(mut st, 1000)))
+    store(mut st, ts, 1, bin(mut st, BMul, bin(mut st, BRem, ms, iconst(mut st, 1000)), iconst(mut st, 1000000)))
+    retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 35), ptoi(mut st, ts), iconst(mut st, 0))))
+}
+
+// 開いた fd の登録簿（IO 便 段 2 — language.md 28 節「後始末」・裁定 Q4 = task ごと）: std/par のプログラムでは rt.open が開いた fd を今の task の
+// 鎖に積み、rt.close が外す。task が死ぬと defer が走らない（11 節）ので、子の入口の出口（rt.task_start — 死も切られた子も通る）が rt.fd_drain で
+// 鎖に残った fd を閉じる。鎖の頭 = TCB の TC_FDS（fd + 1・0 = 空）・次 = @rt.fdreg[fd]（fd ごとに 1 語 — 別の fd の語は別の task しか書かないので
+// ワーカーの間で鍵が要らない）。逐次のプログラムは使わない（defer が必ず走る — 鎖も表も足さない）
+const FD_CAP = 65536
+
+// needOpen は rt.open / rt.close（と std/par のプログラムなら登録簿の表と rt.fd_drain）を（初出なら）宣言する — 使うプログラムでだけ足す
+func needOpen(st mut St) {
+    lsNeed(mut st, NEED_OPEN, 0)
+    if st.rtOpen == -1 {
+        st.rtOpen = addFunc(mut st, int(strLit(mut st, "rt.open")), desugar.ListRef(list1(mut st, TyPtr)), TyI64)
+        st.rtClose = addFunc(mut st, int(strLit(mut st, "rt.close")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+        if st.taskUse {
+            st.fdregG = addGlobalInit(mut st, int(strLit(mut st, "rt.fdreg")), FD_CAP, -1)
+            st.rtFdDrain = addFunc(mut st, int(strLit(mut st, "rt.fd_drain")), desugar.ListRef(list3(mut st, TyPtr, TyI64, TyI64)), -1)
+        }
+    }
+}
+
+// buildOpen は open(path) → fd / 負の errno（std/io の sysOpen）: path を C 文字列にして openat（257 — AT_FDCWD・O_RDONLY | O_CLOEXEC）。
+// std/par のプログラムは今の task の鎖に積む（番号が FD_CAP 以上なら閉じて EMFILE — 登録簿に載らない fd を作らない）
+func buildOpen(st mut St) {
+    if st.rtOpen == -1 {
+        return
+    }
+    begin(mut st, st.rtOpen)
+    buf := globaladdr(mut st, st.iobuf)
+    e := call(mut st, st.rtCstr, list2(mut st, 0, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, bin(mut st, BSub, iconst(mut st, 0), e))
+    setCur(mut st, named)
+    o0 := iconst(mut st, 257)
+    o1 := iconst(mut st, -100)
+    o2 := ptoi(mut st, buf)
+    o3 := iconst(mut st, 524288)
+    o4 := iconst(mut st, 0)
+    oargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, oargs + 1, o0)
+    desugar.HeapSet(mut st.d, oargs + 2, o1)
+    desugar.HeapSet(mut st.d, oargs + 3, o2)
+    desugar.HeapSet(mut st.d, oargs + 4, o3)
+    desugar.HeapSet(mut st.d, oargs + 5, o4)
+    fd := syscall(mut st, oargs)
+    opened := branchIf(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
+    ret(mut st, fd)
+    setCur(mut st, opened)
+    if st.taskUse {
+        fits := branchIf(mut st, cmp(mut st, CGe, fd, iconst(mut st, FD_CAP)))
+        syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+        setErrno(mut st, iconst(mut st, 24))
+        ret(mut st, iconst(mut st, -24))
+        setCur(mut st, fits)
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, gepWord(mut st, globaladdr(mut st, st.fdregG), fd), 0, load(mut st, me, TC_FDS))
+        store(mut st, me, TC_FDS, bin(mut st, BAdd, fd, iconst(mut st, 1)))
+    }
+    setErrno(mut st, iconst(mut st, 0))
+    ret(mut st, fd)
+}
+
+// buildClose は close(fd) → errno（std/io の sysClose）: std/par のプログラムは今の task の鎖から外してから close（3 — EINTR でも再試行しない:
+// Linux は fd を既に解放している）。鎖は Open と defer Close の対で積んだ順の逆に外れるので、ふつうは頭で当たる
+func buildClose(st mut St) {
+    if st.rtClose == -1 {
+        return
+    }
+    begin(mut st, st.rtClose)
+    fd := 0
+    if st.taskUse {
+        reg := globaladdr(mut st, st.fdregG)
+        me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        key := bin(mut st, BAdd, fd, iconst(mut st, 1))
+        loop := newBlock(mut st)
+        p := param(mut st, loop, TyI64)
+        done := newBlock(mut st)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, me, iconst(mut st, TC_FDS)))))
+        setCur(mut st, loop)
+        v := load(mut st, itop(mut st, p), 0)
+        more := branchIf(mut st, cmp(mut st, CEq, v, iconst(mut st, 0)))
+        br(mut st, done, -1)
+        setCur(mut st, more)
+        miss := branchIf(mut st, cmp(mut st, CEq, v, key))
+        store(mut st, itop(mut st, p), 0, load(mut st, gepWord(mut st, reg, fd), 0))
+        br(mut st, done, -1)
+        setCur(mut st, miss)
+        br(mut st, loop, list1(mut st, ptoi(mut st, gepWord(mut st, reg, bin(mut st, BSub, v, iconst(mut st, 1))))))
+        setCur(mut st, done)
+    }
+    retErrno(mut st, syscall(mut st, list2(mut st, iconst(mut st, 3), fd)))
+}
+
+// buildFdDrain は fd_drain(tcb, stop, exit): task の鎖の頭が stop になるまで fd を閉じて外す（exit = 1 は task の出口 — net の ring の close を ring へ積める）（子の入口の出口 — 死・切られた子は stop = 0 で全部。
+// ふつうに終わった子の鎖は空。縮退して親の中で走った子〔admit.sober の rt.task_inline〕は、子に入る前の頭を stop に渡して子が開いた分だけ）
+func buildFdDrain(st mut St) {
+    if st.rtFdDrain == -1 {
+        return
+    }
+    begin(mut st, st.rtFdDrain)
+    tcb := 0
+    stop := 1
+    reg := globaladdr(mut st, st.fdregG)
+    loop := newBlock(mut st)
+    v := param(mut st, loop, TyI64)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, tcb, TC_FDS)))
+    setCur(mut st, loop)
+    more := branchIf(mut st, cmp(mut st, CEq, v, stop))
+    br(mut st, done, -1)
+    setCur(mut st, more)
+    fd := bin(mut st, BSub, v, iconst(mut st, 1))
+    nx := load(mut st, gepWord(mut st, reg, fd), 0)
+    // net の ring の接続は RECV を止めてから閉じる（rt.netop 2 — netring.sober。a = 1 = task の出口〔fd_drain の exit — 縮退した子の死は親が走り続けるので 0〕: close も ring へ）
+    nop := chF(mut st, NETF_OP)
+    if nop != -1 {
+        call(mut st, nop, list4(mut st, iconst(mut st, 2), fd, 2, iconst(mut st, 0)))
+    } else {
+        syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    }
+    br(mut st, loop, list1(mut st, nx))
+    setCur(mut st, done)
+    store(mut st, tcb, TC_FDS, stop)
+    ret(mut st, -1)
+}
+
+// retErrno は syscall の結果 r（負 = -errno）を errno（成功 0）にして W_ERRNO にも置いて返す（関数の出口）
+func retErrno(st mut St, r int) {
+    bad := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
+    re := bin(mut st, BSub, iconst(mut st, 0), r)
+    setErrno(mut st, re)
+    ret(mut st, re)
+    setCur(mut st, bad)
+    ok := iconst(mut st, 0)
+    setErrno(mut st, ok)
+    ret(mut st, ok)
+}
+
+// buildMkdir は mkdir(path) → errno（std/os の sysMkdir）: path を C 文字列にして mkdir（83 — mode 0o755）。本体は program の最後
+func buildMkdir(st mut St) {
+    if st.rtMkdir == -1 {
+        return
+    }
+    begin(mut st, st.rtMkdir)
+    buf := globaladdr(mut st, st.iobuf)
+    e := call(mut st, st.rtCstr, list2(mut st, 0, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, e)
+    setCur(mut st, named)
+    retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 83), ptoi(mut st, buf), iconst(mut st, 493))))
+}
+
+// buildRename は rename(from, to) → errno（std/os の sysRename）: 2 つの path を C 文字列にして rename（82 — 同じファイルシステムの中で原子的）
+func buildRename(st mut St) {
+    if st.rtRename == -1 {
+        return
+    }
+    begin(mut st, st.rtRename)
+    b1 := globaladdr(mut st, st.iobuf)
+    b2 := globaladdr(mut st, st.iobuf2)
+    e1 := call(mut st, st.rtCstr, list2(mut st, 0, b1))
+    ok1 := branchIf(mut st, cmp(mut st, CNe, e1, iconst(mut st, 0)))
+    setErrno(mut st, e1)
+    ret(mut st, e1)
+    setCur(mut st, ok1)
+    e2 := call(mut st, st.rtCstr, list2(mut st, 1, b2))
+    ok2 := branchIf(mut st, cmp(mut st, CNe, e2, iconst(mut st, 0)))
+    setErrno(mut st, e2)
+    ret(mut st, e2)
+    setCur(mut st, ok2)
+    retErrno(mut st, syscall(mut st, list3(mut st, iconst(mut st, 82), ptoi(mut st, b1), ptoi(mut st, b2))))
+}
+
+// buildEnviron は environ(out): 環境変数を「NAME=値のバイト + 0」の連結で out に置く（入口の初期 rsp の envp — read_args と同じ形）
+func buildEnviron(st mut St) {
+    if st.rtEnv == -1 {
+        return
+    }
+    begin(mut st, st.rtEnv)
+    out := 0
+    depth := initOut(mut st, out)
+    sp := itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))
+    argc := load(mut st, sp, 0)
+    envp := gepWord(mut st, sp, bin(mut st, BAdd, argc, iconst(mut st, 2)))
+    loop := newBlock(mut st)
+    e := param(mut st, loop, TyPtr)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, envp))
+    setCur(mut st, loop)
+    sv := load(mut st, e, 0)
+    condbr(mut st, cmp(mut st, CNe, sv, iconst(mut st, 0)), body, -1, done, -1)
+    setCur(mut st, body)
+    s := itop(mut st, sv)
+    n := strLen(mut st, s)
+    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, n, iconst(mut st, 1))))
+    dst := itop(mut st, end)
+    call(mut st, st.rtCopy8, list3(mut st, dst, s, n))
+    store8(mut st, gepByte(mut st, dst, n), 0, iconst(mut st, 0))
+    store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), bin(mut st, BAdd, n, iconst(mut st, 1))))
+    br(mut st, loop, list1(mut st, gepWord(mut st, e, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// ioRw は read(2)（nr 0）/ write(2)（nr 1）の 1 回: std/par を使うプログラムは rt.uio（ワーカーの ring があれば SQE を積んで待つ — IO 便 段 1）・他は syscall
+func ioRw(st mut St, nr int, fd int, p int, n int) int {
+    if st.taskUse {
+        return call(mut st, st.rtUio, list4(mut st, iconst(mut st, 22 + nr), fd, p, n))
+    }
+    return syscall(mut st, list4(mut st, iconst(mut st, nr), fd, p, n))
+}
+
+// branchIf は条件 c が真なら新しいブロックへ分岐して cur にし、偽側のブロックを返す
+func branchIf(st mut St, c int) BlkRef {
+    t := newBlock(mut st)
+    e := newBlock(mut st)
+    condbr(mut st, c, t, -1, e, -1)
+    setCur(mut st, t)
+    return e
+}
+
+// buildCstr は cstr(hdr, buf) → 0 / ENAMETOOLONG / EINVAL: string ヘッダのバイト列を NUL 終端で buf へ写す
+func buildCstr(st mut St, f FnRef) {
+    begin(mut st, f)
+    hdr := 0
+    buf := 1
+    n := load(mut st, hdr, 1)
+    fits := branchIf(mut st, cmp(mut st, CUge, n, iconst(mut st, IO_BUF)))
+    ret(mut st, iconst(mut st, 36))
+    setCur(mut st, fits)
+    p := itop(mut st, load(mut st, hdr, 0))
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    more := branchIf(mut st, cmp(mut st, CGe, i, n))
+    store8(mut st, gepByte(mut st, buf, i), 0, iconst(mut st, 0))
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, more)
+    c := load8(mut st, gepByte(mut st, p, i), 0)
+    not_nul := branchIf(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)))
+    ret(mut st, iconst(mut st, 22))
+    setCur(mut st, not_nul)
+    store8(mut st, gepByte(mut st, buf, i), 0, c)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+}
+
+func setErrno(st mut St, e int) {
+    store(mut st, globaladdr(mut st, st.meta), W_ERRNO, e)
+}
+
+// buildReadFile は read_file(path, out): out に現在深度の region 先端から積んだ中身（[]byte — rt.extend8 で伸ばす）を置く（失敗は空）
+func buildReadFile(st mut St, cstr FnRef) {
+    begin(mut st, st.rtRead)
+    path := 0
+    out := 1
+    meta := globaladdr(mut st, st.meta)
+    buf := globaladdr(mut st, st.iobuf)
+    depth := load(mut st, meta, W_DEPTH)
+    store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
+    store(mut st, out, 1, iconst(mut st, 0))
+    store(mut st, out, 2, depth)
+    e := call(mut st, cstr, list2(mut st, path, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, -1)
+    setCur(mut st, named)
+    o0 := iconst(mut st, 257)
+    o1 := iconst(mut st, -100)
+    o2 := ptoi(mut st, buf)
+    o3 := iconst(mut st, 524288)
+    o4 := iconst(mut st, 0)
+    oargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, oargs + 1, o0)
+    desugar.HeapSet(mut st.d, oargs + 2, o1)
+    desugar.HeapSet(mut st.d, oargs + 3, o2)
+    desugar.HeapSet(mut st.d, oargs + 4, o3)
+    desugar.HeapSet(mut st.d, oargs + 5, o4)
+    fd := syscall(mut st, oargs)
+    opened := branchIf(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
+    ret(mut st, -1)
+    setCur(mut st, opened)
+    // region の先端（out の終わり）へ直に読む（第三便 M12 — 以前は iobuf 4096 バイト → region の写し）: 先端を READ_CHUNK（スロットの残りが
+    // それより少なければ残り）まで仮に伸ばして read(2) し、読めた分に詰め直す。out は先端にいる（initOut が今の bump から始め、伸ばすのは自分だけ）
+    loop := newBlock(mut st)
+    close := newBlock(mut st)
+    err := param(mut st, close, TyI64)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+    room := bin(mut st, BSub, slotLimit(mut st, meta, depth), end)
+    chunk := newBlock(mut st)
+    ch := param(mut st, chunk, TyI64)
+    big := newBlock(mut st)
+    small := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, room, iconst(mut st, READ_CHUNK)), small, -1, big, -1)
+    setCur(mut st, small)
+    // スロットが満ちていれば 1 バイト伸ばして extend8 の超過の検査（exit 102）に落とす（以前の写しの形と同じ — 黙って切り詰めない）
+    br(mut st, chunk, list1(mut st, bin(mut st, BAdd, room, cmp(mut st, CEq, room, iconst(mut st, 0)))))
+    setCur(mut st, big)
+    br(mut st, chunk, list1(mut st, iconst(mut st, READ_CHUNK)))
+    setCur(mut st, chunk)
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, ch))
+    n := ioRw(mut st, 0, fd, end, ch)
+    // 読めた分（失敗・EOF は 0）に先端を詰め直す
+    got0 := newBlock(mut st)
+    gn := param(mut st, got0, TyI64)
+    pos := newBlock(mut st)
+    nonpos := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, n, iconst(mut st, 0)), pos, -1, nonpos, -1)
+    setCur(mut st, pos)
+    br(mut st, got0, list1(mut st, n))
+    setCur(mut st, nonpos)
+    br(mut st, got0, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, got0)
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, gn))
+    not_intr := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, -4)))
+    br(mut st, loop, -1)
+    setCur(mut st, not_intr)
+    not_eof := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, 0)))
+    br(mut st, close, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, not_eof)
+    got := branchIf(mut st, cmp(mut st, CLt, n, iconst(mut st, 0)))
+    br(mut st, close, list1(mut st, bin(mut st, BSub, iconst(mut st, 0), n)))
+    setCur(mut st, got)
+    store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), n))
+    br(mut st, loop, -1)
+    setCur(mut st, close)
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    setErrno(mut st, err)
+    ret(mut st, -1)
+}
+
+// buildWriteAll は write_all(fd, data) → errno（0 = 成功）: data のバイト列をそのまま書く（[]byte — 段 C で詰め直しのループは消えた）。
+// 短い書き込みは続きから、EINTR は再試行
+func buildWriteAll(st mut St, f FnRef, ring bool) {
+    begin(mut st, f)
+    fd := 0
+    data := 1
+    src := itop(mut st, load(mut st, data, 0))
+    ln := load(mut st, data, 1)
+    xl := newBlock(mut st)
+    pos := param(mut st, xl, TyI64)
+    br(mut st, xl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, xl)
+    left := bin(mut st, BSub, ln, pos)
+    has := branchIf(mut st, cmp(mut st, CEq, left, iconst(mut st, 0)))
+    ret(mut st, iconst(mut st, 0))
+    setCur(mut st, has)
+    r := if ring { call(mut st, st.rtUio, list4(mut st, iconst(mut st, 23), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) } else { syscall(mut st, list4(mut st, iconst(mut st, 1), fd, ptoi(mut st, gepByte(mut st, src, pos)), left)) }
+    not_intr := branchIf(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)))
+    br(mut st, xl, list1(mut st, pos))
+    setCur(mut st, not_intr)
+    wrote := branchIf(mut st, cmp(mut st, CLt, r, iconst(mut st, 0)))
+    ret(mut st, bin(mut st, BSub, iconst(mut st, 0), r))
+    setCur(mut st, wrote)
+    br(mut st, xl, list1(mut st, bin(mut st, BAdd, pos, r)))
+}
+
+// buildWriteFile は write_file(path, data) → errno: 作成 / 切り詰めで開いて write_all。close のエラーは返す（先のエラーが優先）
+func buildWriteFile(st mut St, cstr FnRef, wall FnRef) {
+    begin(mut st, st.rtWrite)
+    path := 0
+    data := 1
+    buf := globaladdr(mut st, st.iobuf)
+    e := call(mut st, cstr, list2(mut st, path, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, e)
+    setCur(mut st, named)
+    o0 := iconst(mut st, 257)
+    o1 := iconst(mut st, -100)
+    o2 := ptoi(mut st, buf)
+    o3 := iconst(mut st, 524865)
+    o4 := iconst(mut st, 420)
+    oargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, oargs + 1, o0)
+    desugar.HeapSet(mut st.d, oargs + 2, o1)
+    desugar.HeapSet(mut st.d, oargs + 3, o2)
+    desugar.HeapSet(mut st.d, oargs + 4, o3)
+    desugar.HeapSet(mut st.d, oargs + 5, o4)
+    fd := syscall(mut st, oargs)
+    opened := branchIf(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)))
+    oe := bin(mut st, BSub, iconst(mut st, 0), fd)
+    setErrno(mut st, oe)
+    ret(mut st, oe)
+    setCur(mut st, opened)
+    err := call(mut st, wall, list2(mut st, fd, data))
+    // close(fd)
+    cr := syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    final := newBlock(mut st)
+    fe := param(mut st, final, TyI64)
+    cl_bad := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, cr, iconst(mut st, 0)), cl_bad, -1, final, list1(mut st, err))
+    setCur(mut st, cl_bad)
+    keep := cmp(mut st, CNe, err, iconst(mut st, 0))
+    take := newBlock(mut st)
+    condbr(mut st, keep, final, list1(mut st, err), take, -1)
+    setCur(mut st, take)
+    br(mut st, final, list1(mut st, bin(mut st, BSub, iconst(mut st, 0), cr)))
+    setCur(mut st, final)
+    setErrno(mut st, fe)
+    ret(mut st, fe)
+}
+
+// initOut は out（3 語ヘッダ）を現在深度の region 先端・長さ 0 で初期化し、深度を返す（read_args / read_dir の共通の冒頭）
+func initOut(st mut St, out int) int {
+    meta := globaladdr(mut st, st.meta)
+    depth := load(mut st, meta, W_DEPTH)
+    store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
+    store(mut st, out, 1, iconst(mut st, 0))
+    store(mut st, out, 2, depth)
+    return depth
+}
+
+// strLen は C 文字列 s（NUL 終端）の長さ
+func strLen(st mut St, s int) int {
+    loop := newBlock(mut st)
+    j := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    res := param(mut st, done, TyI64)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, gepByte(mut st, s, j), 0), iconst(mut st, 0)), done, list1(mut st, j), body, -1)
+    setCur(mut st, body)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, j, iconst(mut st, 1))))
+    setCur(mut st, done)
+    return res
+}
+
+// buildReadArgs は read_args(out): argv を「各引数のバイト + 0」の連結で out に置く（原本は W_ARGV の初期 rsp — [argc, argv…]）
+func buildReadArgs(st mut St) {
+    begin(mut st, st.rtArgs)
+    out := 0
+    depth := initOut(mut st, out)
+    sp := itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))
+    argc := load(mut st, sp, 0)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, k, argc), body, -1, done, -1)
+    setCur(mut st, body)
+    s := itop(mut st, load(mut st, gepWord(mut st, sp, bin(mut st, BAdd, k, iconst(mut st, 1))), 0))
+    n := strLen(mut st, s)
+    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, n, iconst(mut st, 1))))
+    dst := itop(mut st, end)
+    call(mut st, st.rtCopy8, list3(mut st, dst, s, n))
+    store8(mut st, gepByte(mut st, dst, n), 0, iconst(mut st, 0))
+    store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), bin(mut st, BAdd, n, iconst(mut st, 1))))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildReadDir は read_dir(path, out): 項目を「d_type 1 バイト + 名前のバイト + 0」の連結で out に置く（失敗は空 + errno。getdents64 の順のまま・
+// `.` / `..` も含む — 除外・ソート・種類の解釈は std/io）。linux_dirent64: d_reclen @16（2B LE）・d_type @18・d_name @19
+func buildReadDir(st mut St, cstr FnRef) {
+    begin(mut st, st.rtDir)
+    path := 0
+    out := 1
+    buf := globaladdr(mut st, st.iobuf)
+    depth := initOut(mut st, out)
+    e := call(mut st, cstr, list2(mut st, path, buf))
+    named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
+    setErrno(mut st, e)
+    ret(mut st, -1)
+    setCur(mut st, named)
+    o0 := iconst(mut st, 257)
+    o1 := iconst(mut st, -100)
+    o2 := ptoi(mut st, buf)
+    o3 := iconst(mut st, 589824)
+    o4 := iconst(mut st, 0)
+    oargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, oargs + 1, o0)
+    desugar.HeapSet(mut st.d, oargs + 2, o1)
+    desugar.HeapSet(mut st.d, oargs + 3, o2)
+    desugar.HeapSet(mut st.d, oargs + 4, o3)
+    desugar.HeapSet(mut st.d, oargs + 5, o4)
+    fd := syscall(mut st, oargs)
+    opened := branchIf(mut st, cmp(mut st, CLt, fd, iconst(mut st, 0)))
+    setErrno(mut st, bin(mut st, BSub, iconst(mut st, 0), fd))
+    ret(mut st, -1)
+    setCur(mut st, opened)
+    loop := newBlock(mut st)
+    close := newBlock(mut st)
+    err := param(mut st, close, TyI64)
+    br(mut st, loop, -1)
+    setCur(mut st, loop)
+    n := syscall(mut st, list4(mut st, iconst(mut st, 217), fd, ptoi(mut st, buf), iconst(mut st, IO_BUF)))
+    not_intr := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, -4)))
+    br(mut st, loop, -1)
+    setCur(mut st, not_intr)
+    not_end := branchIf(mut st, cmp(mut st, CEq, n, iconst(mut st, 0)))
+    br(mut st, close, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, not_end)
+    got := branchIf(mut st, cmp(mut st, CLt, n, iconst(mut st, 0)))
+    br(mut st, close, list1(mut st, bin(mut st, BSub, iconst(mut st, 0), n)))
+    setCur(mut st, got)
+    // レコードの走査（pos < n）
+    rl := newBlock(mut st)
+    pos := param(mut st, rl, TyI64)
+    rbody := newBlock(mut st)
+    br(mut st, rl, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, rl)
+    condbr(mut st, cmp(mut st, CLt, pos, n), rbody, -1, loop, -1)
+    setCur(mut st, rbody)
+    rec := gepByte(mut st, buf, pos)
+    reclen := bin(mut st, BOr, load8(mut st, rec, 16), bin(mut st, BShl, load8(mut st, rec, 17), iconst(mut st, 8)))
+    name := gepByte(mut st, rec, iconst(mut st, 19))
+    ln := strLen(mut st, name)
+    end := bin(mut st, BAdd, load(mut st, out, 0), load(mut st, out, 1))
+    call(mut st, st.rtExtend8, list3(mut st, depth, end, bin(mut st, BAdd, ln, iconst(mut st, 2))))
+    dst := itop(mut st, end)
+    store8(mut st, dst, 0, load8(mut st, rec, 18))
+    call(mut st, st.rtCopy8, list3(mut st, gepByte(mut st, dst, iconst(mut st, 1)), name, ln))
+    store8(mut st, gepByte(mut st, dst, bin(mut st, BAdd, ln, iconst(mut st, 1))), 0, iconst(mut st, 0))
+    store(mut st, out, 1, bin(mut st, BAdd, load(mut st, out, 1), bin(mut st, BAdd, ln, iconst(mut st, 2))))
+    br(mut st, rl, list1(mut st, bin(mut st, BAdd, pos, reclen)))
+    setCur(mut st, close)
+    syscall(mut st, list2(mut st, iconst(mut st, 3), fd))
+    setErrno(mut st, err)
+    ret(mut st, -1)
+}
+
+// buildWriteFd は write_fd(fd, data) → errno: 開いている fd へ直接書く（open しない — 切り詰めない）。先に println の行バッファを flush
+func buildWriteFd(st mut St, wall FnRef) {
+    begin(mut st, st.rtWfd)
+    call(mut st, st.rtFlush, list0(mut st))
+    e := call(mut st, wall, list2(mut st, 0, 1))
+    setErrno(mut st, e)
+    ret(mut st, e)
+}
+
+// buildRun は run(argv) → 終了コード / 負の errno（std/os の sysRun — テスト基盤 T1）: argv は「各引数のバイト + 0」の連結（[]byte — argv[0] = 実行する
+// パス）。fork（57）→ 子は execve（59 — 環境変数は親のまま）、失敗なら exit_group（231）で 127。親は wait4（61）で待ち、正常終了なら終了コード、
+// シグナルで死んだら 128 + 番号（シェルと同じ）。引数の指す先（char* の列）は rt.iobuf に置く（511 本まで — 超えれば -E2BIG）。先に println の行バッファを flush
+func buildRun(st mut St) {
+    if st.rtRun == -1 {
+        return
+    }
+    begin(mut st, st.rtRun)
+    call(mut st, st.rtFlush, list0(mut st))
+    hdr := 0
+    p := itop(mut st, load(mut st, hdr, 0))
+    n := load(mut st, hdr, 1)
+    buf := globaladdr(mut st, st.iobuf)
+    // 各引数の先頭（i = 0 か、直前のバイトが 0）を buf[k] に
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    k := param(mut st, loop, TyI64)
+    s := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    kd := param(mut st, done, TyI64)
+    br(mut st, loop, list3(mut st, iconst(mut st, 0), iconst(mut st, 0), iconst(mut st, 1)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, n), body, -1, done, list1(mut st, k))
+    setCur(mut st, body)
+    cont := newBlock(mut st)
+    k2 := param(mut st, cont, TyI64)
+    mark := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, s, iconst(mut st, 0)), mark, -1, cont, list1(mut st, k))
+    setCur(mut st, mark)
+    room := branchIf(mut st, cmp(mut st, CGe, k, iconst(mut st, IO_BUF / 8 - 1)))
+    ret(mut st, iconst(mut st, -7))
+    setCur(mut st, room)
+    store(mut st, gepWord(mut st, buf, k), 0, ptoi(mut st, gepByte(mut st, p, i)))
+    br(mut st, cont, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, cont)
+    i1 := bin(mut st, BAdd, i, iconst(mut st, 1))
+    z := newBlock(mut st)
+    nz := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, load8(mut st, gepByte(mut st, p, i), 0), iconst(mut st, 0)), z, -1, nz, -1)
+    setCur(mut st, z)
+    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 1)))
+    setCur(mut st, nz)
+    br(mut st, loop, list3(mut st, i1, k2, iconst(mut st, 0)))
+    setCur(mut st, done)
+    store(mut st, gepWord(mut st, buf, kd), 0, iconst(mut st, 0))
+    some := branchIf(mut st, cmp(mut st, CEq, kd, iconst(mut st, 0)))
+    ret(mut st, iconst(mut st, -22))
+    setCur(mut st, some)
+    // envp = 初期 rsp の [argc, argv…, NULL, envp…]
+    sp := itop(mut st, load(mut st, globaladdr(mut st, st.meta), W_ARGV))
+    envp := gepWord(mut st, sp, bin(mut st, BAdd, load(mut st, sp, 0), iconst(mut st, 2)))
+    pid := syscall(mut st, list1(mut st, iconst(mut st, 57)))
+    forked := branchIf(mut st, cmp(mut st, CLt, pid, iconst(mut st, 0)))
+    ret(mut st, pid)
+    setCur(mut st, forked)
+    parent := branchIf(mut st, cmp(mut st, CEq, pid, iconst(mut st, 0)))
+    eargs := listN(mut st, 4)
+    desugar.HeapSet(mut st.d, eargs + 1, iconst(mut st, 59))
+    desugar.HeapSet(mut st.d, eargs + 2, load(mut st, buf, 0))
+    desugar.HeapSet(mut st.d, eargs + 3, ptoi(mut st, buf))
+    desugar.HeapSet(mut st.d, eargs + 4, ptoi(mut st, envp))
+    syscall(mut st, eargs)
+    syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 127)))
+    ret(mut st, iconst(mut st, 127))
+    setCur(mut st, parent)
+    // 子の状態は buf[0] へ（argv の列は親ではもう要らない）
+    store(mut st, buf, 0, iconst(mut st, 0))
+    wargs := listN(mut st, 5)
+    desugar.HeapSet(mut st.d, wargs + 1, iconst(mut st, 61))
+    desugar.HeapSet(mut st.d, wargs + 2, pid)
+    desugar.HeapSet(mut st.d, wargs + 3, ptoi(mut st, buf))
+    desugar.HeapSet(mut st.d, wargs + 4, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, wargs + 5, iconst(mut st, 0))
+    w := syscall(mut st, wargs)
+    waited := branchIf(mut st, cmp(mut st, CLt, w, iconst(mut st, 0)))
+    ret(mut st, w)
+    setCur(mut st, waited)
+    status := load(mut st, buf, 0)
+    sig := bin(mut st, BAnd, status, iconst(mut st, 127))
+    normal := branchIf(mut st, cmp(mut st, CNe, sig, iconst(mut st, 0)))
+    ret(mut st, bin(mut st, BAdd, sig, iconst(mut st, 128)))
+    setCur(mut st, normal)
+    ret(mut st, bin(mut st, BAnd, bin(mut st, BDiv, status, iconst(mut st, 256)), iconst(mut st, 255)))
+}
+
+// relocLabel は写した先のヘッダの深度の印（std/par を使うプログラムではワーカーの WK_RLAB が 0 でなければそれ — チャネルの小アリーナへの写しは
+// 印 = MAX_DEPTH にして受け手が必ず自分の region へ写す〔段 6 P4-4 (B4)〕。それ以外は floor — IR 不変）
+func relocLabel(st mut St, floor int) int {
+    if !st.taskUse {
+        return floor
+    }
+    rl := load(mut st, globaladdr(mut st, st.wkG), WK_RLAB)
+    return bin(mut st, BAdd, floor, bin(mut st, BMul, cmp(mut st, CNe, rl, iconst(mut st, 0)), bin(mut st, BSub, rl, floor)))
+}

@@ -2,7 +2,7 @@ package main
 
 // E2-S の逃げ（docs/formal.md「check の callM の段」の条件 6）の検証例: rename は上げる条件 1〜5 を満たすが、Def として型が付かないので展開へ戻る（周回 2 回）
 
-import "std/strings"
+import "std/convert"
 
 type S struct {
     name string
@@ -12,7 +12,7 @@ type S struct {
 // mut 仮引数の欄へ、本体で組んだ string を入れる — 展開なら呼び手の最内 region に置かれて通るが、callM の Def（自分の region を開く）では
 // フレームの値を呼び手空間の欄へ入れることになり型が付かない → E2-S の逃げで展開へ戻る
 func rename(x mut S, k int) {
-    x.name = "v" + strings.FormatInt(k)
+    x.name = "v" + convert.FormatInt(k)
     x.n = k
 }
 

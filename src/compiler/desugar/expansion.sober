@@ -49,7 +49,7 @@ func expEnd(st mut S, fi int, kind int) {
 }
 
 // ExpansionReport は p を脱糖して寄与（自分だけ）の多い順に上位 ntop 件の表（テキスト）
-@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType)
+@errors(diag.CoreFragment, diag.UnknownName, diag.Malformed, diag.TypeMismatch, diag.PrintArg, diag.LenString, diag.UntypedNil, diag.NonExhaustive, diag.ImmWrite, diag.FieldType, diag.FnCap)
 func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
     mut st := S{}
     initState(mut st, p)
@@ -60,6 +60,7 @@ func ExpansionReport(p loader.Program, ntop int) ([]byte, error?) {
         table.Push(mut st.expIncl, 0)
         table.Push(mut st.expExcl, 0)
     }
+    loadShapes(mut st, shapesFor(p, true, []int{}, -1, false))
     run(mut st)?
     total := table.Len(mut st.cores)
     mut sum := 0

@@ -1,7 +1,8 @@
 package main
 
 // reverse-complement（benchmarks game — docs/bench.md）: fasta の出力を読み、記録（'>' の見出し行 + 配列の行）ごとに見出しはそのまま・
-// 配列は改行を除いて逆順の相補にして 1 行 60 文字で書く。素直な形（Go の双子 bench/revcomp/go と同じアルゴリズム）。
+// 配列は改行を除いて逆順の相補にして 1 行 60 文字で書く。素直な形（Go の双子 bench/revcomp/go と同じアルゴリズム・書き出しも双子と同じく
+// 64 KiB の枠〔io.Writer — bufio.Writer / BufWriter の鏡〕へ流す — 出力の全体を 1 本の slice に溜めない）。
 // 見出しの行末と次の見出しまでの走査は素直なバイトのループ（第三便のベクトル化の対象の形 — 配列の区間は長い）
 
 import "std/io"
@@ -26,7 +27,7 @@ func main() int {
         comp[int(from[j])] = to[j]
         j += 1
     }
-    mut out := mut []byte{}
+    mut w := io.Writer{}
     mut i := 0
     while i < len(b) {
         s := i
@@ -36,7 +37,7 @@ func main() int {
         i += 1
         mut h := s
         while h < i {
-            out = append(out, b[h])
+            io.WriteByte(mut w, b[h])
             h += 1
         }
         hs := i
@@ -48,18 +49,18 @@ func main() int {
         while k >= hs {
             c := b[k]
             if c != '\n' {
-                out = append(out, comp[int(c)])
+                io.WriteByte(mut w, comp[int(c)])
                 col += 1
                 if col == 60 {
-                    out = append(out, '\n')
+                    io.WriteByte(mut w, '\n')
                     col = 0
                 }
             }
             k -= 1
         }
         if col > 0 {
-            out = append(out, '\n')
+            io.WriteByte(mut w, '\n')
         }
     }
-    return if io.WriteStdout(out) != nil { 1 } else { 0 }
+    return if io.Flush(mut w) != nil { 1 } else { 0 }
 }

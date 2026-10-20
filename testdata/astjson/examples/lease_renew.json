@@ -1,0 +1,521 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 7
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "tab",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 13
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 20
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 27
+                  },
+                  "field": "NewLocal",
+                  "tok": 29
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 37
+                        },
+                        "field": "NewScratch",
+                        "tok": 39
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.tab",
+                          "tok": 42
+                        },
+                        {
+                          "k": "int",
+                          "value": 4,
+                          "tok": 46
+                        }
+                      ],
+                      "tok": 40
+                    },
+                    "tok": 36
+                  }
+                ],
+                "tok": 30
+              }
+            ],
+            "tok": 25
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 52
+                  },
+                  "field": "Lease",
+                  "tok": 54
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 56
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 65
+                              },
+                              "field": "Renew",
+                              "tok": 67
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "w.tab",
+                                "tok": 70
+                              }
+                            ],
+                            "tok": 68
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 75
+                              },
+                              "field": "Store",
+                              "tok": 77
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "w.tab",
+                                "tok": 80
+                              },
+                              {
+                                "k": "int",
+                                "value": 0,
+                                "tok": 84
+                              },
+                              {
+                                "k": "int",
+                                "value": 5,
+                                "tok": 86
+                              }
+                            ],
+                            "tok": 78
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 89
+                              },
+                              "field": "Renew",
+                              "tok": 91
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "w.tab",
+                                "tok": 94
+                              }
+                            ],
+                            "tok": 92
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "pool",
+                                "tok": 99
+                              },
+                              "field": "Store",
+                              "tok": 101
+                            },
+                            "args": [
+                              {
+                                "k": "mut_arg",
+                                "name": "w.tab",
+                                "tok": 104
+                              },
+                              {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 108
+                              },
+                              {
+                                "k": "int",
+                                "value": 6,
+                                "tok": 110
+                              }
+                            ],
+                            "tok": 102
+                          }
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "binary",
+                              "op": "*",
+                              "lhs": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "pool",
+                                    "tok": 113
+                                  },
+                                  "field": "Load",
+                                  "tok": 115
+                                },
+                                "args": [
+                                  {
+                                    "k": "mut_arg",
+                                    "name": "w.tab",
+                                    "tok": 118
+                                  },
+                                  {
+                                    "k": "int",
+                                    "value": 0,
+                                    "tok": 122
+                                  }
+                                ],
+                                "tok": 116
+                              },
+                              "rhs": {
+                                "k": "int",
+                                "value": 10,
+                                "tok": 125
+                              },
+                              "tok": 124
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "pool",
+                                  "tok": 127
+                                },
+                                "field": "Load",
+                                "tok": 129
+                              },
+                              "args": [
+                                {
+                                  "k": "mut_arg",
+                                  "name": "w.tab",
+                                  "tok": 132
+                                },
+                                {
+                                  "k": "int",
+                                  "value": 1,
+                                  "tok": 136
+                                }
+                              ],
+                              "tok": 130
+                            },
+                            "tok": 126
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 63
+                  }
+                ],
+                "tok": 55
+              }
+            ],
+            "tok": 50
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 144
+                  },
+                  "field": "Lease",
+                  "tok": 146
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 148
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "binary",
+                        "op": "*",
+                        "lhs": {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "pool",
+                              "tok": 156
+                            },
+                            "field": "Load",
+                            "tok": 158
+                          },
+                          "args": [
+                            {
+                              "k": "mut_arg",
+                              "name": "w.tab",
+                              "tok": 161
+                            },
+                            {
+                              "k": "int",
+                              "value": 0,
+                              "tok": 165
+                            }
+                          ],
+                          "tok": 159
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 10,
+                          "tok": 168
+                        },
+                        "tok": 167
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "pool",
+                            "tok": 170
+                          },
+                          "field": "Load",
+                          "tok": 172
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w.tab",
+                            "tok": 175
+                          },
+                          {
+                            "k": "int",
+                            "value": 1,
+                            "tok": 179
+                          }
+                        ],
+                        "tok": 173
+                      },
+                      "tok": 169
+                    },
+                    "tok": 155
+                  }
+                ],
+                "tok": 147
+              }
+            ],
+            "tok": 142
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 183
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 185
+                }
+              ],
+              "tok": 184
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 188
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 190
+                }
+              ],
+              "tok": 189
+            }
+          }
+        ]
+      },
+      "tok": 21,
+      "bodiless": false,
+      "span": {
+        "start": 20,
+        "end": 195
+      },
+      "sig_end": 24
+    }
+  ],
+  "consts": []
+}

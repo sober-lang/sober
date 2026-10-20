@@ -1,0 +1,40 @@
+package main
+
+// 段 6 P4-2 (O1): 入れ子の scope の印字 — 孫の流れは子の流れの spawn の位置に、子の流れは親の spawn の位置に入る（先行順）。
+// 孫が chan で待つので、子の後半と親の後半は孫が終わるまで溜まる
+
+import "std/task"
+
+func inner(tag string) int {
+    println("${tag} opens")
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        g := task.Spawn(s, (inp) => {
+            println("${tag}.g waits")
+            v := task.Recv(inp)
+            mut got := 0
+            if v != nil {
+                println("${tag}.g got ${v}")
+                got = v
+            }
+            got
+        }, give: rx)
+        println("${tag} sends")
+        task.Send(tx, len(bytes(tag)))
+        println("${tag} joins")
+        task.Join(g)
+    })
+    println("${tag} closes ${r}")
+    return r
+}
+
+func main() {
+    println("start")
+    r, e := task.Run((s task.Scope) => {
+        a := task.Spawn(s, () => inner("a"))
+        b := task.Spawn(s, () => inner("bb"))
+        println("parent")
+        task.Join(a) + task.Join(b)
+    })
+    println("total ${r}")
+}

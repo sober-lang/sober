@@ -1,0 +1,2 @@
+sober: desugar error at examples/bind_neg_assign.sober:7:5 (Malformed)
+exit=1

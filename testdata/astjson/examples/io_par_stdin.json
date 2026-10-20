@@ -8,7 +8,7 @@
     },
     {
       "alias": null,
-      "path": "std/par",
+      "path": "std/task",
       "tok": 7
     },
     {
@@ -22,13 +22,13 @@
       "tok": 0
     },
     {
-      "alias": "$strings",
-      "path": "std/strings",
+      "alias": "$convert",
+      "path": "std/convert",
       "tok": 0
     },
     {
       "alias": "$utf8",
-      "path": "std/utf8",
+      "path": "std/internal/utf8",
       "tok": 0
     }
   ],
@@ -384,10 +384,10 @@
                   "k": "selector",
                   "base": {
                     "k": "ident",
-                    "name": "par",
+                    "name": "task",
                     "tok": 122
                   },
-                  "field": "Scope",
+                  "field": "Run",
                   "tok": 124
                 },
                 "args": [
@@ -398,7 +398,7 @@
                         "name": "s",
                         "type": {
                           "k": "name",
-                          "name": "par.S"
+                          "name": "task.Scope"
                         }
                       }
                     ],
@@ -418,7 +418,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 136
                                 },
                                 "field": "Spawn",
@@ -464,7 +464,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 152
                                 },
                                 "field": "Spawn",
@@ -517,7 +517,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 171
                                 },
                                 "field": "Join",
@@ -549,7 +549,7 @@
                                 "k": "selector",
                                 "base": {
                                   "k": "ident",
-                                  "name": "par",
+                                  "name": "task",
                                   "tok": 182
                                 },
                                 "field": "Join",

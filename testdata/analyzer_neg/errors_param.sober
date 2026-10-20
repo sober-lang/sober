@@ -1,0 +1,65 @@
+package main
+
+// analyzer の負例（scripts/analyzer_neg.sh — 期待は errors_param.err）: 仮引数の名前の @errors（language.md 13 節 — 展開される関数の匿名の関数型の仮引数）。
+// 宣言に仮引数の名前が無い漏れ・公開関数の余分な仮引数の名前（包み替えて戻らない）・公開関数の宣言なし（提示に仮引数の名前）・
+// 呼び手の switch が呼び出し点の実引数のラベルを覆わない・実引数が error を返さない呼び出し点の到達しない腕・
+// 包み替えた cause は呼び出し点ごとに違うので網羅できない（cause の集合は TOP）
+
+type Bad error
+
+type Short error {
+    n int
+}
+
+@errors(Bad)
+func Leak(recv func(k func(n int)) error?) error? {
+    recv((n) => { })?
+    return Bad{}
+}
+
+@errors(Bad, recv)
+func Stale(recv func(k func(n int)) error?) error? {
+    recv((n) => { })? Bad{}
+    return nil
+}
+
+// 包み替え: recv の失敗は Bad の cause へ — 呼び出し点ごとに違うので cause の集合は言えない（TOP）
+@errors(Bad)
+func Wrap(recv func(k func(n int)) error?) error? {
+    recv((n) => { })? Bad{}
+    return nil
+}
+
+func Missing(send func(n int) error?) error? {
+    return send(1)
+}
+
+func put(n int) error? {
+    if n < 0 {
+        return Bad{}
+    }
+    return if n > 5 { Short{n: n} } else { nil }
+}
+
+func main() {
+    switch Missing(put) {
+    case nil:
+        println(0)
+    case Short{n}:
+        println(n)
+    }
+    switch Missing((n) => nil) {
+    case nil:
+        println(0)
+    case Short{n}:
+        println(n)
+    }
+    switch Wrap((k) => put(1)) {
+    case nil:
+        println(0)
+    case Bad{cause: Short{n}}:
+        println(n)
+    }
+    _ = Leak((k) => nil)
+    _ = Stale((k) => nil)
+}

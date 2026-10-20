@@ -1,17 +1,17 @@
 package main
 
-// float の印字と解析の口（language.md 37 節）: println と conv.FormatFloat は最短の往復表現（Go の fmt.Println / strconv.FormatFloat(f, 'g', -1, 64)
-// と同じ綴り — 期待値は Go の双子 scripts/oracles/float_print.go）・conv.ParseFloat の誤り（構文・溢れ）
+// float の印字と解析の口（language.md 37 節）: println と convert.FormatFloat は最短の往復表現（Go の fmt.Println / strconv.FormatFloat(f, 'g', -1, 64)
+// と同じ綴り — 期待値は Go の双子 scripts/oracles/float_print.go）・convert.ParseFloat の誤り（構文・溢れ）
 
 import "std/iter"
-import "std/conv"
+import "std/convert"
 
 func show(s string) {
-    f, err := conv.ParseFloat(s)
+    f, err := convert.ParseFloat(s)
     if err != nil {
         msg := switch err {
-        case conv.InvalidFloat{}: "invalid"
-        case conv.FloatOutOfRange{}: "range"
+        case convert.InvalidFloat{}: "invalid"
+        case convert.FloatOutOfRange{}: "range"
         }
         println(s, msg, f)
     } else {
@@ -25,7 +25,7 @@ func main() int {
     mut x := 1.0
     for i <- iter.Range(0, 12) {
         x = x * 7.0 / 3.0
-        println(i, x, conv.FormatFloat(x * x))
+        println(i, x, convert.FormatFloat(x * x))
     }
     show("3.14159")
     show("-1e-5")

@@ -1,0 +1,13 @@
+package main
+
+// 負例: mut 実引数は呼び手の mut の場所に限る — 不変の束縛は渡せない（language.md 26 節）
+
+func bump(n mut int) {
+    n += 1
+}
+
+func main() {
+    k := 1
+    bump(mut k)
+    println(k)
+}

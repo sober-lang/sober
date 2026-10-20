@@ -1,2 +1,2 @@
-sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
+sober: load error at examples/identity_neg_tx.sober:10:11: `task.Sender` has identity: only task.NewChannel makes one — a zero value would refer to nothing
 exit=1

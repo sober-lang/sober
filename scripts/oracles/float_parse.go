@@ -1,7 +1,7 @@
-// float_parse.go — 浮動小数の解析の差分オラクル（float の段 — language.md 37 節）: 境界・構文の負例 + 乱択の 10 進の文字列（examples/float_parse.in）と
-// Go の strconv.ParseFloat のビット列と状態（0 = ok・1 = 構文・2 = 溢れ — examples/float_parse.out）を作る。Sober 側は examples/float_parse.sober
-// （std/floatfmt.ParseBits）。Go が受けて Sober が受けない形（16 進・_）は出さない — Sober は 10 進だけ（docs 37 節）。
-//   go run scripts/oracles/float_parse.go 5000 examples/float_parse.in examples/float_parse.out
+// float_parse.go — 浮動小数の解析の差分オラクル（float の段 — language.md 37 節）: 境界・構文の負例 + 乱択の 10 進の文字列（examples/float_parse_conv.in）と
+// Go の strconv.ParseFloat のビット列と状態（0 = ok・1 = 構文・2 = 溢れ — examples/float_parse_conv.out）を作る。Sober 側は examples/float_parse_conv.sober
+// （convert.ParseFloat + math.Bits — 2026-10-20 に std/floatfmt が std/internal へ移り、内部の口を直に読む float_parse.sober は同じ入出力の公開の口の双子に統合）。Go が受けて Sober が受けない形（16 進・_）は出さない — Sober は 10 進だけ（docs 37 節）。
+//   go run scripts/oracles/float_parse.go 5000 examples/float_parse_conv.in examples/float_parse_conv.out
 package main
 
 import (

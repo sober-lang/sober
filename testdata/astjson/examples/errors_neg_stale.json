@@ -1,0 +1,203 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Empty",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    },
+    {
+      "name": "TooLong",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 8,
+      "span": {
+        "start": 7,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Parse",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 38
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 40
+                },
+                "tok": 39
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 43
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "Empty",
+                        "elems": [],
+                        "tok": 45,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 42
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 37
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 52
+              },
+              {
+                "k": "nil",
+                "tok": 54
+              }
+            ],
+            "tok": 51
+          }
+        ]
+      },
+      "tok": 25,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 58
+      },
+      "sig_end": 36
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 63
+              },
+              "args": [
+                {
+                  "k": "catch",
+                  "e": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Parse",
+                      "tok": 65
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "x",
+                        "tok": 67
+                      }
+                    ],
+                    "tok": 66
+                  },
+                  "rhs": {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 71
+                    },
+                    "tok": 70
+                  },
+                  "tok": 69
+                }
+              ],
+              "tok": 64
+            }
+          }
+        ]
+      },
+      "tok": 59,
+      "bodiless": false,
+      "span": {
+        "start": 58,
+        "end": 76
+      },
+      "sig_end": 62
+    }
+  ],
+  "consts": []
+}

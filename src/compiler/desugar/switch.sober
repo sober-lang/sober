@@ -131,6 +131,10 @@ func constSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
             if isTag(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef), TFloat) {
                 nomFail(mut st, latN(mut st, subs, i))?
             }
+            // string の値の switch は言語に無い（15 節 — 単値の subject は int / union / error / T?）: 名指しで拒否（以前は check が def error だけ）
+            if isStringTy(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef)) {
+                return 0, diag.TypeMismatch{at: posOf(mut st, latN(mut st, subs, i)), kind: 1}
+            }
             sx := expr(mut st, latN(mut st, subs, i), eb, ef, depth + i)?
             isb := isTag(mut st, computeTy(mut st, latN(mut st, subs, i), eb, ef), TByte)
             subjects = append(subjects, if isb { c1(mut st, CToInt, sx) } else { sx })

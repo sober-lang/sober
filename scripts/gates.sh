@@ -3,7 +3,7 @@
 #
 #   scripts/gates.sh                 = --full
 #   scripts/gates.sh --full          全ゲート（タグ zig の Zig 単体のゲートを除く — 主役交代 R39: src/ は凍結）
-#   scripts/gates.sh --all           全ゲート + タグ zig（src/ を触ったとき）+ stages の重い照合（STAGES_RAW — 掛けた / 掛けない stage3 のコア AST）
+#   scripts/gates.sh --all           全ゲート + タグ zig（src/ を触ったとき）+ stages の重い照合（STAGES_RAW — 掛けた / 掛けないの check の経路の道具の出力 — scripts/rawcheck.sh）
 #   scripts/gates.sh --fast TAG...   タグに関係するゲートだけ（タグ: lex parse fmt load desugar check lower backend lean zig all — 下の表）
 #   scripts/gates.sh --auto          作業木の変更ファイル（git status）からタグを推定（推定できない変更があれば --full、src/ の変更は --all）
 #   オプション: -j G（同時に走らせるゲートの数、既定 6）・--jobs J（ゲートの中の並列、既定 = CPU 数 / 同時ゲート数、最低 4）・--no-cache（差分スキップ・tool の再利用を切る）
@@ -107,15 +107,24 @@ declare -A GTAG=(
     [streq]="lower"
     [ubfstat]="lower"
     [sortcheck]="lower backend"
+    [flatecheck]="lower backend"
+    [ctcheck]="lower backend"
+    [cryptocheck]="lower backend"
+    [tlsfsm]="lean lower backend"
     [iterregion]="lower backend"
+    [llcheck]="lower backend"
     [fitcheck]="lower backend"
     [iouring]="lower backend"
+    [httpcheck]="lower backend"
+    [vaslot]="lower backend"
     [selfpar]="check desugar load"
     [elfeq]="lex parse load desugar lower backend"
     [sobi]="lex parse fmt load desugar check"
+    [refs]="lex parse load"
+    [stdref]="docs"
 )
 # 長いものから（並列の詰め順）
-ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat sortcheck iterregion fitcheck iouring corevec extract obs_zig hermetic_zig ir_roundtrip)
+ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat sortcheck flatecheck ctcheck cryptocheck tlsfsm iterregion fitcheck iouring httpcheck vaslot refs stdref corevec extract obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -151,13 +160,16 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/sortcheck.sh|scripts/iterregion.sh|testdata/sortcheck/*|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|scripts/iouring.sh|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
-            scripts/checkverdict.sh|testdata/checkverdict/*) echo check ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/sortcheck.sh|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/vaslot.sh|testdata/vaslot/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
+            scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
+            scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
+            scripts/stdref.sh|scripts/stdref/*|src/compiler/tools/docgen/*|testdata/stdref/*|docs/std/*) echo docs ;;
             lean/Main.lean|scripts/leanbatch.sh) echo lean ;;
             lean/FeatherweightSober/UniqFreeze.lean|scripts/uniqfreeze.sh|scripts/uniqfreeze.list) echo lean; echo analyzer ;;
             scripts/implicitfreeze.sh|scripts/implicitfreeze.ts) echo desugar; echo lower ;;
             lean/Extract/*|lean/ExtractMain.lean|lean/FeatherweightSober/TyVec.lean|scripts/extract.sh|lean/Extract/sober/*) echo lean ;;
-            docs/guide/*|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*|scripts/benchchart.ts|docs/assets/bench-*) echo docs ;;
+            lean/FeatherweightSober/Tls.lean|scripts/tlsfsm.sh|testdata/tls/fsm.golden) echo lean ;;
+            docs/guide/*|docs/spec/*|docs/language.md|README.md|README.ja.md|scripts/docsync.*|bench/README.md|bench/data/*|scripts/benchsync.*|scripts/benchchart.ts|docs/assets/bench-*) echo docs ;;
             docs/*|*.md) ;;
             *) echo all ;;
         esac
@@ -243,7 +255,7 @@ export SOBER_STAGE2_CHECKED=1
 # IR の検証器は段ごとに（既定の build は最後に 1 回 — 段で崩れたらどの段かを gates が名指す。仕上げ便）
 export SOBER_VERIFY=each
 [ "$cache" = 1 ] && export GATECACHE=$CACHE
-# stages の「掛けた / 掛けない stage3 のコア AST の突き合わせ」（stage3raw の ELF 化 — 約 20〜30 秒）は --all（タグ zig と同じ重い列）だけ。
+# stages の「掛けた / 掛けないの check の経路の突き合わせ」（scripts/rawcheck.sh — 約 3.5 分・決定 (C2) 2026-10-20）は --all（タグ zig と同じ重い列）だけ。
 # --full / --fast / --auto では省く（守りは残す — 単体の scripts/stages.sh も既定で回す）。決定 2026-09-29
 export STAGES_RAW=$withzig
 export GATES_ALL=$withzig   # selfhost_check の (i') 追加シード（corevec v2 — --all だけ）
@@ -279,6 +291,8 @@ run_gate() { # $1 = ゲート名。終了コードと所要を $W/res/<gate> に
         # obs_zig は凍結コーパスの .out 持ちだけ（凍結後の例は stage1 の範囲外の言語で書かれうる — 正規バックエンド列の到達リスト化と同じ筋。決定 2026-09-29）
         obs_zig) SOBER=$STAGE1 scripts/obs.sh $(zig_frozen) > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         benchsync) scripts/benchsync.sh --check > "$LOGS/$g.log" 2>&1 || ec=$? ;;
+        # リネーム道具（report-883）: loadcheck + 負例の期待 TSV + 仮決め名の未分類 0
+        refs) scripts/refs.sh --selftest > "$LOGS/$g.log" 2>&1 || ec=$? ;;
         *) "scripts/$g.sh" > "$LOGS/$g.log" 2>&1 || ec=$? ;;
     esac
     echo "$ec $(( $(date +%s) - s ))" > "$W/res/$g"

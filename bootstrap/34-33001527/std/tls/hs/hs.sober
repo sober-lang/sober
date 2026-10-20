@@ -1,0 +1,752 @@
+package hs
+
+// hs（TLS 便 R3 — report-811 2 節 / 828）: TLS 1.3 のサーバ側の handshake の状態機械と key schedule（RFC 9846 4 節 / 7 節 — 8446bis）。
+// **std/tls の内側** — 利用者は import しない（公開の口は std/tls の Serve / Conn — 隠し方は 0.6.0 の API 総再審）。
+//
+// - 状態 = Phase（1 状態 1 variant — Start〔最初の ClientHello 待ち〕/ WaitCH2〔HelloRetryRequest を送った後〕/ WaitFin〔サーバの flight を送り終え
+//   クライアントの Finished 待ち〕/ Connected / Closed）。Feed は record の枠 1 つを受けて、送るバイト列・受けた application の平文・閉じたかを返す
+//   （転送路の受けの口は 1 本の record.Frames のループ — handshake の直後に同じ切片に乗ってきた application data も同じループで受ける）
+// - v1 の範囲（ユーザー裁定 2026-10-18）: TLS 1.3 だけ・サーバだけ・X25519 だけ・TLS_AES_128_GCM_SHA256 / TLS_CHACHA20_POLY1305_SHA256・
+//   署名は rsa_pss_rsae_sha256（証明書は RSA-2048）・PSK / 0-RTT / クライアント証明書なし。ALPN の不一致は no_application_protocol（RFC 7301）
+// - 乱数の源は Params.seed（空 = crypto.Rand・空でなければ SHA-256(seed ‖ 用途) — 網の決定的な黄金のため）
+// - 誤りは record.Alert{desc}（相手へ送る alert の番号 — 呼び手は AlertRecord を送って閉じる）。相手の alert は Out.peer に
+
+import "std/crypto"
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
+import "std/crypto/rsa"
+import "std/crypto/sha256"
+import "std/crypto/x25519"
+import "std/hex"
+import "std/iter"
+import "std/tls/record"
+
+// handshake のメッセージの型（RFC 9846 4）
+const tClientHello = 1
+const tServerHello = 2
+const tEncryptedExtensions = 8
+const tCertificate = 11
+const tCertificateVerify = 15
+const tFinished = 20
+const tKeyUpdate = 24
+const tMessageHash = 254
+
+// 拡張の型（RFC 9846 4.2）
+const xServerName = 0
+const xSupportedGroups = 10
+const xSignatureAlgorithms = 13
+const xAlpn = 16
+const xSupportedVersions = 43
+const xKeyShare = 51
+
+const groupX25519 = 0x001d
+const sigPssSha256 = 0x0804
+
+// alert の番号（RFC 9846 6）
+const aCloseNotify = 0
+const aUnexpected = 10
+const aHandshakeFailure = 40
+const aIllegalParameter = 47
+const aDecodeError = 50
+const aDecryptError = 51
+const aProtocolVersion = 70
+const aInternal = 80
+const aNoAlpn = 120
+
+// hrrRandom は HelloRetryRequest の random（SHA-256("HelloRetryRequest") — RFC 9846 4.1.3 の値 cf21ad74…8339c）
+func hrrRandom() []byte {
+    return sha256.Sum256(bytes("HelloRetryRequest"))
+}
+
+// Params はサーバの設定（std/tls の Config がここへ写す）
+type Params struct {
+    chain [][]byte          // 証明書の列（DER — 葉が先頭）
+    key rsa.PrivateKey      // 葉の鍵（RSA-2048）
+    alpn []string           // 受ける ALPN（サーバの好みの順 — 空 = ALPN を使わない）
+    suites []int            // suite の好みの順（record.AesGcm / record.ChaCha）
+    seed []byte             // 乱数の源（空 = crypto.Rand）
+}
+
+// NewParams は Params（std/tls の Config から — 網からも）
+func NewParams(chain [][]byte, key rsa.PrivateKey, alpn []string, suites []int, seed []byte) Params {
+    return Params{chain: chain, key: key, alpn: alpn, suites: suites, seed: seed}
+}
+
+// Phase は handshake の状態
+type Phase union {
+    Start {}
+    WaitCH2 {}
+    WaitFin {}
+    Connected {}
+    Closed {}
+}
+
+// Hs は 1 接続の handshake と record の状態
+type Hs struct {
+    ph Phase
+    th sha256.State      // transcript
+    suite int
+    rd record.Dir
+    wr record.Dir
+    cHs []byte           // client / server handshake traffic secret
+    sHs []byte
+    cAp []byte           // client / server application traffic secret（0 番目の世代）
+    sAp []byte
+    expFin []byte        // 期待するクライアントの verify_data
+    alpn string          // 決まった ALPN（無ければ ""）
+    hbuf []byte          // 組み立て中の handshake のバイト列（record をまたぐメッセージ）
+    ccs bool             // 互換の CCS を 1 枚受けた
+    hrr bool             // HelloRetryRequest を送った
+    ch1 []int            // 最初の ClientHello の suite の列（HRR の後の整合の検査）
+    keyed bool           // 送りの鍵がある（サーバの flight を封じた後 — alert を暗号化して送る）
+    upd bool             // 相手が KeyUpdate で update_requested を送った（次の SealApp が先に自分の KeyUpdate を送る — RFC 9846 4.6.3）
+}
+
+// Out は Feed の結果（send = 相手へ送る record の列・app = 受けた application の平文・done = この枠で handshake が済んだ・
+// closed = 相手が close_notify か alert で閉じた〔peer = 受けた alert の番号 — 無ければ -1〕・upd = 相手が update_requested の KeyUpdate を送った
+// 〔受けの鍵は進めた — 送りの返事は次の SealApp / tls.Send が先に送る〕）
+type Out struct {
+    send []byte
+    app []byte
+    done bool
+    closed bool
+    peer int
+    upd bool
+}
+
+func none() Out {
+    return Out{send: []byte{}, app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}
+}
+
+// New は最初の ClientHello を待つ Hs
+func New() Hs {
+    return Hs{ph: Start{}, th: sha256.New(), suite: 0, rd: emptyDir(), wr: emptyDir(), cHs: []byte{}, sHs: []byte{}, cAp: []byte{}, sAp: []byte{},
+        expFin: []byte{}, alpn: "", hbuf: []byte{}, ccs: false, hrr: false, ch1: []int{}, keyed: false, upd: false}
+}
+
+// Resume は handshake の済んだ接続の受けの方向 rd だけを持つ Connected の Hs（std/tls の Recv が置き場の rd から作る — Connected の受けの表を
+// Feed の 1 か所に置くため。送りの方向は持たない — 送りは std/tls の置き場が持つ）
+func Resume(rd record.Dir) Hs {
+    mut h := New()
+    h.rd = rd
+    h.ph = Connected{}
+    return h
+}
+
+// Bare は Connected の Feed に渡す空の Params（Connected の受けは Params を見ない）
+func Bare() Params {
+    k, _ := rsa.ParsePKCS8([]byte{})
+    return NewParams([][]byte{}, k, []string{}, []int{}, []byte{})
+}
+
+func emptyDir() record.Dir {
+    d, _ := record.NewDir(0, []byte{})
+    return d
+}
+
+// Connected は handshake が済んだか
+func IsConnected(h Hs) bool {
+    return switch h.ph {
+        case Connected{}: true
+        default: false
+    }
+}
+
+// Probe は抽象の状態の名前（"start/c0/h0" の形 — 段・互換の CCS を受けたか・HelloRetryRequest を送ったか。Closed は "closed"）。
+// 網 examples/tls_fsm が Lean の遷移表（lean/FeatherweightSober/Tls.lean）と突き合わせる口
+func Probe(h Hs) string {
+    n := switch h.ph {
+        case Start{}: "start"
+        case WaitCH2{}: "waitCH2"
+        case WaitFin{}: "waitFin"
+        case Connected{}: "connected"
+        case Closed{}: ""
+    }
+    if n == "" {
+        return "closed"
+    }
+    return "${n}/c${if h.ccs { 1 } else { 0 }}/h${if h.hrr { 1 } else { 0 }}"
+}
+
+// Alpn は決まった ALPN（無ければ ""）
+func Alpn(h Hs) string {
+    return h.alpn
+}
+
+// Suite は決まった suite
+func Suite(h Hs) int {
+    return h.suite
+}
+
+// Dirs は受けと送りの方向（handshake が済んだ後に std/tls の Conn の置き場へ写す）
+func Dirs(h Hs) (record.Dir, record.Dir) {
+    return h.rd, h.wr
+}
+
+// Secrets は 4 つの traffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の 16 進 — 網が Go の KeyLogWriter と照合する口）
+func Secrets(h Hs) string {
+    return "${hex.Encode(h.cHs)} ${hex.Encode(h.sHs)} ${hex.Encode(h.cAp)} ${hex.Encode(h.sAp)}"
+}
+
+// ── 受け ──
+
+// Feed は record の枠 f を 1 つ受ける（誤りのときは自分で Closed に落ちる — 以降の枠は全部 unexpected_message。report-838 4 節 ②）
+@errors(record.Alert)
+func Feed(h mut Hs, p Params, f record.Frame) (Out, error?) {
+    o, e := feedIn(mut h, p, f)
+    if e != nil {
+        h.ph = Closed{}
+    }
+    return o, e
+}
+
+// Step は Connected の受けの入口（mut の仮引数を持たない — std/tls の Recv の展開点ごとに handshake の道ごと inline させないため。
+// 表は Feed の暗号化した record の枝〔feedSealed〕そのもの — Connected / Closed の h に対して Feed と同じ結果。誤りで Closed に落ちるのも同じ）
+@errors(record.Alert)
+func Step(h Hs, f record.Frame) (Hs, Out, error?) {
+    mut x := h
+    if !IsConnected(x) {
+        x.ph = Closed{}
+        return x, none(), alert(aUnexpected)
+    }
+    o, e := feedSealed(mut x, f, int(f.b[f.off]))
+    if e != nil {
+        x.ph = Closed{}
+    }
+    return x, o, e
+}
+
+@errors(record.Alert)
+func feedIn(h mut Hs, p Params, f record.Frame) (Out, error?) {
+    ct := int(f.b[f.off])
+    k := switch h.ph {
+        case Start{}: 0
+        case WaitCH2{}: 0
+        case WaitFin{}: 1
+        case Connected{}: 1
+        case Closed{}: 2
+    }
+    if k == 0 {
+        return feedPlain(mut h, p, f, ct)
+    }
+    if k == 1 {
+        return feedSealed(mut h, f, ct)
+    }
+    return none(), alert(aUnexpected)
+}
+
+func alert(d int) error? {
+    return record.Alert{desc: d}
+}
+
+// feedPlain は暗号化前の record（最初の ClientHello・HRR の後の互換の CCS と 2 番目の ClientHello）
+@errors(record.Alert)
+func feedPlain(h mut Hs, p Params, f record.Frame, ct int) (Out, error?) {
+    _, body := record.Plain(f)
+    if ct == record.CtCcs {
+        return ccsOnce(mut h, body)
+    }
+    if ct != record.CtHandshake || len(body) == 0 {
+        return none(), alert(aUnexpected)
+    }
+    h.hbuf = cat(h.hbuf, body)
+    if len(h.hbuf) < 4 {
+        return none(), nil
+    }
+    n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+    if int(h.hbuf[0]) != tClientHello {
+        return none(), alert(aUnexpected)
+    }
+    if len(h.hbuf) < 4 + n {
+        return none(), nil
+    }
+    // ClientHello の後ろに続く handshake のバイトは無い約束（鍵の境目をまたがない — RFC 9846 5.1）
+    if len(h.hbuf) != 4 + n {
+        return none(), alert(aUnexpected)
+    }
+    m := h.hbuf
+    h.hbuf = []byte{}
+    return onClientHello(mut h, p, m)
+}
+
+// ccsOnce は互換の CCS（中身 0x01 の 1 枚だけ読み飛ばす — RFC 9846 5 / D.4）
+@errors(record.Alert)
+func ccsOnce(h mut Hs, body []byte) (Out, error?) {
+    if h.ccs || len(body) != 1 || body[0] != 1 {
+        return none(), alert(aUnexpected)
+    }
+    h.ccs = true
+    return none(), nil
+}
+
+// feedSealed は暗号化した record（クライアントの Finished・application data・KeyUpdate・alert）
+@errors(record.Alert)
+func feedSealed(h mut Hs, f record.Frame, ct int) (Out, error?) {
+    if ct == record.CtCcs {
+        if IsConnected(h) {
+            return none(), alert(aUnexpected)
+        }
+        _, body := record.Plain(f)
+        return ccsOnce(mut h, body)
+    }
+    ict, pt := record.Open(mut h.rd, f)?
+    if ict == record.CtAlert {
+        return peerAlert(mut h, pt)
+    }
+    if ict == record.CtApp {
+        if !IsConnected(h) || len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        return Out{send: []byte{}, app: pt, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if ict != record.CtHandshake || len(pt) == 0 {
+        return none(), alert(aUnexpected)
+    }
+    h.hbuf = cat(h.hbuf, pt)
+    mut out := none()
+    while len(h.hbuf) >= 4 {
+        n := int(h.hbuf[1]) << 16 | int(h.hbuf[2]) << 8 | int(h.hbuf[3])
+        if len(h.hbuf) < 4 + n {
+            return out, nil
+        }
+        m := sliceOf(h.hbuf, 0, 4 + n)
+        h.hbuf = sliceOf(h.hbuf, 4 + n, len(h.hbuf) - 4 - n)
+        o := onSealedMsg(mut h, m)?
+        out = Out{send: cat(out.send, o.send), app: out.app, done: out.done || o.done, closed: false, peer: 0 - 1, upd: out.upd || o.upd}
+    }
+    return out, nil
+}
+
+// onSealedMsg は暗号化した handshake のメッセージ 1 つ（WaitFin = Finished・Connected = KeyUpdate）
+@errors(record.Alert)
+func onSealedMsg(h mut Hs, m []byte) (Out, error?) {
+    t := int(m[0])
+    connected := IsConnected(h)
+    if !connected && t == tFinished {
+        if len(m) != 4 + 32 || !crypto.Equal(sliceOf(m, 4, 32), h.expFin) {
+            return none(), alert(aDecryptError)
+        }
+        // 鍵の境目: Finished の後ろに handshake のバイトが残っていてはならない
+        if len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        h.rd = record.NewDir(h.suite, h.cAp)?
+        h.ph = Connected{}
+        return Out{send: []byte{}, app: []byte{}, done: true, closed: false, peer: 0 - 1, upd: false}, nil
+    }
+    if connected && t == tKeyUpdate {
+        if len(m) != 5 || int(m[4]) > 1 {
+            return none(), alert(if len(m) != 5 { aDecodeError } else { aIllegalParameter })
+        }
+        if len(h.hbuf) > 0 {
+            return none(), alert(aUnexpected)
+        }
+        record.Update(mut h.rd)?
+        // update_requested: 自分の KeyUpdate（update_not_requested）は次の application data の前に送る（RFC 9846 4.6.3 — 送りは SealApp / tls.Send の 1 か所）
+        req := int(m[4]) == 1
+        h.upd = h.upd || req
+        return Out{send: []byte{}, app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: req}, nil
+    }
+    return none(), alert(aUnexpected)
+}
+
+// peerAlert は相手の alert（close_notify なら静かに閉じる・他は相手の誤り — 送り返さずに閉じる）
+@errors(record.Alert)
+func peerAlert(h mut Hs, pt []byte) (Out, error?) {
+    if len(pt) != 2 {
+        return none(), alert(aDecodeError)
+    }
+    h.ph = Closed{}
+    return Out{send: []byte{}, app: []byte{}, done: false, closed: true, peer: int(pt[1]), upd: false}, nil
+}
+
+// ── ClientHello ──
+
+// ClientHello の読んだ形
+type hello struct {
+    sessid []byte
+    suites []int
+    compOk bool
+    v13 bool
+    groupX bool
+    share []byte
+    hasShare bool
+    sigPss bool
+    alpn []string
+    hasAlpn bool
+}
+
+// parseHello は ClientHello の本体（型と長さの 4 バイトの後ろ）を読む（読めなければ decode_error・同じ拡張が 2 つなら illegal_parameter）
+@errors(record.Alert)
+func parseHello(m []byte) (hello, error?) {
+    mut c := cur(4, len(m))
+    _ = u16(m, mut c)
+    _ = take(m, mut c, 32)
+    sessid := take(m, mut c, u8(m, mut c))
+    mut cs := sub(mut c, u16(m, mut c))
+    mut suites := mut []int{}
+    while rest(cs) >= 2 {
+        suites = append(suites, u16(m, mut cs))
+    }
+    mut cm := sub(mut c, u8(m, mut c))
+    compOk := rest(cm) == 1 && u8(m, mut cm) == 0
+    mut xs := if rest(c) > 0 { sub(mut c, u16(m, mut c)) } else { sub(mut c, 0) }
+    mut seen := mut []int{}
+    mut v13 := false
+    mut groupX := false
+    mut share := []byte{}
+    mut hasShare := false
+    mut sigPss := false
+    mut alpn := mut []string{}
+    mut hasAlpn := false
+    mut dup := false
+    while rest(xs) >= 4 {
+        t := u16(m, mut xs)
+        mut x := sub(mut xs, u16(m, mut xs))
+        for s <- seen {
+            if s == t {
+                dup = true
+            }
+        }
+        seen = append(seen, t)
+        if t == xSupportedVersions {
+            mut l := sub(mut x, u8(m, mut x))
+            while rest(l) >= 2 {
+                if u16(m, mut l) == 0x0304 {
+                    v13 = true
+                }
+            }
+        } else if t == xSupportedGroups {
+            mut l := sub(mut x, u16(m, mut x))
+            while rest(l) >= 2 {
+                if u16(m, mut l) == groupX25519 {
+                    groupX = true
+                }
+            }
+        } else if t == xKeyShare {
+            hasShare = true
+            mut l := sub(mut x, u16(m, mut x))
+            while rest(l) >= 4 {
+                g := u16(m, mut l)
+                k := take(m, mut l, u16(m, mut l))
+                if g == groupX25519 && len(share) == 0 {
+                    share = k
+                }
+            }
+        } else if t == xSignatureAlgorithms {
+            mut l := sub(mut x, u16(m, mut x))
+            while rest(l) >= 2 {
+                if u16(m, mut l) == sigPssSha256 {
+                    sigPss = true
+                }
+            }
+        } else if t == xAlpn {
+            hasAlpn = true
+            mut l := sub(mut x, u16(m, mut x))
+            while rest(l) >= 1 {
+                b := take(m, mut l, u8(m, mut l))
+                s, e := string(b)
+                if e == nil {
+                    alpn = append(alpn, s)
+                }
+            }
+        }
+    }
+    if c.bad || cs.bad || cm.bad || xs.bad || rest(xs) != 0 || rest(c) != 0 {
+        return emptyHello(), alert(aDecodeError)
+    }
+    if dup {
+        return emptyHello(), alert(aIllegalParameter)
+    }
+    return hello{sessid: sessid, suites: freeze(suites), compOk: compOk, v13: v13, groupX: groupX, share: share, hasShare: hasShare, sigPss: sigPss,
+        alpn: freeze(alpn), hasAlpn: hasAlpn}, nil
+}
+
+func emptyHello() hello {
+    return hello{sessid: []byte{}, suites: []int{}, compOk: false, v13: false, groupX: false, share: []byte{}, hasShare: false, sigPss: false, alpn: []string{}, hasAlpn: false}
+}
+
+// onClientHello は ClientHello m（型と長さの頭込み）を受けて、サーバの flight（または HelloRetryRequest）を返す
+@errors(record.Alert)
+func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
+    ch := parseHello(m)?
+    if !ch.v13 {
+        return none(), alert(aProtocolVersion)
+    }
+    if !ch.compOk {
+        return none(), alert(aIllegalParameter)
+    }
+    suite := pickSuite(p.suites, ch.suites)
+    if suite == 0 || !ch.sigPss || !ch.groupX {
+        return none(), alert(aHandshakeFailure)
+    }
+    alpn := pickAlpn(p.alpn, ch.alpn)
+    if ch.hasAlpn && len(p.alpn) > 0 && alpn == "" {
+        return none(), alert(aNoAlpn)
+    }
+    if h.hrr {
+        // 2 番目の ClientHello: X25519 の key_share が要る・最初に選んだ suite がまだ入っている（RFC 9846 4.1.2 / 4.1.4）
+        if len(ch.share) == 0 || suite != h.suite {
+            return none(), alert(aIllegalParameter)
+        }
+    } else if len(ch.share) == 0 {
+        // X25519 の key_share が無い（supported_groups にはある）: HelloRetryRequest を 1 回だけ
+        return helloRetry(mut h, ch, suite, m)
+    }
+    if len(ch.share) != 32 {
+        return none(), alert(aIllegalParameter)
+    }
+    sha256.Write(mut h.th, m)
+    h.suite = suite
+    h.alpn = alpn
+    priv := rnd(p, "x25519", 32)
+    shared := x25519.Shared(priv, ch.share)
+    mut z := 0
+    for b <- shared {
+        z = z | int(b)
+    }
+    if z == 0 {
+        return none(), alert(aIllegalParameter)
+    }
+    // ServerHello（平文）
+    sh := serverHello(rnd(p, "random", 32), ch.sessid, suite, x25519.Base(priv))
+    sha256.Write(mut h.th, sh)
+    zero := zeros(32)
+    early := hkdf.Extract([]byte{}, zero)
+    hsS := hkdf.Extract(deriveSecret(early, "derived", sha256.Sum256([]byte{})), shared)
+    t1 := sha256.Sum(h.th)
+    h.cHs = deriveSecret(hsS, "c hs traffic", t1)
+    h.sHs = deriveSecret(hsS, "s hs traffic", t1)
+    h.wr = record.NewDir(suite, h.sHs)?
+    h.keyed = true
+    h.rd = record.NewDir(suite, h.cHs)?
+    // EncryptedExtensions・Certificate・CertificateVerify・Finished（暗号化 — 1 回の Seal）
+    ee := encryptedExtensions(alpn)
+    sha256.Write(mut h.th, ee)
+    cert := certificate(p.chain)
+    sha256.Write(mut h.th, cert)
+    cv := certificateVerify(p, sha256.Sum(h.th))?
+    sha256.Write(mut h.th, cv)
+    fin := msg(tFinished, hmac.Sum256(record.ExpandLabel(h.sHs, "finished", []byte{}, 32), sha256.Sum(h.th)))
+    sha256.Write(mut h.th, fin)
+    t2 := sha256.Sum(h.th)
+    ms := hkdf.Extract(deriveSecret(hsS, "derived", sha256.Sum256([]byte{})), zero)
+    h.cAp = deriveSecret(ms, "c ap traffic", t2)
+    h.sAp = deriveSecret(ms, "s ap traffic", t2)
+    h.expFin = hmac.Sum256(record.ExpandLabel(h.cHs, "finished", []byte{}, 32), t2)
+    mut send := mut []byte{}
+    putBytes(mut send, plain(record.CtHandshake, sh))
+    if len(ch.sessid) > 0 && !h.hrr {
+        putBytes(mut send, plain(record.CtCcs, []byte{1}))
+    }
+    flight := cat(cat(ee, cert), cat(cv, fin))
+    putBytes(mut send, record.Seal(mut h.wr, record.CtHandshake, flight, 0))
+    h.wr = record.NewDir(suite, h.sAp)?
+    h.ph = WaitFin{}
+    return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+}
+
+// helloRetry は HelloRetryRequest（transcript の先頭を message_hash(ClientHello1) に置き換え — RFC 9846 4.4.1）
+@errors(record.Alert)
+func helloRetry(h mut Hs, ch hello, suite int, m []byte) (Out, error?) {
+    h.hrr = true
+    h.suite = suite
+    h.ch1 = ch.suites
+    mh := msg(tMessageHash, sha256.Sum256(m))
+    sha256.Write(mut h.th, mh)
+    hr := hrrRandom()
+    mut x := mut []byte{}
+    put16(mut x, xSupportedVersions)
+    put16(mut x, 2)
+    put16(mut x, 0x0304)
+    put16(mut x, xKeyShare)
+    put16(mut x, 2)
+    put16(mut x, groupX25519)
+    hrr := helloBody(hr, ch.sessid, suite, freeze(x))
+    sha256.Write(mut h.th, hrr)
+    mut send := mut []byte{}
+    putBytes(mut send, plain(record.CtHandshake, hrr))
+    if len(ch.sessid) > 0 {
+        putBytes(mut send, plain(record.CtCcs, []byte{1}))
+    }
+    h.ph = WaitCH2{}
+    return Out{send: freeze(send), app: []byte{}, done: false, closed: false, peer: 0 - 1, upd: false}, nil
+}
+
+// pickSuite はサーバの好みの順で、クライアントも出した最初の suite（無ければ 0）
+func pickSuite(ours []int, theirs []int) int {
+    for s <- ours {
+        for t <- theirs {
+            if s == t {
+                return s
+            }
+        }
+    }
+    return 0
+}
+
+// pickAlpn はサーバの好みの順で、クライアントも出した最初の ALPN（無ければ ""）
+func pickAlpn(ours []string, theirs []string) string {
+    for s <- ours {
+        for t <- theirs {
+            if s == t {
+                return s
+            }
+        }
+    }
+    return ""
+}
+
+// ── サーバの flight ──
+
+func serverHello(random []byte, sessid []byte, suite int, pub []byte) []byte {
+    mut x := mut []byte{}
+    put16(mut x, xSupportedVersions)
+    put16(mut x, 2)
+    put16(mut x, 0x0304)
+    put16(mut x, xKeyShare)
+    put16(mut x, 4 + len(pub))
+    put16(mut x, groupX25519)
+    put16(mut x, len(pub))
+    putBytes(mut x, pub)
+    return helloBody(random, sessid, suite, freeze(x))
+}
+
+// helloBody は ServerHello / HelloRetryRequest（legacy_version 0x0303・random・session_id の写し・suite・圧縮 0・拡張）
+func helloBody(random []byte, sessid []byte, suite int, exts []byte) []byte {
+    mut b := mut []byte{}
+    put16(mut b, 0x0303)
+    putBytes(mut b, random)
+    put8(mut b, len(sessid))
+    putBytes(mut b, sessid)
+    put16(mut b, suite)
+    put8(mut b, 0)
+    put16(mut b, len(exts))
+    putBytes(mut b, exts)
+    return msg(tServerHello, freeze(b))
+}
+
+func encryptedExtensions(alpn string) []byte {
+    mut x := mut []byte{}
+    if alpn != "" {
+        ab := bytes(alpn)
+        put16(mut x, xAlpn)
+        put16(mut x, 3 + len(ab))
+        put16(mut x, 1 + len(ab))
+        put8(mut x, len(ab))
+        putBytes(mut x, ab)
+    }
+    mut b := mut []byte{}
+    put16(mut b, len(x))
+    putBytes(mut b, freeze(x))
+    return msg(tEncryptedExtensions, freeze(b))
+}
+
+func certificate(chain [][]byte) []byte {
+    mut l := mut []byte{}
+    for c <- chain {
+        put24(mut l, len(c))
+        putBytes(mut l, c)
+        put16(mut l, 0)
+    }
+    mut b := mut []byte{}
+    put8(mut b, 0)
+    put24(mut b, len(l))
+    putBytes(mut b, freeze(l))
+    return msg(tCertificate, freeze(b))
+}
+
+// certificateVerify は rsa_pss_rsae_sha256 の署名（64 × 0x20 ‖ "TLS 1.3, server CertificateVerify" ‖ 0 ‖ transcript の hash — RFC 9846 4.4.3・salt 32 バイト）
+@errors(record.Alert)
+func certificateVerify(p Params, th []byte) ([]byte, error?) {
+    mut c := mut []byte{}
+    for i <- iter.Range(0, 64) {
+        c = append(c, byte(0x20))
+    }
+    putBytes(mut c, bytes("TLS 1.3, server CertificateVerify"))
+    put8(mut c, 0)
+    putBytes(mut c, th)
+    sig, e := rsa.SignPSS(p.key, freeze(c), rnd(p, "salt", 32))
+    if e != nil {
+        return []byte{}, alert(aInternal)
+    }
+    mut b := mut []byte{}
+    put16(mut b, sigPssSha256)
+    put16(mut b, len(sig))
+    putBytes(mut b, sig)
+    return msg(tCertificateVerify, freeze(b)), nil
+}
+
+// deriveSecret は Derive-Secret(secret, label, transcript の hash)（RFC 9846 7.1）
+func deriveSecret(secret []byte, label string, th []byte) []byte {
+    return record.ExpandLabel(secret, label, th, 32)
+}
+
+// plain は暗号化しない record（頭 = 型 / 0x0303 / 長さ — 2^14 ずつ割る）
+func plain(ct int, body []byte) []byte {
+    mut o := mut []byte{}
+    mut at := 0
+    while at < len(body) || at == 0 {
+        n := if len(body) - at < record.MaxPlain { len(body) - at } else { record.MaxPlain }
+        put8(mut o, ct)
+        put16(mut o, 0x0303)
+        put16(mut o, n)
+        for i <- iter.Range(at, at + n) {
+            o = append(o, body[i])
+        }
+        at += n
+        if len(body) == 0 {
+            at = 1
+        }
+    }
+    return freeze(o)
+}
+
+func zeros(n int) []byte {
+    mut z := mut []byte{}
+    for i <- iter.Range(0, n) {
+        z = append(z, byte(0))
+    }
+    return freeze(z)
+}
+
+// rnd は用途 label の n バイトの乱数（seed が空なら crypto.Rand・空でなければ SHA-256(seed ‖ label) の先頭 — 網の決定的な黄金）
+func rnd(p Params, label string, n int) []byte {
+    if len(p.seed) == 0 {
+        return crypto.Rand(n)
+    }
+    return sliceOf(sha256.Sum256(cat(p.seed, bytes(label))), 0, n)
+}
+
+// ── 送り ──
+
+// SealApp は application の平文 pt の record の列（AES-GCM の鍵の使用上限の手前なら KeyUpdate を先に送って鍵を進める）
+@errors(record.Alert)
+func SealApp(h mut Hs, pt []byte) ([]byte, error?) { // 対の OpenApp は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+    if !IsConnected(h) {
+        return []byte{}, alert(aInternal)
+    }
+    mut pre := []byte{}
+    if h.upd || record.NeedUpdate(h.wr) {
+        pre = record.Seal(mut h.wr, record.CtHandshake, msg(tKeyUpdate, []byte{0}), 0)
+        record.Update(mut h.wr)?
+        h.upd = false
+    }
+    return cat(pre, record.Seal(mut h.wr, record.CtApp, pt, 0)), nil
+}
+
+// AlertRecord は alert desc の record（送りの鍵があれば暗号化・無ければ平文。close_notify は warning〔1〕・他は fatal〔2〕）。送った後は閉じる
+// （鍵の有無は keyed で見る — Feed が誤りで Closed に落ちた後も、鍵の前の誤りは平文で返す）
+func AlertRecord(h mut Hs, desc int) []byte {
+    body := []byte{byte(if desc == aCloseNotify { 1 } else { 2 }), byte(desc)}
+    h.ph = Closed{}
+    if h.keyed {
+        return record.Seal(mut h.wr, record.CtAlert, body, 0)
+    }
+    return plain(record.CtAlert, body)
+}
+
+// CloseNotify は close_notify の record
+func CloseNotify(h mut Hs) []byte {
+    return AlertRecord(mut h, aCloseNotify)
+}

@@ -13,7 +13,7 @@ examples/utf8_simd.sober
 # bench/jsonapi/main.sober — 同上
 bench/routing/main.sober
 bench/1brc/main.sober
-examples/par_chan.sober
+examples/task_chan.sober
 examples/strings_std.sober
-examples/par_chan_hold.sober
+examples/task_chan_hold.sober
 testdata/implicitfreeze/freeze_if_ok.sober

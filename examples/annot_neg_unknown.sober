@@ -1,0 +1,12 @@
+package main
+
+// 負例: 言語が知らない注釈は拒否（language.md 10 節 — 注釈は消費者の決まった閉じた集合）
+
+@frobnicate(1)
+func f() int {
+    return 1
+}
+
+func main() {
+    println(f())
+}

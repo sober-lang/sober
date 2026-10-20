@@ -1,0 +1,23 @@
+package main
+
+// 借りの鍵は関数型の構造（language.md 25 節 — 工程 5c）: 別の named fn type の借りの位置へ借りの値をそのまま渡せる（A の emit を B の値の呼び出しへ）
+
+type A func(emit func(n int) int) int
+type B func(emit func(n int) int) int
+
+type HA struct {
+    a A
+}
+
+type HB struct {
+    b B
+}
+
+func main() {
+    k := 3
+    ha := HA{a: (emit) => {
+        hb := HB{b: (e2) => e2(10) + e2(1)}
+        hb.b(emit) + 1
+    }}
+    println(ha.a((n int) => n * k))
+}

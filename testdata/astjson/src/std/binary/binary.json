@@ -1,0 +1,323 @@
+{
+  "package": "binary",
+  "imports": [],
+  "types": [
+    {
+      "name": "OutOfRange",
+      "type_params": [],
+      "body": {
+        "k": "panic",
+        "fields": [
+          {
+            "name": "i",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 101
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 104
+          }
+        ]
+      },
+      "tok": 98,
+      "span": {
+        "start": 97,
+        "end": 109
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Load64",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "i",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "||",
+                "lhs": {
+                  "k": "binary",
+                  "op": "<",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "i",
+                    "tok": 36
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 38
+                  },
+                  "tok": 37
+                },
+                "rhs": {
+                  "k": "binary",
+                  "op": ">",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "i",
+                    "tok": 40
+                  },
+                  "rhs": {
+                    "k": "binary",
+                    "op": "-",
+                    "lhs": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "len",
+                        "tok": 42
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 44
+                        }
+                      ],
+                      "tok": 43
+                    },
+                    "rhs": {
+                      "k": "int",
+                      "value": 8,
+                      "tok": 47
+                    },
+                    "tok": 46
+                  },
+                  "tok": 41
+                },
+                "tok": 39
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "outOfRange",
+                        "tok": 49
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 51
+                        },
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "len",
+                            "tok": 53
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "b",
+                              "tok": 55
+                            }
+                          ],
+                          "tok": 54
+                        }
+                      ],
+                      "tok": 50
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 35
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "sysLoad64",
+                  "tok": 62
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 64
+                  },
+                  {
+                    "k": "ident",
+                    "name": "i",
+                    "tok": 66
+                  }
+                ],
+                "tok": 63
+              }
+            ],
+            "tok": 61
+          }
+        ]
+      },
+      "tok": 23,
+      "bodiless": false,
+      "span": {
+        "start": 22,
+        "end": 71
+      },
+      "sig_end": 34
+    },
+    {
+      "name": "outOfRange",
+      "type_params": [],
+      "params": [
+        {
+          "name": "i",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "panic",
+                "tok": 81
+              },
+              "args": [
+                {
+                  "k": "composite",
+                  "type_name": "OutOfRange",
+                  "elems": [
+                    {
+                      "key": "i",
+                      "value": {
+                        "k": "ident",
+                        "name": "i",
+                        "tok": 87
+                      }
+                    },
+                    {
+                      "key": "n",
+                      "value": {
+                        "k": "ident",
+                        "name": "n",
+                        "tok": 91
+                      }
+                    }
+                  ],
+                  "tok": 83,
+                  "type_args": []
+                }
+              ],
+              "tok": 82
+            }
+          }
+        ]
+      },
+      "tok": 72,
+      "bodiless": false,
+      "span": {
+        "start": 71,
+        "end": 97
+      },
+      "sig_end": 80
+    }
+  ],
+  "consts": [],
+  "intrinsics": [
+    {
+      "name": "sysLoad64",
+      "key": "load64",
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        },
+        {
+          "name": "i",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "tok": 10,
+      "span": {
+        "start": 3,
+        "end": 22
+      }
+    }
+  ]
+}

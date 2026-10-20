@@ -1,0 +1,45 @@
+package gzip
+
+import "std/compress/flate"
+import "std/hash/crc32"
+import "std/iter"
+
+// Encode は data を gzip（RFC 1952 — 1 個のメンバ）に符号化する: 10 バイトの頭（ID 1f 8b・CM 8 = deflate・FLG 0・MTIME 0・XFL・OS 255 = 不明）+
+// flate.Encode(data, level) + CRC-32 + 長さ（mod 2^32）の 8 バイト（どちらも little endian）。level は flate と同じ 0〜9（範囲外は panic）:
+//
+//     z := gzip.Encode(bytes(body), 6)   // HTTP の Content-Encoding: gzip の本文
+//
+// 名前・時刻・コメントの欄は持たない（MTIME 0 = 無し — 同じ入力なら常に同じバイト列）。XFL は level 9 で 2・level 1 で 4（RFC の「最大圧縮 / 最速」の印）・他 0。
+// OS は Go の compress/gzip の既定と同じ 255（対の Decode は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+func Encode(data []byte, level int) []byte {
+    mut w := flate.Work{}
+    return EncodeWith(mut w, data, level)
+}
+
+// EncodeWith は Encode と同じ符号化を flate の作業域 w で行う（flate.EncodeWith と同じ口 — ワーカー局所の lease で借りた w を渡す。結果は Encode と同じバイト列）（対の DecodeWith は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+func EncodeWith(w mut flate.Work, data []byte, level int) []byte {
+    z := flate.EncodeWith(mut w, data, level)
+    xfl := if level == 9 { 2 } else if level == 1 { 4 } else { 0 }
+    mut out := mut []byte{}
+    out = append(out, byte(0x1f))
+    out = append(out, byte(0x8b))
+    out = append(out, byte(8))
+    out = append(out, byte(0))
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte(0))
+    }
+    out = append(out, byte(xfl))
+    out = append(out, byte(255))
+    for i <- iter.Range(0, len(z)) {
+        out = append(out, z[i])
+    }
+    c := crc32.Sum(data)
+    n := len(data)
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((c >> (8 * i)) & 0xff))
+    }
+    for i <- iter.Range(0, 4) {
+        out = append(out, byte((n >> (8 * i)) & 0xff))
+    }
+    return freeze(out)
+}

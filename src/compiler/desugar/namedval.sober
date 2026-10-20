@@ -9,27 +9,40 @@ package desugar
 // （関数型の仮引数名は型の同一性に入らない — language.md 14 節）。loader は func 宣言を引けない名前付きの呼び出しを素通しにし、ここで写すか
 // 拒否する（diag.NamedArg — 規則と種類は第 1 便と同じ）。写した後の木は位置引数だけで、check・build・analyzer が同じ木を読む。
 // 名前付きの無い呼び出しも、呼び先が名前付き関数型の値で、足りない仮引数が全部 `T?` なら nil を足す。
-// 写す相手の候補が無いプログラム（名前付きの実引数が残っていない・`T?` の仮引数を持つ名前付き関数型が無い）では表層型検査器を走らせない
+// 写す相手の候補が無いプログラム（名前付きの実引数を持つ呼び出しが残っていない・`T?` の仮引数を持つ名前付き関数型が無い）では表層型検査器を走らせない。
+// `T?` の仮引数を持つ名前付き関数型が無ければ、名前付きの無い呼び出しは写らない（足りない仮引数が全部 `T?` にならない）ので、表層型は
+// 名前付きの実引数を含む関数にだけ付ける（nvReach — 写しが読むのは名前付きの呼び出しの呼び先の式の型だけ。式の型は囲む関数の本体と
+// 宣言された署名・const の型で決まり、他の関数の本体の型付けに依らない。const の初期化式は TypeAll の頭で全部付く）。
+// 棄てた案: 写しを lower の buildPre の Typed の後へ移す（check・analyzer も同じ写した木を読む — 層の順が変わる）
 
 import "ast"
 import "diag"
 import "loader"
 import "std/builder"
+import "std/io"
 import "std/iter"
+import "std/os"
 
 // NamedValueArgs は p の名前付き関数型を通した呼び出しを写した Program（写せない形は拒否 — 位置を引けるように p を返す）
 @errors(diag.NamedArg)
 func NamedValueArgs(p loader.Program) (loader.Program, error?) {
     named := nvHasNamed(p)
     if !named && !nvHasOptFnType(p) {
+        nvStatOut(0)
         return p, nil
     }
     mut st := S{}
     Init(mut st, p)
+    opt := nvHasOptFnType(p)
+    if !opt {
+        st.nvMark = nvReach(mut st, p)
+        st.nvSet = true
+    }
     TypeAll(mut st)
+    nvStat(mut st)
     mut out := mut []ast.Tree{}
     for f <- iter.Range(0, len(p.trees)) {
-        r := nvFile(mut st, p, f)
+        r := nvFile(mut st, p, f, opt)
         if r.bad != 0 {
             return p, diag.NamedArg{at: diag.Pos{file: f, tok: r.tok}, kind: r.bad}
         }
@@ -38,14 +51,32 @@ func NamedValueArgs(p loader.Program) (loader.Program, error?) {
     return loader.WithTrees(p, freeze(out)), nil
 }
 
-// nvHasNamed は名前付きの実引数が残っている呼び出しがあるか（loader が写せなかった — func 宣言を引けない呼び先）
+// nvHasNamed は名前付きの実引数が残っている呼び出しがあるか（loader が写せなかった — func 宣言を引けない呼び先）。
+// 節の列を素で見ない: loader の写し（namedargs）は呼び出しの節の実引数の列を差し替えるだけで、元の KNamedArg の節は宙に浮いて残る
+// （自己 build は宙に浮いた節だけで、旧形はこれを数えて全体の TypeAll を 2 回目に走らせていた — report-818）
 func nvHasNamed(p loader.Program) bool {
     for f <- iter.Range(0, len(p.trees)) {
         t := p.trees[f]
         for i <- iter.Range(0, len(t.nodes)) {
-            if t.nodes[i].kind == ast.KNamedArg {
+            if nvLive(t, i) {
                 return true
             }
+        }
+    }
+    return false
+}
+
+// nvLive は節 i が名前付きの実引数を持つ呼び出し（ECall の実引数 b・EPipe の実引数 c）か
+func nvLive(t ast.Tree, i int) bool {
+    x := t.nodes[i]
+    if x.kind != ast.ECall && x.kind != ast.EPipe {
+        return false
+    }
+    args := if x.kind == ast.EPipe { x.c } else { x.b }
+    for k <- iter.Range(0, ast.ListLen(t, args)) {
+        a := ast.ListAt(t, args, k)
+        if a >= 0 && t.nodes[a].kind == ast.KNamedArg {
+            return true
         }
     }
     return false
@@ -79,15 +110,16 @@ type NvOut struct {
 func nvDecl(st mut S, f int, i int, pipe bool) int {
     x := nodeOf(mut st, NodeRef(ABASE + f * FW + i))
     callee := if pipe { NodeRef(x.b) } else { NodeRef(x.a) }
-    y := YTypeOf(mut st, callee)
-    // 関数の仮引数・局所は展開した関数型（YFn — c = 型宣言 + 1）。struct の欄（辞書 const の欄 — 型宣言のまま YDecl で読める）は拾わない:
-    // 決定 7 の「辞書の欄の関数値は位置だけ」
+    y0 := YTypeOf(mut st, callee)
+    // 関数の仮引数・局所は関数型（YFn — c = 型宣言 + 1。値の位置に残った named fn type の仮引数・局所は YDecl なので yFnView で読む）。
+    // struct の欄（辞書 const の欄 — 型宣言のまま YDecl で読める）は拾わない: 決定 7 の「辞書の欄の関数値は位置だけ」
+    y := if kindN(mut st, callee) == ast.EIdent { yFnView(mut st, y0) } else { y0 }
     td := if yk(mut st, y) == YFn { YAt(mut st, y).c - 1 } else { 0 - 1 }
     return if isTreeNode(td) { td } else { -1 }
 }
 
 // nvFile はファイル f の木の呼び出し（ECall の実引数 b・EPipe の実引数 c）を写す
-func nvFile(st mut S, p loader.Program, f int) NvOut {
+func nvFile(st mut S, p loader.Program, f int, opt bool) NvOut {
     t := p.trees[f]
     n0 := len(t.nodes)
     mut ns := mut []ast.Node{}
@@ -107,6 +139,10 @@ func nvFile(st mut S, p loader.Program, f int) NvOut {
             np += 1
         }
         named := np < na
+        if !named && !opt {
+            // `T?` の仮引数を持つ名前付き関数型が無い: 名前付きの無い呼び出しは写らない（囲む関数に表層型が付いていないこともある — nvReach）
+            continue
+        }
         td := nvDecl(mut st, f, i, pipe)
         if td < 0 {
             if named {
@@ -219,4 +255,74 @@ func nvLeft(t ast.Tree, dt ast.Tree, args int, j int, body ast.Node, np int, at 
         }
     }
     return NvPlan{[]int{}, 2, a.tok}
+}
+
+// nvReach は名前付きの実引数を持つ呼び出しを含む関数の印（関数の本体の字句の範囲で引く — yReach と同じ表）
+func nvReach(st mut S, p loader.Program) ListRef {
+    mark := ListRef(listN(mut st, st.nfn))
+    for f <- iter.Range(0, st.nfile) {
+        t := st.trees[f]
+        mut hit := false
+        for n <- iter.Range(0, len(t.nodes)) {
+            if nvLive(t, n) {
+                hit = true
+            }
+        }
+        if hit {
+            mut rs := mut []int{}
+            for i <- iter.Range(0, st.nfn) {
+                nd := fnNode(mut st, i)
+                if fileOf(mut st, nd) == f {
+                    ext := nodeOf(mut st, nd).f
+                    if ext >= 0 {
+                        rs = append(rs, i)
+                        rs = append(rs, latI(mut st, ListRef(ext), 1))
+                        rs = append(rs, latI(mut st, ListRef(ext), 2))
+                    }
+                }
+            }
+            rr := freeze(rs)
+            for n <- iter.Range(0, len(t.nodes)) {
+                if nvLive(t, n) {
+                    fi := rangeOfSorted(rr, t.nodes[n].tok)
+                    if fi >= 0 {
+                        lput(mut st, mark, fi, 1)
+                    }
+                }
+            }
+        }
+    }
+    return mark
+}
+
+// nvStat は型付けの証人（SOBER_PAR_STATS=1 のときだけ stderr へ 1 行 — 表層型を付けた関数の数。写す候補が無ければ typed=0）
+func nvStat(st mut S) {
+    if !nvStatOn() {
+        return
+    }
+    mut typed := 0
+    mut bodies := 0
+    for fi <- iter.Range(0, st.nfn) {
+        if fnBody(mut st, fi) != -1 {
+            bodies += 1
+            if !st.nvSet || latI(mut st, st.nvMark, fi) != 0 {
+                typed += 1
+            }
+        }
+    }
+    _ = io.WriteStderr(bytes("#namedval typed=${typed} bodies=${bodies}\n"))
+}
+
+func nvStatOut(typed int) {
+    if nvStatOn() {
+        _ = io.WriteStderr(bytes("#namedval typed=${typed}\n"))
+    }
+}
+
+func nvStatOn() bool {
+    v, err := os.Getenv("SOBER_PAR_STATS")
+    if err != nil || v == nil {
+        return false
+    }
+    return v == "1"
 }

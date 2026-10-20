@@ -1,0 +1,29 @@
+package main
+
+// 段 6 P4-2 (O1): 溜めの溢れ — 子が chan で待つ間に親が書いた行（約 30 KB）は子の区間の後ろで溜まる。溜めは上限で書き手を止めず
+// 倍々に伸びる（4 KiB から — 止めると、親が上限で止まったまま子は親の Send を待つ、というデッドロックの辺ができる）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        tx, rx := task.NewChannel[int](cap: 1)
+        h := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            mut got := 0
+            if v != nil {
+                println("kid got ${v}")
+                got = v
+            }
+            got
+        }, give: rx)
+        mut i := 0
+        while i < 2000 {
+            println("parent line ${i}")
+            i += 1
+        }
+        task.Send(tx, i)
+        task.Join(h)
+    })
+    println("done ${r}")
+}

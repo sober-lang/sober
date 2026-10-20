@@ -1,0 +1,13 @@
+package main
+
+// 負例: トップレベルの束縛は const 式だけ — 関数を呼べない（実行時の初期化は無い — syntax.md 決定 14・language.md 25 節）
+
+func two() int {
+    return 2
+}
+
+const N = two()
+
+func main() {
+    println(N)
+}

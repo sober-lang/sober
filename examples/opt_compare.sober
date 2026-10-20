@@ -1,0 +1,12 @@
+package main
+
+// 負例（check が名指しで拒否 — diag.TypeMismatch kind 2）: T? と値の == / != は言語に無い（language.md 15 節 — 絞り込んでから比べる）。
+// 値の位置の `v == nil || v != j` は右辺で v を絞り込まない（`||` の否定側の絞り込みは then が脱出の if だけ）。以前は check が位置なしの def error（report-878）
+
+func differs(v int?, j int) bool {
+    return v == nil || v != j
+}
+
+func main() {
+    println("${differs(nil, 1)} ${differs(1, 1)}")
+}

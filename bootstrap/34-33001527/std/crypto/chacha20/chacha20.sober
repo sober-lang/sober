@@ -1,0 +1,121 @@
+package chacha20
+
+// chacha20（TLS 便 — report-790 / 793）: ChaCha20（RFC 8439 2.3〜2.4 — 鍵 32 バイト・nonce 12 バイト・32 bit のブロック番号）。
+// 公開の名前と署名は仮決め（0.6.0 の API 総再審に同席）。語は 32 bit を int に置き、和のたびに mask32・回転は shift 2 回 + or（積も表も無い —
+// 定数時間）。スカラーの形（≈ 25 命令 / バイト）— AES-NI の無い機械の倒れ先の suite の本体。速さの便（in-place・SIMD）は record 層の便で
+
+import "std/iter"
+
+const mask32 = 0xffffffff
+
+// Block は鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）
+func Block(key []byte, nonce []byte, counter int) []byte {
+    mut x := mut []int{}
+    for i <- iter.Range(0, 16) {
+        x = append(x, 0)
+    }
+    mut s := mut []int{}
+    initState(mut s, key, nonce)
+    rounds(mut x, freeze(s), counter & mask32)
+    mut out := mut []byte{}
+    for i <- iter.Range(0, 16) {
+        put32(mut out, x[i])
+    }
+    return freeze(out)
+}
+
+// XorKeyStream は src を鍵ストリーム（ブロック番号 counter から）と xor したもの（暗号化 = 復号）
+func XorKeyStream(key []byte, nonce []byte, counter int, src []byte) []byte {
+    return XorKeyStreamAt(key, nonce, counter, src, 0, len(src))
+}
+
+// XorKeyStreamAt は src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層の口）
+func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n int) []byte {
+    mut x := mut []int{}
+    for i <- iter.Range(0, 16) {
+        x = append(x, 0)
+    }
+    mut s0 := mut []int{}
+    initState(mut s0, key, nonce)
+    s := freeze(s0)
+    mut ctr := counter & mask32
+    mut out := mut []byte{}
+    mut off := 0
+    while off < n {
+        rounds(mut x, s, ctr)
+        for i <- iter.Range(0, 64) {
+            if off + i < n {
+                w := x[i / 4]
+                out = append(out, byte(int(src[at + off + i]) ^ ((w >> (8 * (i % 4))) & 0xff)))
+            }
+        }
+        ctr = (ctr + 1) & mask32
+        off = off + 64
+    }
+    return freeze(out)
+}
+
+// initState は状態の 16 語（定数 4・鍵 8・ブロック番号の席 1〔rounds が埋める〕・nonce 3 — 小さい端の語）を s に積む
+func initState(s mut []int, key []byte, nonce []byte) {
+    s = append(s, 0x61707865)
+    s = append(s, 0x3320646e)
+    s = append(s, 0x79622d32)
+    s = append(s, 0x6b206574)
+    for i <- iter.Range(0, 8) {
+        s = append(s, le32(key, 4 * i))
+    }
+    s = append(s, 0)
+    for i <- iter.Range(0, 3) {
+        s = append(s, le32(nonce, 4 * i))
+    }
+}
+
+// rounds は x = s（語 12 = ブロック番号 ctr）を 20 段（列 + 対角の 10 回）回して初めの値を足したもの（RFC 8439 2.3）
+func rounds(x mut []int, s []int, ctr int) {
+    for i <- iter.Range(0, 16) {
+        x[i] = if i == 12 { ctr } else { s[i] }
+    }
+    for r <- iter.Range(0, 10) {
+        qr(mut x, 0, 4, 8, 12)
+        qr(mut x, 1, 5, 9, 13)
+        qr(mut x, 2, 6, 10, 14)
+        qr(mut x, 3, 7, 11, 15)
+        qr(mut x, 0, 5, 10, 15)
+        qr(mut x, 1, 6, 11, 12)
+        qr(mut x, 2, 7, 8, 13)
+        qr(mut x, 3, 4, 9, 14)
+    }
+    for i <- iter.Range(0, 16) {
+        x[i] = (x[i] + (if i == 12 { ctr } else { s[i] })) & mask32
+    }
+}
+
+// qr は quarter round（RFC 8439 2.1）
+func qr(x mut []int, a int, b int, c int, d int) {
+    x[a] = (x[a] + x[b]) & mask32
+    x[d] = rotl(x[d] ^ x[a], 16)
+    x[c] = (x[c] + x[d]) & mask32
+    x[b] = rotl(x[b] ^ x[c], 12)
+    x[a] = (x[a] + x[b]) & mask32
+    x[d] = rotl(x[d] ^ x[a], 8)
+    x[c] = (x[c] + x[d]) & mask32
+    x[b] = rotl(x[b] ^ x[c], 7)
+}
+
+// rotl は 32 bit の左回転（x は [0, 2^32)・k は 1..31）
+func rotl(x int, k int) int {
+    return ((x << k) | (x >> (32 - k))) & mask32
+}
+
+// le32 は b[p..p+4) の小さい端の 32 bit の語
+func le32(b []byte, p int) int {
+    return int(b[p]) | (int(b[p + 1]) << 8) | (int(b[p + 2]) << 16) | (int(b[p + 3]) << 24)
+}
+
+// put32 は語 w を小さい端の 4 バイトで積む
+func put32(out mut []byte, w int) {
+    out = append(out, byte(w & 0xff))
+    out = append(out, byte((w >> 8) & 0xff))
+    out = append(out, byte((w >> 16) & 0xff))
+    out = append(out, byte((w >> 24) & 0xff))
+}

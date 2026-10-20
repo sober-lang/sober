@@ -2,8 +2,9 @@ package main
 
 // 浮動小数の固定桁の印字の差分（scripts/oracles/float_fixed.go — 境界値と乱択のビット列 × 桁数 0〜20 を Go の strconv.FormatFloat(f, 'f', prec, 64) と照合）
 
-import "std/floatfmt"
+import "std/convert"
 import "std/io"
+import "std/math"
 
 func num(b []byte, i0 int) (int, int) {
     mut i := i0
@@ -26,7 +27,7 @@ func main() int {
     while i < len(b) {
         bits, j := num(b, i)
         p, k := num(b, j)
-        println(floatfmt.FormatFixed(bits, p))
+        println(convert.FormatFixed(math.FromBits(bits), p))
         i = k
     }
     return 0

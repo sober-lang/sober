@@ -1,0 +1,10 @@
+package main
+
+// 負例: freeze した後に同じ道へ書けない（language.md 17 節 U2 — 凍らせた値が変わらないことは受理の時点で決まる）
+
+func main() {
+    mut xs := mut []int{1, 2}
+    ys := freeze(xs)
+    xs[0] = 9
+    println(ys[0])
+}

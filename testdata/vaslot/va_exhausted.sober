@@ -1,0 +1,22 @@
+package main
+
+// vaslot: 子のスロットの補充（mmap）が尽きる — SOBER_REGION_MB=SOBER_TASK_REGION_MB=65536 + ulimit -v 64.5 TiB の下で最初の子の補充が ENOMEM になり、
+// RegionExceeded{cause: va_exhausted} を名乗って死ぬ（誤名乗り slot_capacity の回帰の網 — report-655）
+
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => {
+            mut acc := mut []int{}
+            mut i := 0
+            while i < 100 {
+                acc = append(acc, i)
+                i += 1
+            }
+            len(acc)
+        })
+        task.Join(h)
+    })
+    println(r)
+}

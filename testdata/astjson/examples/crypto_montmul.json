@@ -1,0 +1,112 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/crypto/rsa",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 11
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "montmul mismatch",
+                  "tok": 13
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "rsa",
+                      "tok": 15
+                    },
+                    "field": "MontSelfCheck",
+                    "tok": 17
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 19
+                    },
+                    {
+                      "k": "int",
+                      "value": 40,
+                      "tok": 21
+                    },
+                    {
+                      "k": "int",
+                      "value": 24,
+                      "tok": 23
+                    }
+                  ],
+                  "tok": 18
+                },
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "rsa",
+                      "tok": 26
+                    },
+                    "field": "MontSelfCheck",
+                    "tok": 28
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 77,
+                      "tok": 30
+                    },
+                    {
+                      "k": "int",
+                      "value": 34,
+                      "tok": 32
+                    },
+                    {
+                      "k": "int",
+                      "value": 40,
+                      "tok": 34
+                    }
+                  ],
+                  "tok": 29
+                }
+              ],
+              "tok": 12
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 40
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

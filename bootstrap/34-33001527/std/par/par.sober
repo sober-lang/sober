@@ -1,0 +1,431 @@
+package par
+
+// 段 6 P3a（即時形）— structured concurrency の表層（language.md 11 節「表層」）。
+// Scope / Spawn / Join / Try は desugar（check の経路）と lower（build の経路）が呼び出し点で固定のテンプレートに写す
+// （package std/par の名前で引く閉じた集合 — ユーザーは鋳造できない）。本体は写しが外れたときの柵で、到達しない。
+// task の結果は写せる imm のデータ（P3b-4 — string・slice・map も Join / Try が scope の region へ写す）。error を返す task
+// （g が `(T, error?)` を返す — P3b-4 1b'）の Join は 2 値・Try は Outcome の Failed・Join も Try もしなかった失敗は scope の err へ集約
+
+// sealed は札・handle・死因の封（非公開 — 外で値を書けないので、外からは作れない）。1 語は build の実装が運ぶ値
+// （札 = scope の記録・handle = 子の枠・死因 = 終了コードと点 — lower/par.sober。番地は言語から観測できない）
+type sealed struct {
+    w int
+}
+
+// S は scope の札（par.Scope の本体の仮引数）
+type S struct {
+    seal sealed
+}
+
+// Task は子の task の handle（par.Spawn が返す）
+type Task[T] struct {
+    seal sealed
+}
+
+// Cause は子の死因（不透明 — 中身は実装が運ぶ実行時の値。コアでは抽象）
+type Cause struct {
+    seal sealed
+}
+
+// TaskDied は scope の err: 本体は完走したが死んだ子がいた
+type TaskDied error {
+    cause Cause
+}
+
+// Outcome は par.Try の結果（死を値で見る — 監督の口）。Failed は error を返す task の失敗（P3b-4 1b'）
+type Outcome[T] union {
+    Ok { v T }
+    Failed { e error }
+    Died { cause Cause }
+}
+
+// 予算の単位（段 6 P5-3 — `budget: 64 * MB`）
+const KB = 1024
+const MB = 1048576
+const GB = 1073741824
+
+// 期限の単位（段 3 の ④ — `deadline: 500 * MS`。値はナノ秒の相対時間 — 時刻源は CLOCK_MONOTONIC）
+const MS = 1000000
+
+// NotLowered は呼び出し点の写しが外れた柵（到達しない）
+type NotLowered panic
+
+// Scope は region を 1 段開き、本体 f を札で走らせる。子が全部決着してから戻り、死んだ子がいれば err = TaskDied、
+// 無くて Join も Try もしなかった失敗があれば（生んだ順で最初のもの）err = その子の err。
+// budget = この scope の天井（バイト・省略可）。wait = true なら天井に入れない直接の子は縮退せずに入れるまで待つ（宣言 = 本当の上限 —
+// language.md 11 節「wait」。true / false の字面だけ・省略 = 外の scope の方針を継ぐ〔既定 = 縮退〕）。
+// deadline = 開いた時点からの期限（相対・省略可）: 過ぎたら scope の中〔子孫の task も〕の io の口が io.Expired を返す — 走っている仕事は切らない
+// （待ちの上限であって実行時間の上限ではない — language.md 28 節「デッドライン」。入れ子は早い方）
+@errors(TaskDied)
+func Scope[T](f func(S) T, budget int?, wait bool?, deadline int?) (T, error?) {
+    if fence() {
+        return panic(NotLowered{})
+    }
+    return panic(NotLowered{}), TaskDied{cause: Cause{seal: sealed{}}}
+}
+
+// fence は柵（写しが外れたら panic — 宣言の @errors を本体が書ける形にするための分岐）
+func fence() bool {
+    return true
+}
+
+// Spawn は子の task を生む（g の捕獲は imm のデータだけ・結果は scope の region へ写る）。budget = この子を逐次で走らせたときの使用量の上界
+// （バイト・省略可 — 段 6 P5-3。入場の見積もりの代わりに使う。呼び出しを含まない整数式）
+func Spawn[T](s S, g func() T, budget int?) Task[T] {
+    return panic(NotLowered{})
+}
+
+// Join は子の結果（死んでいたら呼び手も死ぬ — この子の死は私の死）
+func Join[T](h Task[T]) T {
+    return panic(NotLowered{})
+}
+
+// Try は子の結果を Outcome で（死は値）
+func Try[T](h Task[T]) Outcome[T] {
+    return panic(NotLowered{})
+}
+
+// Tx / Rx はチャネルの端点（送り端・受け端 — 単一の task が持つ。子へは Spawn の give: でだけ渡す — 段 6 P3b・language.md 11 節）
+type Tx[T] struct {
+    seal sealed
+}
+
+type Rx[T] struct {
+    seal sealed
+}
+
+// NewChan は容量 cap（1 以上の整数の字面 — P3b）の有界のチャネルの端点の組
+func NewChan[T](cap int) (Tx[T], Rx[T]) {
+    return Tx[T]{seal: sealed{w: cap}}, Rx[T]{seal: sealed{w: cap}}
+}
+
+// Send は v を送る（満杯なら待つ）
+func Send[T](tx Tx[T], v T) {
+    if fence() {
+        panic(NotLowered{})
+    }
+}
+
+// Recv は次の値（空なら待つ。閉じて空なら nil — 何度受けても nil）
+func Recv[T](rx Rx[T]) T? {
+    return panic(NotLowered{})
+}
+
+// RecvAll は `for l <- par.Recv(rx) { … }` の写し先（loader が呼び先を付け替える — 閉じて空になるまで受けて k へ渡す）（対の SendAll は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+func RecvAll[T](rx Rx[T], k func(T)) {
+    mut more := true
+    while more {
+        v := Recv(rx)
+        if v != nil {
+            k(v)
+        } else {
+            more = false
+        }
+    }
+}
+
+// Close は送り端を閉じる（以後の Send は panic・二度目の Close も panic。受け手は残りを受け終えると nil を受ける）
+func Close[T](tx Tx[T]) {
+    if fence() {
+        panic(NotLowered{})
+    }
+}
+
+// SpawnGive は `Spawn(s, give: ep, (ep) => …)` の写し先（loader が呼び先を付け替える — 端点 ep をちょうど 1 つの子へ移す。親に残った別名は失効）
+func SpawnGive[T, E](s S, give E, g func(E) T, budget int?) Task[T] {
+    return panic(NotLowered{})
+}
+
+// Gather は handle の列を生んだ順（正準順）で待って結果を集める fan-in（段 6 P3b-5 — 死んだ子があれば呼び手も死ぬ: Join と同じ）。
+// handle の slice は関数の境界を越えないので、呼び出し点で展開される（loader の expands — 本体は普通の Sober）
+func Gather[T](hs []Task[T]) []T {
+    mut out := mut []T{}
+    mut i := 0
+    while i < len(hs) {
+        out = append(out, Join(hs[i]))
+        i += 1
+    }
+    return freeze(out)
+}
+
+// gatherE は error を返す task の handle の列の Gather（P3b 残穴1・決定 2026-10-06 — 呼び手は par.Gather と書く: handle の slice の
+// 要素の型が Task[(T, error?)] なら表層型検査器がここへ振り分ける）。全部を生んだ順で待ち（失敗で止めない）、err は生んだ順で最初の失敗の err・
+// 失敗があれば結果は空。死んだ子があれば呼び手も死ぬ（Join と同じ）。呼び出し点で展開される（handle の slice の仮引数）
+func gatherE[T](hs []Task[(T, error?)]) ([]T, error?) {
+    mut out := mut []T{}
+    mut bad := -1
+    mut i := 0
+    while i < len(hs) {
+        v, e := Join(hs[i])
+        if e != nil && bad < 0 {
+            bad = i
+        }
+        out = append(out, v)
+        i += 1
+    }
+    if bad >= 0 {
+        // Join は何度でも同じ結果（handle = future）
+        _, e := Join(hs[bad])
+        return []T{}, e
+    }
+    return freeze(out), nil
+}
+
+// mapRes は mapE の scope の値（結果の列と、生んだ順で最初の失敗の err）
+type mapRes[U] struct {
+    vs []U
+    e error?
+}
+
+// Map は xs の各要素に f を並列に（要素ごとに 1 task）適用し、結果を添字の順に返す（段 6 P3b-5 — language.md 11 節: `([]U, error?)`。
+// 結果の型 U はラムダの結果から推論する（P3b 残穴2）。子が死ねば err = TaskDied で結果は空 — 死は Try で値にして集めず、scope の出口が
+// err に乗せる。死を見たら残りを Try しない — scope の値は TaskDied に決まり、後ろの純な子は切られる〔段 6 P4-5〕: Try すると走らせ直しになる）。f の捕獲は Spawn と同じ規則（実引数のラムダの本体が子の本体へ展開される）。呼び出し点で展開される（関数型の引数）
+@errors(TaskDied)
+func Map[T, U](xs []T, f func(T) U, budget int?) ([]U, error?) {
+    return Scope((s S) => {
+        mut hs := mut []Task[U]{}
+        mut i := 0
+        while i < len(xs) {
+            x := xs[i]
+            hs = append(hs, Spawn(s, () => f(x), budget: budget))
+            i += 1
+        }
+        mut out := mut []U{}
+        mut j := 0
+        while j < len(hs) {
+            switch Try(hs[j]) {
+            case Ok{v}: out = append(out, v)
+            case Failed{e}: {}
+            case Died{cause}: j = len(hs)
+            }
+            j += 1
+        }
+        freeze(out)
+    })
+}
+
+// mapE は f が error を返す Map（P3b 残穴2 の続き・決定 2026-10-06 — 呼び手は par.Map と書く: ラムダの結果が `(U, error?)` なら
+// 表層型検査器がここへ振り分ける）。全部を待ち、err は添字の順（= 生んだ順）で最初の失敗の err で結果は空・子が死ねば err = TaskDied（死が先）。
+// 死を見たら残りを Try しない（Map と同じ — 段 6 P4-5）。失敗での打ち切りは未実装（失敗は後ろの子の死に負ける）
+@errors(TaskDied)
+func mapE[T, U](xs []T, f func(T) (U, error?), budget int?) ([]U, error?) {
+    r, se := Scope((s S) => {
+        mut hs := mut []Task[(U, error?)]{}
+        mut i := 0
+        while i < len(xs) {
+            x := xs[i]
+            hs = append(hs, Spawn(s, () => f(x), budget: budget))
+            i += 1
+        }
+        mut out := mut []U{}
+        mut bad := -1
+        mut j := 0
+        while j < len(hs) {
+            switch Try(hs[j]) {
+            case Ok{v}: out = append(out, v)
+            case Failed{e}: if bad < 0 {
+                bad = j
+            }
+            case Died{cause}: j = len(hs)
+            }
+            j += 1
+        }
+        if bad >= 0 {
+            _, e := Join(hs[bad])
+            mapRes[U]{vs: []U{}, e: e}
+        } else {
+            mapRes[U]{vs: freeze(out), e: nil}
+        }
+    })
+    if se != nil {
+        return []U{}, se
+    }
+    return r.vs, r.e
+}
+
+// Pool は名前つきプール（テナント・エンドポイント — 段 6 P5-4・language.md 11 節「天井の木」）の札: par.SpawnIn の第 2 実引数。
+// 1 語は rt の台帳の節（imm のデータ — 子へ捕獲できる）。shed の単位 = プールの節（枯れた節の配下の SpawnIn だけが失敗する）
+type Pool struct {
+    seal sealed
+}
+
+// Shed は par.SpawnIn の失敗: プール（か祖先のプール）の天井に入れなかった — 受けられない、という値（io の入力 — 兄弟の予算の返却時刻に依る）
+type Shed error {}
+
+// PoolLimit はプールの節の表が尽きた（NewPool を POOL_MAX 回より多く呼んだ）
+type PoolLimit panic
+
+// newPool は rt の台帳にプールの節を 1 つ取る（budget = 天井のバイト・parent = 親の節〔0 = 無し〕。表が尽きたら負）
+@intrinsic("par_pool")
+func newPool(budget int, parent int) int
+
+// ledgerWord は台帳の 1 語（k — Ledger の読み口。io: 読んだ値は時刻に依る）
+@intrinsic("par_ledger")
+func ledgerWord(k int) int
+
+// poolFail はプールの節 w の失敗の数を 1 足す（Fail の口）
+@intrinsic("par_fail")
+func poolFail(w int) int
+
+// Fail はプール p の失敗を 1 つ記帳する（Ledger の fail — 境界の口が「受けた仕事が error で終わった」を数える: net.Serve の handler の失敗）
+func Fail(p Pool) {
+    _ = poolFail(p.seal.w)
+}
+
+// NewPool は天井 budget バイトのプール（parent があればその下の節 — 入場は自分の節から根の節まで全部の天井を見る）
+func NewPool(budget int, parent Pool?) Pool {
+    pw := if parent != nil { parent.seal.w } else { 0 }
+    w := newPool(budget, pw)
+    if w < 0 {
+        return panic(PoolLimit{})
+    }
+    return Pool{seal: sealed{w: w}}
+}
+
+// PoolView は台帳のプールの節の 1 行（id = 作った順の番号・parent = 親の id〔-1 = 無し〕・used / tasks = 計上中のバイト / task の数）
+type PoolView struct {
+    id int
+    parent int
+    cap int
+    used int
+    tasks int
+    admit int
+    shed int
+    fail int // Fail で記帳した失敗の数（net.Serve — handler が error を返した接続）
+    died int // このプールで入場した task の死の数（net.Serve — handler が死んだ接続）
+}
+
+// LedgerView は台帳の read-only のビュー（段 6 P5-4 — language.md 11 節「メトリクス」）: 根 = プロセスの天井と計上中の量・縮退 / 天井を超えた入場 /
+// 宣言超過 / shed の数・ワーカー数、と名前つきプールの節（作った順）
+type LedgerView struct {
+    workers int
+    cap int
+    used int
+    tasks int
+    inline int
+    over int
+    declOver int
+    shed int
+    waits int // wait の scope で入場を待った回数（language.md 11 節「wait」）
+    pools []PoolView
+}
+
+// Ledger は台帳の今の値（io の効果 — 読んだ値は時刻に依る: 時計と同じ扱い）
+func Ledger() LedgerView {
+    np := ledgerWord(0)
+    mut ps := mut []PoolView{}
+    mut i := 0
+    while i < np {
+        b := 16 + i * 8
+        ps = append(ps, PoolView{id: i, parent: ledgerWord(b + 5) - 1, cap: ledgerWord(b), used: ledgerWord(b + 1), tasks: ledgerWord(b + 2), admit: ledgerWord(b + 3), shed: ledgerWord(b + 4), fail: ledgerWord(b + 6), died: ledgerWord(b + 7)})
+        i += 1
+    }
+    return LedgerView{workers: ledgerWord(8), cap: ledgerWord(1), used: ledgerWord(2), tasks: ledgerWord(3), inline: ledgerWord(4), over: ledgerWord(5), declOver: ledgerWord(6), shed: ledgerWord(7), waits: ledgerWord(9), pools: freeze(ps)}
+}
+
+// SpawnIn はプール pool の天井に入れれば子の task を生む（handle, nil）・入れなければ (nil, Shed{})（縮退しない — shed を望む境界の口・
+// language.md 11 節「shed」）。入場はプールの節から親の節まで全部と根（根の天井を超えるときは give: と同じく超過で入場）。子と子の中の Spawn は
+// プールの天井の下に計上される。g・budget は Spawn と同じ
+@errors(Shed)
+func SpawnIn[T](s S, pool Pool, g func() T, budget int?) (Task[T]?, error?) {
+    if fence() {
+        return panic(NotLowered{})
+    }
+    return nil, Shed{}
+}
+
+// Local はワーカー局所の置き場の札（region-domain-pool.md 4d 節 — par.NewLocal が作る）: ワーカーごとに T を 1 つ持ち、par.Lease の窓に貸す。
+// 中身は NewLocal を呼んだ region に住む imm の列（region の規則がそのまま効く — 外へ出すと列ごと写る〔別の置き場 — 観測は同じ・遅いだけ〕）。
+// 子 task へは imm のデータとして捕獲で渡る。ゼロ値は何も指さない偽物（同一性の族 — NewLocal だけが作る）。
+// 型引数を持たない: 置き場の T は mut の列（pool.Scratch）を持つ struct で、型引数に置けない（language.md 25 節 — 型引数は写せる型）。
+// T の同一性は loader が型の名前から焼いた指紋で Lease ごとに照合する（違えば panic(LocalType{}) — 呼び手の契約違反）
+type Local struct {
+    blk []int
+}
+
+// LocalType は NewLocal と違う T の窓で Lease した（置き場の T の指紋が合わない）
+type LocalType panic
+
+// NewLocal は T の置き場をワーカーの数だけ作る: `gzw := par.NewLocal((w mut flate.Work) => { pool.NewScratch(mut w.head, 1 << 15) … })`。
+// 窓のラムダは T の Scratch の欄を定数の容量で整える文だけ（loader の検査）。T はスカラーと pool.Scratch の欄だけの struct。
+// 呼び出し点は loader が写す（lease.sober — 本体は写しが外れたときの柵）
+func NewLocal(prep func()) Local {
+    return panic(NotLowered{})
+}
+
+// Lease は lp の今のワーカーの置き場を窓 body に貸す: `z := par.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))`。
+// 意味は「窓のたびに新しい値」— `{ mut w := T{}; 整え(mut w); body(mut w) }` と観測上同じ（スカラーは 0・Scratch は全部 0・容量は NewLocal の整えのまま）。
+// 置き場が使用中（窓の中で譲った task が持っている）なら新しい割り当てに倒れる（遅いだけ）。呼び出し点は loader が写す
+func Lease[U](lp Local, body func() U) U {
+    return panic(NotLowered{})
+}
+
+// LocalNew / LeaseTake / LeaseGive / LeaseBlk は par.NewLocal / par.Lease の写し先（loader が組む — 利用者の直の呼び出しは loader が拒否）。
+// 置き場の列の形: [T の指紋, Scratch の欄の数 n, 欄ごとの容量 × n, ワーカーの数 W, ワーカーごとの区画 × W]。区画 = [印, 鎖, 欄ごとに (tag, 語 × 容量)]
+// （印と鎖は rt の lease_op が書く・tag と語は pool.LeaseAttach が付けた窓の Scratch が書く — imm の列の語を rt の口だけが書く）
+
+// leaseOp は rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き）
+@intrinsic("lease_op")
+func leaseOp(op int, blk []int, off int, v int) int
+
+// LocalNew は T の指紋 fp と Scratch の欄の容量の列 caps から置き場を作る（ワーカーの数だけの区画を今の region に先取り — 全部 0）
+func LocalNew(fp int, caps []int) Local {
+    n := len(caps)
+    mut sz := 2
+    mut i := 0
+    while i < n {
+        sz += 1 + caps[i]
+        i += 1
+    }
+    nw := leaseOp(0, []int{}, 0, 0)
+    total := 3 + n + nw * sz
+    mut b := mut []int{}
+    b = append(b, fp)
+    b = append(b, n)
+    i = 0
+    while i < n {
+        b = append(b, caps[i])
+        i += 1
+    }
+    b = append(b, nw)
+    // 区画は全部 0 から（1 回きり — ワーカーの数 × 区画の大きさ）
+    mut k := len(b)
+    while k < total {
+        b = append(b, 0)
+        k += 1
+    }
+    return Local{blk: freeze(b)}
+}
+
+// LeaseTake は T の指紋 fp を照合し、今のワーカーの区画の位置を返す（使用中なら −1 = 倒れ）
+func LeaseTake(lp Local, fp int) int {
+    if len(lp.blk) == 0 || lp.blk[0] != fp {
+        panic(LocalType{})
+    }
+    n := lp.blk[1]
+    nw := lp.blk[2 + n]
+    w := leaseOp(1, lp.blk, 0, 0)
+    if w < 0 || w >= nw {
+        return 0 - 1
+    }
+    mut sz := 2
+    mut i := 0
+    while i < n {
+        sz += 1 + lp.blk[2 + i]
+        i += 1
+    }
+    at := 3 + n + w * sz
+    return if leaseOp(2, lp.blk, at, 0) == 1 { at } else { 0 - 1 }
+}
+
+// LeaseGive は LeaseTake で取った区画 at を返す（−1 なら何もしない）
+func LeaseGive(lp Local, at int) {
+    if at >= 0 {
+        _ = leaseOp(3, lp.blk, at, 0)
+    }
+}
+
+// LeaseBlk は置き場の列（pool.LeaseAttach へ渡す）
+func LeaseBlk(lp Local) []int {
+    return lp.blk
+}

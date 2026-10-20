@@ -1,0 +1,2 @@
+examples/freeze_neg_write.sober:8:7: error: this writes to `xs[…]` after it was frozen by `freeze(xs)` — the frozen value would change. Finish writing before freeze, or start a new value after it (`x = mut []T{}`) (Analyzer)
+exit=1

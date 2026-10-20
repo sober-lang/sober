@@ -1,0 +1,26 @@
+package main
+
+// 負例（language.md 7 節 L-for の範囲）: 名前付き関数型の仮引数は値の位置の閉包で展開されないので、for の生成元の呼び先にならない
+// （匿名の関数型 `recv func(k func(int)) error?` なら書ける — examples/for_closure_gen）
+
+type Recv func(k func(int)) error?
+
+func gen(n int, k func(int)) error? {
+    mut i := 0
+    while i < n {
+        k(i)
+        i += 1
+    }
+    return nil
+}
+
+func relay(recv Recv) error? {
+    for x <- recv()? {
+        println(x)
+    }
+    return nil
+}
+
+func main() {
+    println(relay((k) => gen(3, k)) == nil)
+}

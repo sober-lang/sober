@@ -1,0 +1,12 @@
+package main
+
+// 負例: else の無い if は文の位置だけ — 値にできない（language.md 1 節。`T?` を暗黙に返さない）
+
+func f(c bool) int {
+    x := if c { 1 }
+    return x
+}
+
+func main() {
+    println(f(true))
+}

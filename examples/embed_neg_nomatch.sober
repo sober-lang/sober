@@ -1,0 +1,10 @@
+package main
+
+// 負例: @embed のパターンに合うファイルが無ければ拒否（書き間違いを黙って空にしない — language.md 20 節）
+
+@embed("testdata/embed/nosuch/*.txt")
+const Files = map[string]string{}
+
+func main() {
+    println(len(Files))
+}

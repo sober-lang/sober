@@ -1,0 +1,68 @@
+package main
+
+// std/http の応答の stream（クロージャの波の第一顧客 — language.md 28 節 w2・report-754 4 節の形）: route が返す Response の stream は要求の path を
+// 捕捉した閉包で、ServeConn が頭（Content-Length = length）を送ってから呼ぶ。File は閉包に捕捉させず、path を受けて stream の中で開く
+// （sendFile — emit は借り: 文形 for の本体が捕捉して呼ぶ）。loopback で 1 本の task が Dial → 要求を送る → Accept して ServeConn → 応答を受ける（net_echo の形）
+
+import "std/http"
+import "std/io"
+import "std/net"
+import "std/task"
+import "std/strings"
+
+func body() string { return "streamed from a file, chunk by chunk\n" }
+
+func sendFile(path string, emit func(b []byte) error?) error? {
+    f := io.Open(path)?
+    defer io.Close(f)
+    for b <- io.Chunks(f)? {
+        emit(io.Raw(b))?
+    }
+    return nil
+}
+
+func route(dir string, r http.Request) http.Response {
+    return switch {
+    case strings.HasPrefix(r.path, "/file/"): {
+        p := dir + "/" + strings.TrimPrefix(r.path, "/file/")
+        http.Response{status: 200, contentType: "text/plain", length: len(bytes(body())), stream: (emit) => sendFile(p, emit)}
+    }
+    default: http.Status(404)
+    }
+}
+
+func run(dir string) error? {
+    io.WriteFile(dir + "/http_stream.tmp", bytes(body()))?
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            // パイプライン 3 本: HEAD（頭だけ — stream は呼ばない）・GET（stream）・その後ろの要求（stream の後も同じ切片の残りを続けて処理する）
+            net.Send(c, bytes("HEAD /file/http_stream.tmp HTTP/1.1\r\nHost: x\r\n\r\nGET /file/http_stream.tmp HTTP/1.1\r\nHost: x\r\n\r\nGET /none HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"))?
+            _, e := task.Run((s task.Scope) => serveOne(l, dir) catch -1, deadline: 5000 * task.MS)
+            if e != nil {
+                println("serve failed")
+            }
+            mut got := mut []byte{}
+            for chunk <- net.Recv(c)? {
+                for x <- chunk { got = append(got, x) }
+            }
+            io.WriteStdout(freeze(got))?
+        }
+    }
+    return nil
+}
+
+// serveOne は 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
+func serveOne(l net.Listener, dir string) (int, error?) {
+    for c <- net.Accept(l)? {
+        http.ServeConn(c, (r http.Request) => route(dir, r))?
+        break
+    }
+    return 0, nil
+}
+
+func main() {
+    e := run("out")
+    if e != nil {
+        println("error")
+    }
+}

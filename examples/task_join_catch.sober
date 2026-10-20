@@ -1,0 +1,39 @@
+package main
+
+// language.md 11 節（Join の項）: error を返す task の Join に catch — 失敗は既定値に落ちる（catch で回収した失敗は scope の err に来ない）。
+// Join の結果は字面で T 1 つなので、catch の左辺の判定は loader でなく表層型の後（ParCheck の層）で掛ける（report-583）
+
+import "std/task"
+
+type Missing error
+
+func load(n int) (int, error?) {
+    if n < 0 {
+        return 0, Missing{}
+    }
+    return n * 10, nil
+}
+
+func label(n int) (string?, error?) {
+    if n == 0 {
+        return nil, nil
+    }
+    if n < 0 {
+        return nil, Missing{}
+    }
+    return "n=${n}", nil
+}
+
+func main() {
+    r, err := task.Run((s task.Scope) => {
+        h1 := task.Spawn(s, () => load(4))
+        h2 := task.Spawn(s, () => load(-1))
+        h3 := task.Spawn(s, () => label(-1))
+        a := task.Join(h1) catch -1
+        b := task.Join(h2) catch -1
+        c := task.Join(h3) catch nil
+        a + b + (if c == nil { 1000 } else { 0 }) + (task.Join(h2) catch 7)
+    })
+    println(r)
+    println(if err == nil { "ok" } else { "failed" })
+}

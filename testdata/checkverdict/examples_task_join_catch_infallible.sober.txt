@@ -1,0 +1,2 @@
+sober: load error at examples/task_join_catch_infallible.sober:11:22: the left of catch must be a call that returns (T, error?)
+exit=1

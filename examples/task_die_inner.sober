@@ -1,0 +1,41 @@
+package main
+
+// 段 6 P4-5: 子の task が、自分の中の scope に生きている孫を残したまま死ぬ（P4-4 の穴 — 死んだ task のスロット〔内側の scope の記録・孫の枠〕が
+// 孫の終わる前にプールへ返り、M:N で孫が返したスロットへ書いた）。巻き戻った task は開いている scope の子を待ってから終わる（drainScopes）
+import "std/task"
+
+func spin(n int) int {
+    mut s := 0
+    mut i := 0
+    while i < n {
+        s = (s + i * 7) % 1000003
+        i += 1
+    }
+    return s
+}
+
+func main() {
+    mut k := 0
+    mut died := 0
+    while k < 40 {
+        n := k
+        r, e := task.Run((s task.Scope) => {
+            a := task.Spawn(s, () => {
+                xs := []int{1, 2}
+                r2, e2 := task.Run((s2 task.Scope) => {
+                    g := task.Spawn(s2, () => spin(20000 + n))
+                    h := task.Spawn(s2, () => spin(10000))
+                    xs[n + 5]
+                })
+                r2
+            })
+            b := task.Spawn(s, () => spin(5000))
+            3
+        })
+        if e != nil {
+            died += 1
+        }
+        k += 1
+    }
+    println("died ${died}")
+}

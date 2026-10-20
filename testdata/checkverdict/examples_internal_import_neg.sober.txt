@@ -1,0 +1,2 @@
+sober: load error at examples/internal_import_neg.sober:6:8: std/internal/... is an implementation detail of std — it can be imported only from inside std
+exit=1

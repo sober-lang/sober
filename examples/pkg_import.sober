@@ -1,0 +1,17 @@
+package main
+
+// package と import（language.md 20 節）: import パスはルート相対・参照名はパスの末尾・公開 = 大文字。
+// 他 package の struct の欄は読める（書けない — pkg_neg_field_write）。別名の import は末尾の衝突を避ける用
+
+import "testdata/specpkg/shapes"
+import sh "testdata/specpkg/shapes"
+
+func main() {
+    r := shapes.Rect{w: 2, h: 3}
+    println(shapes.Area(r), sh.Area(r), r.w, shapes.Unit)
+    q, err := shapes.Parse("circle")
+    switch err {
+    case nil: println(q.w)
+    case shapes.Unknown{name}: println("unknown", name)
+    }
+}

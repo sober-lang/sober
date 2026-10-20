@@ -2,24 +2,24 @@
 
 English | [日本語](std.ja.md)
 
-A map of the packages you use with `import "std/<name>"`. For the exact form of each function, the public declarations (names starting with an upper-case letter) in the source (`src/std/<name>/`) are authoritative.
+A map of the packages you use with `import "std/<name>"`. The exact signature and description of each function are in the [standard library reference](../std/README.ja.md), generated from the doc comments in the source; each package name in the tables below links to its page. The reference is currently Japanese-first; an English version is planned for 1.0.
 
 ## I/O and environment
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/io` | Files, standard I/O, directories | `ReadFile`, `WriteFile`, `ReadStdin`, `WriteStdout`, `WriteStderr`, `ReadDir`, open files `Open` / `Close` (`defer io.Close(f)` right after) / `ReadAll`, reading slots without copying them `for c <- io.Chunks(f)?` (`Lines`, `ChunksAt` from a given offset, the bytes via `Raw`), the buffered `Writer` (`WriteString` / `WriteByte` / `Flush`). Error labels are `NotFound`, `Denied`, `Other` |
-| `std/os` | Processes and the environment | `Args`, `Getenv`, `Run` (child processes), `Mkdir`, `Rename`, `ModTime`, `WriteMode`, `Sleep` |
+| [`std/io`](../std/io.ja.md) | Files, standard I/O, directories | `ReadFile`, `WriteFile`, `ReadStdin`, `WriteStdout`, `WriteStderr`, `ReadDir`, open files `Open` / `Close` (`defer io.Close(f)` right after) / `ReadAll`, reading slots without copying them `for c <- io.Chunks(f)?` (`Lines`, `ChunksAt` from a given offset, the bytes via `Raw`), the buffered `Writer` (`WriteString` / `WriteByte` / `Flush`). Error labels are `NotFound`, `Denied`, `Timeout`, `Expired` (after the deadline of the enclosing `task.Run` has passed), `Closed`, `Other` |
+| [`std/os`](../std/os.ja.md) | Processes and the environment | `Args`, `Getenv`, `Run` (child processes), `Mkdir`, `Rename`, `ModTime`, `WriteMode`, `Sleep` |
 
 ## Text
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/utf8` | UTF-8 validation and substrings | `Check` (validate the whole input once and get a `View`), `Str` (take a substring from a validated view without copying), `Parse`, `Valid`, `IndexInvalid` |
-| `std/strings` | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `Cut`, `CutLast`, `TrimPrefix`, `Join`, `FormatInt`, `Clone` (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary) |
-| `std/builder` | Building sequences | push onto a `Builder[T]` with `Push`, `PushAll`, `PushStr`, and take the result with `Build` |
-| `std/conv` | Converting between numbers and strings | `ParseFloat`, `FormatFloat`, `FormatFixed` |
-| `std/hex` | Hexadecimal | `Encode` |
+| [`std/utf8`](../std/utf8.ja.md) | Validated UTF-8 views | `Check` (validate the whole input once and get a `View`), `Str` (take a substring from a validated view without copying), `Bytes` |
+| [`std/strings`](../std/strings.ja.md) | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `Cut`, `CutLast`, `TrimPrefix`, `Join`, `Clone`, UTF-8 validation `Valid`, `IndexInvalid` (error label `InvalidUtf8`) (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary) |
+| [`std/builder`](../std/builder.ja.md) | Building sequences | push onto a `Builder[T]` with `Push`, `PushAll`, `PushString`, and take the result with `Build` |
+| [`std/convert`](../std/convert.ja.md) | Converting between numbers and strings | `FormatInt`, `ParseInt`, `ParseFloat`, `FormatFloat`, `FormatFixed` |
+| [`std/hex`](../std/hex.ja.md) | Hexadecimal | `Format`, `Parse` |
 
 `string` is immutable text, and `bytes(s)` views it as a byte sequence (`[]byte`). String interpolation is `"x = ${x}"`.
 
@@ -27,11 +27,11 @@ A map of the packages you use with `import "std/<name>"`. For the exact form of 
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/iter` | The lazy sequence `Iter[T]` | `Range`, `Slice`, `Each`, `Count`, `Sum` (consume the result of `for … yield` through a pipe) |
-| `std/sort` | Sorting | `Order` (the indices 0..n−1 in the order of a comparison closure `less(a, b)` — stable. The caller keeps the values and how to compare them) · `OrderUnstable` (same shape; faster, but makes no promise about the order of equal items — still deterministic) |
-| `std/table` | Large tables (a sequence of fixed-size chunks — growing never copies) | `Push`, `Get`, `Set`, `Len` on a `Table[T]`, and `Freeze` into an immutable `Frozen[T]` |
-| `std/pool` | A lending pool looked up by handle | `Acquire`, `Release`, `Get`, `Set` |
-| `std/json` | Reading and writing JSON | `Parse` gives a document `Doc`, read with `Get` / `Items` / `Dec*` and write with `Put*`; mapping to and from types is `json.Decode[T]` / `json.Encode[T]` |
+| [`std/iter`](../std/iter.ja.md) | The lazy sequence `Iter[T]` | `Range`, `Slice`, `Each`, `Count`, `Sum` (consume the result of `for … yield` through a pipe) |
+| [`std/sort`](../std/sort.ja.md) | Sorting | `Order` (the indices 0..n−1 in the order of a comparison closure `less(a, b)` — stable. The caller keeps the values and how to compare them) · `OrderUnstable` (same shape; faster, but makes no promise about the order of equal items — still deterministic) |
+| [`std/table`](../std/table.ja.md) | Large tables (a sequence of fixed-size chunks — growing never copies) | `Push`, `Get`, `Set`, `Len` on a `Table[T]`, and `Freeze` into an immutable `Frozen[T]` |
+| [`std/pool`](../std/pool.ja.md) | A lending pool looked up by handle | `Acquire`, `Release`, `Get`, `Set` |
+| [`std/json`](../std/json.ja.md) | Reading and writing JSON | `Parse` gives a document `Doc`, read with `At` (a one-level view `Value`) / `Get` / `Items` / `Need*` / `ParseString`, `ParseInt`, `ParseFloat`, `ParseBool` and write with `Put*`; mapping to and from types is `json.Decode[T]` / `json.Encode[T]` |
 
 Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`, `freeze`, `clone` [a shallow copy, returned as mut], and a lookup `m[k]` is `T?`).
 
@@ -39,7 +39,7 @@ Slices (`[]T`) and maps (`map[K]V`) are built into the language (`append`, `len`
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/par` | Structured concurrency | `Map`, `Scope` + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChan` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`) |
+| [`std/task`](../std/task.ja.md) | Structured concurrency | `Map`, `Run` (opens a scope — the body receives a `Scope` token) + `Spawn` + `Join` / `Gather` / `Try`, channels `NewChannel` / `Send` / `Recv` / `Close`, `Pool` (`NewPool` / `SpawnIn`) |
 
 Only immutable values and channels can be passed to a child task. The output is the same regardless of the number of workers ([language tour, section 7](tour.md#7-parallelism--structured-concurrency-channels)).
 
@@ -47,16 +47,41 @@ Only immutable values and channels can be passed to a child task. The output is 
 
 | Package | Purpose | Main items |
 |---|---|---|
-| `std/math` | Floating-point basics | `Sqrt`, `Abs`, `Bits` / `FromBits` |
-| `std/rand` | Deterministic pseudo-random numbers | `New` (from a seed), `Intn`, `Int62`, `Bool`, `Split` (split per parallel task) |
-| `std/hash` | Hashing | `Sha256` |
+| [`std/math`](../std/math.ja.md) | Floating-point basics | `Sqrt`, `Abs`, `Bits` / `FromBits` |
+| [`std/rand`](../std/rand.ja.md) | Deterministic pseudo-random numbers | `New` (from a seed), `Intn`, `Int62`, `Bool`, `Split` (split per parallel task) |
+| [`std/hash`](../std/hash.ja.md) | Hashing | `Sha256` |
+| [`std/hash/crc32`](../std/hash-crc32.ja.md) | Checksums | `Sum` (CRC-32 — the same value as gzip, zlib and PNG) |
+
+## Compression
+
+| Package | Purpose | Main items |
+|---|---|---|
+| [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE (RFC 1951) encoder | `Encode(data, level)` (level 0–9 on the zlib scale — 6 is the usual default; the same input always gives the same bytes). There is no decoder yet |
+| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip (RFC 1952) encoder | `Encode(data, level)` (10-byte header + DEFLATE + CRC-32 + length — the body for HTTP `Content-Encoding: gzip`) |
+
+## Networking
+
+| Package | Purpose | Main items |
+|---|---|---|
+| [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, and `Serve` (one task per connection) |
+| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
+| [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net). Errors are `HandshakeFailed`, `BadRecord`, `Closed` ([`std/tls/record`](../std/tls-record.ja.md) is the record layer inside — not for direct import) |
+
+## Cryptography
+
+| Package | Purpose | Main items |
+|---|---|---|
+| [`std/crypto`](../std/crypto.ja.md) | Constant-time helpers and OS randomness | `Equal`, `NonZero`, `Select`, `Wipe`, `Rand` |
+| [`std/crypto/aesgcm`](../std/crypto-aesgcm.ja.md) / [`std/crypto/chacha20poly1305`](../std/crypto-chacha20poly1305.ja.md) | AEAD | `Seal` / `Open`, `Prepare` (expand the key once) + `SealTo` / `OpenAt` (aesgcm needs AES-NI — `Available`) |
+| [`std/crypto/chacha20`](../std/crypto-chacha20.ja.md), [`std/crypto/poly1305`](../std/crypto-poly1305.ja.md) | Stream cipher and MAC | `XorKeyStream`, `Sum` / `SumAead` |
+| [`std/crypto/sha256`](../std/crypto-sha256.ja.md), [`std/crypto/hmac`](../std/crypto-hmac.ja.md), [`std/crypto/hkdf`](../std/crypto-hkdf.ja.md) | Hash, MAC, key derivation | `New` / `Write` / `Sum`, `Sum256`, `Extract` / `Expand` |
+| [`std/crypto/x25519`](../std/crypto-x25519.ja.md), [`std/crypto/rsa`](../std/crypto-rsa.ja.md) | Key agreement and signatures | `Base` / `Shared`, `ParsePKCS8` / `SignPSS` / `VerifyPSS` |
+| [`std/crypto/pem`](../std/crypto-pem.ja.md) | Reading PEM | `Parse` |
 
 ## Other
 
 | Package | Purpose |
 |---|---|
-| `std/testing` | Test helpers (labels for `assert` failures) |
-| `std/layout` | Helpers for declaring binary layouts (`@layout`) |
-| `std/floatfmt` | Internals of floating-point formatting (used by `std/conv`) |
-
-Floating point (`float` formatting, math functions) is still being filled in as of v0.5.0.
+| [`std/testing`](../std/testing.ja.md) | Test helpers (labels for `assert` failures) |
+| [`std/layout`](../std/layout.ja.md) | Helpers for declaring binary layouts (`@layout`) |
+| [`std/binary`](../std/binary.ja.md) | Reading bytes a word at a time (`Load64` — 8 bytes, little-endian) |

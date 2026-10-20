@@ -10,7 +10,7 @@ func main() {
         return
     }
     switch json.At(d, json.Root(d)) {
-    case json.Arr{items}: println(len(items))
-    case json.Num{lit}: println(lit)
+    case json.Array{items}: println(len(items))
+    case json.Number{lit}: println(lit)
     }
 }
