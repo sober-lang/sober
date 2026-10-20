@@ -5,12 +5,19 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "existing tag (e.g. v0.6.0) to (re)publish the ghcr image for"
+        required: true
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -53,3 +60,45 @@ jobs:
           files: |
             dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz
             dist/sober-${{ github.ref_name }}-x86_64-linux.tar.gz.sha256
+
+  # The toolchain image: FROM ghcr.io/sober-lang/sober:<ver> gives a build stage with `sober` on PATH,
+  # no download from github.com at docker-build time (registry pulls only - the mainstream shape of
+  # language toolchains in Dockerfiles). Built from the released tarball so the image is byte-identical
+  # to the release; `workflow_dispatch` republishes the image for an existing tag.
+  image:
+    runs-on: ubuntu-24.04
+    needs: [release]
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.release.result == 'success')
+    steps:
+      - name: Resolve version
+        run: |
+          V="${{ github.event.inputs.version || github.ref_name }}"
+          echo "V=$V" >> "$GITHUB_ENV"
+          echo "BARE=${V#v}" >> "$GITHUB_ENV"
+
+      - name: Fetch the released tarball
+        run: |
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$V/sober-$V-x86_64-linux.tar.gz" -o sober.tar.gz
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$V/sober-$V-x86_64-linux.tar.gz.sha256" -o sober.tar.gz.sha256
+          [ "$(sha256sum sober.tar.gz | cut -d' ' -f1)" = "$(cut -d' ' -f1 sober.tar.gz.sha256)" ]
+          tar -xzf sober.tar.gz
+          mkdir -p img && cp "sober-$V-x86_64-linux/sober" img/sober
+
+      - name: Build the image
+        run: |
+          cat > img/Dockerfile <<EOF
+          FROM alpine:3.20
+          COPY sober /usr/local/bin/sober
+          CMD ["sober"]
+          EOF
+          docker build \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.description="The Sober compiler (single static ELF, stdlib built in)" \
+            --label org.opencontainers.image.licenses="MIT OR Apache-2.0" \
+            -t "ghcr.io/${{ github.repository }}:$BARE" -t "ghcr.io/${{ github.repository }}:latest" img
+
+      - name: Push to ghcr
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "ghcr.io/${{ github.repository }}:$BARE"
+          docker push "ghcr.io/${{ github.repository }}:latest"
