@@ -1,0 +1,2 @@
+examples/effects_neg_negtype.sober:7:1: error: @effects: '!Op' — only the effects block, io, panic, nondet can be negated (Analyzer)
+exit=1

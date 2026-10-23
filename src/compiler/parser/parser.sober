@@ -271,7 +271,7 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
         noinl := an.noinl
         emb := an.emb
         t := tg(cx, p)
-        if (noinl != 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0) && t != lexer.KwFunc {
+        if (noinl != 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0) && t != lexer.KwFunc {
             return -1
         }
         if emb >= 0 && (t != lexer.KwConst || noinl != 0) {
@@ -290,7 +290,7 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
         }
         if an.intr >= 0 {
             // `@intrinsic("鍵") func 名前(仮引数) 結果`（本体なし — ほかの注釈とは組まない）
-            if t != lexer.KwFunc || noinl != 0 || emb >= 0 || an.errs >= 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0 {
+            if t != lexer.KwFunc || noinl != 0 || emb >= 0 || an.errs >= 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 {
                 return -1
             }
             id, q := intrinsicDecl(mut nb, mut db, cx, p, start, an.intr)
@@ -347,7 +347,8 @@ func errorsArgs(db mut builder.Builder[int], cx Cx, p0 int) int {
             b = append(b, '!')
             p += 1
         }
-        mut ok := tg(cx, p) == lexer.Identifier
+        // `panic` は字句ではキーワード（@effects の語 — 他の注釈では解決できない名前として analyzer が拒否する）
+        mut ok := tg(cx, p) == lexer.Identifier || tg(cx, p) == lexer.KwPanic
         if ok {
             spell(cx, p, mut b)
             p += 1
@@ -427,7 +428,7 @@ func importDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], c
 // sec = `@secret(k, …)`（続く関数宣言の仮引数の名前の列 — 読みは @errors と同じ。無し -1）・secTok = その `@` の字句、secBare = 引数なしの `@secret`（続く const 宣言の印）、
 // bless = `@bless`（引数なし — 全部の名前空間: 1）か `@bless(origin)`（出所の名前空間だけ: 2）— 続く関数宣言の印。受理は std だけ — analyzer）・
 // cred = `@credential`（引数なし — 続く関数宣言の印: 結果は認証の源。受理は std だけ）。@secret / @bless の意味は language.md 12 節「秘密の値の宣言」・
-// @credential / @bless(origin) は 12 節「出所の依存」
+// @credential / @bless(origin) は 12 節「出所の依存」。effs = `@effects(…)` の項の列（読みは @errors と同じ — 無し -1）・effsTok = その `@` の字句（12 節の関数の効果）
 type Annot struct {
     p int
     noinl int
@@ -443,11 +444,13 @@ type Annot struct {
     secBare int
     bless int
     cred int
+    effs int
+    effsTok int
 }
 
 // annotBad は読めなかった注釈の並び（p = -1）
 func annotBad() Annot {
-    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1, exh: 0, sec: -1, secTok: 0, secBare: 0, bless: 0, cred: 0}
+    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1, exh: 0, sec: -1, secTok: 0, secBare: 0, bless: 0, cred: 0, effs: -1, effsTok: 0}
 }
 
 // skipParens は位置 p0 の `(` から対応する `)` の次の位置（入れ子の括弧は数える — 閉じずに終わりに来たら -1）
@@ -490,7 +493,22 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     mut secBare := 0
     mut bless := 0
     mut cred := 0
+    // `@effects(…)` は続く関数宣言の効果の宣言（項の読みは @errors と同じ — 語・型の名前・否定の `!`。照合は analyzer/effects.sober）
+    mut effs := 0 - 1
+    mut effsTok := 0
     while tg(cx, p) == lexer.At {
+        if textIs(cx, p + 1, "effects") && tg(cx, p + 2) == lexer.LParen {
+            effsTok = tk(cx, p)
+            effs = errorsArgs(mut db, cx, p + 2)
+            p = skipParens(cx, p + 2)
+            if p < 0 {
+                return annotBad()
+            }
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
         if textIs(cx, p + 1, "intrinsic") && tg(cx, p + 2) == lexer.LParen {
             v, r := parseExpr(mut nb, mut db, cx, p + 3, false)
             if v < 0 || tg(cx, r) != lexer.RParen {
@@ -620,7 +638,7 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
             p += 1
         }
     }
-    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr, exh: exh, sec: sec, secTok: secTok, secBare: secBare, bless: bless, cred: cred}
+    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr, exh: exh, sec: sec, secTok: secTok, secBare: secBare, bless: bless, cred: cred, effs: effs, effsTok: effsTok}
 }
 
 // constDecl は const 宣言（p = `const` の位置 — `const` identifier_list '=' expression_list。値の畳み込みは loader の仕事）の KConst を

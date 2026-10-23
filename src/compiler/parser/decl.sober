@@ -80,7 +80,7 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     results, sig_end := resultOpt(mut nb, mut db, cx, q1)
     if cx.iface && tg(cx, sig_end) == lexer.Semicolon {
         // .sobi の本体の無い宣言（署名だけ）
-        ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 { ast.PutList(mut db, []int{1, start, sig_end + 1, sig_end, noinl, errs, errsTok, expand, exh, an.sec, an.secTok, an.bless + an.cred * 4}) } else { ast.PutList(mut db, []int{1, start, sig_end + 1, sig_end, noinl, errs, errsTok, expand}) }
+        ext := funcExt(mut db, []int{1, start, sig_end + 1, sig_end, noinl, errs, errsTok, expand}, an)
         return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, -1, ext), sig_end + 1
     }
     if tg(cx, sig_end) != lexer.LBrace {
@@ -90,8 +90,32 @@ func funcDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
     if body < 0 || tg(cx, q2) != lexer.Semicolon {
         return -1, q2
     }
-    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand, exh, an.sec, an.secTok, an.bless + an.cred * 4}) } else if exh != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand, exh}) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
+    ext := if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 || exh != 0 { funcExt(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}, an) } else if expand != 0 { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok, expand}) } else { ast.PutList(mut db, []int{0, start, q2 + 1, sig_end, noinl, errs, errsTok}) }
     return node(mut nb, ast.KFuncDecl, tk(cx, p0 + 1), fname, tps, params, results, body, ext), q2 + 1
+}
+
+// funcExt は付加の列 head（8 個 — 番号 0〜7）に注釈の欄を足した列: `@secret` / `@bless` / `@credential` があれば 12 個・`@effects` があれば 14 個
+// （12・13 番 = 項の列・`@` の字句）・`@exhaustive` だけなら 9 個（どれも無ければ head のまま）
+func funcExt(db mut builder.Builder[int], head []int, an Annot) int {
+    mut l := mut []int{}
+    mut i := 0
+    while i < len(head) {
+        l = append(l, head[i])
+        i += 1
+    }
+    if an.sec >= 0 || an.bless != 0 || an.cred != 0 || an.effs >= 0 {
+        l = append(l, an.exh)
+        l = append(l, an.sec)
+        l = append(l, an.secTok)
+        l = append(l, an.bless + an.cred * 4)
+        if an.effs >= 0 {
+            l = append(l, an.effs)
+            l = append(l, an.effsTok)
+        }
+    } else if an.exh != 0 {
+        l = append(l, an.exh)
+    }
+    return ast.PutList(mut db, freeze(l))
 }
 
 // intrinsicDecl は `@intrinsic("鍵")` の後の `func IDENT parameters result? ';'`（本体・型引数なし — KIntrinsic）
@@ -573,19 +597,33 @@ func typeDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx 
             return -1, p
         }
         rs, r := resultOpt(mut nb, mut db, cx, q)
-        // 後置の `@errors(…)`（名前付き関数型の契約 — language.md 12 節の面「高階」・effect の波 段 1）: d = ラベル名の列 + 1（0 = 無し）・e = `@` の字句
+        // 後置の `@errors(…)`（名前付き関数型の契約 — language.md 12 節の面「高階」・effect の波 段 1）: d = ラベル名の列 + 1（0 = 無し）・e = `@` の字句。
+        // 後置の `@effects(…)`（段 5a — 順は問わない）: f = 項の列 + 1（0 = 無し）・節の字句 = その `@`
         mut ed := 0
         mut et := 0
+        mut fd := 0
+        mut ft := 0
         p = r
-        if tg(cx, p) == lexer.At && textIs(cx, p + 1, "errors") && tg(cx, p + 2) == lexer.LParen {
-            et = tk(cx, p)
-            ed = errorsArgs(mut db, cx, p + 2) + 1
-            p = skipParens(cx, p + 2)
-            if p < 0 {
-                return -1, r
+        mut more := true
+        while more {
+            more = false
+            if tg(cx, p) == lexer.At && tg(cx, p + 2) == lexer.LParen && ((ed == 0 && textIs(cx, p + 1, "errors")) || (fd == 0 && textIs(cx, p + 1, "effects"))) {
+                l := errorsArgs(mut db, cx, p + 2) + 1
+                if textIs(cx, p + 1, "errors") {
+                    et = tk(cx, p)
+                    ed = l
+                } else {
+                    ft = tk(cx, p)
+                    fd = l
+                }
+                p = skipParens(cx, p + 2)
+                if p < 0 {
+                    return -1, r
+                }
+                more = true
             }
         }
-        body = node(mut nb, ast.BFunc, 0, ps, rs, pn, ed, et, 0)
+        body = node(mut nb, ast.BFunc, ft, ps, rs, pn, ed, et, fd)
     } else if !generic && typeStart(t) {
         te, q := typeOf(mut nb, mut db, cx, p, false)
         if te < 0 {

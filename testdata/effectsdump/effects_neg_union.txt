@@ -1,0 +1,5 @@
+examples/effects_neg_union.sober:9:6: effects main.apply fi=0 bits=io declared
+examples/effects_neg_union.sober:13:6: effects main.main fi=1 bits=io
+examples/effects_neg_union.sober:6:6: ftype Job union=io
+examples/effects_neg_union.sober:8:1: violation 'main.apply' may have the effect io via a call through a value of type 'Job', which its @effects does not allow (allowed: block, panic, nondet)
+summary fns=2 lambdas=2 edges=12 any=io any-calls=0 fvalues=0 declared=1 violations=1

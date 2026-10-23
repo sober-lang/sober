@@ -1,0 +1,51 @@
+package layout
+
+// @layout（language.md 36 節）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、
+// loader の固定テンプレート（compiler/loader/layout.sober）が @layout の struct ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。
+// ここに置くのは写しの関数が呼ぶ失敗の関数だけ（panic ラベル WidthOverflow / LengthMismatch — exit 101・死亡時に欄が標準エラーへ。language.md 27 節の panic の契約）
+
+// 撤去条件: R3（region を持つ型引数の実体 Def）が入ったら、Decode / Encode を std の総称関数 + コンパイラが出す `layout[T]` 静的辞書に移す
+
+// std/builder は合成の写しの関数が使う（Encode の仮引数 Builder[byte] — この package を読めば std/builder も読み込まれる）
+import "std/builder"
+
+// 書き込みの幅あふれ: 欄 field の値 value が幅 width に収まらない
+type WidthOverflow panic {
+    field string
+    value int
+    width string
+}
+
+// 固定長配列の長さ違い: 欄 field の長さが want でなく got
+type LengthMismatch panic {
+    field string
+    want int
+    got int
+}
+
+// 書き込みの幅あふれ: 欄 field の値 v が幅 width に収まらない
+func FailWidth(field string, width string, v int) {
+    panic(WidthOverflow{field: field, value: v, width: width})
+}
+
+// 固定長配列の長さ違い: 欄 field の長さが want でなく got
+func FailLength(field string, want int, got int) {
+    panic(LengthMismatch{field: field, want: want, got: got})
+}
+
+
+// 以下は loader が合成する口（std に実体は無い — 呼び出しは @layout の struct ごとの写しの関数へ写る）。型引数 T は @layout の struct
+
+// 合成: func Decode[T](b []byte, off int) T?
+// b の off バイト目から T を 1 つ読む。バイトが足りなければ nil。符号つきの幅は符号拡張して読む
+// 例: examples/layout_elf.sober
+
+// 合成: func DecodeAt[T](b []byte, off int, i int) T?
+// b の off バイト目から並ぶ T の i 番目を読む（間隔 = Size[T]）。バイトが足りなければ nil
+
+// 合成: func Encode[T](out mut builder.Builder[byte], v T)
+// v を out の末尾に書く。欄の値が幅に収まらなければ panic(WidthOverflow)・固定長配列の長さが違えば panic(LengthMismatch)
+// 例: examples/layout_widths.sober
+
+// 合成: const Size[T] int
+// T の静的な大きさ（バイト — 欄の幅の和）。呼ばずに定数として書く: `layout.Size[T]`

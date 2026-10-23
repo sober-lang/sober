@@ -103,7 +103,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | scope | `scope { }`、`scope(timeout: 200 * time.ms) { }`、`parallel scope { }` | 11 節 |
 | spawn / await | `spawn f(x)` → `Task[T]`、`await(t)?` | 11 節 |
 | shield | `shield { ... }`（式ブロック。`defer shield { }` と合成） | 11 節 |
-| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13 節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（struct の欄）・`@secret const`、`@bless`（関数 — std だけ。language.md 12 節「秘密の値の宣言」）、`@credential`（関数 / struct の欄 — std だけ）・`Fresh { … } @shared`（union の variant — std だけ）・`@bless(origin)`（関数 — std だけ。12 節「出所の依存」） | 10 節 |
+| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13 節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（struct の欄）・`@secret const`、`@bless`（関数 — std だけ。language.md 12 節「秘密の値の宣言」）、`@credential`（関数 / struct の欄 — std だけ）・`Fresh { … } @shared`（union の variant — std だけ）・`@bless(origin)`（関数 — std だけ。12 節「出所の依存」）、`@effects(io, !block…)`（関数の前置 / 名前付き関数型の後置 — 12 節「関数の効果の宣言」） | 10 節 |
 | 名前付き引数 | `f(x, sep: ",")`、`scope(timeout: 200 * time.ms)`、`@json(name: "x")`。位置が先・名前が後、省略は `T?` 引数のみ、直接呼び出しと名前付き関数型のみ（決定 7） | 決定 7 |
 
 ---
@@ -118,7 +118,7 @@ ImportDecl   = "import" ( ImportSpec | "(" { ImportSpec ";" } ")" ) .
 ImportSpec   = [ identifier ] string_lit .                 (* 別名のみ。"_" と "." は無い（決定 14）。init() も無い *)
 TopLevelDecl = { Annotation } ( ConstDecl | TypeDecl | FuncDecl | BindDecl ) .
 
-Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕ほか。知らない名前は文法の外 *)
+Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕・effects〔関数 — 語・否定の語・名前付き関数型の名前の列〕ほか。知らない名前は文法の外 *)
 AnnotArgs    = AnnotArg { "," AnnotArg } .
 AnnotArg     = [ identifier ":" ] ConstExpr .            (* 名前付き / 位置。Argument と同じ並びで引数が const 式に限られるだけ *)
 
@@ -126,7 +126,7 @@ ConstDecl    = "const" IdentifierList "=" ExpressionList .   (* Go の ( ) グ�
 BindDecl     = [ "mut" ] IdentifierList ":=" ExpressionList .  (* トップレベルは右辺が const 式のみ、mut 不可（決定 14）。左辺は全部新規宣言、シャドーイング禁止（決定 13） *)
 
 TypeDecl     = "type" identifier ( [ TypeParams ] TypeSpecBody | "=" TypeName ) .   (* "=" は型の別名（決定 15 の改訂 — language.md 32 節）: 右辺は型宣言の名前だけ・型パラメータなし・トップレベルだけ *)
-TypeSpecBody = StructType | UnionType | ErrorType | PanicType | FuncType { Annotation } | Type .   (* FuncType の後置の注釈は `@errors(…)` だけ（名前付き関数型の契約 — language.md 13 節）。 最後は Go の defined type — 下地は int / bool に限る（language.md 32 節・宣言の位置で検査） *)
+TypeSpecBody = StructType | UnionType | ErrorType | PanicType | FuncType { Annotation } | Type .   (* FuncType の後置の注釈は `@errors(…)` と `@effects(…)`（名前付き関数型の契約 — language.md 13 節・12 節「関数の効果の宣言」— 順は問わず各 1 つ）。 最後は Go の defined type — 下地は int / bool に限る（language.md 32 節・宣言の位置で検査） *)
 TypeParams   = "[" identifier { "," identifier } "]" .
 
 StructType   = "struct" "{" { FieldDecl ";" } "}" .

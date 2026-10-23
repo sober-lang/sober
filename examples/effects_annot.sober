@@ -1,0 +1,42 @@
+package main
+
+// 関数の効果の宣言（language.md 12 節の関数の効果 — effect の波 段 5a）: 語彙は block・io・panic・nondet。
+// `@effects(…)` は「導出 ⊆ 許容」の主張 — 正の列挙は許容そのもの、否定形は全部から除いたもの（混ぜない）。
+// 名前付き関数型の後置 `@effects(…)` は F の値の契約（F の値になるラムダはこれと照合される）。型の名前の項 `@effects(io, F)` は「io と F の値の効果」
+
+import "std/strings"
+
+// Step の値は io をしない約束（このラムダたちはこの契約と照合される）
+type Step func(x int) int @effects(!io)
+
+// 否定形: 純さの主張（将来 io や panic が入ったら止まる）
+@effects(!io, !block, !panic, !nondet)
+func double(x int) int {
+    return x * 2
+}
+
+// 匿名の関数型の仮引数は透過（k の効果は呼び出し点で数える — 宣言には書かない）
+@effects(!block, !nondet)
+func each(xs []int, k func(int)) {
+    for x <- xs {
+        k(x)
+    }
+}
+
+// 正の列挙: io と Step の値の効果（Step の契約が io を除くので、許容は io ∪ Step の契約）
+@effects(io, Step)
+func run(s Step, x int) {
+    println(s(x))
+}
+
+@effects(!io)
+func shout(s string) string {
+    return strings.ToUpper(s)
+}
+
+func main() {
+    each([]int{1, 2}, (x) => println(double(x)))
+    run((x) => x + 1, 41)
+    run((x) => { if x < 0 { panic(Unreachable{}) }; x * 3 }, 5)
+    println(shout("ok"))
+}

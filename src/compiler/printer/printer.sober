@@ -333,6 +333,11 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
             out = append(out, ' ')
             errorsList(mut out, t, body.d - 1)
         }
+        if body.f != 0 {
+            // 後置の `@effects(…)`
+            obuf.Lit(mut out, " @effects")
+            argList(mut out, t, body.f - 1)
+        }
     }
 }
 
@@ -348,7 +353,7 @@ func errorsList(out mut []byte, t ast.Tree, l int) {
     argList(mut out, t, l)
 }
 
-// argList は注釈の括弧の中の名前の列 `(A, ref.B)`（@errors / @secret）
+// argList は注釈の括弧の中の名前の列 `(A, ref.B)`（@errors / @secret / @effects）
 func argList(out mut []byte, t ast.Tree, l int) {
     out = append(out, '(')
     for i <- iter.Range(0, t.data[l]) {
@@ -402,6 +407,12 @@ func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
     }
     if t.data[x.f] >= 12 && (t.data[x.f + 12] & 4) != 0 {
         obuf.Lit(mut out, "@credential\n")
+    }
+    // `@effects(…)`（付加の列の 12 番 — 署名の契約なので .sobi にも書く）
+    if t.data[x.f] >= 14 && t.data[x.f + 13] >= 0 {
+        obuf.Lit(mut out, "@effects")
+        argList(mut out, t, t.data[x.f + 13])
+        out = append(out, '\n')
     }
     // .sobi の `@expand`（付加の列の 7 番 — parser の ParseIface）
     if expand || (t.data[x.f] >= 8 && t.data[x.f + 8] != 0) {

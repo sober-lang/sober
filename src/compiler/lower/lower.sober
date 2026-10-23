@@ -96,6 +96,16 @@ func ElfTraceErrors(p loader.Program, passes bool) ([]byte, error?) {
     return lowerWith(p, k)
 }
 
+// ElfTraceEffects は関数の効果の動的オラクルの計装つき実行ファイル（`sober build --emit=elf --trace-effects` — effect の波 段 5a・scripts/efftrace.sh）:
+// 関数の入口と出口に `#effin <関数の表の添字>` / `#effout <添字>`・葉（効果の鍵の @intrinsic・println・panic・std/task の待つ口）に `#effleaf <ビット>` を標準出力へ
+// （traceEff — 持ち上げたラムダ・インスタンス〔fn = -1〕と展開した関数は入口 / 出口を出さない: 葉は呼び手の枠に数える）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
+func ElfTraceEffects(p loader.Program, passes bool) ([]byte, error?) {
+    mut k := knob(KElf, passes, true, false, false, 0, VfyLast)
+    k.traceEffs = true
+    return lowerWith(p, k)
+}
+
 func irText(p loader.Program, passes bool) ([]byte, error?) {
     return lowerWith(p, knob(KIr, passes, passes, false, false, 0, VfyLast))
 }
@@ -306,6 +316,7 @@ type Knob struct {
     vmode int
     ymode int
     traceErrs bool
+    traceEffs bool
     xseq bool
     mvRound bool
     noVec bool
@@ -322,7 +333,7 @@ type Knob struct {
 }
 
 func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode int) Knob {
-    return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, xseq: false,
+    return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, traceEffs: false, xseq: false,
         mvRound: false, noVec: false, noSpec: false, ubStat: false, frStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
 }
 
@@ -343,6 +354,7 @@ type LowOut struct {
 func lowerCore(p loader.Program, k Knob) (LowOut, error?) {
     mut st := St{}
     st.traceErrs = k.traceErrs
+    st.traceEffs = k.traceEffs
     st.xseq = k.xseq
     st.mvRound = k.mvRound
     st.noVec = k.noVec
@@ -1289,6 +1301,14 @@ func funcBody(st mut St, fi int) error? {
     if !infoAt(mut st, fi).transp {
         regionEnter(mut st)
     }
+    if st.traceEffs {
+        if isKid(mut st, fi) {
+            // 子の task の入口: その task の積みを空に（死んだ task の TCB は使い回される — 出口の印の無い枠が残る）
+            printChars(mut st, "#effnew 0")
+            traceTask(mut st)
+        }
+        traceEff(mut st, "#effin ")
+    }
     stmts(mut st, lA(nodeOf(mut st, nE(nodeOf(mut st, decl)))))?
     if cur(mut st) != -1 {
         if lenL(mut st, desugar.ListRef(infoAt(mut st, fi).results)) != 0 {
@@ -1296,6 +1316,9 @@ func funcBody(st mut St, fi int) error? {
         }
         runDefers(mut st, 0)?
         if cur(mut st) != -1 {
+            if st.traceEffs {
+                traceEff(mut st, "#effout ")
+            }
             regionSetDepth(mut st, st.entryDepth)
             ret(mut st, -1)
         }
@@ -1921,6 +1944,9 @@ func funcExit(st mut St, v int, at desugar.NodeRef) error? {
     runDefers(mut st, 0)?
     if cur(mut st) == -1 {
         return nil
+    }
+    if st.traceEffs {
+        traceEff(mut st, "#effout ")
     }
     if infoSret(mut st) {
         // 結果の slice / map を呼び手の region へ写す（defer の後・深度復元の前）

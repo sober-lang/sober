@@ -1,0 +1,4 @@
+examples/effects_neg_any.sober:10:6: effects main.call fi=0 bits=io declared
+examples/effects_neg_any.sober:14:6: effects main.main fi=1 bits=io
+examples/effects_neg_any.sober:9:1: violation 'main.call' may have the effect io via a call through a function value (the effects of every function value in the program), which its @effects does not allow (allowed: block, panic, nondet)
+summary fns=2 lambdas=2 edges=11 any=io any-calls=1 fvalues=0 declared=1 violations=1

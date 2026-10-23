@@ -74,6 +74,7 @@ type Key struct {
 ```sober
 @errors(BadSize)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Prepare(key []byte) (Key, error?)
 ```
 
@@ -87,6 +88,7 @@ key の Key（鍵の長さはここで見る）
 @errors(BadSize)
 @secret(key)
 @bless
+@effects(!io, !block, !nondet)
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?)
 ```
 
@@ -99,6 +101,7 @@ pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は�
 ```sober
 @errors(BadSize, Auth)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?)
 ```
 
@@ -111,6 +114,7 @@ Seal の逆（tag を照合してから復号する）
 ```sober
 @errors(BadSize)
 @bless
+@effects(!io, !block, !nondet)
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
@@ -124,6 +128,7 @@ head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt �
 
 ```sober
 @errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?)
 ```
 

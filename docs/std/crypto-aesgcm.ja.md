@@ -75,6 +75,7 @@ tag が合わない
 ## Available
 
 ```sober
+@effects(!io, !block, !nondet)
 func Available() bool
 ```
 
@@ -95,6 +96,7 @@ type Key struct {
 ```sober
 @errors(NoHardware, BadSize)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Prepare(key []byte) (Key, error?)
 ```
 
@@ -108,6 +110,7 @@ key を展開した Key（専用命令の有無と鍵の長さはここで見る
 @errors(NoHardware, BadSize)
 @secret(key)
 @bless
+@effects(!io, !block, !nondet)
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?)
 ```
 
@@ -120,6 +123,7 @@ pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は�
 ```sober
 @errors(NoHardware, BadSize, Auth)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?)
 ```
 
@@ -132,6 +136,7 @@ Seal の逆（tag を crypto.Equal で照合してから復号する）
 ```sober
 @errors(BadSize)
 @bless
+@effects(!io, !block, !nondet)
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
@@ -145,6 +150,7 @@ head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側
 
 ```sober
 @errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?)
 ```
 

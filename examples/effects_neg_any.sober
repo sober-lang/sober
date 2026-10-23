@@ -1,0 +1,17 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 匿名の関数型の欄の値の呼び出しは、プログラムの全部の関数値の効果の合併（ANY — 閉じた世界の上界）
+
+type Box struct {
+    f func(int) int
+}
+
+@effects(!io)
+func call(b Box) int {
+    return b.f(2)
+}
+
+func main() {
+    println(call(Box{f: (x) => x + 1}))
+    println(call(Box{f: (x) => { println(x); x }}))
+}

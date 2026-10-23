@@ -119,7 +119,7 @@ func lsEnvInt(name string) int {
 
 // lsCfg は子の St に写す口（lowerWith が立てる欄のうち program の下ろし方に効くもの）
 func lsCfg(st mut St) []int {
-    return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }}
+    return []int{if st.transparent { 1 } else { 0 }, if st.traceErrs { 1 } else { 0 }, st.rtMut, if st.csSite { 1 } else { 0 }, if st.callStat { 1 } else { 0 }, if st.hwFold { 1 } else { 0 }, if st.cutStat { 1 } else { 0 }, if st.noVec { 1 } else { 0 }, if st.noSpec { 1 } else { 0 }, if st.slotPoison { 1 } else { 0 }, if st.traceEffs { 1 } else { 0 }}
 }
 
 func lsCfgSet(st mut St, c []int) {
@@ -133,6 +133,7 @@ func lsCfgSet(st mut St, c []int) {
     st.noVec = c[7] == 1
     st.noSpec = c[8] == 1
     st.slotPoison = c[9] == 1
+    st.traceEffs = c[10] == 1
     st.ls.groups = 1
 }
 

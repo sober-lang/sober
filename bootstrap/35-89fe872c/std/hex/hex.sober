@@ -1,0 +1,47 @@
+package hex
+
+// バイト列の小文字の 16 進表記（Format）と、その逆向きの読み（Parse）
+
+import "std/iter"
+
+// b の小文字の 16 進表記（1 バイト 2 桁 — Go の hex.EncodeToString・sha256sum の出力と同じ綴り）。
+// 逆向きは Parse（language.md 34 節の Format ⇄ Parse の族）。表引きなので秘密の値（鍵）には使わない（定数時間でない — std/crypto の規律の外）
+//
+//     hex.Format(hash.Sha256(bytes("abc")))   // "ba7816bf…"
+func Format(b []byte) string {
+    digits := bytes("0123456789abcdef")
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        v := int(b[i])
+        out = append(out, digits[v >> 4])
+        out = append(out, digits[v & 15])
+    }
+    return bytesToString(freeze(out))
+}
+
+// Parse の入力が 16 進の綴りでない（奇数の長さ・0-9 a-f A-F 以外の文字）
+type Bad error
+
+// 16 進の綴り s のバイト列（大文字・小文字とも受ける — 暗号のテストベクタの読み）
+@errors(Bad)
+func Parse(s string) ([]byte, error?) {
+    b := bytes(s)
+    if len(b) % 2 != 0 {
+        return []byte{}, Bad{}
+    }
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b) / 2) {
+        hi := nib(int(b[2 * i]))
+        lo := nib(int(b[2 * i + 1]))
+        if hi < 0 || lo < 0 {
+            return []byte{}, Bad{}
+        }
+        out = append(out, byte(hi * 16 + lo))
+    }
+    return freeze(out), nil
+}
+
+// nib は 16 進の 1 文字の値（綴りでなければ -1）
+func nib(c int) int {
+    return if c >= 48 && c <= 57 { c - 48 } else if c >= 97 && c <= 102 { c - 87 } else if c >= 65 && c <= 70 { c - 55 } else { -1 }
+}

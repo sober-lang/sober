@@ -12,6 +12,7 @@ import "std/iter"
 
 // PRK = HMAC-SHA256(salt, ikm)（salt が空なら 32 バイトの 0 — RFC 5869 2.2）
 @secret(ikm)
+@effects(!io, !block, !nondet)
 func Extract(salt []byte, ikm []byte) []byte {
     mut z := mut []byte{}
     if len(salt) == 0 {
@@ -29,6 +30,7 @@ type TooLong error
 // OKM の先頭 n バイト（T(i) = HMAC(prk, T(i-1) ++ info ++ i) を繋ぐ — RFC 5869 2.3）。n が 255 × 32 を超えれば TooLong（RFC の上限）
 @errors(TooLong)
 @secret(prk)
+@effects(!io, !block, !nondet)
 func Expand(prk []byte, info []byte, n int) ([]byte, error?) {
     if n < 0 || n > 255 * sha256.Size {
         return []byte{}, TooLong{}

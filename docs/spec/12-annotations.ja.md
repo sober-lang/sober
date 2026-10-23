@@ -6,7 +6,7 @@
 
 アノテーション `@名前(引数)` は宣言に付ける。受理されたプログラムの意味を変えず、拒否を起こすか、宣言の形を決めるだけ。コンパイル時の計算（comptime）は無い。
 
-A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared` の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
+A-1. 言語が知るアノテーションは `@errors`（7 章）・`@layout`・`@embed`・`@noinline`・`@exhaustive`・`@secret`・`@bless`・`@credential`・`@shared`・`@effects` の閉じた集合（interface ファイル `.sobi` にだけ書く `@expand` を除く）。知らないアノテーションは拒否する。
 例: [`examples/errval.sober`](../../examples/errval.sober)・[`examples/layout_elf.sober`](../../examples/layout_elf.sober)・[`examples/embed_demo.sober`](../../examples/embed_demo.sober)・[`examples/noinline.sober`](../../examples/noinline.sober)
 拒否: [`examples/annot_neg_unknown.sober`](../../examples/annot_neg_unknown.sober)
 決定: [language.md 10 節](../language.md)
@@ -79,3 +79,20 @@ A-13. 認証の源（`@credential` の関数の結果・std の外での `@crede
 例: [`examples/http_origin.sober`](../../examples/http_origin.sober)・[`examples/http_cache.sober`](../../examples/http_cache.sober)
 拒否: [`examples/origin_neg_cookie.sober`](../../examples/origin_neg_cookie.sober)・[`examples/origin_neg_helper.sober`](../../examples/origin_neg_helper.sober)・[`examples/origin_neg_fnvalue.sober`](../../examples/origin_neg_fnvalue.sober)・[`examples/origin_neg_before.sober`](../../examples/origin_neg_before.sober)・[`examples/origin_neg_after.sober`](../../examples/origin_neg_after.sober)・[`examples/origin_neg_mount.sober`](../../examples/origin_neg_mount.sober)・[`examples/origin_neg_capture.sober`](../../examples/origin_neg_capture.sober)・[`examples/origin_neg_head.sober`](../../examples/origin_neg_head.sober)・[`examples/origin_neg_resp.sober`](../../examples/origin_neg_resp.sober)
 決定: [language.md 12 節「出所の依存」・13 節の補 3](../language.md)
+
+## 12.5 関数の効果
+
+A-14. `@effects(…)` は関数の前置と、名前付き関数型の後置（`type F func(…) R @effects(…)` — F の値の契約）に書く。項は効果の語（`block`・`io`・`panic`・`nondet`）・否定の語（`!io`）・名前付き関数型の名前（その型の値の効果）。項は全部が正か全部が否定で、否定できるのは語だけ。
+例: [`examples/effects_annot.sober`](../../examples/effects_annot.sober)
+拒否: [`examples/effects_neg_mixed.sober`](../../examples/effects_neg_mixed.sober)・[`examples/effects_neg_word.sober`](../../examples/effects_neg_word.sober)・[`examples/effects_neg_negtype.sober`](../../examples/effects_neg_negtype.sober)・[`examples/effects_neg_target.sober`](../../examples/effects_neg_target.sober)
+決定: [language.md 12 節「関数の効果の宣言」](../language.md)
+
+A-15. 関数の効果は導出する: `block` = std/task の待つ口（Run・Join・Try・Send・Recv）と待つ io、`io` = プロセスの外との入出力（`println` を含む）、`panic` = `panic(L{…})`、`nondet` = 時刻の読み。呼んだ関数の効果は呼び手の効果。匿名の関数型の仮引数の呼び出しは透過で、渡した実引数（ラムダ・関数）の効果を呼び手が持つ。名前付き関数型の値の呼び出しは、その型の契約か、契約が無ければその型の値になりうる全部の関数・ラムダの効果の合併。匿名の関数型の欄・局所の値の呼び出しは、プログラムの全部の関数値の効果の合併。
+例: [`examples/effects_annot.sober`](../../examples/effects_annot.sober)
+拒否: [`examples/effects_neg_transparent.sober`](../../examples/effects_neg_transparent.sober)・[`examples/effects_neg_union.sober`](../../examples/effects_neg_union.sober)・[`examples/effects_neg_any.sober`](../../examples/effects_neg_any.sober)
+決定: [language.md 12 節「関数の効果の宣言」](../language.md)
+
+A-16. 導出した効果は宣言の許容に含まれなければならない（正の列挙 = 書いた語と型の名前の項の値・否定形 = 否定した語の外の全部）。名前付き関数型の値になるラムダ・関数の効果は、その型の契約に含まれなければならない。検査は `sober check` の analyzer が行う。
+例: [`examples/effects_annot.sober`](../../examples/effects_annot.sober)
+拒否: [`examples/effects_neg_leak.sober`](../../examples/effects_neg_leak.sober)・[`examples/effects_neg_fnvalue.sober`](../../examples/effects_neg_fnvalue.sober)
+決定: [language.md 12 節「関数の効果の宣言」](../language.md)

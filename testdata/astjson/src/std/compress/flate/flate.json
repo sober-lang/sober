@@ -18,10 +18,10 @@
           "name": "deflate.Work"
         }
       },
-      "tok": 42,
+      "tok": 55,
       "span": {
-        "start": 41,
-        "end": 48
+        "start": 54,
+        "end": 61
       }
     },
     {
@@ -36,14 +36,14 @@
               "k": "name",
               "name": "int"
             },
-            "tok": 126
+            "tok": 165
           }
         ]
       },
-      "tok": 123,
+      "tok": 162,
       "span": {
-        "start": 122,
-        "end": 131
+        "start": 161,
+        "end": 170
       }
     }
   ],
@@ -96,11 +96,11 @@
                 "k": "composite",
                 "type_name": "Work",
                 "elems": [],
-                "tok": 24,
+                "tok": 37,
                 "type_args": []
               }
             ],
-            "tok": 21
+            "tok": 34
           },
           {
             "k": "ret",
@@ -110,39 +110,39 @@
                 "callee": {
                   "k": "ident",
                   "name": "EncodeWith",
-                  "tok": 29
+                  "tok": 42
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "w",
-                    "tok": 32
+                    "tok": 45
                   },
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 34
+                    "tok": 47
                   },
                   {
                     "k": "ident",
                     "name": "level",
-                    "tok": 36
+                    "tok": 49
                   }
                 ],
-                "tok": 30
+                "tok": 43
               }
             ],
-            "tok": 28
+            "tok": 41
           }
         ]
       },
-      "tok": 7,
+      "tok": 20,
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 41
+        "end": 54
       },
-      "sig_end": 20
+      "sig_end": 33
     },
     {
       "name": "Prepare",
@@ -169,30 +169,30 @@
                 "base": {
                   "k": "ident",
                   "name": "deflate",
-                  "tok": 56
+                  "tok": 82
                 },
                 "field": "Prepare",
-                "tok": 58
+                "tok": 84
               },
               "args": [
                 {
                   "k": "mut_arg",
                   "name": "w",
-                  "tok": 61
+                  "tok": 87
                 }
               ],
-              "tok": 59
+              "tok": 85
             }
           }
         ]
       },
-      "tok": 49,
+      "tok": 75,
       "bodiless": false,
       "span": {
-        "start": 48,
-        "end": 66
+        "start": 61,
+        "end": 92
       },
-      "sig_end": 55
+      "sig_end": 81
     },
     {
       "name": "EncodeWith",
@@ -252,14 +252,14 @@
                   "lhs": {
                     "k": "ident",
                     "name": "level",
-                    "tok": 86
+                    "tok": 125
                   },
                   "rhs": {
                     "k": "int",
                     "value": 0,
-                    "tok": 88
+                    "tok": 127
                   },
-                  "tok": 87
+                  "tok": 126
                 },
                 "rhs": {
                   "k": "binary",
@@ -267,16 +267,16 @@
                   "lhs": {
                     "k": "ident",
                     "name": "level",
-                    "tok": 90
+                    "tok": 129
                   },
                   "rhs": {
                     "k": "int",
                     "value": 9,
-                    "tok": 92
+                    "tok": 131
                   },
-                  "tok": 91
+                  "tok": 130
                 },
-                "tok": 89
+                "tok": 128
               },
               "then": {
                 "stmts": [
@@ -288,7 +288,7 @@
                         "callee": {
                           "k": "ident",
                           "name": "panic",
-                          "tok": 95
+                          "tok": 134
                         },
                         "args": [
                           {
@@ -300,23 +300,23 @@
                                 "value": {
                                   "k": "ident",
                                   "name": "level",
-                                  "tok": 101
+                                  "tok": 140
                                 }
                               }
                             ],
-                            "tok": 97,
+                            "tok": 136,
                             "type_args": []
                           }
                         ],
-                        "tok": 96
+                        "tok": 135
                       }
                     ],
-                    "tok": 94
+                    "tok": 133
                   }
                 ]
               },
               "else": null,
-              "tok": 85
+              "tok": 124
             }
           },
           {
@@ -329,42 +329,42 @@
                   "base": {
                     "k": "ident",
                     "name": "deflate",
-                    "tok": 108
+                    "tok": 147
                   },
                   "field": "EncodeWith",
-                  "tok": 110
+                  "tok": 149
                 },
                 "args": [
                   {
                     "k": "mut_arg",
                     "name": "w",
-                    "tok": 113
+                    "tok": 152
                   },
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 115
+                    "tok": 154
                   },
                   {
                     "k": "ident",
                     "name": "level",
-                    "tok": 117
+                    "tok": 156
                   }
                 ],
-                "tok": 111
+                "tok": 150
               }
             ],
-            "tok": 107
+            "tok": 146
           }
         ]
       },
-      "tok": 67,
+      "tok": 106,
       "bodiless": false,
       "span": {
-        "start": 66,
-        "end": 122
+        "start": 92,
+        "end": 161
       },
-      "sig_end": 84
+      "sig_end": 123
     }
   ],
   "consts": []

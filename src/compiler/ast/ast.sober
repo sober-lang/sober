@@ -104,7 +104,7 @@ const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字�
 const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
 const BStruct = 53     // a = fields（列）
 const BUnion = 54      // a = variants（列）
-const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）, d = 後置の `@errors` のラベル名の列 + 1（0 = 無し）, e = その `@` の字句
+const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）, d = 後置の `@errors` のラベル名の列 + 1（0 = 無し）, e = その `@` の字句, f = 後置の `@effects` の項の列 + 1（0 = 無し — その `@` の字句は節の tok）
 const BError = 56      // a = fields（列）
 const KField = 57      // a = 名前, b = 型, c = 後置の印（1 = `@secret`・2 = `@credential` — struct の欄だけ）
 const KVariant = 58    // a = 名前, b = fields（列）, c = 後置の `@shared` の印（1）

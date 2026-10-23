@@ -46,11 +46,13 @@ type BadSize error
 
 // k の公開鍵
 @bless
+@effects(!io, !block, !nondet)
 func Public(k PrivateKey) PublicKey {
     return k.pub
 }
 
 // pub の法のバイト長（署名の長さ）
+@effects(!io, !block, !nondet)
 func Size(pub PublicKey) int {
     return pub.k
 }
@@ -58,6 +60,7 @@ func Size(pub PublicKey) int {
 // msg の RSASSA-PSS の署名（k バイト）。salt の長さが PSS の salt 長（通常は crypto.Rand(32) — ハッシュ〔SHA-256〕と同じ長さの乱数。検証の VerifyPSS の sLen に同じ長さを渡す）
 @errors(BadSize, Fault)
 @bless
+@effects(!io, !block, !nondet)
 func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
     pub := k.pub
     em, ee := pssEncode(sha256.Sum256(msg), salt, pub.bits - 1)
@@ -96,6 +99,7 @@ func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
 }
 
 // sig が pub で msg の RSASSA-PSS の署名（salt 長 sLen）か
+@effects(!io, !block, !nondet)
 func VerifyPSS(pub PublicKey, msg []byte, sig []byte, sLen int) bool {
     if len(sig) != pub.k {
         return false

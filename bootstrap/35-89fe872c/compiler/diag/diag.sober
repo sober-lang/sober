@@ -1,0 +1,719 @@
+package diag
+
+// 診断（C4 — reaudit 第 2 弾）: 位置 Pos と拒否の種類ごとの error ラベル（language.md 13 節 — 種類 = ラベルのタグ）、印字 Format。
+// 層（loader / desugar / lower）は拒否をここのラベルで返し、app が Format で 1 行にする。位置は各層が手元の節（desugar の NodeRef・
+// loader の字句）から raise の時点で Pos に落とす（ファイルは推測しない — 引けなければ -1）。
+// ラベルは位置だけを持つ（文言は Format の腕 — string の欄を持たせると error? の全値が中身つきの境界コピーを背負う）。
+// 溜める形（loader の NameHit・desugar の nomLog）は Pos か (ファイル, 字句) の組を別に持つ
+
+import "lexer"
+import "std/iter"
+
+// Pos はファイル file（loader の Program のファイルの番号 — 無ければ -1）の字句 tok
+type Pos struct {
+    file int
+    tok int
+}
+
+// None は位置の無い拒否の Pos
+func None() Pos {
+    return Pos{file: -1, tok: 0}
+}
+
+// ── desugar（脱糖器）の拒否 — 綴りは Zig 版の error 名 ──
+
+// CoreFragment はコアの断片の外（型検査器が扱わない形）
+type CoreFragment error {
+    at Pos
+}
+
+// UnknownName は名前が引けない
+type UnknownName error {
+    at Pos
+}
+
+// Malformed は形が不正（kind 0 = 名指しなし・1 = 呼び出しの実引数の数が仮引数の数と合わない）
+type Malformed error {
+    at Pos
+    kind int
+}
+
+// TypeMismatch は型の違反。kind 0 = 型宣言の区別の違反（language.md 32 節 — 表層型の照合）・1 = string の値の switch（15 節 — 単値の subject は
+// int / union / error / T?）・2 = T? と値の == / !=（絞り込んでから比べる — 15 節）
+type TypeMismatch error {
+    at Pos
+    kind int
+}
+
+// PrintArg は println の実引数が印字できない型（int・byte・bool・string 以外 — `T?`・struct・多値等。check が実引数を見ていなかった F-j の修理）
+type PrintArg error {
+    at Pos
+}
+
+// LenString は len を string に掛けた（language.md 33 節 — string に len は無い。バイト数は len(bytes(s))）
+type LenString error {
+    at Pos
+}
+
+// UntypedNil は期待型の無い位置の nil（`x := if c { 3 } else { nil }`・`f() catch nil` の nil の腕 — 型が決まらない）
+type UntypedNil error {
+    at Pos
+}
+
+// NonExhaustive は union の型パターンの switch が全 variant を覆わない（default も `_` も無い）。missing = 一度も腕に出ない最初の variant の宣言
+// （全部の variant が腕に出ていて入れ子の欄の網羅だけ漏れていれば None）— 文面は app が missing の字句（variant の名前）を添える（Note・Spell）
+type NonExhaustive error {
+    at Pos
+    missing Pos
+}
+
+// ImmWrite は imm の map / slice への書き込み（`m[k] = v` — 束縛が mut でも値が imm: `mut m := map[K]V{}` は右辺の mut を書き忘れた形）
+type ImmWrite error {
+    at Pos
+}
+
+// FieldType は struct の composite の欄の値の型が欄の宣言型に合わない（スカラーの欄 — F-x の名指し）
+type FieldType error {
+    at Pos
+}
+
+// ── lower の拒否（種類の綴りは Zig 版の error 名 — Undefined* は引けなかったものの種類ごと）──
+
+type Unsupported error {
+    at Pos
+}
+
+type UndefinedName error {
+    at Pos
+}
+
+type UndefinedFunction error {
+    at Pos
+}
+
+type UndefinedType error {
+    at Pos
+}
+
+type UndefinedField error {
+    at Pos
+}
+
+type Mismatch error {
+    at Pos
+}
+
+type Missing error {
+    at Pos
+}
+
+// ── loader の拒否（1 ラベル 1 文言 — 文言は Format）──
+
+type ReadFail error {
+    at Pos
+}
+
+type GrammarMismatch error {
+    at Pos
+}
+
+type NoPkgDir error {
+    at Pos
+}
+
+type NoStd error {
+    at Pos
+}
+
+type EmbedReceiver error {
+    at Pos
+}
+
+type EmbedPattern error {
+    at Pos
+}
+
+type EmbedNoMatch error {
+    at Pos
+}
+
+type EmbedPathUtf8 error {
+    at Pos
+}
+
+type EmbedRead error {
+    at Pos
+}
+
+type EmbedFileUtf8 error {
+    at Pos
+}
+
+type PkgName error {
+    at Pos
+}
+
+type RefCollide error {
+    at Pos
+}
+
+// NotImported は修飾名の参照名をそのファイルが import していない（import はファイルごと — language.md 20 節）
+type NotImported error {
+    at Pos
+}
+
+type ImportCycle error {
+    at Pos
+}
+
+type Noinline error {
+    at Pos
+}
+
+type ErrorHoldsError error {
+    at Pos
+}
+
+// RecursiveType は型宣言の参照が循環している（loader — rectype.sober。コアに再帰型が無い）
+type RecursiveType error {
+    at Pos
+}
+
+type ConstExpr error {
+    at Pos
+}
+
+type LocalBuiltin error {
+    at Pos
+}
+
+type LocalImport error {
+    at Pos
+}
+
+// InternalImport は std の外のファイルから `std/internal/…` を import した（std の実装の詳細 — language.md 20 節）
+type InternalImport error {
+    at Pos
+}
+
+type LocalTop error {
+    at Pos
+}
+
+type TParamBuiltin error {
+    at Pos
+}
+
+type TParamTop error {
+    at Pos
+}
+
+type DeclBuiltin error {
+    at Pos
+}
+
+// TopDup はトップレベルの名前（const・func・型）が package の中で 2 度宣言された（loader — localnames.sober。variant どうしは VariantDup）
+type TopDup error {
+    at Pos
+}
+
+type VariantDup error {
+    at Pos
+}
+
+type Shadow error {
+    at Pos
+}
+
+type PureExprStmt error {
+    at Pos
+}
+
+// NilCase は `case nil:` の腕を写せない形（loader/nilcase.sober — D1）。kind = 1 nil の腕が 2 つ以上・2 `nil | …`・3 前に名前のパターン・4 nil の腕しか無い・5〜8 は 2 位置の `case P, nil:`（loader/mvcase.sober の mvBad）
+type NilCase error {
+    at Pos
+    kind int
+}
+
+// LeadingZero は先頭が 0 の 10 進の整数リテラル（`010` — Go の旧来の 8 進と読み違える。syntax.md 決定 18 — 8 進は `0o755` だけ）
+type LeadingZero error {
+    at Pos
+}
+
+// NamedArg は名前付き実引数（syntax.md 決定 7）を位置へ写せない形（loader/namedargs.sober・名前付き関数型の値は desugar/namedval.sober）。kind = 1 呼び先が func 宣言でも仮引数名を持つ名前付き関数型の値でもない・2 その名前の仮引数が無い・
+// 3 宣言の順でない（重複を含む）・4 位置で渡した仮引数を名前でも渡した・5 省略できない（`T?` でない）仮引数が無い・6 パイプ段で穴 `_` が無い
+type NamedArg error {
+    at Pos
+    kind int
+}
+
+// CatchLhs は catch の左辺が `(T, error?)` を返さない func 宣言の呼び出し（loader/catchx.sober — 写した後の多値の束縛の数の照合より先に名指す）
+// MultiBind は値 1 つの束縛（`d := f()`）の値が 2 つ以上の結果を返す呼び出し（loader — catchx.sober）
+type MultiBind error {
+    at Pos
+}
+
+// MutAlias は同じ呼び出しの mut 実引数の経路の重なり（同じ / 一方が他方の接頭 — loader/mutalias.sober・language.md 26 節）。位置 = 後ろの mut 実引数
+type MutAlias error {
+    at Pos
+}
+
+type CatchLhs error {
+    at Pos
+}
+
+// Sealed は封の型（欄の型に宣言した package の非公開の型を持つ struct — utf8.View・json.Doc）の、外での欄つきリテラル（loader/sealx.sober・language.md 15 節）
+type Sealed error {
+    at Pos
+}
+
+// Identity は同一性を持つ型（std/task の札・handle・端点・Pool、std/io の File）のゼロ値を std の外で作る composite（loader/identityx.sober・language.md 28 節 /
+// 11 節 — 2026-10-13 の裁定 Qa1）。kind 1〜6 = 型そのもののゼロ値 `T{}`（1 task.Scope・2 task.Handle・3 task.Sender・4 task.Receiver・5 task.Pool・6 io.File）・
+// 11〜16 = その型を（欄を通して）持つ欄を省いた composite（`W{}`・部分リテラル）
+type Identity error {
+    at Pos
+    kind int
+}
+
+// FileUse は開いたファイル io.File の使い方の拒否（desugar/filecheck.sober・language.md 28 節「資源とストリーム」— IO 便 段 2）。kind = filecheck の FC_*
+// （1 規則の形の外の Open・2 直後の文が defer Close でない・3 規則の形の外の Close・4 defer が別の名前を閉じる・5 写しの束縛・6 代入・7 return / File を返す呼び出し・
+// 8 composite・append・9 閉包の捕獲・10 give:）
+type FileUse error {
+    at Pos
+    kind int
+}
+
+// FnArg は関数型の実引数に置いた名前付き関数を η 展開できない形（loader/eta.sober — language.md 25 節）。kind = 1 mut 仮引数を持つ関数・2 仮引数の数が関数型と違う
+type FnArg error {
+    at Pos
+    kind int
+}
+
+// FnCap は値の位置（値化可能な named fn type の struct の欄 — language.md 25 節 クロージャの波 2026-10-17）のラムダの、値になれない形
+// （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
+// 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）・
+// 6 1 つの値の呼び出しの借りの実引数のラムダが 2 つ目の mut の束縛を捕捉（(α-L1) の縛り — loader/fnval.sober の fvMutOne）・
+// 7 借りの値をそのまま実引数に渡す値の呼び出しの借りのラムダが mut の束縛を捕捉（同じ縛りの (b) — anchor が転送する借りの region 0 と割れうる）
+type FnCap error {
+    at Pos
+    kind int
+}
+
+// ForFallible は失敗しうる生成元（結果が `error?` の呼び出し形の生成元 — language.md 7 節）の印の誤り（loader/forfallible.sober）。
+// kind 1 = 印 `?` が無い（error を黙って捨てる形）・2 = 式の位置の for（yield 形）の生成元・3 = 印 `?` つきだが生成元の結果が `error?` 1 つでない・
+// 4 = 生成元の呼び先が名前付き関数型の仮引数（展開されないので生成元にならない — L-for の範囲外）
+type ForFallible error {
+    at Pos
+    kind int
+}
+
+// AssertOutsideTest は `_test.sober` の外の `assert(…)`（T7 — assert はテストの語彙）
+type AssertOutsideTest error {
+    at Pos
+}
+
+// TypeDecl は型宣言の形の拒否（loader/alias.sober — language.md 32 節）。kind = 0 定義型の下地が int / bool でない・1 別名の右辺が型宣言の名前でない
+// （組み込みの型・合成の型・型引数つき・error / panic ラベル）・2 別名の循環・3 型パラメータつきの別名・4 別名の右辺が未定義か見えない・
+// 5 書き換えの後に別名を指す名前が残った（fail-closed — loader の段の漏れ）
+type TypeDecl error {
+    at Pos
+    kind int
+}
+
+// Layout は @layout（language.md 36 節）の拒否（loader/layout.sober）。kind = 1 `[N]T` の欄が @layout の struct の外・2 @layout が struct でない型宣言に付いている・
+// 3 @layout の欄の型が幅の語（か幅の語の `[N]`・N ≥ 1）でない・4 幅の語が @layout の欄の外・5 @layout の struct に欄が無いか型パラメータがある・
+// 6 `layout.X[T]` の T が @layout の struct でない・7 std/layout の口の形（Decode / DecodeAt / Encode は `[T]` をつけて呼ぶ・Size は `[T]` をつけて呼ばない）・
+// 8 @layout の struct のリテラルの欄の整数リテラルが幅に収まらない
+type Layout error {
+    at Pos
+    kind int
+}
+
+// JsonShape は `json.Decode[T]`（shape[T] — loader/jsonshape.sober）の拒否（kind 1 = T が struct でない・2 = 範囲外の欄の型・3 = 型引数つきで呼んでいない）
+type JsonShape error {
+    at Pos
+    kind int
+}
+
+// Intrinsic は `@intrinsic("鍵")` の宣言（std の本体なしの宣言 — 息継ぎ ③・loader/intrinsic.sober）の拒否（kind 1 = std の外・2 = 鍵が閉じた集合に無い・
+// 3 = 署名が鍵の実装と合わない・4 = 同じ package に同じ名前の宣言が 2 つ）
+type Intrinsic error {
+    at Pos
+    kind int
+}
+
+// Par は structured concurrency（std/task — 段 6 P3a・language.md 11 節）の呼び出し点の拒否（kind 1 = build の経路は未実装〔P3a-2 待ち〕・
+// 3〜17 = 呼び出し点の形 — desugar/parcheck.sober の表・18 = 多値の型の置き場 — loader/tupletype.sober）
+type Par error {
+    at Pos
+    kind int
+}
+
+// Frozen は健全性の規則（analyzer の freeze の U1〜U3 — language.md 17 節）の拒否（build — lower の build が表層型の表の上で掛ける。n = 指摘の数）。
+// 行は app が analyzer.Freeze で引き直して analyze と同じ形で出す（拒否の経路だけ — slice を持つラベルを default つきの switch で受けると
+// 検査器が def error にする — 最小形は report-484）
+type Frozen error {
+    n int
+}
+
+// IsFrozen は err が Frozen か
+func IsFrozen(err error?) bool {
+    return switch err {
+    case nil: false
+    case Frozen{n}: true
+    default: false
+    }
+}
+
+// PanicLabel は panic ラベル（language.md 27 節 — loader/panicx.sober の PL_*）の拒否。kind = 1 裸の `panic()`・2 実引数がラベルのリテラル 1 つでない・
+// 3 リテラルの型が panic ラベルでない・4 RegionExceeded を書いた・5 欄の書き方・6 宣言の欄の型・7 組み込みのラベルの名前の宣言・8 実引数の外の使用
+type PanicLabel error {
+    at Pos
+    kind int
+}
+
+// TestSignature は `_test.sober` の `TestXxx` が引数・戻り・型パラメータを持つ（テストのビルド — loader/testmain.sober。T3）
+type TestSignature error {
+    at Pos
+}
+
+// At は拒否 err の位置（ここのラベルでなければ None）
+func At(err error?) Pos {
+    return switch err {
+    case nil: None()
+    case CoreFragment{at}: at
+    case UnknownName{at}: at
+    case Malformed{at}: at
+    case TypeMismatch{at}: at
+    case PrintArg{at}: at
+    case LenString{at}: at
+    case UntypedNil{at}: at
+    case NonExhaustive{at}: at
+    case ImmWrite{at}: at
+    case FieldType{at}: at
+    case Unsupported{at}: at
+    case UndefinedName{at}: at
+    case UndefinedFunction{at}: at
+    case UndefinedType{at}: at
+    case UndefinedField{at}: at
+    case Mismatch{at}: at
+    case Missing{at}: at
+    case ReadFail{at}: at
+    case GrammarMismatch{at}: at
+    case NoPkgDir{at}: at
+    case NoStd{at}: at
+    case EmbedReceiver{at}: at
+    case EmbedPattern{at}: at
+    case EmbedNoMatch{at}: at
+    case EmbedPathUtf8{at}: at
+    case EmbedRead{at}: at
+    case EmbedFileUtf8{at}: at
+    case PkgName{at}: at
+    case RefCollide{at}: at
+    case NotImported{at}: at
+    case ImportCycle{at}: at
+    case Noinline{at}: at
+    case ErrorHoldsError{at}: at
+    case RecursiveType{at}: at
+    case ConstExpr{at}: at
+    case LocalBuiltin{at}: at
+    case LocalImport{at}: at
+    case InternalImport{at}: at
+    case LocalTop{at}: at
+    case TParamBuiltin{at}: at
+    case TParamTop{at}: at
+    case DeclBuiltin{at}: at
+    case VariantDup{at}: at
+    case TopDup{at}: at
+    case Shadow{at}: at
+    case PureExprStmt{at}: at
+    case TestSignature{at}: at
+    case Frozen{n}: None()
+    case NilCase{at}: at
+    case NamedArg{at}: at
+    case LeadingZero{at}: at
+    case AssertOutsideTest{at}: at
+    case CatchLhs{at}: at
+    case MultiBind{at}: at
+    case MutAlias{at}: at
+    case ForFallible{at}: at
+    case FnArg{at}: at
+    case FnCap{at}: at
+    case Sealed{at}: at
+    case Identity{at}: at
+    case Layout{at}: at
+    case TypeDecl{at}: at
+    case JsonShape{at}: at
+    case Intrinsic{at}: at
+    case PanicLabel{at}: at
+    case Par{at}: at
+    case FileUse{at}: at
+    default: None()
+    }
+}
+
+// Format は拒否 err の 1 行（where = At(err) の `<path>:<行>:<列>` — Where）:
+// `desugar error at <where> (<種類>)`・`lower error at <where> (<種類>)`・`load error: <理由>`（位置があれば `load error at <where>: <理由>`）
+func Format(err error?, where string) string {
+    return switch err {
+    case nil: "error"
+    case CoreFragment{at}: "desugar error at ${where} (CoreFragment)"
+    case UnknownName{at}: "desugar error at ${where} (UnknownName)"
+    case Malformed{at, kind}: if kind == 1 { "desugar error at ${where} (Malformed): the number of arguments does not match the function's parameters" } else { "desugar error at ${where} (Malformed)" }
+    case TypeMismatch{at, kind}: switch kind {
+        case 1: "desugar error at ${where} (TypeMismatch): switch on a string value is not in the language — the subject of a value switch is an int (with default), a union, an error or a T?; compare strings with if / else if"
+        case 2: "desugar error at ${where} (TypeMismatch): cannot compare a T? with a value — narrow it first (`if x != nil { … }`, or switch with case nil); `x == nil || …` narrows x only in an if whose then exits"
+        default: "desugar error at ${where} (TypeMismatch)"
+    }
+    case PrintArg{at}: "desugar error at ${where} (PrintArg): println prints int, byte, bool and string values"
+    case LenString{at}: "desugar error at ${where} (LenString): len is not defined on string — use len(bytes(s)) for the byte count"
+    case UntypedNil{at}: "desugar error at ${where} (UntypedNil): nil has no type here — use it where a T? is expected (a typed parameter, field or result)"
+    case NonExhaustive{at}: "error at ${where} (NonExhaustive): switch does not cover every variant of the union — add the missing cases or a default"
+    case ImmWrite{at}: "error at ${where} (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)"
+    case FieldType{at}: "desugar error at ${where} (FieldType): the value does not have the field's declared type"
+    case Unsupported{at}: "lower error at ${where} (Unsupported)"
+    case UndefinedName{at}: "lower error at ${where} (UndefinedName)"
+    case UndefinedFunction{at}: "lower error at ${where} (UndefinedFunction)"
+    case UndefinedType{at}: "lower error at ${where} (UndefinedType)"
+    case UndefinedField{at}: "lower error at ${where} (UndefinedField)"
+    case Mismatch{at}: "lower error at ${where} (Mismatch)"
+    case Missing{at}: "lower error at ${where} (Missing)"
+    case ReadFail{at}: loadLine(err, where, "cannot read file")
+    case GrammarMismatch{at}: loadLine(err, where, "source does not match the grammar")
+    case NoPkgDir{at}: loadLine(err, where, "cannot open package directory")
+    case NoStd{at}: loadLine(err, where, "no such std package")
+    case EmbedReceiver{at}: loadLine(err, where, "@embed needs the receiver `map[string]string{}` (empty, imm)")
+    case EmbedPattern{at}: loadLine(err, where, "invalid @embed pattern")
+    case EmbedNoMatch{at}: loadLine(err, where, "@embed pattern matches no file")
+    case EmbedPathUtf8{at}: loadLine(err, where, "@embed path is not valid UTF-8")
+    case EmbedRead{at}: loadLine(err, where, "@embed cannot read file")
+    case EmbedFileUtf8{at}: loadLine(err, where, "@embed file is not valid UTF-8")
+    case PkgName{at}: loadLine(err, where, "package name must match the directory name")
+    case RefCollide{at}: loadLine(err, where, "import reference name collides (use an alias)")
+    case NotImported{at}: loadLine(err, where, "this file does not import the package it names (imports are per file — add the import to this file)")
+    case ImportCycle{at}: loadLine(err, where, "import cycle")
+    case Noinline{at}: loadLine(err, where, "@noinline applies to a function with mut parameters and no function-typed parameters")
+    case ErrorHoldsError{at}: loadLine(err, where, "an error label cannot hold an error")
+    case RecursiveType{at}: loadLine(err, where, "recursive type declaration (a type cannot contain itself — directly or through []T, map, T? or another type)")
+    case ConstExpr{at}: loadLine(err, where, "const expression")
+    case LocalBuiltin{at}: loadLine(err, where, "a local binding cannot reuse a builtin name (len, shape, println, await, freeze, keys, bytes, true, false, append, delete)")
+    case LocalImport{at}: loadLine(err, where, "a local binding cannot reuse an import reference name")
+    case InternalImport{at}: loadLine(err, where, "std/internal/... is an implementation detail of std — it can be imported only from inside std")
+    case LocalTop{at}: loadLine(err, where, "a local binding cannot reuse a top-level name (const, func or type)")
+    case TParamBuiltin{at}: loadLine(err, where, "a type parameter cannot reuse a builtin name")
+    case TParamTop{at}: loadLine(err, where, "a type parameter cannot reuse a top-level type name")
+    case DeclBuiltin{at}: loadLine(err, where, "a top-level declaration cannot reuse a builtin name")
+    case VariantDup{at}: loadLine(err, where, "a variant name must be unique among the package's top-level names")
+    case TopDup{at}: loadLine(err, where, "a top-level name is declared more than once in the package")
+    case Shadow{at}: loadLine(err, where, "a local binding cannot shadow or redeclare another local binding")
+    case PureExprStmt{at}: loadLine(err, where, "an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)")
+    case TestSignature{at}: loadLine(err, where, "a test function (Test… in a _test.sober file) takes no parameters, type parameters or results")
+    case Frozen{n}: "error: ${n} soundness findings (Analyzer)"
+    case AssertOutsideTest{at}: loadLine(err, where, "assert is only available in _test.sober files")
+    case CatchLhs{at}: loadLine(err, where, "the left of catch must be a call that returns (T, error?)")
+    case Sealed{at}: loadLine(err, where, "this type is sealed (a field has a non-public type of its package): only its own package builds it with fields — write T{} for the zero value, or use the package's constructor")
+    case Identity{at, kind}: loadLine(err, where, if kind < 100 {
+        "`${identityName(kind)}` has identity: only ${identityMaker(kind)} makes one — a zero value would refer to nothing"
+    } else {
+        "this literal leaves a field at its zero value that holds a `${identityName(kind - 100)}`, which has identity: only ${identityMaker(kind - 100)} makes one — set the field, or declare it `T?`"
+    })
+    case FnArg{at, kind}: loadLine(err, where, if kind == 1 {
+        "a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)"
+    } else {
+        "this function takes a different number of parameters than the function type expects"
+    })
+    case FnCap{at, kind}: loadLine(err, where, switch kind {
+        case 1: "a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one"
+        case 7: "this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call"
+        case 6: "the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that"
+        case 2: "a lambda in a value position (a function-typed field) cannot use return — its body is an expression; return would escape the enclosing function"
+        case 3: "a lambda in a value position (a function-typed field) cannot use `?` — the error would escape the enclosing function"
+        case 5: "a lambda in a value position (a function-typed field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container"
+        default: "a lambda in a value position (a function-typed field) cannot break or continue a loop outside the lambda"
+    })
+    case ForFallible{at, kind}: loadLine(err, where, switch kind {
+        case 1: "this generator can fail (it returns error?): mark the for with `?` — `for x <- g(…)? { … }` — or drop the error explicitly with `_ = g(…, (x) => { … })`"
+        case 2: "a generator that can fail is only allowed in the statement form of for (for x <- g(…)? { … }), not in a for expression"
+        case 4: "only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)"
+        default: "`?` on a generator needs a generator that returns error? only"
+    })
+    case MultiBind{at}: loadLine(err, where, "this call returns several values: bind them all (`v, err := f()`), or handle the error with `?` or `catch` (`v := f()?`)")
+    case MutAlias{at}: loadLine(err, where, "mut arguments overlap: this mut argument names the same place as an earlier one in the call (the same name, or a field of it) — mut arguments are exclusive for the duration of the call")
+    case Layout{at, kind}: loadLine(err, where, switch kind {
+        case 1: "a fixed-length array field ([N]T) is only allowed in a @layout struct"
+        case 2: "@layout applies only to a struct type declaration"
+        case 3: "a @layout field has a width type (u8, i8, u16le, u32be, …) or a fixed-length array [N] of one (N ≥ 1)"
+        case 4: "width types (u8, u16le, …) are only allowed as @layout struct field types"
+        case 5: "a @layout struct needs at least one field and no type parameters"
+        case 6: "the type argument of layout.Decode / DecodeAt / Encode / Size must be a @layout struct"
+        case 7: "layout.Decode / DecodeAt / Encode are called with a type argument (layout.Decode[T](…)); layout.Size[T] is a constant"
+        default: "an integer literal does not fit the width of its @layout field"
+    })
+    case TypeDecl{at, kind}: loadLine(err, where, switch kind {
+        case 0: "the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W"
+        case 1: "an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type"
+        case 2: "an alias refers back to itself through other aliases"
+        case 3: "an alias has no type parameters — write the type arguments where the alias is used (type B = lib.Box, then B[int])"
+        case 4: "the type an alias names is not declared or not visible here (a type from another package must be exported)"
+        default: "internal: a name still refers to an alias after the loader rewrote aliases to the types they name"
+    })
+    case JsonShape{at, kind}: loadLine(err, where, switch kind {
+        case 1: "the type argument of json.Decode / Encode must be a struct type without type parameters"
+        case 2: "json.Decode / Encode support struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)"
+        default: "json.Decode / Encode (and DecodeWith / EncodeWith) are called with a type argument: json.Decode[T](doc, node), json.Encode[T](value)"
+    })
+    case Intrinsic{at, kind}: loadLine(err, where, switch kind {
+        case 1: "@intrinsic is only accepted inside std"
+        case 2: "unknown @intrinsic key (the set of keys is closed — see desugar/intrinsic.sober)"
+        case 3: "the signature of an @intrinsic declaration does not match its key"
+        default: "duplicate @intrinsic declaration in the package"
+    })
+    case Par{at, kind}: if kind == 1 { "lower error at ${where}: task.Run / Spawn / Join / Try are not lowered yet (build of structured concurrency is 段 6 P3a-2)" } else { loadLine(err, where, switch kind {
+        case 3: "task.Run / task.Spawn take a lambda literal written at the call ((s) => … for Run, () => … for Spawn)"
+        case 4: "a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)"
+        case 5: "a spawned task cannot capture the scope token (task.Scope), also inside a struct field or T? — spawn from the scope body"
+        case 6: "a spawned task cannot capture a task handle (task.Handle), also inside a struct field or T? — join it in the scope body"
+        case 7: "return and break / continue cannot leave a task.Run / task.Spawn body, and ? cannot leave a task.Spawn body (the scope waits for its children at its end; ? in a task.Run body fails the scope)"
+        case 8: "the result of a spawned task must be copyable to the scope (data — not a function value, task.Scope, task.Handle or a channel endpoint)"
+        case 9: "the result of task.Run cannot hold a task.Scope or task.Handle (it would outlive the scope)"
+        case 13: "task.NewChannel takes its capacity as an integer literal of 1 or more (cap: 16)"
+        case 14: "task.NewChannel needs its payload type written: task.NewChannel[T](cap: n)"
+        case 15: "a channel endpoint (task.Sender / task.Receiver) moves to a child only through give: — task.Spawn(s, (out) => …, give: tx)"
+        case 17: "an error-returning task's handle goes in a slice of task.Handle[(T, error?)] (the element type says the task can fail — Join gives two values)"
+        case 18: "a multi-value type (T, error?) is written only as the type argument of task.Handle — task.Handle[(T, error?)] (no anonymous tuple types)"
+        case 20: "budget: is a size written without calls or division (a literal, a name, task.MB, + - *) — it is read for the admission only"
+        case 19: "a channel payload cannot hold task.Scope, task.Handle or a channel endpoint (also inside struct fields or T?) — they stay with the task that owns them"
+        case 16: "handles (task.Handle) go in a mut slice: mut hs := mut []task.Handle[T]{} (an imm slice copies its elements, and a handle is not copied)"
+        case 22: "wait: is written as the literal true or false — the admission policy of a scope is fixed where it is written"
+        case 23: "deadline: is a relative time written without calls or division (a literal, a name, task.MS, + - *)"
+        case 21: "a spawned task cannot capture mut contents (this value is a mut slice / map or holds one — freeze it before the Spawn: v := freeze(x))"
+        case 24: "task.Lease / task.NewLocal take a window: a lambda with one mut parameter of a written struct type — (w mut T) => …"
+        case 25: "a mut lambda parameter is written only as the window of task.Lease / task.NewLocal"
+        case 26: "a worker-local place holds a struct with only scalar fields (int, byte, bool, float) and pool.Scratch fields, without type parameters"
+        case 27: "the setup of task.NewLocal sizes each pool.Scratch field exactly once — pool.NewScratch(mut w.f, n) with n a constant (a literal, a const name, + - * <<) — and does nothing else"
+        case 28: "LocalNew / LeaseTake / LeaseGive / LeaseBlock / LeaseAttach are what task.NewLocal / task.Lease are rewritten into — call task.NewLocal / task.Lease instead"
+        case 11: "a spawned task cannot capture a function-typed parameter (it is a closure inlined at the call — call it in the scope body and spawn with the value)"
+        default: "task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)"
+    }) }
+    case FileUse{at, kind}: loadLine(err, where, switch kind {
+        case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)` (io.OpenUnder the same way; io.OpenRoot closed by `defer io.CloseRoot(r)`)"
+        case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line"
+        case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes (io.CloseRoot likewise after `r := io.OpenRoot(…)`)"
+        case 4: "this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open"
+        case 5: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
+        case 6: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
+        case 7: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
+        case 8: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
+        case 9: "a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
+        case 11: "a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task"
+        default: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
+    })
+    case PanicLabel{at, kind}: loadLine(err, where, switch kind {
+        case 1: "panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})"
+        case 2: "the argument of panic is a single panic label literal L{…}"
+        case 3: "not a panic label — declare it as type L panic{…} (or use Unreachable / InvariantBroken)"
+        case 4: "RegionExceeded is raised by the runtime only"
+        case 5: "a panic label literal names its fields (name: value), each at most once — omitted fields are zero"
+        case 6: "a panic label field is int, byte, bool or string"
+        case 7: "Unreachable, InvariantBroken and RegionExceeded are built-in panic labels"
+        default: "a panic label is only used as the argument of panic(L{…})"
+    })
+    case LeadingZero{at}: loadLine(err, where, "a decimal literal cannot start with 0 — write 0o for octal (0o755), or drop the leading zeros")
+    case NamedArg{at, kind}: loadLine(err, where, switch kind {
+        case 1: "named arguments can only be passed to a func declaration or a value of a named function type with parameter names"
+        case 2: "the function has no parameter with this name"
+        case 3: "named arguments must follow the order of the parameters"
+        case 4: "this parameter is already given by position"
+        case 5: "a parameter that is not optional (T?) is missing — only T? parameters can be left out"
+        default: "a pipe stage with named arguments marks the piped value with _"
+    })
+    case NilCase{at, kind}: loadLine(err, where, switch kind {
+        case 1: "case nil appears more than once in the switch"
+        case 2: "case nil cannot be combined with other alternatives (nil | …)"
+        case 3: "case nil must come before name patterns (_ or a binding also matches nil)"
+        case 4: "a switch with case nil needs another case or a default"
+        case 5: "in a (value, error?) switch, a case for a non-nil error takes _ as its value pattern (case _, e:)"
+        case 6: "case _, e also matches a nil error: the nil cases must cover every value (case v, nil:)"
+        case 7: "a default here would be needed for both a nil and a non-nil error: cover every value in the nil cases (case v, nil:)"
+        default: "a non-nil error has no case: add case _, e: or a default"
+    })
+    default: "error"
+    }
+}
+
+// loadLine は loader の拒否の 1 行（位置があれば `load error at <where>: <理由>`）
+// identityName / identityMaker は同一性の族の番号（Identity の kind）の型の綴りと生成の口
+func identityName(k int) string {
+    return switch k {
+    case 1: "task.Scope"
+    case 2: "task.Handle"
+    case 3: "task.Sender"
+    case 4: "task.Receiver"
+    case 5: "task.Pool"
+    case 7: "task.Local"
+    case 8: "io.Root"
+    case 9: "net.Listener"
+    case 10: "net.Conn"
+    case 11: "tls.Conn"
+    default: "io.File"
+    }
+}
+
+func identityMaker(k int) string {
+    return switch k {
+    case 1: "task.Run (the body's parameter)"
+    case 2: "task.Spawn"
+    case 3: "task.NewChannel"
+    case 4: "task.NewChannel"
+    case 5: "task.NewPool"
+    case 7: "task.NewLocal"
+    case 8: "io.OpenRoot"
+    case 9: "net.Listen (the parameter of its function)"
+    case 10: "net.Accept or net.Dial (the parameter of its function)"
+    case 11: "tls.Serve (the handler's parameter)"
+    default: "io.Open"
+    }
+}
+
+func loadLine(err error?, where string, why string) string {
+    return if At(err).file >= 0 { "load error at ${where}: ${why}" } else { "load error: ${why}" }
+}
+
+// Note は拒否の 2 つ目の位置（NonExhaustive の落ちている variant — 無ければ None）
+func Note(err error?) Pos {
+    return switch err {
+    case nil: None()
+    case NonExhaustive{at, missing}: missing
+    default: None()
+    }
+}
+
+// Spell はソース src の字句 tok の綴り（範囲外なら ""）
+func Spell(src []byte, tok int) string {
+    toks := lexer.Lex(src)
+    if tok < 0 || tok >= len(toks) {
+        return ""
+    }
+    s, err := string(src[toks[tok].start:toks[tok].end])
+    return if err == nil { s } else { "" }
+}
+
+// Where はファイル path（ソース src）の字句 tok の `<path>:<行>:<列>`（tok が字句の範囲外なら `token <tok>`）
+func Where(path string, src []byte, tok int) string {
+    toks := lexer.Lex(src)
+    if tok < 0 || tok >= len(toks) {
+        return "token ${tok}"
+    }
+    at := toks[tok].start
+    mut line := 1
+    mut col := 1
+    for i <- iter.Range(0, at) {
+        if src[i] == '\n' {
+            line += 1
+            col = 1
+        } else {
+            col += 1
+        }
+    }
+    return "${path}:${line}:${col}"
+}

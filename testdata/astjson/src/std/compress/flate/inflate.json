@@ -98,13 +98,13 @@
                   "lhs": {
                     "k": "ident",
                     "name": "maxSize",
-                    "tok": 46
+                    "tok": 59
                   },
                   "rhs": {
                     "k": "nil",
-                    "tok": 48
+                    "tok": 61
                   },
-                  "tok": 47
+                  "tok": 60
                 },
                 "then": {
                   "stmts": [
@@ -113,7 +113,7 @@
                       "expr": {
                         "k": "ident",
                         "name": "maxSize",
-                        "tok": 50
+                        "tok": 63
                       }
                     }
                   ]
@@ -129,17 +129,17 @@
                         "operand": {
                           "k": "int",
                           "value": 1,
-                          "tok": 55
+                          "tok": 68
                         },
-                        "tok": 54
+                        "tok": 67
                       }
                     }
                   ]
                 },
-                "tok": 45
+                "tok": 58
               }
             ],
-            "tok": 43
+            "tok": 56
           },
           {
             "k": "bind",
@@ -157,32 +157,32 @@
                   "base": {
                     "k": "ident",
                     "name": "inflate",
-                    "tok": 64
+                    "tok": 77
                   },
                   "field": "At",
-                  "tok": 66
+                  "tok": 79
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 68
+                    "tok": 81
                   },
                   {
                     "k": "int",
                     "value": 0,
-                    "tok": 70
+                    "tok": 83
                   },
                   {
                     "k": "ident",
                     "name": "lim",
-                    "tok": 72
+                    "tok": 85
                   }
                 ],
-                "tok": 67
+                "tok": 80
               }
             ],
-            "tok": 58
+            "tok": 71
           },
           {
             "k": "expr",
@@ -194,19 +194,19 @@
                 "lhs": {
                   "k": "ident",
                   "name": "st",
-                  "tok": 76
+                  "tok": 89
                 },
                 "rhs": {
                   "k": "selector",
                   "base": {
                     "k": "ident",
                     "name": "inflate",
-                    "tok": 78
+                    "tok": 91
                   },
                   "field": "Large",
-                  "tok": 80
+                  "tok": 93
                 },
-                "tok": 77
+                "tok": 90
               },
               "then": {
                 "stmts": [
@@ -221,22 +221,22 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 83
+                        "tok": 96
                       },
                       {
                         "k": "composite",
                         "type_name": "TooLarge",
                         "elems": [],
-                        "tok": 89,
+                        "tok": 102,
                         "type_args": []
                       }
                     ],
-                    "tok": 82
+                    "tok": 95
                   }
                 ]
               },
               "else": null,
-              "tok": 75
+              "tok": 88
             }
           },
           {
@@ -252,19 +252,19 @@
                   "lhs": {
                     "k": "ident",
                     "name": "st",
-                    "tok": 96
+                    "tok": 109
                   },
                   "rhs": {
                     "k": "selector",
                     "base": {
                       "k": "ident",
                       "name": "inflate",
-                      "tok": 98
+                      "tok": 111
                     },
                     "field": "Ok",
-                    "tok": 100
+                    "tok": 113
                   },
-                  "tok": 97
+                  "tok": 110
                 },
                 "rhs": {
                   "k": "binary",
@@ -272,27 +272,27 @@
                   "lhs": {
                     "k": "ident",
                     "name": "end",
-                    "tok": 102
+                    "tok": 115
                   },
                   "rhs": {
                     "k": "call",
                     "callee": {
                       "k": "ident",
                       "name": "len",
-                      "tok": 104
+                      "tok": 117
                     },
                     "args": [
                       {
                         "k": "ident",
                         "name": "data",
-                        "tok": 106
+                        "tok": 119
                       }
                     ],
-                    "tok": 105
+                    "tok": 118
                   },
-                  "tok": 103
+                  "tok": 116
                 },
-                "tok": 101
+                "tok": 114
               },
               "then": {
                 "stmts": [
@@ -307,22 +307,22 @@
                         },
                         "elems": [],
                         "mut": false,
-                        "tok": 110
+                        "tok": 123
                       },
                       {
                         "k": "composite",
                         "type_name": "Bad",
                         "elems": [],
-                        "tok": 116,
+                        "tok": 129,
                         "type_args": []
                       }
                     ],
-                    "tok": 109
+                    "tok": 122
                   }
                 ]
               },
               "else": null,
-              "tok": 95
+              "tok": 108
             }
           },
           {
@@ -331,24 +331,24 @@
               {
                 "k": "ident",
                 "name": "out",
-                "tok": 123
+                "tok": 136
               },
               {
                 "k": "nil",
-                "tok": 125
+                "tok": 138
               }
             ],
-            "tok": 122
+            "tok": 135
           }
         ]
       },
-      "tok": 23,
+      "tok": 36,
       "bodiless": false,
       "span": {
         "start": 14,
-        "end": 129
+        "end": 142
       },
-      "sig_end": 42
+      "sig_end": 55
     }
   ],
   "consts": []

@@ -7,6 +7,7 @@ import "std/iter"
 
 // PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密鍵
 @errors(BadKey)
+@effects(!io, !block, !nondet)
 func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
     bad := PrivateKey{pub: noPublic(), mp: noMont(), mq: noMont(), dp: []int{}, dq: []int{}, qinv: []int{}, pbits: 0, qbits: 0}
     // PrivateKeyInfo ::= SEQUENCE { version INTEGER, algorithm AlgorithmIdentifier, privateKey OCTET STRING }
@@ -80,6 +81,7 @@ func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実�
 
 // 大きい端のバイト列の n と e の公開鍵（検証の網の API）
 @errors(BadKey)
+@effects(!io, !block, !nondet)
 func NewPublic(nb []byte, eb []byte) (PublicKey, error?) {
     mut lead := 0
     while lead < len(nb) && nb[lead] == byte(0) {

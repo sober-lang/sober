@@ -1,0 +1,45 @@
+package lower
+
+// 死んだ仮引数の除去の実引数の残し方（cfgclean.sober ccKeepArgs）の単体テスト（`cd compiler && ../bin/sober test lower`）: 残す実引数を 1 つずらす形は
+// 数も定義もそろうので検証器を通り、題材でも等価になりうる（展開後の mem2reg は仮引数を列の末尾に足す — report-498 3 節 変異 2）。IR を手で組んで直に見る
+
+import "desugar"
+import "std/iter"
+
+// ckT は仮引数 3 本のブロックへの辺の実引数 [10, 20, 30] を、生きた仮引数の印 mask（ビット k = k 本目）で ccKeepArgs に掛けた列
+func ckT(mask int) []int {
+    mut st := St{}
+    initScalars(mut st)
+    desugar.HeapPush(mut st.d, 0)
+    f := addFunc(mut st, 0, desugar.ListRef(listN(mut st, 0)), TyI64)
+    begin(mut st, f)
+    to := newBlock(mut st)
+    ps := []int{param(mut st, to, TyI64), param(mut st, to, TyI64), param(mut st, to, TyI64)}
+    mut live := mut []int{}
+    for _ <- iter.Range(0, irFnNVal(mut st, f)) {
+        live = append(live, 0)
+    }
+    for k <- iter.Range(0, 3) {
+        if (mask >> k) & 1 == 1 {
+            live[ps[k]] = 1
+        }
+    }
+    out := ccKeepArgs(mut st, to, list3(mut st, 10, 20, 30), mut live)
+    mut r := []int{}
+    for k <- iter.Range(0, desugar.HeapGet(mut st.d, out)) {
+        r = append(r, desugar.HeapGet(mut st.d, out + 1 + k))
+    }
+    return r
+}
+
+func TestCcKeepArgs() {
+    a := ckT(2)
+    assert(len(a) == 1 && a[0] == 20)
+    b := ckT(5)
+    assert(len(b) == 2 && b[0] == 10 && b[1] == 30)
+    c := ckT(6)
+    assert(len(c) == 2 && c[0] == 20 && c[1] == 30)
+    assert(len(ckT(0)) == 0)
+    e := ckT(7)
+    assert(len(e) == 3 && e[0] == 10 && e[1] == 20 && e[2] == 30)
+}

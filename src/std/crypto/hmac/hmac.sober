@@ -10,6 +10,7 @@ import "std/iter"
 
 // key で msg の HMAC-SHA256（32 バイト）。鍵が 64 バイトを超えれば SHA-256 で縮めてから使う
 @secret(key)
+@effects(!io, !block, !nondet)
 func Sum256(key []byte, msg []byte) []byte {
     k := if len(key) > sha256.BlockSize { sha256.Sum256(key) } else { key }
     mut ip := mut []byte{}

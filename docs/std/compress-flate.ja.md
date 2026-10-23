@@ -9,6 +9,7 @@ DEFLATE（RFC 1951）の符号化（Encode）と復号（Decode — inflate.sobe
 ## Encode
 
 ```sober
+@effects(!io, !block, !nondet)
 func Encode(data []byte, level int) []byte
 ```
 
@@ -40,6 +41,7 @@ z := task.Lease(gzw, (w mut flate.Work) => flate.EncodeWith(mut w, b, 6))  // �
 ## Prepare
 
 ```sober
+@effects(!io, !block, !nondet)
 func Prepare(w mut Work)
 ```
 
@@ -48,6 +50,7 @@ w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロ�
 ## EncodeWith
 
 ```sober
+@effects(!io, !block, !nondet)
 func EncodeWith(w mut Work, data []byte, level int) []byte
 ```
 
@@ -85,6 +88,7 @@ Decode の出力が maxSize バイトを越える（展開爆弾の封 — 越�
 
 ```sober
 @errors(Bad, TooLarge)
+@effects(!io, !block, !nondet)
 func Decode(data []byte, maxSize int?) ([]byte, error?)
 ```
 

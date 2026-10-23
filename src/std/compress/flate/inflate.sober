@@ -19,6 +19,7 @@ type TooLarge error
 //
 // 作業域は符号の表（数 KB）だけで、ブロックごとに作り直す（対の DecodeWith は実需まで足さない — lease で借りる大きさでない。34 節 2 の注記）
 @errors(Bad, TooLarge)
+@effects(!io, !block, !nondet)
 func Decode(data []byte, maxSize int?) ([]byte, error?) {
     lim := if maxSize != nil { maxSize } else { -1 }
     out, end, st := inflate.At(data, 0, lim)

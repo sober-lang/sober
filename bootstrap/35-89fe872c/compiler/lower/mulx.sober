@@ -1,0 +1,32 @@
+package lower
+
+// 多倍長の塊（RSA の続き — report-862 / 864 / 866・std/crypto/rsa の montMul）: 組み込みの鍵 2 つ。cpumulx = この機械で塊を使えるか（0 / 1 — rt.cpu の印の bit 3
+// 〔CPUID.7.0:EBX の bit 8 = BMI2 の MULX かつ bit 19 = ADX の ADCX / ADOX — clmul.sober の rt.cpu_probe〕・SOBER_NOMULX=1 で 0）・montmul(d, a, b, m, m0i, n)（引数は全部番地と int —
+// 64 bit limb の Montgomery の積 1 回まるごと〔行ごとに a·b と f·m の 2 本の積和・行末・condSub — x86.sober xMontMul〕。書くのは d の n + 1 語だけ）。
+// IR は OpSyscall の b = MM_B（c = 種類）: 番地を通して読み書きする不透明な op（aes.sober と同じ理由 — 効果の扱いは syscall と同じ）。x86 の最適化の
+// バックエンドの ELF の道でだけ塊になり（x86.sober xMontMul）、IR テキストには `mm.<種類>` で出る（stage1 の語彙の外）・.ll では 0。
+// hw の道でない出力では cpumulx = 0 の印（MK_CPU）を出すだけで、std の分岐が塊を呼ばない（倒れ先 = Sober の montMul — 塊の照合の相手）
+
+const MM_B = 3
+
+// 種類（OpSyscall の c）
+const MK_CPU = 0    // a = [] → 0（hw の道でない出力の cpumulx の印）
+const MK_MUL = 1    // a = [d, a, b, m, m0i, n]
+
+// cpuMulx は cpumulx の値（hw の道: rt.cpu の印の bit 3）
+func cpuMulx(st mut St) int {
+    if !st.hwFold {
+        return push(mut st, true, OpSyscall, list0(mut st), MM_B, MK_CPU)
+    }
+    return bin(mut st, BAnd, bin(mut st, BSar, cpuMarks(mut st), iconst(mut st, 3)), iconst(mut st, 1))
+}
+
+// mmOp は montmul（vs = 引数の列）
+func mmOp(st mut St, kind int, vs int) int {
+    return push(mut st, true, OpSyscall, vs, MM_B, kind)
+}
+
+// mmName は IR テキストの綴り
+func mmName(kind int) string {
+    return if kind == MK_CPU { "mm.cpu " } else { "mm.mul " }
+}

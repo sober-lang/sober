@@ -6,6 +6,7 @@ import "diag"
 import "desugar"
 import "ast"
 import "lexer"
+import "loader"
 import "std/iter"
 
 // ── 多値 ──
@@ -273,10 +274,12 @@ func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desug
     if ck == ast.EIdent {
         name := sA(nodeOf(mut st, callee))
         if strIs(mut st, name, "println") {
+            traceLeaf(mut st, loader.EffIo)
             return printlnCall(mut st, args, at)
         }
         if strIs(mut st, name, "panic") && lookup(mut st, name) < 0 && desugar.ResolveFn(mut st.d, pk, name) < 0 {
             // `panic(L{…})`（language.md 27 節）: 欄を印字して exit 101（範囲外・ゼロ除算と同じ終端）。結果は Never（-1 — return と同じ）
+            traceLeaf(mut st, loader.EffPanic)
             return panicCall(mut st, args, at)
         }
         br0 := builtin(mut st, name, args, at)?
@@ -324,7 +327,9 @@ func callArgs(st mut St, callee0 desugar.NodeRef, args desugar.ListRef, at desug
             // 並列モードの判定（desugar.ParReach）が届く par の口を落とした — task の rt が無いまま下ろすと壊れるので、ここで止める
             panic(InvariantBroken{})
         }
-        return parCall(mut st, desugar.ParKey(mut st.d, fi), fi, args, at, callee0)
+        pkey := desugar.ParKey(mut st.d, fi)
+        traceLeaf(mut st, if pkey == desugar.PAR_SCOPE || pkey == desugar.PAR_JOIN || pkey == desugar.PAR_TRY || pkey == desugar.PAR_SEND || pkey == desugar.PAR_RECV { loader.EffBlock } else { 0 })
+        return parCall(mut st, pkey, fi, args, at, callee0)
     }
     if lenL(mut st, fnTParams(mut st, fi)) > 0 {
         return genericCall(mut st, fi, args, at, callee0)

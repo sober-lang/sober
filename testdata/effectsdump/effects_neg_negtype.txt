@@ -1,0 +1,5 @@
+examples/effects_neg_negtype.sober:8:6: effects main.run fi=0 bits=none declared
+examples/effects_neg_negtype.sober:12:6: effects main.main fi=1 bits=io
+examples/effects_neg_negtype.sober:5:6: ftype Op union=none
+examples/effects_neg_negtype.sober:7:1: violation @effects: '!Op' — only the effects block, io, panic, nondet can be negated
+summary fns=2 lambdas=1 edges=7 any=none any-calls=0 fvalues=0 declared=1 violations=1

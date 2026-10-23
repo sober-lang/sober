@@ -67,6 +67,33 @@
         "start": 15,
         "end": 29
       }
+    },
+    {
+      "name": "Waiter",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "ms"
+        ]
+      },
+      "tok": 111,
+      "span": {
+        "start": 110,
+        "end": 119
+      }
     }
   ],
   "funcs": [
@@ -315,6 +342,123 @@
       "sig_end": 97
     },
     {
+      "name": "waitVia",
+      "type_params": [],
+      "params": [
+        {
+          "name": "lw",
+          "type": {
+            "k": "name",
+            "name": "task.Local"
+          },
+          "mutable": false
+        },
+        {
+          "name": "wt",
+          "type": {
+            "k": "name",
+            "name": "Waiter"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 133
+                  },
+                  "field": "Lease",
+                  "tok": 135
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 137
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "binary",
+                      "op": "+",
+                      "lhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "sum",
+                          "tok": 145
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w",
+                            "tok": 148
+                          }
+                        ],
+                        "tok": 146
+                      },
+                      "rhs": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "wt",
+                          "tok": 151
+                        },
+                        "args": [
+                          {
+                            "k": "int",
+                            "value": 0,
+                            "tok": 153
+                          }
+                        ],
+                        "tok": 152
+                      },
+                      "tok": 150
+                    },
+                    "tok": 144
+                  }
+                ],
+                "tok": 136
+              }
+            ],
+            "tok": 132
+          }
+        ]
+      },
+      "tok": 120,
+      "bodiless": false,
+      "span": {
+        "start": 119,
+        "end": 159
+      },
+      "sig_end": 131
+    },
+    {
       "name": "main",
       "type_params": [],
       "params": [],
@@ -335,10 +479,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 117
+                    "tok": 166
                   },
                   "field": "NewLocal",
-                  "tok": 119
+                  "tok": 168
                 },
                 "args": [
                   {
@@ -360,32 +504,32 @@
                         "base": {
                           "k": "ident",
                           "name": "pool",
-                          "tok": 127
+                          "tok": 176
                         },
                         "field": "NewScratch",
-                        "tok": 129
+                        "tok": 178
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w.tab",
-                          "tok": 132
+                          "tok": 181
                         },
                         {
                           "k": "int",
                           "value": 8,
-                          "tok": 136
+                          "tok": 185
                         }
                       ],
-                      "tok": 130
+                      "tok": 179
                     },
-                    "tok": 126
+                    "tok": 175
                   }
                 ],
-                "tok": 120
+                "tok": 169
               }
             ],
-            "tok": 115
+            "tok": 164
           },
           {
             "k": "bind",
@@ -401,10 +545,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 142
+                    "tok": 191
                   },
                   "field": "NewLocal",
-                  "tok": 144
+                  "tok": 193
                 },
                 "args": [
                   {
@@ -426,32 +570,32 @@
                         "base": {
                           "k": "ident",
                           "name": "pool",
-                          "tok": 152
+                          "tok": 201
                         },
                         "field": "NewScratch",
-                        "tok": 154
+                        "tok": 203
                       },
                       "args": [
                         {
                           "k": "mut_arg",
                           "name": "w.tab",
-                          "tok": 157
+                          "tok": 206
                         },
                         {
                           "k": "int",
                           "value": 8,
-                          "tok": 161
+                          "tok": 210
                         }
                       ],
-                      "tok": 155
+                      "tok": 204
                     },
-                    "tok": 151
+                    "tok": 200
                   }
                 ],
-                "tok": 145
+                "tok": 194
               }
             ],
-            "tok": 140
+            "tok": 189
           },
           {
             "k": "bind",
@@ -467,16 +611,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 167
+                    "tok": 216
                   },
                   "field": "Lease",
-                  "tok": 169
+                  "tok": 218
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 171
+                    "tok": 220
                   },
                   {
                     "k": "lambda",
@@ -502,19 +646,19 @@
                               "base": {
                                 "k": "ident",
                                 "name": "os",
-                                "tok": 180
+                                "tok": 229
                               },
                               "field": "Sleep",
-                              "tok": 182
+                              "tok": 231
                             },
                             "args": [
                               {
                                 "k": "int",
                                 "value": 0,
-                                "tok": 184
+                                "tok": 233
                               }
                             ],
-                            "tok": 183
+                            "tok": 232
                           }
                         },
                         {
@@ -524,27 +668,27 @@
                             "callee": {
                               "k": "ident",
                               "name": "sum",
-                              "tok": 187
+                              "tok": 236
                             },
                             "args": [
                               {
                                 "k": "mut_arg",
                                 "name": "w",
-                                "tok": 190
+                                "tok": 239
                               }
                             ],
-                            "tok": 188
+                            "tok": 237
                           }
                         }
                       ]
                     },
-                    "tok": 178
+                    "tok": 227
                   }
                 ],
-                "tok": 170
+                "tok": 219
               }
             ],
-            "tok": 165
+            "tok": 214
           },
           {
             "k": "bind",
@@ -560,16 +704,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 198
+                    "tok": 247
                   },
                   "field": "Lease",
-                  "tok": 200
+                  "tok": 249
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 202
+                    "tok": 251
                   },
                   {
                     "k": "lambda",
@@ -594,60 +738,60 @@
                           "callee": {
                             "k": "ident",
                             "name": "sum",
-                            "tok": 210
+                            "tok": 259
                           },
                           "args": [
                             {
                               "k": "mut_arg",
                               "name": "w",
-                              "tok": 213
+                              "tok": 262
                             }
                           ],
-                          "tok": 211
+                          "tok": 260
                         },
                         "rhs": {
                           "k": "call",
                           "callee": {
                             "k": "ident",
                             "name": "nap",
-                            "tok": 216
+                            "tok": 265
                           },
                           "args": [
                             {
                               "k": "int",
                               "value": 0,
-                              "tok": 218
+                              "tok": 267
                             }
                           ],
-                          "tok": 217
+                          "tok": 266
                         },
-                        "tok": 215
+                        "tok": 264
                       },
                       "rhs": {
                         "k": "call",
                         "callee": {
                           "k": "ident",
                           "name": "nap",
-                          "tok": 221
+                          "tok": 270
                         },
                         "args": [
                           {
                             "k": "int",
                             "value": 0,
-                            "tok": 223
+                            "tok": 272
                           }
                         ],
-                        "tok": 222
+                        "tok": 271
                       },
-                      "tok": 220
+                      "tok": 269
                     },
-                    "tok": 209
+                    "tok": 258
                   }
                 ],
-                "tok": 201
+                "tok": 250
               }
             ],
-            "tok": 196
+            "tok": 245
           },
           {
             "k": "bind",
@@ -663,16 +807,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 229
+                    "tok": 278
                   },
                   "field": "Lease",
-                  "tok": 231
+                  "tok": 280
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 233
+                    "tok": 282
                   },
                   {
                     "k": "lambda",
@@ -694,16 +838,16 @@
                         "callee": {
                           "k": "ident",
                           "name": "sum",
-                          "tok": 241
+                          "tok": 290
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "w",
-                            "tok": 244
+                            "tok": 293
                           }
                         ],
-                        "tok": 242
+                        "tok": 291
                       },
                       "rhs": {
                         "k": "call",
@@ -712,16 +856,16 @@
                           "base": {
                             "k": "ident",
                             "name": "task",
-                            "tok": 247
+                            "tok": 296
                           },
                           "field": "Lease",
-                          "tok": 249
+                          "tok": 298
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "lw",
-                            "tok": 251
+                            "tok": 300
                           },
                           {
                             "k": "lambda",
@@ -740,31 +884,31 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "sum",
-                                "tok": 259
+                                "tok": 308
                               },
                               "args": [
                                 {
                                   "k": "mut_arg",
                                   "name": "u",
-                                  "tok": 262
+                                  "tok": 311
                                 }
                               ],
-                              "tok": 260
+                              "tok": 309
                             },
-                            "tok": 258
+                            "tok": 307
                           }
                         ],
-                        "tok": 250
+                        "tok": 299
                       },
-                      "tok": 246
+                      "tok": 295
                     },
-                    "tok": 240
+                    "tok": 289
                   }
                 ],
-                "tok": 232
+                "tok": 281
               }
             ],
-            "tok": 227
+            "tok": 276
           },
           {
             "k": "bind",
@@ -780,16 +924,16 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 269
+                    "tok": 318
                   },
                   "field": "Lease",
-                  "tok": 271
+                  "tok": 320
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "lw",
-                    "tok": 273
+                    "tok": 322
                   },
                   {
                     "k": "lambda",
@@ -811,16 +955,16 @@
                         "callee": {
                           "k": "ident",
                           "name": "sum",
-                          "tok": 281
+                          "tok": 330
                         },
                         "args": [
                           {
                             "k": "mut_arg",
                             "name": "w",
-                            "tok": 284
+                            "tok": 333
                           }
                         ],
-                        "tok": 282
+                        "tok": 331
                       },
                       "rhs": {
                         "k": "call",
@@ -829,16 +973,16 @@
                           "base": {
                             "k": "ident",
                             "name": "task",
-                            "tok": 287
+                            "tok": 336
                           },
                           "field": "Lease",
-                          "tok": 289
+                          "tok": 338
                         },
                         "args": [
                           {
                             "k": "ident",
                             "name": "lv",
-                            "tok": 291
+                            "tok": 340
                           },
                           {
                             "k": "lambda",
@@ -857,31 +1001,31 @@
                               "callee": {
                                 "k": "ident",
                                 "name": "sum",
-                                "tok": 299
+                                "tok": 348
                               },
                               "args": [
                                 {
                                   "k": "mut_arg",
                                   "name": "u",
-                                  "tok": 302
+                                  "tok": 351
                                 }
                               ],
-                              "tok": 300
+                              "tok": 349
                             },
-                            "tok": 298
+                            "tok": 347
                           }
                         ],
-                        "tok": 290
+                        "tok": 339
                       },
-                      "tok": 286
+                      "tok": 335
                     },
-                    "tok": 280
+                    "tok": 329
                   }
                 ],
-                "tok": 272
+                "tok": 321
               }
             ],
-            "tok": 267
+            "tok": 316
           },
           {
             "k": "expr",
@@ -892,19 +1036,19 @@
                 "base": {
                   "k": "ident",
                   "name": "os",
-                  "tok": 307
+                  "tok": 356
                 },
                 "field": "Sleep",
-                "tok": 309
+                "tok": 358
               },
               "args": [
                 {
                   "k": "int",
                   "value": 0,
-                  "tok": 311
+                  "tok": 360
                 }
               ],
-              "tok": 310
+              "tok": 359
             }
           },
           {
@@ -922,10 +1066,10 @@
                   "base": {
                     "k": "ident",
                     "name": "task",
-                    "tok": 318
+                    "tok": 367
                   },
                   "field": "Run",
-                  "tok": 320
+                  "tok": 369
                 },
                 "args": [
                   {
@@ -948,16 +1092,16 @@
                               "base": {
                                 "k": "ident",
                                 "name": "task",
-                                "tok": 327
+                                "tok": 376
                               },
                               "field": "Lease",
-                              "tok": 329
+                              "tok": 378
                             },
                             "args": [
                               {
                                 "k": "ident",
                                 "name": "lw",
-                                "tok": 331
+                                "tok": 380
                               },
                               {
                                 "k": "lambda",
@@ -980,7 +1124,7 @@
                                         {
                                           "k": "ident",
                                           "name": "_",
-                                          "tok": 340
+                                          "tok": 389
                                         }
                                       ],
                                       "op": "=",
@@ -992,16 +1136,16 @@
                                             "base": {
                                               "k": "ident",
                                               "name": "task",
-                                              "tok": 342
+                                              "tok": 391
                                             },
                                             "field": "Spawn",
-                                            "tok": 344
+                                            "tok": 393
                                           },
                                           "args": [
                                             {
                                               "k": "ident",
                                               "name": "s",
-                                              "tok": 346
+                                              "tok": 395
                                             },
                                             {
                                               "k": "lambda",
@@ -1011,24 +1155,24 @@
                                                 "callee": {
                                                   "k": "ident",
                                                   "name": "nap",
-                                                  "tok": 351
+                                                  "tok": 400
                                                 },
                                                 "args": [
                                                   {
                                                     "k": "int",
                                                     "value": 0,
-                                                    "tok": 353
+                                                    "tok": 402
                                                   }
                                                 ],
-                                                "tok": 352
+                                                "tok": 401
                                               },
-                                              "tok": 350
+                                              "tok": 399
                                             }
                                           ],
-                                          "tok": 345
+                                          "tok": 394
                                         }
                                       ],
-                                      "tok": 340
+                                      "tok": 389
                                     },
                                     {
                                       "k": "expr",
@@ -1037,35 +1181,35 @@
                                         "callee": {
                                           "k": "ident",
                                           "name": "sum",
-                                          "tok": 357
+                                          "tok": 406
                                         },
                                         "args": [
                                           {
                                             "k": "mut_arg",
                                             "name": "w",
-                                            "tok": 360
+                                            "tok": 409
                                           }
                                         ],
-                                        "tok": 358
+                                        "tok": 407
                                       }
                                     }
                                   ]
                                 },
-                                "tok": 338
+                                "tok": 387
                               }
                             ],
-                            "tok": 330
+                            "tok": 379
                           }
                         }
                       ]
                     },
-                    "tok": 325
+                    "tok": 374
                   }
                 ],
-                "tok": 321
+                "tok": 370
               }
             ],
-            "tok": 314
+            "tok": 363
           },
           {
             "k": "expr",
@@ -1074,7 +1218,7 @@
               "callee": {
                 "k": "ident",
                 "name": "println",
-                "tok": 369
+                "tok": 418
               },
               "args": [
                 {
@@ -1090,40 +1234,87 @@
                         "k": "binary",
                         "op": "+",
                         "lhs": {
-                          "k": "ident",
-                          "name": "a",
-                          "tok": 371
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "ident",
+                            "name": "a",
+                            "tok": 420
+                          },
+                          "rhs": {
+                            "k": "ident",
+                            "name": "b",
+                            "tok": 422
+                          },
+                          "tok": 421
                         },
                         "rhs": {
                           "k": "ident",
-                          "name": "b",
-                          "tok": 373
+                          "name": "c",
+                          "tok": 424
                         },
-                        "tok": 372
+                        "tok": 423
                       },
                       "rhs": {
                         "k": "ident",
-                        "name": "c",
-                        "tok": 375
+                        "name": "d",
+                        "tok": 426
                       },
-                      "tok": 374
+                      "tok": 425
                     },
                     "rhs": {
                       "k": "ident",
-                      "name": "d",
-                      "tok": 377
+                      "name": "r",
+                      "tok": 428
                     },
-                    "tok": 376
+                    "tok": 427
                   },
                   "rhs": {
-                    "k": "ident",
-                    "name": "r",
-                    "tok": 379
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "waitVia",
+                      "tok": 430
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "lw",
+                        "tok": 432
+                      },
+                      {
+                        "k": "lambda",
+                        "params": [
+                          {
+                            "name": "ms",
+                            "type": null
+                          }
+                        ],
+                        "body": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "nap",
+                            "tok": 438
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "ms",
+                              "tok": 440
+                            }
+                          ],
+                          "tok": 439
+                        },
+                        "tok": 437
+                      }
+                    ],
+                    "tok": 431
                   },
-                  "tok": 378
+                  "tok": 429
                 }
               ],
-              "tok": 370
+              "tok": 419
             }
           },
           {
@@ -1136,13 +1327,13 @@
                 "lhs": {
                   "k": "ident",
                   "name": "err",
-                  "tok": 383
+                  "tok": 446
                 },
                 "rhs": {
                   "k": "nil",
-                  "tok": 385
+                  "tok": 448
                 },
-                "tok": 384
+                "tok": 447
               },
               "then": {
                 "stmts": [
@@ -1153,7 +1344,7 @@
                       "callee": {
                         "k": "ident",
                         "name": "println",
-                        "tok": 387
+                        "tok": 450
                       },
                       "args": [
                         {
@@ -1162,29 +1353,29 @@
                           "operand": {
                             "k": "int",
                             "value": 1,
-                            "tok": 390
+                            "tok": 453
                           },
-                          "tok": 389
+                          "tok": 452
                         }
                       ],
-                      "tok": 388
+                      "tok": 451
                     }
                   }
                 ]
               },
               "else": null,
-              "tok": 382
+              "tok": 445
             }
           }
         ]
       },
-      "tok": 111,
+      "tok": 160,
       "bodiless": false,
       "span": {
-        "start": 110,
-        "end": 397
+        "start": 159,
+        "end": 460
       },
-      "sig_end": 114
+      "sig_end": 163
     }
   ],
   "consts": []

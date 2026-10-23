@@ -1,0 +1,2 @@
+examples/effects_neg_any.sober:9:1: error: 'main.call' may have the effect io via a call through a function value (the effects of every function value in the program), which its @effects does not allow (allowed: block, panic, nondet) (Analyzer)
+exit=1

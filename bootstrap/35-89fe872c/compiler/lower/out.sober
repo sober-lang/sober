@@ -1,0 +1,435 @@
+package lower
+
+// 出力の正準順（段 6 P4-2 (O1) — language.md 11 節「P4 の意味の裁定」）: stdout = spawn の木の先行順。
+// - 区間（segment）の連結リスト = 出力の順そのもの。task は TCB の TC_SEG に今書いている区間を持つ。spawn は親の区間の直後に子の区間と親の続きの区間を
+//   差し込み、親の区間を閉じる（速い道 = 親の区間が頭なら、それを親の続きとしてそのまま使い、子の区間を頭の前に差すだけ — 頭の溜めは常に空）
+// - 頭（フロンティア）の区間の task だけが行バッファから直接 write し、後ろの task は行を自分の区間の溜めへ積む（rt.flush — fd 1 のときだけ・fd 2 は直接）
+// - task が終わると区間を閉じ、頭なら rt.out_adv が閉じた区間の溜めを出して解放しながら進み、開いた区間に当たったらその溜めを出してフロンティアにする
+// - 溜めは上限で書き手を止めない（止めると「フロンティアが後ろの task の chan を待ち、後ろが出力の上限で止まる」デッドロックの辺ができる）— 成長側（mmap で倍々）
+// - 終わり（main の正常終了・toStderr を通る死）: rt.out_drain が頭から全区間の溜めを順に出す（開いた区間も — その時点で作られた分を先行順で）
+// 不変条件: task の切替点で行バッファは常に空（println は全引数を先に評価してから書く — expr.sober printlnCall）。spawn / 終わりの熱い道は行バッファを見ない
+
+import "desugar"
+import "std/iter"
+
+// @rt.out の配置（語）
+const OUT_HEAD = 0
+const OUT_FREE = 1
+const OUT_WORDS = 2
+// 区間の配置（語）
+const SG_NEXT = 0
+const SG_CLOSED = 1
+const SG_BUF = 2     // 溜めの番地（0 = 無し）
+const SG_LEN = 3
+const SG_CAP = 4
+const SG_WORDS = 5
+const SG_CHUNK = 256        // 区間の塊（mmap 1 回で SG_CHUNK 個）
+const SG_BUF_MIN = 4096     // 溜めの最初の容量（バイト — 1 頁。倍々に伸びる）
+
+// needOutRt は区間の rt の宣言（needTaskRt から — std/task を使うプログラムだけ）
+func needOutRt(st mut St) {
+    lsNeed(mut st, NEED_OUT, 0)
+    st.outG = addGlobalInit(mut st, int(strLit(mut st, "rt.out")), OUT_WORDS, -1)
+    st.rtOutNode = addFunc(mut st, int(strLit(mut st, "rt.out_node")), desugar.ListRef(list0(mut st)), TyPtr)
+    st.rtOutAdv = addFunc(mut st, int(strLit(mut st, "rt.out_adv")), desugar.ListRef(list0(mut st)), -1)
+    st.rtOutAppend = addFunc(mut st, int(strLit(mut st, "rt.out_append")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
+    st.rtOutWrite = addFunc(mut st, int(strLit(mut st, "rt.out_write")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), -1)
+    st.rtOutDrain = addFunc(mut st, int(strLit(mut st, "rt.out_drain")), desugar.ListRef(list0(mut st)), -1)
+    st.rtOutFork = addFunc(mut st, int(strLit(mut st, "rt.out_fork")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+}
+
+func buildOutRt(st mut St) {
+    buildOutNode(mut st)
+    buildOutAdv(mut st)
+    buildOutAppend(mut st)
+    buildOutWrite(mut st)
+    buildOutDrain(mut st)
+    buildOutFork(mut st)
+}
+
+// segNew は開いた空の区間（空きの鎖から — 尽きたら rt.out_node が塊を作る）
+func segNew(st mut St) int {
+    og := globaladdr(mut st, st.outG)
+    f := load(mut st, og, OUT_FREE)
+    bPop := newBlock(mut st)
+    bNew := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    s := param(mut st, bEnd, TyPtr)
+    condbr(mut st, cmp(mut st, CEq, f, iconst(mut st, 0)), bNew, -1, bPop, -1)
+    setCur(mut st, bPop)
+    fp := itop(mut st, f)
+    store(mut st, og, OUT_FREE, load(mut st, fp, SG_NEXT))
+    br(mut st, bEnd, list1(mut st, fp))
+    setCur(mut st, bNew)
+    br(mut st, bEnd, list1(mut st, call(mut st, st.rtOutNode, list0(mut st))))
+    setCur(mut st, bEnd)
+    zero := iconst(mut st, 0)
+    store(mut st, s, SG_CLOSED, zero)
+    store(mut st, s, SG_LEN, zero)
+    return s
+}
+
+// outInitMain は入口で main の区間を作って頭にする（taskInitMain から）
+func outInitMain(st mut St) {
+    s := segNew(mut st)
+    store(mut st, s, SG_NEXT, iconst(mut st, 0))
+    store(mut st, globaladdr(mut st, st.outG), OUT_HEAD, ptoi(mut st, s))
+    store(mut st, globaladdr(mut st, st.mainTcb), TC_SEG, ptoi(mut st, s))
+}
+
+// outFork は spawn（親 me・子 tcb）の区間の差し込み（rt.task_go の頭 — 切替の前）。速い道 = 親の区間が頭（溜めは空）: 親の続きはそのまま・
+// 子の区間を頭の前へ。それ以外は rt.out_fork（冷たい道を外に出す — spawn の切替点の割り当てを軽く保つ）
+func outFork(st mut St, me int, tcb int) {
+    og := globaladdr(mut st, st.outG)
+    sv := load(mut st, me, TC_SEG)
+    bHead := newBlock(mut st)
+    bMid := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    bSeg := newBlock(mut st)
+    bNone := newBlock(mut st)
+    condbr(mut st, outNoSeg(mut st, me, tcb), bNone, -1, bSeg, -1)
+    setCur(mut st, bNone)
+    store(mut st, tcb, TC_SEG, iconst(mut st, 0))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bSeg)
+    condbr(mut st, cmp(mut st, CEq, sv, load(mut st, og, OUT_HEAD)), bHead, -1, bMid, -1)
+    setCur(mut st, bHead)
+    sc := segNew(mut st)
+    store(mut st, sc, SG_NEXT, sv)
+    store(mut st, og, OUT_HEAD, ptoi(mut st, sc))
+    store(mut st, tcb, TC_SEG, ptoi(mut st, sc))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bMid)
+    call(mut st, st.rtOutFork, list2(mut st, me, tcb))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
+// outNoSeg は spawn の子 tcb が区間を持たないか（段 6 P4-6）: TC_CUTOK ≠ 0（純な子 = 1・stdout に書かない子 = 2 — 子孫も・cancel.sober の
+// cutPatch が閉世界で決める — report-994 F4）か、親が区間を持たない（区間を持たない task の子孫・純な子の中の走らせ直し）。区間を持たない task は
+// stdout に何も書かないので、先行順の列に席が要らない — spawn / 終わりの区間の操作（M:N では全ワーカー共通の鍵 MN_OLOCK）を踏まない
+func outNoSeg(st mut St, me int, tcb int) int {
+    return bin(mut st, BOr, cmp(mut st, CNe, load(mut st, tcb, TC_CUTOK), iconst(mut st, 0)), cmp(mut st, CEq, load(mut st, me, TC_SEG), iconst(mut st, 0)))
+}
+
+// buildOutFork は rt.out_fork(me, tcb)（親の区間 S が頭でない）: S → Sc（子）→ S'（親の続き）→ S の元の次・S を閉じる（頭でないので進めない）
+func buildOutFork(st mut St) {
+    begin(mut st, st.rtOutFork)
+    s := itop(mut st, load(mut st, 0, TC_SEG))
+    sc := segNew(mut st)
+    s2 := segNew(mut st)
+    store(mut st, s2, SG_NEXT, load(mut st, s, SG_NEXT))
+    store(mut st, sc, SG_NEXT, ptoi(mut st, s2))
+    store(mut st, s, SG_NEXT, ptoi(mut st, sc))
+    store(mut st, s, SG_CLOSED, iconst(mut st, 1))
+    store(mut st, 0, TC_SEG, ptoi(mut st, s2))
+    store(mut st, 1, TC_SEG, ptoi(mut st, sc))
+    ret(mut st, -1)
+}
+
+// outClose は終わる task（tcb）の区間を閉じる（rt.task_start から）。頭なら進める — 速い道（溜めを持ったことがない区間で、次が開いた空の区間 =
+// 子が待たずに走り切った形）はその場で頭を次へ移して解放するだけ・それ以外は rt.out_adv（頭の区間の溜めは常に空 — 出すものは無い）
+func outClose(st mut St, tcb int) {
+    og := globaladdr(mut st, st.outG)
+    sv := load(mut st, tcb, TC_SEG)
+    bHead := newBlock(mut st)
+    bFast := newBlock(mut st)
+    bSlow := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    // 区間を持たない task（outNoSeg）は何もしない
+    bHas := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, sv, iconst(mut st, 0)), bEnd, -1, bHas, -1)
+    setCur(mut st, bHas)
+    s := itop(mut st, sv)
+    store(mut st, s, SG_CLOSED, iconst(mut st, 1))
+    condbr(mut st, cmp(mut st, CEq, sv, load(mut st, og, OUT_HEAD)), bHead, -1, bEnd, -1)
+    setCur(mut st, bHead)
+    nx := load(mut st, s, SG_NEXT)
+    np := itop(mut st, nx)
+    busy := bin(mut st, BOr, bin(mut st, BOr, load(mut st, np, SG_CLOSED), load(mut st, np, SG_LEN)), load(mut st, s, SG_CAP))
+    condbr(mut st, cmp(mut st, CEq, busy, iconst(mut st, 0)), bFast, -1, bSlow, -1)
+    setCur(mut st, bFast)
+    store(mut st, og, OUT_HEAD, nx)
+    store(mut st, s, SG_NEXT, load(mut st, og, OUT_FREE))
+    store(mut st, og, OUT_FREE, sv)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bSlow)
+    call(mut st, st.rtOutAdv, list0(mut st))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
+// outRoute は rt.flush の頭（std/task を使うプログラムだけ）: fd 1 で今の task の区間が頭でなければ、行を区間の溜めへ積んで返る
+func outRoute(st mut St, meta int) {
+    // M:N（段 6 P4-4）: 頭かどうかの判定と溜めへの積みを鍵の中で（頭を進める task が同時に溜めを出して頭を移しうる）
+    // fd 2（死の文面・trace）は鍵を取らない（区間の対象外 — 終わりの drain が鍵を持ったまま stderr へ書く）
+    bMn := newBlock(mut st)
+    bCo := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, mnOn(mut st), cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1))), bMn, -1, bCo, -1)
+    setCur(mut st, bMn)
+    mn := globaladdr(mut st, st.mnG)
+    spinLock(mut st, mn, MN_OLOCK)
+    lnM := load(mut st, meta, W_LINE_LEN)
+    svM := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SEG)
+    // 区間を持たない task（svM = 0）は直接書く: 導出（cancel.sober の outSolve）が印字する子を取りこぼしたときの倒れ先 = 順が崩れるだけ（区間 0 へ積むと固まる）
+    awayM := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, svM, iconst(mut st, 0))), cmp(mut st, CNe, svM, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
+    bKeepM := newBlock(mut st)
+    bGoM := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, awayM, cmp(mut st, CGt, lnM, iconst(mut st, 0))), bKeepM, -1, bGoM, -1)
+    setCur(mut st, bKeepM)
+    call(mut st, st.rtOutAppend, list3(mut st, itop(mut st, svM), gepByte(mut st, meta, iconst(mut st, W_LINE * 8)), lnM))
+    store(mut st, meta, W_LINE_LEN, iconst(mut st, 0))
+    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    ret(mut st, -1)
+    setCur(mut st, bGoM)
+    store(mut st, mn, MN_OLOCK, iconst(mut st, 0))
+    bGoAll := newBlock(mut st)
+    br(mut st, bGoAll, -1)
+    setCur(mut st, bCo)
+    ln := load(mut st, meta, W_LINE_LEN)
+    sv := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SEG)
+    away := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, sv, iconst(mut st, 0))), cmp(mut st, CNe, sv, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
+    bKeep := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, away, cmp(mut st, CGt, ln, iconst(mut st, 0))), bKeep, -1, bGo, -1)
+    setCur(mut st, bKeep)
+    call(mut st, st.rtOutAppend, list3(mut st, itop(mut st, sv), gepByte(mut st, meta, iconst(mut st, W_LINE * 8)), ln))
+    store(mut st, meta, W_LINE_LEN, iconst(mut st, 0))
+    ret(mut st, -1)
+    setCur(mut st, bGo)
+    br(mut st, bGoAll, -1)
+    setCur(mut st, bGoAll)
+}
+
+// buildOutNode は rt.out_node() ptr: 区間の塊を mmap して 1 つ目を返し、残りを空きの鎖へ（溜め・容量は 0 — 無名の頁は 0 で始まる）
+func buildOutNode(st mut St) {
+    begin(mut st, st.rtOutNode)
+    og := globaladdr(mut st, st.outG)
+    a := sysMmap(mut st, iconst(mut st, SG_CHUNK * SG_WORDS * 8))
+    // 2 つ目から最後までを鎖に（最後の次 = 今の空きの鎖）
+    sz := iconst(mut st, SG_WORDS * 8)
+    last := bin(mut st, BAdd, a, iconst(mut st, (SG_CHUNK - 1) * SG_WORDS * 8))
+    loop := newBlock(mut st)
+    q := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, a, sz)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, q, last), body, -1, done, -1)
+    setCur(mut st, body)
+    q1 := bin(mut st, BAdd, q, sz)
+    store(mut st, itop(mut st, q), SG_NEXT, q1)
+    br(mut st, loop, list1(mut st, q1))
+    setCur(mut st, done)
+    store(mut st, itop(mut st, last), SG_NEXT, load(mut st, og, OUT_FREE))
+    store(mut st, og, OUT_FREE, bin(mut st, BAdd, a, sz))
+    ret(mut st, itop(mut st, a))
+}
+
+// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）。写したら madvise(MADV_NOHUGEPAGE)
+// （report-1053 — 透過的 huge page が always の箱では、隣同士で溶け合ったワーカーごとの小さい写像〔PBUF・環の記録・slab ほか〕に
+// 1 頁触るだけで 2 MiB 窓ごと常駐し、ワーカーあたり +5 MB 前後 RSS が膨らんでいた。失敗は無視）
+func sysMmap(st mut St, size int) int {
+    args := listN(mut st, 7)
+    desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
+    desugar.HeapSet(mut st.d, args + 2, iconst(mut st, 0))
+    desugar.HeapSet(mut st.d, args + 3, size)
+    desugar.HeapSet(mut st.d, args + 4, iconst(mut st, 3))
+    desugar.HeapSet(mut st.d, args + 5, iconst(mut st, 16418))
+    desugar.HeapSet(mut st.d, args + 6, iconst(mut st, -1))
+    desugar.HeapSet(mut st.d, args + 7, iconst(mut st, 0))
+    a := syscall(mut st, args)
+    bad := newBlock(mut st)
+    good := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CUge, a, iconst(mut st, -4095)), bad, -1, good, -1)
+    setCur(mut st, bad)
+    memPanic(mut st, PM_VA)
+    setCur(mut st, good)
+    syscall(mut st, list4(mut st, iconst(mut st, 28), a, size, iconst(mut st, 15)))
+    return a
+}
+
+// segDump は区間 s の溜めを出して長さを 0 に
+func segDump(st mut St, s int) {
+    ln := load(mut st, s, SG_LEN)
+    bW := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, ln, iconst(mut st, 0)), bW, -1, bEnd, -1)
+    setCur(mut st, bW)
+    call(mut st, st.rtOutWrite, list2(mut st, itop(mut st, load(mut st, s, SG_BUF)), ln))
+    store(mut st, s, SG_LEN, iconst(mut st, 0))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
+// buildOutAdv は rt.out_adv(): 頭（閉じている）から、閉じた区間の溜めを出して解放しながら進み、開いた区間の溜めを出してそこを頭にする
+func buildOutAdv(st mut St) {
+    begin(mut st, st.rtOutAdv)
+    og := globaladdr(mut st, st.outG)
+    loop := newBlock(mut st)
+    h := param(mut st, loop, TyPtr)
+    br(mut st, loop, list1(mut st, itop(mut st, load(mut st, og, OUT_HEAD))))
+    setCur(mut st, loop)
+    segDump(mut st, h)
+    nx := load(mut st, h, SG_NEXT)
+    // 解放（溜めは手放す — 溜めた区間は稀なので塊ごと持ち回さない）
+    cap := load(mut st, h, SG_CAP)
+    bUnmap := newBlock(mut st)
+    bFree := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, cap, iconst(mut st, 0)), bUnmap, -1, bFree, -1)
+    setCur(mut st, bUnmap)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), load(mut st, h, SG_BUF), cap))
+    store(mut st, h, SG_BUF, iconst(mut st, 0))
+    store(mut st, h, SG_CAP, iconst(mut st, 0))
+    br(mut st, bFree, -1)
+    setCur(mut st, bFree)
+    store(mut st, h, SG_NEXT, load(mut st, og, OUT_FREE))
+    store(mut st, og, OUT_FREE, ptoi(mut st, h))
+    store(mut st, og, OUT_HEAD, nx)
+    bNone := newBlock(mut st)
+    bSome := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, nx, iconst(mut st, 0)), bNone, -1, bSome, -1)
+    setCur(mut st, bNone)
+    ret(mut st, -1)
+    setCur(mut st, bSome)
+    np := itop(mut st, nx)
+    bOpen := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, np, SG_CLOSED), iconst(mut st, 0)), loop, list1(mut st, np), bOpen, -1)
+    setCur(mut st, bOpen)
+    segDump(mut st, np)
+    ret(mut st, -1)
+}
+
+// buildOutAppend は rt.out_append(s, p, n): 区間 s の溜めへ n バイト積む（足りなければ倍々に mmap し直す — 書き手を止めない）
+func buildOutAppend(st mut St) {
+    begin(mut st, st.rtOutAppend)
+    s := 0
+    p := 1
+    n := 2
+    ln := load(mut st, s, SG_LEN)
+    cap := load(mut st, s, SG_CAP)
+    need := bin(mut st, BAdd, ln, n)
+    bGrow := newBlock(mut st)
+    bPut := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, need, cap), bGrow, -1, bPut, -1)
+    setCur(mut st, bGrow)
+    // 新しい容量 = max(SG_BUF_MIN, 2 × cap, need)
+    c2 := bin(mut st, BMul, cap, iconst(mut st, 2))
+    c3 := imax(mut st, c2, iconst(mut st, SG_BUF_MIN))
+    nc := imax(mut st, c3, need)
+    nb := sysMmap(mut st, nc)
+    bCopy := newBlock(mut st)
+    bSet := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, cap, iconst(mut st, 0)), bCopy, -1, bSet, -1)
+    setCur(mut st, bCopy)
+    old := load(mut st, s, SG_BUF)
+    call(mut st, st.rtCopy8, list3(mut st, itop(mut st, nb), itop(mut st, old), ln))
+    syscall(mut st, list3(mut st, iconst(mut st, 11), old, cap))
+    br(mut st, bSet, -1)
+    setCur(mut st, bSet)
+    store(mut st, s, SG_BUF, nb)
+    store(mut st, s, SG_CAP, nc)
+    br(mut st, bPut, -1)
+    setCur(mut st, bPut)
+    call(mut st, st.rtCopy8, list3(mut st, gepByte(mut st, itop(mut st, load(mut st, s, SG_BUF)), ln), p, n))
+    store(mut st, s, SG_LEN, need)
+    ret(mut st, -1)
+}
+
+// buildOutWrite は rt.out_write(p, n): fd 1 へ n バイト（短い書き込みは続きから・EINTR は再試行・失敗は捨てる — rt.flush と同じ）
+func buildOutWrite(st mut St) {
+    begin(mut st, st.rtOutWrite)
+    p := 0
+    n := 1
+    loop := newBlock(mut st)
+    dn := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    rest := bin(mut st, BSub, n, dn)
+    condbr(mut st, cmp(mut st, CGt, rest, iconst(mut st, 0)), body, -1, done, -1)
+    setCur(mut st, body)
+    r := syscall(mut st, list4(mut st, iconst(mut st, 1), iconst(mut st, 1), ptoi(mut st, gepByte(mut st, p, dn)), rest))
+    retry := newBlock(mut st)
+    notIntr := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, r, iconst(mut st, -4)), retry, -1, notIntr, -1)
+    setCur(mut st, retry)
+    br(mut st, loop, list1(mut st, dn))
+    setCur(mut st, notIntr)
+    ok := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLe, r, iconst(mut st, 0)), done, -1, ok, -1)
+    setCur(mut st, ok)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, dn, r)))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// buildOutDrain は rt.out_drain(): 行バッファを今の task の区間へ（rt.flush）、頭から全区間の溜めを順に出す（終わりの前 — 開いた区間も）
+func buildOutDrain(st mut St) {
+    begin(mut st, st.rtOutDrain)
+    if st.rtMut == 4 {
+        // 数え口（開発用）: `#mn <別ワーカーで走り始めた> <走り始めた> <別ワーカーへの起こし>` を出力の頭に
+        mnD := globaladdr(mut st, st.mnG)
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 35)))
+        call(mut st, st.rtPint, list1(mut st, load(mut st, mnD, MN_CNT_CROSS)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+        call(mut st, st.rtPint, list1(mut st, load(mut st, mnD, MN_CNT_START)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+        call(mut st, st.rtPint, list1(mut st, load(mut st, mnD, MN_PTAIL)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 10)))
+        // 計器（scratch）: ワーカーごとに `#wk <k> <計器 16 語>`
+        kl := newBlock(mut st)
+        kk := param(mut st, kl, TyI64)
+        kb := newBlock(mut st)
+        kd := newBlock(mut st)
+        br(mut st, kl, list1(mut st, iconst(mut st, 0)))
+        setCur(mut st, kl)
+        condbr(mut st, cmp(mut st, CLt, kk, load(mut st, mnD, MN_N)), kb, -1, kd, -1)
+        setCur(mut st, kb)
+        kwp := itop(mut st, load(mut st, gepWord(mut st, mnD, bin(mut st, BAdd, kk, iconst(mut st, MN_WK))), 0))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 35)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 119)))
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+        call(mut st, st.rtPint, list1(mut st, kk))
+        for j <- iter.Range(0, 16) {
+            call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 32)))
+            call(mut st, st.rtPint, list1(mut st, load(mut st, kwp, WK_K0 + j)))
+        }
+        call(mut st, st.rtPchar, list1(mut st, iconst(mut st, 10)))
+        br(mut st, kl, list1(mut st, bin(mut st, BAdd, kk, iconst(mut st, 1))))
+        setCur(mut st, kd)
+    }
+    call(mut st, st.rtFlush, list0(mut st))
+    // M:N: 鍵を取ったまま出す（終わりの直前 — 他のワーカーの区間の操作を止める。外さない: この後 exit_group）
+    bMn := newBlock(mut st)
+    bCo := newBlock(mut st)
+    condbr(mut st, mnOn(mut st), bMn, -1, bCo, -1)
+    setCur(mut st, bMn)
+    // 2 度目の drain（死の道が重なる）は鍵を取り直さない
+    mn := globaladdr(mut st, st.mnG)
+    bLk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, atomicXchg(mut st, mn, MN_EXIT, iconst(mut st, 1)), iconst(mut st, 0)), bLk, -1, bCo, -1)
+    setCur(mut st, bLk)
+    spinLock(mut st, mn, MN_OLOCK)
+    br(mut st, bCo, -1)
+    setCur(mut st, bCo)
+    loop := newBlock(mut st)
+    h := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CEq, h, iconst(mut st, 0)), done, -1, body, -1)
+    setCur(mut st, body)
+    hp := itop(mut st, h)
+    segDump(mut st, hp)
+    br(mut st, loop, list1(mut st, load(mut st, hp, SG_NEXT)))
+    setCur(mut st, done)
+    ret(mut st, -1)
+}
+
+// imax は max(a, b)（分岐なし — a + (b - a) × (b > a)）
+func imax(st mut St, a int, b int) int {
+    return bin(mut st, BAdd, a, bin(mut st, BMul, bin(mut st, BSub, b, a), cmp(mut st, CGt, b, a)))
+}

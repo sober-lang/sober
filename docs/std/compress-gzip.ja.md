@@ -9,6 +9,7 @@ gzip（RFC 1952）の符号化と復号（中身は std/compress/flate）
 ## Encode
 
 ```sober
+@effects(!io, !block, !nondet)
 func Encode(data []byte, level int) []byte
 ```
 
@@ -23,6 +24,7 @@ z := gzip.Encode(bytes(body), 6)   // HTTP の Content-Encoding: gzip の本文
 ## EncodeWith
 
 ```sober
+@effects(!io, !block, !nondet)
 func EncodeWith(w mut flate.Work, data []byte, level int) []byte
 ```
 
@@ -42,6 +44,7 @@ Decode の入力の gzip の包みが違う（ID が 1f 8b でない・CM が 8 
 
 ```sober
 @errors(Bad, flate.Bad, flate.TooLarge)
+@effects(!io, !block, !nondet)
 func Decode(data []byte, maxSize int?) ([]byte, error?)
 ```
 

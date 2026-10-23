@@ -1,0 +1,297 @@
+package deflate
+
+// 逐次の符号器（Stream）の網: 出力を繋いだ列を一括の復号（std/internal/inflate — node:zlib / Go の 219 列と照合済みの核）で読み戻して入力と一致・
+// emit の切り方（1 B〜64 KiB の無作為・1 つ・1 バイトずつ・空の emit）と level 0〜9 と gzip / 生の DEFLATE をまたいで同じ・各 Feed の返りまでの接頭辞に
+// 最後の空のブロック（03 00）を足すだけで、そこまでの平文が復号できる（sync flush の約束）・窓のずらし（64 KiB を越える入力）。
+// DEFLATE_DUMP が有れば、その置き場に各例の入力・出力・切れ目を書く（scripts/flatecheck.sh が node:zlib の gunzipSync と逐次の createGunzip で照合する）
+
+import "std/internal/crc32"
+import "std/internal/inflate"
+import "std/io"
+import "std/iter"
+import "std/os"
+
+// text は n バイトの圧縮の効く列（語の繰り返しに乱数のバイトを混ぜる — seed で形を変える）
+func text(n int, seed int) []byte {
+    w := bytes("sober deflate stream window sync flush huffman lazy greedy ")
+    mut b := mut []byte{}
+    mut x := seed
+    for i <- iter.Range(0, n) {
+        x = (x * 1103515245 + 12345) & 0x7fffffff
+        b = append(b, if x % 11 == 0 { byte((x >> 8) & 255) } else { w[(i + seed) % len(w)] })
+    }
+    return freeze(b)
+}
+
+// cuts は data の切れ目（emit の終わりの位置の列 — 最後は len(data)）。mode 0 = 1 つ・1 = 1 バイトずつ・2 = 1 B〜64 KiB の無作為（seed）・3 = 空の emit を挟む
+func cuts(n int, mode int, seed int) []int {
+    mut c := mut []int{}
+    if mode == 0 {
+        c = append(c, n)
+    } else if mode == 1 {
+        for i <- iter.Range(1, n + 1) {
+            c = append(c, i)
+        }
+    } else {
+        mut x := seed
+        mut at := 0
+        while at < n {
+            x = (x * 1103515245 + 12345) & 0x7fffffff
+            // 小さい emit を多めに（大きさの桁を先に引く）
+            k := 1 << (x % 17)
+            l := 1 + (x >> 5) % k
+            nx := if at + l > n { n } else { at + l }
+            if mode == 3 {
+                // 同じ位置で 2 回切る（空の emit）
+                c = append(c, at + (nx - at) / 2)
+                c = append(c, at + (nx - at) / 2)
+            }
+            c = append(c, nx)
+            at = nx
+        }
+        if n == 0 {
+            c = append(c, 0)
+        }
+    }
+    return freeze(c)
+}
+
+func part(d []byte, s int, t int) []byte {
+    mut r := mut []byte{}
+    for i <- iter.Range(s, t) {
+        r = append(r, d[i])
+    }
+    return freeze(r)
+}
+
+func plus(a []byte, b []byte) []byte {
+    mut r := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        r = append(r, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        r = append(r, b[i])
+    }
+    return freeze(r)
+}
+
+func same(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func le32(d []byte, q int) int {
+    return int(d[q]) | (int(d[q + 1]) << 8) | (int(d[q + 2]) << 16) | (int(d[q + 3]) << 24)
+}
+
+// raw は生の DEFLATE の z を復号した列（形が違えば印 "<bad>"）
+func raw(z []byte) []byte {
+    out, end, st := inflate.At(z, 0, 0 - 1)
+    return if st == inflate.Ok && end == len(z) { out } else { bytes("<bad>") }
+}
+
+// unzip は gzip の 1 メンバの z を頭（10 バイト）・中身・CRC-32 と長さを照合して復号した列
+func unzip(z []byte) []byte {
+    if len(z) < 18 || z[0] != byte(0x1f) || z[1] != byte(0x8b) || z[2] != byte(8) || z[3] != byte(0) {
+        return bytes("<bad head>")
+    }
+    out, end, st := inflate.At(z, 10, 0 - 1)
+    if st != inflate.Ok || end + 8 != len(z) || le32(z, end) != crc32.Update(0, out) || le32(z, end + 4) != len(out) {
+        return bytes("<bad>")
+    }
+    return out
+}
+
+// run は data を切れ目 cs で Feed して End まで回し、(繋いだ出力, 各 Feed の返りの終わりの位置) を返す。生の DEFLATE なら各接頭辞 ‖ 03 00 の復号も照合する
+func run(data []byte, level int, gz bool, cs []int) ([]byte, []int) {
+    mut s := Stream{}
+    Begin(mut s, level, gz)
+    mut out := mut []byte{}
+    mut ends := mut []int{}
+    mut at := 0
+    for c <- cs {
+        z := Feed(mut s, part(data, at, c))
+        for i <- iter.Range(0, len(z)) {
+            out = append(out, z[i])
+        }
+        ends = append(ends, len(out))
+        if !gz && level % 3 == 0 {
+            assert(same(raw(plus(freeze(out), []byte{byte(3), byte(0)})), part(data, 0, c)))
+        }
+        at = c
+    }
+    z := End(mut s)
+    for i <- iter.Range(0, len(z)) {
+        out = append(out, z[i])
+    }
+    return freeze(out), freeze(ends)
+}
+
+func check(data []byte, level int, gz bool, cs []int) {
+    out, _ := run(data, level, gz, cs)
+    if gz {
+        assert(same(unzip(out), data))
+    } else {
+        assert(same(raw(out), data))
+    }
+}
+
+func TestStreamSmall() {
+    ns := []int{0, 1, 2, 3, 7, 100, 1000}
+    for n <- ns {
+        d := text(n, n + 3)
+        for lv <- iter.Range(0, 10) {
+            for mode <- iter.Range(0, 4) {
+                check(d, lv, lv % 2 == 0, cuts(n, mode, lv + 7))
+                check(d, lv, lv % 2 == 1, cuts(n, mode, lv + 9))
+            }
+        }
+    }
+}
+
+// 窓のずらし（64 KiB を越える）・記号の溜めが満ちる emit（16383 記号を越える 1 回）・ずらしの直後の小さい emit
+func TestStreamLarge() {
+    d := text(300000, 5)
+    lvs := []int{0, 1, 3, 4, 6, 9}
+    for lv <- lvs {
+        check(d, lv, true, cuts(len(d), 0, 1))
+        check(d, lv, false, cuts(len(d), 2, lv + 1))
+        check(d, lv, true, cuts(len(d), 3, lv + 2))
+    }
+    // 64 KiB ちょうどの切片（Static の切片の形）と 32 KiB の境目の前後
+    mut cs := mut []int{}
+    mut at := 0
+    ls := []int{65536, 65536, 32767, 1, 32768, 65535, 2, 37000}
+    for l <- ls {
+        at += l
+        cs = append(cs, at)
+    }
+    cs = append(cs, len(d))
+    check(d, 6, true, freeze(cs))
+    check(d, 1, false, freeze(cs))
+}
+
+// 同じ入力・同じ切り方なら同じバイト列（決定的）・emit の切り方で出力は変わっても読み戻しは同じ
+func TestStreamDeterministic() {
+    d := text(70000, 11)
+    a, _ := run(d, 6, true, cuts(len(d), 2, 3))
+    b, _ := run(d, 6, true, cuts(len(d), 2, 3))
+    assert(same(a, b))
+}
+
+// 空の入力: Begin → End だけ（gzip の頭 + 03 00 + CRC 0 + 長さ 0）
+func TestStreamEmpty() {
+    mut s := Stream{}
+    Begin(mut s, 6, true)
+    z := End(mut s)
+    assert(len(z) == 20)
+    assert(same(unzip(z), []byte{}))
+    mut r := Stream{}
+    Begin(mut r, 6, false)
+    assert(same(End(mut r), []byte{byte(3), byte(0)}))
+}
+
+// DEFLATE_DUMP の置き場に node:zlib の照合の材料を書く（<名前>.in・<名前>.gz・<名前>.idx = 各 Feed の「出力の終わり 入力の終わり」の行）
+func TestStreamDump() {
+    dir := os.Getenv("DEFLATE_DUMP") catch nil
+    if dir == nil {
+        return
+    }
+    d := text(200000, 21)
+    mut k := 0
+    lvs := []int{0, 1, 4, 6, 9}
+    modes := []int{0, 2, 3}
+    for lv <- lvs {
+        for mode <- modes {
+            cs := cuts(len(d), mode, lv * 7 + mode)
+            out, ends := run(d, lv, true, cs)
+            name := "${dir}/s${k}"
+            mut idx := mut []byte{}
+            for i <- iter.Range(0, len(cs)) {
+                for c <- bytes("${ends[i]} ${cs[i]}\n") {
+                    idx = append(idx, c)
+                }
+            }
+            assert(io.WriteFile("${name}.in", d) == nil)
+            assert(io.WriteFile("${name}.gz", out) == nil)
+            assert(io.WriteFile("${name}.idx", freeze(idx)) == nil)
+            k += 1
+        }
+    }
+}
+
+// 大きさの黄金（決定的な符号器 — 符号器を意図して変えたら書き直す・flatecheck の sizes.golden と同じ規律）: 1 回の Feed は一括の EncodeWith と同じ記号の列
+// （ハッシュの桁が同じ 15 の入力で）+ sync flush の 5 バイト + 終わりの 2 バイト − 一括の最後のブロックとの端数。64 KiB の切片・無作為の切り方の大きさは、
+// 窓の持ち越し（ずらしを 32768 の倍数に揃える・下駄を進める）が崩れると鎖が乱れて伸びる — 読み戻しは正しいままなので、この網が率の崩れを拾う
+func TestStreamSizes() {
+    d := text(300000, 5)
+    mut cs := mut []int{}
+    mut at := 0
+    while at < len(d) {
+        at = if at + 65536 > len(d) { len(d) } else { at + 65536 }
+        cs = append(cs, at)
+    }
+    c64 := freeze(cs)
+    want := []int{1, 96125, 96131, 96226, 98715, 6, 75254, 75261, 75361, 77847, 9, 74503, 74509, 74611, 77094}
+    mut k := 0
+    while k < len(want) {
+        lv := want[k]
+        mut w := Work{}
+        assert(len(EncodeWith(mut w, d, lv)) == want[k + 1])
+        a, _ := run(d, lv, false, cuts(len(d), 0, 1))
+        b, _ := run(d, lv, false, c64)
+        c, _ := run(d, lv, false, cuts(len(d), 2, 4))
+        assert(len(a) == want[k + 2])
+        assert(len(b) == want[k + 3])
+        assert(len(c) == want[k + 4])
+        k += 5
+    }
+}
+
+// DEFLATE_BENCH = "<切片のバイト数> <回数> [level]" があれば計測の題材を走らせる（testdata/flatecheck/streambench.sh — Go の compress/gzip の Write + Flush の双子と同じ入力・
+// 同じ切り方。入力 = text(1 MiB, 5)・応答ごとに Begin〔Go は NewWriterLevel〕・切片ごとに Feed〔Write + Flush〕・End〔Close〕）。Feed は式ブロックで包む
+// （mut 仮引数の関数は region 透過 — 包まないと窓の写しが回数ぶん積もる）
+func TestStreamBench() {
+    spec := os.Getenv("DEFLATE_BENCH") catch nil
+    if spec == nil {
+        return
+    }
+    mut f := mut []int{}
+    mut v := 0
+    for c <- bytes(spec) {
+        if c == ' ' {
+            f = append(f, v)
+            v = 0
+        } else {
+            v = v * 10 + int(c) - 48
+        }
+    }
+    f = append(f, v)
+    cut := f[0]
+    reps := f[1]
+    lv := if len(f) > 2 { f[2] } else { 6 }
+    d := text(1 << 20, 5)
+    mut total := 0
+    for r <- iter.Range(0, reps) {
+        total += {
+            mut s := Stream{}
+            Begin(mut s, lv, true)
+            mut t := 0
+            mut at := 0
+            while at < len(d) {
+                nx := if at + cut > len(d) { len(d) } else { at + cut }
+                t += { len(Feed(mut s, d[at:nx])) }
+                at = nx
+            }
+            t + len(End(mut s))
+        }
+    }
+    println("bench cut ${cut} reps ${reps} level ${lv} out ${total / (if reps > 0 { reps } else { 1 })}")
+}

@@ -87,6 +87,9 @@ declare -A GTAG=(
     [errtrace]="load desugar analyzer lower backend"
     [analyzer_neg]="parse load desugar analyzer"
     [secretdump]="load desugar analyzer"
+    [effectsdump]="load desugar analyzer"
+    [efftrace]="load desugar analyzer lower backend"
+    [fixcheck]="load desugar analyzer"
     [uniqfreeze]="desugar analyzer lean"
     [implicitfreeze]="desugar analyzer lower backend"
     [sobertest]="load lower backend"
@@ -121,13 +124,14 @@ declare -A GTAG=(
     [pid1stop]="lower backend"
     [vaslot]="lower backend"
     [selfpar]="check desugar load"
+    [nextgen]="lower backend"
     [elfeq]="lex parse load desugar lower backend"
     [sobi]="lex parse fmt load desugar check"
     [refs]="lex parse load"
     [stdref]="docs"
 )
 # 長いものから（並列の詰め順）
-ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat framestat sortcheck flatecheck ctcheck cryptocheck tlsfsm iterregion fitcheck iouring httpcheck pid1stop vaslot refs stdref corevec extract obs_zig hermetic_zig ir_roundtrip)
+ORDER=(zigtest stages selfpar nextgen selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump effectsdump efftrace fixcheck uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat framestat sortcheck flatecheck ctcheck cryptocheck tlsfsm iterregion fitcheck iouring httpcheck pid1stop vaslot refs stdref corevec extract obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -150,9 +154,10 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             src/compiler/printer/*|src/compiler/tools/fmtdump/*) echo fmt ;;
             src/compiler/loader/*|src/compiler/tools/loaderdump/*) echo load ;;
             src/compiler/desugar/*|src/compiler/tools/desugardump/*) echo desugar ;;
-            src/compiler/analyzer/*|scripts/pool_oracle.sh|scripts/errtrace.sh|scripts/analyzer_neg.sh|scripts/secretdump.sh|testdata/secretdump/*) echo analyzer ;;
+            src/compiler/analyzer/*|scripts/pool_oracle.sh|scripts/errtrace.sh|scripts/analyzer_neg.sh|scripts/secretdump.sh|testdata/secretdump/*|scripts/effectsdump.sh|testdata/effectsdump/*|scripts/efftrace.sh|scripts/efftrace.ts|scripts/fixcheck.sh|testdata/fix/*|testdata/fixgold/*) echo analyzer ;;
             src/compiler/checker/*|src/compiler/tools/checkdump/*|src/compiler/tools/sobercheck/*) echo check ;;
             scripts/selfpar.sh|testdata/selfpar/*|scripts/checkstats.sh) echo check ;;
+            scripts/nextgen.sh) echo lower ;;
             src/compiler/lower/*|src/compiler/tools/lowerdump/*|src/compiler/tools/lldump/*|src/compiler/app/*) echo lower ;;
             src/compiler/x86/*|src/compiler/elf/*|src/compiler/tools/x86encdump/*) echo backend ;;
             src/compiler/iface/*|scripts/sobi.sh|scripts/frozen/sobi_known.txt) echo fmt; echo load ;;

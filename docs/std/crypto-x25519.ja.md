@@ -18,6 +18,7 @@ shared := x25519.Shared(priv, peer)    // 共有値（32 バイト — 全 0 の
 ```sober
 @secret(k)
 @bless
+@effects(!io, !block, !nondet)
 func Base(k []byte) []byte
 ```
 
@@ -27,6 +28,7 @@ func Base(k []byte) []byte
 
 ```sober
 @secret(k)
+@effects(!io, !block, !nondet)
 func Shared(k []byte, u []byte) []byte
 ```
 

@@ -2,6 +2,35 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.2 — 2026-10-23
+
+A hotfix for v0.6.1, together with the first part of function effects in the analyzer.
+
+### Language
+
+- Function effects `@effects` (checked by `sober check` — build acceptance is unchanged):
+  - The analyzer derives each function's effects from what it calls: `block` (may wait — task waits, channel operations), `io` (talks to the outside of the process), `panic` (an explicit `panic(…)`) and `nondet` (values that vary even with fixed input — time, timing).
+  - A declaration is a claim about the derivation: prefix a function with `@effects(io)` / `@effects(!block)`, or suffix a named function type with `type F func(…) R @effects(…)`. A list is either all positive or all negated; `@effects()` means no effects.
+  - A derived effect outside the declaration is rejected at the declaration, naming the first call that brings it in. Values of a named function type are checked against its contract.
+  - Declarations are optional for now.
+- `sober check <entry> --effects-dump` prints the derived effects.
+
+### Tools
+
+- `sober fix [--effects] [--errors] <entry>` writes the derived `@effects` / `@errors` declarations onto public functions that have none, and narrows word-only lists that are wider than the derivation. Negated lists, lists naming function types, internal functions and declarations that the derivation exceeds are left alone.
+
+### Analyzer
+
+- The lease-window performance lint now uses the derived effects (`block`) instead of its own check. It also sees waits through function values, so the set of warnings can change.
+
+### Fixes
+
+- Fixed memory corruption in programs that use std/task with two or more workers and io_uring available (the default on a multi-core host, unless seccomp blocks io_uring as Docker's default profile does): when a task other than `main` called `io.ReadFile` and the read had to wait, the runtime could release regions that were still in use, and two tasks could end up sharing the same memory. The symptom was silently wrong values or unexpected panics. The bug came in with v0.6.1.
+
+### Testing
+
+- New gate `scripts/nextgen.sh`: builds the compiler with the current runtime (with a runtime invariant check) and runs its own parallel build and check with 1, 2 and 8 workers, so runtime changes are exercised by the compiler itself before they reach a bootstrap step.
+
 ## v0.6.1 — 2026-10-23
 
 A follow-up to the Web release.

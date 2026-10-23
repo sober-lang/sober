@@ -10,6 +10,7 @@ ChaCha20（RFC 8439 2.3〜2.4 — 鍵 32 バイト・nonce 12 バイト・32 bit
 
 ```sober
 @secret(key)
+@effects(!io, !block, !nondet)
 func Block(key []byte, nonce []byte, counter int) []byte
 ```
 
@@ -19,6 +20,7 @@ func Block(key []byte, nonce []byte, counter int) []byte
 
 ```sober
 @secret(key)
+@effects(!io, !block, !nondet)
 func XorKeyStream(key []byte, nonce []byte, counter int, src []byte) []byte
 ```
 
@@ -28,6 +30,7 @@ src を鍵ストリーム（ブロック番号 counter から）と xor した�
 
 ```sober
 @secret(key)
+@effects(!io, !block, !nondet)
 func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n int) []byte
 ```
 

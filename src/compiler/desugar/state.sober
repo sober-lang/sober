@@ -848,6 +848,21 @@ func FuncSecret(st mut S, fd ast.Node) (ListRef, int) {
     return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
 }
 
+// FuncEffects は関数宣言 fd の `@effects(…)` の項の列（文字列の列 — 無ければ -1）と `@` の字句（付加の列の 12・13 番目 — parser.funcExt。
+// language.md 12 節の関数の効果）
+func FuncEffects(st mut S, fd ast.Node) (ListRef, int) {
+    ext := fd.f
+    if ext < LBASE || lenL(mut st, ListRef(ext)) < 14 {
+        return -1, 0
+    }
+    raw := latI(mut st, ListRef(ext), 12)
+    tok := latI(mut st, ListRef(ext), 13)
+    if raw < 0 {
+        return -1, tok
+    }
+    return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
+}
+
 // FuncBless は関数宣言 fd に `@bless` の印があるか（付加の列の 12 番目）
 func FuncBless(st mut S, fd ast.Node) bool {
     return (funcMarks(mut st, fd) & 1) != 0

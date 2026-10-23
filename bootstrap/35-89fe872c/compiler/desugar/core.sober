@@ -1,0 +1,390 @@
+package desugar
+
+import "std/iter"
+import "std/table"
+
+// コア式（Lean の Expr と同形 — 5 語 [tag, a, b, c, d]）
+
+const CLit = 1       // a = 値
+const CTT = 2
+const CFF = 3
+const CTriv = 4
+const CVar = 5       // a = de Bruijn 添字
+const CLet = 6       // a = e, b = body
+const CAdd = 7       // a, b
+const CLt = 8        // a, b
+const CBin = 9       // a = 種類（B*）, b, c
+const CIte = 10      // a = c, b = t, c = e
+const CNil = 11      // a = 型
+const CSome = 12     // a
+const CIfnil = 13    // a = e, b = nil, c = some
+const CInl = 14      // a = r（型）, b = e
+const CInr = 15      // a = l（型）, b = e
+const CCase = 16     // a = e, b = l, c = r
+const CPair = 17     // a, b
+const CFst = 18      // a
+const CSnd = 19      // a
+const CCall = 20     // a = 関数の添字, b = e, c = 型引数の列（-1 = 無し）, d = callm
+const CFnref = 21    // a = 関数の添字, b = 型引数の列（-1 = 無し）
+const CCallv = 22    // a = f, b = e
+const CAnn = 23      // a = e, b = 型
+const CBlock = 24    // a
+const CBlockR = 25   // a = 型, b = e
+const CAlloc = 26    // a = m, b = e
+const CDeref = 27    // a
+const CAssign = 28   // a = l, b = e
+const CWhile = 29    // a = c, b = body
+const CFreeze = 30   // a
+const CMkslice = 31  // a = m, b = 型, d = region + 1（0 = 最内 — M3b の region 指定版 mksliceAt）
+const CIndex = 32    // a = e, b = i, c = 型（-1 = 注釈なし）
+const CLen = 33      // a
+const CAppend = 34   // a = e, b = v
+const CSetidx = 35   // a = e, b = i, c = v
+const CSubslice = 36 // a = e, b = a, c = b
+const CEqs = 37      // a, b
+const CConcat = 38   // a, b
+const CMkmap = 39    // a = m, b = キー型, c = 値型, d = region + 1（0 = 最内 — mkmapAt）
+const CGetm = 40     // a = 型, b = e, c = key
+const CSetm = 41     // a = e, b = key, c = v
+const CDelm = 42     // a = 型, b = e, c = key
+const CLenm = 43     // a
+const CLabel = 44    // a = ラベルの記録（LB*）, b = 型, c = e, d = 整形（W*）
+const CJump = 45     // a = ラベルの id, b = 型, c = e
+const CStrlit = 46   // a = バイト列（ヒープの文字列）, b = region（Lean の strlit — region b の imm int セル列）
+const CKeysm = 47    // a（keysm の段 — map のキー列のスナップショット）
+const CUnreach = 48  // a = 型（到達しない — error の switch の覆っていない腕。error 網羅 analyzer A5・formal.md「到達しない項の段」）
+const CToByte = 49   // a（byte の段 — `byte(n)`: int → byte、範囲外は panic。language.md 33 節・formal.md「byte の段」）
+const CToInt = 50    // a（`int(b)`: byte → int）
+const CFlit = 51     // a = ビット列（float の段 — IEEE 754 binary64 を i64 の 2 の補数で読んだ値。language.md 37 節・Lean の flit）
+const CFBin = 52     // a = 種類（FB*）, b, c（float × float → float / bool — Lean の farith / fcmp）
+const CFConv = 53    // a = 種類（FC*）, b = e（neg / sqrt / ofInt / toInt / bits / fromBits — Lean の fconv）
+const CCopyTo = 54   // a = 型, b = e, c = 写し先の region k（境界コピー式 — Lean の copyTo・宛先構築レーン M3）
+// 段 6 P3a（task の木 — Lean の scope / spawn / join / tryJ。scope の型は union t unit — inr = 子の死）
+const CScope = 55    // a = 型 t（本体の写した型）, b = 本体（var 0 = 札）, c = err の型 eps（P3b-4 1b' — 未回収の失敗の写し先の型・region 0 の形）
+const CSpawn = 56    // a = 札, b = 渡す値, c = 子の本体（閉じている — var 0 = 渡す値）
+const CJoin = 57     // a = 型 t（結果型 — 子の結果を scope の region へ写すときに歩く型。P3b-4）, b = handle
+const CTry = 58      // a = 型 t（死のときの nil の注釈）, b = handle
+const CNewch = 59    // a = 家の region r, b = 容量, c = ペイロードの型（段 6 P3b — 端点の組 prod (own tx r t) (own rx r t)）
+const CSend = 60     // a = 送り端, b = 値
+const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
+const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
+const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndex と同じ）（clone の段 — slice / map の浅い写しを最内 region の mut へ）
+const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの関数値の呼び出し — Lean の callMv・借りの閉包の mut 捕捉 (α-L1)）
+
+// float の二項の種類（FAdd..FDiv は farith、FEq..FGe は fcmp）
+const FAdd = 1
+const FSub = 2
+const FMul = 3
+const FDiv = 4
+const FEq = 5
+const FNe = 6
+const FLt = 7
+const FLe = 8
+const FGt = 9
+const FGe = 10
+
+// float の単項の写しの種類
+const FCNeg = 1
+const FCSqrt = 2
+const FCOfInt = 3
+const FCToInt = 4
+const FCBits = 5
+const FCFromBits = 6
+
+// arith / cmp ファミリの種類
+const BSub = 1
+const BMul = 2
+const BDiv = 3
+const BMod = 4
+const BEq = 5
+const BNe = 6
+const BLe = 7
+const BGt = 8
+const BGe = 9
+const BAnd = 10
+const BOr = 11
+const BXor = 12
+const BShl = 13
+const BShr = 14
+
+// ラベルの整形
+const WNone = 0
+const WDiscard = 1
+const WAnn = 2
+
+// CoreExpr はコア式 1 つ（st.cores の要素 — 作ったら変えない）。参照 = CBASE + 添字（ヒープの番地・型の参照と取り違えて読むと
+// 範囲外で panic する）。欄は int の記録 — 子の式は int(e) で入れ、読むのは CoreRef(x.a) 等
+type CoreExpr struct {
+    tag int
+    a int
+    b int
+    c int
+    d int
+}
+
+const CBASE = 2199023255552
+
+// CoreRef はコア式の参照（CBASE + 添字。-1 = 無し）
+type CoreRef int
+
+// ce はコア式を作る（欄は生の int — 種類つきの構築子だけが呼ぶ）
+func ce(st mut S, tag int, a int, b int, c int, d int) CoreRef {
+    n := table.Len(mut st.cores)
+    table.Push(mut st.cores, CoreExpr{tag: tag, a: a, b: b, c: c, d: d})
+    return CoreRef(CBASE + n)
+}
+
+// coreAt はコア式 x の記録（非ジェネリックの包み — F-10）
+func coreAt(st mut S, x CoreRef) CoreExpr {
+    return table.Get(mut st.cores, int(x) - CBASE)
+}
+
+// latCore / hgetCore / hsetCore はヒープの列・記録越しのコア式（ヒープの語は int）
+func latCore(st mut S, l ListRef, i int) CoreRef {
+    return CoreRef(latI(mut st, l, i))
+}
+
+func hgetCore(st mut S, i int) CoreRef {
+    return CoreRef(hget(mut st, i))
+}
+
+func hsetCore(st mut S, i int, e CoreRef) {
+    hset(mut st, i, int(e))
+}
+
+// ── 子が全部式のコア式 ──
+
+// float の段の記録（a は種類・ビット列 — 子でない欄）
+func cFlit(st mut S, bits int) CoreRef {
+    return ce(mut st, CFlit, bits, 0, 0, 0)
+}
+
+func cFBin(st mut S, k int, a CoreRef, b CoreRef) CoreRef {
+    return ce(mut st, CFBin, k, int(a), int(b), 0)
+}
+
+func cFConv(st mut S, k int, e CoreRef) CoreRef {
+    return ce(mut st, CFConv, k, int(e), 0, 0)
+}
+
+func c1(st mut S, tag int, a CoreRef) CoreRef {
+    return ce(mut st, tag, int(a), 0, 0, 0)
+}
+
+func c2(st mut S, tag int, a CoreRef, b CoreRef) CoreRef {
+    return ce(mut st, tag, int(a), int(b), 0, 0)
+}
+
+func c3(st mut S, tag int, a CoreRef, b CoreRef, c CoreRef) CoreRef {
+    return ce(mut st, tag, int(a), int(b), int(c), 0)
+}
+
+func cTriv(st mut S) CoreRef {
+    return ce(mut st, CTriv, 0, 0, 0, 0)
+}
+
+func cTT(st mut S) CoreRef {
+    return ce(mut st, CTT, 0, 0, 0, 0)
+}
+
+func cFF(st mut S) CoreRef {
+    return ce(mut st, CFF, 0, 0, 0, 0)
+}
+
+func cLet(st mut S, e CoreRef, body CoreRef) CoreRef {
+    return ce(mut st, CLet, int(e), int(body), 0, 0)
+}
+
+func cIte(st mut S, c CoreRef, t CoreRef, e CoreRef) CoreRef {
+    return ce(mut st, CIte, int(c), int(t), int(e), 0)
+}
+
+// ── 整数の欄を持つコア式 ──
+
+func cLit(st mut S, n int) CoreRef {
+    return ce(mut st, CLit, n, 0, 0, 0)
+}
+
+func cVar(st mut S, i int) CoreRef {
+    return ce(mut st, CVar, i, 0, 0, 0)
+}
+
+// cBin の k は種類（B*）
+func cBin(st mut S, k int, a CoreRef, b CoreRef) CoreRef {
+    return ce(mut st, CBin, k, int(a), int(b), 0)
+}
+
+// cCall の fi は関数の添字、ts は型引数の列（-1 = 無し）、m は callm（0 / 1）
+func cCall(st mut S, fi int, e CoreRef, ts int, m int) CoreRef {
+    return ce(mut st, CCall, fi, int(e), ts, m)
+}
+
+// cFnref の fi は関数の添字、ts は型引数の列（-1 = 無し）
+func cFnref(st mut S, fi int, ts int) CoreRef {
+    return ce(mut st, CFnref, fi, ts, 0, 0)
+}
+
+// cAlloc の m は mut（0 / 1）
+func cAlloc(st mut S, m int, e CoreRef) CoreRef {
+    return ce(mut st, CAlloc, m, int(e), 0, 0)
+}
+
+// cStrlit の s はバイト列（ヒープの文字列）、r は region
+func cStrlit(st mut S, s int, r int) CoreRef {
+    return ce(mut st, CStrlit, s, r, 0, 0)
+}
+
+// ── 型を欄に持つコア式（型は int(t) で入れ、読むのは TyRef(x.b) 等）──
+
+func cAnn(st mut S, e CoreRef, t TyRef) CoreRef {
+    return ce(mut st, CAnn, int(e), int(t), 0, 0)
+}
+
+func cNil(st mut S, t TyRef) CoreRef {
+    return ce(mut st, CNil, int(t), 0, 0, 0)
+}
+
+func cUnreach(st mut S, t TyRef) CoreRef {
+    return ce(mut st, CUnreach, int(t), 0, 0, 0)
+}
+
+func cInl(st mut S, r TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CInl, int(r), int(e), 0, 0)
+}
+
+func cInr(st mut S, l TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CInr, int(l), int(e), 0, 0)
+}
+
+func cBlockR(st mut S, t TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CBlockR, int(t), int(e), 0, 0)
+}
+
+// cScope は構造化スコープ（本体の var 0 = 札・型は union t (union unit eps') — inr (inl) = 子の死・inr (inr) = 未回収の失敗）
+func cScope(st mut S, t TyRef, eps TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CScope, int(t), int(e), int(eps), 0)
+}
+
+// cSpawn は子の task を生む（本体 e は閉じている — var 0 = 渡す値 a）
+func cSpawn(st mut S, sc CoreRef, a CoreRef, e CoreRef) CoreRef {
+    return ce(mut st, CSpawn, int(sc), int(a), int(e), 0)
+}
+
+func cJoin(st mut S, t TyRef, h CoreRef) CoreRef {
+    return ce(mut st, CJoin, int(t), int(h), 0, 0)
+}
+
+// cTry は死を値として見る（完了 = some v・死 = nil t）
+func cTry(st mut S, t TyRef, h CoreRef) CoreRef {
+    return ce(mut st, CTry, int(t), int(h), 0, 0)
+}
+
+func cNewch(st mut S, r int, cap int, t TyRef) CoreRef {
+    return ce(mut st, CNewch, r, cap, int(t), 0)
+}
+
+func cSend(st mut S, c CoreRef, v CoreRef) CoreRef {
+    return ce(mut st, CSend, int(c), int(v), 0, 0)
+}
+
+func cRecv(st mut S, c CoreRef) CoreRef {
+    return ce(mut st, CRecv, int(c), 0, 0, 0)
+}
+
+func cClose(st mut S, c CoreRef) CoreRef {
+    return ce(mut st, CClose, int(c), 0, 0, 0)
+}
+
+// cCallMv は anchor つきの関数値の呼び出し（anchor = region a — env か引数に mut の束縛を持つ閉包の呼び出し）
+func cCallMv(st mut S, a int, f CoreRef, e CoreRef) CoreRef {
+    return ce(mut st, CCallMv, int(f), int(e), a, 0)
+}
+
+// cCopyTo は e を外側の region k へ写す境界コピー式（型 t は k 以下しか指さない）
+func cCopyTo(st mut S, k int, t TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CCopyTo, int(t), int(e), k, 0)
+}
+
+func cMkslice(st mut S, m int, t TyRef) CoreRef {
+    return ce(mut st, CMkslice, m, int(t), 0, 0)
+}
+
+// cMksliceAt は空 slice を region r に作る（M3b — mut の宛先構築。d = r + 1 — 0 は最内の mkslice）
+func cMksliceAt(st mut S, m int, t TyRef, r int) CoreRef {
+    return ce(mut st, CMkslice, m, int(t), 0, r + 1)
+}
+
+// cClone は clone(x) の写し（t は読み出しの注釈 — -1 = 注釈なし）
+func cClone(st mut S, e CoreRef, t TyRef) CoreRef {
+    return ce(mut st, CClone, int(e), int(t), 0, 0)
+}
+
+// cIndex の t は -1 = 注釈なし
+func cIndex(st mut S, e CoreRef, i CoreRef, t TyRef) CoreRef {
+    return ce(mut st, CIndex, int(e), int(i), int(t), 0)
+}
+
+func cMkmap(st mut S, m int, k TyRef, v TyRef) CoreRef {
+    return ce(mut st, CMkmap, m, int(k), int(v), 0)
+}
+
+// cMkmapAt は空 map を region r に作る（M3b — d = r + 1）
+func cMkmapAt(st mut S, m int, k TyRef, v TyRef, r int) CoreRef {
+    return ce(mut st, CMkmap, m, int(k), int(v), r + 1)
+}
+
+func cGetm(st mut S, t TyRef, e CoreRef, key CoreRef) CoreRef {
+    return ce(mut st, CGetm, int(t), int(e), int(key), 0)
+}
+
+func cDelm(st mut S, t TyRef, e CoreRef, key CoreRef) CoreRef {
+    return ce(mut st, CDelm, int(t), int(e), int(key), 0)
+}
+
+// cLabel の lb はラベルの記録（LB*）、wrap は整形（W*）
+func cLabel(st mut S, lb int, t TyRef, e CoreRef, wrap int) CoreRef {
+    return ce(mut st, CLabel, lb, int(t), int(e), wrap)
+}
+
+// cJump の id はラベルの id
+func cJump(st mut S, id int, t TyRef, e CoreRef) CoreRef {
+    return ce(mut st, CJump, id, int(t), int(e), 0)
+}
+
+// pairChain は値の列 → 右結合の pair 鎖（0 は triv、1 は素の値）
+func pairChain(st mut S, l ListRef) CoreRef {
+    n := lenL(mut st, l)
+    if n == 0 {
+        return cTriv(mut st)
+    }
+    mut acc := latCore(mut st, l, n - 1)
+    mut i := n - 2
+    while i >= 0 {
+        acc = c2(mut st, CPair, latCore(mut st, l, i), acc)
+        i -= 1
+    }
+    return acc
+}
+
+// projection は n フィールドの i 番目の射影（i < n-1 は fst(snd^i)、i = n-1 は snd^(n-1)）
+func projection(st mut S, base CoreRef, i int, n int) CoreRef {
+    mut cur := base
+    for k <- iter.Range(0, i) {
+        cur = c1(mut st, CSnd, cur)
+    }
+    if n >= 2 && i < n - 1 {
+        cur = c1(mut st, CFst, cur)
+    }
+    return cur
+}
+
+// wrapLets は e の列を外側から let で被せる（列の先頭が最外）
+func wrapLets(st mut S, lets ListRef, body CoreRef) CoreRef {
+    mut out := body
+    mut i := lenL(mut st, lets) - 1
+    while i >= 0 {
+        out = cLet(mut st, latCore(mut st, lets, i), out)
+        i -= 1
+    }
+    return out
+}

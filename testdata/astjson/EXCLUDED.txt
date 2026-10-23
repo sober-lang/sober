@@ -2,6 +2,7 @@ examples/annot.sober	error: Unsupported at tok 24 (rule annotation): annotation
 examples/annot_neg_unknown.sober	sober: parse error
 examples/bind.sober	error: Unsupported at tok 3 (rule bind_decl): top-level declaration kind
 examples/char_lit_nonascii.sober	sober: parse error
+examples/effects_neg_target.sober	sober: parse error
 examples/fntype_errors_neg_prefix.sober	sober: parse error
 examples/func_neg_method.sober	sober: parse error
 examples/named_fn_type_mixed.sober	sober: parse error

@@ -59,6 +59,7 @@ examples/composite_mixed.sober: sober: desugar error at examples/composite_mixed
 examples/composite_slice_elem_ty.sober: sober: desugar error at examples/composite_slice_elem_ty.sober:10:15 (FieldType): the value does not have the field's declared type
 examples/const_neg_call.sober: sober: load error at examples/const_neg_call.sober:9:7: const expression
 examples/defined_neg_struct.sober: sober: load error at examples/defined_neg_struct.sober:9:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
+examples/effects_neg_target.sober: sober: load error: source does not match the grammar
 examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
 examples/errors_neg_try_dest.sober: sober: desugar error at examples/errors_neg_try_dest.sober:16:18 (Malformed)
 examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)

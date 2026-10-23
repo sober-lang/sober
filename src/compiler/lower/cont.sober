@@ -622,6 +622,9 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
         // float の組み込み（std/math — language.md 37 節）: sqrt は sqrtsd・ビット列の読み替えは同じ語（型だけ変わる）
         // std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — desugar の SysKey）: 鍵の番号で実装を引く
         sk := desugar.SysKey(mut st.d, st.curPkg, name)
+        if sk != 0 {
+            traceLeaf(mut st, loader.IntrinsicEffects(sk))
+        }
         fsq := sk == loader.IFSqrt
         fbi := sk == loader.IFBits
         ffb := sk == loader.IFFromBits
@@ -1018,15 +1021,18 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     if k == 1 || k == 5 {
         t := mkSlice(mut st, tByte(mut st), false)
         out := newAgg(mut st, t)
-        if destHere(mut st, at) {
-            // 宛先構築（1.0× アタック便 — M1 の印）: 結果が return に流れ着くなら、読む間だけ深度を宛先へ切り替えて宛先の region の先端へ直に読む
-            // （io.ReadFile の戻り値の境界コピー — 1BRC の 140 MB の写し — が消える）。宛先の region の先端は呼び手が止まっている間は空いている
+        // 宛先構築（1.0× アタック便 — M1 の印）: 結果が return に流れ着くなら宛先の深度の region の先端へ直に読む（io.ReadFile の戻り値の
+        // 境界コピー — 1BRC の 140 MB の写し — が消える）。宛先の region の先端は呼び手が止まっている間は空いている。深度は実引数で渡す —
+        // 今の深度を宛先へ切り替えて呼ぶ旧形は、読みの待ちの park が (宛先, 今の深度] の生きた region を手放した（report-1086）
+        d := if destHere(mut st, at) { st.destDepth } else { regionDepth(mut st) }
+        if st.rtMut == 21 && destHere(mut st, at) {
+            // 変異 21（scripts/nextgen.sh の自己検査）: 旧形 — 読む間だけ今の深度を宛先へ切り替える
             saved := regionDepth(mut st)
-            regionSetDepth(mut st, st.destDepth)
-            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list2(mut st, p.v, out))
+            regionSetDepth(mut st, d)
+            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list3(mut st, p.v, out, d))
             regionSetDepth(mut st, saved)
         } else {
-            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list2(mut st, p.v, out))
+            call(mut st, if k == 1 { st.rtRead } else { st.rtDir }, list3(mut st, p.v, out, d))
         }
         return one1(mut st, t, out), nil
     }

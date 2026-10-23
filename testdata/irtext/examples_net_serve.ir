@@ -13537,18 +13537,17 @@ b7:
   br b1(%21)
 }
 
-func @rt.read_file(%0 ptr, %1 ptr) {
+func @rt.read_file(%0 ptr, %1 ptr, %2 i64) {
 b0:
-  %2 = fsaddr @rt.meta
-  %3 = fsaddr @rt.iobuf
-  %4 = load.i64 %2[0]
-  %5 = region.bump %4
+  %3 = fsaddr @rt.meta
+  %4 = fsaddr @rt.iobuf
+  %5 = region.bump %2
   %6 = ptoi %5
   store %1[0], %6
   %7 = const 0
   store %1[1], %7
-  store %1[2], %4
-  %8 = call @rt.cstr(%0, %3)
+  store %1[2], %2
+  %8 = call @rt.cstr(%0, %4)
   %9 = const 0
   %10 = ne %8, %9
   condbr %10, b1, b2
@@ -13559,7 +13558,7 @@ b1:
 b2:
   %12 = const 257
   %13 = const -100
-  %14 = ptoi %3
+  %14 = ptoi %4
   %15 = const 524288
   %16 = const 0
   %17 = syscall(%12, %13, %14, %15, %16)
@@ -13579,9 +13578,9 @@ b5:
   %25 = load.i64 %1[1]
   %26 = add %24, %25
   %27 = fsaddr @rt.slots
-  %28 = gep.word %27, %4
+  %28 = gep.word %27, %2
   %29 = load.i64 %28[0]
-  %30 = load.i64 %2[1030]
+  %30 = load.i64 %3[1030]
   %31 = add %29, %30
   %32 = sub %31, %26
   %34 = const 1048576
@@ -13594,7 +13593,7 @@ b6(%23 i64):
   store %59[1027], %23
   ret
 b7(%33 i64):
-  call @rt.extend8(%4, %26, %33)
+  call @rt.extend8(%2, %26, %33)
   %40 = const 22
   %41 = call @rt.uio(%40, %17, %26, %33)
   %43 = const 0
@@ -13609,7 +13608,7 @@ b9:
   %38 = add %32, %37
   br b7(%38)
 b10(%42 i64):
-  call @rt.extend8(%4, %26, %42)
+  call @rt.extend8(%2, %26, %42)
   %46 = const -4
   %47 = eq %41, %46
   condbr %47, b13, b14
@@ -13751,126 +13750,124 @@ b6(%19 i64):
   br b1(%40)
 }
 
-func @rt.read_dir(%0 ptr, %1 ptr) {
+func @rt.read_dir(%0 ptr, %1 ptr, %2 i64) {
 b0:
-  %2 = fsaddr @rt.iobuf
-  %3 = fsaddr @rt.meta
-  %4 = load.i64 %3[0]
-  %5 = region.bump %4
-  %6 = ptoi %5
-  store %1[0], %6
-  %7 = const 0
-  store %1[1], %7
-  store %1[2], %4
-  %8 = call @rt.cstr(%0, %2)
-  %9 = const 0
-  %10 = ne %8, %9
-  condbr %10, b1, b2
+  %3 = fsaddr @rt.iobuf
+  %4 = region.bump %2
+  %5 = ptoi %4
+  store %1[0], %5
+  %6 = const 0
+  store %1[1], %6
+  store %1[2], %2
+  %7 = call @rt.cstr(%0, %3)
+  %8 = const 0
+  %9 = ne %7, %8
+  condbr %9, b1, b2
 b1:
-  %11 = fsaddr @rt.meta
-  store %11[1027], %8
+  %10 = fsaddr @rt.meta
+  store %10[1027], %7
   ret
 b2:
-  %12 = const 257
-  %13 = const -100
-  %14 = ptoi %2
-  %15 = const 589824
-  %16 = const 0
-  %17 = syscall(%12, %13, %14, %15, %16)
-  %18 = const 0
-  %19 = lt %17, %18
-  condbr %19, b3, b4
+  %11 = const 257
+  %12 = const -100
+  %13 = ptoi %3
+  %14 = const 589824
+  %15 = const 0
+  %16 = syscall(%11, %12, %13, %14, %15)
+  %17 = const 0
+  %18 = lt %16, %17
+  condbr %18, b3, b4
 b3:
-  %20 = const 0
-  %21 = sub %20, %17
-  %22 = fsaddr @rt.meta
-  store %22[1027], %21
+  %19 = const 0
+  %20 = sub %19, %16
+  %21 = fsaddr @rt.meta
+  store %21[1027], %20
   ret
 b4:
   br b5
 b5:
-  %24 = const 217
-  %25 = ptoi %2
-  %26 = const 4096
-  %27 = syscall(%24, %17, %25, %26)
-  %28 = const -4
-  %29 = eq %27, %28
-  condbr %29, b7, b8
-b6(%23 i64):
-  %75 = const 3
-  %76 = syscall(%75, %17)
-  %77 = fsaddr @rt.meta
-  store %77[1027], %23
+  %23 = const 217
+  %24 = ptoi %3
+  %25 = const 4096
+  %26 = syscall(%23, %16, %24, %25)
+  %27 = const -4
+  %28 = eq %26, %27
+  condbr %28, b7, b8
+b6(%22 i64):
+  %74 = const 3
+  %75 = syscall(%74, %16)
+  %76 = fsaddr @rt.meta
+  store %76[1027], %22
   ret
 b7:
   br b5
 b8:
-  %30 = const 0
-  %31 = eq %27, %30
-  condbr %31, b9, b10
+  %29 = const 0
+  %30 = eq %26, %29
+  condbr %30, b9, b10
 b9:
-  %32 = const 0
-  br b6(%32)
+  %31 = const 0
+  br b6(%31)
 b10:
-  %33 = const 0
-  %34 = lt %27, %33
-  condbr %34, b11, b12
+  %32 = const 0
+  %33 = lt %26, %32
+  condbr %33, b11, b12
 b11:
-  %35 = const 0
-  %36 = sub %35, %27
-  br b6(%36)
+  %34 = const 0
+  %35 = sub %34, %26
+  br b6(%35)
 b12:
-  %38 = const 0
-  br b13(%38)
-b13(%37 i64):
-  %39 = lt %37, %27
-  condbr %39, b14, b5
+  %37 = const 0
+  br b13(%37)
+b13(%36 i64):
+  %38 = lt %36, %26
+  condbr %38, b14, b5
 b14:
-  %40 = gep.byte %2, %37
-  %41 = load8 %40[16]
-  %42 = load8 %40[17]
-  %43 = const 8
-  %44 = shl %42, %43
-  %45 = or_ %41, %44
-  %46 = const 19
-  %47 = gep.byte %40, %46
-  %50 = const 0
-  br b15(%50)
-b15(%48 i64):
-  %51 = gep.byte %47, %48
-  %52 = load8 %51[0]
-  %53 = const 0
-  %54 = eq %52, %53
-  condbr %54, b17(%48), b16
+  %39 = gep.byte %3, %36
+  %40 = load8 %39[16]
+  %41 = load8 %39[17]
+  %42 = const 8
+  %43 = shl %41, %42
+  %44 = or_ %40, %43
+  %45 = const 19
+  %46 = gep.byte %39, %45
+  %49 = const 0
+  br b15(%49)
+b15(%47 i64):
+  %50 = gep.byte %46, %47
+  %51 = load8 %50[0]
+  %52 = const 0
+  %53 = eq %51, %52
+  condbr %53, b17(%47), b16
 b16:
-  %55 = const 1
-  %56 = add %48, %55
-  br b15(%56)
-b17(%49 i64):
-  %57 = load.i64 %1[0]
-  %58 = load.i64 %1[1]
-  %59 = add %57, %58
-  %60 = const 2
-  %61 = add %49, %60
-  call @rt.extend8(%4, %59, %61)
-  %62 = itop %59
-  %63 = load8 %40[18]
-  store8 %62[0], %63
-  %64 = const 1
-  %65 = gep.byte %62, %64
-  call @rt.copy8(%65, %47, %49)
-  %66 = const 1
-  %67 = add %49, %66
-  %68 = gep.byte %62, %67
-  %69 = const 0
-  store8 %68[0], %69
-  %70 = load.i64 %1[1]
-  %71 = const 2
-  %72 = add %49, %71
-  %73 = add %70, %72
-  store %1[1], %73
-  %74 = add %37, %45
-  br b13(%74)
+  %54 = const 1
+  %55 = add %47, %54
+  br b15(%55)
+b17(%48 i64):
+  %56 = load.i64 %1[0]
+  %57 = load.i64 %1[1]
+  %58 = add %56, %57
+  %59 = const 2
+  %60 = add %48, %59
+  call @rt.extend8(%2, %58, %60)
+  %61 = itop %58
+  %62 = load8 %39[18]
+  store8 %61[0], %62
+  %63 = const 1
+  %64 = gep.byte %61, %63
+  call @rt.copy8(%64, %46, %48)
+  %65 = const 1
+  %66 = add %48, %65
+  %67 = gep.byte %61, %66
+  %68 = const 0
+  store8 %67[0], %68
+  %69 = load.i64 %1[1]
+  %70 = const 2
+  %71 = add %48, %70
+  %72 = add %69, %71
+  store %1[1], %72
+  %73 = add %36, %44
+  br b13(%73)
 }
 
 func @rt.write_fd(%0 i64, %1 ptr) i64 {

@@ -1,0 +1,3 @@
+testdata/fix/lib/lib.sober:14:6: error: public function 'Check' returns an error but has no @errors: add `@errors(Bad)` (Analyzer)
+testdata/fix/lib/lib.sober:18:1: error: @errors of 'Strict' lists Gone which it never returns: write `@errors(Bad)` (Analyzer)
+exit=1

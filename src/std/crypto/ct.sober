@@ -21,6 +21,7 @@ func sysAddr(b []byte) int
 // （どこで食い違ったかが時間に出ない — MAC の tag の比較に使う関数）
 @secret(a, b)
 @bless
+@effects(!io, !block, !nondet)
 func Equal(a []byte, b []byte) bool {
     if len(a) != len(b) {
         return false
@@ -34,18 +35,21 @@ func Equal(a []byte, b []byte) bool {
 
 // x が 0 なら 0、それ以外なら -1（全ビット 1）の mask（x | -x の最上位のビットを算術シフトで広げる — 分岐なし）
 @secret(x)
+@effects(!io, !block, !nondet)
 func NonZero(x int) int {
     return (x | -x) >> 63
 }
 
 // m が -1 なら a、0 なら b（m は NonZero などで作った mask だけ — 他の値は契約違反で結果は不定）
 @secret(m, a, b)
+@effects(!io, !block, !nondet)
 func Select(m int, a int, b int) int {
     return (a & m) | (b & ^m)
 }
 
 // b の全バイトを 0 にする（用済みの鍵の後始末）
 @secret(b)
+@effects(!io, !block, !nondet)
 func Wipe(b mut []byte) {
     for i <- iter.Range(0, len(b)) {
         b[i] = byte(0)

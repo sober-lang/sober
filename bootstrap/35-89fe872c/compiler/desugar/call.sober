@@ -1,0 +1,1392 @@
+package desugar
+
+// 呼び出し（src/stage1/desugar.zig の call / inlineCall / lambdaCall / liftLambda / tryExpr 一族の写し）
+
+import "diag"
+import "ast"
+import "loader"
+import "std/iter"
+import "std/table"
+
+// Closure はラムダの閉包（st.closures の要素 — 添字で指す）: 定義時の束縛の鎖・関数の鎖・package・型環境・return の行き先・
+// 展開中の関数の鎖を凍結して持つ（本体は字句的に定義点のもの）
+type Closure struct {
+    lambda NodeRef     // ラムダの節
+    envB int       // 定義時の値の束縛の鎖
+    envF int       // 定義時の関数型の束縛の鎖
+    pkg int
+    tenv int
+    ft TyRef       // 関数型（-1 = 不明）
+    retTarget int
+    inlrec int     // 定義時の展開中の関数の鎖
+}
+
+func closure(st mut S, lam NodeRef, eb int, ef int, ft TyRef) int {
+    at := table.Len(mut st.closures)
+    table.Push(mut st.closures, Closure{lambda: lam, envB: eb, envF: ef, pkg: st.curPkg, tenv: st.tenv, ft: ft, retTarget: st.retTarget, inlrec: st.inlrec})
+    return at
+}
+
+// clo は閉包 cl の記録（非ジェネリックの包み — F-10）
+func clo(st mut S, cl int) Closure {
+    return table.Get(mut st.closures, cl)
+}
+
+// fnRef は名前付き関数 → fnref（展開される関数・mut 引数の関数・ジェネリックは値にならない）
+func fnRef(st mut S, fi int, at NodeRef) (CoreRef, error?) {
+    if fnExpands(mut st, fi) || fnMutDef(mut st, fi) || lenL(mut st, fnTParams(mut st, fi)) > 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    d := fnDef(mut st, fi)
+    if d < 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    return cFnref(mut st, d, -1), nil
+}
+
+// callValue は関数値の呼び出し（関数値を先に評価し、引数は pair 鎖）
+func callValue(st mut S, callee NodeRef, ft TyRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    f := expr(mut st, callee, eb, ef, depth)?
+    n := lenL(mut st, args)
+    vs := ListRef(listN(mut st, n))
+    mut p := tLeft(mut st, ft)
+    for i <- iter.Range(0, n) {
+        mut want := p
+        if i + 1 != n {
+            if tg(mut st, p) != TPr {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            want = tLeft(mut st, p)
+            p = tRight(mut st, p)
+        }
+        hsetCore(mut st, int(vs) + 1 + i, coerceExpr(mut st, latN(mut st, args, i), want, eb, ef, depth, at)?)
+    }
+    if n == 0 && tg(mut st, p) != TUnit {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    return c2(mut st, CCallv, f, pairChain(mut st, vs)), nil
+}
+
+// letArgs は引数を左から右へ let で評価して捨て、body を返す形（println / io の代役）
+func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    ec := explicitCallee(mut st, callee0, eb)
+    callee := ec.callee
+    explicit := ec.explicit
+    na := lenL(mut st, args)
+    // 変換 `X(e)` / `int(x)` / `bool(x)`（language.md 32 節）: 値は変えない — 脱糖で消える
+    cv := convTarget(mut st, callee, eb, st.curPkg)
+    if cv != CONV_NONE {
+        if na != 1 {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        a0 := latN(mut st, args, 0)
+        t0 := computeTy(mut st, a0, eb, ef)
+        // byte の変換（language.md 33 節）: `byte(n)` は int → byte（コアの tobyte — 範囲外は panic、定数は範囲検査）・`byte(b)` は恒等 /
+        // `int(b)` は byte → int（toint）。named scalar との間は変換しない（下地へ戻してから）
+        if cv == CONV_BYTE {
+            if isUntypedConst(mut st, a0, eb, st.curPkg) {
+                return byteLit(mut st, a0, eb)
+            }
+            if isTag(mut st, t0, TByte) {
+                return expr(mut st, a0, eb, ef, depth)
+            }
+            // 型の分からない実引数（switch 式の束縛など — computeTy の F-c の穴）も tobyte に下ろす: int でなければコアの検査が拒否する
+            if (t0 != -1 && !isTag(mut st, t0, TInt)) || isNamedScalar(mut st, exprSty(mut st, a0, eb, ef)) {
+                nomFail(mut st, at)?
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CToByte, v), nil
+        }
+        if cv == CONV_INT && isTag(mut st, t0, TByte) {
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CToInt, v), nil
+        }
+        // float の変換（language.md 37 節）: `float(i)` は int → float（コアの tofloat — 型なしの整数定数も同じ写し）・`float(f)` は恒等 /
+        // `int(f)` は float → int（ftoint — NaN・範囲外は実行時に panic）。named scalar との間は変換しない
+        if cv == CONV_FLOAT {
+            if isTag(mut st, t0, TFloat) {
+                return expr(mut st, a0, eb, ef, depth)
+            }
+            if (t0 != -1 && !isTag(mut st, t0, TInt)) || isNamedScalar(mut st, exprSty(mut st, a0, eb, ef)) {
+                nomFail(mut st, at)?
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return cFConv(mut st, FCOfInt, v), nil
+        }
+        if cv == CONV_INT && isTag(mut st, t0, TFloat) {
+            v := expr(mut st, a0, eb, ef, depth)?
+            return cFConv(mut st, FCToInt, v), nil
+        }
+        if !convOk(mut st, cv, t0, exprSty(mut st, a0, eb, ef)) {
+            nomFail(mut st, at)?
+        }
+        return expr(mut st, a0, eb, ef, depth)
+    }
+    // 閉包の値（値の位置 — closure.sober）の呼び出し
+    ct := closureCallee(mut st, callee, eb, ef)
+    if ct != -1 {
+        return callClosure(mut st, callee, ct, args, at, eb, ef, depth)
+    }
+    ft := fnValueTy(mut st, callee, eb, ef)
+    if ft != -1 {
+        return callValue(mut st, callee, ft, args, at, eb, ef, depth)
+    }
+    if kindN(mut st, callee) == ast.EIdent {
+        name := sA(nodeOf(mut st, callee))
+        if strIs(mut st, name, "println") {
+            // 実引数は lower が印字できる型だけ（int・byte・bool・string — named scalar はコアで int）。型が読めない実引数・分岐する式
+            // （if / switch / ブロック式 — 腕の中の絞り込みを computeTy が見ない: `if v != nil { v } else { 0 }`）は今までどおり通す
+            for k <- iter.Range(0, na) {
+                ak := kindN(mut st, latN(mut st, args, k))
+                pt := if ak == ast.EIf || ak == ast.ESwitch || ak == ast.EBlock { TyRef(-1) } else { computeTy(mut st, latN(mut st, args, k), eb, ef) }
+                if pt != -1 && !isTag(mut st, pt, TInt) && !isTag(mut st, pt, TByte) && !isTag(mut st, pt, TBool) && !isTag(mut st, pt, TFloat) && !isStringTy(mut st, pt) {
+                    return 0, diag.PrintArg{at: posOf(mut st, latN(mut st, args, k))}
+                }
+            }
+            mut body := cTriv(mut st)
+            mut i := na - 1
+            while i >= 0 {
+                v := expr(mut st, latN(mut st, args, i), eb, ef, depth + i)?
+                body = cLet(mut st, v, body)
+                i -= 1
+            }
+            return body, nil
+        }
+        if strIs(mut st, name, "len") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            a0 := latN(mut st, args, 0)
+            if isStringTy(mut st, computeTy(mut st, a0, eb, ef)) {
+                return 0, diag.LenString{at: posOf(mut st, at)}
+            }
+            if isTag(mut st, computeTy(mut st, a0, eb, ef), TMp) {
+                v := expr(mut st, a0, eb, ef, depth)?
+                return c1(mut st, CLenm, v), nil
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CLen, v), nil
+        }
+        // keys(m)（keysm の段）: map のキー列のスナップショット（最内 region の imm slice）
+        if strIs(mut st, name, "keys") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            a0 := latN(mut st, args, 0)
+            mt := computeTy(mut st, a0, eb, ef)
+            if mt == -1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            if !isTag(mut st, mt, TMp) {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            v := expr(mut st, a0, eb, ef, depth)?
+            return c1(mut st, CKeysm, v), nil
+        }
+        // clone(x)（clone の段 — freeze の双対）: slice / map の浅い写しを最内 region の mut へ。読み出しの注釈は index と同じ
+        // （imm の slice は要素型が注釈を持つとき・imm の map はセル型 prod k (opt v) が常に注釈を持つ — Lean の readAs）
+        if strIs(mut st, name, "clone") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            a0 := latN(mut st, args, 0)
+            bt := computeTy(mut st, a0, eb, ef)
+            if bt == -1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            if isTag(mut st, bt, TSl) && tStrBit(mut st, bt) == 0 {
+                v := expr(mut st, a0, eb, ef, depth)?
+                return cClone(mut st, v, readAnn(mut st, bt)), nil
+            }
+            if isTag(mut st, bt, TMp) {
+                v := expr(mut st, a0, eb, ef, depth)?
+                ann := if tMutBit(mut st, bt) != 0 { TyRef(-1) } else { tProd(mut st, tKey(mut st, bt), tOpt(mut st, tVal(mut st, bt))) }
+                return cClone(mut st, v, ann), nil
+            }
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        // std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — intrinsic.sober の SysKey）: コアの近似は鍵の番号で（float の 3 つは fconv・
+        // []byte を返すものは新しい imm slice・mut []int は新しい mut slice・他は 0 — 実引数は左から評価して捨てる）
+        sk := SysKey(mut st, st.curPkg, name)
+        if sk != 0 {
+            if na != SysArity(sk) {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            if sk == loader.IFSqrt || sk == loader.IFBits || sk == loader.IFFromBits {
+                v := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+                return cFConv(mut st, if sk == loader.IFSqrt { FCSqrt } else if sk == loader.IFBits { FCBits } else { FCFromBits }, v), nil
+            }
+            mut body := if SysResult(sk) == 'b' { c1(mut st, CFreeze, cMkslice(mut st, 1, tByte(mut st))) } else if SysResult(sk) == 'm' { cMkslice(mut st, 1, st.tInt) } else { cLit(mut st, 0) }
+            mut i := na - 1
+            while i >= 0 {
+                v := expr(mut st, latN(mut st, args, i), eb, ef, depth + i)?
+                body = cLet(mut st, v, body)
+                i -= 1
+            }
+            return body, nil
+        }
+        if strIs(mut st, name, "bytesToString") && IsStdPkg(mut st, st.curPkg) {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            bt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if bt == -1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            if tg(mut st, bt) != TSl || tStrBit(mut st, bt) != 0 || tMutBit(mut st, bt) != 0 || tg(mut st, tElem(mut st, bt)) != TByte {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            return expr(mut st, latN(mut st, args, 0), eb, ef, depth)
+        }
+        if strIs(mut st, name, "bytes") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            if !isStringTy(mut st, computeTy(mut st, latN(mut st, args, 0), eb, ef)) {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            return expr(mut st, latN(mut st, args, 0), eb, ef, depth)
+        }
+        if strIs(mut st, name, "freeze") {
+            if na != 1 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            v := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+            return c1(mut st, CFreeze, v), nil
+        }
+        if strIs(mut st, name, "delete") {
+            if na != 2 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            bt := computeTy(mut st, latN(mut st, args, 0), eb, ef)
+            if bt == -1 {
+                return 0, diag.CoreFragment{at: posOf(mut st, at)}
+            }
+            if tg(mut st, bt) != TMp {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            m := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
+            key := expr(mut st, latN(mut st, args, 1), eb, ef, depth)?
+            return cDelm(mut st, tVal(mut st, bt), m, key), nil
+        }
+        if strIs(mut st, name, "append") {
+            if na != 2 {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            a0 := latN(mut st, args, 0)
+            if isStringTy(mut st, computeTy(mut st, a0, eb, ef)) {
+                return 0, diag.Malformed{at: posOf(mut st, at)}
+            }
+            wantAssignable(mut st, elemSty(mut st, exprSty(mut st, a0, eb, ef)), latN(mut st, args, 1), eb, ef)?
+            subject := expr(mut st, a0, eb, ef, depth)?
+            // []byte への追記は値を要素の byte の文脈に置く（`append(out, 34)` — language.md 33 節）
+            st0 := computeTy(mut st, a0, eb, ef)
+            v0 := if isTag(mut st, st0, TSl) && isTag(mut st, tElem(mut st, st0), TByte) { coerceExpr(mut st, latN(mut st, args, 1), tElem(mut st, st0), eb, ef, depth, at)? } else { expr(mut st, latN(mut st, args, 1), eb, ef, depth)? }
+            v := appendValueAnn(mut st, a0, latN(mut st, args, 1), v0, eb, ef)
+            return c2(mut st, CAppend, subject, v), nil
+        }
+        cl := lookupF(mut st, ef, name)
+        if cl >= 0 {
+            return lambdaCall(mut st, cl, args, at, eb, ef, depth)
+        }
+    }
+    fi := findFn(mut st, callee, eb)
+    if fi < 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    pkey := ParKey(mut st, fi)
+    if pkey != 0 {
+        return parCall(mut st, pkey, fi, args, at, eb, ef, depth)
+    }
+    if fnExpands(mut st, fi) || e2sSiteInline(mut st, fi, explicit, args, eb, ef, at) {
+        expBegin(mut st)
+        r, ierr := inlineCall(mut st, fi, callee0, explicit, args, at, eb, ef, depth)
+        expEnd(mut st, fi, 0)
+        return r, ierr
+    }
+    // mut の部分を持つ値を外の region から普通の関数（mut 引数なし）へ渡す呼び出し（反復の region・式ブロックの中）は展開する（M4）:
+    // call の規則は仮引数の region を呼び手の最内へ写すので、外の region の mut の部分（写せない）と一致しない
+    if !fnMutDef(mut st, fi) && mutValInline(mut st, fi, args, eb, ef) {
+        if st.mvInlN < table.Len(mut st.mvInl) {
+            table.Set(mut st.mvInl, st.mvInlN, fi)
+        } else {
+            table.Push(mut st.mvInl, fi)
+        }
+        st.mvInlN = st.mvInlN + 1
+        expBegin(mut st)
+        r, ierr := inlineCall(mut st, fi, callee0, explicit, args, at, eb, ef, depth)
+        expEnd(mut st, fi, 0)
+        st.mvInlN = st.mvInlN - 1
+        return r, ierr
+    }
+    mut d := fnDef(mut st, fi)
+    if d < 0 && d != DINST {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    ps := fnParams(mut st, fi)
+    if na != lenL(mut st, ps) {
+        return 0, diag.Malformed{at: posOf(mut st, at), kind: 1}
+    }
+    tps := fnTParams(mut st, fi)
+    nt := lenL(mut st, tps)
+    mut ts := ListRef(-1)
+    if nt > 0 {
+        ts = inferTs(mut st, fi, callee0, explicit, args, eb, ef, at, false)?
+    } else if explicit != -1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    penv := paramEnv(mut st, tps, ts, nt)
+    vs := ListRef(listN(mut st, na))
+    // callM の anchor（mut の実引数の根の束縛の region — 最も外）。今の最内がそれより深ければ（反復の region・式ブロックの中）、
+    // imm の実引数を anchor へ形式コピーする（M4 (a) — 1 slot の規則は imm の仮引数も anchor へ写す。imm は同一性が観測不能なので
+    // 写しは常に健全・lower は読むだけの引数を写さない観測等価の実装）
+    mut anchor := -1
+    if fnMutDef(mut st, fi) {
+        for q <- iter.Range(0, na) {
+            ma := latN(mut st, args, q)
+            if kindN(mut st, ma) == ast.EMutArg {
+                mb := lookup(mut st, eb, latS(mut st, DotParts(mut st, nodeOf(mut st, ma).a), 0))
+                if mb >= 0 && (anchor < 0 || bnd(mut st, mb).region < anchor) {
+                    anchor = bnd(mut st, mb).region
+                }
+            }
+        }
+    }
+    mut i := 0
+    while i < na {
+        prm := latN(mut st, ps, i)
+        arg := latN(mut st, args, i)
+        if ast.ParamIsMut(nodeOf(mut st, prm)) {
+            if kindN(mut st, arg) == ast.EMutArg && !isDotted(mut st, arg) {
+                mb := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+                xsaved := st.tenv
+                st.tenv = penv
+                msty := SurfaceOf(mut st, fnPkg(mut st, fi), nB(nodeOf(mut st, prm)))
+                st.tenv = xsaved
+                if mb >= 0 && msty != SUNK && bnd(mut st, mb).sty != SUNK && msty != bnd(mut st, mb).sty {
+                    nomFail(mut st, arg)?
+                }
+            }
+            hsetCore(mut st, int(vs) + 1 + i, mutRefArg(mut st, arg, eb, depth)?)
+        } else {
+            xsaved := st.tenv
+            st.tenv = penv
+            dsty := SurfaceOf(mut st, fnPkg(mut st, fi), nB(nodeOf(mut st, prm)))
+            st.tenv = xsaved
+            wantAssignable(mut st, dsty, arg, eb, ef)?
+            w, err := tyIn(mut st, fnPkg(mut st, fi), penv, nB(nodeOf(mut st, prm)), at)
+            fdr := if err == nil { fieldFnValDecl(mut st, fnPkg(mut st, fi), penv, nB(nodeOf(mut st, prm)))? } else { -1 }
+            if fdr >= 0 {
+                // 値化可能な named fn type の仮引数は値の位置（工程 4 B1 の同梱 — 閉包の組を渡す）
+                hsetCore(mut st, int(vs) + 1 + i, closureValue(mut st, arg, w, fdr, eb, ef, depth, at)?)
+            } else if err == nil && kindN(mut st, arg) == ast.EStrlit && isStringTy(mut st, w) {
+                // string リテラルの実引数は region 0（呼び手空間の上界 — 再帰する mut Def の imm 引数の条件に掛けない。F-6）。spawn の子の中は子の床（taskFloor）
+                hsetCore(mut st, int(vs) + 1 + i, cStrlit(mut st, nodeOf(mut st, arg).a, st.taskFloor))
+            } else if err == nil {
+                av := coerceExpr(mut st, arg, w, eb, ef, depth, at)?
+                mut ac := CoreRef(-1)
+                if anchor >= 0 {
+                    asaved := st.rdepth
+                    st.rdepth = anchor + 1
+                    pw := pointTy(mut st, w)
+                    st.rdepth = asaved
+                    ac = storeCopy(mut st, av, computeTy(mut st, arg, eb, ef), pw, anchor)
+                }
+                hsetCore(mut st, int(vs) + 1 + i, if ac != -1 { ac } else { av })
+            } else {
+                hsetCore(mut st, int(vs) + 1 + i, expr(mut st, arg, eb, ef, depth)?)
+            }
+        }
+        i += 1
+    }
+    if d == DINST {
+        d = instDef(mut st, fi, callee0, penv, at)?
+        return cCall(mut st, d, pairChain(mut st, vs), -1, b2i(fnMutDef(mut st, fi))), nil
+    }
+    return cCall(mut st, d, pairChain(mut st, vs), int(ts), b2i(fnMutDef(mut st, fi))), nil
+}
+
+// mutValInline は関数 fi の呼び出し（実引数 args）を mut の部分を持つ値のために展開するか: 関数のラベルより深い region にいて、
+// mut 引数でない実引数のどれかの型が mut のコンテナを含み、fi が展開中の積みに無い（再帰しない）とき
+func mutValInline(st mut S, fi int, args ListRef, eb int, ef int) bool {
+    if st.retTarget < 0 || st.rdepth <= lab(mut st, labelAt(mut st, st.retTarget)).rdepth {
+        return false
+    }
+    for q <- iter.Range(0, st.mvInlN) {
+        if table.Get(mut st.mvInl, q) == fi {
+            return false
+        }
+    }
+    for q <- iter.Range(0, lenL(mut st, args)) {
+        a := latN(mut st, args, q)
+        if a != -1 && kindN(mut st, a) != ast.EMutArg && kindN(mut st, a) != ast.ELambda {
+            t := computeTy(mut st, a, eb, ef)
+            if t != -1 && !tyMutFreeD(mut st, t) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// Callee は呼び出しの callee（明示の型引数 `f[T](...)` なら f と型引数の列 explicit — 無ければ -1）
+type Callee struct {
+    callee NodeRef
+    explicit NodeRef
+}
+
+func explicitCallee(st mut S, callee0 NodeRef, eb int) Callee {
+    if kindN(mut st, callee0) == ast.EIndex && kindN(mut st, nB(nodeOf(mut st, callee0))) == ast.EIdent {
+        if findFn(mut st, nA(nodeOf(mut st, callee0)), eb) >= 0 {
+            return Callee{callee: nA(nodeOf(mut st, callee0)), explicit: nB(nodeOf(mut st, callee0))}
+        }
+    }
+    return Callee{callee: callee0, explicit: -1}
+}
+
+// paramEnv は型パラメータ tps（nt 個）を型引数 ts に束ねた型環境（[n, (名前, 型, -1) × n]）
+func paramEnv(st mut S, tps ListRef, ts ListRef, nt int) int {
+    penv := listN(mut st, nt * 3)
+    hset(mut st, penv, nt)
+    for i <- iter.Range(0, nt) {
+        hset(mut st, penv + 1 + i * 3, latI(mut st, tps, i))
+        hset(mut st, penv + 2 + i * 3, latI(mut st, ts, i))
+        hset(mut st, penv + 3 + i * 3, -1)
+    }
+    return penv
+}
+
+// ── ジェネリック Def のインスタンス（型パラメータ型の補間の穴）──
+// 本体に型パラメータ型の補間の穴がある Def は抽象の Def を出さず（穴の脱糖 = FormatInt・if・そのままの連結が型引数で分かれる）、
+// 呼び出しの表層型の型引数ごとに型引数を代入した Def を持ち上げたラムダと同じ鎖（st.ndef 以降の添字）に足す。
+// 印は typer の YInstNeeded、添字の振り直しは desugar.sober の run（印の付いた関数の Def の添字は DINST）
+
+const DINST = -2
+
+// noteInstEnv は型環境 env（インスタンス・展開のもの）の表層型の型引数 ya を対応の鎖に積む
+func noteInstEnv(st mut S, env int, ya ListRef) {
+    if ya != -1 {
+        st.instEnvs = rec5(mut st, env, int(ya), st.instEnvs, 0, 0)
+    }
+}
+
+// instYArgs は型環境 env の表層型の型引数（対応が無ければ -1）
+func instYArgs(st mut S, env int) ListRef {
+    mut r := st.instEnvs
+    while r != -1 {
+        if hget(mut st, r) == env {
+            return hgetL(mut st, r + 1)
+        }
+        r = hget(mut st, r + 2)
+    }
+    return -1
+}
+
+// callYArgs は呼び出し（callee の節 cn）の表層型の型引数を、呼び手の型環境 outer のインスタンスの型引数で代入したもの
+// （呼び手が抽象の本体なら型パラメータが残る — 型パラメータ・不明の成分を含めば -1）
+func callYArgs(st mut S, cn NodeRef, outer int) ListRef {
+    ya := YTArgsOf(mut st, cn)
+    if ya == -1 {
+        return -1
+    }
+    oy := instYArgs(mut st, outer)
+    r := if oy == -1 { ya } else { ySubstList(mut st, ya, oy) }
+    for i <- iter.Range(0, lenL(mut st, r)) {
+        y := latI(mut st, r, i)
+        if YHasVar(mut st, y) || YHasHole(mut st, y) {
+            return -1
+        }
+    }
+    return r
+}
+
+// instDef は印の付いたジェネリック Def fi の、呼び出し（callee の節 cn・型環境 penv — 型引数を代入したもの）のインスタンスの Def の添字。
+// 同じ表層型の型引数のインスタンスは 1 つ（再帰の呼び出しは脱糖の前に表へ載せた添字を引く）
+func instDef(st mut S, fi int, cn NodeRef, penv int, at NodeRef) (int, error?) {
+    ya := callYArgs(mut st, cn, st.tenv)
+    if ya == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    mut r := st.insts
+    while r != -1 {
+        if hget(mut st, r) == fi && yListEq(mut st, hgetL(mut st, r + 1), ya) {
+            return hget(mut st, r + 2), nil
+        }
+        r = hget(mut st, r + 3)
+    }
+    idx := st.ndef + st.nlifted
+    def := rec5(mut st, 0, 0, 0, 0, -1)
+    if st.liftedTail >= 0 {
+        hset(mut st, st.liftedTail + 4, def)
+    } else {
+        st.liftedHead = def
+    }
+    st.liftedTail = def
+    st.nlifted = st.nlifted + 1
+    table.Push(mut st.liftAt, int(fnNode(mut st, fi)))
+    st.insts = rec5(mut st, fi, int(ya), idx, st.insts, 0)
+    noteInstEnv(mut st, penv, ya)
+    // 本体は呼び出しの途中で脱糖する（defOf が関数の文脈を丸ごと退避して戻す。switch・error の switch・辞書 const の文脈は外す）
+    sw := swCtx(mut st)
+    ec := errCtx(mut st)
+    dc := st.dictConst
+    st.hasErrSw = 0
+    st.dictConst = -1
+    body := defOf(mut st, fi, penv)?
+    st.dictConst = dc
+    setErrCtx(mut st, ec)
+    setSwCtx(mut st, sw)
+    for k <- iter.Range(0, 4) {
+        hset(mut st, def + k, hget(mut st, body + k))
+    }
+    return idx, nil
+}
+
+// mutRefArg は mut 引数の実引数 `mut x`（R2）: 呼び手の mut ローカルの ref
+func mutRefArg(st mut S, arg NodeRef, eb int, depth int) (CoreRef, error?) {
+    if kindN(mut st, arg) != ast.EMutArg {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    // 割った束縛の中の場所（`mut x` / `mut x.f`）: ref（の木）をそのまま渡す
+    pl := placeOfMutArg(mut st, arg, eb, depth)
+    if pl.ok {
+        return pl.refs, nil
+    }
+    if isDotted(mut st, arg) {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+    if b < 0 {
+        return 0, diag.UnknownName{at: posOf(mut st, arg)}
+    }
+    if !bnd(mut st, b).mutable {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    return cVar(mut st, depth - 1 - bnd(mut st, b).level), nil
+}
+
+// inlining の列（[fn, next]）に fi があるか
+func inInlining(st mut S, fi int) bool {
+    mut x := st.inlrec
+    while x >= 0 {
+        if hget(mut st, x) == fi {
+            return true
+        }
+        x = hget(mut st, x + 1)
+    }
+    return false
+}
+
+// inlineCall は展開される関数の呼び出し点展開。値引数は letE、関数型引数はラムダを fenv に積む
+func inlineCall(st mut S, fi int, cn NodeRef, explicit NodeRef, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    if inInlining(mut st, fi) {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    if int(fnBody(mut st, fi)) < 0 {
+        // 本体の無い宣言（.sobi の署名だけ）は展開できない
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    if lenL(mut st, args) != np {
+        return 0, diag.Malformed{at: posOf(mut st, at), kind: 1}
+    }
+    pk := fnPkg(mut st, fi)
+    mut body_tenv := st.tenv
+    if lenL(mut st, fnTParams(mut st, fi)) > 0 {
+        body_tenv = callEnv(mut st, fi, cn, explicit, args, eb, ef, at)?
+    } else if explicit != -1 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    mut fenv := -1
+    mut benv := -1
+    vals := ListRef(listN(mut st, np))
+    mut nv := 0
+    mut level := depth
+    for i <- iter.Range(0, np) {
+        p := latN(mut st, ps, i)
+        arg := latN(mut st, args, i)
+        pt := nB(nodeOf(mut st, p))
+        if ast.ParamIsMut(nodeOf(mut st, p)) {
+            v := mutParamArg(mut st, fi, p, arg, body_tenv, eb, level, at)?
+            hsetCore(mut st, int(vals) + 1 + nv, v)
+            nv += 1
+            pb := lookup(mut st, eb, latS(mut st, DotParts(mut st, nodeOf(mut st, arg).a), 0))
+            saved := st.tenv
+            st.tenv = body_tenv
+            w, err := tyOf(mut st, pk, pt, at, TYFUEL)
+            pd := declOfTypeExpr(mut st, pk, pt)
+            pe := elemDeclOfTypeExpr(mut st, pk, pt)
+            psplit := teSplits(mut st, pk, body_tenv, pt)
+            psty := SurfaceOf(mut st, pk, pt)
+            st.tenv = saved
+            if err != nil {
+                return 0, err
+            }
+            if !isDotted(mut st, arg) && psty != SUNK && bnd(mut st, pb).sty != SUNK && psty != bnd(mut st, pb).sty {
+                nomFail(mut st, arg)?
+            }
+            benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, true, pd, w, pe, bnd(mut st, pb).region, -1, psplit, psty)
+            level += 1
+        } else {
+            if kindN(mut st, arg) == ast.EMutArg {
+                return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+            }
+            if kindN(mut st, pt) == ast.TFunc {
+                w, fsty := tyStyIn(mut st, pk, body_tenv, pt, at)?
+                c := closureArg(mut st, arg, w, eb, ef, at)?
+                // 名前付き関数型の照合（X3 — 別の名前付き関数型に束縛した閉包は渡せない。ラムダ・for 式は名前なしで可）
+                asty := if kindN(mut st, arg) == ast.EIdent && lookup(mut st, eb, sA(nodeOf(mut st, arg))) < 0 { lookupFSty(mut st, ef, sA(nodeOf(mut st, arg))) } else { SFREE }
+                if !Assignable(mut st, fsty, asty) {
+                    nomFail(mut st, arg)?
+                }
+                fenv = bindFT(mut st, fenv, nodeOf(mut st, p).a, c, fsty, pt, pk, body_tenv)
+            } else if strIs(mut st, PkgPath(mut st, pk), "std/task") && strIs(mut st, sA(nodeOf(mut st, p)), "budget") {
+                // std/task の展開される口（Map / mapE）の budget:（段 6 P5-3）はコアへ運ばない — 本体での使い道は Spawn の budget: だけで、
+                // Spawn の写しは捨てる（呼び出しを含まない整数式 — ParCheck kind 20）。束ねないので budget: の無い呼び出しのコアは不変
+                {}
+            } else if parEpParam(mut st, pk, pt) != -1 || ParHandlesParam(mut st, pk, pt) {
+                // std/task の端点の仮引数（RecvAll）: コアの型は own — 実引数の型のまま束ねる（ann しない）
+                hsetCore(mut st, int(vals) + 1 + nv, expr(mut st, arg, eb, ef, level)?)
+                nv += 1
+                benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, -1, computeTy(mut st, arg, eb, ef), -1, 0, -1, false, SUNK)
+                level += 1
+            } else {
+                saved := st.tenv
+                st.tenv = body_tenv
+                w, err := tyOf(mut st, pk, pt, at, TYFUEL)
+                pd := declOfTypeExpr(mut st, pk, pt)
+                pe := elemDeclOfTypeExpr(mut st, pk, pt)
+                psty := SurfaceOf(mut st, pk, pt)
+                st.tenv = saved
+                if err != nil {
+                    return 0, err
+                }
+                wantAssignable(mut st, psty, arg, eb, ef)?
+                want := w
+                xs2 := st.tenv
+                st.tenv = body_tenv
+                fdr, ferr := fieldFnValDecl(mut st, pk, body_tenv, pt)
+                st.tenv = xs2
+                if ferr != nil {
+                    return 0, ferr
+                }
+                if fdr >= 0 {
+                    // 値化可能な named fn type の仮引数は値の位置（工程 4 B1 の同梱）
+                    hsetCore(mut st, int(vals) + 1 + nv, closureValue(mut st, arg, want, fdr, eb, ef, level, at)?)
+                    nv += 1
+                    benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, pd, want, pe, 0, -1, false, psty)
+                    level += 1
+                    continue
+                }
+                // mut の部分を持つ値は ann しない（展開点の最内の座標へ合わせると、外の region の mut の部分〔不変〕と食い違う — M4）
+                aty := if want != -1 && tyMutFreeD(mut st, want) { inlineArgTy(mut st, arg, want, eb) } else { TyRef(-1) }
+                v := if aty != -1 {
+                    cv := coerceExpr(mut st, arg, want, eb, ef, level, at)?
+                    cAnn(mut st, cv, aty)
+                } else {
+                    expr(mut st, arg, eb, ef, level)?
+                }
+                hsetCore(mut st, int(vals) + 1 + nv, v)
+                nv += 1
+                benv = bind(mut st, benv, sA(nodeOf(mut st, p)), level, false, pd, want, pe, 0, aty, false, psty)
+                level += 1
+            }
+        }
+    }
+    st.inlining = rec5(mut st, fi, st.inlining, 0, 0, 0)
+    saved_inl := hget(mut st, st.inlining + 1)
+    saved := fnCtx(mut st)
+    st.inlrec = rec5(mut st, fi, st.inlrec, 0, 0, 0)
+    st.curPkg = pk
+    if YInstNeeded(mut st, fi) && body_tenv != saved.tenv {
+        // 本体に型パラメータ型の補間の穴がある: 展開の型環境に表層型の型引数を対応させる（expr.sober の interpKind が引く）
+        noteInstEnv(mut st, body_tenv, callYArgs(mut st, cn, saved.tenv))
+    }
+    st.tenv = body_tenv
+    // 本体 = `label t body`（t は結果型の展開点の座標）
+    rs := fnResults(mut st, fi)
+    nr := lenL(mut st, rs)
+    rtys := ListRef(listN(mut st, nr))
+    for j <- iter.Range(0, nr) {
+        t := tyOf(mut st, pk, latN(mut st, rs, j), at, TYFUEL)?
+        hsetTy(mut st, int(rtys) + 1 + j, pointTy(mut st, t))
+    }
+    // 結果の型式は戻りのラベルを作る間だけ（本体の return は展開点のラベルが受ける）
+    st.curRes = rs
+    st.curResPkg = pk
+    rl := newLabel(mut st, LRet, tyChain(mut st, rtys))
+    st.curRes = saved.curRes
+    st.curResPkg = saved.curResPkg
+    setLabelRtys(mut st, rl, rtys)
+    setLabelAnn(mut st, rl, nr > 0)
+    st.retTarget = pushLabel(mut st, rl)
+    st.loopFloor = st.nlab
+    st.curRtys = rtys
+    inner := scoped(mut st, lA(nodeOf(mut st, fnBody(mut st, fi))), benv, fenv, level, true, nr == 0, lab(mut st, rl).t)?
+    st.nlab = st.nlab - 1
+    mut body := labelNode(mut st, rl, inner, if nr > 0 { WAnn } else { WDiscard })
+    setFnCtx(mut st, saved)
+    st.inlining = saved_inl
+    mut k := nv - 1
+    while k >= 0 {
+        body = cLet(mut st, latCore(mut st, vals, k), body)
+        k -= 1
+    }
+    return body, nil
+}
+
+// mutParamArg は mut 引数の実引数（V3-5）: ref そのものを渡し、仮引数の型を ref の型（region は束縛の alloc 点）で ann する
+func mutParamArg(st mut S, fi int, p NodeRef, arg NodeRef, body_tenv int, eb int, level int, at NodeRef) (CoreRef, error?) {
+    if kindN(mut st, arg) != ast.EMutArg {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    w, psplit := tySplitIn(mut st, fnPkg(mut st, fi), body_tenv, nB(nodeOf(mut st, p)), at)?
+    // 割った束縛の中の場所（`mut x` / `mut x.f`）: ref（の木）を渡す（葉は場所の型で ann する）。割り方は仮引数の型と揃うこと
+    pl := placeOfMutArg(mut st, arg, eb, level)
+    if pl.ok {
+        if (pl.dr >= 0) != psplit {
+            return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+        }
+        // struct の場所は実引数と仮引数の宣言が同じ型宣言であること（形が同じ別の struct を渡すのは型エラー — ann を付けないので
+        // ここが唯一の照合。インスタンスの型引数の違いは葉の型として本体の検査に残る）
+        if pl.dr >= 0 {
+            pd := teDecl(mut st, fnPkg(mut st, fi), body_tenv, nB(nodeOf(mut st, p)))
+            if pd < 0 || hget(mut st, pd) != hget(mut st, pl.dr) {
+                return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+            }
+        }
+        // struct の場所（ref の木）は ann しない: 木の型は実引数の宣言 pl.dr から組む（仮引数の型との照合ではない）うえ、ref true を葉とする
+        // 木の sub は等値だけ（緩めない）なので、ann は冗長な自己整合の表明 — 欄の数 × 展開点の数でコアを膨らませる。
+        // 木の型（placeTy → splitTy）も組まない: 欄の型が引けないことによる拒否は、上の仮引数の型の tyOf（同じ型宣言 — 直前で照合）が
+        // 先に err で出す。組むと mut 実引数 1 つごとに数百語の型の記録がコアに残らずヒープに積もる（自己適用で 750 万語）
+        if pl.dr >= 0 {
+            return pl.refs, nil
+        }
+        pt := placeTy(mut st, pl, w, at)?
+        return cAnn(mut st, pl.refs, pt), nil
+    }
+    if isDotted(mut st, arg) || psplit {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    b := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+    if b < 0 {
+        return 0, diag.UnknownName{at: posOf(mut st, arg)}
+    }
+    if !bnd(mut st, b).mutable {
+        return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+    }
+    ref := cVar(mut st, level - 1 - bnd(mut st, b).level)
+    saved_rd := st.rdepth
+    st.rdepth = bnd(mut st, b).region + 1
+    inner := pointTy(mut st, w)
+    st.rdepth = saved_rd
+    return cAnn(mut st, ref, tRefOf(mut st, 1, bnd(mut st, b).region, inner)), nil
+}
+
+// closureArg は関数型の引数位置に書ける形（ラムダ・閉包の名前・for 式）
+func closureArg(st mut S, arg NodeRef, want TyRef, eb int, ef int, at NodeRef) (int, error?) {
+    k := kindN(mut st, arg)
+    if k == ast.EFor {
+        if forOut(mut st, arg) {
+            return 0, diag.CoreFragment{at: posOf(mut st, arg)}
+        }
+        g := latN(mut st, lA(nodeOf(mut st, arg)), 0)
+        lowered := forLower(mut st, arg, forSrcKind(mut st, nB(nodeOf(mut st, g)), eb, ef))
+        return closure(mut st, lowered, eb, ef, want), nil
+    }
+    if k == ast.ELambda {
+        return closure(mut st, arg, eb, ef, want), nil
+    }
+    if k == ast.EIdent {
+        b := lookup(mut st, eb, sA(nodeOf(mut st, arg)))
+        if b < 0 {
+            c := lookupF(mut st, ef, sA(nodeOf(mut st, arg)))
+            if c >= 0 {
+                return c, nil
+            }
+        }
+        // 借りの値の転送（(α-L0)）は loader が η の展開のラムダに写して来る（loader/fnval.sober の fvBrwEta — check と build が同じ木を読む）
+    }
+    return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// for の生成元の種類（forexpand.zig の SrcKind）。種類の決め方は消費者ごと（desugar = forSrcKind、lower は自分の束縛表と型で決める）、
+// 書き換えの組み立て（ForGen / ForLower）は 1 本（build と check の共有 — reaudit 第 2 弾 C1 A2 ①）
+const FSlice = 0
+const FMap = 1
+const FClosure = 2
+const FCall = 3
+const FCallV = 4    // 閉包の名前の呼び出し形（`for x <- recv(a)? { … }` — recv は展開される関数の匿名の関数型の仮引数・language.md 7 節 L-for）
+
+// forSrcKind は for の生成元の種類（forLower が書き換えを選ぶ）
+func forSrcKind(st mut S, src NodeRef, eb int, ef int) int {
+    if isClosureName(mut st, src, eb, ef) {
+        return FClosure
+    }
+    if closureGenCall(mut st, src, eb, ef) {
+        return FCallV
+    }
+    if isCallGen(mut st, GenCallOf(mut st, src, st.curPkg), eb) {
+        return FCall
+    }
+    return if isTag(mut st, computeTy(mut st, src, eb, ef), TMp) { FMap } else { FSlice }
+}
+
+// closureGenCall は生成元が閉包の名前の呼び出し形か（`recv(a…)` / 印つき `recv(a…)?` — recv が閉包に束縛された名前で、そのラムダの仮引数が
+// 実引数より 1 つ多く、束縛の型の最後の仮引数が関数型）。判定は束縛の型（展開される関数の宣言の匿名の関数型）だけ — 呼び出し形の生成元と同じテンプレート
+func closureGenCall(st mut S, src NodeRef, eb int, ef int) bool {
+    c := if kindN(mut st, src) == ast.ETry { nA(nodeOf(mut st, src)) } else { src }
+    if kindN(mut st, c) != ast.ECall || !isClosureName(mut st, nA(nodeOf(mut st, c)), eb, ef) {
+        return false
+    }
+    cr := clo(mut st, lookupF(mut st, ef, sA(nodeOf(mut st, nA(nodeOf(mut st, c))))))
+    n := lenL(mut st, lA(nodeOf(mut st, cr.lambda)))
+    if n != lenL(mut st, lB(nodeOf(mut st, c))) + 1 || !isTag(mut st, cr.ft, TFn) {
+        return false
+    }
+    // 最後の仮引数の型（仮引数の組は右へ入れ子の TPr — lambdaCall の読みと同じ）
+    mut pt := tLeft(mut st, cr.ft)
+    for i <- iter.Range(1, n) {
+        pt = if tg(mut st, pt) == TPr { tRight(mut st, pt) } else { pt }
+    }
+    return isTag(mut st, pt, TFn)
+}
+
+// isCallGen は生成元が呼び出し形か（`x <- iter.Range(0, n)` — 名前の付いた関数の呼び出しで、仮引数が実引数より 1 つ多く、
+// 最後の仮引数が関数型。継続 k を末尾の実引数に足して呼ぶ — Go の range-over-func の鏡）。slice を返す呼び出し（`keys(m)`）は数が合うので当たらない
+func isCallGen(st mut S, src NodeRef, eb int) bool {
+    return CallGenFn(mut st, src, st.curPkg) >= 0
+}
+
+// GenCallOf は生成元の呼び出しの節: 失敗しうる生成元の印 `g(a)?`（language.md 7 節 — 呼び出し形の生成元に付いた `?`）なら `?` の内側の呼び出し、
+// それ以外は src のまま（呼び出し形でない `f()?` — slice を返す呼び出しに `?` — は普通の `?` の式）。印の有無と結果の形は loader（forfallible.sober）が先に検査済み
+func GenCallOf(st mut S, src NodeRef, from int) NodeRef {
+    if kindN(mut st, src) == ast.ETry && CallGenFn(mut st, nA(nodeOf(mut st, src)), from) >= 0 {
+        return nA(nodeOf(mut st, src))
+    }
+    return src
+}
+
+// CallGenFn は呼び出し形の生成元の関数の表の添字（isCallGen の判定。当たらなければ -1）。from は呼び出しを書いた package。
+// 束縛表は見ない: ローカル束縛がトップレベル名・import の参照名を隠す形は localnames が拒否するので、見ても同じ判定になる
+func CallGenFn(st mut S, src NodeRef, from int) int {
+    if kindN(mut st, src) != ast.ECall {
+        return -1
+    }
+    callee := nA(nodeOf(mut st, src))
+    ck := kindN(mut st, callee)
+    fi := if ck == ast.EIdent {
+        ResolveFn(mut st, from, sA(nodeOf(mut st, callee)))
+    } else if ck == ast.ESelector && kindN(mut st, nA(nodeOf(mut st, callee))) == ast.EIdent {
+        ResolveSelFn(mut st, from, sA(nodeOf(mut st, nA(nodeOf(mut st, callee)))), sB(nodeOf(mut st, callee)))
+    } else {
+        -1
+    }
+    if fi < 0 {
+        return -1
+    }
+    ps := fnParams(mut st, fi)
+    np := lenL(mut st, ps)
+    return if np == lenL(mut st, lB(nodeOf(mut st, src))) + 1 && kindN(mut st, nB(nodeOf(mut st, latN(mut st, ps, np - 1)))) == ast.TFunc { fi } else { -1 }
+}
+
+// forLower は for 式 → Iter[T] 型のラムダ（forexpand.zig の lower — 表層 AST の節をヒープに足す）:
+// `(yield) => { GEN(src, (x) => { if g { yield(e) } }) }`。map の生成元は `iter#.Slice(keys(src), k)`（keysm の段）
+func forLower(st mut S, fe NodeRef, kind int) NodeRef {
+    return lambda1(mut st, int(strLit(mut st, "yield")), forGen(mut st, fe, kind), fe)
+}
+
+// ForLower / ForGen / IsForStmt / ForOut は lower の読み口（書き換えの組み立てと形の判定を共有する）。from = for を書いた package（lower の今の package —
+// st.curPkg は ParCheckTyped の歩きが最後の関数の package のまま残すので、生成元の名前を引く前に付け替える）
+func ForLower(st mut S, fe NodeRef, kind int, from int) NodeRef {
+    st.curPkg = from
+    return forLower(mut st, fe, kind)
+}
+
+func ForGen(st mut S, fe NodeRef, kind int, from int) NodeRef {
+    st.curPkg = from
+    return forGen(mut st, fe, kind)
+}
+
+func YieldCall(st mut S, v int, at NodeRef) NodeRef {
+    return yieldCall(mut st, v, at)
+}
+
+func IsForStmt(st mut S, e NodeRef) bool {
+    return isForStmt(mut st, e)
+}
+
+func ForOut(st mut S, fe NodeRef) bool {
+    return forOut(mut st, fe)
+}
+
+// isForStmt は文形の for か（文の位置に置いたブロック形 — language.md 7 節）。本体は消費のコールバックで、yield は字句的に囲む生成器のもの
+func isForStmt(st mut S, e NodeRef) bool {
+    return kindN(mut st, e) == ast.EFor && nodeOf(mut st, e).b == 1
+}
+
+// forStmt は文形の for → `GEN(src, (x) => { if g { body } })`（forLower の内側そのもの — 外側の `(yield) =>` で包まない）
+func forStmt(st mut S, fe NodeRef, eb int, ef int) (NodeRef, error?) {
+    if forOut(mut st, fe) {
+        return 0, diag.CoreFragment{at: posOf(mut st, fe)}
+    }
+    g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
+    return forGen(mut st, fe, forSrcKind(mut st, nB(nodeOf(mut st, g)), eb, ef)), nil
+}
+
+// forGen は for の生成元の呼び出し `GEN(src, (x) => { if g { 本体 } })`（本体 = yield 形なら `yield(e)`、ブロック形なら文の列）
+func forGen(st mut S, fe NodeRef, kind int) NodeRef {
+    g := latN(mut st, lA(nodeOf(mut st, fe)), 0)
+    mut inner := if nodeOf(mut st, fe).b == 0 { yieldCall(mut st, nodeOf(mut st, fe).c, fe) } else { NodeRef(rec8(mut st, ast.EBlock, fe, nodeOf(mut st, fe).c, 0, 0, 0, 0, 0)) }
+    guards := lC(nodeOf(mut st, g))
+    mut i := lenL(mut st, guards) - 1
+    while i >= 0 {
+        inner = NodeRef(rec8(mut st, ast.EIf, g, latI(mut st, guards, i), int(blockOf(mut st, inner)), -1, 0, 0, 0))
+        i -= 1
+    }
+    kf := lambda1(mut st, latI(mut st, lA(nodeOf(mut st, g)), 0), inner, g)
+    mut gen := NodeRef(-1)
+    if kind == FClosure {
+        gen = NodeRef(rec8(mut st, ast.ECall, g, nodeOf(mut st, g).b, list1(mut st, int(kf)), 0, 0, 0, 0))
+    } else if kind == FCall || kind == FCallV {
+        // 失敗しうる生成元 `for x <- g(a)? { … }` → `g(a, k)?`（継続を足した呼び出しを生成元の `?` の節〔包み替えの wrap ごと〕で包む）
+        try0 := nB(nodeOf(mut st, g))
+        src := if kind == FCallV && kindN(mut st, try0) == ast.ETry { nA(nodeOf(mut st, try0)) } else { GenCallOf(mut st, try0, st.curPkg) }
+        sargs := lB(nodeOf(mut st, src))
+        na := lenL(mut st, sargs)
+        args := listN(mut st, na + 1)
+        for j <- iter.Range(0, na) {
+            hset(mut st, args + 1 + j, latI(mut st, sargs, j))
+        }
+        hset(mut st, args + 1 + na, int(kf))
+        gen = NodeRef(rec8(mut st, ast.ECall, g, nodeOf(mut st, src).a, args, 0, 0, 0, 0))
+        if src != try0 {
+            gen = NodeRef(rec8(mut st, ast.ETry, try0, int(gen), nodeOf(mut st, try0).b, 0, 0, 0, 0))
+        }
+    } else {
+        base := rec8(mut st, ast.EIdent, g, int(strLit(mut st, "iter#")), 0, 0, 0, 0, 0)
+        callee := NodeRef(rec8(mut st, ast.ESelector, g, base, int(strLit(mut st, "Slice")), 0, 0, 0, 0))
+        mut src := nB(nodeOf(mut st, g))
+        // 合成した呼び出し iter.Slice[T] の型引数 T = 生成元の要素（slice の要素・map のキー）を表層型検査器の表へ（lower が読む）
+        yNoteGenTArgs(mut st, callee, src)
+        if kind == FMap {
+            kc := rec8(mut st, ast.EIdent, g, int(strLit(mut st, "keys")), 0, 0, 0, 0, 0)
+            src = NodeRef(rec8(mut st, ast.ECall, g, kc, list1(mut st, int(src)), 0, 0, 0, 0))
+        }
+        gen = NodeRef(rec8(mut st, ast.ECall, g, int(callee), list2(mut st, int(src), int(kf)), 0, 0, 0, 0))
+    }
+    return gen
+}
+
+// lambda1 は 1 引数・型注釈なし・本体ブロックのラムダ（本体が既にブロックならそのまま）
+func lambda1(st mut S, param int, body NodeRef, at NodeRef) NodeRef {
+    lp := rec8(mut st, ast.KLParam, at, param, -1, 0, 0, 0, 0)
+    blk := if kindN(mut st, body) == ast.EBlock { body } else { NodeRef(rec8(mut st, ast.EBlock, at, nodeOf(mut st, blockOf(mut st, body)).a, 0, 0, 0, 0, 0)) }
+    return NodeRef(rec8(mut st, ast.ELambda, at, list1(mut st, lp), int(blk), 0, 0, 0, 0))
+}
+
+// blockOf は式 1 つを文位置に置いたブロック（KBlock）
+func blockOf(st mut S, e NodeRef) NodeRef {
+    s := rec8(mut st, ast.SExpr, e, int(e), 0, 0, 0, 0, 0)
+    return NodeRef(rec8(mut st, ast.KBlock, NodeRef(-1), list1(mut st, s), 0, 0, 0, 0, 0))
+}
+
+// isClosureArg は引数が閉包として束縛される形か（ラムダ・for 式・閉包の名前）
+func isClosureArg(st mut S, arg NodeRef, eb int, ef int) bool {
+    k := kindN(mut st, arg)
+    if k == ast.ELambda || k == ast.EFor {
+        return true
+    }
+    return isClosureName(mut st, arg, eb, ef)
+}
+
+// lambdaCall はラムダの呼び出し点展開。本体から見えるのは定義時の env + 引数
+func lambdaCall(st mut S, cl int, args ListRef, at NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    cr := clo(mut st, cl)
+    lam := cr.lambda
+    lps := lA(nodeOf(mut st, lam))
+    n := lenL(mut st, lps)
+    if lenL(mut st, args) != n {
+        return 0, diag.Malformed{at: posOf(mut st, at), kind: 1}
+    }
+    ft := cr.ft
+    cpk := cr.pkg
+    wants := ListRef(listN(mut st, n))
+    mut i := 0
+    while i < n {
+        lput(mut st, wants, i, -1)
+        i += 1
+    }
+    if isTag(mut st, ft, TFn) {
+        mut pt := tLeft(mut st, ft)
+        i = 0
+        while i < n {
+            if i + 1 == n {
+                hsetTy(mut st, int(wants) + 1 + i, pt)
+            } else if tg(mut st, pt) == TPr {
+                hsetTy(mut st, int(wants) + 1 + i, tLeft(mut st, pt))
+                pt = tRight(mut st, pt)
+            } else {
+                i = n
+            }
+            i += 1
+        }
+    }
+    vals := ListRef(listN(mut st, n))
+    mut nv := 0
+    mut benv := cr.envB
+    mut fenv := cr.envF
+    mut level := depth
+    i = 0
+    while i < n {
+        lp := latN(mut st, lps, i)
+        arg := latN(mut st, args, i)
+        want := latTy(mut st, wants, i)
+        if isClosureArg(mut st, arg, eb, ef) {
+            c := closureArg(mut st, arg, want, eb, ef, at)?
+            fenv = bindF(mut st, fenv, nodeOf(mut st, lp).a, c, SUNK)
+        } else {
+            aty := computeTy(mut st, arg, eb, ef)
+            ann_t := if want != -1 { inlineArgTy(mut st, arg, want, eb) } else { TyRef(-1) }
+            v := if ann_t != -1 {
+                cv := coerceExpr(mut st, arg, want, eb, ef, level, at)?
+                cAnn(mut st, cv, ann_t)
+            } else {
+                expr(mut st, arg, eb, ef, level)?
+            }
+            hsetCore(mut st, int(vals) + 1 + nv, v)
+            nv += 1
+            pt := nB(nodeOf(mut st, lp))
+            d := if pt != -1 { declOfTypeExpr(mut st, cpk, pt) } else { declOfExpr(mut st, arg, eb, ef) }
+            el := if pt != -1 { elemDeclOfTypeExpr(mut st, cpk, pt) } else { elemDeclOfExpr(mut st, arg, eb, ef) }
+            benv = bind(mut st, benv, sA(nodeOf(mut st, lp)), level, false, d, if want != -1 { want } else { aty }, el, 0, ann_t, false, if pt != -1 { SurfaceOf(mut st, cpk, pt) } else { bindSty(mut st, arg, eb, ef) })
+            level += 1
+        }
+        i += 1
+    }
+    saved := fnCtx(mut st)
+    st.tenv = cr.tenv
+    st.curPkg = cpk
+    st.retTarget = cr.retTarget
+    st.loopFloor = st.nlab
+    st.inlrec = cr.inlrec
+    // 文形 for の本体（節の c = 文形 for の brk のラベルスタックの位置 + 1）: 床の上に brk を積み直し、展開ごとに cont を新設して本体を包む
+    // （break → for 全体の外、continue → 本体の末尾。本体の値は捨てる）
+    loop := nodeOf(mut st, lam).c
+    mut cont := -1
+    if loop > 0 {
+        pushLabel(mut st, labelAt(mut st, loop - 1))
+        cont = newLabel(mut st, LCont, st.tUnit)
+        pushLabel(mut st, cont)
+    }
+    lbody := nB(nodeOf(mut st, lam))
+    // 結果が T?（`func(c Conn) error?` — 28 節 net の handler）なら本体の値を期待型で寄せる（ラベル・nil・if の腕。他の結果型は従来どおり ann だけ）
+    rw := if loop == 0 && isTag(mut st, ft, TFn) && tg(mut st, tRight(mut st, ft)) == TOpt { pointTy(mut st, tRight(mut st, ft)) } else { TyRef(-1) }
+    mut body := CoreRef(-1)
+    if kindN(mut st, lbody) == ast.EBlock && rw != -1 {
+        body = coerceArm(mut st, lA(nodeOf(mut st, lbody)), rw, benv, fenv, level, lbody)?
+    } else if kindN(mut st, lbody) == ast.EBlock {
+        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, level, false, loop > 0, -1)?
+    } else if rw != -1 {
+        body = coerceExpr(mut st, lbody, rw, benv, fenv, level, lbody)?
+    } else {
+        body = expr(mut st, lbody, benv, fenv, level)?
+    }
+    if loop > 0 {
+        body = labelNode(mut st, cont, body, WNone)
+        st.nlab = st.nlab - 2
+    }
+    if isTag(mut st, ft, TFn) {
+        body = cAnn(mut st, body, pointTy(mut st, tRight(mut st, ft)))
+    }
+    setFnCtx(mut st, saved)
+    mut k := nv - 1
+    while k >= 0 {
+        body = cLet(mut st, latCore(mut st, vals, k), body)
+        k -= 1
+    }
+    return body, nil
+}
+
+// dictLiftOf は辞書 const のラムダ lam を持ち上げた Def の添字（まだなら -1）。記録は [lam, idx, next]
+func dictLiftOf(st mut S, lam int) int {
+    mut x := st.dictLifts
+    while x >= 0 {
+        if hget(mut st, x) == lam {
+            return hget(mut st, x + 1)
+        }
+        x = hget(mut st, x + 2)
+    }
+    return -1
+}
+
+// liftLambda は閉じたラムダ → 匿名 Def（関数表の末尾）+ fnref
+func liftLambda(st mut S, lam NodeRef, ft TyRef, outer_b int, outer_f int, at NodeRef) (CoreRef, error?) {
+    saved_rd := st.rdepth
+    st.rdepth = 2
+    saved_tf := st.taskFloor
+    st.taskFloor = 0
+    saved_ps := st.parScope1
+    st.parScope1 = 0
+    defer {
+        st.taskFloor = saved_tf
+        st.parScope1 = saved_ps
+    }
+    if (st.inDict != 0) {
+        idx := dictLiftOf(mut st, int(lam))
+        if idx >= 0 {
+            st.rdepth = saved_rd
+            return cFnref(mut st, idx, -1), nil
+        }
+    }
+    lps := lA(nodeOf(mut st, lam))
+    n := lenL(mut st, lps)
+    ptys := ListRef(listN(mut st, n))
+    mut p := tLeft(mut st, ft)
+    mut i := 0
+    while i < n {
+        if i + 1 == n {
+            hsetTy(mut st, int(ptys) + 1 + i, p)
+        } else if tg(mut st, p) == TPr {
+            hsetTy(mut st, int(ptys) + 1 + i, tLeft(mut st, p))
+            p = tRight(mut st, p)
+        } else {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+        i += 1
+    }
+    if n == 0 && tg(mut st, tLeft(mut st, ft)) != TUnit {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    pdecls := ListRef(listN(mut st, n))
+    pelems := ListRef(listN(mut st, n))
+    i = 0
+    while i < n {
+        lput(mut st, pdecls, i, -1)
+        lput(mut st, pelems, i, -1)
+        i += 1
+    }
+    if st.liftHint >= 0 {
+        h := st.liftHint
+        st.liftHint = -1
+        hps := lA(nodeOf(mut st, hgetN(mut st, h + 2)))
+        if lenL(mut st, hps) == n {
+            saved := st.tenv
+            st.tenv = hget(mut st, h + 1)
+            i = 0
+            while i < n {
+                te := latN(mut st, hps, i)
+                lput(mut st, pdecls, i, declOfTypeExpr(mut st, hget(mut st, h), te))
+                lput(mut st, pelems, i, elemDeclOfTypeExpr(mut st, hget(mut st, h), te))
+                i += 1
+            }
+            st.tenv = saved
+        }
+    }
+    mut benv := -1
+    mut d := 1
+    mut exs := ListRef(listN(mut st, 0))
+    if n == 1 {
+        benv = bind(mut st, benv, sA(nodeOf(mut st, latN(mut st, lps, 0))), 0, false, latI(mut st, pdecls, 0), latTy(mut st, ptys, 0), latI(mut st, pelems, 0), 0, -1, false, SUNK)
+    } else if n >= 2 {
+        exs = ListRef(listN(mut st, n))
+        i = 0
+        while i < n {
+            hsetCore(mut st, int(exs) + 1 + i, projection(mut st, cVar(mut st, d - 1), i, n))
+            benv = bind(mut st, benv, sA(nodeOf(mut st, latN(mut st, lps, i))), d, false, latI(mut st, pdecls, i), latTy(mut st, ptys, i), latI(mut st, pelems, i), 0, -1, false, SUNK)
+            d += 1
+            i += 1
+        }
+    }
+    saved := fnCtx(mut st)
+    st.hasOuter = b2i(true)
+    st.outerB = outer_b
+    st.outerF = outer_f
+    st.retTarget = -1
+    st.loopFloor = st.nlab
+    lbody := nB(nodeOf(mut st, lam))
+    mut body := CoreRef(-1)
+    if kindN(mut st, lbody) == ast.EBlock {
+        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, -1, d, false, false, -1)?
+    } else {
+        body = coerceExpr(mut st, lbody, tRight(mut st, ft), benv, -1, d, at)?
+    }
+    setFnCtx(mut st, saved)
+    body = wrapLets(mut st, exs, body)
+    idx := st.ndef + st.nlifted
+    def := rec5(mut st, int(tLeft(mut st, ft)), int(tRight(mut st, ft)), int(body), st.curTparams, -1)
+    if st.liftedTail >= 0 {
+        hset(mut st, st.liftedTail + 4, def)
+    } else {
+        st.liftedHead = def
+    }
+    st.liftedTail = def
+    st.nlifted = st.nlifted + 1
+    table.Push(mut st.liftAt, int(lam))
+    if (st.inDict != 0) {
+        st.dictLifts = rec5(mut st, int(lam), idx, st.dictLifts, 0, 0)
+    }
+    mut ts := -1
+    if st.curTparams > 0 {
+        ts = listN(mut st, st.curTparams)
+        i = 0
+        while i < st.curTparams {
+            hsetTy(mut st, ts + 1 + i, tVar(mut st, i))
+            i += 1
+        }
+    }
+    st.rdepth = saved_rd
+    return cFnref(mut st, idx, ts), nil
+}
+
+// ── 後置 `?`（V4-4b、S1。Z1 = 入口のゼロ値束縛は撤去 — R4b の clampR が吸収、selfhost-drafts「Z1 の撤去」）──
+
+// isErrOptTE は型式が `error?` か
+func isErrOptTE(st mut S, te NodeRef) bool {
+    if kindN(mut st, te) != ast.TOpt {
+        return false
+    }
+    x := nA(nodeOf(mut st, te))
+    return kindN(mut st, x) == ast.TName && strIs(mut st, sA(nodeOf(mut st, x)), "error")
+}
+
+// tryExpr は後置 `?`: `let p = f() in (ifnil (last p) triv (jump k unit (zeros…, some err)); init p)`
+func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
+    at := e
+    tc0 := nA(nodeOf(mut st, e))
+    if kindN(mut st, tc0) != ast.ECall {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    c0 := nA(nodeOf(mut st, tc0))
+    callee := if kindN(mut st, c0) == ast.EIndex { nA(nodeOf(mut st, c0)) } else { c0 }
+    // 名前付き関数か、名前付き関数から束縛した関数値（n25 — 結果の型式の列は束縛が持つ）
+    res := fnResOf(mut st, callee, eb)
+    // 関数型の仮引数に束縛した閉包の呼び出し（`f(c)?` — 結果の型式は持たないのでコア型の組の鎖から読む）
+    // 値の位置の閉包（値化可能な named fn type の値の束縛・欄の読み — `g(x)?` は束縛して見る形と同じ結果の型。F — report-972）
+    ct0 := if res == -1 { cloResTy(mut st, callee, eb, ef) } else { TyRef(-1) }
+    cv := if res == -1 && ct0 == -1 { closureCallee(mut st, callee, eb, ef) } else { TyRef(-1) }
+    crt := if cv != -1 { closRet(mut st, cv) } else { ct0 }
+    if res == -1 && crt == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    // `task.Join(h)?`（scope の本体の中 — language.md 11 節「本体の `?`」）: Join の結果は字面で T 1 つ — fallible な task なら T = (U, error?) の 2 つ
+    fj := findFn(mut st, callee, eb)
+    joinE := fj >= 0 && ParKey(mut st, fj) == PAR_JOIN && lenL(mut st, lB(nodeOf(mut st, tc0))) == 1 && parTaskFallible(mut st, latN(mut st, lB(nodeOf(mut st, tc0)), 0))
+    mut kr := 0
+    if joinE {
+        kr = 2
+    } else if crt != -1 {
+        mut lt := crt
+        kr = 1
+        while tg(mut st, lt) == TPr {
+            lt = tRight(mut st, lt)
+            kr += 1
+        }
+        leo := isErrOpt(mut st, lt)?
+        if !leo {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+    } else {
+        kr = lenL(mut st, res)
+        if kr == 0 || !isErrOptTE(mut st, latN(mut st, res, kr - 1)) {
+            return 0, diag.Malformed{at: posOf(mut st, at)}
+        }
+    }
+    if st.retTarget < 0 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    lb := labelAt(mut st, st.retTarget)
+    if lab(mut st, lb).t == -1 {
+        return 0, diag.CoreFragment{at: posOf(mut st, at)}
+    }
+    rtys := lab(mut st, lb).rtys
+    n := if rtys == -1 { 0 } else { lenL(mut st, rtys) }
+    if n == 0 {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    eo := isErrOpt(mut st, latTy(mut st, rtys, n - 1))?
+    if !eo {
+        return 0, diag.Malformed{at: posOf(mut st, at)}
+    }
+    mut i := 0
+    while i < n - 1 {
+        if !hasZero(mut st, latTy(mut st, rtys, i)) {
+            return 0, diag.CoreFragment{at: posOf(mut st, at)}
+        }
+        i += 1
+    }
+    p := expr(mut st, tc0, eb, ef, depth)?
+    // some 腕（深さ depth + 2: var 0 = err、var 1 = p）
+    sd := depth + 2
+    vs := ListRef(listN(mut st, n))
+    // ゼロ値はその場で組む（深い位置の imm コンテナは jump の clampR — R4b — がラベルの region へ締める）
+    i = 0
+    while i < n - 1 {
+        hsetCore(mut st, int(vs) + 1 + i, zeroOf(mut st, latTy(mut st, rtys, i), at)?)
+        i += 1
+    }
+    wrap := nB(nodeOf(mut st, e))
+    mut err_v := CoreRef(-1)
+    if wrap != -1 {
+        wname := sA(nodeOf(mut st, wrap))
+        vr := findVariant(mut st, st.curPkg, wname)
+        if vr.decl != NodeRef(ERRS) {
+            return 0, diag.Malformed{at: posOf(mut st, wrap)}
+        }
+        topv := labelL(mut st, wrap, vr.decl, vr.pkg, vr.idx, eb, ef, sd)?
+        inner := cVar(mut st, 0)
+        chain := c2(mut st, CAppend, c1(mut st, CSnd, inner), c1(mut st, CFst, inner))
+        err_v = c2(mut st, CPair, topv, chain)
+    } else {
+        err_v = cVar(mut st, 0)
+    }
+    hsetCore(mut st, int(vs) + n, c1(mut st, CSome, err_v))
+    payload0 := pairChain(mut st, vs)
+    // ラベルより深い region（反復の region・式ブロック）からの伝播は ann で締めない（exitJump と同じ — jumpRel が締める。M4）
+    payload := if lab(mut st, lb).ann && st.rdepth <= lab(mut st, lb).rdepth { cAnn(mut st, payload0, lab(mut st, lb).t) } else { payload0 }
+    setLabelUsed(mut st, lb)
+    dv := withDefers(mut st, payload, lab(mut st, lb).scopeDepth, sd)?
+    jump := cJump(mut st, lab(mut st, lb).id, st.tUnit, dv)
+    // 判定（深さ depth + 1: var 0 = p）
+    err_opt := projection(mut st, cVar(mut st, 0), kr - 1, kr)
+    check := c3(mut st, CIfnil, err_opt, cTriv(mut st), jump)
+    // 成功値（深さ depth + 2: 判定の匿名束縛の下で var 1 = p）
+    mut succ := CoreRef(-1)
+    if kr == 1 {
+        succ = cTriv(mut st)
+    } else if kr == 2 {
+        succ = projection(mut st, cVar(mut st, 1), 0, 2)
+    } else {
+        comps := ListRef(listN(mut st, kr - 1))
+        i = 0
+        while i < kr - 1 {
+            hsetCore(mut st, int(comps) + 1 + i, projection(mut st, cVar(mut st, 1), i, kr))
+            i += 1
+        }
+        succ = pairChain(mut st, comps)
+    }
+    return cLet(mut st, p, cLet(mut st, check, succ)), nil
+}
+
+// tyStyIn は型環境 env のもとで型式 te のコア型と表層型を読む（tyOf → SurfaceOf の順・型環境は出口で戻す）
+func tyStyIn(st mut S, pk int, env int, te NodeRef, at NodeRef) (TyRef, int, error?) {
+    saved := st.tenv
+    st.tenv = env
+    defer {
+        st.tenv = saved
+    }
+    t := tyOf(mut st, pk, te, at, TYFUEL)?
+    return t, SurfaceOf(mut st, pk, te), nil
+}
+
+// tySplitIn は型環境 env のもとで型式 te のコア型と、mut の場所として欄ごとに割るか（teSplits）を読む（型環境は出口で戻す）
+func tySplitIn(st mut S, pk int, env int, te NodeRef, at NodeRef) (TyRef, bool, error?) {
+    saved := st.tenv
+    st.tenv = env
+    defer {
+        st.tenv = saved
+    }
+    t := tyOf(mut st, pk, te, at, TYFUEL)?
+    return t, teSplits(mut st, pk, env, te), nil
+}

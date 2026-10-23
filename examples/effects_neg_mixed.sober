@@ -1,0 +1,12 @@
+package main
+
+// 負例（check が拒否 — analyzer）: `@effects` は全部が正の列挙か全部が否定形（混ぜない）
+
+@effects(io, !block)
+func f() {
+    println(1)
+}
+
+func main() {
+    f()
+}

@@ -401,6 +401,19 @@ func buildSlotNew(st mut St) {
     d := 0
     meta := globaladdr(mut st, st.meta)
     sg := globaladdr(mut st, st.slotsG)
+    if st.rtMut == 19 || st.rtMut == 20 || st.rtMut == 21 {
+        // 検査つきの rt（scripts/nextgen.sh の検出器 — report-1086・変異 20 / 21 も検査つき）: main 以外の task が入る深度は own + 1 のはず。飛ばすと間の欄（他の task が残した
+        // スロット）が自前の範囲に入り、退避・終わりの返しで 2 つの task が同じスロットを持つ — 違えば exit 81
+        bOk := newBlock(mut st)
+        bBad := newBlock(mut st)
+        notMain := cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.taskG), TK_CUR), ptoi(mut st, globaladdr(mut st, st.mainTcb)))
+        skip := cmp(mut st, CNe, d, bin(mut st, BAdd, load(mut st, sg, SLOT_OWN), iconst(mut st, 1)))
+        condbr(mut st, bin(mut st, BAnd, skip, notMain), bBad, -1, bOk, -1)
+        setCur(mut st, bBad)
+        syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 81)))
+        br(mut st, bOk, -1)
+        setCur(mut st, bOk)
+    }
     // 予備を採る（d = own + 1 が予備 SPLO < d ≤ SPHI で、今の task のスロットが既定の大きさ）: 表の欄をそのまま自前にする
     bAdopt := newBlock(mut st)
     bTake := newBlock(mut st)
@@ -640,10 +653,14 @@ func parkRelease(st mut St, me int) {
         condbr(mut st, cmp(mut st, CNe, load(mut st, meta, W_SLOT_SIZE), load(mut st, meta, W_SLOT_DEF)), bSkip, -1, bChk2, -1)
     }
     setCur(mut st, bChk2)
-    dep := load(mut st, meta, W_DEPTH)
+    // 変異 20（scripts/nextgen.sh の自己検査 — report-1086）: task の基底より深い region を全部死んだと読み違えて手放し、手放すスロットの [基底, bump) を毒で塗る
+    dep := if st.rtMut == 20 { load(mut st, me, TC_BASE) } else { load(mut st, meta, W_DEPTH) }
     own := load(mut st, sg, SLOT_OWN)
     condbr(mut st, cmp(mut st, CGt, own, dep), bGo, -1, bSkip, -1)
     setCur(mut st, bGo)
+    if st.rtMut == 20 {
+        parkPoison(mut st, dep, own)
+    }
     lo := load(mut st, sg, SLOT_SPLO)
     hi := load(mut st, sg, SLOT_SPHI)
     bEmpty := newBlock(mut st)
@@ -679,6 +696,34 @@ func parkRelease(st mut St, me int) {
     store(mut st, sg, SLOT_OWN, dep)
     br(mut st, bSkip, -1)
     setCur(mut st, bSkip)
+}
+
+// parkPoison は変異 20 の毒: (dep, own] の各スロットの [基底, bump) を 0x5a… で塗る
+func parkPoison(st mut St, dep int, own int) {
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, dep, iconst(mut st, 1))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, own), body, -1, done, -1)
+    setCur(mut st, body)
+    e := load(mut st, gepWord(mut st, meta, k), W_BUMP)
+    pl := newBlock(mut st)
+    p := param(mut st, pl, TyI64)
+    pb := newBlock(mut st)
+    pd := newBlock(mut st)
+    br(mut st, pl, list1(mut st, load(mut st, gepWord(mut st, sg, k), 0)))
+    setCur(mut st, pl)
+    condbr(mut st, cmp(mut st, CLt, p, e), pb, -1, pd, -1)
+    setCur(mut st, pb)
+    store(mut st, itop(mut st, p), 0, iconst(mut st, 6510615555426900570))
+    br(mut st, pl, list1(mut st, bin(mut st, BAdd, p, iconst(mut st, 8))))
+    setCur(mut st, pd)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
 }
 
 // buildSlotTake は rt.slot_take() i64: プールのスロットを 1 つ取る（空なら SLOT_CHUNK 本ぶんの VA を予約 — rt.slot_new の子の枝と同じ。

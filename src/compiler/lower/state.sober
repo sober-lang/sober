@@ -299,6 +299,7 @@ type St struct {
     tenv int // 型環境（generics.sober — [n, (名前, 型)…]、-1 = 空）
     insts int // ジェネリック関数のインスタンスの鎖（[next, キー, FnInfo]）
     inDict int // 辞書 const の展開中か（0 / 1）
+    traceEffs bool   // 開発用 `--trace-effects`: 関数の入口 / 出口と効果の葉の印字（traceEff / traceLeaf — 関数の効果の動的オラクル）
     traceErrs bool   // 開発用 `--trace-errors`: error を返す出口ごとにタグを出す計装（traceErr — error 網羅 analyzer の動的オラクル）
     stopAt int       // 計測の口（`--stop-after=<段>` — scripts/passstats.sh）: 0 = 最後まで・k = 段 k の後で止めて空の出力（StageCode の表）
     halted bool      // stopAt の段に着いた

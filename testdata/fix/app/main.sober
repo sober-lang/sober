@@ -1,0 +1,18 @@
+package main
+
+import "testdata/fix/lib"
+
+func Shown(x int) {
+    println(lib.Pure(x))
+}
+
+func main() {
+    v, e := lib.Check(3)
+    w, e2 := lib.Strict(4)
+    lib.Wide(v + w)
+    lib.Nap(0)
+    Shown(lib.Quiet(1))
+    if e != nil || e2 != nil {
+        println(-1)
+    }
+}

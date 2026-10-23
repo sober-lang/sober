@@ -850,10 +850,10 @@ func installIo(st mut St) {
     if st.taskUse {
         wallF = addFunc(mut st, int(strLit(mut st, "rt.write_all_u")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     }
-    st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+    st.rtRead = addFunc(mut st, int(strLit(mut st, "rt.read_file")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
     st.rtWrite = addFunc(mut st, int(strLit(mut st, "rt.write_file")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), TyI64)
     st.rtArgs = addFunc(mut st, int(strLit(mut st, "rt.read_args")), desugar.ListRef(list1(mut st, TyPtr)), -1)
-    st.rtDir = addFunc(mut st, int(strLit(mut st, "rt.read_dir")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
+    st.rtDir = addFunc(mut st, int(strLit(mut st, "rt.read_dir")), desugar.ListRef(list3(mut st, TyPtr, TyPtr, TyI64)), -1)
     st.rtWfd = addFunc(mut st, int(strLit(mut st, "rt.write_fd")), desugar.ListRef(list2(mut st, TyI64, TyPtr)), TyI64)
     buildCstr(mut st, cstr)
     buildWriteAll(mut st, wall, false)
@@ -1382,17 +1382,16 @@ func setErrno(st mut St, e int) {
     store(mut st, globaladdr(mut st, st.meta), W_ERRNO, e)
 }
 
-// buildReadFile は read_file(path, out): out に現在深度の region 先端から積んだ中身（[]byte — rt.extend8 で伸ばす）を置く（失敗は空）
+// buildReadFile は read_file(path, out, depth): out に深度 depth（今の深度か宛先構築の宛先 — 呼び手が渡す）の region 先端から積んだ中身
+// （[]byte — rt.extend8 で伸ばす）を置く（失敗は空）。深度は実引数で受ける — 今の深度のレジスタを宛先へ書き換えて呼ぶと、読みの待ち（rt.uio の park）が
+// 今の深度より深い生きた region を死んだ深度として手放す（report-1086 — L1-R の park は今の深度のレジスタを最内の生きた深度と読む）
 func buildReadFile(st mut St, cstr FnRef) {
     begin(mut st, st.rtRead)
     path := 0
     out := 1
     meta := globaladdr(mut st, st.meta)
     buf := globaladdr(mut st, st.iobuf)
-    depth := load(mut st, meta, W_DEPTH)
-    store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
-    store(mut st, out, 1, iconst(mut st, 0))
-    store(mut st, out, 2, depth)
+    depth := initOutAt(mut st, out, 2)
     e := call(mut st, cstr, list2(mut st, path, buf))
     named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
     setErrno(mut st, e)
@@ -1539,8 +1538,11 @@ func buildWriteFile(st mut St, cstr FnRef, wall FnRef) {
 
 // initOut は out（3 語ヘッダ）を現在深度の region 先端・長さ 0 で初期化し、深度を返す（read_args / read_dir の共通の冒頭）
 func initOut(st mut St, out int) int {
-    meta := globaladdr(mut st, st.meta)
-    depth := load(mut st, meta, W_DEPTH)
+    return initOutAt(mut st, out, load(mut st, globaladdr(mut st, st.meta), W_DEPTH))
+}
+
+// initOutAt は initOut の深度 depth 版（out を深度 depth の region の先端から始める空の列にして depth を返す）
+func initOutAt(st mut St, out int, depth int) int {
     store(mut st, out, 0, ptoi(mut st, regionBump(mut st, depth)))
     store(mut st, out, 1, iconst(mut st, 0))
     store(mut st, out, 2, depth)
@@ -1591,14 +1593,14 @@ func buildReadArgs(st mut St) {
     ret(mut st, -1)
 }
 
-// buildReadDir は read_dir(path, out): 項目を「d_type 1 バイト + 名前のバイト + 0」の連結で out に置く（失敗は空 + errno。getdents64 の順のまま・
+// buildReadDir は read_dir(path, out, depth): 深度 depth の region に（read_file と同じ — 深度は実引数）項目を「d_type 1 バイト + 名前のバイト + 0」の連結で out に置く（失敗は空 + errno。getdents64 の順のまま・
 // `.` / `..` も含む — 除外・ソート・種類の解釈は std/io）。linux_dirent64: d_reclen @16（2B LE）・d_type @18・d_name @19
 func buildReadDir(st mut St, cstr FnRef) {
     begin(mut st, st.rtDir)
     path := 0
     out := 1
     buf := globaladdr(mut st, st.iobuf)
-    depth := initOut(mut st, out)
+    depth := initOutAt(mut st, out, 2)
     e := call(mut st, cstr, list2(mut st, path, buf))
     named := branchIf(mut st, cmp(mut st, CNe, e, iconst(mut st, 0)))
     setErrno(mut st, e)

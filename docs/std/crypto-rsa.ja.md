@@ -17,6 +17,7 @@ ok := rsa.VerifyPSS(rsa.Public(k), msg, sig, 32)
 ## MontSelfCheck
 
 ```sober
+@effects(!io, !block, !nondet)
 func MontSelfCheck(seed int, maxN int, rounds int) int
 ```
 
@@ -26,6 +27,7 @@ func MontSelfCheck(seed int, maxN int, rounds int) int
 
 ```sober
 @errors(BadKey)
+@effects(!io, !block, !nondet)
 func ParsePKCS8(der []byte) (PrivateKey, error?)
 ```
 
@@ -39,6 +41,7 @@ PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密�
 
 ```sober
 @errors(BadKey)
+@effects(!io, !block, !nondet)
 func NewPublic(nb []byte, eb []byte) (PublicKey, error?)
 ```
 
@@ -109,6 +112,7 @@ salt の長さや鍵の大きさが PSS に足りない
 
 ```sober
 @bless
+@effects(!io, !block, !nondet)
 func Public(k PrivateKey) PublicKey
 ```
 
@@ -117,6 +121,7 @@ k の公開鍵
 ## Size
 
 ```sober
+@effects(!io, !block, !nondet)
 func Size(pub PublicKey) int
 ```
 
@@ -127,6 +132,7 @@ pub の法のバイト長（署名の長さ）
 ```sober
 @errors(BadSize, Fault)
 @bless
+@effects(!io, !block, !nondet)
 func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?)
 ```
 
@@ -137,6 +143,7 @@ msg の RSASSA-PSS の署名（k バイト）。salt の長さが PSS の salt �
 ## VerifyPSS
 
 ```sober
+@effects(!io, !block, !nondet)
 func VerifyPSS(pub PublicKey, msg []byte, sig []byte, sLen int) bool
 ```
 

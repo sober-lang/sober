@@ -1,0 +1,533 @@
+package lower
+
+// 写しの転送（G 便 — report-536 (D)）: GVN の後の SSA に掛ける。スロット S が「番地 A からの語ごとの写し（`v_j = load A[j]; store S[j], v_j`
+// — j = 0 .. n − 1 をちょうど 1 回ずつ・同じブロック）」でだけ書かれ、S のほかの使い道が `load S[j]` と rt.str_eq の引数だけなら、写しから
+// 使い道までの道に A の指す先を書きうるものが無い限り、使い道を A へ付け替えて（`load S[j]` → `load A[j]`・str_eq(S) → str_eq(A)）写しを消す
+// （routing の照合のループ — `r := routes[ri]` の Route 6 語を毎周スロットへ写し、r.method を str_eq に番地で渡すのでスロットが SROA に掛からなかった）。
+// rt.str_eq は引数の指す先の 2 語（と文字列のバイト）を読むだけで、書かず・番地を残さない（別名の事実 — docs/ir.md 6 節。hloop / rlim と同じ型の論証）。
+// 書きうるもの（危うい命令）: 番地の根がほかのスロットでない store / store8・rt.str_eq / rt.panic / rt.panic_mem 以外の呼び出し・間接呼び出し・syscall・
+// 原子・罠・task の op・relocate・region の入り / 深度の書き換え（region を出て入り直すと A の指す先が使い回されうる）。
+// 危うい命令 X が致命的なのは、写しの最初の読みから X へ、X から使い道へ、写しを通り直さずに行ける道があるとき（前向き F と後ろ向き G の到達で判定）。
+// 写しのブロック C は使い道のブロックを全部支配すること（C の中の使い道は写しの後ろ）
+
+import "desugar"
+import "std/iter"
+
+// cpfwdModule はモジュールの全関数に写しの転送を掛ける
+func cpfwdModule(st mut St) {
+    mut f := st.fhead
+    while f != -1 {
+        if irFnBHead(mut st, f) != -1 {
+            cpfwdFunc(mut st, f)
+        }
+        f = irFnNext(mut st, f)
+    }
+}
+
+// cfCheap は rt.str_eq の引数にスロットの番地（slotaddr の結果）を渡す呼び出しがある関数か（作業域を作らない — slotaddr の結果と str_eq の引数の
+// 小さい列を突き合わせる）
+func cfCheap(st mut St, f FnRef) bool {
+    if st.rtStreq == -1 {
+        return false
+    }
+    mut slots := mut []int{}
+    mut args := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpSlotaddr {
+                slots = append(slots, irInsRes(mut st, i))
+            } else if op == OpCall && irInsFn(mut st, i) == st.rtStreq {
+                l := irInsB(mut st, i)
+                for k <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                    args = append(args, desugar.HeapGet(mut st.d, l + 1 + k))
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    for a <- iter.Range(0, len(args)) {
+        for s <- iter.Range(0, len(slots)) {
+            if args[a] == slots[s] {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+func cpfwdFunc(st mut St, f FnRef) {
+    if !cfCheap(mut st, f) {
+        return
+    }
+    nb := irFnNBlk(mut st, f)
+    nv := irFnNVal(mut st, f)
+    mut pw := PrW{def: mut []int{}, dblk: mut []int{}, inl: mut []int{}, mark: 0}
+    xFill(mut pw.def, nv, -1)
+    xFill(mut pw.dblk, nv, -1)
+    mut cands := mut []int{}
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            r := irInsRes(mut st, i)
+            if r >= 0 {
+                pw.def[r] = int(i)
+                pw.dblk[r] = irBlkId(mut st, b)
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsOp(mut st, i) == OpCall && irInsFn(mut st, i) == st.rtStreq {
+                l := irInsB(mut st, i)
+                for k <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                    v := desugar.HeapGet(mut st.d, l + 1 + k)
+                    if v >= 0 && v < nv && pw.def[v] >= 0 && irInsOp(mut st, InsRef(pw.def[v])) == OpSlotaddr {
+                        s := irInsA(mut st, InsRef(pw.def[v]))
+                        mut seen := false
+                        for q <- iter.Range(0, len(cands)) {
+                            if cands[q] == s {
+                                seen = true
+                            }
+                        }
+                        if !seen {
+                            cands = append(cands, s)
+                        }
+                    }
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    mut w := m2rW{nb: nb, blk: mut []int{}, rpoIx: mut []int{}, rpo: mut []int{}, nrpo: 0, pcnt: mut []int{}, preds: mut []int{}, idom: mut []int{}}
+    mut ready := false
+    mut moved := false
+    for q <- iter.Range(0, len(cands)) {
+        mut c := CfC{cb: mut []int{}, ca: mut []int{}, cn: mut []int{}, stores: mut []int{}, scp: mut []int{}, srcs: mut []int{}, loads: mut []int{}, calls: mut []int{}, cargs: mut []int{}, own: mut []int{}}
+        if cfClassify(mut st, f, mut pw, cands[q], mut c) {
+            if !ready {
+                m2rCfg(mut st, mut w, f)
+                xFill(mut pw.inl, nb, 0)
+                ready = true
+            }
+            if cfSafe(mut st, mut w, mut pw, cands[q], mut c) {
+                cfRewrite(mut st, f, mut pw, mut c)
+                moved = true
+            }
+        }
+    }
+    if moved {
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optRenumber(mut st, f)
+    }
+}
+
+// CfC は候補のスロット 1 つの写し（複数 — 同じスロットを別の場所の写しが使い回す: routing の照合の while と 404 の for）と使い道
+type CfC struct {
+    cb mut []int     // 写しごと: ブロックの番号
+    ca mut []int     // 写しごと: 写し元の番地の値
+    cn mut []int     // 写しごと: 語の数
+    stores mut []int // 写しの store の命令
+    scp mut []int    // その写しの番目
+    srcs mut []int   // その store の値の load の命令
+    loads mut []int  // 使い道の load S[j]
+    calls mut []int  // 使い道の str_eq の呼び出し（同じ命令が 2 回並びうる）
+    cargs mut []int  // その引数の番目
+    own mut []int    // 使い道ごと（loads → calls の順）: 持ち主の写し（cfSafe が埋める）
+}
+
+// cfIsS は値 v がスロット s の番地（slotaddr s の結果）か
+func cfIsS(st mut St, def mut []int, v int, s int) bool {
+    return v >= 0 && v < len(def) && def[v] >= 0 && irInsOp(mut st, InsRef(def[v])) == OpSlotaddr && irInsA(mut st, InsRef(def[v])) == s
+}
+
+// cfClassify はスロット s の使い道を全部見て、書き込みが全部ブロックごとの語の写しで、ほかの使い道が load と str_eq だけなら c を埋めて true
+func cfClassify(st mut St, f FnRef, pw mut PrW, s int, c mut CfC) bool {
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        bid := irBlkId(mut st, b)
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            op := irInsOp(mut st, i)
+            if op == OpStore && cfIsS(mut st, mut pw.def, irInsA(mut st, i), s) {
+                // 写しの store: 値は同じブロックの、写し元 A の同じ語の load（ブロックごとに A は 1 つ）
+                v := irInsC(mut st, i)
+                if v < 0 || v >= len(pw.def) || pw.def[v] < 0 || cfIsS(mut st, mut pw.def, v, s) {
+                    return false
+                }
+                li := InsRef(pw.def[v])
+                if irInsOp(mut st, li) != OpLoad || irInsC(mut st, li) != 0 || irInsB(mut st, li) != irInsB(mut st, i) || pw.dblk[v] != bid {
+                    return false
+                }
+                mut k := -1
+                for q <- iter.Range(0, len(c.cb)) {
+                    if c.cb[q] == bid {
+                        k = q
+                    }
+                }
+                if k < 0 {
+                    k = len(c.cb)
+                    c.cb = append(c.cb, bid)
+                    c.ca = append(c.ca, irInsA(mut st, li))
+                    c.cn = append(c.cn, 0)
+                } else if c.ca[k] != irInsA(mut st, li) {
+                    return false
+                }
+                c.cn[k] = c.cn[k] + 1
+                c.stores = append(c.stores, int(i))
+                c.scp = append(c.scp, k)
+                c.srcs = append(c.srcs, int(li))
+            } else if op == OpLoad && cfIsS(mut st, mut pw.def, irInsA(mut st, i), s) {
+                if irInsC(mut st, i) != 0 {
+                    return false
+                }
+                c.loads = append(c.loads, int(i))
+            } else if op == OpCall && irInsFn(mut st, i) == st.rtStreq {
+                l := irInsB(mut st, i)
+                for k <- iter.Range(0, desugar.HeapGet(mut st.d, l)) {
+                    if cfIsS(mut st, mut pw.def, desugar.HeapGet(mut st.d, l + 1 + k), s) {
+                        c.calls = append(c.calls, int(i))
+                        c.cargs = append(c.cargs, k)
+                    }
+                }
+            } else if op != OpSlotaddr {
+                for k <- iter.Range(0, xNOps(mut st, i)) {
+                    if cfIsS(mut st, mut pw.def, xOpnd(mut st, i, k), s) {
+                        return false
+                    }
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        for k <- iter.Range(0, xNTermOps(mut st, b)) {
+            if cfIsS(mut st, mut pw.def, xTermOpnd(mut st, b, k), s) {
+                return false
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+    if len(c.cb) == 0 || len(c.loads) + len(c.calls) == 0 {
+        return false
+    }
+    // 写しごとに語 0 .. n − 1 をちょうど 1 回ずつ（2 ≤ n ≤ 16 — str_eq は語 0 / 1 を読む）・A は S の番地でない
+    for k <- iter.Range(0, len(c.cb)) {
+        n := c.cn[k]
+        if n < 2 || n > 16 || cfIsS(mut st, mut pw.def, c.ca[k], s) {
+            return false
+        }
+        mut have := mut []int{}
+        xFill(mut have, n, 0)
+        for q <- iter.Range(0, len(c.stores)) {
+            if c.scp[q] == k {
+                j := irInsB(mut st, InsRef(c.stores[q]))
+                if j < 0 || j >= n || have[j] == 1 {
+                    return false
+                }
+                have[j] = 1
+            }
+        }
+    }
+    return true
+}
+
+// cfRoot は番地 v の根（gep を基底へ辿った値 — 16 段まで）
+func cfRoot(st mut St, def mut []int, v0 int) int {
+    mut v := v0
+    mut k := 0
+    while k < 16 && v >= 0 && v < len(def) && def[v] >= 0 && (irInsOp(mut st, InsRef(def[v])) == OpGepW || irInsOp(mut st, InsRef(def[v])) == OpGepB) {
+        v = irInsA(mut st, InsRef(def[v]))
+        k += 1
+    }
+    return v
+}
+
+// cfRootSlot は番地 v の根がスロットならその番号（でなければ -1）
+func cfRootSlot(st mut St, def mut []int, v int) int {
+    r := cfRoot(mut st, mut def, v)
+    return if r >= 0 && r < len(def) && def[r] >= 0 && irInsOp(mut st, InsRef(def[r])) == OpSlotaddr { irInsA(mut st, InsRef(def[r])) } else { -1 }
+}
+
+// cfDanger は命令 i が写し元 A（根のスロット aslot — スロットでなければ -1）の指す先か、スロット s（ほかの写しの store）を書きうるか
+func cfDanger(st mut St, def mut []int, i InsRef, aslot int, s int) bool {
+    op := irInsOp(mut st, i)
+    if op == OpStore || op == OpStore8 {
+        t := cfRootSlot(mut st, mut def, irInsA(mut st, i))
+        return t < 0 || t == aslot || t == s
+    }
+    if op == OpCall {
+        g := irInsFn(mut st, i)
+        return g != st.rtStreq && g != st.rtPanic && g != st.rtPanicMem
+    }
+    return op == OpCallI || op == OpSyscall || op == OpAtomic || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone || op == OpRReloc ||
+        op == OpREnter || op == OpRSetDepth || op == OpUnwind
+}
+
+// cfPos は命令 x のブロック b の中の位置（無ければ -1）
+func cfPos(st mut St, b BlkRef, x int) int {
+    mut k := 0
+    mut i := irBlkIHead(mut st, b)
+    while i != -1 {
+        if int(i) == x {
+            return k
+        }
+        k += 1
+        i = irInsNext(mut st, i)
+    }
+    return -1
+}
+
+// cfUse は使い道の番目 u（loads → calls の順）の命令
+func cfUse(c mut CfC, u int) int {
+    return if u < len(c.loads) { c.loads[u] } else { c.calls[u - len(c.loads)] }
+}
+
+// cfSafe は使い道ごとに持ち主の写し（使い道を支配する写しのうち一番近いもの — 同じブロックなら写しの後ろの使い道だけ）を決め、写しごとに、写しの
+// 最初の読みから持ち物の使い道までの道に危うい命令（ほかの写しの store を含む）が無いかを見る
+func cfSafe(st mut St, w mut m2rW, pw mut PrW, s int, c mut CfC) bool {
+    nb := w.nb
+    ncp := len(c.cb)
+    nu := len(c.loads) + len(c.calls)
+    // 写しごとの最初の読み・最後の store の位置
+    mut first := mut []int{}
+    mut lastSt := mut []int{}
+    for k <- iter.Range(0, ncp) {
+        if w.rpoIx[c.cb[k]] < 0 {
+            return false
+        }
+        first = append(first, 1 << 40)
+        lastSt = append(lastSt, -1)
+    }
+    for q <- iter.Range(0, len(c.stores)) {
+        k := c.scp[q]
+        bk := BlkRef(w.blk[c.cb[k]])
+        ps := cfPos(mut st, bk, c.stores[q])
+        pl := cfPos(mut st, bk, c.srcs[q])
+        if ps > lastSt[k] {
+            lastSt[k] = ps
+        }
+        if pl < first[k] {
+            first[k] = pl
+        }
+    }
+    // 使い道のブロック・位置・持ち主
+    mut ub := mut []int{}
+    mut up := mut []int{}
+    for u <- iter.Range(0, nu) {
+        x := cfUse(mut c, u)
+        r := irInsRes(mut st, InsRef(x))
+        bu := if r >= 0 && r < len(pw.dblk) { pw.dblk[r] } else { -1 }
+        if bu < 0 || w.rpoIx[bu] < 0 {
+            return false
+        }
+        p := cfPos(mut st, BlkRef(w.blk[bu]), x)
+        mut best := -1
+        for k <- iter.Range(0, ncp) {
+            ok := if c.cb[k] == bu { lastSt[k] < p } else { licmDominates(mut w, c.cb[k], bu) }
+            if ok && (best < 0 || w.rpoIx[c.cb[k]] > w.rpoIx[c.cb[best]]) {
+                best = k
+            }
+        }
+        if best < 0 || (u < len(c.loads) && irInsB(mut st, InsRef(x)) >= c.cn[best]) {
+            return false
+        }
+        ub = append(ub, bu)
+        up = append(up, p)
+        c.own = append(c.own, best)
+    }
+    mut last := mut []int{}
+    xFill(mut last, nb, -1)
+    mut stk := mut []int{}
+    xFill(mut stk, nb + 1, 0)
+    for k <- iter.Range(0, ncp) {
+        cb := c.cb[k]
+        cbk := BlkRef(w.blk[cb])
+        mut any := false
+        for bi <- iter.Range(0, nb) {
+            last[bi] = -1
+            pw.inl[bi] = 0
+        }
+        for u <- iter.Range(0, nu) {
+            if c.own[u] == k {
+                any = true
+                if up[u] > last[ub[u]] {
+                    last[ub[u]] = up[u]
+                }
+            }
+        }
+        if any {
+            // F（印 1）: C の後続から C を通らずに。G（印 2）: 持ち物の使い道のブロック（C 以外）の前任から、C を越えずに逆向きに
+            mut sp := 0
+            for j <- iter.Range(0, xNSucc(mut st, cbk)) {
+                sx := xSucc(mut st, cbk, j)
+                if sx != cb && pw.inl[sx] & 1 == 0 {
+                    pw.inl[sx] = pw.inl[sx] | 1
+                    stk[sp] = sx
+                    sp += 1
+                }
+            }
+            while sp > 0 {
+                sp -= 1
+                x := stk[sp]
+                xb := BlkRef(w.blk[x])
+                for j <- iter.Range(0, xNSucc(mut st, xb)) {
+                    sx := xSucc(mut st, xb, j)
+                    if sx != cb && pw.inl[sx] & 1 == 0 {
+                        pw.inl[sx] = pw.inl[sx] | 1
+                        stk[sp] = sx
+                        sp += 1
+                    }
+                }
+            }
+            for u <- iter.Range(0, nu) {
+                if c.own[u] == k && ub[u] != cb {
+                    for j <- iter.Range(w.pcnt[ub[u]], w.pcnt[ub[u] + 1]) {
+                        pp := w.preds[j]
+                        if pw.inl[pp] & 2 == 0 {
+                            pw.inl[pp] = pw.inl[pp] | 2
+                            stk[sp] = pp
+                            sp += 1
+                        }
+                    }
+                }
+            }
+            while sp > 0 {
+                sp -= 1
+                x := stk[sp]
+                if x != cb {
+                    for j <- iter.Range(w.pcnt[x], w.pcnt[x + 1]) {
+                        pp := w.preds[j]
+                        if pw.inl[pp] & 2 == 0 {
+                            pw.inl[pp] = pw.inl[pp] | 2
+                            stk[sp] = pp
+                            sp += 1
+                        }
+                    }
+                }
+            }
+            // 危うい命令: C は写しの最初の読みの後ろ（自分の写しの store を除く）・F のブロックは全部 — 同じブロックの後ろに持ち物の使い道があるか、
+            // ブロックが G なら致命的
+            aslot := cfRootSlot(mut st, mut pw.def, c.ca[k])
+            for bi <- iter.Range(0, nb) {
+                if w.blk[bi] >= 0 && (bi == cb || pw.inl[bi] & 1 == 1) {
+                    mut p := 0
+                    mut i := irBlkIHead(mut st, BlkRef(w.blk[bi]))
+                    while i != -1 {
+                        if (bi != cb || p > first[k]) && (p < last[bi] || pw.inl[bi] & 2 == 2) && cfDanger(mut st, mut pw.def, i, aslot, s) && !cfOwnStore(mut c, int(i), k) {
+                            return false
+                        }
+                        p += 1
+                        i = irInsNext(mut st, i)
+                    }
+                }
+            }
+        }
+    }
+    return true
+}
+
+// cfOwnStore は命令 x が写し k の store か
+func cfOwnStore(c mut CfC, x int, k int) bool {
+    for q <- iter.Range(0, len(c.stores)) {
+        if c.stores[q] == x && c.scp[q] == k {
+            return true
+        }
+    }
+    return false
+}
+
+// cfRewrite は使い道を持ち主の写し元へ付け替え、写しの store を全部と（ほかに使い道の無い）写しの load を消す
+func cfRewrite(st mut St, f FnRef, pw mut PrW, c mut CfC) {
+    for u <- iter.Range(0, len(c.loads)) {
+        irSetInsA(mut st, InsRef(c.loads[u]), c.ca[c.own[u]])
+    }
+    for q <- iter.Range(0, len(c.calls)) {
+        desugar.HeapSet(mut st.d, irInsB(mut st, InsRef(c.calls[q])) + 1 + c.cargs[q], c.ca[c.own[len(c.loads) + q]])
+    }
+    // 写しの load の結果の使い道の数（写しの store を除く）
+    ns := len(c.stores)
+    mut cnt := mut []int{}
+    xFill(mut cnt, ns, 0)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if !cfIsStore(mut c, int(i)) {
+                for o <- iter.Range(0, xNOps(mut st, i)) {
+                    cfCount(mut st, mut pw.def, xOpnd(mut st, i, o), mut c, mut cnt)
+                }
+            }
+            i = irInsNext(mut st, i)
+        }
+        for o <- iter.Range(0, xNTermOps(mut st, b)) {
+            cfCount(mut st, mut pw.def, xTermOpnd(mut st, b, o), mut c, mut cnt)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    b = irFnBHead(mut st, f)
+    while b != -1 {
+        mut mine := false
+        for k <- iter.Range(0, len(c.cb)) {
+            if c.cb[k] == irBlkId(mut st, b) {
+                mine = true
+            }
+        }
+        if mine {
+            mut prev := InsRef(-1)
+            mut i := irBlkIHead(mut st, b)
+            while i != -1 {
+                nx := irInsNext(mut st, i)
+                mut drop := cfIsStore(mut c, int(i))
+                for q <- iter.Range(0, ns) {
+                    if int(i) == c.srcs[q] && cnt[q] == 0 {
+                        drop = true
+                    }
+                }
+                if drop {
+                    if prev == -1 {
+                        irSetBlkIHead(mut st, b, nx)
+                    } else {
+                        irSetInsNext(mut st, prev, nx)
+                    }
+                    if irBlkITail(mut st, b) == i {
+                        irSetBlkITail(mut st, b, prev)
+                    }
+                } else {
+                    prev = i
+                }
+                i = nx
+            }
+        }
+        b = irBlkNext(mut st, b)
+    }
+}
+
+// cfIsStore は命令 x が写しの store か
+func cfIsStore(c mut CfC, x int) bool {
+    for q <- iter.Range(0, len(c.stores)) {
+        if c.stores[q] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// cfCount は被演算子 v が写しの load の結果なら数える
+func cfCount(st mut St, def mut []int, v int, c mut CfC, cnt mut []int) {
+    if v < 0 || v >= len(def) || def[v] < 0 {
+        return
+    }
+    for q <- iter.Range(0, len(c.srcs)) {
+        if def[v] == c.srcs[q] {
+            cnt[q] = cnt[q] + 1
+        }
+    }
+}

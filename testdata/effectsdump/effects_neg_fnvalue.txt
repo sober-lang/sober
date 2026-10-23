@@ -1,0 +1,6 @@
+examples/effects_neg_fnvalue.sober:7:6: effects main.all fi=0 bits=block, io, nondet
+examples/effects_neg_fnvalue.sober:16:6: effects main.main fi=1 bits=block, io, nondet
+examples/effects_neg_fnvalue.sober:5:6: ftype Check union=panic
+std/iter/iter.sober:8:6: ftype Iter union=none
+examples/effects_neg_fnvalue.sober:17:34: violation this function value of type 'Check' may have the effect panic via the call of 'panic', which the @effects of 'Check' does not allow (allowed: block, io, nondet)
+summary fns=7 lambdas=3 edges=16 any=panic any-calls=0 fvalues=0 declared=0 violations=1

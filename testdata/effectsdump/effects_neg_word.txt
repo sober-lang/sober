@@ -1,0 +1,4 @@
+examples/effects_neg_word.sober:6:6: effects main.f fi=0 bits=none declared
+examples/effects_neg_word.sober:10:6: effects main.main fi=1 bits=io
+examples/effects_neg_word.sober:5:1: violation @effects: '!alloc' — only the effects block, io, panic, nondet can be negated
+summary fns=2 lambdas=0 edges=3 any=none any-calls=0 fvalues=0 declared=1 violations=1

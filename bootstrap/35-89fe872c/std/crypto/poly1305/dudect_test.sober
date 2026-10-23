@@ -1,0 +1,56 @@
+package poly1305
+
+// dudect の切り分けの題材（report-1027 / 1028 — white-box: 非公開の start / absorb / finish を直に呼ぶ。scripts/dudect.sh が std/internal/dudect と一緒に回す）。
+// 固定鍵の値ごとに決まる 0.1 cycle 級のずれ（Zen 3 / Zen 4 — exp_poly_ff）が Sum のどの段にあるかを、ff の形（固定鍵 A 対 固定鍵 B — exp_poly_ff と同じ 2 つ）で段ごとに測る:
+// exp_poly_start = start だけ・exp_poly_absorb = start + absorb（64 バイト = 4 ブロック）・exp_poly_finish = start + finish（absorb なし）。
+// absorb の寄与 ≈ absorb − start・finish の寄与 ≈ finish − start（効果の差で読む — 窓の中で start を外す口が無いため）。
+// 名前が exp_ なので判定は informational（scripts/dudect.ts）。環境変数 SOBER_DUDECT が無ければ何もしない（unittest では測らずに通る）
+
+import "std/internal/dudect"
+import "std/iter"
+
+// dpat は固定の n バイト（std/internal/dudect の題材の pat と同じ値 — k = 1 が exp_poly_ff のクラス 0・k = 2 がクラス 1）
+func dpat(n int, k int) []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, n) {
+        b = append(b, byte((i * 37 + k * 11 + 5) & 0xff))
+    }
+    return freeze(b)
+}
+
+// ff はクラス c の固定鍵
+func ff(c int, i int) []byte {
+    return dpat(32, if c == 0 { 1 } else { 2 })
+}
+
+func TestExpPolyStart() {
+    n := dudect.Count()
+    if n == 0 {
+        return
+    }
+    dudect.Measure("exp_poly_start", n, 8, ff, (x) => {
+        a := start(x)
+        ((a.r0 ^ a.r1 ^ a.r2 ^ a.r3 ^ a.r4) & 1) == 1
+    })
+}
+
+func TestExpPolyAbsorb() {
+    n := dudect.Count()
+    if n == 0 {
+        return
+    }
+    msg := dpat(64, 7)
+    dudect.Measure("exp_poly_absorb", n, 8, ff, (x) => {
+        mut a := start(x)
+        absorb(mut a, msg, 0, len(msg), false)
+        ((a.h0 ^ a.h1 ^ a.h2 ^ a.h3 ^ a.h4) & 1) == 1
+    })
+}
+
+func TestExpPolyFinish() {
+    n := dudect.Count()
+    if n == 0 {
+        return
+    }
+    dudect.Measure("exp_poly_finish", n, 8, ff, (x) => len(finish(start(x), x)) == 16)
+}

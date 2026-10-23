@@ -1,0 +1,12 @@
+package main
+
+// 負例（check が拒否 — analyzer）: `@effects` の項は語（block・io・panic・nondet）か名前付き関数型の名前（alloc は語彙に無い — language.md 12 節の語彙の粒度）
+
+@effects(!alloc)
+func f() int {
+    return 1
+}
+
+func main() {
+    println(f())
+}

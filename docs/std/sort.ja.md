@@ -9,6 +9,7 @@
 ## Order
 
 ```sober
+@effects(!io, !block, !nondet)
 func Order(n int, less func(int, int) bool) []int
 ```
 
@@ -70,6 +71,7 @@ func main() int {
 ## OrderUnstable
 
 ```sober
+@effects(!io, !block, !nondet)
 func OrderUnstable(n int, less func(int, int) bool) []int
 ```
 

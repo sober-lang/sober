@@ -1,0 +1,2 @@
+examples/effects_neg_word.sober:5:1: error: @effects: '!alloc' — only the effects block, io, panic, nondet can be negated (Analyzer)
+exit=1

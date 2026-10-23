@@ -1,0 +1,94 @@
+package loader
+
+// 封の型の外での欄つきリテラル（language.md 15 節「部分リテラル」・report-594 の裁定 A）: 欄の型に、宣言した package の非公開の型（小文字で始まる
+// 型宣言 — utf8.View・json.Doc・par の札の `seal`）を持つ struct は「封の型」— その package の検査の口だけが作る証人。部分リテラル（省いた欄はゼロ値）を
+// 解禁したので、外で `utf8.View{b: …}` と書くと封の欄をゼロ値にした偽の証人が組めてしまう。外では欄つきのリテラルを全部拒否する（ゼロ値 `T{}` は
+// 無害なので今どおり — 封の欄を持つ型を欄に持つ封の無い struct の部分リテラルも、封の型の値がゼロ値になるだけなので受理）。check と build が同じ層
+
+import "std/builder"
+import "std/iter"
+import "std/strings"
+import "ast"
+
+// sealedTab は封の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 無ければ空）
+func sealedTab(cx Cx) []int {
+    // 非公開の型の表（[package, ファイル, 型宣言の節] の 3 語ずつ — 1 回だけ作る。封の判定は欄ごとにこの短い表を引く）
+    mut pb := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            tdi := ast.ListAt(t, tys, k)
+            nb := bytes(Name(t, t.nodes[tdi].a))
+            if len(nb) > 0 && nb[0] >= 'a' && nb[0] <= 'z' {
+                builder.Push(mut pb, cx.file_pkg[f])
+                builder.Push(mut pb, f)
+                builder.Push(mut pb, tdi)
+            }
+        }
+    }
+    pt := builder.Build(mut pb)
+    if len(pt) == 0 {
+        return []int{}
+    }
+    // 封の型の表: 同じ形の 3 語ずつ
+    mut sb := builder.Builder[int]{}
+    for f <- iter.Range(0, len(cx.trees)) {
+        t := cx.trees[f]
+        tys := t.nodes[t.file].c
+        for k <- iter.Range(0, ast.ListLen(t, tys)) {
+            tdi := ast.ListAt(t, tys, k)
+            if sealedDecl(cx, pt, f, tdi) {
+                builder.Push(mut sb, cx.file_pkg[f])
+                builder.Push(mut sb, f)
+                builder.Push(mut sb, tdi)
+            }
+        }
+    }
+    return builder.Build(mut sb)
+}
+
+// sealedLit はファイル f の composite x が外での封の型（表 st）の欄つきリテラルか（noderules.sober の走査から）
+func sealedLit(cx Cx, st []int, f int, x ast.Node) bool {
+    t := cx.trees[f]
+    if ast.ListLen(t, x.b) == 0 {
+        return false
+    }
+    ref, base, dotted := strings.CutLast(Name(t, x.a), ".")
+    if !dotted {
+        return false
+    }
+    pk := fileImportOf(cx, f, ref)
+    return pk >= 0 && pk != cx.file_pkg[f] && sealedIn(cx, st, pk, base)
+}
+
+// sealedDecl はファイル f の型宣言 tdi が封の型か（struct で、欄の型が同じ package の非公開の型宣言の名前）
+func sealedDecl(cx Cx, pt []int, f int, tdi int) bool {
+    t := cx.trees[f]
+    body := t.nodes[t.nodes[tdi].c]
+    if body.kind != ast.BStruct {
+        return false
+    }
+    for j <- iter.Range(0, ast.ListLen(t, body.a)) {
+        ft := t.nodes[t.nodes[ast.ListAt(t, body.a, j)].b]
+        if ft.kind == ast.TName {
+            if sealedIn(cx, pt, cx.file_pkg[f], Name(t, ft.a)) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// sealedIn は型宣言の表 st（非公開の型の表・封の型の表）に package pk の名前 base があるか
+func sealedIn(cx Cx, st []int, pk int, base string) bool {
+    for e <- iter.Range(0, len(st) / 3) {
+        if st[e * 3] == pk {
+            t := cx.trees[st[e * 3 + 1]]
+            if Name(t, t.nodes[st[e * 3 + 2]].a) == base {
+                return true
+            }
+        }
+    }
+    return false
+}

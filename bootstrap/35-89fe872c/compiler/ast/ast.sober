@@ -1,0 +1,186 @@
+package ast
+
+// 表層 AST（src/stage1/ast.zig と同じ情報）。
+// 表現は平らな表: 節は []Node の添字で指し、列と文字列は []int のデータプールの添字で指す
+// （Sober に参照型は無いので、木は添字で結ぶ — testdata/minic_rd の []Node と同じ流儀）。
+// - 列 L: data[L] = 個数 n、data[L+1 .. L+n] = 要素（節の添字 / 文字列の添字 / 穴は -1）
+// - 文字列 S: data[S] = バイト数 n、data[S+1 .. S+n] = バイト。名前もソースから写す（F-4 の案 (a) の変形 —
+//   オフセットでなく写しにするのは、エスケープ解決済みの文字列リテラルや合成名（$utf8 等）を同じ形で持つため）
+// - 無しは -1
+// 節の各欄の意味は種類ごとに決まる（下の一覧）。tok は Pos（ファイル内のトークン番号）
+
+import "std/builder"
+import "std/iter"
+
+type Node struct {
+    kind, tok, a, b, c, d, e, f int
+}
+
+// WithA〜WithD は欄 a〜d を v に差し替えた節の写し（欄の書きは型を宣言した package の中だけ — language.md 20 節。
+// 他の package は写しを組み直す口としてこれを使う）
+func WithA(n Node, v int) Node {
+    mut m := n
+    m.a = v
+    return m
+}
+
+func WithB(n Node, v int) Node {
+    mut m := n
+    m.b = v
+    return m
+}
+
+func WithC(n Node, v int) Node {
+    mut m := n
+    m.c = v
+    return m
+}
+
+func WithD(n Node, v int) Node {
+    mut m := n
+    m.d = v
+    return m
+}
+
+// Tree は組み上がった表（Build 済み）。file は根（File 節）の添字
+type Tree struct {
+    nodes []Node
+    data []int
+    file int
+}
+
+// ── 式 ──
+const EInt = 1         // a = 値, b = 綴り（0 = 10 進、1 = 文字リテラル `'a'` — language.md 33 節。printer と AST JSON だけが見る）
+const ENil = 2
+const EIdent = 3       // a = 名前
+const EBinary = 4      // a = 演算子（lexer の種類）, b = lhs, c = rhs
+const EUnary = 5       // a = 演算子, b = operand
+const ECall = 6        // a = callee, b = args（列）
+const EPipe = 7        // a = lhs, b = callee, c = args（列、穴は -1）
+const EIndex = 8       // a = base, b = idx
+const ESlice3 = 9      // a = base, b = lo, c = hi
+const EStrlit = 10     // a = 値（文字列）
+const EInterp = 11     // a = lits（文字列の列）, b = holes（列）, c = 1 なら印字できない型の穴で全体を空文字に（assert の値の行 — loader/assert.sober。ソースには書けない）
+const ESlicelit = 12   // a = elem（型）, b = elems（列）, c = mut
+const EMaplit = 13     // a = key（型）, b = value（型）, c = entries（KEntry の列）, d = mut
+const EComposite = 14  // a = type_name（文字列）, b = elems（KElem の列）, c = type_args（列）
+const ESelector = 15   // a = base, b = field（文字列）
+const ELambda = 16     // a = params（KLParam の列）, b = body
+const EIf = 17         // a = cond, b = then（KBlock）, c = else（-1 可）
+const ESwitch = 18     // a = subjects（列）, b = cases（KCase の列）, c = default（KBlock、-1 可）
+const EBlock = 19      // a = stmts（列）
+const EFor = 20        // a = gens（KGen の列）, b = 0（yield）/ 1（block）, c = yield の式 / stmts（列）
+const EMutArg = 21     // a = 名前, b = 1 なら loader の lease の写しが組んだ欄の場所（他の package の欄の書きの規則の外 — loader/lease.sober。ソースには書けない）
+const ETry = 22        // a = e, b = wrap（EComposite、-1 可）
+const EParen = 23      // a = 中身（括弧 — 出力では透過。パターンの選択 `|` の分解だけが区別する）
+const EFloat = 26      // a = 値（IEEE 754 binary64 のビット列を i64 の 2 の補数で読んだ値 — language.md 37 節）, b = 綴り（データの文字列 — printer と AST JSON が保つ）
+const ECatch = 25      // a = 可謬の呼び出し（ECall）, b = 右辺（式、または `return …` の SRet）— loader の catchx.sober が写して消す（以降の層は見ない）
+const EUtf8Ref = 24    // `string(b)` の書き換え先の `$utf8`（出力は ident "$utf8"）
+
+// ── 文 ──
+const SBind = 30       // a = names（文字列の列）, b = mutable, c = values（列）
+const SAssign = 31     // a = targets（列）, b = 演算子, c = values（列）
+const SRet = 32        // a = values（列）
+const SExpr = 33       // a = 式
+const SWhile = 34      // a = cond, b = body（KBlock）
+const SBreak = 35
+const SContinue = 36
+const SDefer = 37      // a = 式
+const SYield = 38      // a = 式
+
+// ── 型 ──
+const TName = 40       // a = 名前
+const TFunc = 41       // a = params（型の列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — 名前は型の同一性に入らない。syntax.md 決定 7 の名前付き引数だけが読む）
+const TOpt = 42        // a = 中身
+const TSlice = 43      // a = elem, b = mut
+const TMap = 44        // a = key, b = value, c = mut
+const TGeneric = 45    // a = 名前, b = args（列）
+const TArray = 46      // a = 長さ（値）, b = elem — `[N]T`。struct の欄の型の位置にだけ（parser）・@layout の struct の外は loader の拒否（language.md 36 節）
+const TTuple = 47      // a = 要素の型の列（2 つ以上）— `(T, error?)`。型引数の位置にだけ（parser）・std/task の Task の型引数の外は loader の拒否（language.md 11 節 — P3b 残穴1）
+
+// ── 宣言・その他 ──
+const KFile = 50       // a = package（文字列）, b = imports, c = types, d = funcs, e = consts（すべて列）, f = intrinsics（KIntrinsic の列 — 無ければ 0。std だけ）
+const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字列）
+const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
+const BStruct = 53     // a = fields（列）
+const BUnion = 54      // a = variants（列）
+const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）, d = 後置の `@errors` のラベル名の列 + 1（0 = 無し）, e = その `@` の字句, f = 後置の `@effects` の項の列 + 1（0 = 無し — その `@` の字句は節の tok）
+const BError = 56      // a = fields（列）
+const KField = 57      // a = 名前, b = 型, c = 後置の印（1 = `@secret`・2 = `@credential` — struct の欄だけ）
+const KVariant = 58    // a = 名前, b = fields（列）, c = 後置の `@shared` の印（1）
+const KFuncDecl = 59   // a = 名前, b = type_params, c = params, d = results, e = body（KBlock）, f = 付加（列: bodiless, span.start, span.end, sig_end）
+const KParam = 60      // a = 名前, b = 型, c = mutable
+const KConst = 61      // a = 名前, b = 式, c = span.start, d = span.end, e = `@embed` のパターン, f = 印（ビット 0 = `@embed`・ビット 1 = `@secret`）
+const KBlock = 62      // a = stmts（列）
+const KCase = 63       // a = patterns（列）, b = body（KBlock）
+const KElem = 64       // a = key（文字列、-1 可）, b = value
+const KEntry = 65      // a = key, b = value
+const KLParam = 66     // a = 名前, b = 型（-1 可）, c = mut 仮引数の印（窓のラムダ — task.Lease / task.NewLocal）
+const KGen = 67        // a = names（文字列の列）, b = src, c = guards（列）
+const KPConst = 68     // a = alts（列）
+const KPType = 69      // a = bind（文字列、-1 可）, b = variant（文字列）, c = fields（KFieldPat の列）
+const KFieldPat = 70   // a = 名前, b = sub（パターン、-1 可）
+const BDefined = 71    // a = 下地の型式（named scalar — `type X int`。language.md 32 節）
+// KNamedArg は名前付き実引数 `name: value`（syntax.md 決定 7）: a = 名前（文字列）, b = 値（式 / EMutArg）。ECall の実引数の列にだけ現れ、
+// loader が位置引数へ写す（namedargs.sober）— 以降の層は見ない
+const KNamedArg = 72
+// BPanic は panic ラベルの宣言の本体（`type L panic{…}` — language.md 27 節）: a = fields（列）。loader が検査の後に BStruct へ写す（panicx.sober）— 以降の層は見ない
+const BPanic = 73
+// KIntrinsic は std の本体なしの宣言 `@intrinsic("鍵") func 名前(仮引数) 結果`（息継ぎ ③ — sys の組み込みの署名をソースに置く）:
+// a = 名前, b = 鍵（文字列）, c = params（KParam の列）, d = results（列）, e = span.start, f = span.end。KFile の f の列にだけ現れ、関数の表には入らない
+// （呼び出しは desugar / lower が名前で引いて鍵の実装へ — desugar の SysKey）
+const KIntrinsic = 74
+// BAlias は型の別名の本体（`type A = B` — language.md 32 節「型の別名」）: a = 右辺の型式（loader が TName だけを受ける）。loader/alias.sober が参照を実体の名前へ写し、
+// 検査の束の後で宣言を型の列から外す — desugar 以降の層は見ない（生の木を読む fmt・.sobi・docgen は見る）
+const BAlias = 75
+// EVal は lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
+// 番号は木の種類と重ならないように離して置く（desugar の descTable は木の節の欄の付け替えにだけ使い、EVal は引かない）
+const EVal = 90
+// NKinds は種類の番号の上限（descTable の大きさ）
+const NKinds = 100
+
+// ParamIsMut は仮引数の節（KParam）が mut 仮引数か（c = mutable）
+func ParamIsMut(x Node) bool {
+    return x.c != 0
+}
+
+// Add は節を積んで添字を返す
+func Add(nb mut builder.Builder[Node], n Node) int {
+    builder.Push(mut nb, n)
+    return builder.Len(mut nb) - 1
+}
+
+// PutBytes は b[s:e] を文字列として積む
+func PutBytes(db mut builder.Builder[int], b []byte, s int, e int) int {
+    at := builder.Len(mut db)
+    builder.Push(mut db, e - s)
+    for i <- iter.Range(s, e) {
+        builder.Push(mut db, int(b[i]))
+    }
+    return at
+}
+
+// PutLit は綴りをそのまま文字列として積む（合成名）
+func PutLit(db mut builder.Builder[int], w string) int {
+    b := bytes(w)
+    return PutBytes(mut db, b, 0, len(b))
+}
+
+// PutList は xs を列として積む
+func PutList(db mut builder.Builder[int], xs []int) int {
+    at := builder.Len(mut db)
+    builder.Push(mut db, len(xs))
+    for i <- iter.Range(0, len(xs)) {
+        builder.Push(mut db, xs[i])
+    }
+    return at
+}
+
+// ListLen / ListAt は列の読み出し
+func ListLen(t Tree, l int) int {
+    return t.data[l]
+}
+
+func ListAt(t Tree, l int, i int) int {
+    return t.data[l + 1 + i]
+}

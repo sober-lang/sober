@@ -1,0 +1,2 @@
+examples/effects_neg_union.sober:8:1: error: 'main.apply' may have the effect io via a call through a value of type 'Job', which its @effects does not allow (allowed: block, panic, nondet) (Analyzer)
+exit=1

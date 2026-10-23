@@ -19,6 +19,7 @@ const partialLimit = 8
 // 実装 = 自然な列のマージソート: 昇順の列と狭義の降順の列（反転する — 等しいものを含まないので安定のまま）を拾い、base より短い列は二分挿入で伸ばして、
 // 隣どうしを対でマージする周を列が 1 本になるまで繰り返す（既に並んでいる対は写すだけ・右が丸ごと前なら右・左の順に写す）。比べる回数は O(n log n)・並んだ入力と逆順の入力は O(n)・作業域は添字 2n 語
 // 例: examples/sort_order.sober
+@effects(!io, !block, !nondet)
 func Order(n int, less func(int, int) bool) []int {
     mut ab := mut []int{}
     for i <- iter.Range(0, n) {
@@ -184,6 +185,7 @@ func Order(n int, less func(int, int) bool) []int {
 // 実装 = pattern-defeating quicksort（pdqsort）: pivot = 3 点（長い区間は 9 点）の中央値・pivot と等しい要素が多い区間は等しいものを左へ寄せて飛ばす・
 // 分割が既に済んでいた区間は部分挿入ソートで仕上げを試す・偏った分割が log₂ n 回続いた区間は heapsort（最悪 O(n log n)）・偏った分割の後は決まった位置を入れ替えて並びの癖を崩す（乱択しない）。短い区間は挿入ソート。再帰しない（区間を積む）。作業域は区間の積み（O(log n) 語）
 // 例: examples/sort_order.sober
+@effects(!io, !block, !nondet)
 func OrderUnstable(n int, less func(int, int) bool) []int {
     mut ab := mut []int{}
     for i <- iter.Range(0, n) {

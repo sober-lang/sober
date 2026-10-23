@@ -986,6 +986,14 @@ func FnTypeOf(st mut S, e NodeRef) int {
     return if d >= 0 && isTreeNode(d) && kindN(mut st, nC(nodeOf(mut st, NodeRef(d)))) == ast.BFunc { d } else { -1 }
 }
 
+// IsFnValue は式 e の表層型が関数型（匿名・名前付き — option なら中身）か（analyzer の効果の導出が関数値の呼び出しを組み込み・型変換・型の構築と分ける口 —
+// effect の波 段 5a）
+func IsFnValue(st mut S, e NodeRef) bool {
+    y0 := yGet(mut st, int(e))
+    y := if yk(mut st, y0) == YOpt { YAt(mut st, y0).a } else { y0 }
+    return yk(mut st, y) == YFn || FnTypeOf(mut st, e) != -1
+}
+
 // ExprDecl は式 e の表層型が型宣言（struct / union / named scalar / 名前付き関数型 — option なら中身）ならその型宣言の節（でなければ -1 —
 // analyzer の値の流れが欄のスロットを型 × 名前で引く口。language.md 13 節の補 2）
 func ExprDecl(st mut S, e NodeRef) NodeRef {
@@ -1002,6 +1010,16 @@ func FnTypeErrors(st mut S, decl NodeRef) (ListRef, int, int) {
         return -1, 0, pk
     }
     return ListRef(LBASE + LSTRS * LK + refFile(int(decl)) * FW + body.d - 1), body.e, pk
+}
+
+// FnTypeEffects は名前付き関数型の型宣言 decl の後置 `@effects` の項の列（無ければ -1）と `@` の字句・宣言の package
+func FnTypeEffects(st mut S, decl NodeRef) (ListRef, int, int) {
+    body := nodeOf(mut st, nC(nodeOf(mut st, decl)))
+    pk := FilePkg(mut st, refFile(int(decl)))
+    if body.f == 0 {
+        return -1, 0, pk
+    }
+    return ListRef(LBASE + LSTRS * LK + refFile(int(decl)) * FW + body.f - 1), body.tok, pk
 }
 
 // LamYFn は値の位置のラムダ lam の期待型の表層型（関数型 YFn — 記録なしは -1）

@@ -380,6 +380,7 @@ func expPub(xm []int, e []int, nb int, mt mont) []int {
 // 専用命令の montMul と Sober の montMulS の照合（検証の網の API — 利用者は使わない: examples/crypto_montmul と cryptocheck の格子が叩く）。
 // 種 seed の擬似乱数で limb の数 1〜maxN の奇数の法 m（最上位の limb は 0 でない）と m 未満の a・b を rounds 組ずつ作り、montMul（専用命令 — 専用命令の無い出力では
 // montMulS そのもの）と montMulS の結果を比べる。2 乗（a = b）と最大値寄り（m − 1）も混ぜる。食い違いの数を返す
+@effects(!io, !block, !nondet)
 func MontSelfCheck(seed int, maxN int, rounds int) int {
     mut x := seed
     mut bad := 0

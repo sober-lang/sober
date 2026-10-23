@@ -11,6 +11,7 @@ Poly1305 の一回の MAC（RFC 8439 2.5 — 鍵 32 バイト = r ‖ s・tag 16
 ```sober
 @secret(key)
 @bless
+@effects(!io, !block, !nondet)
 func Sum(key []byte, msg []byte) []byte
 ```
 
@@ -20,6 +21,7 @@ key（32 バイト — 1 回だけ使う鍵。同じ鍵で 2 つのメッセー�
 
 ```sober
 @secret(key)
+@effects(!io, !block, !nondet)
 func SumAead(key []byte, ad []byte, msg []byte, off int, n int) []byte
 ```
 

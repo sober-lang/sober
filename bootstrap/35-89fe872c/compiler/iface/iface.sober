@@ -1,0 +1,376 @@
+package iface
+
+// package の interface（.sobi — language.md 29 節）の書き出し。形は Sober ソースの部分集合で、印字器（compiler/printer）の正規形で書く
+// （原文を切り出さない）。先頭に版の行 `// sobi 1`（コメント — parser は読み飛ばす）。
+//
+// 載せる項目と形（stage1 の src/stage1/iface.zig と同じ）:
+// - 型宣言（struct / union / error / 名前付き関数型 / named scalar）・辞書 const = 宣言ごと
+// - 展開される関数（関数型の引数・mut 引数 — loader の fn_expands）・総称関数 = 宣言ごと（脱糖器の inlineCall・単相化が本体を要る）
+// - 他の関数 = 署名だけ（注釈 `@errors` / `@noinline` つき — 本体なし）
+// - std の `@intrinsic` の宣言 = 載せた範囲（展開される関数の本体）が参照したものだけ（std/io の Chunks — 本体から鍵を呼ぶ展開される関数。stage1 の .sobi には無い — std だけ）
+// - 畳める const = 畳んだ値だけ（`const step = 4` — `@secret` の印は残す）・他の const（辞書・@embed）は原文の宣言のまま
+// - E2-S の逃げ（callM の Def として型付かなかった関数 — checker.ExclE2）は宣言の前に `@expand`（呼び出し点ごとに展開する — 判定 D'）
+// 載せる範囲 = 根（公開の項目 + error ラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（欄の選択 `x.f` の f と文字列リテラルを除く）が
+// package のトップレベル名（union の variant 名はその union）なら足す。import は載せた範囲が参照したものだけ（暗黙の import は落とす）。
+// 並びは印字器の file と同じ: 型 → const → 関数（種類の中はファイル順 × 宣言順 — 関数表・error のタグの順は種類の中の順だけを使う）
+
+import "ast"
+import "loader"
+import "obuf"
+import "printer"
+import "std/iter"
+import "std/strings"
+
+// Item は package のトップレベルの宣言 1 つ（kind 0 = 型・1 = 関数・2 = const・3 = std の @intrinsic の宣言）
+type Item struct {
+    file int
+    node int
+    kind int
+    name string
+}
+
+// Emit は package pk の .sobi の本文（excl = E2-S の逃げの関数の表の添字）。raw = ファイルごとのソースを読み直した生の木（loader の写しの前 —
+// @layout の欄の幅の型・@embed の受け皿・catch を原文のまま書くため。loader の写しは節を末尾に足すか同じ添字で差し替えるだけなので、宣言の節の添字は
+// p の表〔fn_node / c_node〕とそろう）。読み直せないファイル（loader が合成した `$layout/…` — file = -1）は載せない（依存する側の loader が自分の
+// 呼び出しのぶんを合成し直す）
+func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
+    q := loader.WithTrees(p, raw)
+    items := pkgItems(q, pk)
+    names := nameIndex(q, items)
+    inc := closure(q, items, names)
+    mut out := mut []byte{}
+    obuf.Lit(mut out, "// sobi 1\npackage ")
+    obuf.Lit(mut out, p.pkg_name[pk])
+    out = append(out, '\n')
+    imports(mut out, q, pk, items, inc)
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] && items[i].kind == 0 {
+            out = append(out, '\n')
+            appendB(mut out, printer.TypeDeclText(q.trees[items[i].file], items[i].node))
+            out = append(out, '\n')
+        }
+    }
+    mut anyc := false
+    for i <- iter.Range(0, len(items)) {
+        anyc = anyc || (inc[i] && items[i].kind == 2)
+    }
+    if anyc {
+        out = append(out, '\n')
+    }
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] && items[i].kind == 2 {
+            ci := constIndex(q, items[i])
+            if ci >= 0 && !q.c_dict[ci] && q.c_has[ci] {
+                // 畳んだ値でも `@secret` の印は落とさない（源の宣言 — language.md 12 節「秘密の値の宣言」）
+                if (q.trees[items[i].file].nodes[items[i].node].f & 2) != 0 {
+                    obuf.Lit(mut out, "@secret\n")
+                }
+                obuf.Lit(mut out, "const ")
+                obuf.Lit(mut out, items[i].name)
+                obuf.Lit(mut out, " = ")
+                // min int は字句で書けない（-9223372036854775808 は単項 − と溢れるリテラル — 読み戻しの check --split が grammar error）ので式の形で
+                if q.c_value[ci] == minInt {
+                    obuf.Lit(mut out, "-9223372036854775807 - 1")
+                } else {
+                    obuf.Int(mut out, q.c_value[ci])
+                }
+            } else {
+                appendB(mut out, printer.ConstText(q.trees[items[i].file], items[i].node))
+            }
+            out = append(out, '\n')
+        }
+    }
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] && items[i].kind == 3 {
+            out = append(out, '\n')
+            appendB(mut out, printer.IntrinsicDeclText(q.trees[items[i].file], items[i].node))
+            out = append(out, '\n')
+        }
+    }
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] && items[i].kind == 1 {
+            fi := fnIndex(q, items[i])
+            out = append(out, '\n')
+            appendB(mut out, printer.FuncDeclText(q.trees[items[i].file], items[i].node, !wholeFn(q, items[i], fi), contains(excl, fi)))
+            out = append(out, '\n')
+        }
+    }
+    return freeze(out)
+}
+
+const minInt = -9223372036854775807 - 1
+
+// Link はリンク集合（package のパスをロード順に 1 行ずつ — link.txt）
+func Link(p loader.Program) []byte {
+    mut out := mut []byte{}
+    for k <- iter.Range(0, len(p.pkg_path)) {
+        obuf.Lit(mut out, p.pkg_path[k])
+        out = append(out, '\n')
+    }
+    return freeze(out)
+}
+
+func appendB(out mut []byte, b []byte) {
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i])
+    }
+}
+
+func contains(xs []int, x int) bool {
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] == x {
+            return true
+        }
+    }
+    return false
+}
+
+// pkgItems は package pk の宣言（ファイル順 × 種類ごとの宣言順）
+func pkgItems(p loader.Program, pk int) []Item {
+    mut out := mut []Item{}
+    for f <- iter.Range(p.pkg_lo[pk], p.pkg_hi[pk]) {
+        t := p.trees[f]
+        if t.file < 0 {
+            continue
+        }
+        fl := t.nodes[t.file]
+        for k <- iter.Range(0, ast.ListLen(t, fl.c)) {
+            n := ast.ListAt(t, fl.c, k)
+            out = append(out, Item{file: f, node: n, kind: 0, name: loader.Name(t, t.nodes[n].a)})
+        }
+        for k <- iter.Range(0, ast.ListLen(t, fl.d)) {
+            n := ast.ListAt(t, fl.d, k)
+            out = append(out, Item{file: f, node: n, kind: 1, name: loader.Name(t, t.nodes[n].a)})
+        }
+        for k <- iter.Range(0, ast.ListLen(t, fl.e)) {
+            n := ast.ListAt(t, fl.e, k)
+            out = append(out, Item{file: f, node: n, kind: 2, name: loader.Name(t, t.nodes[n].a)})
+        }
+        if fl.f != 0 {
+            for k <- iter.Range(0, ast.ListLen(t, fl.f)) {
+                n := ast.ListAt(t, fl.f, k)
+                out = append(out, Item{file: f, node: n, kind: 3, name: loader.Name(t, t.nodes[n].a)})
+            }
+        }
+    }
+    return freeze(out)
+}
+
+// nameIndex はトップレベル名 → 項目（union の variant 名はその union の項目）
+func nameIndex(p loader.Program, items []Item) map[string]int {
+    mut m := mut map[string]int{}
+    for i <- iter.Range(0, len(items)) {
+        m[items[i].name] = i
+        if items[i].kind == 0 {
+            t := p.trees[items[i].file]
+            body := t.nodes[t.nodes[items[i].node].c]
+            if body.kind == ast.BUnion {
+                for k <- iter.Range(0, ast.ListLen(t, body.a)) {
+                    m[loader.Name(t, t.nodes[ast.ListAt(t, body.a, k)].a)] = i
+                }
+            }
+        }
+    }
+    return freeze(m)
+}
+
+// fnIndex / constIndex は項目の関数表・const 表の添字（無ければ -1）
+func fnIndex(p loader.Program, it Item) int {
+    for i <- iter.Range(0, len(p.fn_file)) {
+        if p.fn_file[i] == it.file && p.fn_node[i] == it.node {
+            return i
+        }
+    }
+    return -1
+}
+
+func constIndex(p loader.Program, it Item) int {
+    for i <- iter.Range(0, len(p.c_file)) {
+        if p.c_file[i] == it.file && p.c_node[i] == it.node {
+            return i
+        }
+    }
+    return -1
+}
+
+// wholeFn は関数を宣言ごと載せるか（展開される・総称）
+func wholeFn(p loader.Program, it Item, fi int) bool {
+    t := p.trees[it.file]
+    return (fi >= 0 && p.fn_expands[fi]) || ast.ListLen(t, t.nodes[it.node].b) > 0
+}
+
+// isPublic は名前が公開か（大文字で始まる）
+func isPublic(s string) bool {
+    b := bytes(s)
+    return len(b) > 0 && int(b[0]) >= 65 && int(b[0]) <= 90
+}
+
+// isLabel は型宣言が error ラベルか
+func isLabel(p loader.Program, it Item) bool {
+    t := p.trees[it.file]
+    return it.kind == 0 && t.nodes[t.nodes[it.node].c].kind == ast.BError
+}
+
+// isParRedirect は std/task の非公開の振り分け先（gatherE / mapE — 表層型検査器が task.Gather / task.Map の呼び出しをここへ振り分ける。
+// 公開の本体からは参照されないので根に入れる — desugar/task.sober の PREDIR）
+func isParRedirect(p loader.Program, it Item) bool {
+    return p.pkg_path[p.file_pkg[it.file]] == "std/task" && (it.name == "gatherE" || it.name == "mapE")
+}
+
+// closure は載せる項目の印（根 = 公開 + error ラベル・リンク可視の閉包）
+func closure(p loader.Program, items []Item, names map[string]int) []bool {
+    mut inc := mut []bool{}
+    for i <- iter.Range(0, len(items)) {
+        inc = append(inc, false)
+    }
+    mut work := mut []int{}
+    for i <- iter.Range(0, len(items)) {
+        if isPublic(items[i].name) || isLabel(p, items[i]) || isParRedirect(p, items[i]) {
+            inc[i] = true
+            work = append(work, i)
+        }
+    }
+    mut w := 0
+    while w < len(work) {
+        it := items[work[w]]
+        w += 1
+        refs := itemRefs(p, it)
+        for k <- iter.Range(0, len(refs)) {
+            j := names[refs[k]]
+            if j != nil {
+                if !inc[j] {
+                    inc[j] = true
+                    work = append(work, j)
+                }
+            }
+        }
+    }
+    return freeze(inc)
+}
+
+// itemRefs は項目の載せる範囲の識別子（形ごと: 型 = 本体と型パラメータ・関数 = 署名〔宣言ごとなら本体も〕・const = 値〔畳むなら無し〕）
+func itemRefs(p loader.Program, it Item) []string {
+    t := p.trees[it.file]
+    x := t.nodes[it.node]
+    mut roots := mut []int{}
+    if it.kind == 0 {
+        roots = append(roots, x.c)
+    } else if it.kind == 1 {
+        for k <- iter.Range(0, ast.ListLen(t, x.c)) {
+            roots = append(roots, ast.ListAt(t, x.c, k))
+        }
+        for k <- iter.Range(0, ast.ListLen(t, x.d)) {
+            roots = append(roots, ast.ListAt(t, x.d, k))
+        }
+        if wholeFn(p, it, fnIndex(p, it)) && x.e >= 0 {
+            roots = append(roots, x.e)
+        }
+    } else if it.kind == 2 {
+        ci := constIndex(p, it)
+        if ci < 0 || p.c_dict[ci] || !p.c_has[ci] {
+            roots = append(roots, x.b)
+        }
+    }
+    ids := identsUnder(t, freeze(roots))
+    if it.kind != 1 || t.data[x.f] < 6 || t.data[x.f + 6] < 0 {
+        return ids
+    }
+    // `@errors(…)` のラベル名（修飾 `ref.L` は import の参照 — 署名だけの関数でも載る）
+    mut out := mut []string{}
+    for k <- iter.Range(0, len(ids)) {
+        out = append(out, ids[k])
+    }
+    l := t.data[x.f + 6]
+    for k <- iter.Range(0, t.data[l]) {
+        out = append(out, loader.Name(t, t.data[l + 1 + k]))
+    }
+    return freeze(out)
+}
+
+// imports は載せた範囲が参照した import の行（印字器の file と同じ形 — ファイル順 × 宣言順・パスの重複は 1 行。暗黙の import〔字句 0〕は落とす）。
+// 参照名は loader の import 表（imp_ref）から引く。参照したか = 載せた範囲の識別子が参照名か、修飾名 `ref.X` の頭が参照名か
+func imports(out mut []byte, p loader.Program, pk int, items []Item, inc []bool) {
+    mut refs := mut []string{}
+    for i <- iter.Range(0, len(items)) {
+        if inc[i] {
+            rs := itemRefs(p, items[i])
+            for k <- iter.Range(0, len(rs)) {
+                refs = append(refs, rs[k])
+            }
+        }
+    }
+    all := freeze(refs)
+    mut seen := mut map[string]bool{}
+    mut first := true
+    for f <- iter.Range(p.pkg_lo[pk], p.pkg_hi[pk]) {
+        t := p.trees[f]
+        if t.file < 0 {
+            continue
+        }
+        il := t.nodes[t.file].b
+        for k <- iter.Range(0, ast.ListLen(t, il)) {
+            im := t.nodes[ast.ListAt(t, il, k)]
+            path := loader.Name(t, im.b)
+            ref := if im.a >= 0 { loader.Name(t, im.a) } else { refOf(p, pk, path) }
+            if im.tok != 0 && seen[path] == nil && usesRef(all, ref) {
+                seen[path] = true
+                if first {
+                    out = append(out, '\n')
+                    first = false
+                }
+                obuf.Lit(mut out, "import ")
+                if im.a >= 0 {
+                    obuf.Lit(mut out, ref)
+                    out = append(out, ' ')
+                }
+                out = append(out, '"')
+                obuf.Lit(mut out, path)
+                out = append(out, '"')
+                out = append(out, '\n')
+            }
+        }
+    }
+}
+
+// refOf は package pk の import 表のパス path の参照名（無ければ ""）
+func refOf(p loader.Program, pk int, path string) string {
+    for i <- iter.Range(0, len(p.imp_pkg)) {
+        if p.imp_pkg[i] == pk && p.imp_path[i] == path {
+            return p.imp_ref[i]
+        }
+    }
+    return ""
+}
+
+// usesRef は識別子の列が参照名 ref を使うか（そのものか、修飾名 `ref.X`）
+func usesRef(refs []string, ref string) bool {
+    if ref == "" {
+        return false
+    }
+    for i <- iter.Range(0, len(refs)) {
+        if refs[i] == ref || strings.HasPrefix(refs[i], ref + ".") {
+            return true
+        }
+    }
+    return false
+}
+
+// Sigs は関数の署名表（`<package>.<名前>` + タブ + 署名の綴り〔注釈込み・1 行〕— 関数表の順）。scripts/sobi.sh の G-d が、package 単位の視点
+// （check --pkg P --iface D --sigs）の表が全体の表に含まれることを見る（合成定理の hmap — formal.md V5-6。stage1 の toSigsJson の表層版）
+func Sigs(p loader.Program) []byte {
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(p.fn_file)) {
+        f := p.fn_file[i]
+        t := p.trees[f]
+        obuf.Lit(mut out, p.pkg_path[p.file_pkg[f]])
+        out = append(out, '.')
+        obuf.Lit(mut out, loader.Name(t, t.nodes[p.fn_node[i]].a))
+        out = append(out, '\t')
+        s := printer.FuncDeclText(t, p.fn_node[i], true, false)
+        for k <- iter.Range(0, len(s)) {
+            out = append(out, if s[k] == '\n' { ' ' } else { s[k] })
+        }
+        out = append(out, '\n')
+    }
+    return freeze(out)
+}

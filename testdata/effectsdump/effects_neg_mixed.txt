@@ -1,0 +1,4 @@
+examples/effects_neg_mixed.sober:6:6: effects main.f fi=0 bits=io declared
+examples/effects_neg_mixed.sober:10:6: effects main.main fi=1 bits=io
+examples/effects_neg_mixed.sober:5:1: violation @effects is either all positive (`@effects(io, block)`) or all negated (`@effects(!io)`): '!block' mixes the two
+summary fns=2 lambdas=0 edges=3 any=none any-calls=0 fvalues=0 declared=1 violations=1

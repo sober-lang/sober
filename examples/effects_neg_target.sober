@@ -1,0 +1,9 @@
+package main
+
+// 負例（load が拒否 — 文法）: 前置の `@effects` は関数宣言にだけ付く（名前付き関数型は後置）
+
+@effects(!io)
+type Op func(x int) int
+
+func main() {
+}

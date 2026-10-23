@@ -61,6 +61,26 @@ func IntrinsicCode(key string) int {
     return if key == "fsqrt" { IFSqrt } else if key == "fbits" { IFBits } else if key == "ffrombits" { IFFromBits } else if key == "errno" { IErrno } else if key == "args" { IArgs } else if key == "environ" { IEnviron } else if key == "read_file" { IReadFile } else if key == "read_dir" { IReadDir } else if key == "read_fd" { IReadFd } else if key == "run" { IRun } else if key == "mkdir" { IMkdir } else if key == "syscall" { ISyscall } else if key == "addr" { IAddr } else if key == "wait_fd" { IWaitFd } else if key == "fd_own" { IFdOwn } else if key == "net_op" { INetOp } else if key == "stat" { IStat } else if key == "sleep" { ISleep } else if key == "write_file" { IWriteFile } else if key == "write_fd" { IWriteFd } else if key == "write_mode" { IWriteMode } else if key == "rename" { IRename } else if key == "par_pool" { IParPool } else if key == "par_ledger" { IParLedger } else if key == "par_fail" { IParFail } else if key == "open" { IOpen } else if key == "close" { IClose } else if key == "chunk_open" { IChunkOpen } else if key == "chunk_next" { IChunkNext } else if key == "chunk_close" { IChunkClose } else if key == "deadline" { IDeadline } else if key == "lease_op" { ILeaseOp } else if key == "lease_view" { ILeaseView } else if key == "load64" { ILoad64 } else if key == "cpuclmul" { ICpuClmul } else if key == "crcfold" { ICrcFold } else if key == "cpuaes" { IAesCpu } else if key == "aeskey" { IAesKey } else if key == "aesctr" { IAesCtr } else if key == "aesghash" { IAesGhash } else if key == "mulhi" { IMulHi } else if key == "addrn" { IAddrN } else if key == "cpumulx" { IMmCpu } else if key == "montmul" { IMmMul } else if key == "cycles" { ICycles } else { 0 }
 }
 
+// 関数の効果のビット（language.md 12 節の関数の効果 — v1 の語彙。ビット 4 は出所の credential の席〔段 4 — 語彙には吸収しない〕・それより上は DB の波の席）
+const EffBlock = 1   // 待ちに入りうる（task の検査点・lease の窓を跨ぐ）
+const EffIo = 2      // プロセスの外と出入りする（入力も出力も）
+const EffPanic = 4   // 明示の panic(L{…})（境界検査・RegionExceeded は数えない）
+const EffNondet = 8  // io の入力を固定しても値が揺れる（時刻・タイミング）
+const EffAll = 15
+
+// IntrinsicEffects は鍵の番号の効果のビット（葉の表 — 効果の葉は rt の原始の口で、表は compiler が持つ。2026-09-17 の「std の葉が宣言」の読み替え・report-991 1 節）。
+// 純な鍵（fsqrt・fbits・errno・addr・load64・cpu*・crcfold・aes*・mulhi・montmul — cpu* は機械に依るが 1 プロセスで一定）と lease_* / par_pool / par_fail（観測は
+// par_ledger の側）は 0
+func IntrinsicEffects(code int) int {
+    return switch code {
+    case IReadFd | INetOp | IWaitFd | IRun | IChunkNext | IChunkClose: EffBlock | EffIo
+    case ISleep: EffBlock
+    case IArgs | IEnviron | IReadFile | IReadDir | IMkdir | IStat | IWriteFile | IWriteFd | IWriteMode | IRename | IOpen | IClose | IChunkOpen | ISyscall | IFdOwn: EffIo
+    case IDeadline | ICycles | IParLedger: EffNondet
+    default: 0
+    }
+}
+
 // IntrinsicSig は鍵の番号の署名（仮引数の型の並び ">" 結果の型 — i = int・f = float・s = string・b = []byte・n = []int・m = mut []int）
 func IntrinsicSig(code int) string {
     return switch code {

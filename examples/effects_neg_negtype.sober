@@ -1,0 +1,14 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 否定できるのは語だけ（型の名前の項は正の列挙にだけ書く）
+
+type Op func(x int) int
+
+@effects(!Op)
+func run(o Op) int {
+    return o(1)
+}
+
+func main() {
+    println(run((x) => x))
+}

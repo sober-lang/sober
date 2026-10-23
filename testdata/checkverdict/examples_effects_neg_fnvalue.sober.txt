@@ -1,0 +1,2 @@
+examples/effects_neg_fnvalue.sober:17:34: error: this function value of type 'Check' may have the effect panic via the call of 'panic', which the @effects of 'Check' does not allow (allowed: block, io, nondet) (Analyzer)
+exit=1

@@ -1,0 +1,956 @@
+package analyzer
+
+// 関数の効果（effect の波 段 5a — language.md 12 節の関数の効果・report-991）: v1 の語彙 block・io・panic・nondet（loader.Eff* のビット）の導出と `@effects` の照合。
+// 導出 = 型ごとの閉じた合併（値の流れは使わない — 自己 check で毎回全プログラムに走るので、本体を 1 回だけ歩いて依存のグラフを作り、グラフの上で不動点を解く）:
+//   節 = 関数・ラムダ・名前付き関数型 F の合併・匿名の関数値の合併 ANY・期待型の分からない関数名の値の合併 AU。辺 [to, src, at] =「to は src の効果を持つ」
+//   （src < 0 は定数のビット −src − 1・at = 寄与した節 — 漏れの指摘の 1 段目）
+//   - 葉: @intrinsic の鍵（loader.IntrinsicEffects — 表は compiler が持つ）・組み込みの panic（panic）/ println（io）・std/task の待つ口
+//     （Run・Join・Try・Send・Recv — 本体は柵なので歩かない）
+//   - 名前の呼び出し = 呼び先の節（本体の無い .sobi の関数は宣言 — 無ければ全部）
+//   - F の値の呼び出し = F の契約（後置 `@effects`）か、無ければ F の合併（LamKey が F のラムダ ∪ F の仮引数・欄に置いた関数名）。どちらにも AU を足す
+//   - 匿名の関数型の値の呼び出し: 仮引数（関数・囲むラムダ）は透過（実引数は呼び出し点で数える）・ラムダを束ねた局所はそのラムダ・他（欄・局所）は ANY
+//   - ラムダの本体は持ち主の節（作っただけでは起きない）。F の位置（LamKey）なら F の合併の要素・他は囲む節に足す（借りの位置 — 透過）。全部 ANY の要素
+//   - 関数名の値: F の仮引数・欄の位置なら F の合併・他の呼び出しの実引数は囲む節に足して AU・それ以外は AU。全部 ANY の要素
+// 照合 = 導出 ⊆ 許容（正の列挙 = 語 ∪ 型の名前の項の値・否定形 = 全部 − 否定）。F の位置のラムダ / 関数名は F の契約と照合。tightness は強制（段 5b）と一緒
+
+import "ast"
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+const MEffAnn = 44     // @effects の項が読めない（at = 関数宣言 / 型宣言, 付帯 = 項の添字 + 種類 * 4096）
+const MEffLeak = 45    // 導出 ⊄ 宣言（at = 関数宣言, 付帯 = 違反の記録の添字）
+const MEffFnLeak = 46  // F の値の効果 ⊄ F の契約（at = ラムダ / 関数名, 付帯 = 違反の記録の添字）
+
+// 節の種類
+const EN_FN = 0
+const EN_LAM = 1
+const EN_ANY = 2
+const EN_F = 3
+const EN_AU = 4
+
+const EF_DEPTH = 8  // 型の名前の項を辿る深さ（循環の止め）
+
+// Ef は効果の導出の状態（節の表・辺・歩きの文脈・違反）
+type Ef struct {
+    n int                   // 節の数（関数 [0, nfn)・ANY = nfn・AU = nfn + 1・以降はラムダと F の合併）
+    nk table.Table[int]     // 節の種類
+    nref table.Table[int]   // 節の参照（関数の添字・ラムダの節・型宣言）
+    bits table.Table[int]   // 節の効果
+    e table.Table[int]      // 辺 [to, src, at]…
+    fnodes table.Table[int] // F の合併の節 [型宣言, 節]…
+    fn int                  // 今歩いている関数
+    cur int                 // 今の持ち主の節
+    lp table.Table[int]     // 囲むラムダの仮引数の名前（[0, lpN)）
+    lpN int
+    lb table.Table[int]     // ラムダを束ねた局所 [名前, 節]…（[0, lbN) — 関数ごと）
+    lbN int
+    addr table.Table[int]   // 値の位置の関数名 [関数, 型宣言（-1 = 分からない）, 節]…
+    flam table.Table[int]   // F の位置のラムダ [節, 型宣言]…
+    viol table.Table[int]   // 違反 [節, 漏れたビット, 許容, 型宣言]…（EV_W 語ずつ）
+    anyCalls int            // ANY に倒した呼び出し
+}
+
+// ── 節と辺 ──
+
+func efNode(az mut Az, k int, ref int) int {
+    table.Push(mut az.ef.nk, k)
+    table.Push(mut az.ef.nref, ref)
+    table.Push(mut az.ef.bits, 0)
+    az.ef.n += 1
+    return az.ef.n - 1
+}
+
+func efEdge(az mut Az, to int, src int, at int) {
+    table.Push(mut az.ef.e, to)
+    table.Push(mut az.ef.e, src)
+    table.Push(mut az.ef.e, at)
+}
+
+// efConst は to に定数のビット b を足す（0 は積まない）
+func efConst(az mut Az, to int, b int, at int) {
+    if b != 0 {
+        efEdge(mut az, to, -b - 1, at)
+    }
+}
+
+func efAny(az mut Az) int {
+    return az.nfn
+}
+
+func efAU(az mut Az) int {
+    return az.nfn + 1
+}
+
+// efFNode は名前付き関数型の型宣言 d の合併の節（初めてなら作り、AU を要素に足す）
+func efFNode(az mut Az, d int) int {
+    for i <- iter.Range(0, table.Len(mut az.ef.fnodes) / 2) {
+        if table.Get(mut az.ef.fnodes, i * 2) == d {
+            return table.Get(mut az.ef.fnodes, i * 2 + 1)
+        }
+    }
+    id := efNode(mut az, EN_F, d)
+    table.Push(mut az.ef.fnodes, d)
+    table.Push(mut az.ef.fnodes, id)
+    efEdge(mut az, id, efAU(mut az), d)
+    return id
+}
+
+// ── 宣言の項 ──
+
+// efWord は項の綴り s の語のビット（否定の `!` は読み飛ばす — 語でなければ 0）
+func efWord(az mut Az, s desugar.StrRef) int {
+    w := str(mut az, s)
+    return if w == "block" || w == "!block" { loader.EffBlock } else if w == "io" || w == "!io" { loader.EffIo } else if w == "panic" || w == "!panic" { loader.EffPanic } else if w == "nondet" || w == "!nondet" { loader.EffNondet } else { 0 }
+}
+
+// efTypeTerm は項の綴り s（package pk の文脈）の名前付き関数型の型宣言（でなければ -1）
+func efTypeTerm(az mut Az, pk int, s desugar.StrRef) int {
+    r := desugar.ResolveType(mut az.d, pk, s)
+    if r.kind != desugar.TopType || kind(mut az, desugar.NodeRef(node(mut az, desugar.NodeRef(r.idx)).c)) != ast.BFunc {
+        return -1
+    }
+    return r.idx
+}
+
+// efBad は項の列 l（package pk の文脈）の最初の読めない項（項の添字 + 種類 * 4096 — 0 = 語でも型でもない・1 = 正と否定の混在・2 = 語でないものの否定・-1 = 無し）
+func efBad(az mut Az, pk int, l desugar.ListRef) int {
+    mut pos := 0
+    mut neg := 0
+    for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        s := desugar.StrRef(desugar.LatI(mut az.d, l, j))
+        c := desugar.Dat(mut az.d, int(s) + 1)
+        if c == '?' {
+            return j
+        }
+        if c == '!' {
+            neg += 1
+            if efWord(mut az, s) == 0 {
+                return j + 2 * 4096
+            }
+        } else {
+            pos += 1
+            if efWord(mut az, s) == 0 && efTypeTerm(mut az, pk, s) == -1 {
+                return j
+            }
+        }
+        if pos > 0 && neg > 0 {
+            return j + 4096
+        }
+    }
+    return -1
+}
+
+// efNeg は項の列が否定形か（最初の項で決まる — 混在は efBad が拒否）
+func efNeg(az mut Az, l desugar.ListRef) bool {
+    return desugar.LenL(mut az.d, l) > 0 && desugar.Dat(mut az.d, desugar.LatI(mut az.d, l, 0) + 1) == '!'
+}
+
+// efWords は項の列の語のビット（否定形なら否定した語）
+func efWords(az mut Az, l desugar.ListRef) int {
+    mut b := 0
+    for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        b = b | efWord(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+    }
+    return b
+}
+
+// efCallF は名前付き関数型 d の値の呼び出しの効果を to に足す（契約があれば語と型の名前の項・無ければ合併の節。どちらにも AU）
+func efCallF(az mut Az, to int, d int, at int, depth int) {
+    l, t, pk := desugar.FnTypeEffects(mut az.d, desugar.NodeRef(d))
+    if l == -1 || efBad(mut az, pk, l) != -1 {
+        efEdge(mut az, to, efFNode(mut az, d), at)
+        return
+    }
+    if efNeg(mut az, l) {
+        efConst(mut az, to, loader.EffAll & ^efWords(mut az, l), at)
+        return
+    }
+    efConst(mut az, to, efWords(mut az, l), at)
+    efEdge(mut az, to, efAU(mut az), at)
+    if depth < EF_DEPTH {
+        for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+            T := efTypeTerm(mut az, pk, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+            if T != -1 {
+                efCallF(mut az, to, T, at, depth + 1)
+            }
+        }
+    }
+}
+
+// efAllowed は項の列 l（package pk の文脈・読める列）の許容のビット（解いた後に読む — 型の名前の項は契約か合併の節の効果）
+func efAllowed(az mut Az, pk int, l desugar.ListRef, depth int) int {
+    if efNeg(mut az, l) {
+        return loader.EffAll & ^efWords(mut az, l)
+    }
+    mut b := efWords(mut az, l)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        T := efTypeTerm(mut az, pk, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+        if T != -1 {
+            b = b | efTypeVal(mut az, T, depth + 1)
+        }
+    }
+    return b
+}
+
+// efTypeVal は名前付き関数型 d の値の呼び出しの効果（解いた後に読む）
+func efTypeVal(az mut Az, d int, depth int) int {
+    l, t, pk := desugar.FnTypeEffects(mut az.d, desugar.NodeRef(d))
+    if l == -1 || efBad(mut az, pk, l) != -1 || depth > EF_DEPTH {
+        return table.Get(mut az.ef.bits, efFNode(mut az, d))
+    }
+    return efAllowed(mut az, pk, l, depth) | table.Get(mut az.ef.bits, efAU(mut az))
+}
+
+// ── 歩き ──
+
+// efRun は導出（節を立て・本体を歩き・型の名前の項の節を作り・解く）
+func efRun(az mut Az) {
+    az.nfn = desugar.Nfn(mut az.d)
+    for fi <- iter.Range(0, az.nfn) {
+        efNode(mut az, EN_FN, fi)
+    }
+    efNode(mut az, EN_ANY, 0)
+    efNode(mut az, EN_AU, 0)
+    efEdge(mut az, efAny(mut az), efAU(mut az), 0)
+    for fi <- iter.Range(0, az.nfn) {
+        efWalkFn(mut az, fi)
+    }
+    // 宣言の型の名前の項の合併の節（解く前に作る — 要素の辺は AU だけで、ラムダの要素は歩きの中で足してある）
+    for fi <- iter.Range(0, az.nfn) {
+        l, t := desugar.FuncEffects(mut az.d, fnDecl(mut az, fi))
+        if l != -1 {
+            efTermNodes(mut az, desugar.FnAt(mut az.d, fi).pkg, l)
+        }
+    }
+    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
+        ts := desugar.ListRef(desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f)).c)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, ts)) {
+            td := nat(mut az, ts, i)
+            if kind(mut az, desugar.NodeRef(node(mut az, td).c)) == ast.BFunc {
+                l, t, pk := desugar.FnTypeEffects(mut az.d, td)
+                if l != -1 {
+                    efTermNodes(mut az, pk, l)
+                }
+            }
+        }
+    }
+    efSolve(mut az)
+}
+
+// efTermNodes は項の列の型の名前の項（契約の無い型）の合併の節を作る
+func efTermNodes(az mut Az, pk int, l desugar.ListRef) {
+    if efBad(mut az, pk, l) != -1 || efNeg(mut az, l) {
+        return
+    }
+    for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        T := efTypeTerm(mut az, pk, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+        if T != -1 {
+            efFNode(mut az, T)
+        }
+    }
+}
+
+// efWalkFn は関数 fi の本体を歩いて辺を積む（std/task の柵の口は鍵の表・本体の無い関数は宣言）
+func efWalkFn(az mut Az, fi int) {
+    fd := fnDecl(mut az, fi)
+    pk := desugar.FnAt(mut az.d, fi).pkg
+    key := desugar.ParKey(mut az.d, fi)
+    if key != 0 {
+        efConst(mut az, fi, if key == desugar.PAR_SCOPE || key == desugar.PAR_JOIN || key == desugar.PAR_TRY || key == desugar.PAR_SEND || key == desugar.PAR_RECV { loader.EffBlock } else { 0 }, int(desugar.FnAt(mut az.d, fi).node))
+        return
+    }
+    body := desugar.NodeRef(fd.e)
+    if body == -1 {
+        l, t := desugar.FuncEffects(mut az.d, fd)
+        at := int(desugar.FnAt(mut az.d, fi).node)
+        if l == -1 || efBad(mut az, pk, l) != -1 {
+            efConst(mut az, fi, loader.EffAll, at)
+        } else if efNeg(mut az, l) {
+            efConst(mut az, fi, loader.EffAll & ^efWords(mut az, l), at)
+        } else {
+            efConst(mut az, fi, efWords(mut az, l), at)
+            for j <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+                T := efTypeTerm(mut az, pk, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+                if T != -1 {
+                    efCallF(mut az, fi, T, at, 1)
+                }
+            }
+        }
+        return
+    }
+    az.pk = pk
+    az.ef.fn = fi
+    az.ef.cur = fi
+    az.ef.lpN = 0
+    az.ef.lbN = 0
+    efBlock(mut az, body)
+}
+
+func efBlock(az mut Az, b desugar.NodeRef) {
+    if b == -1 {
+        return
+    }
+    l := desugar.ListRef(node(mut az, b).a)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        efStmt(mut az, nat(mut az, l, i))
+    }
+}
+
+// efBody はラムダの本体・if の腕（ブロックか式）
+func efBody(az mut Az, b desugar.NodeRef) {
+    if b == -1 {
+        return
+    }
+    k := kind(mut az, b)
+    if k == ast.EBlock || k == ast.KBlock {
+        efBlock(mut az, b)
+    } else {
+        efExpr(mut az, b)
+    }
+}
+
+func efList(az mut Az, l desugar.ListRef) {
+    if l == -1 {
+        return
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+        efExpr(mut az, nat(mut az, l, i))
+    }
+}
+
+func efStmt(az mut Az, s desugar.NodeRef) {
+    x := node(mut az, s)
+    k := x.kind
+    if k == ast.SBind {
+        vs := desugar.ListRef(x.c)
+        ns := desugar.ListRef(x.a)
+        if desugar.LenL(mut az.d, vs) == 1 && desugar.LenL(mut az.d, ns) == 1 && kind(mut az, nat(mut az, vs, 0)) == ast.ELambda {
+            // ラムダを束ねた局所（呼び出しはそのラムダ — ANY に倒さない）
+            id := efLambda(mut az, nat(mut az, vs, 0))
+            if table.Len(mut az.ef.lb) <= az.ef.lbN * 2 {
+                table.Push(mut az.ef.lb, 0)
+                table.Push(mut az.ef.lb, 0)
+            }
+            table.Set(mut az.ef.lb, az.ef.lbN * 2, desugar.LatI(mut az.d, ns, 0))
+            table.Set(mut az.ef.lb, az.ef.lbN * 2 + 1, id)
+            az.ef.lbN += 1
+            return
+        }
+        efList(mut az, vs)
+    } else if k == ast.SAssign {
+        efList(mut az, desugar.ListRef(x.a))
+        efList(mut az, desugar.ListRef(x.c))
+    } else if k == ast.SRet {
+        efList(mut az, desugar.ListRef(x.a))
+    } else if k == ast.SExpr || k == ast.SDefer || k == ast.SYield {
+        efExpr(mut az, desugar.NodeRef(x.a))
+    } else if k == ast.SWhile {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        efBlock(mut az, desugar.NodeRef(x.b))
+    }
+}
+
+func efExpr(az mut Az, e desugar.NodeRef) {
+    if e == -1 {
+        return
+    }
+    x := node(mut az, e)
+    k := x.kind
+    if k == ast.EIdent {
+        efName(mut az, e, -1, false)
+    } else if k == ast.ESelector {
+        if !efName(mut az, e, -1, false) {
+            efExpr(mut az, desugar.NodeRef(x.a))
+        }
+    } else if k == ast.ECall {
+        efCall(mut az, e, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1))
+    } else if k == ast.EPipe {
+        efCall(mut az, e, desugar.NodeRef(x.b), desugar.ListRef(x.c), desugar.NodeRef(x.a))
+    } else if k == ast.ELambda {
+        efLambda(mut az, e)
+    } else if k == ast.EBinary {
+        efExpr(mut az, desugar.NodeRef(x.b))
+        efExpr(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EUnary {
+        efExpr(mut az, desugar.NodeRef(x.b))
+    } else if k == ast.EIndex {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        efExpr(mut az, desugar.NodeRef(x.b))
+    } else if k == ast.EParen {
+        efExpr(mut az, desugar.NodeRef(x.a))
+    } else if k == ast.ESlice3 {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        efExpr(mut az, desugar.NodeRef(x.b))
+        efExpr(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EInterp || k == ast.ESlicelit {
+        efList(mut az, desugar.ListRef(x.b))
+    } else if k == ast.EMaplit {
+        es := desugar.ListRef(x.c)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
+            en := node(mut az, nat(mut az, es, i))
+            efExpr(mut az, desugar.NodeRef(en.a))
+            efExpr(mut az, desugar.NodeRef(en.b))
+        }
+    } else if k == ast.EComposite {
+        efComposite(mut az, x)
+    } else if k == ast.EIf {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        efBody(mut az, desugar.NodeRef(x.b))
+        efBody(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.ESwitch {
+        efList(mut az, desugar.ListRef(x.a))
+        cs := desugar.ListRef(x.b)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
+            c := node(mut az, nat(mut az, cs, i))
+            ps := desugar.ListRef(c.a)
+            for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+                p := nat(mut az, ps, j)
+                if kind(mut az, p) == ast.KPConst {
+                    efList(mut az, desugar.ListRef(node(mut az, p).a))
+                }
+            }
+            efBody(mut az, desugar.NodeRef(c.b))
+        }
+        efBody(mut az, desugar.NodeRef(x.c))
+    } else if k == ast.EBlock || k == ast.KBlock {
+        efBlock(mut az, e)
+    } else if k == ast.EFor {
+        gs := desugar.ListRef(x.a)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
+            g := node(mut az, nat(mut az, gs, i))
+            efExpr(mut az, desugar.NodeRef(g.b))
+            efList(mut az, desugar.ListRef(g.c))
+        }
+        if x.b == 0 {
+            efExpr(mut az, desugar.NodeRef(x.c))
+        } else {
+            l := desugar.ListRef(x.c)
+            for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
+                efStmt(mut az, nat(mut az, l, i))
+            }
+        }
+    } else if k == ast.ETry {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        if x.b != -1 {
+            efComposite(mut az, node(mut az, desugar.NodeRef(x.b)))
+        }
+    } else if k == ast.ECatch {
+        efExpr(mut az, desugar.NodeRef(x.a))
+        efExpr(mut az, desugar.NodeRef(x.b))
+    }
+}
+
+// efComposite はリテラルの要素（struct の名前付き関数型の欄に置いた関数名は F の合併の要素）
+func efComposite(az mut Az, x ast.Node) {
+    els := desugar.ListRef(x.b)
+    mut fs := desugar.ListRef(-1)
+    mut fpk := az.pk
+    if desugar.LenL(mut az.d, els) > 0 {
+        r := desugar.ResolveType(mut az.d, az.pk, desugar.StrRef(x.a))
+        if r.kind == desugar.TopType {
+            body := node(mut az, desugar.NodeRef(node(mut az, desugar.NodeRef(r.idx)).c))
+            if body.kind == ast.BStruct {
+                fs = desugar.ListRef(body.a)
+                fpk = r.pkg
+            }
+        }
+    }
+    for i <- iter.Range(0, desugar.LenL(mut az.d, els)) {
+        el := node(mut az, nat(mut az, els, i))
+        v := desugar.NodeRef(el.b)
+        vk := kind(mut az, v)
+        if vk == ast.EIdent || vk == ast.ESelector {
+            mut d := -1
+            if fs != -1 {
+                for j <- iter.Range(0, desugar.LenL(mut az.d, fs)) {
+                    fl := node(mut az, nat(mut az, fs, j))
+                    if (el.a == -1 && j == i) || (el.a != -1 && desugar.StrEq(mut az.d, desugar.StrRef(el.a), desugar.StrRef(fl.a))) {
+                        d = efNamedF(mut az, desugar.NodeRef(fl.b), fpk)
+                    }
+                }
+            }
+            if !efName(mut az, v, d, false) && vk == ast.ESelector {
+                efExpr(mut az, desugar.NodeRef(node(mut az, v).a))
+            }
+        } else {
+            efExpr(mut az, v)
+        }
+    }
+}
+
+// efNamedF は型の式 t（package pk の文脈 — option は中身）が名前付き関数型ならその型宣言（でなければ -1）
+func efNamedF(az mut Az, t0 desugar.NodeRef, pk int) int {
+    mut t := t0
+    while t != -1 && kind(mut az, t) == ast.TOpt {
+        t = desugar.NodeRef(node(mut az, t).a)
+    }
+    if t == -1 || kind(mut az, t) != ast.TName {
+        return -1
+    }
+    return efTypeTerm(mut az, pk, desugar.StrRef(node(mut az, t).a))
+}
+
+// efFnOf は式 e（EIdent / ESelector — 値の位置）が名前付き関数ならその添字（でなければ -1）
+func efFnOf(az mut Az, e desugar.NodeRef) int {
+    x := node(mut az, e)
+    if x.kind == ast.EIdent {
+        return desugar.ResolveFn(mut az.d, az.pk, desugar.StrRef(x.a))
+    }
+    if x.kind == ast.ESelector && kind(mut az, desugar.NodeRef(x.a)) == ast.EIdent {
+        return desugar.ResolveSelFn(mut az.d, az.pk, desugar.StrRef(node(mut az, desugar.NodeRef(x.a)).a), desugar.StrRef(x.b))
+    }
+    return -1
+}
+
+// efName は値の位置の名前 e が関数名なら記録する（d = 置いた位置の名前付き関数型〔-1 = 分からない〕・arg = 呼び出しの実引数）。関数名だったか
+func efName(az mut Az, e desugar.NodeRef, d int, arg bool) bool {
+    h := efFnOf(mut az, e)
+    if h < 0 {
+        return false
+    }
+    table.Push(mut az.ef.addr, h)
+    table.Push(mut az.ef.addr, d)
+    table.Push(mut az.ef.addr, int(e))
+    efEdge(mut az, efAny(mut az), h, int(e))
+    if d >= 0 {
+        efEdge(mut az, efFNode(mut az, d), h, int(e))
+    } else {
+        efEdge(mut az, efAU(mut az), h, int(e))
+        if arg {
+            efEdge(mut az, az.ef.cur, h, int(e))
+        }
+    }
+    return true
+}
+
+// efLambda はラムダ e の節を作って本体を歩き、置き場に足す（F の位置なら F の合併・他は囲む持ち主）。節を返す
+func efLambda(az mut Az, e desugar.NodeRef) int {
+    x := node(mut az, e)
+    id := efNode(mut az, EN_LAM, int(e))
+    owner := az.ef.cur
+    lp0 := az.ef.lpN
+    ps := desugar.ListRef(x.a)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if table.Len(mut az.ef.lp) <= az.ef.lpN {
+            table.Push(mut az.ef.lp, 0)
+        }
+        table.Set(mut az.ef.lp, az.ef.lpN, node(mut az, nat(mut az, ps, i)).a)
+        az.ef.lpN += 1
+    }
+    az.ef.cur = id
+    efBody(mut az, desugar.NodeRef(x.b))
+    az.ef.cur = owner
+    az.ef.lpN = lp0
+    key := desugar.LamKey(mut az.d, e)
+    if key >= 0 {
+        efEdge(mut az, efFNode(mut az, key), id, int(e))
+        table.Push(mut az.ef.flam, id)
+        table.Push(mut az.ef.flam, key)
+    } else {
+        efEdge(mut az, owner, id, int(e))
+    }
+    efEdge(mut az, efAny(mut az), id, int(e))
+    return id
+}
+
+// efIsParam は名前 name が今の関数か囲むラムダの仮引数か
+func efIsParam(az mut Az, name desugar.StrRef) bool {
+    for i <- iter.Range(0, az.ef.lpN) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.ef.lp, i)), name) {
+            return true
+        }
+    }
+    ps := desugar.ListRef(fnDecl(mut az, az.ef.fn).c)
+    for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
+        if desugar.StrEq(mut az.d, desugar.StrRef(node(mut az, nat(mut az, ps, j)).a), name) {
+            return true
+        }
+    }
+    return false
+}
+
+// efBound は名前 name を束ねたラムダの節（無ければ -1 — 後の束縛が勝つ）
+func efBound(az mut Az, name desugar.StrRef) int {
+    mut i := az.ef.lbN - 1
+    while i >= 0 {
+        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.ef.lb, i * 2)), name) {
+            return table.Get(mut az.ef.lb, i * 2 + 1)
+        }
+        i -= 1
+    }
+    return -1
+}
+
+// efCall は呼び出し e（callee・実引数の列 args・pipe の左辺 lhs）の効果を今の持ち主に足し、実引数を歩く
+func efCall(az mut Az, e desugar.NodeRef, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef) {
+    c := if kind(mut az, callee) == ast.EIndex { desugar.NodeRef(node(mut az, callee).a) } else { callee }
+    x := node(mut az, c)
+    cur := az.ef.cur
+    g := efFnOf(mut az, c)
+    if g >= 0 {
+        efEdge(mut az, cur, g, int(e))
+    } else {
+        d := desugar.FnTypeOf(mut az.d, callee)
+        if d != -1 {
+            efCallF(mut az, cur, d, int(e), 0)
+        } else if c == callee && x.kind == ast.EIdent && efLeaf(mut az, cur, desugar.StrRef(x.a), e) {
+            // 葉（組み込み・@intrinsic の鍵）
+        } else if c == callee && x.kind == ast.EIdent && efIsParam(mut az, desugar.StrRef(x.a)) {
+            // 匿名の関数型の仮引数: 透過（実引数は呼び出し点で数える）
+        } else if c == callee && x.kind == ast.EIdent && efBound(mut az, desugar.StrRef(x.a)) != -1 {
+            efEdge(mut az, cur, efBound(mut az, desugar.StrRef(x.a)), int(e))
+        } else if desugar.IsFnValue(mut az.d, callee) {
+            efEdge(mut az, cur, efAny(mut az), int(e))
+            az.ef.anyCalls += 1
+        }
+        if x.kind != ast.EIdent {
+            efExpr(mut az, c)
+        }
+    }
+    // 実引数（pipe の左辺は穴の位置か先頭）
+    n := desugar.LenL(mut az.d, args)
+    mut hole := false
+    for i <- iter.Range(0, n) {
+        if nat(mut az, args, i) == -1 {
+            hole = true
+        }
+    }
+    mut j := 0
+    if lhs != -1 && !hole {
+        efArg(mut az, lhs, g, 0)
+        j = 1
+    }
+    for i <- iter.Range(0, n) {
+        a := nat(mut az, args, i)
+        efArg(mut az, if a == -1 { lhs } else { a }, g, j)
+        j += 1
+    }
+}
+
+// efLeaf は呼び出しの名前 name が葉（組み込みの panic / println・今の package の @intrinsic の鍵）なら to に足す
+func efLeaf(az mut Az, to int, name desugar.StrRef, e desugar.NodeRef) bool {
+    if desugar.StrIs(mut az.d, name, "panic") {
+        efConst(mut az, to, loader.EffPanic, int(e))
+        return true
+    }
+    if desugar.StrIs(mut az.d, name, "println") {
+        efConst(mut az, to, loader.EffIo, int(e))
+        return true
+    }
+    code := desugar.SysKey(mut az.d, az.pk, name)
+    if code != 0 {
+        efConst(mut az, to, loader.IntrinsicEffects(code), int(e))
+        return true
+    }
+    return false
+}
+
+// efArg は呼び出しの j 番目の実引数 a（呼び先の関数 g — 関数値なら -1）を歩く: 関数名なら仮引数の型で置き場を決める
+func efArg(az mut Az, a desugar.NodeRef, g int, j int) {
+    k := kind(mut az, a)
+    if k != ast.EIdent && k != ast.ESelector {
+        efExpr(mut az, a)
+        return
+    }
+    mut d := -1
+    if g >= 0 {
+        ps := desugar.ListRef(fnDecl(mut az, g).c)
+        if j < desugar.LenL(mut az.d, ps) {
+            d = efNamedF(mut az, desugar.NodeRef(node(mut az, nat(mut az, ps, j)).b), desugar.FnAt(mut az.d, g).pkg)
+        }
+    }
+    if !efName(mut az, a, d, true) && k == ast.ESelector {
+        efExpr(mut az, desugar.NodeRef(node(mut az, a).a))
+    }
+}
+
+// ── 解き ──
+
+// efSolve は定数を立て、効果を辺の逆向きに作業の列で伝える（src の効果が広がったら to へ）
+func efSolve(az mut Az) {
+    n := az.ef.n
+    mut head := table.Table[int]{}
+    for i <- iter.Range(0, n) {
+        table.Push(mut head, -1)
+    }
+    ne := table.Len(mut az.ef.e) / 3
+    mut next := table.Table[int]{}
+    for i <- iter.Range(0, ne) {
+        to := table.Get(mut az.ef.e, i * 3)
+        src := table.Get(mut az.ef.e, i * 3 + 1)
+        table.Push(mut next, -1)
+        if src < 0 {
+            table.Set(mut az.ef.bits, to, table.Get(mut az.ef.bits, to) | (-src - 1))
+        } else {
+            table.Set(mut next, i, table.Get(mut head, src))
+            table.Set(mut head, src, i)
+        }
+    }
+    mut work := table.Table[int]{}
+    mut inq := table.Table[int]{}
+    for i <- iter.Range(0, n) {
+        b := table.Get(mut az.ef.bits, i)
+        table.Push(mut inq, if b != 0 { 1 } else { 0 })
+        if b != 0 {
+            table.Push(mut work, i)
+        }
+    }
+    mut h := 0
+    while h < table.Len(mut work) {
+        s := table.Get(mut work, h)
+        h += 1
+        table.Set(mut inq, s, 0)
+        b := table.Get(mut az.ef.bits, s)
+        mut i := table.Get(mut head, s)
+        while i != -1 {
+            to := table.Get(mut az.ef.e, i * 3)
+            o := table.Get(mut az.ef.bits, to)
+            if (o | b) != o {
+                table.Set(mut az.ef.bits, to, o | b)
+                if table.Get(mut inq, to) == 0 {
+                    table.Set(mut inq, to, 1)
+                    table.Push(mut work, to)
+                }
+            }
+            i = table.Get(mut next, i)
+        }
+    }
+}
+
+// ── 照合 ──
+
+// efCheck は宣言の項・導出 ⊆ 宣言・F の位置の値 ⊆ F の契約を照合する
+func efCheck(az mut Az) {
+    for fi <- iter.Range(0, az.nfn) {
+        fd := fnDecl(mut az, fi)
+        l, t := desugar.FuncEffects(mut az.d, fd)
+        if l != -1 {
+            pk := desugar.FnAt(mut az.d, fi).pkg
+            bad := efBad(mut az, pk, l)
+            at := desugar.FnAt(mut az.d, fi).node
+            if bad != -1 {
+                report(mut az, MEffAnn, at, desugar.NodeRef(bad))
+            } else if desugar.NodeRef(fd.e) != -1 {
+                allow := efAllowed(mut az, pk, l, 0)
+                miss := table.Get(mut az.ef.bits, fi) & ^allow
+                if miss != 0 {
+                    report(mut az, MEffLeak, at, desugar.NodeRef(efViol(mut az, fi, miss, allow, -1)))
+                }
+            }
+        }
+    }
+    for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
+        ts := desugar.ListRef(desugar.NodeOf(mut az.d, desugar.FileRoot(mut az.d, f)).c)
+        for i <- iter.Range(0, desugar.LenL(mut az.d, ts)) {
+            td := nat(mut az, ts, i)
+            if kind(mut az, desugar.NodeRef(node(mut az, td).c)) == ast.BFunc {
+                l, t, pk := desugar.FnTypeEffects(mut az.d, td)
+                bad := if l == -1 { -1 } else { efBad(mut az, pk, l) }
+                if bad != -1 {
+                    report(mut az, MEffAnn, td, desugar.NodeRef(bad))
+                }
+            }
+        }
+    }
+    // F の位置のラムダ・関数名（契約のある F だけ）
+    for i <- iter.Range(0, table.Len(mut az.ef.flam) / 2) {
+        id := table.Get(mut az.ef.flam, i * 2)
+        efFnCheck(mut az, id, table.Get(mut az.ef.flam, i * 2 + 1), table.Get(mut az.ef.nref, id))
+    }
+    for i <- iter.Range(0, table.Len(mut az.ef.addr) / 3) {
+        d := table.Get(mut az.ef.addr, i * 3 + 1)
+        if d >= 0 {
+            efFnCheck(mut az, table.Get(mut az.ef.addr, i * 3), d, table.Get(mut az.ef.addr, i * 3 + 2))
+        }
+    }
+}
+
+// efFnCheck は F の位置の値（節 id・置いた節 at）を F の契約と照合する
+func efFnCheck(az mut Az, id int, d int, at int) {
+    l, t, pk := desugar.FnTypeEffects(mut az.d, desugar.NodeRef(d))
+    if l == -1 || efBad(mut az, pk, l) != -1 {
+        return
+    }
+    allow := efAllowed(mut az, pk, l, 0)
+    miss := table.Get(mut az.ef.bits, id) & ^allow
+    if miss != 0 {
+        report(mut az, MEffFnLeak, desugar.NodeRef(at), desugar.NodeRef(efViol(mut az, id, miss, allow, d)))
+    }
+}
+
+const EV_W = 4  // 違反の記録の幅 [節, 漏れたビット, 許容, 型宣言（関数の宣言の漏れは -1）]
+
+func efViol(az mut Az, id int, miss int, allow int, d int) int {
+    v := table.Len(mut az.ef.viol) / EV_W
+    table.Push(mut az.ef.viol, id)
+    table.Push(mut az.ef.viol, miss)
+    table.Push(mut az.ef.viol, allow)
+    table.Push(mut az.ef.viol, d)
+    return v
+}
+
+// ── 綴り ──
+
+// efBitsStr は効果のビットの綴り（`block, io` — 空は `none`）
+func efBitsStr(b int) string {
+    mut s := ""
+    if (b & loader.EffBlock) != 0 {
+        s = "block"
+    }
+    if (b & loader.EffIo) != 0 {
+        s = if s == "" { "io" } else { s + ", io" }
+    }
+    if (b & loader.EffPanic) != 0 {
+        s = if s == "" { "panic" } else { s + ", panic" }
+    }
+    if (b & loader.EffNondet) != 0 {
+        s = if s == "" { "nondet" } else { s + ", nondet" }
+    }
+    return if s == "" { "none" } else { s }
+}
+
+// efFirst は節 id に効果 b のどれかを持ち込んだ最初の辺の綴り（指摘の鎖の 1 段目）
+func efFirst(az mut Az, id int, b int) string {
+    for i <- iter.Range(0, table.Len(mut az.ef.e) / 3) {
+        if table.Get(mut az.ef.e, i * 3) == id {
+            src := table.Get(mut az.ef.e, i * 3 + 1)
+            sb := if src < 0 { -src - 1 } else { table.Get(mut az.ef.bits, src) }
+            if (sb & b) != 0 {
+                return efEdgeStr(mut az, src, desugar.NodeRef(table.Get(mut az.ef.e, i * 3 + 2)))
+            }
+        }
+    }
+    return "?"
+}
+
+// efEdgeStr は辺の源 src（at = 寄与した節）の綴り
+func efEdgeStr(az mut Az, src int, at desugar.NodeRef) string {
+    if src >= 0 && src < az.nfn {
+        return "the call of '${fnName(mut az, src)}'"
+    }
+    if src >= 0 && table.Get(mut az.ef.nk, src) == EN_LAM {
+        return "a function literal it passes on (a parameter of an anonymous function type is transparent)"
+    }
+    if src >= 0 && table.Get(mut az.ef.nk, src) == EN_F {
+        return "a call through a value of type '${fnTyName(mut az, table.Get(mut az.ef.nref, src))}'"
+    }
+    if src >= 0 {
+        return "a call through a function value (the effects of every function value in the program)"
+    }
+    k := kind(mut az, at)
+    if k == ast.ECall || k == ast.EPipe {
+        x := node(mut az, at)
+        c := desugar.NodeRef(if k == ast.ECall { x.a } else { x.b })
+        cx := node(mut az, if kind(mut az, c) == ast.EIndex { desugar.NodeRef(node(mut az, c).a) } else { c })
+        if cx.kind == ast.EIdent {
+            return "the call of '${str(mut az, desugar.StrRef(cx.a))}'"
+        }
+        d := desugar.FnTypeOf(mut az.d, c)
+        if d != -1 {
+            return "a call through a value of type '${fnTyName(mut az, d)}'"
+        }
+        if cx.kind == ast.ESelector && kind(mut az, desugar.NodeRef(cx.a)) == ast.EIdent {
+            return "the call of '${str(mut az, desugar.StrRef(node(mut az, desugar.NodeRef(cx.a)).a))}.${str(mut az, desugar.StrRef(cx.b))}'"
+        }
+    }
+    return "its declaration"
+}
+
+// efMessage は効果の指摘の本文
+func efMessage(az mut Az, k int, at desugar.NodeRef, x int) string {
+    if k == MEffAnn {
+        j := x % 4096
+        c := x / 4096
+        fd := node(mut az, at)
+        mut l := desugar.ListRef(-1)
+        if fd.kind == ast.KFuncDecl {
+            l1, t1 := desugar.FuncEffects(mut az.d, fd)
+            l = l1
+        } else {
+            l2, t2, p2 := desugar.FnTypeEffects(mut az.d, at)
+            l = l2
+        }
+        item := str(mut az, desugar.StrRef(desugar.LatI(mut az.d, l, j)))
+        return if c == 1 {
+            "@effects is either all positive (`@effects(io, block)`) or all negated (`@effects(!io)`): '${item}' mixes the two"
+        } else if c == 2 {
+            "@effects: '${item}' — only the effects block, io, panic, nondet can be negated"
+        } else if item == "?" {
+            "@effects expects effects (block, io, panic, nondet) or names of function types"
+        } else {
+            "@effects: '${item}' is neither an effect (block, io, panic, nondet) nor a named function type"
+        }
+    }
+    id := table.Get(mut az.ef.viol, x * EV_W)
+    miss := table.Get(mut az.ef.viol, x * EV_W + 1)
+    allow := table.Get(mut az.ef.viol, x * EV_W + 2)
+    via := efFirst(mut az, id, miss)
+    if k == MEffFnLeak {
+        d := table.Get(mut az.ef.viol, x * EV_W + 3)
+        return "this function value of type '${fnTyName(mut az, d)}' may have the effect ${efBitsStr(miss)} via ${via}, which the @effects of '${fnTyName(mut az, d)}' does not allow (allowed: ${efBitsStr(allow)})"
+    }
+    return "'${fnName(mut az, id)}' may have the effect ${efBitsStr(miss)} via ${via}, which its @effects does not allow (allowed: ${efBitsStr(allow)})"
+}
+
+// efPos は効果の指摘の位置（宣言の項・漏れ = `@` の字句・F の値 = 置いた節）
+func efPos(az mut Az, k int, at desugar.NodeRef) diag.Pos {
+    pos := desugar.PosOf(mut az.d, at)
+    if k == MEffFnLeak {
+        return pos
+    }
+    fd := node(mut az, at)
+    if fd.kind == ast.KFuncDecl {
+        l, t := desugar.FuncEffects(mut az.d, fd)
+        return diag.Pos{file: pos.file, tok: t}
+    }
+    l, t, pk := desugar.FnTypeEffects(mut az.d, at)
+    return diag.Pos{file: pos.file, tok: t}
+}
+
+// ── dump ──
+
+// EffectsDump は効果の導出の表（開発用 `check --effects-dump`）: 本体のある関数ごとのビット・宣言・名前付き関数型の合併 / 契約・違反・要約
+func EffectsDump(p loader.Program) []Finding {
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
+        pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0}}
+    desugar.Typed(mut az.d, p)
+    efRun(mut az)
+    efCheck(mut az)
+    mut fs := mut []Finding{}
+    mut ndecl := 0
+    for fi <- iter.Range(0, az.nfn) {
+        fd := fnDecl(mut az, fi)
+        l, t := desugar.FuncEffects(mut az.d, fd)
+        if l != -1 {
+            ndecl += 1
+        }
+        if desugar.NodeRef(fd.e) != -1 {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node), what: "effects ${fnName(mut az, fi)} fi=${fi} bits=${efBitsStr(table.Get(mut az.ef.bits, fi))}${if l != -1 { " declared" } else { "" }}"})
+        }
+    }
+    mut nlam := 0
+    for i <- iter.Range(0, az.ef.n) {
+        k := table.Get(mut az.ef.nk, i)
+        if k == EN_LAM {
+            nlam += 1
+        } else if k == EN_F {
+            d := table.Get(mut az.ef.nref, i)
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.NodeRef(d)), what: "ftype ${fnTyName(mut az, d)} union=${efBitsStr(table.Get(mut az.ef.bits, i))}"})
+        }
+    }
+    mut nv := 0
+    for i <- iter.Range(0, table.Len(mut az.out) / 3) {
+        k := table.Get(mut az.out, i * 3)
+        if k == MEffAnn || k == MEffLeak || k == MEffFnLeak {
+            nv += 1
+            at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
+            fs = append(fs, Finding{warn: false, at: efPos(mut az, k, at), what: "violation ${efMessage(mut az, k, at, table.Get(mut az.out, i * 3 + 2))}"})
+        }
+    }
+    fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary fns=${az.nfn} lambdas=${nlam} edges=${table.Len(mut az.ef.e) / 3} any=${efBitsStr(table.Get(mut az.ef.bits, efAny(mut az)))} any-calls=${az.ef.anyCalls} fvalues=${table.Len(mut az.ef.addr) / 3} declared=${ndecl} violations=${nv}"})
+    return freeze(fs)
+}

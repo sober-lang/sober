@@ -275,6 +275,35 @@ func traceErr(st mut St) {
     setCur(mut st, done)
 }
 
+// traceEff は開発用の計装（st.traceEffs — 関数の本体の頭と出口の後半）: `<w><関数の表の添字> <task>` の行（持ち上げたラムダ・インスタンスは出さない。
+// task = 今の task の TCB の番地〔std/task を使わないプログラムは 0〕— 判定は task ごとに呼び出しの積みを組み直す）
+func traceEff(st mut St, w string) {
+    fx := infoAt(mut st, st.info)
+    if fx.fn < 0 {
+        return
+    }
+    printChars(mut st, w)
+    call(mut st, st.rtPint, list1(mut st, iconst(mut st, fx.fn)))
+    traceTask(mut st)
+}
+
+// traceLeaf は開発用の計装（st.traceEffs）: 効果の葉 b（loader.Eff* のビット — 0 は出さない）の `#effleaf <ビット> <task>` の行
+func traceLeaf(st mut St, b int) {
+    if !st.traceEffs || b == 0 {
+        return
+    }
+    printChars(mut st, "#effleaf ")
+    call(mut st, st.rtPint, list1(mut st, iconst(mut st, b)))
+    traceTask(mut st)
+}
+
+// traceTask は ` <今の task の TCB の番地>` と改行
+func traceTask(st mut St) {
+    printChars(mut st, " ")
+    call(mut st, st.rtPint, list1(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.taskG), TK_CUR) } else { iconst(mut st, 0) }))
+    printChars(mut st, "\n")
+}
+
 // traceSwitch は開発用の計装（st.traceErrs）: error の switch の subject（値 v — 先頭ラベルの union のタグが語 0）ごとに
 // `#errsw <ファイル> <字句> <ラベルのタグ>` を標準出力へ（仮引数・cause の集合の照合 — 戻りの計装では見えない）
 func traceSwitch(st mut St, sw desugar.NodeRef, v int) {

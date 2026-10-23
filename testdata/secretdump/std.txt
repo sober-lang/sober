@@ -1,45 +1,45 @@
 std/binary/binary.sober:11:6: secret std/binary.Load64
-std/crypto/ct.sober:24:6: secret std/crypto.Equal
-std/crypto/ct.sober:37:6: secret std/crypto.NonZero
-std/crypto/ct.sober:43:6: secret std/crypto.Select
-std/crypto/ct.sober:49:6: secret std/crypto.Wipe
-std/crypto/aesgcm/aesgcm.sober:68:6: secret std/crypto/aesgcm.Prepare
-std/crypto/aesgcm/aesgcm.sober:84:6: secret std/crypto/aesgcm.Seal
-std/crypto/aesgcm/aesgcm.sober:92:6: secret std/crypto/aesgcm.Open
-std/crypto/aesgcm/aesgcm.sober:102:6: secret std/crypto/aesgcm.SealTo
-std/crypto/aesgcm/aesgcm.sober:147:6: secret std/crypto/aesgcm.OpenAt
-std/crypto/aesgcm/aesgcm.sober:178:6: secret std/crypto/aesgcm.recCtx
-std/crypto/aesgcm/aesgcm.sober:218:6: secret std/crypto/aesgcm.padded
-std/crypto/aesgcm/aesgcm.sober:230:6: secret std/crypto/aesgcm.ghashAt
-std/crypto/aesgcm/aesgcm.sober:241:6: secret std/crypto/aesgcm.ghashLens
-std/crypto/aesgcm/aesgcm.sober:249:6: secret std/crypto/aesgcm.yOf
-std/crypto/chacha20/chacha20.sober:12:6: secret std/crypto/chacha20.Block
-std/crypto/chacha20/chacha20.sober:29:6: secret std/crypto/chacha20.XorKeyStream
-std/crypto/chacha20/chacha20.sober:35:6: secret std/crypto/chacha20.XorKeyStreamAt
-std/crypto/chacha20/chacha20.sober:61:6: secret std/crypto/chacha20.initState
-std/crypto/chacha20/chacha20.sober:76:6: secret std/crypto/chacha20.rounds
-std/crypto/chacha20/chacha20.sober:96:6: secret std/crypto/chacha20.qr
-std/crypto/chacha20/chacha20.sober:108:6: secret std/crypto/chacha20.rotl
-std/crypto/chacha20/chacha20.sober:113:6: secret std/crypto/chacha20.le32
-std/crypto/chacha20/chacha20.sober:118:6: secret std/crypto/chacha20.put32
-std/crypto/chacha20poly1305/chacha20poly1305.sober:35:6: secret std/crypto/chacha20poly1305.Prepare
-std/crypto/chacha20poly1305/chacha20poly1305.sober:46:6: secret std/crypto/chacha20poly1305.Seal
-std/crypto/chacha20poly1305/chacha20poly1305.sober:54:6: secret std/crypto/chacha20poly1305.Open
-std/crypto/chacha20poly1305/chacha20poly1305.sober:63:6: secret std/crypto/chacha20poly1305.SealTo
-std/crypto/chacha20poly1305/chacha20poly1305.sober:96:6: secret std/crypto/chacha20poly1305.ctTail
-std/crypto/chacha20poly1305/chacha20poly1305.sober:119:6: secret std/crypto/chacha20poly1305.OpenAt
-std/crypto/chacha20poly1305/chacha20poly1305.sober:131:6: secret std/crypto/chacha20poly1305.polyKey
-std/crypto/hkdf/hkdf.sober:15:6: secret std/crypto/hkdf.Extract
-std/crypto/hkdf/hkdf.sober:32:6: secret std/crypto/hkdf.Expand
-std/crypto/hmac/hmac.sober:13:6: secret std/crypto/hmac.Sum256
-std/crypto/poly1305/poly1305.sober:15:6: secret std/crypto/poly1305.Sum
-std/crypto/poly1305/poly1305.sober:24:6: secret std/crypto/poly1305.SumAead
-std/crypto/poly1305/poly1305.sober:51:6: secret std/crypto/poly1305.start
-std/crypto/poly1305/poly1305.sober:64:6: secret std/crypto/poly1305.absorb
-std/crypto/poly1305/poly1305.sober:117:6: secret std/crypto/poly1305.tail
-std/crypto/poly1305/poly1305.sober:126:6: secret std/crypto/poly1305.finish
-std/crypto/poly1305/poly1305.sober:186:6: secret std/crypto/poly1305.le32
-std/crypto/poly1305/poly1305.sober:191:6: secret std/crypto/poly1305.put32
+std/crypto/ct.sober:25:6: secret std/crypto.Equal
+std/crypto/ct.sober:39:6: secret std/crypto.NonZero
+std/crypto/ct.sober:46:6: secret std/crypto.Select
+std/crypto/ct.sober:53:6: secret std/crypto.Wipe
+std/crypto/aesgcm/aesgcm.sober:70:6: secret std/crypto/aesgcm.Prepare
+std/crypto/aesgcm/aesgcm.sober:87:6: secret std/crypto/aesgcm.Seal
+std/crypto/aesgcm/aesgcm.sober:96:6: secret std/crypto/aesgcm.Open
+std/crypto/aesgcm/aesgcm.sober:107:6: secret std/crypto/aesgcm.SealTo
+std/crypto/aesgcm/aesgcm.sober:153:6: secret std/crypto/aesgcm.OpenAt
+std/crypto/aesgcm/aesgcm.sober:184:6: secret std/crypto/aesgcm.recCtx
+std/crypto/aesgcm/aesgcm.sober:224:6: secret std/crypto/aesgcm.padded
+std/crypto/aesgcm/aesgcm.sober:236:6: secret std/crypto/aesgcm.ghashAt
+std/crypto/aesgcm/aesgcm.sober:247:6: secret std/crypto/aesgcm.ghashLens
+std/crypto/aesgcm/aesgcm.sober:255:6: secret std/crypto/aesgcm.yOf
+std/crypto/chacha20/chacha20.sober:13:6: secret std/crypto/chacha20.Block
+std/crypto/chacha20/chacha20.sober:31:6: secret std/crypto/chacha20.XorKeyStream
+std/crypto/chacha20/chacha20.sober:38:6: secret std/crypto/chacha20.XorKeyStreamAt
+std/crypto/chacha20/chacha20.sober:64:6: secret std/crypto/chacha20.initState
+std/crypto/chacha20/chacha20.sober:79:6: secret std/crypto/chacha20.rounds
+std/crypto/chacha20/chacha20.sober:99:6: secret std/crypto/chacha20.qr
+std/crypto/chacha20/chacha20.sober:111:6: secret std/crypto/chacha20.rotl
+std/crypto/chacha20/chacha20.sober:116:6: secret std/crypto/chacha20.le32
+std/crypto/chacha20/chacha20.sober:121:6: secret std/crypto/chacha20.put32
+std/crypto/chacha20poly1305/chacha20poly1305.sober:36:6: secret std/crypto/chacha20poly1305.Prepare
+std/crypto/chacha20poly1305/chacha20poly1305.sober:48:6: secret std/crypto/chacha20poly1305.Seal
+std/crypto/chacha20poly1305/chacha20poly1305.sober:57:6: secret std/crypto/chacha20poly1305.Open
+std/crypto/chacha20poly1305/chacha20poly1305.sober:67:6: secret std/crypto/chacha20poly1305.SealTo
+std/crypto/chacha20poly1305/chacha20poly1305.sober:100:6: secret std/crypto/chacha20poly1305.ctTail
+std/crypto/chacha20poly1305/chacha20poly1305.sober:124:6: secret std/crypto/chacha20poly1305.OpenAt
+std/crypto/chacha20poly1305/chacha20poly1305.sober:136:6: secret std/crypto/chacha20poly1305.polyKey
+std/crypto/hkdf/hkdf.sober:16:6: secret std/crypto/hkdf.Extract
+std/crypto/hkdf/hkdf.sober:34:6: secret std/crypto/hkdf.Expand
+std/crypto/hmac/hmac.sober:14:6: secret std/crypto/hmac.Sum256
+std/crypto/poly1305/poly1305.sober:16:6: secret std/crypto/poly1305.Sum
+std/crypto/poly1305/poly1305.sober:26:6: secret std/crypto/poly1305.SumAead
+std/crypto/poly1305/poly1305.sober:53:6: secret std/crypto/poly1305.start
+std/crypto/poly1305/poly1305.sober:66:6: secret std/crypto/poly1305.absorb
+std/crypto/poly1305/poly1305.sober:119:6: secret std/crypto/poly1305.tail
+std/crypto/poly1305/poly1305.sober:128:6: secret std/crypto/poly1305.finish
+std/crypto/poly1305/poly1305.sober:188:6: secret std/crypto/poly1305.le32
+std/crypto/poly1305/poly1305.sober:193:6: secret std/crypto/poly1305.put32
 std/crypto/rsa/bn.sober:39:6: secret std/crypto/rsa.cy
 std/crypto/rsa/bn.sober:44:6: secret std/crypto/rsa.bw
 std/crypto/rsa/bn.sober:58:6: secret std/crypto/rsa.bnFromBytes
@@ -52,10 +52,10 @@ std/crypto/rsa/bn.sober:228:6: secret std/crypto/rsa.subMod
 std/crypto/rsa/bn.sober:252:6: secret std/crypto/rsa.put
 std/crypto/rsa/bn.sober:260:6: secret std/crypto/rsa.toMont
 std/crypto/rsa/bn.sober:287:6: secret std/crypto/rsa.expMont
-std/crypto/rsa/bn.sober:437:6: secret std/crypto/rsa.bnAddMul
-std/crypto/rsa/rsa.sober:61:6: secret std/crypto/rsa.SignPSS
-std/crypto/rsa/rsa.sober:137:6: secret std/crypto/rsa.mgf1
-std/crypto/rsa/rsa.sober:157:6: secret std/crypto/rsa.pssEncode
+std/crypto/rsa/bn.sober:438:6: secret std/crypto/rsa.bnAddMul
+std/crypto/rsa/rsa.sober:64:6: secret std/crypto/rsa.SignPSS
+std/crypto/rsa/rsa.sober:141:6: secret std/crypto/rsa.mgf1
+std/crypto/rsa/rsa.sober:161:6: secret std/crypto/rsa.pssEncode
 std/crypto/sha256/sha256.sober:35:6: secret std/crypto/sha256.Write
 std/crypto/sha256/sha256.sober:69:6: secret std/crypto/sha256.Sum
 std/crypto/sha256/sha256.sober:99:6: secret std/crypto/sha256.Sum256
@@ -63,16 +63,16 @@ std/crypto/sha256/sha256.sober:106:6: secret std/crypto/sha256.cat
 std/crypto/sha256/sha256.sober:120:6: secret std/crypto/sha256.load
 std/crypto/sha256/sha256.sober:128:6: secret std/crypto/sha256.compress
 std/crypto/sha256/sha256.sober:171:6: secret std/crypto/sha256.rotr
-std/crypto/x25519/x25519.sober:48:6: secret std/crypto/x25519.Base
-std/crypto/x25519/x25519.sober:58:6: secret std/crypto/x25519.Shared
-std/crypto/x25519/x25519.sober:113:6: secret std/crypto/x25519.cswap
-std/crypto/x25519/x25519.sober:123:6: secret std/crypto/x25519.carry
-std/crypto/x25519/x25519.sober:142:6: secret std/crypto/x25519.fadd
-std/crypto/x25519/x25519.sober:147:6: secret std/crypto/x25519.fsub
-std/crypto/x25519/x25519.sober:154:6: secret std/crypto/x25519.fmul
-std/crypto/x25519/x25519.sober:184:6: secret std/crypto/x25519.invert
-std/crypto/x25519/x25519.sober:200:6: secret std/crypto/x25519.unpack
-std/crypto/x25519/x25519.sober:212:6: secret std/crypto/x25519.pack
+std/crypto/x25519/x25519.sober:49:6: secret std/crypto/x25519.Base
+std/crypto/x25519/x25519.sober:60:6: secret std/crypto/x25519.Shared
+std/crypto/x25519/x25519.sober:115:6: secret std/crypto/x25519.cswap
+std/crypto/x25519/x25519.sober:125:6: secret std/crypto/x25519.carry
+std/crypto/x25519/x25519.sober:144:6: secret std/crypto/x25519.fadd
+std/crypto/x25519/x25519.sober:149:6: secret std/crypto/x25519.fsub
+std/crypto/x25519/x25519.sober:156:6: secret std/crypto/x25519.fmul
+std/crypto/x25519/x25519.sober:186:6: secret std/crypto/x25519.invert
+std/crypto/x25519/x25519.sober:202:6: secret std/crypto/x25519.unpack
+std/crypto/x25519/x25519.sober:214:6: secret std/crypto/x25519.pack
 std/tls/tls.sober:189:6: secret std/tls.newBlk
 std/tls/tls.sober:211:6: secret std/tls.putDir
 std/tls/tls.sober:283:6: secret std/tls.Send
@@ -109,16 +109,16 @@ std/internal/hs/hs.sober:473:6: secret std/internal/hs.onClientHello
 std/internal/hs/hs.sober:660:6: secret std/internal/hs.certificateVerify
 std/internal/hs/hs.sober:680:6: secret std/internal/hs.deriveSecret
 std/crypto/chacha20poly1305/chacha20poly1305.sober:28:6: field Key.key from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.r0 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.r1 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.r2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.r3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.r4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.h0 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.h1 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.h2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.h3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
-std/crypto/poly1305/poly1305.sober:38:6: field acc.h4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.r0 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.r1 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.r2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.r3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.r4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.h0 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.h1 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.h2 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.h3 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
+std/crypto/poly1305/poly1305.sober:40:6: field acc.h4 from the @secret parameter 'key' of 'std/crypto/poly1305.Sum'
 std/tls/tls.sober:40:6: field Conn.blk from the @secret parameter 'key' of 'std/crypto/chacha20poly1305.Prepare'
 std/tls/record/record.sober:56:6: field Dir.secret from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/tls/record/record.sober:56:6: field Dir.iv from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'

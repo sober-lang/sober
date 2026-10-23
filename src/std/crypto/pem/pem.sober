@@ -16,6 +16,7 @@ type Bad error
 
 // text の中の PEM の塊の全部（塊の外の行は無視 — RFC 7468 の説明文の扱い）
 @errors(Bad)
+@effects(!io, !block, !nondet)
 func Parse(text string) ([]Block, error?) {
     lines := splitLines(bytes(text))
     mut out := mut []Block{}

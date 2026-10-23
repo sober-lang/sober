@@ -1,0 +1,16 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 契約の無い名前付き関数型の値の呼び出しは、その型の値になる全部のラムダ・関数の効果の合併（閉じた世界）—
+// どこかの Job が io をすれば、Job を呼ぶ関数は io を持ちうる
+
+type Job func(x int) int
+
+@effects(!io)
+func apply(j Job, x int) int {
+    return j(x)
+}
+
+func main() {
+    println(apply((x) => x + 1, 1))
+    println(apply((x) => { println(x); x }, 2))
+}

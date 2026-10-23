@@ -1,0 +1,21 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 宣言 `@effects(!io)` の関数が io の関数を呼ぶ（漏れは宣言の位置で — 入った呼び出しを名指す）
+
+func log(x int) {
+    println(x)
+}
+
+@effects(!io)
+func sum(xs []int) int {
+    mut s := 0
+    for x <- xs {
+        s += x
+    }
+    log(s)
+    return s
+}
+
+func main() {
+    println(sum([]int{1, 2}))
+}

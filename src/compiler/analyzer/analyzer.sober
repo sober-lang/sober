@@ -45,7 +45,6 @@ type Az struct {
     wins table.Table[int]    // lease の窓の列 [Local の名前（-1 = 字面の名前でない）, 指摘済み]…（lease.sober — [winBase, winN) が今の task の窓）
     winN int
     winBase int
-    blk table.Table[int]     // 関数ごとの block 効果の印（desugar.MayBlock — 最初の窓の中の呼び出しで作る）
     flowBase int             // Flow のスロットの基底（関数 fi の Flow = スロット flowBase + fi — ビット j = 匿名の関数型の仮引数 j の呼び出しの失敗が漏れうる）
     cand table.Table[int]    // 関数が呼んだ Flow の対象の仮引数（ビット j — FLOW が戻りに届けば Flow になる）
     dflow table.Table[int]   // 関数の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j）— package をまたぐ呼び出しは Flow でなくこれを読む
@@ -56,6 +55,7 @@ type Az struct {
     lamCand int              // 今の F の値のラムダが失敗を漏らしうる仮引数（ビット j）
     lamck table.Table[int]   // F の値のラムダの記録 [ラムダ, 型宣言, 集合.lo, 集合.hi, 呼んだ仮引数]…（最後の 1 周）
     sv Sv                    // 秘密の値の流れ（secret.sober — error の解きの後に同じ az.er へ区間を積む）
+    ef Ef                    // 関数の効果の導出（effects.sober — 本体の走査の前に解く: lease の窓の lint が block を読む）
     trySink int              // task.Run の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
 }
 
@@ -70,8 +70,11 @@ func Run(p loader.Program) []Finding {
 func runAz(p loader.Program, only bool) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}}
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0}}
     desugar.Typed(mut az.d, p)
+    if !only {
+        efRun(mut az)
+    }
     mut z := Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
         esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
         hs: table.Table[int]{}, seen: table.Table[int]{}, work: table.Table[int]{}, dkey: table.Table[int]{}, dval: table.Table[int]{}, rstart: table.Table[int]{}, rlist: table.Table[int]{}, bhead: table.Table[int]{}, bstamp: table.Table[int]{}, bnext: table.Table[int]{}, stamp: 0, nNames: 0, nHold: 0, nEsc: 0, nEv: 0, nLoops: 0, nRoots: 0, nSeen: 0, pk: 0, out: table.Table[int]{},
@@ -103,6 +106,7 @@ func runAz(p loader.Program, only bool) []Finding {
         checkFnTypes(mut az)
         checkSwitches(mut az)
         checkExhaustive(mut az)
+        efCheck(mut az)
         svInit(mut az)
         svSolve(mut az)
     }
@@ -131,6 +135,8 @@ func runAz(p loader.Program, only bool) []Finding {
         x := desugar.NodeRef(table.Get(mut az.out, i * 3 + 2))
         if k == MLeaseBlock || k == MLeaseNest {
             fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: leaseMessage(mut az, k, at, x)})
+        } else if k == MEffAnn || k == MEffLeak || k == MEffFnLeak {
+            fs = append(fs, Finding{warn: false, at: efPos(mut az, k, at), what: efMessage(mut az, k, at, int(x))})
         } else if k == MSwGap || k == MSwDeadDefault {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
         } else if k == MExhMissing || k == MExhDeadDefault {
@@ -414,7 +420,7 @@ func entries(az mut Az, l desugar.ListRef) {
 func ErrorsDump(p loader.Program) []Finding {
     mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
         pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}}
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}, ef: Ef{n: 0, nk: table.Table[int]{}, nref: table.Table[int]{}, bits: table.Table[int]{}, e: table.Table[int]{}, fnodes: table.Table[int]{}, fn: 0, cur: 0, lp: table.Table[int]{}, lpN: 0, lb: table.Table[int]{}, lbN: 0, addr: table.Table[int]{}, flam: table.Table[int]{}, viol: table.Table[int]{}, anyCalls: 0}}
     // 表層型検査器を通す（名前付き関数型の @errors — F の値の呼び出し・F の値のラムダの記録は Typed の表を読む: check と同じ導出）
     desugar.Typed(mut az.d, p)
     errInit(mut az)

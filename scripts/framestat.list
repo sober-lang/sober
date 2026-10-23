@@ -16,4 +16,6 @@ bench/httparena/main.sober main.serveTlsConn 6287
 bench/httparena/main.sober @sum 100386
 bench/httparena/main.sober @zero 1835
 @self loader.finish 1988
-@self @sum 844053
+# 2026-10-23 effect の波 段 5a-1（analyzer/effects.sober の歩きと解き — report-1084・実測 × 1.01 の標準運用）: @self @sum 861456
+# 2026-10-23 effect の波 段 5a-2 / 5a-3（trace の計装・sober fix — report-1084・実測 × 1.01 の標準運用）: @self @sum 876496
+@self @sum 885261

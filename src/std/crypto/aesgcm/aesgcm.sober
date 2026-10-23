@@ -53,6 +53,7 @@ type BadSize error
 type Auth error
 
 // この機械で Seal / Open が使えるか
+@effects(!io, !block, !nondet)
 func Available() bool {
     return sysCpuAes() == 1
 }
@@ -65,6 +66,7 @@ type Key struct {
 // key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 @errors(NoHardware, BadSize)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Prepare(key []byte) (Key, error?) {
     if sysCpuAes() != 1 {
         return Key{ctx: []byte{}}, NoHardware{}
@@ -81,6 +83,7 @@ func Prepare(key []byte) (Key, error?) {
 @errors(NoHardware, BadSize)
 @secret(key)
 @bless
+@effects(!io, !block, !nondet)
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?) {
     k := Prepare(key)?
     return SealTo(k, nonce, ad, pt, []byte{}, []byte{})
@@ -89,6 +92,7 @@ func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?) {
 // Seal の逆（tag を crypto.Equal で照合してから復号する）
 @errors(NoHardware, BadSize, Auth)
 @secret(key)
+@effects(!io, !block, !nondet)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
     k := Prepare(key)?
     return OpenAt(k, nonce, ad, sealed, 0, len(sealed))
@@ -99,6 +103,7 @@ func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
 // GHASH は宛先の暗号文を読む・tag は計数器 J0 の ctx の CTR で宛先へ書く〔Y ⊕ E(J0) — 宛先は凍っているので Sober の添字では書かない〕）
 @errors(BadSize)
 @bless
+@effects(!io, !block, !nondet)
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
     if len(nonce) != NonceSize {
         return []byte{}, BadSize{}
@@ -144,6 +149,7 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte)
 
 // b[off, off + n)（暗号文 ‖ tag）を写さずに tag を照合してから復号した平文。nonce の長さが違う・n が tag より短い・[off, off + n) が b の外なら BadSize
 @errors(BadSize, Auth)
+@effects(!io, !block, !nondet)
 func OpenAt(k Key, nonce []byte, ad []byte, b []byte, off int, n int) ([]byte, error?) { // 対の SealAt は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
     if len(nonce) != NonceSize || n < Overhead || off < 0 || off + n > len(b) {
         return []byte{}, BadSize{}

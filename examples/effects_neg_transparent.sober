@@ -1,0 +1,18 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 匿名の関数型の仮引数は透過 — 渡したラムダの io は呼び手の効果（each 自身は io をしない）
+
+func each(xs []int, k func(int)) {
+    for x <- xs {
+        k(x)
+    }
+}
+
+@effects(!io)
+func show(xs []int) {
+    each(xs, (x) => println(x))
+}
+
+func main() {
+    show([]int{1, 2})
+}

@@ -29,6 +29,7 @@ PEM の形が違う（BEGIN と END が対にならない・base64 の綴りが�
 
 ```sober
 @errors(Bad)
+@effects(!io, !block, !nondet)
 func Parse(text string) ([]Block, error?)
 ```
 

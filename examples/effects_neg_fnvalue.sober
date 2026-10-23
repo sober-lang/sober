@@ -1,0 +1,18 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 名前付き関数型の契約 `@effects(!panic)` の値になるラムダが panic しうる（ラムダの位置で拒否）
+
+type Check func(x int) bool @effects(!panic)
+
+func all(xs []int, c Check) bool {
+    for x <- xs {
+        if !c(x) {
+            return false
+        }
+    }
+    return true
+}
+
+func main() {
+    println(all([]int{1, 2}, (x) => { if x > 9 { panic(Unreachable{}) }; x > 0 }))
+}

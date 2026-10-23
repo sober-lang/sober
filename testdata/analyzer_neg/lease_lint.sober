@@ -1,7 +1,8 @@
 package main
 
 // lease の窓の性能 lint（警告 — 受理は変えない。analyzer/lease.sober）: 窓の中の待ち（block 効果の導出 — 推移的に）と、同じ Local の入れ子の窓。
-// 鳴らない形: 純な窓・違う Local の入れ子・窓の中で spawn した子の待ち（別の task）・窓の外の待ち
+// 鳴らない形: 純な窓・違う Local の入れ子・窓の中で spawn した子の待ち（別の task）・窓の外の待ち。
+// 名前付き関数型の値の呼び出しは型の値の合併（関数の効果の導出 — language.md 12 節「関数の効果の宣言」）: 待つ Waiter の値がどこかにあれば鳴る
 
 import "std/iter"
 import "std/os"
@@ -28,6 +29,13 @@ func nap(ms int) int {
     return ms
 }
 
+type Waiter func(ms int) int
+
+// 鳴る: 名前付き関数型の値の待ち（どこかの Waiter の値が待つ — MayBlock の頃は関数値の呼び出しを見ずに抜けていた形）
+func waitVia(lw task.Local, wt Waiter) int {
+    return task.Lease(lw, (w mut Work) => sum(mut w) + wt(0))
+}
+
 func main() {
     lw := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 8))
     lv := task.NewLocal((w mut Work) => pool.NewScratch(mut w.tab, 8))
@@ -50,7 +58,7 @@ func main() {
             sum(mut w)
         })
     })
-    println(a + b + c + d + r)
+    println(a + b + c + d + r + waitVia(lw, (ms) => nap(ms)))
     if err != nil {
         println(-1)
     }

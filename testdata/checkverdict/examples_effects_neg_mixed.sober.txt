@@ -1,0 +1,2 @@
+examples/effects_neg_mixed.sober:5:1: error: @effects is either all positive (`@effects(io, block)`) or all negated (`@effects(!io)`): '!block' mixes the two (Analyzer)
+exit=1
