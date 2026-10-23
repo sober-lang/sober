@@ -583,6 +583,23 @@ func IsUntypedConst(st mut S, e NodeRef, pk int) bool {
     return isUntypedConst(mut st, e, -1, pk)
 }
 
+// ConNamed は const の表の添字 c の const が型つき（値の式が named scalar への変換 `T(…)` — language.md 32 節「型つきの const」）なら
+// その型宣言（でなければ -1）。check（表層型検査器・表層型）と build（lower）が同じ判定を読む
+func ConNamed(st mut S, c int) NodeRef {
+    if c < 0 || ConDict(mut st, c) {
+        return NodeRef(-1)
+    }
+    mut e := nB(nodeOf(mut st, ConNode(mut st, c)))
+    while kindN(mut st, e) == ast.EParen {
+        e = nA(nodeOf(mut st, e))
+    }
+    if kindN(mut st, e) != ast.ECall {
+        return NodeRef(-1)
+    }
+    cv := convTarget(mut st, nA(nodeOf(mut st, e)), -1, ConPkg(mut st, c))
+    return if cv >= 0 { NodeRef(cv) } else { NodeRef(-1) }
+}
+
 // ConvTarget は callee（package pk の文脈、束縛でないことは呼び手が見る）が変換なら行き先（convTarget）
 func ConvTarget(st mut S, callee NodeRef, pk int) int {
     return convTarget(mut st, callee, -1, pk)

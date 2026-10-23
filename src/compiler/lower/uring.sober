@@ -386,7 +386,7 @@ func urNetGate(st mut St, rec int, wait int) int {
     if dlFn(st.rtD3) == 0 {
         br(mut st, bD, list1(mut st, zero))
         setCur(mut st, bD)
-        return ext
+        return urTmrGate(mut st, rec, wait, ext)
     }
     head := bin(mut st, BMul, unet, load(mut st, rp, UR_DLQ))
     bScan := newBlock(mut st)
@@ -436,7 +436,37 @@ func urNetGate(st mut St, rec int, wait int) int {
     store(mut st, rp, UR_GEA + 2, urAdd(mut st, rec, UR_TS * 8))
     br(mut st, bD, list1(mut st, has))
     setCur(mut st, bD)
-    return ext
+    return urTmrGate(mut st, rec, wait, ext)
+}
+
+// urTmrGate は関門の時計の表の段（sleep を組むプログラムだけ — report-ct1）: net の ring の眠りなら満了した sleep を起こし（rt.tmr_fire）、次の満了が
+// 期限の走査の timeout（ext = 1 のとき UR_TS）より早ければ enter の timeout をそれに。起こした待ち手がいれば enter は眠らない（buildUpoll の mc）
+func urTmrGate(st mut St, rec int, wait int, ext int) int {
+    if st.rtTmrFire == -1 {
+        return ext
+    }
+    rp := itop(mut st, rec)
+    zero := iconst(mut st, 0)
+    bJ := newBlock(mut st)
+    e2 := param(mut st, bJ, TyI64)
+    bF := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, rp, UR_NET), zero), cmp(mut st, CNe, wait, zero)), bF, -1, bJ, list1(mut st, ext))
+    setCur(mut st, bF)
+    dt := call(mut st, st.rtTmrFire, list0(mut st))
+    sec := iconst(mut st, 1000000000)
+    curNs := bin(mut st, BAdd, bin(mut st, BMul, load(mut st, rp, UR_TS), sec), load(mut st, rp, UR_TS + 1))
+    use := bin(mut st, BAnd, cmp(mut st, CGe, dt, zero), bin(mut st, BOr, cmp(mut st, CEq, ext, zero), cmp(mut st, CLt, dt, curNs)))
+    bU := newBlock(mut st)
+    condbr(mut st, use, bU, -1, bJ, list1(mut st, ext))
+    setCur(mut st, bU)
+    store(mut st, rp, UR_TS, bin(mut st, BDiv, dt, sec))
+    store(mut st, rp, UR_TS + 1, bin(mut st, BRem, dt, sec))
+    store(mut st, rp, UR_GEA, zero)
+    store(mut st, rp, UR_GEA + 1, zero)
+    store(mut st, rp, UR_GEA + 2, urAdd(mut st, rec, UR_TS * 8))
+    br(mut st, bJ, list1(mut st, iconst(mut st, 1)))
+    setCur(mut st, bJ)
+    return e2
 }
 
 // buildUpoll は rt.uring_poll(wait): 積んだ SQE を提出し（wait なら先に eventfd の読みを出し、完了が 1 つ来るまで眠る — ring の眠り）、
@@ -593,6 +623,13 @@ func buildUpoll(st mut St) {
     br(mut st, hl, list1(mut st, bin(mut st, BAnd, urAdd(mut st, h, 1), iconst(mut st, 4294967295))))
     setCur(mut st, hd)
     urSt32(mut st, headA, h)
+    if net && st.rtTmrFire != -1 {
+        // enter の後にもう一度 時計の表の満了を起こす（timeout で起きた enter の後に、眠らない enter をもう 1 回挟まない — report-ct1 3.3）
+        bTf := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, rp, UR_NET), zero), cmp(mut st, CNe, wait, zero)))
+        _ = call(mut st, st.rtTmrFire, list0(mut st))
+        br(mut st, bTf, -1)
+        setCur(mut st, bTf)
+    }
     if net {
         br(mut st, bEp, -1)
         setCur(mut st, bEp)

@@ -1,0 +1,341 @@
+package stdflate
+
+// std/compress/flate・gzip の Decode の負例と境目（report-1021 — 往復と zlib / Go の双子は scripts/flatecheck.sh）: 切り詰め（全部の接頭辞）・余りのバイト・
+// 手で組んだ壊れた列（ブロックの型 3・stored の LEN / NLEN・頭より前を指す距離・使えない記号・符号の長さの表の過剰 / 数え過ぎ）・gzip の包みの誤り・
+// maxSize（展開爆弾）・1 ビットずつ反転した列で落ちないこと
+
+import "std/compress/flate"
+import "std/compress/gzip"
+import "std/hex"
+import "std/iter"
+
+func text(n int) []byte {
+    w := bytes("sober deflate inflate region huffman ")
+    mut b := mut []byte{}
+    mut x := 7
+    for i <- iter.Range(0, n) {
+        x = (x * 1103515245 + 12345) & 0x7fffffff
+        b = append(b, if x % 7 == 0 { byte((x >> 8) & 255) } else { w[i % len(w)] })
+    }
+    return freeze(b)
+}
+
+func cut(b []byte, n int) []byte {
+    return b[0:n]
+}
+
+func plus(a []byte, b []byte) []byte {
+    mut r := mut []byte{}
+    for i <- iter.Range(0, len(a)) {
+        r = append(r, a[i])
+    }
+    for i <- iter.Range(0, len(b)) {
+        r = append(r, b[i])
+    }
+    return freeze(r)
+}
+
+// flipped は b の bit i を反転した写し
+func flipped(b []byte, i int) []byte {
+    mut r := mut []byte{}
+    for k <- iter.Range(0, len(b)) {
+        r = append(r, if k == i >> 3 { byte(int(b[k]) ^ (1 << (i & 7))) } else { b[k] })
+    }
+    return freeze(r)
+}
+
+// at は b の k バイト目を v にした写し
+func at(b []byte, k int, v int) []byte {
+    mut r := mut []byte{}
+    for j <- iter.Range(0, len(b)) {
+        r = append(r, if j == k { byte(v) } else { b[j] })
+    }
+    return freeze(r)
+}
+
+func badFlate(b []byte) bool {
+    _, e := flate.Decode(b)
+    return switch e {
+    case nil: false
+    case flate.Bad{}: true
+    case flate.TooLarge{}: false
+    }
+}
+
+func badGzip(b []byte) bool {
+    _, e := gzip.Decode(b)
+    return e != nil
+}
+
+func gzipLabel(b []byte) string {
+    _, e := gzip.Decode(b)
+    return switch e {
+    case nil: "nil"
+    case gzip.Bad{}: "gzip.Bad"
+    case flate.Bad{}: "flate.Bad"
+    case flate.TooLarge{}: "flate.TooLarge"
+    }
+}
+
+// 全部の接頭辞は Bad（最後のブロックの前で尽きる）— stored・固定・動的の各 level
+func TestTruncated() {
+    src := text(3000)
+    for lv <- iter.Range(0, 10) {
+        z := flate.Encode(src, lv)
+        for n <- iter.Range(0, len(z)) {
+            assert(badFlate(cut(z, n)))
+        }
+    }
+    g := gzip.Encode(src, 6)
+    for n <- iter.Range(0, len(g)) {
+        assert(badGzip(cut(g, n)))
+    }
+    // 空の入力
+    assert(badFlate([]byte{}))
+    assert(gzipLabel([]byte{}) == "gzip.Bad")
+}
+
+func TestTrailing() {
+    z := flate.Encode(text(100), 6)
+    assert(badFlate(plus(z, []byte{0})))
+    g := gzip.Encode(text(100), 6)
+    assert(gzipLabel(plus(g, []byte{0x1f})) == "gzip.Bad")
+    assert(gzipLabel(plus(g, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})) == "gzip.Bad")
+}
+
+// bw は LSB から詰めるビットの書き手（手で組む列）
+type bw struct {
+    out mut []byte
+    bb int
+    bn int
+}
+
+func put(w mut bw, v int, n int) {
+    w.bb = w.bb | (v << w.bn)
+    w.bn += n
+    while w.bn >= 8 {
+        w.out = append(w.out, byte(w.bb & 255))
+        w.bb = w.bb >> 8
+        w.bn -= 8
+    }
+}
+
+// code は Huffman の符号 c（長さ l — MSB から）を書く
+func code(w mut bw, c int, l int) {
+    mut i := l - 1
+    while i >= 0 {
+        put(mut w, (c >> i) & 1, 1)
+        i -= 1
+    }
+}
+
+// lit は固定 Huffman の文字・長さの記号 s を書く
+func lit(w mut bw, s int) {
+    if s < 144 {
+        code(mut w, 0x30 + s, 8)
+    } else if s < 256 {
+        code(mut w, 0x190 + s - 144, 9)
+    } else if s < 280 {
+        code(mut w, s - 256, 7)
+    } else {
+        code(mut w, 0xc0 + s - 280, 8)
+    }
+}
+
+func done(w mut bw) []byte {
+    if w.bn > 0 {
+        put(mut w, 0, 8 - w.bn)
+    }
+    mut r := mut []byte{}
+    for i <- iter.Range(0, len(w.out)) {
+        r = append(r, w.out[i])
+    }
+    return freeze(r)
+}
+
+func TestHandMade() {
+    // 正例: 固定のブロックで "ab" + 長さ 3 距離 2（"aba"）+ 終わり → "ababa"
+    mut ok := bw{}
+    put(mut ok, 1, 1)
+    put(mut ok, 1, 2)
+    lit(mut ok, 97)
+    lit(mut ok, 98)
+    lit(mut ok, 257)
+    code(mut ok, 1, 5)
+    lit(mut ok, 256)
+    good := flate.Decode(done(mut ok)) catch bytes("<bad>")
+    assert(hex.Format(good) == hex.Format(bytes("ababa")))
+    // ブロックの型 3
+    assert(badFlate([]byte{0x07}))
+    // stored の LEN と NLEN が補数でない・LEN が入力を越える
+    assert(badFlate([]byte{0x01, 0x05, 0x00, 0x00, 0x00, 1, 2, 3, 4, 5}))
+    assert(badFlate([]byte{0x01, 0x05, 0x00, 0xfa, 0xff, 1, 2}))
+    // 頭より前を指す距離（出力 1 バイトで距離 2）
+    mut far := bw{}
+    put(mut far, 1, 1)
+    put(mut far, 1, 2)
+    lit(mut far, 97)
+    lit(mut far, 257)
+    code(mut far, 1, 5)
+    lit(mut far, 256)
+    assert(badFlate(done(mut far)))
+    // 使えない記号: 長さ 286・距離 30
+    mut l286 := bw{}
+    put(mut l286, 1, 1)
+    put(mut l286, 1, 2)
+    lit(mut l286, 286)
+    assert(badFlate(done(mut l286)))
+    mut d30 := bw{}
+    put(mut d30, 1, 1)
+    put(mut d30, 1, 2)
+    lit(mut d30, 97)
+    lit(mut d30, 257)
+    code(mut d30, 30, 5)
+    lit(mut d30, 256)
+    assert(badFlate(done(mut d30)))
+    // 動的: HLIT = 30（287 記号 — 286 を越える）
+    mut hl := bw{}
+    put(mut hl, 1, 1)
+    put(mut hl, 2, 2)
+    put(mut hl, 30, 5)
+    put(mut hl, 0, 5)
+    put(mut hl, 0, 4)
+    assert(badFlate(done(mut hl)))
+    // 動的: 符号の長さの符号が過剰（4 本とも長さ 1）
+    mut ov := bw{}
+    put(mut ov, 1, 1)
+    put(mut ov, 2, 2)
+    put(mut ov, 0, 5)
+    put(mut ov, 0, 5)
+    put(mut ov, 0, 4)
+    for k <- iter.Range(0, 4) {
+        put(mut ov, 1, 3)
+    }
+    assert(badFlate(done(mut ov)))
+    // 動的: 符号の長さの符号が不完全（長さ 2 が 1 本だけ）
+    mut inc := bw{}
+    put(mut inc, 1, 1)
+    put(mut inc, 2, 2)
+    put(mut inc, 0, 5)
+    put(mut inc, 0, 5)
+    put(mut inc, 0, 4)
+    put(mut inc, 2, 3)
+    put(mut inc, 0, 3)
+    put(mut inc, 0, 3)
+    put(mut inc, 0, 3)
+    assert(badFlate(done(mut inc)))
+    // 動的: 符号の長さの符号の完全 / 不完全だけが違う対（zlib も不完全を拒む）— 文字・長さは 0〜254 が 8 ビット・255 と 256 が 9 ビット（完全）・
+    // 距離は 8 ビット 1 本（1 本だけの不完全は許される）・中身は終わり（256）だけ
+    empty := flate.Decode(lensBlock(true)) catch bytes("<bad>")
+    assert(len(empty) == 0)
+    assert(badFlate(lensBlock(false)))
+}
+
+// lensBlock は上の対の列（complete なら符号の長さの符号 = 8 → 1 ビット・7 と 9 → 2 ビット、でなければ 7 を外して不完全）
+func lensBlock(complete bool) []byte {
+    mut w := bw{}
+    put(mut w, 1, 1)
+    put(mut w, 2, 2)
+    put(mut w, 0, 5)
+    put(mut w, 0, 5)
+    // 順 16 17 18 0 8 7 9 の 7 本
+    put(mut w, 3, 4)
+    for k <- iter.Range(0, 4) {
+        put(mut w, 0, 3)
+    }
+    put(mut w, 1, 3)
+    put(mut w, if complete { 2 } else { 0 }, 3)
+    put(mut w, 2, 3)
+    // 8 の符号 = 0・9 の符号 = 11（完全）/ 10（不完全）
+    nine := if complete { 3 } else { 2 }
+    for k <- iter.Range(0, 255) {
+        code(mut w, 0, 1)
+    }
+    code(mut w, nine, 2)
+    code(mut w, nine, 2)
+    code(mut w, 0, 1)
+    code(mut w, 511, 9)
+    return done(mut w)
+}
+
+func TestGzipWrapper() {
+    g := gzip.Encode(text(500), 6)
+    assert(gzipLabel(g) == "nil")
+    assert(gzipLabel(at(g, 0, 0x1e)) == "gzip.Bad")
+    assert(gzipLabel(at(g, 1, 0x8c)) == "gzip.Bad")
+    assert(gzipLabel(at(g, 2, 7)) == "gzip.Bad")
+    // FLG の予約ビット
+    assert(gzipLabel(at(g, 3, 0x20)) == "gzip.Bad")
+    // FHCRC を立てたのに頭の CRC が無い（中身の頭のバイトを CRC として読んで不一致）
+    assert(gzipLabel(at(g, 3, 2)) == "gzip.Bad")
+    // FNAME を立てたのに 0 が無い（終わりまで探して尽きる — または中身を名前として読む）
+    assert(badGzip(at(g, 3, 8)))
+    // 末尾の CRC-32・長さ
+    n := len(g)
+    assert(gzipLabel(at(g, n - 8, int(g[n - 8]) ^ 1)) == "gzip.Bad")
+    assert(gzipLabel(at(g, n - 1, int(g[n - 1]) ^ 0x80)) == "gzip.Bad")
+    // 中身の誤りは flate.Bad（ブロックの型 3 にする — 頭 10 バイトの直後の 1 バイト目の bit 1〜2）
+    assert(gzipLabel(at(g, 10, int(g[10]) | 6)) == "flate.Bad")
+    // 頭の途中で尽きる
+    assert(gzipLabel(cut(g, 9)) == "gzip.Bad")
+    // MTIME・XFL・OS・FTEXT は見ない
+    assert(gzipLabel(at(at(at(g, 4, 0x55), 8, 9), 9, 3)) == "nil")
+    assert(gzipLabel(at(g, 3, 1)) == "nil")
+}
+
+func TestMaxSize() {
+    mut z0 := mut []byte{}
+    for i <- iter.Range(0, 1 << 20) {
+        z0 = append(z0, byte(0))
+    }
+    zeros := freeze(z0)
+    z := flate.Encode(zeros, 9)
+    // 1 MiB の 0 は 1 KiB ほどに縮む — 入力の大きさは出力の上限にならない
+    assert(len(z) < 2048)
+    _, e := flate.Decode(z, maxSize: 4096)
+    big := switch e {
+    case nil: false
+    case flate.TooLarge{}: true
+    case flate.Bad{}: false
+    }
+    assert(big)
+    full := flate.Decode(z, maxSize: 1 << 20) catch []byte{}
+    assert(len(full) == 1 << 20)
+    // gzip の上限は全メンバの合計
+    g := gzip.Encode(zeros, 9)
+    two := plus(g, g)
+    assert(gzipLabel(two) == "nil")
+    _, e2 := gzip.Decode(two, maxSize: (1 << 21) - 1)
+    big2 := switch e2 {
+    case nil: false
+    case flate.TooLarge{}: true
+    case flate.Bad{}: false
+    case gzip.Bad{}: false
+    }
+    assert(big2)
+    both := gzip.Decode(two, maxSize: 1 << 21) catch []byte{}
+    assert(len(both) == 1 << 21)
+    // 空の出力と maxSize 0
+    e0 := flate.Decode(flate.Encode([]byte{}, 6), maxSize: 0) catch bytes("<bad>")
+    assert(len(e0) == 0)
+}
+
+// 1 ビットずつ反転した列: 落ちない（誤りか何かのバイト列）。gzip は CRC が拾うので中身と末尾の反転は全部誤り（中身の最後のバイトの
+// 使わないビット — 最後のブロックの後の詰め — は除く）
+func TestBitFlips() {
+    src := text(400)
+    for lv <- iter.Range(0, 10) {
+        z := flate.Encode(src, lv)
+        for i <- iter.Range(0, 8 * len(z)) {
+            _, e := flate.Decode(flipped(z, i), maxSize: 1 << 16)
+            _ = e
+        }
+    }
+    g := gzip.Encode(src, 6)
+    pad := 10 + len(flate.Encode(src, 6)) - 1
+    for i <- iter.Range(80, 8 * len(g)) {
+        if i >> 3 != pad {
+            assert(badGzip(flipped(g, i)))
+        }
+    }
+}

@@ -1,0 +1,92 @@
+{
+  "package": "lib",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "tab",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Prepare",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 25
+                },
+                "field": "NewScratch",
+                "tok": 27
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w.tab",
+                  "tok": 30
+                },
+                {
+                  "k": "int",
+                  "value": 64,
+                  "tok": 34
+                }
+              ],
+              "tok": 28
+            }
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 39
+      },
+      "sig_end": 24
+    }
+  ],
+  "consts": []
+}

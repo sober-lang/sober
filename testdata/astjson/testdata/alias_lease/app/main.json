@@ -1,0 +1,444 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/alias_lease/flate",
+      "tok": 7
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 14
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "flate",
+                      "tok": 16
+                    },
+                    "field": "Encode",
+                    "tok": 18
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 3,
+                      "tok": 20
+                    }
+                  ],
+                  "tok": 19
+                }
+              ],
+              "tok": 15
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 26
+                  },
+                  "field": "NewLocal",
+                  "tok": 28
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "flate.Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "flate",
+                          "tok": 38
+                        },
+                        "field": "Prepare",
+                        "tok": 40
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w",
+                          "tok": 43
+                        }
+                      ],
+                      "tok": 41
+                    },
+                    "tok": 37
+                  }
+                ],
+                "tok": 29
+              }
+            ],
+            "tok": 24
+          },
+          {
+            "k": "bind",
+            "names": [
+              "a"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 49
+                  },
+                  "field": "Lease",
+                  "tok": 51
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 53
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "flate.Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "flate",
+                          "tok": 63
+                        },
+                        "field": "EncodeWith",
+                        "tok": 65
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w",
+                          "tok": 68
+                        },
+                        {
+                          "k": "int",
+                          "value": 5,
+                          "tok": 70
+                        }
+                      ],
+                      "tok": 66
+                    },
+                    "tok": 62
+                  }
+                ],
+                "tok": 52
+              }
+            ],
+            "tok": 47
+          },
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 76
+                  },
+                  "field": "Lease",
+                  "tok": 78
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "lw",
+                    "tok": 80
+                  },
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "flate.Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "flate",
+                          "tok": 90
+                        },
+                        "field": "EncodeWith",
+                        "tok": 92
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w",
+                          "tok": 95
+                        },
+                        {
+                          "k": "int",
+                          "value": 7,
+                          "tok": 97
+                        }
+                      ],
+                      "tok": 93
+                    },
+                    "tok": 89
+                  }
+                ],
+                "tok": 79
+              }
+            ],
+            "tok": 74
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 101
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 103
+                },
+                {
+                  "k": "ident",
+                  "name": "b",
+                  "tok": 105
+                }
+              ],
+              "tok": 102
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "lr"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 110
+                  },
+                  "field": "NewLocal",
+                  "tok": 112
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "flate.Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "flate",
+                          "tok": 122
+                        },
+                        "field": "Ready",
+                        "tok": 124
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w",
+                          "tok": 127
+                        }
+                      ],
+                      "tok": 125
+                    },
+                    "tok": 121
+                  }
+                ],
+                "tok": 113
+              }
+            ],
+            "tok": 108
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 131
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 133
+                    },
+                    "field": "Lease",
+                    "tok": 135
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "lr",
+                      "tok": 137
+                    },
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "w",
+                          "type": {
+                            "k": "name",
+                            "name": "flate.Work"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "call",
+                        "callee": {
+                          "k": "selector",
+                          "base": {
+                            "k": "ident",
+                            "name": "flate",
+                            "tok": 147
+                          },
+                          "field": "EncodeWith",
+                          "tok": 149
+                        },
+                        "args": [
+                          {
+                            "k": "mut_arg",
+                            "name": "w",
+                            "tok": 152
+                          },
+                          {
+                            "k": "int",
+                            "value": 9,
+                            "tok": 154
+                          }
+                        ],
+                        "tok": 150
+                      },
+                      "tok": 146
+                    }
+                  ],
+                  "tok": 136
+                }
+              ],
+              "tok": 132
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 161
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

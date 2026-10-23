@@ -1,26 +1,35 @@
 package main
 
-// ctcheck の題材（scripts/ctcheck.sh — report-791）: std/crypto の定数時間の関数を全部呼んで ELF に載せる。中身の値は見ない（見るのは機械語の条件分岐）。
+// ctcheck の題材（scripts/ctcheck.sh — report-791 / 984）: 秘密の値の流れの導出の表 T（testdata/secretdump/std.txt）の関数を全部呼んで ELF に載せる（tls の handshake は走らない枝から参照）。中身の値は見ない（見るのは機械語の条件分岐）。
 // neg* は規律を破った形の見本（秘密の mask で if・食い違いで早く抜ける比較）— 網が分岐を数えられることの負例として黄金に載せる
 
+import "std/binary"
 import "std/crypto"
 import "std/crypto/aesgcm"
 import "std/crypto/chacha20"
 import "std/crypto/chacha20poly1305"
+import "std/crypto/hkdf"
+import "std/crypto/hmac"
 import "std/crypto/poly1305"
 import "std/crypto/x25519"
 import "std/crypto/pem"
 import "std/crypto/rsa"
+import "std/crypto/sha256"
 import "std/iter"
+import "std/tls"
 import "std/tls/record"
 
 @embed("testdata/crypto/rsa2048.key")
 const Keys = map[string]string{}
 
+// 負例（analyzer も拒否する — testdata/analyzer_neg/secret_neg_select_if）
+@secret(m)
 func negSelectIf(m int, a int, b int) int {
     return if m != 0 { a } else { b }
 }
 
+// 負例（analyzer も拒否する — testdata/analyzer_neg/secret_neg_eq_early）
+@secret(a, b)
 func negEqEarly(a []byte, b []byte) bool {
     if len(a) != len(b) {
         return false
@@ -31,6 +40,14 @@ func negEqEarly(a []byte, b []byte) bool {
         }
     }
     return true
+}
+
+// serveOne は接続 1 本で 1 回受けて送る（ctcheck の題材 — ELF に tls の受けと送りを載せる）
+func serveOne(c tls.Conn, a []byte) error? {
+    for p <- tls.Recv(c)? {
+        println(len(p))
+    }
+    return tls.Send(c, a)
 }
 
 func main() {
@@ -47,6 +64,8 @@ func main() {
     opened, _ := chacha20poly1305.Open(k, n, b, sealed)
     xs := x25519.Shared(k, x25519.Base(a))
     ga, _ := aesgcm.Seal(a, n, b, k)
+    gp, _ := aesgcm.Open(a, n, b, ga)
+    println(len(gp))
     gk, _ := aesgcm.Prepare(a)
     go, _ := aesgcm.OpenAt(gk, n, b, ga, 0, len(ga))
     println(len(ga) + len(go))
@@ -55,6 +74,16 @@ func main() {
     rec := record.Seal(mut rw, record.CtApp, a, 3)
     rct, rpt, _ := record.Open(mut rr, record.Frame{b: rec, off: 0, n: len(rec)})
     println(rct + len(rpt))
+    _ = record.Update(mut rw)
+    println(len(record.Pack(rw)) + len(record.ExpandLabel(k, "key", b, 16)))
+    prk := hkdf.Extract(b, k)
+    okm, _ := hkdf.Expand(prk, b, 32)
+    println(len(okm) + len(hmac.Sum256(k, a)) + len(sha256.Sum256(a)) + binary.Load64(k, 0))
+    // tls（hs・Conn の送り）は走らない枝から参照する（ELF に載せるだけ）
+    if len(a) == 1000 {
+        cfg, _ := tls.Parse("", "")
+        _ = tls.Serve(":0", cfg, (tc) => serveOne(tc, a))
+    }
     ks := Keys
     kt := ks["testdata/crypto/rsa2048.key"]
     if kt != nil {

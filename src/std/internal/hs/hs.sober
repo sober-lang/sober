@@ -18,6 +18,7 @@ import "std/crypto/rsa"
 import "std/crypto/sha256"
 import "std/crypto/x25519"
 import "std/hex"
+import "std/internal/bless"
 import "std/iter"
 import "std/tls/record"
 
@@ -183,9 +184,10 @@ func Dirs(h Hs) (record.Dir, record.Dir) {
     return h.rd, h.wr
 }
 
-// Secrets は 4 つの traffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の 16 進 — 網が Go の KeyLogWriter と照合する口）
+// Secrets は 4 つの traffic secret（client hs ‖ server hs ‖ client ap ‖ server ap の 16 進 — 網が Go の KeyLogWriter と照合する口）。
+// key log は鍵を故意に開示する口: ここで祝福してから 16 進にする（hex.Format の表引きの時間は開示した値にだけ掛かる）
 func Secrets(h Hs) string {
-    return "${hex.Format(h.cHs)} ${hex.Format(h.sHs)} ${hex.Format(h.cAp)} ${hex.Format(h.sAp)}"
+    return "${hex.Format(bless.Bytes(h.cHs))} ${hex.Format(bless.Bytes(h.sHs))} ${hex.Format(bless.Bytes(h.cAp))} ${hex.Format(bless.Bytes(h.sAp))}"
 }
 
 // ── 受け ──
@@ -501,11 +503,8 @@ func onClientHello(h mut Hs, p Params, m []byte) (Out, error?) {
     h.alpn = alpn
     priv := rnd(p, "x25519", 32)
     shared := x25519.Shared(priv, ch.share)
-    mut z := 0
-    for b <- shared {
-        z = z | int(b)
-    }
-    if z == 0 {
+    // 全 0 の共有値（低位数の点 — RFC 7748 6.1）は拒否。比べは crypto.Equal（全バイトを畳んで最後に 1 回だけ判定 — 漏れるのは「全 0 か」の 1 ビット）
+    if crypto.Equal(shared, zeros(32)) {
         return none(), alert(aIllegalParameter)
     }
     // ServerHello（平文）

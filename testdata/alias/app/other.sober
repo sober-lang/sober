@@ -1,0 +1,15 @@
+package main
+
+// 実体の package を import するファイル: 別名は既存の参照名で実体へ写る（合成の import は足さない）
+
+import "testdata/alias/lib"
+import "testdata/alias/wrap"
+
+func other(w wrap.Work) int {
+    v := lib.Work{n: 1, sum: 4}
+    return keep(w) + keep(v)
+}
+
+func keep(w lib.Work) int {
+    return w.sum
+}

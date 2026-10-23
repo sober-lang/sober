@@ -1,0 +1,122 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Status",
+      "type_params": [],
+      "body": {
+        "k": "defined",
+        "type": {
+          "k": "name",
+          "name": "int"
+        }
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "x"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "ident",
+                  "name": "OK",
+                  "tok": 22
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 24
+                },
+                "tok": 23
+              }
+            ],
+            "tok": 20
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 26
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "int",
+                    "tok": 28
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 30
+                    }
+                  ],
+                  "tok": 29
+                }
+              ],
+              "tok": 27
+            }
+          }
+        ]
+      },
+      "tok": 16,
+      "bodiless": false,
+      "span": {
+        "start": 15,
+        "end": 36
+      },
+      "sig_end": 19
+    }
+  ],
+  "consts": [
+    {
+      "name": "OK",
+      "expr": {
+        "k": "call",
+        "callee": {
+          "k": "ident",
+          "name": "Status",
+          "tok": 10
+        },
+        "args": [
+          {
+            "k": "int",
+            "value": 200,
+            "tok": 12
+          }
+        ],
+        "tok": 11
+      },
+      "tok": 8,
+      "span": {
+        "start": 7,
+        "end": 15
+      }
+    }
+  ]
+}

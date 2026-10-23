@@ -1,0 +1,22 @@
+package main
+
+// 負例: 1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛は合わせて 1 つ（language.md 25 節 (α-L1) の縛り — anchor 1 slot）。
+// 直し方 = 2 つを 1 つの struct にまとめてその束縛を捕捉する
+
+type Stream func(emit func(b []byte) error?) error?
+
+func two(emit func(b []byte) error?) error? {
+    return emit(bytes("de"))
+}
+
+func count(st Stream) int {
+    mut n := 0
+    mut m := 0
+    e := st((b []byte) => { n += len(b); m += 1; nil })
+    if e != nil { return -1 }
+    return n + m
+}
+
+func main() {
+    println(count((emit) => two(emit)))
+}

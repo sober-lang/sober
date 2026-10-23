@@ -613,7 +613,29 @@ func yFunc(st mut S, fi int, body NodeRef) {
             yBindName(mut st, sA(p), t)
         }
     }
+    yRetMut(mut st, fi, ps, ex)
     yBlock(mut st, lA(nodeOf(mut st, body)))
+}
+
+// yRetMut は mut の仮引数も関数型の仮引数（展開）も持たない関数の結果の型が mut の中身（mut の slice / map — struct の欄・T? の中も、型引数を
+// 代入した後で）を持つなら記録する（F-bt — language.md 26 節: mut の値の置き場は呼び手の mut の実引数〔callM の anchor〕か展開の呼び手が決める。
+// どちらも無い関数〔コアの Def — formal.md の Ty.retOk〕は mut を返せない。check の analyzer と build の lower が同じ表から拒否する）
+func yRetMut(st mut S, fi int, ps ListRef, ex bool) {
+    if ex {
+        return
+    }
+    for i <- iter.Range(0, lenL(mut st, ps)) {
+        if nodeOf(mut st, latN(mut st, ps, i)).c != 0 {
+            return
+        }
+    }
+    rs := fnResults(mut st, fi)
+    for i <- iter.Range(0, lenL(mut st, rs)) {
+        rt := yTe(mut st, st.ypk, st.ytps, latN(mut st, rs, i))
+        if yHasMut(mut st, rt, 8) {
+            yFieldNote(mut st, 2, fnNode(mut st, fi), StrRef(-1), rt)
+        }
+    }
 }
 
 // yBlock は文の列をスコープの中で検査し、ブロックの値の型を返す
@@ -866,6 +888,10 @@ func yTop(st mut S, r TopRef) int {
     if r.kind == TopConst {
         if ConDict(mut st, r.idx) {
             return yConTy(mut st, r.idx)
+        }
+        if ConHas(mut st, r.idx) && ConNamed(mut st, r.idx) != -1 {
+            // 型つきの const（`const OK = Status(200)` — language.md 32 節）
+            return yDecl(mut st, ConNamed(mut st, r.idx), -1, -1)
         }
         return if ConHas(mut st, r.idx) { yBase(YInt) } else { -1 }
     }
@@ -1443,6 +1469,13 @@ func yJoin(st mut S, a int, b int) int {
     }
     if yk(mut st, a) == YNil {
         return if yk(mut st, b) == YOpt { b } else { yMk(mut st, YOpt, b, 0, 0) }
+    }
+    // T の腕と T? の腕は T?（`if c { "a" } else if d { "b" } else { nil }` の内側の if・`else { o }` — T? の期待位置の合流）
+    if yk(mut st, a) == YOpt && yEq(mut st, YAt(mut st, a).a, b) {
+        return a
+    }
+    if yk(mut st, b) == YOpt && yEq(mut st, YAt(mut st, b).a, a) {
+        return b
     }
     return -1
 }

@@ -1,0 +1,31 @@
+package main
+
+// 負例（language.md 13 節「表の網羅」）: @exhaustive の error の switch が、腕のラベルの宣言元の package（main）のラベル C を名指していない
+
+type A error {}
+type B error {}
+type C error {}
+
+@exhaustive
+func name(e error?) string {
+    return switch e {
+    case nil: "nil"
+    case A{}: "A"
+    case B{}: "B"
+    default: "?"
+    }
+}
+
+func mk(i int) error? {
+    if i == 0 {
+        return A{}
+    }
+    if i == 1 {
+        return C{}
+    }
+    return nil
+}
+
+func main() {
+    println(name(mk(0)))
+}

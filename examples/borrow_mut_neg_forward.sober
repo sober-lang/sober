@@ -1,0 +1,22 @@
+package main
+
+// 負例: 借りの値（値の位置のラムダの借りの仮引数 emit）をそのまま実引数に渡す値の呼び出しの借りのラムダは mut を捕捉できない（language.md 25 節 (α-L1) の (b)
+// — 転送する借りの閉包は Def の region 0 で、mut の束縛の region と anchor が割れうる）
+
+type Stream func(emit func(b []byte) error?) error?
+type Two func(a func(b []byte) error?, c func(b []byte) error?) error?
+
+func run(a func(b []byte) error?, c func(b []byte) error?) error? {
+    a(bytes("x"))?
+    return c(bytes("yz"))
+}
+
+func pass(t Two) Stream {
+    mut n := 0
+    return (emit) => t(emit, (r []byte) => { n += len(r); nil })
+}
+
+func main() {
+    st := pass((a, c) => run(a, c))
+    println(st((b []byte) => nil) == nil)
+}

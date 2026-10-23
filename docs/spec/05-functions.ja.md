@@ -46,8 +46,8 @@ F-8. トップレベルの const に辞書を置ける（`const IntOrd = Ord[int
 拒否: [`examples/const_neg_call.sober`](../../examples/const_neg_call.sober)
 決定: [language.md 25 節](../language.md)
 
-F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄 — に置いたラムダは閉包になる。閉包は作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。閉包は仮引数・結果・欄として関数の境界を越えられる。
-例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)
+F-9. 値の位置 — 名前つき関数型の仮引数・結果、struct の関数型の欄、その option（`F?`）の欄 — に置いたラムダは閉包になる。匿名の関数型の欄の閉包を値の呼び出しの借りの実引数へそのまま渡すと、ラムダ `(…) => x.f(…)` に写して渡す。閉包は作成点の imm の値を写して捕捉する（後で元の変数が変わっても見えない）。閉包は仮引数・結果・欄として関数の境界を越えられる。
+例: [`examples/closure_field_capture.sober`](../../examples/closure_field_capture.sober)・[`examples/closure_param.sober`](../../examples/closure_param.sober)・[`examples/closure_result.sober`](../../examples/closure_result.sober)・[`examples/closure_field_opt.sober`](../../examples/closure_field_opt.sober)・[`examples/closure_def_capture.sober`](../../examples/closure_def_capture.sober)・[`examples/closure_anon_field.sober`](../../examples/closure_anon_field.sober)・[`examples/borrow_anon_field_eta.sober`](../../examples/borrow_anon_field_eta.sober)
 決定: [language.md 25 節](../language.md)
 
 F-10. 値の位置のラムダは mut の束縛と同一性の型（task の Scope・Handle・端点、net.Conn など）を捕捉できず、本体に `return` を書けない（定義した関数より長く生きうる）。
@@ -80,26 +80,36 @@ F-15. 借りの位置のラムダの中では、囲む展開される関数の�
 拒否: [`examples/borrow_pend_mut.sober`](../../examples/borrow_pend_mut.sober)・[`examples/borrow_pend_value.sober`](../../examples/borrow_pend_value.sober)
 決定: [language.md 25 節](../language.md)
 
+F-16. 値の呼び出しの借りの実引数のラムダ（とその本体の中の展開されるラムダ・文形 for）は、mut の束縛（mut ローカル・mut 仮引数）を捕捉できる。捕捉は作成点の写しでなく束縛そのもので、借りの呼び出しをまたいだ更新が呼び手に見える。1 つの値の呼び出しの借りの実引数のラムダが捕捉する mut の束縛は合わせて 1 つまで（同じ束縛を複数のラムダで捕捉するのは可 — 2 つ要るなら 1 つの struct にまとめる）。値の位置のラムダと、展開待ちの的へ流れるラムダ（F-15）の mut の捕捉は拒否し、借りの値をそのまま実引数に渡す呼び出しの借りのラムダの mut の捕捉も拒否する。借りの実引数のラムダは関数値（閉包）を持つ値も捕捉できる。freeze の規則（3 章 V-8・V-9）では、捕捉は作成点の呼び出しへの mut 実引数に数え、ラムダの本体の中では捕捉した束縛の中身を freeze できない。
+例: [`examples/borrow_mut_count.sober`](../../examples/borrow_mut_count.sober)・[`examples/borrow_mut_state.sober`](../../examples/borrow_mut_state.sober)・[`examples/borrow_mut_deep.sober`](../../examples/borrow_mut_deep.sober)・[`examples/borrow_mut_union.sober`](../../examples/borrow_mut_union.sober)・[`examples/borrow_mut_param.sober`](../../examples/borrow_mut_param.sober)・[`examples/borrow_mut_shared.sober`](../../examples/borrow_mut_shared.sober)・[`examples/borrow_mut_store.sober`](../../examples/borrow_mut_store.sober)・[`examples/borrow_mut_anon_field.sober`](../../examples/borrow_mut_anon_field.sober)
+拒否: [`examples/borrow_mut_neg_value.sober`](../../examples/borrow_mut_neg_value.sober)・[`examples/borrow_mut_neg_two.sober`](../../examples/borrow_mut_neg_two.sober)・[`examples/borrow_mut_neg_two_args.sober`](../../examples/borrow_mut_neg_two_args.sober)・[`examples/borrow_mut_neg_frozen.sober`](../../examples/borrow_mut_neg_frozen.sober)・[`examples/borrow_mut_neg_freeze_body.sober`](../../examples/borrow_mut_neg_freeze_body.sober)・[`examples/borrow_mut_neg_forward.sober`](../../examples/borrow_mut_neg_forward.sober)
+決定: [language.md 17 節・25 節](../language.md)
+
 ## 5.4 ジェネリクス
 
-F-16. 関数と型は型パラメータを持てる — `func f[T](…)`・`type Ord[T] struct {…}`・`type Opt[T] union {…}`。型パラメータに制約は書かない（振る舞いは辞書で渡す — F-1）。関数の型引数は値の実引数の型と、ラムダの実引数の結果の型から推論し、決まらなければ拒否する。明示するときは `f[int](x)`（1 個まで）。ジェネリック union の variant のリテラルは型引数を明示し（`Some[int]{v: 3}`）、個数は宣言どおり。
+F-17. 関数と型は型パラメータを持てる — `func f[T](…)`・`type Ord[T] struct {…}`・`type Opt[T] union {…}`。型パラメータに制約は書かない（振る舞いは辞書で渡す — F-1）。関数の型引数は値の実引数の型と、ラムダの実引数の結果の型から推論し、決まらなければ拒否する。明示するときは `f[int](x)`（1 個まで）。ジェネリック union の variant のリテラルは型引数を明示し（`Some[int]{v: 3}`）、個数は宣言どおり。
 例: [`examples/generic.sober`](../../examples/generic.sober)・[`examples/generic_infer.sober`](../../examples/generic_infer.sober)・[`examples/generic_infer_lambda.sober`](../../examples/generic_infer_lambda.sober)・[`examples/generic_union.sober`](../../examples/generic_union.sober)
 拒否: [`examples/generic_union_arity.sober`](../../examples/generic_union_arity.sober)・[`examples/generic_union_noargs.sober`](../../examples/generic_union_noargs.sober)
 決定: [language.md 3 節・25 節](../language.md)
 
 ## 5.5 名前つき引数
 
-F-17. 呼び出しに名前つき引数を書ける（`f(x, sep: ",")`）— 位置の実引数が先・名前つきが後で、名前つきどうしは仮引数の宣言の順。省略できるのは型が `T?` の仮引数だけで、省略は `nil`。パイプの左辺の位置は穴 `_` で書く。名前つき引数を書けるのは func 宣言の直接の呼び出しと、仮引数名を持つ名前つき関数型の値の呼び出しだけ（辞書の欄の関数値・ラムダの値は位置だけ）。
+F-18. 呼び出しに名前つき引数を書ける（`f(x, sep: ",")`）— 位置の実引数が先・名前つきが後で、名前つきどうしは仮引数の宣言の順。省略できるのは型が `T?` の仮引数だけで、省略は `nil`。パイプの左辺の位置は穴 `_` で書く。名前つき引数を書けるのは func 宣言の直接の呼び出しと、仮引数名を持つ名前つき関数型の値の呼び出しだけ（辞書の欄の関数値・ラムダの値は位置だけ）。
 例: [`examples/named_args.sober`](../../examples/named_args.sober)・[`examples/named_fn_args.sober`](../../examples/named_fn_args.sober)
 拒否: [`examples/named_args_missing.sober`](../../examples/named_args_missing.sober)・[`examples/named_args_order.sober`](../../examples/named_args_order.sober)・[`examples/named_args_positional.sober`](../../examples/named_args_positional.sober)・[`examples/named_args_unknown.sober`](../../examples/named_args_unknown.sober)・[`examples/named_args_pipe.sober`](../../examples/named_args_pipe.sober)・[`examples/named_args_nonfunc.sober`](../../examples/named_args_nonfunc.sober)・[`examples/named_fn_args_field.sober`](../../examples/named_fn_args_field.sober)・[`examples/named_fn_args_nonames.sober`](../../examples/named_fn_args_nonames.sober)
 決定: [syntax.md 決定 7](../syntax.md)
 
-F-18. 関数型の仮引数の名前は、全部つけるか全部つけないか。
+F-19. 関数型の仮引数の名前は、全部つけるか全部つけないか。
 拒否: [`examples/named_fn_type_mixed.sober`](../../examples/named_fn_type_mixed.sober)
 決定: [syntax.md 決定 7](../syntax.md)
 
 ## 5.6 公開の境界
 
-F-19. 匿名の関数型の仮引数は、公開の関数でも書ける — 匿名の関数型の仮引数は借り（呼び出しの間だけ使い、格納も持ち出しもされない）なので契約の置き場が要らない。値として格納・返却する関数は名前つき関数型で宣言する（契約 — `@errors` など — はその宣言に集まる）。
+F-20. 匿名の関数型の仮引数は、公開の関数でも書ける — 匿名の関数型の仮引数は借り（呼び出しの間だけ使い、格納も持ち出しもされない）なので契約の置き場が要らない。値として格納・返却する関数は名前つき関数型で宣言する（契約 — `@errors` など — はその宣言に集まる）。
 例: [`examples/errors_param.sober`](../../examples/errors_param.sober)・[`examples/borrow_stream.sober`](../../examples/borrow_stream.sober)・[`examples/io_chunks.sober`](../../examples/io_chunks.sober)
 決定: [language.md 14 節・25 節](../language.md)
+
+F-21. mut の仮引数も関数型の仮引数も持たない関数は、結果の型に mut の中身（mut の slice / map — struct の欄・`T?` の中も、型引数を代入した後で）を持てない。mut の値は呼び手がゼロ値リテラルで作り、mut の実引数で渡す。check と build の両方が拒否する。
+例: [`examples/fn_ret_mut.sober`](../../examples/fn_ret_mut.sober)
+拒否: [`examples/fn_ret_mut_neg.sober`](../../examples/fn_ret_mut_neg.sober)
+決定: [language.md 26 節](../language.md)

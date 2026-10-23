@@ -12,8 +12,17 @@ D=testdata/ctcheck
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 OD=$(command -v objdump || ls -d /nix/store/*binutils*/bin/objdump | head -n1)
-# 照合する関数 = testdata/ctcheck/funcs.txt（秘密の値を算術で扱う芯 — 方式の便ごとに足す）
-mapfile -t FUNCS < <(grep -v '^#' $D/funcs.txt | grep -v '^$')
+# 照合する関数 = testdata/ctcheck/funcs.txt（導出の表 T〔testdata/secretdump/std.txt — secretdump のゲートが木と同期〕+ 手書きの残置 + 負例）。
+# 同期の照合: `@std…` と `-@…` の和 ≡ T・`+@…` ∩ T = ∅（funcs.txt が導出とずれたら赤）
+T=$(grep ': secret ' testdata/secretdump/std.txt | sed 's/.*: secret /@/' | sort)
+L=$(grep -E '^-?@std/' $D/funcs.txt | awk '{ print $1 }' | sed 's/^-//' | sort)
+if [ "$T" != "$L" ]; then
+    echo "ctcheck: FAIL — $D/funcs.txt と導出の表 T（testdata/secretdump/std.txt）がずれた:"; diff <(echo "$T") <(echo "$L") | head -20; exit 1
+fi
+for f in $(grep '^+@' $D/funcs.txt | awk '{ print $1 }' | sed 's/^+//'); do
+    echo "$T" | grep -qxF -- "$f" && { echo "ctcheck: FAIL — 手書きの残置 $f が T に入った（funcs.txt の \`+@\` を \`@\` へ）"; exit 1; }
+done
+mapfile -t FUNCS < <(grep -E '^\+?@' $D/funcs.txt | awk '{ print $1 }' | sed 's/^+//')
 "$S2" build $D/app.sober --emit=elf --passes -o "$W/app" > /dev/null || { echo "ctcheck: FAIL build"; exit 1; }
 "$S2" build $D/app.sober --emit=syms -o "$W/syms" > /dev/null || { echo "ctcheck: FAIL syms"; exit 1; }
 # 最後の記号の終わり = 実行の LOAD の終わり（後ろに読み出し専用のデータが続きうるので、最後の関数だけ逆アセンブルを「ret / syscall の直後の nop の詰め・0 のバイト〔add [rax],al〕」で切る。

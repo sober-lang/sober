@@ -1,0 +1,2 @@
+sober: load error at examples/named_scalar_typed_const_neg_constexpr.sober:8:7: const expression
+exit=1

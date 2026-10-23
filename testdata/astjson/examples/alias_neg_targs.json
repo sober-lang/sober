@@ -1,0 +1,91 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Box",
+      "type_params": [
+        "T"
+      ],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "v",
+            "type": {
+              "k": "name",
+              "name": "T"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "IntBox",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "generic",
+          "name": "Box",
+          "args": [
+            {
+              "k": "name",
+              "name": "int"
+            }
+          ]
+        }
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 23
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 28
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 30
+                }
+              ],
+              "tok": 29
+            }
+          }
+        ]
+      },
+      "tok": 24,
+      "bodiless": false,
+      "span": {
+        "start": 23,
+        "end": 35
+      },
+      "sig_end": 27
+    }
+  ],
+  "consts": []
+}

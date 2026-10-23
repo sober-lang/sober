@@ -253,7 +253,7 @@ func switchCovers(st mut St, sw desugar.NodeRef, sty int) bool {
             info := desugar.HeapGet(mut st.d, sty + 1)
             // error の全ラベルの union は宣言を持たない（SI_DECL = -1）— ラベル集合の領域（リンク集合の全ラベル）
             ud := desugar.HeapGet(mut st.d, info + SI_DECL)
-            dom := if ud == -1 { desugar.PmCol{kind: desugar.PmErr, a: desugar.PmAllLabels(mut st.d), b: 0} } else { desugar.PmCol{kind: desugar.PmSum, a: ud, b: desugar.HeapGet(mut st.d, info + SI_PKG)} }
+            dom := if ud == -1 { desugar.PmAllErr(mut st.d, 0) } else { desugar.PmCol{kind: desugar.PmSum, a: ud, b: desugar.HeapGet(mut st.d, info + SI_PKG), h: 0} }
             return !desugar.PmUseful1(mut st.d, st.curPkg, rows, n, desugar.NodeRef(-1), dom, desugar.ListRef(-1))
         }
     }

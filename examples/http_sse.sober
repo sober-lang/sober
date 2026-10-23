@@ -1,0 +1,58 @@
+package main
+
+// Server-Sent Events（language.md 28 節の「SSE」— 0.7.0 便 8）: 応答の stream で text/event-stream を送る。長さ不定の stream なので chunked で、
+// emit 1 回 = chunk 1 つ = 送り 1 回（std は emit をまたいで溜めない — イベントは組んだ順にすぐ届く）。イベントの行は http.FormatEvent で組む
+// （data の改行は行ごとの `data:` に割る・event / id の改行は panic(BadEvent) — examples/http_sse_bad）。保存させない（cache: NoStore）。
+// text/event-stream は compress: の対象外（ServeWith に compress: を渡しても圧縮しない — 頭に Content-Encoding も Vary も無い）。
+// 繋ぎ直した受け手は最後に受けた id を Last-Event-ID で返す（http.Header で読む — ここではその続きから送る）。
+// 長命の接続は scope の deadline の外に置く（ServeConn を deadline つきの task.Run で包むと流れが切れる）。
+// ネットの代わりに recv が決まった要求の列を渡し、send が送りの 1 回ずつを印字する（行末の CR は外す・送りの区切りに `--`）
+
+import "std/http"
+import "std/convert"
+
+func show(b []byte) error? {
+    mut out := mut []byte{}
+    for x <- b {
+        if x != '\r' {
+            out = append(out, x)
+        }
+    }
+    println("-- ${string(freeze(out)) catch "?"}")
+    return nil
+}
+
+// events は from の次から 3 つのイベントを送る（心拍のコメントを 1 つ挟む）
+func events(from int, emit func(b []byte) error?) error? {
+    mut i := from + 1
+    while i <= from + 3 {
+        emit(bytes(http.FormatEvent(http.Event{event: "tick", data: "n = ${i}\nsquare = ${i * i}", id: convert.FormatInt(i)})))?
+        if i == from + 1 {
+            emit(bytes(": ping\n\n"))?
+        }
+        i += 1
+    }
+    emit(bytes(http.FormatEvent(http.Event{data: "bye", retry: 5000})))?
+    return nil
+}
+
+func route(r http.Request) http.Response {
+    if r.path != "/events" {
+        return http.Status(404)
+    }
+    last := http.Header(r, "Last-Event-ID")
+    from := if last != nil { convert.ParseInt(last) catch 0 } else { 0 }
+    return http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (emit) => events(from, emit)}
+}
+
+func give(a string, k func([]byte)) error? {
+    k(bytes(a))
+    return nil
+}
+
+func main() {
+    reqs := "GET /events HTTP/1.1\r\nAccept: text/event-stream\r\nAccept-Encoding: gzip\r\n\r\n" +
+        "GET /events HTTP/1.1\r\nLast-Event-ID: 41\r\nConnection: close\r\n\r\n"
+    e := http.ServeWith((k) => give(reqs, k), (b) => show(b), route, compress: http.Gzip{})
+    println(e == nil)
+}

@@ -1,0 +1,12 @@
+package wrap
+
+// 負例（region-domain-pool.md 4d）: 整えの転送は本体 1 文の `G(mut w)` だけ — 2 文の包みは辿らない
+
+import "testdata/loader_neg/lease_fwd_two/lib"
+
+type Work = lib.Work
+
+func Prepare(w mut Work) {
+    lib.Prepare(mut w)
+    lib.Prepare(mut w)
+}

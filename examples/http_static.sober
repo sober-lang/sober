@@ -1,0 +1,149 @@
+package main
+
+// std/http の静的ファイル（language.md 28 節「静的ファイル」— static 便）: http.Static(prefix, root, precompressed:) は `GET <prefix>/*path` の 1 行の表を返し、
+// 要求ごとに root を io.OpenRoot して `*path` を io.OpenUnder で開く（root の外へ出ないのはカーネルの保証 — `..`・外を指す symlink は 404）。
+// precompressed は Accept-Encoding で `.br` / `.gz` を選んで素通しし、Content-Encoding と Vary を付ける。Content-Type は元の名前の拡張子。
+// 条件付き GET: 弱い ETag（送る変種の更新時刻と大きさ + 変種の印）・Last-Modified・Cache-Control（cache: — 省略は no-cache）。If-None-Match の一致・
+// If-Modified-Since のちょうどの一致は 304（ETag・Cache-Control・Vary だけ — Content-Length も本文も無い）・If-Match / If-Unmodified-Since が偽なら 412。
+// 更新時刻は touch -d で固定する（ETag と Last-Modified が決まる）。
+// loopback で 1 本の task が Dial → パイプラインの要求を送る → Accept して ServeConn → 応答を受ける（http_stream の形）。
+// リポジトリのルートを cwd にして実行する（作業域は out/http_static — symlink は ln で張る）
+
+import "std/http"
+import "std/io"
+import "std/net"
+import "std/os"
+import "std/task"
+
+// mkdir は d を作る（既にあってよい — EEXIST は読み捨てる）
+@errors(io.NotFound, io.Denied, io.Other)
+func mkdir(d string) error? {
+    e := os.Mkdir(d)
+    if e == nil || exists(e) {
+        return nil
+    }
+    return e
+}
+
+// exists は e が EEXIST か
+func exists(e error) bool {
+    return switch e {
+    case io.Other{errno}: errno == 17
+    default: false
+    }
+}
+
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func setup(w string) error? {
+    mkdir(w)?
+    mkdir(w + "/www")?
+    mkdir(w + "/www/sub")?
+    io.WriteFile(w + "/www/index.html", bytes("<p>hi</p>"))?
+    io.WriteFile(w + "/www/app.js", bytes("plain js"))?
+    io.WriteFile(w + "/www/app.js.gz", bytes("[gz bytes]"))?
+    io.WriteFile(w + "/www/app.js.br", bytes("[br]"))?
+    io.WriteFile(w + "/www/.hidden", bytes("dot"))?
+    io.WriteFile(w + "/www/sub/data.bin", bytes("01"))?
+    io.WriteFile(w + "/outside.txt", bytes("secret"))?
+    _ = os.Run("/bin/ln", []string{"-sfn", "../outside.txt", w + "/www/esc"})?
+    touch(w + "/www/index.html", "@1700000000.5")?
+    touch(w + "/www/app.js", "@1700000001")?
+    touch(w + "/www/app.js.gz", "@1700000002")?
+    touch(w + "/www/app.js.br", "@1700000003")?
+    touch(w + "/www/.hidden", "@1700000000")?
+    touch(w + "/www/sub/data.bin", "@1700000000")?
+    return nil
+}
+
+// touch は path の更新時刻を at（touch -d の形）にする
+@errors(io.NotFound, io.Denied, io.Other)
+func touch(path string, at string) error? {
+    _ = os.Run("/usr/bin/touch", []string{"-d", at, path})?
+    return nil
+}
+
+func req(method string, path string, ae string) string {
+    return "${method} ${path} HTTP/1.1\r\nHost: x\r\n${ae}\r\n"
+}
+
+// 条件付き GET の要求（index.html の ETag = W/"17979cfe53f76500-9"・更新時刻の秒 = Tue, 14 Nov 2023 22:13:20 GMT・
+// app.js = W/"17979cfe71c4ca00-8"・app.js.br = W/"17979cfee8fa5e00-4-br"）
+func conds() string {
+    ix := "W/\"17979cfe53f76500-9\""
+    lm := "Tue, 14 Nov 2023 22:13:20 GMT"
+    return req("GET", "/s/index.html", "If-None-Match: ${ix}\r\n") +
+        req("GET", "/s/index.html", "If-None-Match: \"x\", W/\"y\" ,${ix}\r\n") +
+        req("GET", "/s/index.html", "If-None-Match: \"17979cfe53f76500-9\"\r\n") +
+        req("GET", "/s/index.html", "If-None-Match: *\r\n") +
+        req("HEAD", "/s/index.html", "If-None-Match: ${ix}\r\n") +
+        req("GET", "/s/index.html", "If-None-Match: W/\"nope\"\r\nIf-Modified-Since: ${lm}\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: ${lm}\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Tuesday, 14-Nov-23 22:13:20 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Tue Nov 14 22:13:20 2023\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Tue, 14 Nov 2023 22:13:21 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: Tue, 14 Nov 2023 22:13:19 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: yesterday\r\n") +
+        req("GET", "/s/index.html", "If-Modified-Since: ${lm}\r\nIf-Modified-Since: ${lm}\r\n") +
+        req("GET", "/s/index.html", "If-Match: ${ix}\r\n") +
+        req("GET", "/s/index.html", "If-Match: *\r\n") +
+        req("GET", "/s/index.html", "If-Unmodified-Since: Tue, 14 Nov 2023 22:13:19 GMT\r\n") +
+        req("GET", "/s/index.html", "If-Unmodified-Since: ${lm}\r\n") +
+        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"17979cfe71c4ca00-8\"\r\n") +
+        req("GET", "/s/app.js", "Accept-Encoding: br\r\nIf-None-Match: W/\"17979cfee8fa5e00-4-br\"\r\n") +
+        req("GET", "/f/app.js", "If-None-Match: W/\"17979cfe71c4ca00-8\"\r\n") +
+        req("GET", "/f/app.js", "") +
+        req("GET", "/n/sub/data.bin", "") +
+        req("GET", "/none", "")
+}
+
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired, io.Closed, net.Bad)
+func run(w string) error? {
+    setup(w)?
+    for l <- net.Listen("127.0.0.1:0")? {
+        for c <- net.Dial("127.0.0.1:${net.Port(l)}")? {
+            all := req("GET", "/s/app.js", "Accept-Encoding: gzip, br\r\n") +
+                req("GET", "/s/app.js", "Accept-Encoding: gzip\r\n") +
+                req("GET", "/s/app.js", "Accept-Encoding: br;q=0, gzip;q=0\r\n") +
+                req("HEAD", "/s/index.html", "") +
+                req("GET", "/s/sub/data.bin", "") +
+                req("GET", "/s/.hidden", "") +
+                req("GET", "/s/../outside.txt", "") +
+                req("GET", "/s/sub/../../outside.txt", "") +
+                req("GET", "/s/esc", "") +
+                req("GET", "/s/sub", "") +
+                req("GET", "/s/", "") +
+                req("POST", "/s/index.html", "Content-Length: 0\r\n") +
+                conds() +
+                req("GET", "/s/nope.css", "Connection: close\r\n")
+            net.Send(c, bytes(all))?
+            _, e := task.Run((s task.Scope) => serveOne(l, w) catch -1, deadline: 5000 * task.MS)
+            if e != nil {
+                println("serve failed")
+            }
+            mut got := mut []byte{}
+            for chunk <- net.Recv(c)? {
+                for x <- chunk { got = append(got, x) }
+            }
+            io.WriteStdout(freeze(got))?
+        }
+    }
+    return nil
+}
+
+// serveOne は 1 本だけ受けて ServeConn に渡す（Connection: close で返る）
+func serveOne(l net.Listener, w string) (int, error?) {
+    rs := http.Merge(http.Merge(http.Static("/s", w + "/www", precompressed: true), http.Static("/f", w + "/www", cache: http.Fresh{maxAge: 60, immutable: true})),
+        http.Merge(http.Static("/n", w + "/www", cache: http.NoStore{}), []http.Route{http.Route{method: "GET", path: "/none", handler: (r) => http.Status(204), middleware: []http.Middleware{}}}))
+    for c <- net.Accept(l)? {
+        http.ServeConn(c, (r) => http.Dispatch(rs, r))?
+        break
+    }
+    return 0, nil
+}
+
+func main() {
+    e := run("out/http_static")
+    if e != nil {
+        println("error")
+    }
+}

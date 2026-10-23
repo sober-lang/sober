@@ -1,0 +1,11 @@
+package main
+
+// 負例: OpenRoot を io.Close で閉じる（Root の対は io.CloseRoot — diag.FileUse・language.md 28 節「根の下の開き」）
+
+import "std/io"
+
+func main() {
+    r := io.OpenRoot("testdata/io") catch return
+    defer io.Close(r)
+    println("opened")
+}

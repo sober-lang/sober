@@ -1,0 +1,16 @@
+package main
+
+// 負例（check が拒否 — analyzer）: 名前付き関数型の @errors にエラーのラベルでも F の仮引数でもない名前（language.md 13 節）
+
+type Bad error
+
+type F func(x int) error? @errors(Bad, recv)
+
+func use(f F) int {
+    e := f(1)
+    return if e != nil { 1 } else { 0 }
+}
+
+func main() {
+    println(use((x) => if x > 0 { Bad{} } else { nil }))
+}

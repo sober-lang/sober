@@ -62,3 +62,7 @@ P-5. `std/` で始まる import パスは標準ライブラリ（コンパイラ
 P-6. プログラムには main package の `func main()` か `func main() int` が要る。
 拒否: [`examples/no_main.sober`](../../examples/no_main.sober)
 決定: [language.md 27 節](../language.md)
+
+P-7. 公開の型の別名（`type Work = lib.Work`）は他の package の型を、別名を宣言した package の公開の名前で出す。公開は別名の名前の大小で決まり、公開の別名は非公開の型も指せる。std の公開の別名は `std/internal/…` の型を指してよい（import の検問はパスの字面の規則で、型の到達には掛からない）。利用者は別名の package だけを import すればよい。別名の右辺は宣言の場所から見える型に限る（他の package の非公開の型は指せない）。
+例: [`examples/alias_pkg.sober`](../../examples/alias_pkg.sober)
+決定: [language.md 32 節・20 節](../language.md)

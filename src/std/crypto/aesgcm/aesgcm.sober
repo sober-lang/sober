@@ -10,7 +10,7 @@ package aesgcm
 // SealTo は head ‖ 暗号文 ‖ tag を 1 回の確保に直に書き、OpenAt は b[off, off + n) を写さずに検証してから復号する
 //
 //     k := aesgcm.Prepare(key)?
-//     rec := aesgcm.SealTo(k, nonce, ad, pt, hdr)?           // hdr ‖ 暗号文 ‖ tag
+//     rec := aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
 //     pt := aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
 
 // 塊は compiler/lower/aes.sober・x86.sober の xAes: CTR は 8 ブロックを交互に・GHASH は 4 ブロックを束ねて還元 1 回
@@ -59,11 +59,12 @@ func Available() bool {
 
 // 展開した鍵（Prepare の結果 — 鍵の展開 11 段と GHASH の H^1〜H^4 を持つ ctx のテンプレート。Sober からも専用命令の実装からも書かない — record ごとに写して使う）
 type Key struct {
-    ctx []byte
+    ctx []byte @secret
 }
 
 // key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 @errors(NoHardware, BadSize)
+@secret(key)
 func Prepare(key []byte) (Key, error?) {
     if sysCpuAes() != 1 {
         return Key{ctx: []byte{}}, NoHardware{}
@@ -78,27 +79,33 @@ func Prepare(key []byte) (Key, error?) {
 
 // pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は同じ鍵で 1 回だけ使う
 @errors(NoHardware, BadSize)
+@secret(key)
+@bless
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?) {
     k := Prepare(key)?
-    return SealTo(k, nonce, ad, pt, []byte{})
+    return SealTo(k, nonce, ad, pt, []byte{}, []byte{})
 }
 
 // Seal の逆（tag を crypto.Equal で照合してから復号する）
 @errors(NoHardware, BadSize, Auth)
+@secret(key)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
     k := Prepare(key)?
     return OpenAt(k, nonce, ad, sealed, 0, len(sealed))
 }
 
-// head ‖ 暗号文 ‖ tag。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・
+// head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。無ければ []byte{}）。
+// nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt と tail を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・
 // GHASH は宛先の暗号文を読む・tag は計数器 J0 の ctx の CTR で宛先へ書く〔Y ⊕ E(J0) — 宛先は凍っているので Sober の添字では書かない〕）
 @errors(BadSize)
-func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
+@bless
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?) { // 対の OpenTo は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
     if len(nonce) != NonceSize {
         return []byte{}, BadSize{}
     }
     h := len(head)
-    n := len(pt)
+    p := len(pt)
+    n := p + len(tail)
     cd := recCtx(k.ctx, nonce, 2)
     c0 := recCtx(k.ctx, nonce, 1)
     mut o := mut []byte{}
@@ -108,9 +115,14 @@ func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte) ([]byte, err
         j += 1
     }
     mut i := 0
-    while i < n {
+    while i < p {
         o = append(o, pt[i])
         i += 1
+    }
+    mut u := 0
+    while u < len(tail) {
+        o = append(o, tail[u])
+        u += 1
     }
     mut t := 0
     while t < Overhead {

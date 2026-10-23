@@ -1,0 +1,3 @@
+examples/origin_neg_std.sober:7:6: error: @credential (a function) is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」) (Analyzer)
+examples/origin_neg_std.sober:12:6: error: @bless(origin) is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」) (Analyzer)
+exit=1

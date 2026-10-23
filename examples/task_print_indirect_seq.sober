@@ -1,0 +1,14 @@
+package main
+
+// examples/task_print_indirect の逐次の双子（scripts/seqpar.list）: spawn の木の先行順 = 子 0〜3 の印字・親・終わり
+
+func main() {
+    println("start")
+    mut i := 0
+    while i < 4 {
+        println("kid ${i}")
+        i += 1
+    }
+    println("parent")
+    println("done 0")
+}

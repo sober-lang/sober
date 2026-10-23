@@ -29,6 +29,7 @@ Go の双子は言語比較のためでなく追跡の物差し（同じアル�
 
 ## 公式の数字の取り方（2026-10-20〜 — GitHub Actions・report-920〜923）
 
+- 計測の workflow（下の bench-official.yml と、HttpArena の形の httparena.yml）は開発用の private リポジトリにだけあり、公開リポジトリには含まれない — 公開側で読めるのは結果（bench/data/official.tsv と bench/data/raw/）と、手元で同じ計測を回す scripts / bench の道具。
 - 正は bench/data/official.tsv。README{,.ja}.md・bench/README.md の数字の行・表・グラフは `scripts/benchsync.sh` の生成物（gates の benchsync が照合）
 - 計測 = `.github/workflows/bench-official.yml`（workflow_dispatch・linux-x64-16vcpu）: 版を固定（Go 1.26.1・Rust 1.89.0・zig 0.15.2）→ bootstrap → `BENCH_PREP=1 scripts/bench.sh -n 1`（入力と双子）→ loadavg が 1.5 を割るまで待つ → `bench/seqperf.sh -n 5 --rust` → `bench/extsort.sh` → raw と bench-env.txt（CPU の型番・カーネル・各版）を artifact に
 - 物差し = task-clock（カーネルの時間を含む CPU 時間）。この VM はハードウェアのカウンタを出さない（cycles / 命令は NA — report-921）。比は同じ周の対（Sober の周 i / 相手の周 i）の比の全周の中央（周ごとに全実装に乗る箱の揺れを打ち消す — 同じ箱で 3 run の幅は最大 3.7%・report-922）。絶対値は run ごとに 2〜9% 動くので比だけで読む

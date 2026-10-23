@@ -41,6 +41,10 @@ func expr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
         }
         return r.v, nil
     case ast.ENil:
+        // ブロックの末尾の nil は末尾の期待型（T?）があれば注釈つき nil（F-bw — 展開のラムダの `{ …; nil }`・coerceArm が期待型を渡す）
+        if isTag(mut st, want, TOpt) {
+            return cNil(mut st, tInner(mut st, want)), nil
+        }
         return 0, diag.UntypedNil{at: posOf(mut st, at)}
     case ast.EInterp:
         lowered := lowerInterp(mut st, e, eb, ef)?
@@ -678,6 +682,14 @@ func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at N
             t := coerceArm(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), want, eb, ef, depth, at)?
             els := nC(nodeOf(mut st, e))
             o := if kindN(mut st, els) == ast.EBlock { coerceArm(mut st, lA(nodeOf(mut st, els)), want, eb, ef, depth, at)? } else { coerceExpr(mut st, els, want, eb, ef, depth, at)? }
+            // 腕の region の合流（ifExpr の F-g と同じ線 — F-bv: `P{f: if c { "x" } else { nil }}` の nil の腕は期待の中身〔欄の region〕・
+            // リテラルの腕は最内の region で、注釈が無いと核の検査器が腕の型の食い違いで拒否した〔build は受理〕）
+            tp := optArmPay(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), payload, eb, ef)
+            op := if kindN(mut st, els) == ast.EBlock { optArmPay(mut st, lA(nodeOf(mut st, els)), payload, eb, ef) } else { optExprPay(mut st, els, payload, eb, ef) }
+            up := upJoin2(mut st, tp, op)
+            if up != -1 {
+                return cIte(mut st, cond, cAnn(mut st, t, tOpt(mut st, up)), cAnn(mut st, o, tOpt(mut st, up))), nil
+            }
             return cIte(mut st, cond, t, o), nil
         }
     }
@@ -688,6 +700,25 @@ func coerceExpr(st mut S, e NodeRef, want TyRef, eb int, ef int, depth int, at N
         return wrapSome(mut st, t, want, payload, core), nil
     }
     return 0, diag.CoreFragment{at: posOf(mut st, at)}
+}
+
+// optArmPay は T? の期待（中身 payload）の if の腕 l の値の中身の型（nil の腕は payload・T? の値はその中身・分からなければ -1）
+func optArmPay(st mut S, l ListRef, payload TyRef, eb int, ef int) TyRef {
+    se := singleExpr(mut st, l)
+    if se != -1 {
+        return optExprPay(mut st, se, payload, eb, ef)
+    }
+    t := armTy(mut st, l, eb, ef)
+    return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
+}
+
+// optExprPay は optArmPay の式 1 つの形
+func optExprPay(st mut S, e NodeRef, payload TyRef, eb int, ef int) TyRef {
+    if kindN(mut st, e) == ast.ENil {
+        return payload
+    }
+    t := computeTy(mut st, e, eb, ef)
+    return if t != -1 && tg(mut st, t) == TOpt { tInner(mut st, t) } else { t }
 }
 
 // wrapSome は型 t の値 core を T?（want、中身 payload）の位置に置く形（一致・緩む形は素のまま、ペイロード型なら some）
@@ -720,12 +751,15 @@ func coerceArm(st mut S, l ListRef, want TyRef, eb int, ef int, depth int, at No
         s := latN(mut st, l, n - 1)
         sk := kindN(mut st, s)
         if sk == ast.SExpr {
-            t = computeTy(mut st, nA(nodeOf(mut st, s)), eb, ef)
+            // armTy（末尾が同じ腕で束縛した名前なら束縛の値の型 — F-bv の同席: computeTy だけだと -1 で CoreFragment・build は受理）
+            t = armTy(mut st, l, eb, ef)
         }
         ends_exit = sk == ast.SRet || sk == ast.SBreak || sk == ast.SContinue
     }
-    core := scoped(mut st, l, eb, ef, depth, false, false, if ends_exit { want } else { TyRef(-1) })?
-    if ends_exit {
+    // 末尾の式の型が取れない（`{ println(x); nil }` の nil — F-bw）なら末尾の期待型を渡して寄せる（腕の値は want の型で組まれる）
+    tail_want := ends_exit || (n > 0 && t == -1 && kindN(mut st, latN(mut st, l, n - 1)) == ast.SExpr)
+    core := scoped(mut st, l, eb, ef, depth, false, false, if tail_want { want } else { TyRef(-1) })?
+    if tail_want {
         return core, nil
     }
     if t != -1 {

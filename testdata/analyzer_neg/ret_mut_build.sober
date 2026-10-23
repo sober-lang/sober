@@ -1,0 +1,11 @@
+package main
+
+func f() mut []int {
+    return mut []int{}
+}
+
+func main() {
+    mut x := f()
+    x = append(x, 1)
+    println(len(x))
+}

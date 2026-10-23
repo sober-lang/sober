@@ -1,0 +1,25 @@
+package main
+
+// 負例: 値の位置の閉包（名前付き関数型の欄 — http.Route の handler と同じ位置）が io.Root を捕捉する。Root は同一性の型で、捕捉できるのは
+// task.Run の本体と借りの位置のラムダだけ（diag.FileUse・language.md 28 節「根の下の開き」— http.Static が root を path で受ける理由）
+
+import "std/io"
+
+type Size func(rel string) int
+
+type Table struct {
+    size Size
+}
+
+func sizeOf(r io.Root, rel string) int {
+    f := io.OpenUnder(r, rel) catch return -1
+    defer io.Close(f)
+    return io.Size(f) catch -1
+}
+
+func main() {
+    r := io.OpenRoot("testdata/io") catch return
+    defer io.CloseRoot(r)
+    t := Table{size: (rel) => sizeOf(r, rel)}
+    println(t.size("hello.txt"))
+}

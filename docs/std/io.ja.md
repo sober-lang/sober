@@ -4,7 +4,7 @@
 
 `import "std/io"`
 
-ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）。どの関数も同期の形で、バイト列は []byte で受け渡す。失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
+ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）と根の下の開き（OpenRoot / OpenUnder）。どの関数も同期の形で、バイト列は []byte で受け渡す。失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
 
 ## NotFound
 
@@ -120,6 +120,76 @@ func Close(f File)
 ```
 
 f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。閉じる失敗は返さない: 読むためだけに開いた fd の close の失敗に打つ手は無い）
+
+## Root
+
+```sober
+type Root struct {
+    fd int
+    seal rootSeal
+}
+```
+
+根として開いたディレクトリ（[language.md 28 節](../language.md)「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの`defer io.CloseRoot(r)`・写せない・外へ出せない・give: では渡せない）。OpenUnder の根になる capability で、中身は O\_PATH の fd（読み書きの口は無い）。ディレクトリの項目の種類 EntryKind の Dir とは別物
+
+## OpenRoot
+
+```sober
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func OpenRoot(path string) (Root, error?)
+```
+
+path のディレクトリを OpenUnder の根として開く（openat の O\_PATH | O\_DIRECTORY）。開いたら同じブロックの直後の文で `defer io.CloseRoot(r)` を書く。ディレクトリでなければ NotFound（ENOTDIR）
+
+失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
+
+## CloseRoot
+
+```sober
+func CloseRoot(r Root)
+```
+
+r を閉じる（OpenRoot の直後の defer でだけ書ける — desugar/filecheck）
+
+## OpenUnder
+
+```sober
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func OpenUnder(r Root, rel string) (File, error?)
+```
+
+r の下の rel のファイルを読むために開く（openat2 の RESOLVE\_BENEATH | RESOLVE\_NO\_MAGICLINKS）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く。r の外へ出ないのはカーネルの保証: `..`・絶対パス・r の外を指す symlink は解決の途中で拒否されて Denied（EXDEV）— rel を文字列として検査しない。r の中を指す symlink は辿る。fifo などを開いても塞がない（O\_NONBLOCK — 通常のファイルの読みには効かない）。openat2 の無いカーネルではOther{errno: 38}（openat へ倒れない — 倒れると根の外へ出ない保証が消える）
+
+失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
+
+## FileInfo
+
+```sober
+type FileInfo struct {
+    size int
+    modTime int
+    kind EntryKind?
+}
+```
+
+Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体を見て path を引き直さない。kind に Symlink は来ない — 開くときに辿る）
+
+欄:
+
+- `size` — 大きさ（バイト — st\_size。通常のファイル以外は意味を持たない）
+- `modTime` — 更新時刻（st\_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。std/os の ModTime と同じ値）
+- `kind` — 種類（Regular・Dir・Irregular〔fifo・socket・デバイス〕— Stat は必ず入れる。option にしてあるのは FileInfo にゼロ値を持たせるため〔union はゼロ値を持たない — `(FileInfo, error?)` を返す関数の `?` の早期 return が FileInfo{} を要る〕）
+
+## Stat
+
+```sober
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func Stat(f File) (FileInfo, error?)
+```
+
+f の属性（fstat(2) の大きさ・更新時刻・種類 — 通常のファイルでなくても誤りにしない: 判定は kind で呼び手が）
+
+失敗のラベル: [`NotFound`](#notfound)・[`Denied`](#denied)・[`Other`](#other)・[`Timeout`](#timeout)・[`Expired`](#expired)
 
 ## ReadAll
 

@@ -100,6 +100,7 @@ def renameFn (ρ : Nat → Nat) : Expr → Expr
   | callM fn ts' e => callM (ρ fn) ts' (renameFn ρ e)
   | fnref fn ts' => fnref (ρ fn) ts'
   | callv f e => callv (renameFn ρ f) (renameFn ρ e)
+  | callMv a f e => callMv a (renameFn ρ f) (renameFn ρ e)
   | ann e t => ann (renameFn ρ e) t
   | block e => block (renameFn ρ e)
   | blockR t e => blockR t (renameFn ρ e)

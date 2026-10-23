@@ -1,0 +1,55 @@
+package main
+
+// 借りの閉包の mut 捕捉（(α-L1)）の格納点の写し: 借りの本体が深い region の imm（stream の反復の region の chunk・本体の中で作った文字列）を
+// 捕捉した mut の欄へ格納する — lower は作成点が env に積んだ束縛の行き先の深度を floor に写す（mut 仮引数の M5 と同じ）。写しが無いと、
+// stream の次の反復の確保が置き場を上書きして z.keep が壊れる
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Z struct {
+    last []byte
+    keep []byte
+    n int
+}
+
+func chunks(emit func(b []byte) error?) error? {
+    mut i := 0
+    while i < 4 {
+        mut buf := mut []byte{}
+        mut j := 0
+        while j < 40 {
+            buf = append(buf, byte(97 + i))
+            j += 1
+        }
+        emit(freeze(buf))?
+        // 次の反復の region の確保で前の buf の置き場を上書きさせる
+        mut junk := mut []byte{}
+        mut q := 0
+        while q < 200 {
+            junk = append(junk, byte(48))
+            q += 1
+        }
+        i += 1
+    }
+    return nil
+}
+
+func run(st Stream) Z {
+    mut z := Z{last: bytes(""), keep: bytes(""), n: 0}
+    e := st((b []byte) => {
+        t := bytes("x${len(b)}${string(b) catch "?"}")
+        z.last = b
+        if z.n == 1 { z.keep = t }
+        z.n += 1
+        nil
+    })
+    if e != nil { z.n = -1 }
+    return z
+}
+
+func main() {
+    z := run((emit) => chunks(emit))
+    println(z.n)
+    println(string(z.last) catch "?")
+    println(string(z.keep) catch "?")
+}

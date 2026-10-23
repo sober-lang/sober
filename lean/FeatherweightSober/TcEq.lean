@@ -280,6 +280,23 @@ theorem tcEq_callv (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 <
       | succ d' =>
         cases t <;> cases hy : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x1 <;> simp [sCallv1, kCallv, typecheck, hx, hy, ihx1]
 
+theorem tcEq_callMv (xa : Nat) (x0 : Expr) (x1 : Expr) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) (ih_x1 : ∀ n b d Γ Λ, sizeOf x1 < n → evalRule Δ f n b d Γ Λ x1 = typecheck Δ Ξ Ψ f b d Γ Λ x1) :
+    ∀ n b d Γ Λ, sizeOf (Expr.callMv xa x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.callMv xa x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.callMv xa x0 x1) := by
+  intro n b d Γ Λ h; cases n with
+  | zero => omega
+  | succ n =>
+    simp only [Expr.callMv.sizeOf_spec] at h
+    have ihx0 := fun b d Γ Λ => ih_x0 n b d Γ Λ (by omega)
+    have ihx1 := fun b d Γ Λ => ih_x1 n b d Γ Λ (by omega)
+    simp only [evalRule, tcStep, ihx0]
+    cases hx : typecheck Δ Ξ Ψ f b d Γ Λ x0 with
+    | none => cases d <;> simp [sCallv1, typecheck, hx]
+    | some t =>
+      cases d with
+      | zero => cases t <;> cases hy : typecheck Δ Ξ Ψ f b 0 Γ Λ x1 <;> simp [sCallv1, kCallMv, typecheck, hx, hy, ihx1]
+      | succ d' =>
+        cases t <;> cases hy : typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ x1 <;> simp [sCallv1, kCallMv, typecheck, hx, hy, ihx1]
+
 theorem tcEq_ann (x0 : Expr) (x1 : Ty) (ih_x0 : ∀ n b d Γ Λ, sizeOf x0 < n → evalRule Δ f n b d Γ Λ x0 = typecheck Δ Ξ Ψ f b d Γ Λ x0) :
     ∀ n b d Γ Λ, sizeOf (Expr.ann x0 x1) < n → evalRule Δ f n b d Γ Λ (Expr.ann x0 x1) = typecheck Δ Ξ Ψ f b d Γ Λ (Expr.ann x0 x1) := by
   intro n b d Γ Λ h; cases n with
@@ -891,6 +908,7 @@ theorem evalRule_eq_typecheck :
   | callM x0 x1 x2 ih_x2 => exact tcEq_callM x0 x1 x2 ih_x2
   | fnref x0 x1 => exact tcEq_fnref x0 x1
   | callv x0 x1 ih_x0 ih_x1 => exact tcEq_callv x0 x1 ih_x0 ih_x1
+  | callMv xa x0 x1 ih_x0 ih_x1 => exact tcEq_callMv xa x0 x1 ih_x0 ih_x1
   | ann x0 x1 ih_x0 => exact tcEq_ann x0 x1 ih_x0
   | block x0 ih_x0 => exact tcEq_block x0 ih_x0
   | blockR x0 x1 ih_x1 => exact tcEq_blockR x0 x1 ih_x1

@@ -35,6 +35,12 @@ type GvnT struct {
 }
 
 func gvnFunc(st mut St, f FnRef) {
+    gvnFuncK(mut st, f, false)
+}
+
+// gvnFuncK は gvnFunc に、fold なら分かっている条件の condbr の畳み込みを足したもの（展開の後の cfgclean だけ — 畳むとブロックが
+// 消えて番号が振り直るので、ブロックの番号の表を持ったまま gvnFunc を呼ぶ他のパス〔hdr・unroll 等〕では掛けない）
+func gvnFuncK(st mut St, f FnRef, fold bool) {
     nv := irFnNVal(mut st, f)
     nb := irFnNBlk(mut st, f)
     optReset(mut st, nv, nb)
@@ -68,27 +74,65 @@ func gvnFunc(st mut St, f FnRef) {
     }
     mut t := GvnT{head: mut []int{}, ents: mut []int{}, n: 0, mask: cap - 1}
     xFill(mut t.head, cap, -1)
-    // 支配木の前順（明示のスタック: [ブロック, 次の子, 入ったときの項の数] の 3 語ずつ・sp = 使っている語数）
-    mut stk := mut []int{0, 0, 0}
-    mut sp := 3
-    gvnBlock(mut st, mut t, BlkRef(w.blk[0]), vt)
+    // 支配木の前順（明示のスタック: [ブロック, 次の子, 入ったときの項の数, 入ったときの ex の語数, 入ったときの kn] の 5 語ずつ・sp = 使っている語数）
+    // load の表は前任が 1 つで、それが支配木の親のブロックへ親の出口の表を引き継ぐ（拡張基本ブロック — 境界検査の condbr で切れた
+    // ブロックの鎖でヘッダや欄の読み直しが消える）。親の出口の表は ex に積み、子を全部回って親を出るときに捨てる（stk の 4 語目 = ex の長さ）
+    mut ex := mut []int{}
+    mut exn := 0
+    // 分かっている条件: 前任が 1 つの親の condbr の辺で入ったブロックの部分木では、その条件の値が真 / 偽と決まっている（[値, 真偽] の 2 語ずつ・
+    // kn = 使っている語数・stk の 5 語目 = 入ったときの kn）。同じ値で分岐する condbr を br に畳む（bce.sober ② と同じ判定 — 展開の後の cfgclean の
+    // GVN でも効くように GVN の中に置く: 展開した本体の検査と呼び手の検査が同じ比較になった形〔flate の insert と Load64〕。bce を展開の後にも
+    // 掛けると自己 build の仕事 +1.55 G — report-999）
+    mut kc := mut []int{}
+    mut kn := 0
+    mut folded := false
+    mut lt := mut []int{}
+    mut stk := mut []int{0, 0, 0, 0, 0}
+    mut sp := 5
+    mut ln := gvnBlock(mut st, mut t, BlkRef(w.blk[0]), vt, mut lt, 0)
+    exn = gvnExPush(mut ex, exn, mut lt, ln)
     while sp > 0 {
-        tp := sp - 3
+        tp := sp - 5
         bb := stk[tp]
         ci := stk[tp + 1]
         if ccnt[bb] + ci < ccnt[bb + 1] {
             stk[tp + 1] = ci + 1
             c := kids[ccnt[bb] + ci]
-            gvnPush3(mut stk, sp, c, t.n)
-            sp += 3
-            gvnBlock(mut st, mut t, BlkRef(w.blk[c]), vt)
+            // 親の出口の表は ex の [0, exn) の末尾の 1 本（親が積んだ — 語数の語が末尾。子の部分木は出るときに exn を戻す）
+            mut ln0 := 0
+            kn0 := kn
+            if w.pcnt[c + 1] - w.pcnt[c] == 1 && w.preds[w.pcnt[c]] == bb {
+                ln0 = gvnExTop(mut ex, exn, mut lt)
+                pb := BlkRef(w.blk[bb])
+                if irBlkTerm(mut st, pb) == TmCondbr && irBlkX2(mut st, pb) != irBlkX4(mut st, pb) {
+                    kn = gvnKcPush(mut kc, kn, resolve(mut st, irBlkX1(mut st, pb)), if irBlkX2(mut st, pb) == w.blk[c] { 1 } else { 0 })
+                }
+            }
+            gvnPush5(mut stk, sp, c, t.n, exn, kn0)
+            sp += 5
+            ln = gvnBlock(mut st, mut t, BlkRef(w.blk[c]), vt, mut lt, ln0)
+            exn = gvnExPush(mut ex, exn, mut lt, ln)
+            if fold && gvnKcFold(mut st, BlkRef(w.blk[c]), mut kc, kn) {
+                folded = true
+            }
         } else {
             gvnPop(mut t, stk[tp + 2])
+            exn = stk[tp + 3]
+            kn = stk[tp + 4]
             sp = tp
         }
     }
     optDce(mut st, f)
     optRenumber(mut st, f)
+    // 畳んだ condbr の後始末（到達しなくなったブロック — bce.sober と同じ列。付け替えの表を使う optDce / optRenumber の後に置く: optReset が表を空にする）
+    if folded {
+        recountPreds(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optBlocks(mut st, f)
+        optReset(mut st, irFnNVal(mut st, f), irFnNBlk(mut st, f))
+        optDce(mut st, f)
+        optRenumber(mut st, f)
+    }
 }
 
 // gvnMul2 は浮動小数の `x * 2.0` を `x + x` にする（強度低減 — IEEE で厳密に同値: どちらも丸めが起きず、±0・∞・NaN も同じ結果。
@@ -134,14 +178,76 @@ func gvnMul2(st mut St, f FnRef, nv int) {
     }
 }
 
-// gvnPush3 は stk の sp 語目から [b, 0, n] を置く（足りなければ伸ばす）
-func gvnPush3(stk mut []int, sp int, b int, n int) {
-    while len(stk) < sp + 3 {
+// gvnPush5 は stk の sp 語目から [b, 0, n, e, k] を置く（足りなければ伸ばす）
+func gvnPush5(stk mut []int, sp int, b int, n int, e int, k int) {
+    while len(stk) < sp + 5 {
         stk = append(stk, 0)
     }
     stk[sp] = b
     stk[sp + 1] = 0
     stk[sp + 2] = n
+    stk[sp + 3] = e
+    stk[sp + 4] = k
+}
+
+// gvnKcPush は分かっている条件の表 kc の kn 語目から [v, x] を置き、新しい kn を返す
+func gvnKcPush(kc mut []int, kn int, v int, x int) int {
+    while len(kc) < kn + 2 {
+        kc = append(kc, 0)
+    }
+    kc[kn] = v
+    kc[kn + 1] = x
+    return kn + 2
+}
+
+// gvnKcFold は b の condbr の条件が kc（kn 語）で分かっていれば br に畳む（行き先と実引数は分かっている側 — bce.sober と同じ書き換え）
+func gvnKcFold(st mut St, b BlkRef, kc mut []int, kn int) bool {
+    if irBlkTerm(mut st, b) != TmCondbr {
+        return false
+    }
+    c := resolve(mut st, irBlkX1(mut st, b))
+    mut i := kn - 2
+    while i >= 0 {
+        if kc[i] == c {
+            kv := kc[i + 1]
+            to := if kv == 1 { irBlkX2(mut st, b) } else { irBlkX4(mut st, b) }
+            args := if kv == 1 { irBlkX3(mut st, b) } else { irBlkX5(mut st, b) }
+            irSetBlkTerm(mut st, b, TmBr)
+            irSetBlkX1(mut st, b, to)
+            irSetBlkX2(mut st, b, args)
+            irSetBlkX3(mut st, b, -1)
+            irSetBlkX4(mut st, b, -1)
+            irSetBlkX5(mut st, b, -1)
+            return true
+        }
+        i -= 2
+    }
+    return false
+}
+
+// gvnExPush は ex の exn 語目から load の表 lt の先頭 ln 語とその語数を積み、新しい exn を返す（足りなければ伸ばす）
+func gvnExPush(ex mut []int, exn int, lt mut []int, ln int) int {
+    while len(ex) < exn + ln + 1 {
+        ex = append(ex, 0)
+    }
+    for i <- iter.Range(0, ln) {
+        ex[exn + i] = lt[i]
+    }
+    ex[exn + ln] = ln
+    return exn + ln + 1
+}
+
+// gvnExTop は ex の [0, exn) の末尾に積まれた表を lt の先頭へ写し、その語数を返す
+func gvnExTop(ex mut []int, exn int, lt mut []int) int {
+    n := ex[exn - 1]
+    b := exn - 1 - n
+    while len(lt) < n {
+        lt = append(lt, 0)
+    }
+    for i <- iter.Range(0, n) {
+        lt[i] = ex[b + i]
+    }
+    return n
 }
 
 // gvnPop は表を項の数 n まで戻す（足した逆順にバケツの頭を戻す）
@@ -191,10 +297,10 @@ func gvnAdd(t mut GvnT, op int, a int, b int, c int, v int) {
 }
 
 // gvnBlock はブロック blk の命令に値番号を引く（load の表はブロックの中だけ — 入口で空・ブロックを出たら捨てる）
-func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int) {
-    // load の表: [番地, オフセット, 型, 値] の 4 語ずつ（小さい — 線形に引く）・ln = 使っている語数（空にするのは ln = 0）
-    mut lt := mut []int{}
-    mut ln := 0
+func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int, lt mut []int, ln0 int) int {
+    // load の表: [番地, オフセット, 型, 値] の 4 語ずつ（小さい — 線形に引く）・ln = 使っている語数（空にするのは ln = 0）。
+    // 入口の表 = lt の先頭 ln0 語（前任 1 つの親から引き継いだ分 — gvnFunc）・返り = 出口の語数
+    mut ln := ln0
     mut ins := irBlkIHead(mut st, blk)
     while ins != -1 {
         op := irInsOp(mut st, ins)
@@ -258,6 +364,7 @@ func gvnBlock(st mut St, t mut GvnT, blk BlkRef, vt int) {
         }
         ins = irInsNext(mut st, ins)
     }
+    return ln
 }
 
 // gvnPure は値番号を引く純粋な命令か（load は別の表・region の読みは対象外）

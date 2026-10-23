@@ -1,0 +1,15 @@
+package main
+
+// lease の整えの転送（region-domain-pool.md 4d）と型の別名（language.md 32 節）: 作業域の型 flate.Work は別の package の型の別名で、
+// 整えの flate.Prepare は実体の package の Prepare を呼ぶ本体 1 文の包み — loader が転送を辿り、実体の整え（Scratch の欄ごとに NewScratch 1 回）を検査する
+
+import "std/iter"
+import "std/task"
+import "testdata/alias_lease/flate"
+
+func main() {
+    lw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))
+    for x <- iter.Range(1, 4) {
+        println(task.Lease(lw, (w mut flate.Work) => flate.EncodeWith(mut w, x)))
+    }
+}

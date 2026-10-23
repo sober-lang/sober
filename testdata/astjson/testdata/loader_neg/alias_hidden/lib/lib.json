@@ -1,0 +1,30 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "secret",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    }
+  ],
+  "funcs": [],
+  "consts": []
+}

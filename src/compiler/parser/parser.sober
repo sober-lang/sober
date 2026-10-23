@@ -271,18 +271,26 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
         noinl := an.noinl
         emb := an.emb
         t := tg(cx, p)
-        if (noinl != 0 || an.expand != 0) && t != lexer.KwFunc {
+        if (noinl != 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0) && t != lexer.KwFunc {
             return -1
         }
         if emb >= 0 && (t != lexer.KwConst || noinl != 0) {
             return -1
         }
+        // 引数なしの `@secret` は const の前置だけ（欄は後置 — fieldList）
+        if an.secBare != 0 && t != lexer.KwConst {
+            return -1
+        }
         if an.layout != 0 && (t != lexer.KwType || an.errs >= 0) {
+            return -1
+        }
+        // `@errors` は関数宣言の前置だけ（名前付き関数型は後置 — typeDecl。型・const の前に置いた形は黙って捨てずに文法の外）
+        if an.errs >= 0 && t != lexer.KwFunc {
             return -1
         }
         if an.intr >= 0 {
             // `@intrinsic("鍵") func 名前(仮引数) 結果`（本体なし — ほかの注釈とは組まない）
-            if t != lexer.KwFunc || noinl != 0 || emb >= 0 || an.errs >= 0 || an.expand != 0 {
+            if t != lexer.KwFunc || noinl != 0 || emb >= 0 || an.errs >= 0 || an.expand != 0 || an.exh != 0 || an.sec >= 0 || an.bless != 0 || an.cred != 0 {
                 return -1
             }
             id, q := intrinsicDecl(mut nb, mut db, cx, p, start, an.intr)
@@ -294,7 +302,7 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
             continue
         }
         if t == lexer.KwFunc {
-            fd, q := funcDecl(mut nb, mut db, cx, p, start, noinl, an.errs, an.errsTok, an.expand)
+            fd, q := funcDecl(mut nb, mut db, cx, p, start, an)
             if fd < 0 {
                 return -1
             }
@@ -308,7 +316,7 @@ func parseFile(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
             types = append(types, td)
             p = q
         } else if t == lexer.KwConst {
-            p = constDecl(mut nb, mut db, cx, p, start, emb, mut consts)
+            p = constDecl(mut nb, mut db, cx, p, start, emb, an.secBare, mut consts)
             if p < 0 {
                 return -1
             }
@@ -415,7 +423,11 @@ func importDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], c
 
 // Annot は宣言の前の注釈の並び: p = 続く宣言の位置（失敗なら -1）、noinl = `@noinline` の印（1）、emb = `@embed("glob")` のパターン（無し -1）、
 // errs = `@errors(...)` のラベル名の列（文字列 — 修飾は "ref.N"・否定は先頭に "!"・形の読めない引数は "?"。無し -1）、errsTok = その `@` の字句、
-// layout = `@layout`（引数なし — 続く型宣言の印。language.md 36 節）の印（1）
+// layout = `@layout`（引数なし — 続く型宣言の印。language.md 36 節）の印（1）、exh = `@exhaustive`（引数なし — 続く関数宣言の印。language.md 13 節「表の網羅」）の印（1）、
+// sec = `@secret(k, …)`（続く関数宣言の仮引数の名前の列 — 読みは @errors と同じ。無し -1）・secTok = その `@` の字句、secBare = 引数なしの `@secret`（続く const 宣言の印）、
+// bless = `@bless`（引数なし — 全部の名前空間: 1）か `@bless(origin)`（出所の名前空間だけ: 2）— 続く関数宣言の印。受理は std だけ — analyzer）・
+// cred = `@credential`（引数なし — 続く関数宣言の印: 結果は認証の源。受理は std だけ）。@secret / @bless の意味は language.md 12 節「秘密の値の宣言」・
+// @credential / @bless(origin) は 12 節「出所の依存」
 type Annot struct {
     p int
     noinl int
@@ -425,6 +437,38 @@ type Annot struct {
     layout int
     expand int
     intr int
+    exh int
+    sec int
+    secTok int
+    secBare int
+    bless int
+    cred int
+}
+
+// annotBad は読めなかった注釈の並び（p = -1）
+func annotBad() Annot {
+    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1, exh: 0, sec: -1, secTok: 0, secBare: 0, bless: 0, cred: 0}
+}
+
+// skipParens は位置 p0 の `(` から対応する `)` の次の位置（入れ子の括弧は数える — 閉じずに終わりに来たら -1）
+func skipParens(cx Cx, p0 int) int {
+    mut p := p0
+    mut depth := 0
+    mut going := true
+    while going {
+        t := tg(cx, p)
+        if t == lexer.Eof {
+            return -1
+        }
+        if t == lexer.LParen {
+            depth += 1
+        } else if t == lexer.RParen {
+            depth -= 1
+        }
+        p += 1
+        going = depth > 0
+    }
+    return p
 }
 
 // annots は位置 p0 からの注釈の並び `(annotation ';'?)*`（`@errors(...)` はラベル名の列を持つ — 検査は analyzer。受理の集合は読み捨てていた頃と同じ）
@@ -432,7 +476,7 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     mut p := p0
     // `@noinline`（引数なし）は続く関数宣言の印
     mut noinl := 0
-    // `@embed("glob")` は続く const 宣言（名前 1 つ）の印 — KConst の e = パターン（文字列）、f = 1（ファイルの読み込みは loader）
+    // `@embed("glob")` は続く const 宣言（名前 1 つ）の印 — KConst の e = パターン（文字列）、f のビット 0（ファイルの読み込みは loader）。引数なしの `@secret` は f のビット 1
     mut emb := 0 - 1
     mut errs := 0 - 1
     mut errsTok := 0
@@ -440,15 +484,21 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
     mut expand := 0
     // `@intrinsic("鍵")` は続く本体なしの func 宣言の印（KIntrinsic — 受理は std だけ・鍵の集合は閉じる: loader の検査）
     mut intr := 0 - 1
+    mut exh := 0
+    mut sec := 0 - 1
+    mut secTok := 0
+    mut secBare := 0
+    mut bless := 0
+    mut cred := 0
     while tg(cx, p) == lexer.At {
         if textIs(cx, p + 1, "intrinsic") && tg(cx, p + 2) == lexer.LParen {
             v, r := parseExpr(mut nb, mut db, cx, p + 3, false)
             if v < 0 || tg(cx, r) != lexer.RParen {
-                return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
+                return annotBad()
             }
             vn := nodeAt(mut nb, v)
             if vn.kind != ast.EStrlit {
-                return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
+                return annotBad()
             }
             intr = vn.a
             p = r + 1
@@ -468,11 +518,11 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
         if textIs(cx, p + 1, "embed") && tg(cx, p + 2) == lexer.LParen {
             v, r := parseExpr(mut nb, mut db, cx, p + 3, false)
             if v < 0 || tg(cx, r) != lexer.RParen {
-                return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
+                return annotBad()
             }
             vn := nodeAt(mut nb, v)
             if vn.kind != ast.EStrlit {
-                return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
+                return annotBad()
             }
             emb = vn.a
             p = r + 1
@@ -489,6 +539,63 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
             }
             continue
         }
+        if textIs(cx, p + 1, "exhaustive") && tg(cx, p + 2) != lexer.LParen {
+            exh = 1
+            p += 2
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
+        if textIs(cx, p + 1, "secret") {
+            // `@secret(k, …)`（関数 — 名前の列は空にしない）か `@secret`（const）
+            if tg(cx, p + 2) == lexer.LParen {
+                if tg(cx, p + 3) == lexer.RParen {
+                    return annotBad()
+                }
+                secTok = tk(cx, p)
+                sec = errorsArgs(mut db, cx, p + 2)
+                p = skipParens(cx, p + 2)
+                if p < 0 {
+                    return annotBad()
+                }
+            } else {
+                secBare = 1
+                p += 2
+            }
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
+        if textIs(cx, p + 1, "bless") && tg(cx, p + 2) != lexer.LParen {
+            bless = 1
+            p += 2
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
+        if textIs(cx, p + 1, "bless") {
+            // `@bless(origin)` — 名前空間の引数は origin だけ（閉じた集合）
+            if tg(cx, p + 3) != lexer.Identifier || !textIs(cx, p + 3, "origin") || tg(cx, p + 4) != lexer.RParen {
+                return annotBad()
+            }
+            bless = 2
+            p += 5
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
+        if textIs(cx, p + 1, "credential") && tg(cx, p + 2) != lexer.LParen {
+            cred = 1
+            p += 2
+            if tg(cx, p) == lexer.Semicolon {
+                p += 1
+            }
+            continue
+        }
         if textIs(cx, p + 1, "layout") && tg(cx, p + 2) != lexer.LParen {
             layout = 1
             p += 2
@@ -498,38 +605,27 @@ func annots(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
             continue
         }
         if !textIs(cx, p + 1, "errors") {
-            return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
+            return annotBad()
         }
         errsTok = tk(cx, p)
         errs = errorsArgs(mut db, cx, p + 2)
         p += 2
         if tg(cx, p) == lexer.LParen {
-            mut depth := 0
-            mut going := true
-            while going {
-                t := tg(cx, p)
-                if t == lexer.Eof {
-                    return Annot{p: -1, noinl: 0, emb: -1, errs: -1, errsTok: 0, layout: 0, expand: 0, intr: -1}
-                }
-                if t == lexer.LParen {
-                    depth += 1
-                } else if t == lexer.RParen {
-                    depth -= 1
-                }
-                p += 1
-                going = depth > 0
+            p = skipParens(cx, p)
+            if p < 0 {
+                return annotBad()
             }
         }
         if tg(cx, p) == lexer.Semicolon {
             p += 1
         }
     }
-    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr}
+    return Annot{p: p, noinl: noinl, emb: emb, errs: errs, errsTok: errsTok, layout: layout, expand: expand, intr: intr, exh: exh, sec: sec, secTok: secTok, secBare: secBare, bless: bless, cred: cred}
 }
 
 // constDecl は const 宣言（p = `const` の位置 — `const` identifier_list '=' expression_list。値の畳み込みは loader の仕事）の KConst を
 // consts に足す（start = 注釈を含む宣言の先頭・emb = @embed のパターン）。結果 = 次の位置（失敗なら -1）
-func constDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, start int, emb int, consts mut []int) int {
+func constDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx, p int, start int, emb int, secret int, consts mut []int) int {
     mut names := mut []int{}
     mut q := p + 1
     mut more := true
@@ -570,7 +666,7 @@ func constDecl(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
     }
     mut k := 0
     while k < len(names) {
-        consts = append(consts, node(mut nb, ast.KConst, tk(cx, names[k]), name(mut db, cx, names[k]), values[k], start, q + 1, if emb >= 0 { emb } else { 0 }, if emb >= 0 { 1 } else { 0 }))
+        consts = append(consts, node(mut nb, ast.KConst, tk(cx, names[k]), name(mut db, cx, names[k]), values[k], start, q + 1, if emb >= 0 { emb } else { 0 }, (if emb >= 0 { 1 } else { 0 }) + 2 * secret))
         k += 1
     }
     return q + 1

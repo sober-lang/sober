@@ -1,34 +1,42 @@
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 23
 
 form user=kr pass=x%21
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 19
 
 form user=- pass=-
 HTTP/1.1 201 Created
 Content-Type: application/json
+Cache-Control: private
 Location: /users/ann
 Content-Length: 22
 
 {"name":"ann","age":7}HTTP/1.1 400 Bad Request
+Cache-Control: private
 Content-Length: 0
 
 HTTP/1.1 200 OK
 Content-Type: text/plain
 Cache-Control: max-age=60
+X-Source: out
 Content-Length: 12
 
 static body
 HTTP/1.1 403 Forbidden
+Cache-Control: private
 Content-Length: 0
 
 HTTP/1.1 404 Not Found
+Cache-Control: private
 Content-Length: 0
 
 HTTP/1.1 405 Method Not Allowed
+Cache-Control: private
 Allow: POST
 Content-Length: 0
 Connection: close

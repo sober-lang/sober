@@ -1,0 +1,3 @@
+examples/net_region_mix.sober:26:10: error: case convert.InvalidInt is unreachable: the subject never carries it (it may carry: io.Denied, io.Timeout, io.Expired, io.Closed, io.Other, net.Bad, strings.InvalidUtf8) — remove the case (Analyzer)
+examples/net_region_mix.sober:27:10: error: case convert.IntOutOfRange is unreachable: the subject never carries it (it may carry: io.Denied, io.Timeout, io.Expired, io.Closed, io.Other, net.Bad, strings.InvalidUtf8) — remove the case (Analyzer)
+exit=1

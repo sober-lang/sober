@@ -146,6 +146,13 @@ func MovRegReg(c mut table.Table[byte], dst int, src int) {
     opRR(mut c, 0x89, -1, src, dst)
 }
 
+// MovRegReg32 は mov dst32, src32（上位 32 ビットを 0 に — `and x, 0xffffffff` の形）— 89 /r（REX.W なし）
+func MovRegReg32(c mut table.Table[byte], dst int, src int) {
+    rex(mut c, false, hi(src), 0, hi(dst), false)
+    put(mut c, 0x89)
+    table.Push(mut c, modrm(3, lo(src), lo(dst)))
+}
+
 // MovRegMem は mov dst, [base + disp] — REX.W 8B /r
 func MovRegMem(c mut table.Table[byte], dst int, base int, disp int) {
     opMem(mut c, true, 0x8b, -1, dst, base, disp, false)
@@ -184,6 +191,20 @@ func Mfence(c mut table.Table[byte]) {
     put(mut c, 0x0f)
     put(mut c, 0xae)
     put(mut c, 0xf0)
+}
+
+// Lfence は lfence — 0F AE E8（前の命令が終わるまで後ろの命令を始めない — 計時の柵）
+func Lfence(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0xae)
+    put(mut c, 0xe8)
+}
+
+// Rdtscp は rdtscp — 0F 01 F9（edx:eax = 時刻の計数器・ecx = プロセッサの印 — 前の命令が終わってから読む）
+func Rdtscp(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0x01)
+    put(mut c, 0xf9)
 }
 
 // Pause は pause — F3 90（スピンの待ちの 1 回）

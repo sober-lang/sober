@@ -1,0 +1,2 @@
+examples/exhaustive_neg_union_default.sober:12:12: error: @exhaustive: the cases name every variant of the union Shape, so the default is unreachable — remove it (a default covers only values outside the closed set) (Analyzer)
+exit=1

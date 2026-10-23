@@ -1,0 +1,26 @@
+package main
+
+// 負例: 借りのラムダの本体の中では捕捉した mut の束縛は mut 仮引数（language.md 17 節 U1・25 節 (α-L1)）— 中身を freeze できない
+// （囲む関数がまだ持っていて、呼び出しの後に書ける）。freeze は囲む関数の中で呼び出しの後に
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Z struct {
+    acc mut []byte
+    n int
+}
+
+func two(emit func(b []byte) error?) error? {
+    return emit(bytes("de"))
+}
+
+func count(st Stream) int {
+    mut z := Z{acc: mut []byte{1, 2}, n: 0}
+    e := st((b []byte) => { w := freeze(z.acc); z.n += len(w); nil })
+    if e != nil { return -1 }
+    return z.n
+}
+
+func main() {
+    println(count((emit) => two(emit)))
+}

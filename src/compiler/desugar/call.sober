@@ -1263,7 +1263,10 @@ func tryExpr(st mut S, e NodeRef, eb int, ef int, depth int) (CoreRef, error?) {
     // 名前付き関数か、名前付き関数から束縛した関数値（n25 — 結果の型式の列は束縛が持つ）
     res := fnResOf(mut st, callee, eb)
     // 関数型の仮引数に束縛した閉包の呼び出し（`f(c)?` — 結果の型式は持たないのでコア型の組の鎖から読む）
-    crt := if res == -1 { cloResTy(mut st, callee, eb, ef) } else { TyRef(-1) }
+    // 値の位置の閉包（値化可能な named fn type の値の束縛・欄の読み — `g(x)?` は束縛して見る形と同じ結果の型。F — report-972）
+    ct0 := if res == -1 { cloResTy(mut st, callee, eb, ef) } else { TyRef(-1) }
+    cv := if res == -1 && ct0 == -1 { closureCallee(mut st, callee, eb, ef) } else { TyRef(-1) }
+    crt := if cv != -1 { closRet(mut st, cv) } else { ct0 }
     if res == -1 && crt == -1 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
     }

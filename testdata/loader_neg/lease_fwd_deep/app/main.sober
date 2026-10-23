@@ -1,0 +1,9 @@
+package main
+
+import "std/task"
+import "testdata/loader_neg/lease_fwd_deep/wrap"
+
+func main() {
+    lw := task.NewLocal((w mut wrap.Work) => wrap.P5(mut w))
+    println(task.Lease(lw, (w mut wrap.Work) => 1))
+}

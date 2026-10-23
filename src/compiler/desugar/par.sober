@@ -588,7 +588,7 @@ func parTy(st mut S, key int, fi int, args ListRef, eb int, ef int, tex NodeRef)
 
 // coreKids は tag の子の欄（ビット 1 = a・2 = b・4 = c）
 func coreKids(tag int) int {
-    if tag == CLet || tag == CAdd || tag == CLt || tag == CPair || tag == CCallv || tag == CAssign || tag == CWhile || tag == CIndex || tag == CAppend || tag == CEqs || tag == CConcat || tag == CSpawn || tag == CSend {
+    if tag == CLet || tag == CAdd || tag == CLt || tag == CPair || tag == CCallv || tag == CCallMv || tag == CAssign || tag == CWhile || tag == CIndex || tag == CAppend || tag == CEqs || tag == CConcat || tag == CSpawn || tag == CSend {
         return 3
     }
     if tag == CBin || tag == CGetm || tag == CDelm || tag == CFBin {

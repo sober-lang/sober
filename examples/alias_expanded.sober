@@ -1,0 +1,70 @@
+package main
+
+// 型の別名の網の双子（examples/alias.sober の別名を手で実体の名前に展開した形 — corejson が alias と一致する）
+
+type Point struct {
+    x int
+    y int
+}
+
+
+type Shape union {
+    Dot { p Point }
+    Line { a Point; b Point }
+}
+
+
+type Meters int
+
+
+const Limit = Meters(10)
+
+type Scale func(int) int
+
+
+type Box[T] struct {
+    v T
+}
+
+
+type Pair struct {
+    p Point
+    m Meters
+    f Scale
+}
+
+func len2(p Point) int {
+    return p.x * p.x + p.y * p.y
+}
+
+func bump(p mut Point) {
+    p.x += 1
+}
+
+func area(s Shape) int {
+    return switch s {
+    case Dot{p}: 0
+    case Line{a, b}: (b.x - a.x) * (b.y - a.y)
+    }
+}
+
+func apply(f Scale, x int) int {
+    return f(x)
+}
+
+func main() {
+    mut p := Point{x: 3, y: 4}
+    println(len2(p))
+    bump(mut p)
+    q := Point{1, 2}
+    println(len2(p), len2(q))
+    l := Line{a: q, b: Point{4, 6}}
+    println(area(l), area(Dot{p: p}))
+    m := Meters(7)
+    println(int(m), m == 7, m != Limit, Limit == Meters(10))
+    k := Pair{p: q, m: Meters(3), f: (x int) => x * 2}
+    println(apply(k.f, int(k.m)))
+    b := Box[int]{v: 5}
+    c := Box[int]{v: b.v + 1}
+    println(b.v, c.v)
+}

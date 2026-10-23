@@ -3,6 +3,7 @@ package main
 // Wycheproof（testdata/wycheproof/README.md）の X25519 518 件を std/crypto/x25519 に通す（report-794）。valid も acceptable（低位数の点・
 // twist・非正準の u・全 0 の共有値）も RFC 7748 の値どおりの共有値を出すこと（全 0 の検査は TLS の側 — RFC 8446 7.4.2）。食い違った tcId を印字する
 
+import "std/crypto"
 import "std/crypto/x25519"
 import "std/hex"
 import "std/iter"
@@ -58,8 +59,7 @@ func main() {
     for g <- f.testGroups {
         for t <- g.tests {
             n = n + 1
-            got := hex.Format(x25519.Shared(unhex(t.private), unhex(t.public)))
-            if got != t.shared {
+            if !crypto.Equal(x25519.Shared(unhex(t.private), unhex(t.public)), unhex(t.shared)) {
                 bad = append(bad, t.tcId)
             }
             if t.shared == "0000000000000000000000000000000000000000000000000000000000000000" {

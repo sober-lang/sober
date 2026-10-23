@@ -1,0 +1,26 @@
+package main
+
+// 型つきの const（language.md 32 節）: 値の式が named scalar への変換 `T(定数式)` の const は型 T を持つ（Go の typed constant と同じ）。
+// 型の無い const（`const Plain = 7`）は今までどおり文脈の型に割り当てられる
+
+type Status int
+
+const OK = Status(200)
+const NotFound = Status(400 + 4)
+const Plain = 7
+
+func code(s Status) int {
+    return int(s)
+}
+
+func main() {
+    x := OK
+    mut y := Status(1)
+    y = NotFound
+    println(code(x))
+    println(code(y))
+    println(x == 200)
+    println(y == NotFound)
+    println(code(Plain))
+    println(Plain + 1)
+}

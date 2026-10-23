@@ -493,6 +493,16 @@ theorem tsubst_typing {e : Expr} {Δ : Defs} {f b d : Nat} {Γ : Ctx} {t : Ty} {
       have hf' := ihf hf
       simp only [Ty.tsubst] at hf'
       exact .callv hf' (ihe harg) hsub' hbd
+  | callMv a ef e ihf ihe =>
+    cases he with
+    | callMv hf harg hsub hbd had =>
+      rename_i d' p r ta
+      rw [← Ty.tsubst_relocA hts]
+      have hsub' := Ty.sub_tsubst (ts := ts) hsub
+      rw [← Ty.tsubst_renR hts] at hsub'
+      have hf' := ihf hf
+      simp only [Ty.tsubst] at hf'
+      exact .callMv hf' (ihe harg) hsub' hbd had
   | call fn ts' e ihe =>
     cases he with
     | call hfn hlen hargs harg hsub hbd =>

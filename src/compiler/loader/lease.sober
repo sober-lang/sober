@@ -422,29 +422,56 @@ type LPrep struct {
     ok bool
 }
 
-// prepCall は整えの文の列 ps が T の package（tpk）の関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` なら、その関数の本体（mut 仮引数 1 つ）を返す
+// prepCall は整えの文の列 ps が関数 1 つの呼び出し `F(mut w)` / `pkg.F(mut w)` で、1 文の転送を辿って T の package（tpk）の関数に着くなら、その関数の本体（mut 仮引数 1 つ）を返す
 func prepCall(cx Cx, f int, t ast.Tree, ps []int, w string, tpk int) LPrep {
-    if len(ps) != 1 {
-        return LPrep{}
+    // 1 文の転送 `G(mut p)`（p は呼んだ関数の唯一の mut 仮引数そのもの）は G へ辿る — T の package の関数に着くまで・深さ 4 まで
+    //（公開の package の包みが std/internal の実体の整えを呼ぶ形 — 別名の第一顧客 flate.Prepare → deflate.Prepare。region-domain-pool.md 4d）
+    mut cf := f
+    mut ct := t
+    mut cps := ps
+    mut cw := w
+    mut depth := 0
+    while depth <= 4 {
+        if len(cps) != 1 {
+            return LPrep{}
+        }
+        e := if cps[0] < 0 { 0 - 1 - cps[0] } else if ct.nodes[cps[0]].kind == ast.SExpr { ct.nodes[cps[0]].a } else { 0 - 1 }
+        if e < 0 || ct.nodes[e].kind != ast.ECall || ast.ListLen(ct, ct.nodes[e].b) != 1 {
+            return LPrep{}
+        }
+        a := ct.nodes[ast.ListAt(ct, ct.nodes[e].b, 0)]
+        if a.kind != ast.EMutArg || Name(ct, a.a) != cw {
+            return LPrep{}
+        }
+        c := ct.nodes[ct.nodes[e].a]
+        mut fn := ""
+        mut pk := 0 - 1
+        if c.kind == ast.EIdent {
+            fn = Name(ct, c.a)
+            pk = cx.file_pkg[cf]
+        } else if c.kind == ast.ESelector && ct.nodes[c.a].kind == ast.EIdent {
+            fn = Name(ct, c.b)
+            pk = fileImportOf(cx, cf, Name(ct, ct.nodes[c.a].a))
+        }
+        if pk < 0 {
+            return LPrep{}
+        }
+        r := prepFn(cx, pk, fn)
+        if !r.ok || pk == tpk {
+            return r
+        }
+        cf = r.file
+        ct = cx.trees[cf]
+        cps = r.stmts
+        cw = r.param
+        depth += 1
     }
-    e := if ps[0] < 0 { 0 - 1 - ps[0] } else if t.nodes[ps[0]].kind == ast.SExpr { t.nodes[ps[0]].a } else { 0 - 1 }
-    if e < 0 || t.nodes[e].kind != ast.ECall || ast.ListLen(t, t.nodes[e].b) != 1 {
-        return LPrep{}
-    }
-    a := t.nodes[ast.ListAt(t, t.nodes[e].b, 0)]
-    if a.kind != ast.EMutArg || Name(t, a.a) != w {
-        return LPrep{}
-    }
-    c := t.nodes[t.nodes[e].a]
-    mut fn := ""
-    if c.kind == ast.EIdent && cx.file_pkg[f] == tpk {
-        fn = Name(t, c.a)
-    } else if c.kind == ast.ESelector && t.nodes[c.a].kind == ast.EIdent && fileImportOf(cx, f, Name(t, t.nodes[c.a].a)) == tpk {
-        fn = Name(t, c.b)
-    } else {
-        return LPrep{}
-    }
-    for g <- iter.Range(cx.pkg_lo[tpk], cx.pkg_hi[tpk]) {
+    return LPrep{}
+}
+
+// prepFn は package pk の関数 fn（型パラメータなし・mut の仮引数 1 つ・本体あり）の本体の文の列と仮引数の名前（無ければ ok = false）
+func prepFn(cx Cx, pk int, fn string) LPrep {
+    for g <- iter.Range(cx.pkg_lo[pk], cx.pkg_hi[pk]) {
         gt := cx.trees[g]
         fs := gt.nodes[gt.file].d
         for j <- iter.Range(0, ast.ListLen(gt, fs)) {

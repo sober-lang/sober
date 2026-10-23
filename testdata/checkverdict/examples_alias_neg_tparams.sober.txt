@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_tparams.sober:9:6: an alias has no type parameters — write the type arguments where the alias is used (type B = lib.Box, then B[int])
+exit=1

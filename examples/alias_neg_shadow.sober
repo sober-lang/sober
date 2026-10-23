@@ -1,0 +1,14 @@
+package main
+
+// 負例（language.md 32 節「型の別名」・syntax.md 決定 13）: 別名の名前はトップレベルの型の名前 — ローカル束縛に使えない
+
+type Point struct {
+    x int
+}
+
+type Pt = Point
+
+func main() {
+    Pt := 3
+    println(Pt)
+}

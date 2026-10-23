@@ -1,0 +1,47 @@
+package main
+
+// 匿名の関数型の欄の env の鍵は借りの位置と別（language.md 25 節 5d — 2026-10-22 report-1038 (c) 案 A）: 同じ構造の借り（count）が mut を捕捉しても、
+// 欄を持つ struct（Sink）の型は変わらない — slice に積んで freeze し、子 task へ渡せる（旧「借りと同じ寄せ方」では check だけが拒否した遠隔作用の割れ）
+
+import "std/task"
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Sink struct {
+    put func(b []byte) error?
+    tag int
+}
+
+func mk(k int) Sink {
+    return Sink{put: (b []byte) => { println(len(b) + k); nil }, tag: k}
+}
+
+func two(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    return emit(bytes("de"))
+}
+
+func count(st Stream) int {
+    mut n := 0
+    e := st((b []byte) => { n += len(b); nil })
+    if e != nil { return -1 }
+    return n
+}
+
+func main() {
+    mut ss := mut []Sink{}
+    mut i := 0
+    while i < 2 {
+        ss = append(ss, mk(i))
+        i += 1
+    }
+    fs := freeze(ss)
+    _ = fs[1].put(bytes("xyz"))
+    sk := fs[1]
+    r, _ := task.Run((sc task.Scope) => {
+        h := task.Spawn(sc, () => sk.tag * 10)
+        task.Join(h)
+    })
+    println(r)
+    println(count((emit) => two(emit)))
+}

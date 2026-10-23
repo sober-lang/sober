@@ -1,0 +1,15 @@
+package main
+
+// 負例（language.md 32 節 — 型つきの const）: Status 型の const を int の仮引数へ渡せない（named と下地の暗黙の変換は無い — `int(OK)` と書く）
+
+type Status int
+
+const OK = Status(200)
+
+func f(n int) int {
+    return n
+}
+
+func main() {
+    println(f(OK))
+}

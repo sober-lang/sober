@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_dup.sober:11:6: a top-level name is declared more than once in the package
+exit=1

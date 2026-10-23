@@ -1,0 +1,140 @@
+# bench-official — 公式ベンチ（bench/README.md・README の速度とメモリの数字とグラフ）の計測。手動の起動だけ。
+# 逐次 12 題材（bench/seqperf.sh -n 5 --rust — Sober → Go → Rust の交互）と外部ソート（bench/extsort.sh）を同じ job で測り、raw と
+# 計測環境（bench-env.txt — CPU の型番・カーネル・各版）を artifact にする。取り込みは手元で scripts/benchfetch.sh <run-id>
+# （型番の照合 → bench/data/raw/ へ写し → benchsync --import → 文書の生成 → いつものコミットと push の調停 — report-920 の案 C）。
+# 物差し = task-clock の周ごとの比（この VM はハードウェアのカウンタを出さない — report-921・再現性の実験 = report-922 の bench-exp）。
+# 版は固定（runner の既定は Rust 1.99 / Go 1.24 で手元と 10 版ずれる）。上げるときは基線の取り直しと一緒に
+name: bench-official
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "runs-on label（基線と同じラベル — 箱の CPU の型番は bench-env.txt に残り、benchfetch が基線と照合する）"
+        default: "linux-x64-16vcpu"
+      rounds:
+        description: "seqperf / extsort の周の数（交互）"
+        default: "5"
+      extsort_chart:
+        description: "extsort の RSS の図の入力の大きさ（バイト・空白区切り — 空にすると省く・約 9 分短くなる。公式の表は 1 GiB の周だけを読む）"
+        default: "268435456 1073741824 4294967296"
+
+concurrency:
+  group: bench-official
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Rust 1.89.0
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+
+      - name: perf
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y linux-tools-common "linux-tools-$(uname -r)" 2> /dev/null || sudo apt-get -qq install -y linux-tools-generic
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+
+      - name: Environment record + probe (task-clock must count)
+        run: |
+          mkdir -p out/bench
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "run_attempt=${{ github.run_attempt }}"
+            echo "commit=$(git rev-parse --short=8 HEAD)"
+            echo "runner=${{ inputs.runner }}"
+            echo "runner_name=$RUNNER_NAME"
+            echo "cpu=$(lscpu | sed -n 's/^Model name: *//p')"
+            echo "kernel=$(uname -r)"
+            echo "go=$(go version | cut -d' ' -f3)"
+            echo "rust=$(rustc --version | cut -d' ' -f2)"
+            echo "zig=$(zig version)"
+            echo "perf=$(perf --version | cut -d' ' -f3)"
+            echo "nproc=$(nproc)"
+            echo "pin_cpu=$(( $(nproc) - 1 ))"
+            echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee out/bench/bench-env.txt
+          lscpu -e=CPU,CORE,SOCKET,NODE,ONLINE | tee out/bench/lscpu-e.txt
+          perf stat -x, -e task-clock -o out/bench/probe.txt -- /bin/true
+          cat out/bench/probe.txt
+          grep -q '^[0-9][0-9.]*,[^,]*,task-clock' out/bench/probe.txt || { echo "task-clock が数えられない — 計測を止める"; exit 1; }
+
+      - name: Build stage1 and stage2 (bootstrap chain)
+        run: |
+          (cd src/stage1 && zig build)
+          scripts/stage2.sh
+
+      - name: Prepare (inputs + twins)
+        run: |
+          BENCH_PREP=1 scripts/bench.sh -n 1
+          bench/rust/build.sh
+
+      # 準備の後の余熱（loadavg 3.8 → 1.4 で周 1 が +5〜17% — report-922 の 3 節）。捨て周より安い: loadavg が 1.5 を割るまで待つ（最大 3 分）
+      - name: Quiet down
+        run: |
+          for i in $(seq 36); do awk '{ exit !($1 < 1.5) }' /proc/loadavg && break; sleep 5; done
+          cat /proc/loadavg
+
+      - name: seqperf
+        run: |
+          bench/seqperf.sh -n "${{ inputs.rounds }}" --rust -o out/bench/seqperf.tsv
+          wc -l out/bench/seqperf.tsv
+
+      - name: Quiet down
+        run: |
+          for i in $(seq 36); do awk '{ exit !($1 < 1.5) }' /proc/loadavg && break; sleep 5; done
+          cat /proc/loadavg
+
+      - name: extsort
+        run: |
+          bench/extsort.sh -n "${{ inputs.rounds }}" --chart "${{ inputs.extsort_chart }}" -o out/bench/extsort.tsv
+          wc -l out/bench/extsort.tsv
+
+      # 取り込んだときの姿の下見（job の中で official.tsv を作って文書とグラフを生成 — 読むだけ・リポジトリには書かない）
+      - name: Preview (benchsync --import → generate, dry)
+        run: |
+          BENCHSYNC_TSV=out/bench/official.tsv node --experimental-strip-types scripts/benchsync.ts --import out/bench/seqperf.tsv out/bench/extsort.tsv \
+            "$(sed -n 's/^started=//p' out/bench/bench-env.txt | cut -c1-10)" "$(sed -n 's/^commit=//p' out/bench/bench-env.txt)" --env out/bench/bench-env.txt
+          BENCHSYNC_TSV=out/bench/official.tsv BENCHSYNC_OUT=out/bench/render node --experimental-strip-types scripts/benchsync.ts > /dev/null
+          {
+            echo "## bench-official — $(sed -n 's/^cpu=//p' out/bench/bench-env.txt)（$(sed -n 's/^kernel=//p' out/bench/bench-env.txt)）"
+            echo
+            grep -E 'benchsync:(bench-go|bench-rust|bench-rust-tally|bench-rss-go)' out/bench/render/bench/README.md | sed 's/ <!--.*//'
+            echo
+            echo "取り込み: \`scripts/benchfetch.sh ${{ github.run_id }}\`（型番が基線と違えば拒否される）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-official-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out/bench/bench-env.txt
+            out/bench/lscpu-e.txt
+            out/bench/probe.txt
+            out/bench/seqperf.tsv
+            out/bench/extsort.tsv
+          if-no-files-found: warn

@@ -80,6 +80,15 @@ func buildLeaseRt(st mut St) {
     b1 := branchIf(mut st, cmp(mut st, CEq, op, one))
     ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.wkG), WK_ID) } else { zero })
     setCur(mut st, b1)
+    // op 6: 今の深度より深い自前のスロット（死んだ region — 前の命の高水位が残る）の頁を OS へ返す（1 回きりの深い作業の後 — tls の handshake の後〔report-1012〕）。
+    // 返すのは [スロットの基底, bump) の全部（W_MADV の残しを使わない — 次の命は最初の頁から触り直す）。bump は書き換えない（slotRelease の used は
+    // admission の観測 — admitEnd — に流れるので、命の高水位のまま残す）。task の無いプログラムは何もしない
+    b6 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 6)))
+    if st.taskUse {
+        leaseTrim(mut st)
+    }
+    ret(mut st, zero)
+    setCur(mut st, b6)
     // op 4: 生の読み・op 5: 生の書き
     b4 := branchIf(mut st, cmp(mut st, CEq, op, iconst(mut st, 4)))
     ret(mut st, load(mut st, addr, 0))
@@ -137,4 +146,36 @@ func leaseDrainCall(st mut St) {
     if st.rtLeaseDrain != -1 {
         call(mut st, st.rtLeaseDrain, list2(mut st, 0, iconst(mut st, 0)))
     }
+}
+
+// leaseTrim は op 6 の本体: 深度 k（今の深度 < k ≤ 自前の最深 SLOT_OWN）のスロットの [基底, bump) を madvise(MADV_DONTNEED)。
+// bump は task の切り替えで自前の範囲ごと退避・復元される（slotRange）ので、この task の命の高水位 — 範囲の外の値（0 か大きさ超え）は飛ばす
+func leaseTrim(st mut St) {
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    hi := load(mut st, sg, SLOT_OWN)
+    size := load(mut st, meta, W_SLOT_SIZE)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    rel := newBlock(mut st)
+    nxt := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, load(mut st, meta, W_DEPTH), iconst(mut st, 1))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, hi), body, -1, done, -1)
+    setCur(mut st, body)
+    s := load(mut st, gepWord(mut st, sg, k), 0)
+    used := bin(mut st, BSub, load(mut st, gepWord(mut st, meta, k), W_BUMP), s)
+    inR := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGt, used, iconst(mut st, 0)), inR, -1, nxt, -1)
+    setCur(mut st, inR)
+    condbr(mut st, cmp(mut st, CLe, used, size), rel, -1, nxt, -1)
+    setCur(mut st, rel)
+    // madvise(s, used, MADV_DONTNEED = 4)。失敗は無視（返せなくても意味は変わらない）
+    syscall(mut st, list4(mut st, iconst(mut st, 28), s, used, iconst(mut st, 4)))
+    br(mut st, nxt, -1)
+    setCur(mut st, nxt)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
 }

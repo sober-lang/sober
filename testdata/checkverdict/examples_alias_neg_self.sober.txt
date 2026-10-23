@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_self.sober:5:6: an alias refers back to itself through other aliases
+exit=1

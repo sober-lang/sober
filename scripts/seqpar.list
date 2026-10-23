@@ -4,3 +4,4 @@ examples/task_def.sober examples/task_def_seq.sober
 examples/task_chan_regions.sober examples/task_chan_regions_seq.sober
 examples/task_print_chan.sober examples/task_print_chan_seq.sober
 examples/task_scope_try.sober examples/task_scope_try_seq.sober
+examples/task_print_indirect.sober examples/task_print_indirect_seq.sober

@@ -63,7 +63,7 @@ tag が合わない（暗号文・ad・nonce・鍵のどれかが違う）
 
 ```sober
 type Key struct {
-    key []byte
+    key []byte @secret
 }
 ```
 
@@ -73,6 +73,7 @@ type Key struct {
 
 ```sober
 @errors(BadSize)
+@secret(key)
 func Prepare(key []byte) (Key, error?)
 ```
 
@@ -84,6 +85,8 @@ key の Key（鍵の長さはここで見る）
 
 ```sober
 @errors(BadSize)
+@secret(key)
+@bless
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?)
 ```
 
@@ -95,6 +98,7 @@ pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は�
 
 ```sober
 @errors(BadSize, Auth)
+@secret(key)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?)
 ```
 
@@ -106,10 +110,11 @@ Seal の逆（tag を照合してから復号する）
 
 ```sober
 @errors(BadSize)
-func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte) ([]byte, error?)
+@bless
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
-head ‖ 暗号文 ‖ tag。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize
+head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。無ければ []byte{}・aesgcm.SealTo と同じ口）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize
 
 失敗のラベル: [`BadSize`](#badsize)
 

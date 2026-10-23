@@ -32,7 +32,7 @@ func cutMarkChan(st mut St) {
     lsEv(mut st, EV_CHAN, 0, 0, 0, 0)
 }
 
-// cutFlag は spawn の「純な子か」の定数（cutPatch が 1 に書き換える）
+// cutFlag は spawn の「純な子か」の定数（cutPatch が 1〔純な子〕か 2〔stdout に書かない子〕に書き換える）
 func cutFlag(st mut St, kid FnRef) int {
     flag := iconst(mut st, 0)
     st.cutSites = rec4(mut st, st.cutSites, int(irBlkITail(mut st, st.cur)), int(kid), 0)
@@ -72,7 +72,7 @@ func buildCancelRt(st mut St) {
     condbr(mut st, cmp(mut st, CEq, tp, zero), bNo, -1, bL2, -1)
     setCur(mut st, bL2)
     t := itop(mut st, tp)
-    condbr(mut st, cmp(mut st, CEq, load(mut st, t, TC_CUTOK), zero), bNo, -1, bL3, -1)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, load(mut st, t, TC_CUTOK), iconst(mut st, 1)), zero), bNo, -1, bL3, -1)
     setCur(mut st, bL3)
     rec := itop(mut st, load(mut st, itop(mut st, load(mut st, t, TC_FRAME)), FR_SREC))
     c := load(mut st, rec, SR_CUT)
@@ -100,7 +100,7 @@ func buildCutEnd(st mut St) {
     store(mut st, cs, 0, bin(mut st, BAnd, r, cmp(mut st, CEq, load(mut st, globaladdr(mut st, st.trapG), TW_CODE), iconst(mut st, CUT_CODE))))
     bW := newBlock(mut st)
     bW2 := newBlock(mut st)
-    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, tcb0, TC_CUTOK), z0), cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.cutGenG), 0), z0)), bW, -1, bW2, -1)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, bin(mut st, BAnd, load(mut st, tcb0, TC_CUTOK), iconst(mut st, 1)), z0), cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.cutGenG), 0), z0)), bW, -1, bW2, -1)
     setCur(mut st, bW)
     store(mut st, cs, 0, bin(mut st, BOr, load(mut st, cs, 0), call(mut st, st.rtCutWalk, list1(mut st, tcb0))))
     br(mut st, bW2, -1)
@@ -201,12 +201,12 @@ func cutIsRt(st mut St, f FnRef) bool {
 func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
-        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq ||
+        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq ||
         g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
 }
 
-// cutPatch は spawn の置き場の定数を書く（純な子 = 1）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し / 罠 / 切替 / clone を持つ・純でない rt を
-// 呼ぶ・純でない関数を呼ぶか番地を取る（固定点）
+// cutPatch は spawn の置き場の定数を書く（純な子 = 1・純でないが stdout に書かない子 = 2）: 純でない関数 = チャネルに触る・syscall / 間接呼び出し /
+// 罠 / 切替 / clone を持つ・純でない rt を呼ぶ・純でない関数を呼ぶか番地を取る（固定点）。stdout に書く関数は outSolve（下）
 func cutPatch(st mut St) {
     if st.cutSites == -1 {
         return
@@ -219,6 +219,12 @@ func cutPatch(st mut St) {
     }
     // [関数, 呼ぶ利用者の関数の数, 関数…]
     mut cs := mut []int{}
+    // stdout に書く関数の導出（outSolve）の材料 — 同じ歩きで集める: 葉・間接呼び出しを持つ関数・番地を取られた関数
+    mut leaf := mut []int{}
+    mut ind := mut []int{}
+    mut taken := mut []int{}
+    // 置き場の印（rt.netop 5 — Serve）を使うか: acceptor の担い手を足す（mnInit の即値 — report-997）
+    mut place := false
     mut f := st.fhead
     while f != -1 {
         if !cutIsRt(mut st, f) {
@@ -227,11 +233,17 @@ func cutPatch(st mut St) {
             cs = append(cs, 0)
             mut b := irFnBHead(mut st, f)
             while b != -1 {
+                // 死の文面（panic.sober の toStderr — rt.out_drain を呼んでから fd 2 に切り替える）の後の印字は stderr: 同じブロックの中だけ見る
+                // （ブロックをまたいだ印字は stdout に数える — 保守側）
+                mut err := false
                 mut i := irBlkIHead(mut st, b)
                 while i != -1 {
                     op := irInsOp(mut st, i)
                     if op == OpSyscall || op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
                         bad[int(f)] = 1
+                    }
+                    if op == OpCallI {
+                        ind = append(ind, int(f))
                     }
                     if op == OpCall || op == OpFuncaddr {
                         g := irInsFn(mut st, i)
@@ -239,7 +251,19 @@ func cutPatch(st mut St) {
                             if !cutRtPure(mut st, g) {
                                 bad[int(f)] = 1
                             }
+                            if op == OpCall && g == chF(mut st, NETF_OP) && cutConstArg0(mut st, f, i) == 5 {
+                                place = true
+                            }
+                            if g == st.rtOutDrain {
+                                err = true
+                            }
+                            if !err && (g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr) {
+                                leaf = append(leaf, int(f))
+                            }
                         } else {
+                            if op == OpFuncaddr {
+                                taken = append(taken, int(g))
+                            }
                             cs = append(cs, int(g))
                             cs[at + 1] = cs[at + 1] + 1
                         }
@@ -269,15 +293,111 @@ func cutPatch(st mut St) {
             at += 2 + n
         }
     }
+    if place && st.mnExtra >= 0 {
+        irSetInsA(mut st, InsRef(st.mnExtra), 1)
+    }
+    out := outSolve(mut st, cs, leaf, ind, taken)
     k = st.cutSites
     while k != -1 {
-        if bad[desugar.HeapGet(mut st.d, k + 2)] == nil {
+        kid := desugar.HeapGet(mut st.d, k + 2)
+        if bad[kid] == nil {
             irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 1)
             desugar.HeapSet(mut st.d, k + 3, 1)
             st.cutKids = st.cutKids + 1
+        } else if out[kid] == nil {
+            irSetInsA(mut st, InsRef(desugar.HeapGet(mut st.d, k + 1)), 2)
         }
         k = desugar.HeapGet(mut st.d, k)
     }
+}
+
+// cutConstArg0 は関数 f の呼び出しの命令 ci の最初の引数が即値ならその値（でなければ -1）
+func cutConstArg0(st mut St, f FnRef, ci InsRef) int {
+    v := desugar.HeapGet(mut st.d, irInsB(mut st, ci) + 1)
+    mut b := irFnBHead(mut st, f)
+    while b != -1 {
+        mut i := irBlkIHead(mut st, b)
+        while i != -1 {
+            if irInsRes(mut st, i) == v {
+                return if irInsOp(mut st, i) == OpConst { irInsA(mut st, i) } else { -1 }
+            }
+            i = irInsNext(mut st, i)
+        }
+        b = irBlkNext(mut st, b)
+    }
+    return -1
+}
+
+// outSolve は stdout に書きうる利用者の関数の集合（report-994 F4 — 出力の正準順の区間〔out.sober〕が要る子）: 葉 = println / print の rt の口
+// （rt.print_char / print_int / print_str / print_qstr — 行バッファに積む口。死・計測・trace の印字は fd 2 に切り替えてから書く）を本体から呼ぶ関数。
+// 呼ぶ・番地を取る（spawn の子・関数値）利用者の関数へ伝える（cs = cutPatch の [関数, 数, 呼び先…] — 逆辺の作業列）。間接呼び出しは
+// 「全部書く」に倒さず、番地を取られた全関数の合併（閉じた世界 — 番地を取られた関数のどれかが書くなら、間接呼び出しを持つ関数は全部書く側。
+// spawn の子の入口は番地を取られるが OpTStart で始まり、間接呼び出しの先にならないので除く）。直の io の書き込み（WriteFd・syscall）は区間の
+// 対象外（11 節 — 行バッファを通らない）なので葉にしない
+func outSolve(st mut St, cs []int, leaf []int, ind []int, taken []int) map[int]int {
+    // 逆辺: 呼び先 g → 呼び手の鎖（rhead[g] = 辺の番号・rnext / rfrom = 辺の列）
+    mut rhead := mut map[int]int{}
+    mut rnext := mut []int{}
+    mut rfrom := mut []int{}
+    mut at := 0
+    while at < len(cs) {
+        g := cs[at]
+        n := cs[at + 1]
+        for q <- iter.Range(0, n) {
+            h := cs[at + 2 + q]
+            p := rhead[h]
+            rnext = append(rnext, if p != nil { p } else { -1 })
+            rfrom = append(rfrom, g)
+            rhead[h] = len(rfrom) - 1
+        }
+        at += 2 + n
+    }
+    mut kids := mut map[int]int{}
+    mut k := st.cutSites
+    while k != -1 {
+        kids[desugar.HeapGet(mut st.d, k + 2)] = 1
+        k = desugar.HeapGet(mut st.d, k)
+    }
+    mut tk := mut map[int]int{}
+    for g <- taken {
+        if kids[g] == nil {
+            tk[g] = 1
+        }
+    }
+    mut out := mut map[int]int{}
+    mut work := mut []int{}
+    for g <- leaf {
+        if out[g] == nil {
+            out[g] = 1
+            work = append(work, g)
+        }
+    }
+    mut anyInd := false
+    mut wi := 0
+    while wi < len(work) {
+        g := work[wi]
+        wi += 1
+        if !anyInd && tk[g] != nil {
+            anyInd = true
+            for h <- ind {
+                if out[h] == nil {
+                    out[h] = 1
+                    work = append(work, h)
+                }
+            }
+        }
+        r := rhead[g]
+        mut e := if r != nil { r } else { -1 }
+        while e != -1 {
+            c := rfrom[e]
+            if out[c] == nil {
+                out[c] = 1
+                work = append(work, c)
+            }
+            e = rnext[e]
+        }
+    }
+    return out
 }
 
 // cutSuccs はブロック b の後続（0〜2 個）を積みに足す

@@ -1,0 +1,19 @@
+# framestat の上限（scripts/framestat.sh — `<題材> <関数 | @sum〔全関数のフレームの和〕 | @zero〔入口の零初期化の和〕> <上限 B>`）
+# 線 = 実測 ×1.01（compiler / std の編集でフレームは少し動く — bench/ratchet.txt の ×1.005 と同じ考え方）
+# 2026-10-21 段 0（彩色の前 — HEAD 30dfa99e + 計器の実測: serveTlsConn 56176・@sum 171504・@zero 34584・@self finish 24032・@self @sum 1141680）
+# 2026-10-21 段 1（spill の枠の彩色 — xSpillColor・report-1003）: serveTlsConn 37008（spill 21976 → 2816）・@sum 135136・@zero 34584・@self finish 20416・@self @sum 960592
+# 2026-10-21 段 2（スロットの彩色 — slotcolor.sober・門 128 語・report-1003）: serveTlsConn 6096（スロット 34152 → 3240・零初期化 32624 → 1376）・@sum 92256・@zero 3096・@self finish 1792・@self @sum 818976
+# 2026-10-22 std/tls.pump の入れ子の揃え（report-1014 — 全展開の serveTlsConn の x86 の割り当ての感度: spill の部分区間 5269 → 7199・零初期化 1376 → 1712）: @zero 3432（×1.01 = 3467）
+# 2026-10-22 0.7.0 便 8 の段 8-2（応答の chunked — serveBuf の展開先に chunked の枝: ul / kp / 2 本目の借りのラムダ・report-1033・ナビ裁定 = 実測 × 1.01・ユーザーへは事後追認）: serveTlsConn 6448・@sum 94608・@zero 4136
+# 2026-10-22 L1-2+3（借りの閉包の mut 捕捉 — loader / analyzer / desugar の新しい関数・report-1037・実測 × 1.01・ユーザーへは事後追認）: @self @sum 827392
+# 2026-10-22 型の別名（finish に別名の書き換え・剥がし・fail-closed の検査の呼び出し 3 つ — report-1045・実測 × 1.01）: @self loader.finish 1968
+# 2026-10-22 CPU 効率便 U1（std/http の frameAt に頭の 1 回なめ — 要求行の走査・ヘッダの位置の表・report-1050・実測 × 1.01）: bench/httparena @sum 95712
+# 2026-10-22 型の別名 段 3（lease の整えの転送 — loader/lease.sober の prepCall / prepFn・report-1046・実測 × 1.01）: @self @sum 835696
+# 2026-10-23 slotcolor の頭の並び（要零を先・逃げるだけを後 — report-1063 / 1064）: @zero 4136 → 3752（serveTlsConn の零初期化 1952 → 1592）・締め直し = 実測 × 1.01
+# 2026-10-23 間接呼び出しの sret の受け皿を全語の書きと読む（ir.sober CALLI_SRET — zeroinit / slotcolor・report-1069）: serveTlsConn 6448 → 5872・@sum 95904 → 94256・@zero 3752 → 1560（受け皿が要零の専用スロットから彩色の候補へ）・締め直し = 実測 × 1.01
+# 2026-10-23 0.7.0 便 8 の段 8-5（compress + stream — serveBuf の展開先に stream の枝・report-1057〜1071・ユーザー裁定 = 値札受理）: serveTlsConn 5872 → 6224・@sum 94256 → 99392・@zero 1560 → 1816・締め直し = 実測 × 1.01（事後追認の標準運用）
+bench/httparena/main.sober main.serveTlsConn 6287
+bench/httparena/main.sober @sum 100386
+bench/httparena/main.sober @zero 1835
+@self loader.finish 1988
+@self @sum 844053

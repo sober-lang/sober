@@ -114,7 +114,7 @@ func binWord(b int) int {
 // kids は写し終えてから組む前に要る子の数（葉は 0）
 func kids(k int) int {
     return switch k {
-    case desugar.CLet | desugar.CAdd | desugar.CLt | desugar.CPair | desugar.CAssign | desugar.CWhile | desugar.CAppend | desugar.CEqs | desugar.CConcat | desugar.CCallv | desugar.CBin | desugar.CFBin | desugar.CIndex | desugar.CGetm | desugar.CDelm | desugar.CSend: 2
+    case desugar.CLet | desugar.CAdd | desugar.CLt | desugar.CPair | desugar.CAssign | desugar.CWhile | desugar.CAppend | desugar.CEqs | desugar.CConcat | desugar.CCallv | desugar.CCallMv | desugar.CBin | desugar.CFBin | desugar.CIndex | desugar.CGetm | desugar.CDelm | desugar.CSend: 2
     case desugar.CIte | desugar.CIfnil | desugar.CCase | desugar.CSetidx | desugar.CSubslice | desugar.CSetm | desugar.CSpawn: 3
     case desugar.CScope | desugar.CTry | desugar.CJoin | desugar.CRecv | desugar.CClose: 1
     case desugar.CSome | desugar.CFst | desugar.CSnd | desugar.CBlock | desugar.CDeref | desugar.CFreeze | desugar.CLen | desugar.CLenm | desugar.CKeysm | desugar.CClone | desugar.CToByte | desugar.CToInt | desugar.CFConv | desugar.CAnn | desugar.CBlockR | desugar.CCopyTo | desugar.CInl | desugar.CInr | desugar.CCall | desugar.CAlloc | desugar.CLabel | desugar.CJump: 1
@@ -261,6 +261,9 @@ func convExpr(st mut S, h []int, labs []desugar.Label, tys []desugar.Ty, cs []de
         if k == desugar.CBlockR {
             t := ctyOf(mut st, tys, a)
             r = node(mut st, K_BLOCKR, 0, v0, t, 0)
+        }
+        if k == desugar.CCallMv {
+            r = node(mut st, W_CALLMV, 0, v0, v1, c)
         }
         if k == desugar.CCopyTo {
             t := ctyOf(mut st, tys, a)

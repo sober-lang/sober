@@ -66,7 +66,7 @@ func xZeroNeed(st mut St, f FnRef, ws []int) []int {
                     ps = append(ps, int(ins))
                     ps = append(ps, id)
                 }
-            } else if op == OpCall && zeroSretP(mut st, ins) >= 0 {
+            } else if (op == OpCall || op == OpCallI) && zeroSretP(mut st, ins) >= 0 {
                 // sret の受け皿（引数 0）の全語を書く call（F_SRET_BIT の約束）— 番地が後で解ける形なら後で
                 if !zeroGenSret(mut gen, mut addr, ws, sa, sg, nw, id, zeroSretP(mut st, ins)) {
                     psr = append(psr, int(ins))
@@ -250,8 +250,11 @@ func zeroInto(inw mut []int, outw mut []int, preds []int, pcnt []int, id int, en
     }
 }
 
-// zeroSretP は命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT）なら受け皿の値（引数 0）、それ以外は -1
+// zeroSretP は命令 ins が sret の受け皿を渡す call（呼ぶ関数の F_MUTP の F_SRET_BIT・間接なら c = CALLI_SRET）なら受け皿の値（引数 0）、それ以外は -1
 func zeroSretP(st mut St, ins InsRef) int {
+    if xiOp(mut st, ins) == OpCallI && xiC(mut st, ins) == CALLI_SRET && xLen(mut st, xiB(mut st, ins)) > 0 {
+        return xAt(mut st, xiB(mut st, ins), 0)
+    }
     if xiOp(mut st, ins) != OpCall || xLen(mut st, xiB(mut st, ins)) == 0 {
         return -1
     }
@@ -322,9 +325,14 @@ func zeroScan(st mut St, b BlkRef, wb mut []int, addr []int, slotOfG []int, star
             if gi >= 0 && gi < nv && addr[gi] >= 0 {
                 zeroEscape(mut wb, slotOfG[addr[gi]], start, ws, mut need)
             }
-        } else if op == OpCall && zeroSretP(mut st, ins) >= 0 {
-            // 受け皿以外の引数は逃げ（呼ばれた関数が読みうる）。受け皿（スロットの頭）は全語を書き済みに — 呼ばれた関数は書く前に読まない
-            for k <- iter.Range(1, xNOps(mut st, ins)) {
+        } else if (op == OpCall || op == OpCallI) && zeroSretP(mut st, ins) >= 0 {
+            // 受け皿以外の引数は逃げ（呼ばれた関数が読みうる）。受け皿（スロットの頭）は全語を書き済みに — 呼ばれた関数は書く前に読まない。
+            // 被演算子の並び: 直接 = [引数…]（受け皿は 0）・間接 = [callee, 引数…]（受け皿は 1）
+            sk := if op == OpCallI { 1 } else { 0 }
+            for k <- iter.Range(0, xNOps(mut st, ins)) {
+                if k == sk {
+                    continue
+                }
                 o := xOpnd(mut st, ins, k)
                 if o >= 0 && o < nv && addr[o] >= 0 {
                     zeroEscape(mut wb, slotOfG[addr[o]], start, ws, mut need)

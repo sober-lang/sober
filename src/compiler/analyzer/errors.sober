@@ -1,10 +1,10 @@
 package analyzer
 
 // error のラベル集合の導出（error 網羅 analyzer A2 — language.md 13 節。今は影: 消費者は開発用の `check --errors-dump` だけ）。
-// 抽象値 = ラベル集合（1 語のビット集合 — 添字 = リンク時のタグ = loader のラベル表の順。TOP = 不明）。値は「その式の error の成分」だけを見る:
+// 抽象値 = ラベル集合（2 語のビット集合 LSet — flow.sober。添字 = リンク時のタグ = loader のラベル表の順。TOP = 不明）。値は「その式の error の成分」だけを見る:
 // error の成分を持たない式の集合は、error の位置（戻りの error の成分・error の仮引数・error の欄）へ流れないので、過大（TOP）でも結果を汚さない —
 // 分からない名前・添字の読み・関数値の呼び出しは TOP に倒す（健全の側）。
-// 集合の置き場（スロット — az.sets）: 関数 fi の戻り R[fi] = スロット fi・ラベル L の cause C[L] = nfn + L（wrap の地点の内側の合併 — 裁定 C-b）・
+// 集合の置き場（スロット — az.er の解き手 — flow.sober）: 関数 fi の戻り R[fi] = スロット fi・ラベル L の cause C[L] = nfn + L（wrap の地点の内側の合併 — 裁定 C-b）・
 // 関数の仮引数 P[fi][j]（呼び手の実引数の合併 — 裁定 P-b。公開関数の error の仮引数は TOP）・error 型の struct の欄（欄の名前ごとの合併 — 閉世界）。
 // package をまたぐ呼び出しは呼び先の `@errors` の宣言を読む（裁定 E2 — 無ければ導出。公開関数に宣言が無いことは declare.sober が拒否する）。
 // 展開される関数 F の匿名の関数型の仮引数 r（結果が error?）の呼び出しの値は擬ラベル FLOW（符号のビット — ラベルの容量を食わない）で、呼んだ r を Cand[F] に記す。
@@ -19,71 +19,6 @@ import "ast"
 import "desugar"
 import "std/iter"
 import "std/table"
-
-const TOP = 4611686018427387904  // 1 << 62
-const NBITS = 62                   // これ以上のタグのラベルは TOP に倒す（1 語の集合）
-
-// flowBit は擬ラベル FLOW（1 << 63 — 符号のビット。const にすると .sobi が `-9223372036854775808` と印字して読み戻せない）
-func flowBit() int {
-    return TOP << 1
-}
-
-// bit はラベル L の集合
-func bit(L int) int {
-    return if L >= 0 && L < NBITS { 1 << L } else { TOP }
-}
-
-// ── スロット ──
-
-func newSlot(az mut Az, v int) int {
-    table.Push(mut az.sets, v)
-    table.Push(mut az.rhead, -1)
-    return table.Len(mut az.sets) - 1
-}
-
-// readSlot はスロット s の集合（今歩いている関数を読み手に登録する）
-func readSlot(az mut Az, s int) int {
-    mut r := table.Get(mut az.rhead, s)
-    mut seen := false
-    while r != -1 && !seen {
-        if table.Get(mut az.rnode, r) == az.cur {
-            seen = true
-        }
-        r = table.Get(mut az.rnode, r + 1)
-    }
-    if !seen {
-        table.Push(mut az.rnode, az.cur)
-        table.Push(mut az.rnode, table.Get(mut az.rhead, s))
-        table.Set(mut az.rhead, s, table.Len(mut az.rnode) - 2)
-    }
-    return table.Get(mut az.sets, s)
-}
-
-// addSlot はスロット s に集合 m を合併する（広がったら読み手を作業の列へ）
-func addSlot(az mut Az, s int, m int) {
-    if s == -1 || m == 0 {
-        return
-    }
-    // FLOW を持てるのは今の関数の戻りだけ（他の置き場では呼び出し点ごとの集合を言えない — TOP）
-    n := if (m & flowBit()) != 0 && s != az.cur { (m & ^flowBit()) | TOP } else { m }
-    o := table.Get(mut az.sets, s)
-    if (o | n) == o {
-        return
-    }
-    table.Set(mut az.sets, s, o | n)
-    mut r := table.Get(mut az.rhead, s)
-    while r != -1 {
-        enqueue(mut az, table.Get(mut az.rnode, r))
-        r = table.Get(mut az.rnode, r + 1)
-    }
-}
-
-func enqueue(az mut Az, f int) {
-    if table.Get(mut az.inq, f) == 0 {
-        table.Set(mut az.inq, f, 1)
-        table.Push(mut az.work, f)
-    }
-}
 
 // ── 型式・名前の小道具 ──
 
@@ -130,55 +65,18 @@ func paramIdx(az mut Az, name desugar.StrRef) int {
     return -1
 }
 
-// ── 局所（名前 → 集合 — az.envN 個が有効）──
-
-func envFind(az mut Az, name desugar.StrRef) int {
-    for i <- iter.Range(0, az.envN) {
-        if desugar.StrEq(mut az.d, desugar.StrRef(table.Get(mut az.env, i * 2)), name) {
-            return i
-        }
-    }
-    return -1
-}
-
-func envAdd(az mut Az, name desugar.StrRef, m int) {
-    if name == -1 {
-        return
-    }
-    i := envFind(mut az, name)
-    if i == -1 {
-        if az.envN * 2 < table.Len(mut az.env) {
-            table.Set(mut az.env, az.envN * 2, int(name))
-            table.Set(mut az.env, az.envN * 2 + 1, m)
-        } else {
-            table.Push(mut az.env, int(name))
-            table.Push(mut az.env, m)
-        }
-        az.envN += 1
-        if m != 0 {
-            az.envChanged = true
-        }
-        return
-    }
-    o := table.Get(mut az.env, i * 2 + 1)
-    if (o | m) != o {
-        table.Set(mut az.env, i * 2 + 1, o | m)
-        az.envChanged = true
-    }
-}
-
 // ident は名前の集合: 局所 → 仮引数（error 型なら P のスロット）→ トップレベル（関数・const — error の値でない）
-func ident(az mut Az, name desugar.StrRef) int {
+func ident(az mut Az, name desugar.StrRef) LSet {
     i := envFind(mut az, name)
     if i != -1 {
-        return table.Get(mut az.env, i * 2 + 1)
+        return envGet(mut az, i)
     }
     j := paramIdx(mut az, name)
     if j != -1 {
         p := nat(mut az, desugar.ListRef(fnDecl(mut az, az.cur).c), j)
-        return if isErrTy(mut az, desugar.NodeRef(node(mut az, p).b)) { readSlot(mut az, table.Get(mut az.pbase, az.cur) + j) } else { 0 }
+        return if isErrTy(mut az, desugar.NodeRef(node(mut az, p).b)) { readSlot(mut az, table.Get(mut az.pbase, az.cur) + j) } else { lsNone() }
     }
-    return 0
+    return lsNone()
 }
 
 // paramOf は関数 fi の仮引数 name の添字（無ければ -1）
@@ -195,7 +93,7 @@ func paramOf(az mut Az, fi int, name desugar.StrRef) int {
 // flowParam は関数 fi の仮引数 j が匿名の関数型で結果に error を持つか（Flow の対象 — 名前つき関数型の仮引数は対象外）
 func flowParam(az mut Az, fi int, j int) bool {
     t := desugar.NodeRef(node(mut az, nat(mut az, desugar.ListRef(fnDecl(mut az, fi).c), j)).b)
-    if j >= NBITS || t == -1 || kind(mut az, t) != ast.TFunc {
+    if j >= PBITS || t == -1 || kind(mut az, t) != ast.TFunc {
         return false
     }
     rs := desugar.ListRef(node(mut az, t).b)
@@ -229,8 +127,8 @@ func errInit(az mut Az) {
     az.nfn = desugar.Nfn(mut az.d)
     az.nerr = desugar.NErr(mut az.d)
     for fi <- iter.Range(0, az.nfn) {
-        newSlot(mut az, 0)
-        table.Push(mut az.inq, 0)
+        newSlot(mut az, lsNone())
+        table.Push(mut az.er.inq, 0)
         fd := fnDecl(mut az, fi)
         rs := desugar.ListRef(fd.d)
         mut ef := 0
@@ -242,26 +140,26 @@ func errInit(az mut Az) {
         table.Push(mut az.errfn, ef)
     }
     for L <- iter.Range(0, az.nerr) {
-        newSlot(mut az, 0)
+        newSlot(mut az, lsNone())
         table.Push(mut az.lit, 0)
     }
     for fi <- iter.Range(0, az.nfn) {
-        table.Push(mut az.declared, declaredSet(mut az, fi))
+        declPush(mut az, fi)
         table.Push(mut az.dflow, declaredFlow(mut az, fi))
     }
-    az.flowBase = table.Len(mut az.sets)
+    az.flowBase = table.Len(mut az.er.rhead)
     for fi <- iter.Range(0, az.nfn) {
-        newSlot(mut az, 0)
+        newSlot(mut az, lsNone())
         table.Push(mut az.cand, 0)
     }
     for fi <- iter.Range(0, az.nfn) {
         fd := fnDecl(mut az, fi)
-        table.Push(mut az.pbase, table.Len(mut az.sets))
+        table.Push(mut az.pbase, table.Len(mut az.er.rhead))
         pub := isPublic(mut az, desugar.StrRef(fd.a))
         ps := desugar.ListRef(fd.c)
         for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
             e := isErrTy(mut az, desugar.NodeRef(node(mut az, nat(mut az, ps, j)).b))
-            newSlot(mut az, if e && pub { TOP } else { 0 })
+            newSlot(mut az, if e && pub { lsTop() } else { lsNone() })
         }
     }
     for f <- iter.Range(0, desugar.Nfile(mut az.d)) {
@@ -274,7 +172,7 @@ func errInit(az mut Az) {
                     fl := node(mut az, nat(mut az, fs, k))
                     if isErrTy(mut az, desugar.NodeRef(fl.b)) && fieldSlot(mut az, desugar.StrRef(fl.a)) == -1 {
                         table.Push(mut az.ffield, fl.a)
-                        table.Push(mut az.ffield, newSlot(mut az, 0))
+                        table.Push(mut az.ffield, newSlot(mut az, lsNone()))
                     }
                 }
             }
@@ -288,10 +186,10 @@ func errSolve(az mut Az) {
         enqueue(mut az, fi)
     }
     mut h := 0
-    while h < table.Len(mut az.work) {
-        fi := table.Get(mut az.work, h)
+    while h < table.Len(mut az.er.work) {
+        fi := table.Get(mut az.er.work, h)
         h += 1
-        table.Set(mut az.inq, fi, 0)
+        table.Set(mut az.er.inq, fi, 0)
         walkFn(mut az, fi)
         az.walks += 1
     }
@@ -310,30 +208,30 @@ func walkFn(az mut Az, fi int) {
     }
     az.cur = fi
     az.pk = desugar.FnAt(mut az.d, fi).pkg
-    az.envN = 0
+    az.er.envN = 0
     mut again := true
     mut n := 0
     while again && n < 16 {
-        az.envChanged = false
+        az.er.envChanged = false
         blockVal(mut az, body)
-        again = az.envChanged
+        again = az.er.envChanged
         n += 1
     }
-    if (table.Get(mut az.sets, fi) & flowBit()) != 0 {
-        addSlot(mut az, az.flowBase + fi, table.Get(mut az.cand, fi))
+    if lsIsFlow(slotGet(mut az, fi)) {
+        addSlot(mut az, az.flowBase + fi, LSet{lo: table.Get(mut az.cand, fi), hi: 0})
     }
 }
 
 // ── 式と文（集合 = その式の error の成分）──
 
 // blockVal はブロックの節（KBlock / EBlock）の文を歩き、値（末尾の式文）の集合を返す
-func blockVal(az mut Az, b desugar.NodeRef) int {
+func blockVal(az mut Az, b desugar.NodeRef) LSet {
     if b == -1 {
-        return 0
+        return lsNone()
     }
     l := desugar.ListRef(node(mut az, b).a)
     n := desugar.LenL(mut az.d, l)
-    mut v := 0
+    mut v := lsNone()
     for i <- iter.Range(0, n) {
         s := nat(mut az, l, i)
         if i + 1 == n && kind(mut az, s) == ast.SExpr {
@@ -346,21 +244,21 @@ func blockVal(az mut Az, b desugar.NodeRef) int {
 }
 
 // elseVal は if の else（ブロックか else-if）の集合
-func elseVal(az mut Az, e desugar.NodeRef) int {
+func elseVal(az mut Az, e desugar.NodeRef) LSet {
     if e == -1 {
-        return 0
+        return lsNone()
     }
     k := kind(mut az, e)
     return if k == ast.EBlock || k == ast.KBlock { blockVal(mut az, e) } else { ev(mut az, e) }
 }
 
-func evList(az mut Az, l desugar.ListRef) int {
-    mut v := 0
+func evList(az mut Az, l desugar.ListRef) LSet {
+    mut v := lsNone()
     if l == -1 {
-        return 0
+        return lsNone()
     }
     for i <- iter.Range(0, desugar.LenL(mut az.d, l)) {
-        v = v | ev(mut az, nat(mut az, l, i))
+        v = lsOr(v, ev(mut az, nat(mut az, l, i)))
     }
     return v
 }
@@ -390,7 +288,7 @@ func est(az mut Az, s desugar.NodeRef) {
         vals := desugar.ListRef(x.c)
         nt := desugar.LenL(mut az.d, ts)
         nv := desugar.LenL(mut az.d, vals)
-        all := if nt != nv { evList(mut az, vals) } else { 0 }
+        all := if nt != nv { evList(mut az, vals) } else { lsNone() }
         for i <- iter.Range(0, nt) {
             m := if nt == nv { ev(mut az, nat(mut az, vals, i)) } else { all }
             assignTo(mut az, nat(mut az, ts, i), m)
@@ -408,7 +306,7 @@ func est(az mut Az, s desugar.NodeRef) {
 }
 
 // assignTo は代入の行き先 t へ集合 m（名前 → 局所・欄 → error 型の欄のスロット・添字 → 歩くだけ）
-func assignTo(az mut Az, t desugar.NodeRef, m int) {
+func assignTo(az mut Az, t desugar.NodeRef, m LSet) {
     x := node(mut az, t)
     if x.kind == ast.EIdent {
         envAdd(mut az, desugar.StrRef(x.a), m)
@@ -444,9 +342,9 @@ func retVals(az mut Az, vals desugar.ListRef) {
 }
 
 // ev は式を歩いて error の成分の集合を返す
-func ev(az mut Az, e desugar.NodeRef) int {
+func ev(az mut Az, e desugar.NodeRef) LSet {
     if e == -1 {
-        return 0
+        return lsNone()
     }
     x := node(mut az, e)
     k := x.kind
@@ -454,7 +352,7 @@ func ev(az mut Az, e desugar.NodeRef) int {
     case ast.EIdent:
         return ident(mut az, desugar.StrRef(x.a))
     case ast.ECall:
-        return callVal(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1), 0)
+        return callVal(mut az, desugar.NodeRef(x.a), desugar.ListRef(x.b), desugar.NodeRef(-1), lsNone())
     case ast.EPipe:
         lm := ev(mut az, desugar.NodeRef(x.a))
         return callVal(mut az, desugar.NodeRef(x.b), desugar.ListRef(x.c), desugar.NodeRef(x.a), lm)
@@ -470,35 +368,56 @@ func ev(az mut Az, e desugar.NodeRef) int {
             evElems(mut az, desugar.ListRef(wx.b))
             L := labelOf(mut az, desugar.StrRef(wx.a))
             if az.trySink == 0 {
-                addSlot(mut az, az.cur, bit(L))
+                addSlot(mut az, az.cur, lsBit(L))
             }
             if L != -1 {
                 addSlot(mut az, az.nfn + L, m)
             }
         }
-        return 0
+        return lsNone()
     case ast.EComposite:
         return composite(mut az, x)
     case ast.ESelector:
         ev(mut az, desugar.NodeRef(x.a))
         s := fieldSlot(mut az, desugar.StrRef(x.b))
-        return if s == -1 { 0 } else { readSlot(mut az, s) }
+        return if s == -1 { lsNone() } else { readSlot(mut az, s) }
     case ast.EIf:
         ev(mut az, desugar.NodeRef(x.a))
-        return blockVal(mut az, desugar.NodeRef(x.b)) | elseVal(mut az, desugar.NodeRef(x.c))
+        return lsOr(blockVal(mut az, desugar.NodeRef(x.b)), elseVal(mut az, desugar.NodeRef(x.c)))
     case ast.ESwitch:
         return switchVal(mut az, e, x)
     case ast.EBlock:
         return blockVal(mut az, e)
     case ast.ELambda:
         ps := desugar.ListRef(x.a)
+        // 宣言つきの名前付き関数型 F の値になるラムダ（fntype.sober）: F の Flow の対象の仮引数を積み、本体の集合を最後の 1 周で記録する
+        key := desugar.LamKey(mut az.d, e)
+        member := key != -1 && fnErrs(mut az, key) != -1
+        sb := az.lamBase
+        sn := az.lamFN
+        sc := az.lamCand
+        if member {
+            az.lamBase = az.lamFN
+            az.lamCand = 0
+        }
         for i <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
-            envAdd(mut az, desugar.StrRef(node(mut az, nat(mut az, ps, i)).a), TOP)
+            pn := desugar.StrRef(node(mut az, nat(mut az, ps, i)).a)
+            envAdd(mut az, pn, lsTop())
+            if member && fnFlowParam(mut az, key, i) {
+                lamPush(mut az, pn, i)
+            }
         }
         // 値 = 本体の値の集合（Flow の実引数として呼び出し点で読む — callVal。他の位置では関数値は error の位置へ流れない）
         body := desugar.NodeRef(x.b)
         bk := kind(mut az, body)
-        return if bk == ast.EBlock || bk == ast.KBlock { blockVal(mut az, body) } else { ev(mut az, body) }
+        v := if bk == ast.EBlock || bk == ast.KBlock { blockVal(mut az, body) } else { ev(mut az, body) }
+        if member {
+            lamRecord(mut az, e, key, v, az.lamCand)
+            az.lamBase = sb
+            az.lamFN = sn
+            az.lamCand = sc
+        }
+        return v
     case ast.EFor:
         gs := desugar.ListRef(x.a)
         for i <- iter.Range(0, desugar.LenL(mut az.d, gs)) {
@@ -506,7 +425,7 @@ func ev(az mut Az, e desugar.NodeRef) int {
             ev(mut az, desugar.NodeRef(g.b))
             ns := desugar.ListRef(g.a)
             for j <- iter.Range(0, desugar.LenL(mut az.d, ns)) {
-                envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, ns, j)), TOP)
+                envAdd(mut az, desugar.StrRef(desugar.LatI(mut az.d, ns, j)), lsTop())
             }
             evList(mut az, desugar.ListRef(g.c))
         }
@@ -518,26 +437,26 @@ func ev(az mut Az, e desugar.NodeRef) int {
                 est(mut az, nat(mut az, stmts, i))
             }
         }
-        return 0
+        return lsNone()
     case ast.EIndex:
         ev(mut az, desugar.NodeRef(x.a))
         ev(mut az, desugar.NodeRef(x.b))
-        return TOP
+        return lsTop()
     case ast.EBinary:
         ev(mut az, desugar.NodeRef(x.b))
         ev(mut az, desugar.NodeRef(x.c))
-        return 0
+        return lsNone()
     case ast.EUnary:
         ev(mut az, desugar.NodeRef(x.b))
-        return 0
+        return lsNone()
     case ast.ESlice3:
         ev(mut az, desugar.NodeRef(x.a))
         ev(mut az, desugar.NodeRef(x.b))
         ev(mut az, desugar.NodeRef(x.c))
-        return 0
+        return lsNone()
     case ast.EInterp | ast.ESlicelit:
         evList(mut az, desugar.ListRef(x.b))
-        return 0
+        return lsNone()
     case ast.EMaplit:
         es := desugar.ListRef(x.c)
         for i <- iter.Range(0, desugar.LenL(mut az.d, es)) {
@@ -545,9 +464,9 @@ func ev(az mut Az, e desugar.NodeRef) int {
             ev(mut az, desugar.NodeRef(en.a))
             ev(mut az, desugar.NodeRef(en.b))
         }
-        return 0
+        return lsNone()
     }
-    return 0
+    return lsNone()
 }
 
 func evElems(az mut Az, l desugar.ListRef) {
@@ -557,7 +476,7 @@ func evElems(az mut Az, l desugar.ListRef) {
 }
 
 // composite はリテラル: error ラベルなら {L}。struct なら error 型の欄へ値の集合を流す（位置指定の欄は宣言の順で名前を引く）
-func composite(az mut Az, x ast.Node) int {
+func composite(az mut Az, x ast.Node) LSet {
     name := desugar.StrRef(x.a)
     els := desugar.ListRef(x.b)
     L := labelOf(mut az, name)
@@ -567,7 +486,7 @@ func composite(az mut Az, x ast.Node) int {
             table.Set(mut az.lit, L, 1)
         }
         evElems(mut az, els)
-        return bit(L)
+        return lsBit(L)
     }
     r := desugar.ResolveType(mut az.d, az.pk, name)
     body := if r.kind == desugar.TopType { desugar.NodeRef(node(mut az, desugar.NodeRef(r.idx)).c) } else { desugar.NodeRef(-1) }
@@ -580,7 +499,7 @@ func composite(az mut Az, x ast.Node) int {
             addSlot(mut az, fieldSlot(mut az, fname), m)
         }
     }
-    return 0
+    return lsNone()
 }
 
 // calleeFn は呼び出しの callee の関数の表の添字（-1 = 関数でない — 組み込み・変換・型の構築。-2 = 関数値 — 中が見えない）
@@ -606,15 +525,18 @@ func calleeFn(az mut Az, callee desugar.NodeRef) int {
 }
 
 // callVal は呼び出し callee(args)（pipe なら左辺 lhs — 穴 -1 の位置か先頭 — の集合 lm）の集合。実引数の集合は呼び先の error の仮引数の P へ
-func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm int) int {
+func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desugar.NodeRef, lm LSet) LSet {
     fi := calleeFn(mut az, callee)
     fp := if fi == -2 { curFlowParam(mut az, callee) } else { -1 }
+    // F の値のラムダの Flow の対象の仮引数の呼び出し・宣言つきの名前付き関数型 F の値の呼び出し（fntype.sober）
+    lf := if fi == -2 && fp == -1 { lamFlowIdx(mut az, callee) } else { -1 }
+    fd := if fi == -2 && fp == -1 && lf == -1 { fnCallDecl(mut az, callee) } else { -1 }
     if fi == -2 {
         ev(mut az, callee)
     }
-    // 呼び先の Flow（読み手に登録 — 広がったらこの関数を歩き直す）
-    fl := if fi >= 0 { flowOf(mut az, fi) } else { 0 }
-    mut extra := 0
+    // 呼び先の Flow（読み手に登録 — 広がったらこの関数を歩き直す）。F の値の呼び出しは宣言の仮引数の名前の項
+    fl := if fi >= 0 { flowOf(mut az, fi) } else if fd != -1 { fnDeclFlow(mut az, fd) } else { 0 }
+    mut extra := lsNone()
     n := desugar.LenL(mut az.d, args)
     mut j := 0
     mut hole := false
@@ -627,7 +549,7 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
     if lhs != -1 && !hole {
         argTo(mut az, fi, 0, lm)
         if (fl & 1) != 0 {
-            extra = extra | flowArg(mut az, lhs, lm)
+            extra = lsOr(extra, flowArg(mut az, lhs, lm))
         }
         j = 1
     }
@@ -640,8 +562,8 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
         a := nat(mut az, args, i)
         m := if a == -1 { lm } else { ev(mut az, a) }
         argTo(mut az, fi, j, m)
-        if j < NBITS && (fl & (1 << j)) != 0 {
-            extra = extra | flowArg(mut az, if a == -1 { lhs } else { a }, m)
+        if j < PBITS && (fl & (1 << j)) != 0 {
+            extra = lsOr(extra, flowArg(mut az, if a == -1 { lhs } else { a }, m))
         }
         j += 1
     }
@@ -651,66 +573,76 @@ func callVal(az mut Az, callee desugar.NodeRef, args desugar.ListRef, lhs desuga
     if fp != -1 {
         // 今の関数の匿名の関数型の仮引数の呼び出し: 失敗は呼び出し点ごとに実引数のラベル — 擬ラベル FLOW（戻りに届けば Flow へ — walkFn）
         table.Set(mut az.cand, az.cur, table.Get(mut az.cand, az.cur) | (1 << fp))
-        return flowBit()
+        return lsFlow()
+    }
+    if lf != -1 {
+        az.lamCand = az.lamCand | (1 << lf)
+        return lsNone()
+    }
+    if fd != -1 {
+        return lsOr(fnSet(mut az, fd), extra)
     }
     if fi == -2 {
         az.unknown += 1
-        return TOP
+        return lsTop()
     }
     if fi >= 0 && desugar.ParOpenErr(mut az.d, fi) {
         // task.Run の err は ChildDied か、Join も Try もしなかった子の err（P3b-4 1b' — 本体で生んだ error を返す task の err の合併。
         // 子のラムダの集合を scope ごとに集める形は未実装 — 開いた集合として扱う〔網羅の主張をしない〕）。task.Map（scope を開く std の口）も同じ
-        return TOP
+        return lsTop()
     }
     if fi == -1 || table.Get(mut az.errfn, fi) == 0 {
-        return 0
+        return lsNone()
     }
-    return fnLabels(mut az, fi) | extra
+    return lsOr(fnLabels(mut az, fi), extra)
 }
 
 // fnLabels は関数 fi（error を返す）の集合
-func fnLabels(az mut Az, fi int) int {
-    d := table.Get(mut az.declared, fi)
-    if d != -1 && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
+func fnLabels(az mut Az, fi int) LSet {
+    if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         // package をまたぐ呼び出しは宣言を読む（裁定 E2 — 依存 package の中を解析しない 29 節の合成と同じ答えになる。宣言と導出の食い違いは宣言側の package で拒否する）
-        return d
+        return declGet(mut az, fi)
     }
-    return readSlot(mut az, fi) & ^flowBit()
+    return lsNoFlow(readSlot(mut az, fi))
 }
 
 // flowOf は関数 fi の Flow（package をまたぐ宣言つきの呼び先は宣言の仮引数の名前 — 裁定 E2 と同じ）
 func flowOf(az mut Az, fi int) int {
-    d := table.Get(mut az.declared, fi)
-    if d != -1 && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
+    if declHas(mut az, fi) && desugar.FnAt(mut az.d, fi).pkg != desugar.FnAt(mut az.d, az.cur).pkg {
         return table.Get(mut az.dflow, fi)
     }
-    return readSlot(mut az, az.flowBase + fi)
+    return readSlot(mut az, az.flowBase + fi).lo
 }
 
 // flowArg は Flow の位置の実引数 a（集合 m — ラムダなら本体の値）の失敗のラベル: ラムダは本体の値・名前つき関数はその集合・
 // 呼び手自身の Flow の対象の仮引数は呼び手の FLOW（推移）・他（局所の関数値など）は TOP
-func flowArg(az mut Az, a desugar.NodeRef, m int) int {
+func flowArg(az mut Az, a desugar.NodeRef, m LSet) LSet {
     k := kind(mut az, a)
     if k == ast.ELambda {
         return m
     }
+    lj := lamFlowIdx(mut az, a)
+    if lj != -1 {
+        az.lamCand = az.lamCand | (1 << lj)
+        return lsNone()
+    }
     p := curFlowParam(mut az, a)
     if p != -1 {
         table.Set(mut az.cand, az.cur, table.Get(mut az.cand, az.cur) | (1 << p))
-        return flowBit()
+        return lsFlow()
     }
     if k == ast.EIdent || k == ast.ESelector {
         g := calleeFn(mut az, a)
         if g >= 0 {
-            return if table.Get(mut az.errfn, g) == 0 { 0 } else { fnLabels(mut az, g) }
+            return if table.Get(mut az.errfn, g) == 0 { lsNone() } else { fnLabels(mut az, g) }
         }
     }
-    return TOP
+    return lsTop()
 }
 
 // argTo は関数 fi の j 番目の仮引数が error 型なら、実引数の集合 m を P へ
-func argTo(az mut Az, fi int, j int, m int) {
-    if fi < 0 || m == 0 {
+func argTo(az mut Az, fi int, j int, m LSet) {
+    if fi < 0 || lsEmpty(m) {
         return
     }
     ps := desugar.ListRef(fnDecl(mut az, fi).c)
@@ -721,15 +653,15 @@ func argTo(az mut Az, fi int, j int, m int) {
 
 // switchVal は switch: subject の集合 S、腕の束縛（ラベルの型パターンは {L}・その cause は C[L]・他の束縛は TOP）、腕の値の合併。
 // error ラベルの型パターンを持つ単一の subject の switch は最後の 1 周で記録する（S・覆ったラベル・default の有無 — A5 の裁定材料）
-func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
+func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
     subs := desugar.ListRef(x.a)
     S0 := evList(mut az, subs)
-    S := if (S0 & flowBit()) != 0 { (S0 & ^flowBit()) | TOP } else { S0 }
+    S := if lsIsFlow(S0) { lsOr(lsNoFlow(S0), lsTop()) } else { S0 }
     single := desugar.LenL(mut az.d, subs) == 1
     cs := desugar.ListRef(x.b)
-    mut covered := 0
+    mut covered := lsNone()
     mut isErr := false
-    mut v := 0
+    mut v := lsNone()
     for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
         c := node(mut az, nat(mut az, cs, i))
         ps := desugar.ListRef(c.a)
@@ -741,8 +673,8 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
                 if L != -1 {
                     // 多値の subject（`case _, L{…}:` — check の断片外）は列ごとの集合を分けない: 記録は単一の subject だけ
                     isErr = single
-                    covered = covered | bit(L)
-                    envAdd(mut az, desugar.StrRef(px.a), bit(L))
+                    covered = lsOr(covered, lsBit(L))
+                    envAdd(mut az, desugar.StrRef(px.a), lsBit(L))
                     labelFields(mut az, L, desugar.ListRef(px.c))
                 } else {
                     bindTop(mut az, p)
@@ -760,14 +692,17 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
                 }
             }
         }
-        v = v | blockVal(mut az, desugar.NodeRef(c.b))
+        v = lsOr(v, blockVal(mut az, desugar.NodeRef(c.b)))
     }
     hasDef := x.c != -1
-    v = v | blockVal(mut az, desugar.NodeRef(x.c))
+    v = lsOr(v, blockVal(mut az, desugar.NodeRef(x.c)))
+    if az.rec {
+        exhNote(mut az, e)
+    }
     if az.rec && isErr {
         // 腕ごとの記録 [switch の記録の添字, 腕のパターンの節, タグ]（到達しない腕の拒否 — 裁定 E4-d (ii)）。腕の中の switch が先に記録されるので、
         // 添字はここ（自分の記録を積む直前）で決める
-        swi := table.Len(mut az.sw) / 4
+        swi := table.Len(mut az.sw) / SW_W
         for i <- iter.Range(0, desugar.LenL(mut az.d, cs)) {
             ps := desugar.ListRef(node(mut az, nat(mut az, cs, i)).a)
             for j <- iter.Range(0, desugar.LenL(mut az.d, ps)) {
@@ -783,8 +718,10 @@ func switchVal(az mut Az, e desugar.NodeRef, x ast.Node) int {
             }
         }
         table.Push(mut az.sw, int(e))
-        table.Push(mut az.sw, S)
-        table.Push(mut az.sw, covered)
+        table.Push(mut az.sw, S.lo)
+        table.Push(mut az.sw, S.hi)
+        table.Push(mut az.sw, covered.lo)
+        table.Push(mut az.sw, covered.hi)
         table.Push(mut az.sw, if hasDef { 1 } else { 0 })
         table.Push(mut az.swpk, az.pk)
     }
@@ -803,10 +740,10 @@ func labelFields(az mut Az, L int, fps desugar.ListRef) {
         isCause := desugar.StrIs(mut az.d, desugar.StrRef(fp.a), "cause")
         A := if isCause && sub != -1 && kind(mut az, sub) == ast.KPType { labelOf(mut az, desugar.StrRef(node(mut az, sub).b)) } else { -1 }
         if sub == -1 {
-            m := if isCause { readSlot(mut az, az.nfn + L) } else { 0 }
+            m := if isCause { readSlot(mut az, az.nfn + L) } else { lsNone() }
             envAdd(mut az, desugar.StrRef(fp.a), m)
         } else if A != -1 {
-            envAdd(mut az, desugar.StrRef(node(mut az, sub).a), bit(A))
+            envAdd(mut az, desugar.StrRef(node(mut az, sub).a), lsBit(A))
             labelFields(mut az, A, desugar.ListRef(node(mut az, sub).c))
         } else {
             bindTop(mut az, sub)
@@ -821,13 +758,13 @@ func bindTop(az mut Az, p desugar.NodeRef) {
     }
     x := node(mut az, p)
     if x.kind == ast.KPType {
-        envAdd(mut az, desugar.StrRef(x.a), TOP)
+        envAdd(mut az, desugar.StrRef(x.a), lsTop())
         fps := desugar.ListRef(x.c)
         if fps != -1 {
             for i <- iter.Range(0, desugar.LenL(mut az.d, fps)) {
                 fp := node(mut az, nat(mut az, fps, i))
                 if fp.b == -1 {
-                    envAdd(mut az, desugar.StrRef(fp.a), TOP)
+                    envAdd(mut az, desugar.StrRef(fp.a), lsTop())
                 } else {
                     bindTop(mut az, desugar.NodeRef(fp.b))
                 }
@@ -838,7 +775,7 @@ func bindTop(az mut Az, p desugar.NodeRef) {
         for q <- iter.Range(0, desugar.LenL(mut az.d, alts)) {
             a := nat(mut az, alts, q)
             if kind(mut az, a) == ast.EIdent {
-                envAdd(mut az, desugar.StrRef(node(mut az, a).a), TOP)
+                envAdd(mut az, desugar.StrRef(node(mut az, a).a), lsTop())
             }
         }
     }

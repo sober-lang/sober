@@ -276,7 +276,7 @@ func inlineCall(st mut St, decl desugar.NodeRef, pk int, params desugar.ListRef,
     // `return sort.OrderUnstable(…)` — report-693）。呼び手が展開の本体なら st.destDepth は外の展開の入口の深度で、入れ子でも反復をまたがない。
     // forceDest（外の束縛への代入の右辺）は含めない — ループの中の代入で本体の伸長の残骸が外の region に積もる
     savedDest := st.destDepth
-    if !(st.transparent && st.destOk && int(at) >= 0 && nodeOf(mut st, at).e == 1) {
+    if !(int(at) >= 0 && destMark(mut st, at)) {
         st.destDepth = desugar.HeapGet(mut st.d, ctx + IC_DEPTH)
     }
     pushScope(mut st)
@@ -367,6 +367,9 @@ func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int
     saved := enter(mut st, cr.chain, cr.pkg, cr.env, cr.ret, cr.inl)
     savedDest := st.destDepth
     st.destDepth = cr.dest
+    // 展開されるラムダの本体ではラムダの印（2）を使わない（展開の宛先は定義した関数の宛先 — ループの中の展開の結果が外の region へ積もる・report-1006 a3）
+    savedLam := st.lamDest
+    st.lamDest = false
     pushScope(mut st)
     lps := lA(nodeOf(mut st, lam))
     for i <- iter.Range(0, np) {
@@ -451,6 +454,7 @@ func lambdaCall(st mut St, c int, args desugar.ListRef, at desugar.NodeRef) (int
     popScope(mut st)
     leave(mut st, saved)
     st.destDepth = savedDest
+    st.lamDest = savedLam
     if isTag(mut st, vt, TNever) {
         return -1, nil
     }
@@ -549,6 +553,12 @@ func liftLambdaFn(st mut St, lam desugar.NodeRef, ft int, env bool, at desugar.N
     } else {
         s := if !hasR { node(mut st, ast.SExpr, at, body, 0, 0, 0) } else { node(mut st, ast.SRet, at, list1(mut st, body), 0, 0, 0) }
         blk = node(mut st, ast.KBlock, at, list1(mut st, s), 0, 0, 0)
+    }
+    // 関数値の呼び先の約束（report-1006 a2）: 結果が slice を持つ持ち上げたラムダは入口で宛先の深度のレジスタを読んで 0 に戻す（本体の KBlock の印 —
+    // 関数値の呼び出しは呼び手がレジスタを書く。読まない呼び先に残った値を、その中のループの印の無い呼び出しが拾う — report-692）
+    if st.transparent && resultsHoldSlice(mut st, hgetL(mut st, ft + 1)) {
+        b0 := nodeOf(mut st, desugar.NodeRef(blk))
+        blk = desugar.SynNode(mut st.d, ast.Node{kind: b0.kind, tok: b0.tok, a: b0.a, b: b0.b, c: b0.c, d: b0.d, e: 1, f: b0.f}, at)
     }
     dname := strLit(mut st, "lambda")
     dtps := list0(mut st)

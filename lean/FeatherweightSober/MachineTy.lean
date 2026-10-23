@@ -154,6 +154,24 @@ inductive StackTy (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (b : Nat) : Stack →
       Ty.sub ta (p.shiftR d) = true → b ≤ d →
       StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocR d) tf →
       StackTy Δ Ξ Ψ b (.callvR fv :: S) Λ (d + 1) ta tf
+  /-- anchor つきの関数値呼び出し（L1）の関数側評価中: 前提は callMv の規則と同じ（anchor は注釈） -/
+  | callMvL {S d a e p r ta tf} :
+      HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ e ta →
+      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
+      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocA a d) tf →
+      StackTy Δ Ξ Ψ b (.callMvL a e :: S) Λ (d + 1) (.fn p r) tf
+  /-- anchor つきの関数値呼び出しの引数評価中: 引数値が戻ると callMKa へ渡し直す -/
+  | callMvR {S d a fv p r ta tf} :
+      Value fv → HasType Δ Ξ (Ψ.take (d + 1)) b b (d + 1) [] Λ fv (.fn p r) →
+      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
+      StackTy Δ Ξ Ψ b S Λ (d + 1) (r.relocA a d) tf →
+      StackTy Δ Ξ Ψ b (.callMvR a fv :: S) Λ (d + 1) ta tf
+  /-- anchor を注釈で持つ callMK（callMv の委譲先）: callMK の前提から anchorOf を抜いたもの -/
+  | callMKa {S d a fn ts dfn ta tf} :
+      Δ[fn]? = some dfn → ts.length = dfn.tparams → Ty.tyArgsOk ts = true →
+      Ty.sub ta ((dfn.inst ts).param.renR a d) = true → b ≤ a → a ≤ d →
+      StackTy Δ Ξ Ψ b S Λ (d + 1) ((dfn.inst ts).ret.relocA a d) tf →
+      StackTy Δ Ξ Ψ b (.callMKa a fn ts :: S) Λ (d + 1) ta tf
   /-- 関数の返り境界（round4）: 深さ d + 2（呼び手 d + 1 + フレーム region d... 実行時は
   最内 = d + 1）で ret.shiftR d の値を受け、relocate（境界コピー）+ region pop で
   呼び手の深さ d + 1 へ返す。t0 は base の戻り値型（retOk が relocate の床）。
@@ -557,6 +575,13 @@ theorem StackTy.mono {Δ : Defs} {Ξ : ChanTy} {Ψ Ψ' : StoreTy} {b : Nat} {S d
   | callvR hv h1 hsub hbd hS ih =>
     exact .callvR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
       hsub hbd (ih hle)
+  | callMvL h1 hsub hbd had hS ih =>
+    exact .callMvL (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
+      hsub hbd had (ih hle)
+  | callMvR hv h1 hsub hbd had hS ih =>
+    exact .callMvR hv (h1.store_mono (hle _ (Nat.le_refl _)) (storePre_of_take_eq (take_pre_take hpre hS.le_depth)))
+      hsub hbd had (ih hle)
+  | callMKa hfn hlen hargs hsub hbd had hS ih => exact .callMKa hfn hlen hargs hsub hbd had (ih hle)
   | fretK hro hbd _ ih =>
     exact .fretK hro hbd (ih fun d' hd' => hle d' (Nat.le_succ_of_le hd'))
   | fretKA hro hbd had _ ih =>
@@ -706,6 +731,9 @@ theorem StackTy.chan_mono {Δ : Defs} {Ξ Ξ' : ChanTy} {Ψ : StoreTy} {b : Nat}
   | callMK hfn hlen hargs hanc hsub hbd had _ ih => exact .callMK hfn hlen hargs hanc hsub hbd had ih
   | callvL h1 hsub hbd _ ih => exact .callvL (h1.chan_mono hle) hsub hbd ih
   | callvR hv h1 hsub hbd _ ih => exact .callvR hv (h1.chan_mono hle) hsub hbd ih
+  | callMvL h1 hsub hbd had _ ih => exact .callMvL (h1.chan_mono hle) hsub hbd had ih
+  | callMvR hv h1 hsub hbd had _ ih => exact .callMvR hv (h1.chan_mono hle) hsub hbd had ih
+  | callMKa hfn hlen hargs hsub hbd had _ ih => exact .callMKa hfn hlen hargs hsub hbd had ih
   | fretK hro hbd _ ih => exact .fretK hro hbd ih
   | fretKA hro hbd had _ ih => exact .fretKA hro hbd had ih
   | freezeKs hmf _ ih => exact .freezeKs hmf ih

@@ -238,7 +238,7 @@ func desc(k int, b int) int {
     case ast.EFor: if b == 1 { d6(3, 0, 3, 0, 0, 0) } else { d6(3, 0, 1, 0, 0, 0) }
     case ast.SBind: d6(4, 0, 3, 0, 0, 0)
     case ast.SAssign: d6(3, 0, 3, 0, 0, 0)
-    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined: d6(1, 0, 0, 0, 0, 0)
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: d6(1, 0, 0, 0, 0, 0)
     case ast.TArray: d6(0, 1, 0, 0, 0, 0)
     case ast.TFunc | ast.BFunc: d6(3, 3, 4, 0, 0, 0)
     case ast.TGeneric | ast.KVariant: d6(2, 3, 0, 0, 0, 0)

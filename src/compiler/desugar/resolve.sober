@@ -771,9 +771,9 @@ func tyOf(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (TyRef, error?) {
         memoPut(mut st, int(decl), env, fuel, t)
         return t, nil
     case ast.TFunc:
-        // 値の位置の匿名の関数型の欄（工程 5d）は閉包の型（env の鍵 = 関数型の構造 — 借りと同じ寄せ方）
+        // 値の位置の匿名の関数型の欄（工程 5d）は閉包の型（env の鍵 = 関数型の構造 — 欄どうしで共有・借りの位置とは別 — report-1038 (c) 案 A）
         if anonFieldTE(mut st, te) {
-            return closTyOfKey(mut st, pk, te, brwKey(mut st, pk, te, at, fuel)?, at, fuel)
+            return closTyOfKey(mut st, pk, te, brwKey(mut st, pk, te, at, fuel, true)?, at, fuel)
         }
         pl := lA(nodeOf(mut st, te))
         ps := ListRef(listN(mut st, lenL(mut st, pl)))

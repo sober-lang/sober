@@ -1,0 +1,31 @@
+package main
+
+// 負例（check が拒否 — analyzer）: F の値になるラムダが F の @errors に無いラベル Gone を返しうる（漏れはラムダの位置で — language.md 13 節）
+
+type Bad error
+
+type Gone error
+
+type F func(x int) error? @errors(Bad)
+
+type Box struct {
+    f F
+}
+
+func mk(k int) Box {
+    return Box{f: (x) => if x > k { Gone{} } else if x > 0 { Bad{} } else { nil }}
+}
+
+@errors(Bad)
+func Run(b Box) error? {
+    g := b.f
+    g(3)?
+    return nil
+}
+
+func main() {
+    println(switch Run(mk(1)) {
+    case nil: "ok"
+    case Bad{}: "bad"
+    })
+}

@@ -1,0 +1,14 @@
+package main
+
+// pid1stop の相手（M:N — 子 2 本が眠る・ワーカーのスレッドが待ちに入った状態で受ける）
+import "std/os"
+import "std/task"
+
+func main() {
+    r, _ := task.Run((s task.Scope) => {
+        h := task.Spawn(s, () => { os.Sleep(30000); 1 })
+        g := task.Spawn(s, () => { os.Sleep(30000); 2 })
+        task.Join(h) + task.Join(g)
+    })
+    println(r)
+}

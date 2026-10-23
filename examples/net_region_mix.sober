@@ -1,0 +1,138 @@
+package main
+
+// net.Serve の region: の置き場の網（report-1077 / 1078）: 小さいスロットの接続の task（region: 1 MiB — 既定のスロットを割った小さいスロットを
+// 深度ごとに 1 本）と既定の大きさの子 task が、同じワーカーの上で深い region を持ったまま交互に寝る。各段は自分の region に列を作り
+// （接続の段は約 320 KB・既定の子の段は約 1.3 MB）、深い段で眠ってから戻り際に自分の列が壊れていないかを数える。SOBER_TASK_REGION_MB=4 なら
+// 既定のスロット 1 本が小さいスロット 4 本になる。置き場を取り違えると（大きさの違うスロットを予備やプールから採る）列が壊れて数が合わない
+
+import "std/io"
+import "std/iter"
+import "std/net"
+import "std/os"
+import "std/task"
+import "std/strings"
+import "std/convert"
+
+func show(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case io.Timeout{}: "timeout"
+    case io.Expired{}: "expired"
+    case io.Closed{}: "closed"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    case net.Bad{}: "bad"
+    case strings.InvalidUtf8{}: "invalid utf8"
+    case convert.InvalidInt{}: "invalid int"
+    case convert.IntOutOfRange{}: "int out of range"
+    }
+}
+
+// fill は seed から決まる n 語の列（呼び手の region）
+func fill(n int, seed int) []int {
+    mut ys := mut []int{}
+    for i <- iter.Range(0, n) {
+        ys = append(ys, i * 7 + seed)
+    }
+    return freeze(ys)
+}
+
+// intact は fill(len(xs), seed) と同じなら 1
+func intact(xs []int, seed int) int {
+    mut ok := 1
+    for i <- iter.Range(0, len(xs)) {
+        if xs[i] != i * 7 + seed {
+            ok = 0
+        }
+    }
+    return ok
+}
+
+// level は n 段の region を開き、各段で w 語の列を作って一番深い段で眠り、戻り際に壊れていない段の数を返す
+func level(n int, seed int, w int) int {
+    xs := fill(w, seed + n)
+    r := if n == 0 { sleepy() } else { level(n - 1, seed, w) }
+    return r + intact(xs, seed + n)
+}
+
+func sleepy() int {
+    os.Sleep(3)
+    return 0
+}
+
+// handle は受けた段の数で level を走らせて結果を返す
+func handle(c net.Conn) error? {
+    for chunk <- net.Recv(c)? {
+        n := convert.ParseInt(string(chunk)?)?
+        net.Send(c, bytes("${level(n, 1000, 40000)}"))?
+    }
+    return nil
+}
+
+func main() {
+    println(run() catch "listen failed")
+}
+
+func run() (string, error?) {
+    mut out := ""
+    for l <- net.Listen("127.0.0.1:0")? {
+        port := net.Port(l)
+        r, _ := task.Run((s task.Scope) => {
+            // 接続 4 本（小さいスロット）と既定の子 4 本を同時に
+            mut cs := mut []task.Handle[string]{}
+            for k <- iter.Range(0, 4) {
+                cs = append(cs, task.Spawn(s, () => client(port, 9 + k)))
+            }
+            mut ks := mut []task.Handle[int]{}
+            for k <- iter.Range(0, 4) {
+                ks = append(ks, task.Spawn(s, () => kid(9 + k)))
+            }
+            sv, _ := task.Run((s2 task.Scope) => show(net.Serve(l, handle, region: 1 * task.MB)), deadline: 2500 * task.MS)
+            mut acc := "serve: ${sv}"
+            for v <- task.Gather(cs) {
+                acc = acc + "\n" + v
+            }
+            for v <- task.Gather(ks) {
+                acc = acc + "\nkid: ${v}"
+            }
+            acc
+        }, deadline: 10000 * task.MS)
+        out = r
+    }
+    return out, nil
+}
+
+func client(port int, n int) string {
+    v, e := ask(port, n)
+    return if e == nil { "conn ${n}: ${v}" } else { show(e) }
+}
+
+// ask は接続を 2 本続けて張り、それぞれで段の数 n を 2 回送って返った数を並べる（n + 1 なら全段の列が壊れていない）。往復の間に接続の task は
+// 浅い段で寝る（深い段のスロットを予備に返してから深く入り直す）・1 本目の接続の task は 2 本目の前に終わる（スロットを返す — 既定の子がまだ深く動いている間）
+func ask(port int, n int) (string, error?) {
+    mut got := ""
+    for conn <- iter.Range(0, 2) {
+        for a <- net.Dial("127.0.0.1:${port}")? {
+            for round <- iter.Range(0, 2) {
+                net.Send(a, bytes("${n}"))?
+                for chunk <- net.Recv(a)? {
+                    got = got + (if conn + round == 0 { "" } else { "," }) + string(chunk)?
+                    break
+                }
+                os.Sleep(2)
+            }
+        }
+        os.Sleep(2)
+    }
+    return got, nil
+}
+
+// kid は既定の大きさの子: level を 4 回（間に寝る）。各段の列は 1 MiB を越える（小さいスロット〔1 MiB〕を既定の子が採る取り違えは隣のスロットを壊す）
+func kid(n int) int {
+    mut r := 0
+    for round <- iter.Range(0, 4) {
+        r = r + level(n, 2000 + round, 160000)
+        os.Sleep(1)
+    }
+    return r
+}

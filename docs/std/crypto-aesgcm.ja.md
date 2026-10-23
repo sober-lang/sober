@@ -14,7 +14,7 @@ record 層向けの API: 鍵の展開は Prepare で 1 回（接続ごと方向�
 
 ```sober
 k := aesgcm.Prepare(key)?
-rec := aesgcm.SealTo(k, nonce, ad, pt, hdr)?           // hdr ‖ 暗号文 ‖ tag
+rec := aesgcm.SealTo(k, nonce, ad, pt, hdr, tail)?     // hdr ‖ 暗号文（pt ‖ tail）‖ tag
 pt := aesgcm.OpenAt(k, nonce, ad, buf, off, n)?        // buf[off, off + n) = 暗号文 ‖ tag
 ```
 
@@ -84,7 +84,7 @@ func Available() bool
 
 ```sober
 type Key struct {
-    ctx []byte
+    ctx []byte @secret
 }
 ```
 
@@ -94,6 +94,7 @@ type Key struct {
 
 ```sober
 @errors(NoHardware, BadSize)
+@secret(key)
 func Prepare(key []byte) (Key, error?)
 ```
 
@@ -105,6 +106,8 @@ key を展開した Key（専用命令の有無と鍵の長さはここで見る
 
 ```sober
 @errors(NoHardware, BadSize)
+@secret(key)
+@bless
 func Seal(key []byte, nonce []byte, ad []byte, pt []byte) ([]byte, error?)
 ```
 
@@ -116,6 +119,7 @@ pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。nonce は�
 
 ```sober
 @errors(NoHardware, BadSize, Auth)
+@secret(key)
 func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?)
 ```
 
@@ -127,10 +131,11 @@ Seal の逆（tag を crypto.Equal で照合してから復号する）
 
 ```sober
 @errors(BadSize)
-func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte) ([]byte, error?)
+@bless
+func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
-head ‖ 暗号文 ‖ tag。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・GHASH は宛先の暗号文を読む・tag は計数器 J0 の ctx の CTR で宛先へ書く〔Y ⊕ E(J0) — 宛先は凍っているので Sober の添字では書かない〕）
+head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。無ければ []byte{}）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt と tail を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・GHASH は宛先の暗号文を読む・tag は計数器 J0 の ctx の CTR で宛先へ書く〔Y ⊕ E(J0) — 宛先は凍っているので Sober の添字では書かない〕）
 
 失敗のラベル: [`BadSize`](#badsize)
 

@@ -206,6 +206,21 @@ theorem stepLeaf_callvR (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) 
   cases fv <;> kR
 
 set_option maxHeartbeats 0 in
+theorem stepLeaf_callMvL (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (a : Nat) (e : Expr) :
+    step Δ π' (.ret H ((.callMvL a e) :: S) v) K2 = (step Δ π (.ret H ((.callMvL a e) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_callMvR (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (a : Nat) (fv : Expr) :
+    step Δ π' (.ret H ((.callMvR a fv) :: S) v) K2 = (step Δ π (.ret H ((.callMvR a fv) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  cases fv <;> kR
+
+set_option maxHeartbeats 0 in
+theorem stepLeaf_callMKa (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (a fn : Nat) (ts : List Ty) :
+    step Δ π' (.ret H ((.callMKa a fn ts) :: S) v) K2 = (step Δ π (.ret H ((.callMKa a fn ts) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
+  first | kR | (cases v <;> kR)
+
+set_option maxHeartbeats 0 in
 theorem stepLeaf_fretK (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v : Expr) (K K2 : ChanSt) (t : Ty) :
     step Δ π' (.ret H ((.fretK t) :: S) v) K2 = (step Δ π (.ret H ((.fretK t) :: S) v) K).map (fun p => (p.1.fixLeaf, K2)) := by
   first | kR | (cases v <;> kR)
@@ -470,6 +485,9 @@ theorem stepLeaf_ret (Δ : Defs) (π π' : List Bool) (H : Heap) (S : Stack) (v 
     | callMK fn ts => exact stepLeaf_callMK Δ π π' H S v K K2 fn ts
     | callvL e => exact stepLeaf_callvL Δ π π' H S v K K2 e
     | callvR fv => exact stepLeaf_callvR Δ π π' H S v K K2 fv
+    | callMvL a e => exact stepLeaf_callMvL Δ π π' H S v K K2 a e
+    | callMvR a fv => exact stepLeaf_callMvR Δ π π' H S v K K2 a fv
+    | callMKa a fn ts => exact stepLeaf_callMKa Δ π π' H S v K K2 a fn ts
     | fretK t => exact stepLeaf_fretK Δ π π' H S v K K2 t
     | idxL ot i => exact stepLeaf_idxL Δ π π' H S v K K2 ot i
     | idxR ot sv => exact stepLeaf_idxR Δ π π' H S v K K2 ot sv

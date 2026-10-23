@@ -1,0 +1,49 @@
+package main
+
+// nil 判定の if 式の値を閉包が捕捉する形（F-br の回帰 — 2026-10-21）: `q := if p != nil { p } else { … }` の q は絞った中身の型（T）で、
+// q を捕捉するラムダ（名前付き関数型の仮引数・匿名の関数型の仮引数・struct の関数型の欄）の本体で T として読める。
+// 以前は check の脱糖が絞った腕を外の束縛（T?）で読んで q を T? にし、ラムダの中だけ型が食い違った（check だけ拒否・build は受理）
+
+type K func(x int) int
+
+type R struct {
+    f K?
+}
+
+func viaNamed(k K) int {
+    return k(1)
+}
+
+func viaAnon(k func(x int) int) int {
+    return k(1)
+}
+
+func ints(p int?) int {
+    q := if p != nil { p } else { 0 }
+    return viaNamed((x) => x + q) + viaAnon((x) => x * q)
+}
+
+func strs(p string?) int {
+    q := if p == nil { "" } else { p }
+    return viaNamed((x) => x + len(bytes(q)))
+}
+
+func bools(p bool?) int {
+    q := if p != nil { p } else { false }
+    return viaAnon((x) => if q { x } else { 0 - x })
+}
+
+func field(p string?) R {
+    q := if p != nil { p } else { "-" }
+    return R{f: (x) => x + len(bytes(q))}
+}
+
+func main() {
+    println("${ints(5)} ${ints(nil)}")
+    println("${strs("abc")} ${strs(nil)}")
+    println("${bools(true)} ${bools(nil)}")
+    f := field("xy").f
+    if f != nil {
+        println("${f(10)}")
+    }
+}

@@ -123,8 +123,8 @@ T-22. 封の型（欄の型に、宣言した package の非公開の型を持�
 拒否: [`examples/utf8_view_neg.sober`](../../examples/utf8_view_neg.sober)・[`examples/json_doc_forge.sober`](../../examples/json_doc_forge.sober)
 決定: [language.md 15 節](../language.md)
 
-T-23. 同一性の型（std/task の `Scope`・`Handle`・`Sender`・`Receiver`・`Pool`、std/io の `File` など — 作る関数だけが本物を作る型）のゼロ値は std の外で作れない。型そのもののリテラル `T{}` と、同一性の型を（欄・型引数を通して推移的に）持つ欄を省いたリテラルを拒否する。`T?` の欄・slice / map の欄は省ける。
-拒否: [`examples/identity_neg_tx.sober`](../../examples/identity_neg_tx.sober)・[`examples/identity_neg_field.sober`](../../examples/identity_neg_field.sober)・[`examples/identity_neg_nested.sober`](../../examples/identity_neg_nested.sober)・[`examples/identity_neg_generic.sober`](../../examples/identity_neg_generic.sober)
+T-23. 同一性の型（std/task の `Scope`・`Handle`・`Sender`・`Receiver`・`Pool`・`Local`、std/io の `File`・`Root`、std/net の `Listener`・`Conn`、std/tls の `Conn` — 作る関数だけが本物を作る型）のゼロ値は std の外で作れない。型そのもののリテラル `T{}` と、同一性の型を（欄・型引数を通して推移的に）持つ欄を省いたリテラルを拒否する。`T?` の欄・slice / map の欄は省ける。
+拒否: [`examples/identity_neg_tx.sober`](../../examples/identity_neg_tx.sober)・[`examples/identity_neg_field.sober`](../../examples/identity_neg_field.sober)・[`examples/identity_neg_nested.sober`](../../examples/identity_neg_nested.sober)・[`examples/identity_neg_generic.sober`](../../examples/identity_neg_generic.sober)・[`examples/identity_neg_root.sober`](../../examples/identity_neg_root.sober)・[`examples/identity_neg_conn.sober`](../../examples/identity_neg_conn.sober)・[`examples/identity_neg_listener.sober`](../../examples/identity_neg_listener.sober)・[`examples/identity_neg_tls_field.sober`](../../examples/identity_neg_tls_field.sober)
 決定: [language.md 15 節](../language.md)
 
 ## 2.9 slice
@@ -185,12 +185,17 @@ T-34. 型宣言が作る型（struct・union・error ラベル・名前つき関
 拒否: [`examples/nominal_struct_arg.sober`](../../examples/nominal_struct_arg.sober)・[`examples/nominal_struct_eq.sober`](../../examples/nominal_struct_eq.sober)・[`examples/nominal_struct_slice.sober`](../../examples/nominal_struct_slice.sober)・[`examples/nominal_fn.sober`](../../examples/nominal_fn.sober)
 決定: [language.md 32 節](../language.md)
 
-T-35. named scalar `type R int` / `type F bool` は下地 int / bool の値を区別する型。下地は int と bool に限り、型パラメータは持たない。演算は同じ named どうしの `==` / `!=` だけ — 算術・ビット演算・順序比較・論理演算・条件の位置には使えず、要るときは `int(x)` / `bool(x)` で下地へ戻す。
+T-35. named scalar `type R int` / `type F bool` は下地 int / bool の値を区別する型。下地は int と bool に限り（宣言の位置で検査する — 使わない宣言も拒否）、型パラメータは持たない。演算は同じ named どうしの `==` / `!=` だけ — 算術・ビット演算・順序比較・論理演算・条件の位置には使えず、要るときは `int(x)` / `bool(x)` で下地へ戻す。
 例: [`examples/named_scalar.sober`](../../examples/named_scalar.sober)
-拒否: [`examples/named_scalar_arith.sober`](../../examples/named_scalar_arith.sober)・[`examples/named_scalar_order.sober`](../../examples/named_scalar_order.sober)・[`examples/named_scalar_cond.sober`](../../examples/named_scalar_cond.sober)・[`examples/named_scalar_under.sober`](../../examples/named_scalar_under.sober)
+拒否: [`examples/named_scalar_arith.sober`](../../examples/named_scalar_arith.sober)・[`examples/named_scalar_order.sober`](../../examples/named_scalar_order.sober)・[`examples/named_scalar_cond.sober`](../../examples/named_scalar_cond.sober)・[`examples/named_scalar_under.sober`](../../examples/named_scalar_under.sober)・[`examples/defined_neg_struct.sober`](../../examples/defined_neg_struct.sober)
 決定: [language.md 32 節](../language.md)
 
-T-36. 整数リテラル・const は named int の文脈に、`true` / `false` は named bool の文脈に置ける（`n == -1` と書ける）。明示の変換 `X(e)` は e が下地の型か同じ下地の別の named のときだけで、値を変えない。named と下地・別の named どうしの暗黙の変換は無い。型引数の中でも区別する（`B[Meters]` と `B[int]` は別の型）。
-例: [`examples/named_scalar.sober`](../../examples/named_scalar.sober)・[`examples/named_scalar_ifarm.sober`](../../examples/named_scalar_ifarm.sober)
-拒否: [`examples/named_scalar_mix.sober`](../../examples/named_scalar_mix.sober)・[`examples/named_scalar_targ.sober`](../../examples/named_scalar_targ.sober)・[`examples/named_scalar_targ_union.sober`](../../examples/named_scalar_targ_union.sober)
+T-36. 整数リテラル・型の無い const は named int の文脈に、`true` / `false` は named bool の文脈に置ける（`n == -1` と書ける）。明示の変換 `X(e)` は e が下地の型か同じ下地の別の named のときだけで、値を変えない。named と下地・別の named どうしの暗黙の変換は無い。型引数の中でも区別する（`B[Meters]` と `B[int]` は別の型）。値の式が下地 int の named scalar への変換 `T(定数式)` の const（`const OK = Status(200)`）は型 T を持つ型つきの const で、T の値として扱う（int の文脈には置けない）。変換は const の値の式の一番外にだけ置け、型つきの const は定数式の中で参照できない。
+例: [`examples/named_scalar.sober`](../../examples/named_scalar.sober)・[`examples/named_scalar_ifarm.sober`](../../examples/named_scalar_ifarm.sober)・[`examples/named_scalar_typed_const.sober`](../../examples/named_scalar_typed_const.sober)
+拒否: [`examples/named_scalar_mix.sober`](../../examples/named_scalar_mix.sober)・[`examples/named_scalar_targ.sober`](../../examples/named_scalar_targ.sober)・[`examples/named_scalar_targ_union.sober`](../../examples/named_scalar_targ_union.sober)・[`examples/named_scalar_typed_const_neg_int.sober`](../../examples/named_scalar_typed_const_neg_int.sober)・[`examples/named_scalar_typed_const_neg_arith.sober`](../../examples/named_scalar_typed_const_neg_arith.sober)・[`examples/named_scalar_typed_const_neg_constexpr.sober`](../../examples/named_scalar_typed_const_neg_constexpr.sober)
 決定: [language.md 32 節](../language.md)
+
+T-37. 型の別名 `type A = B` の A は B と同じ型の別の名前で、どこでも区別しない（代入・nominal の照合・型引数の中）。B は型宣言の名前（`N` か `ref.N` — struct・union・名前つき関数型・named scalar・別の別名）に限る — 組み込みの型・合成の型・型引数つきの名前・error / panic ラベルは置けない。総称の宣言の別名は使う側で型引数を書く（`type B = Box` の `B[int]`）。別名は型パラメータを持たず、トップレベルだけに書ける。別名の別名は実体まで辿り、循環は拒否する。別名の名前はトップレベルの型の名前の 1 つ（ローカル束縛に使えず、同じ package の名前と重ならない）。別名は宣言の package を変えない — 欄の書き・封の型・同一性の型・union の variant の名前は実体の package の規則のまま。
+例: [`examples/alias.sober`](../../examples/alias.sober)・[`examples/alias_expanded.sober`](../../examples/alias_expanded.sober)
+拒否: [`examples/alias_neg_cycle.sober`](../../examples/alias_neg_cycle.sober)・[`examples/alias_neg_self.sober`](../../examples/alias_neg_self.sober)・[`examples/alias_neg_undefined.sober`](../../examples/alias_neg_undefined.sober)・[`examples/alias_neg_builtin.sober`](../../examples/alias_neg_builtin.sober)・[`examples/alias_neg_compound.sober`](../../examples/alias_neg_compound.sober)・[`examples/alias_neg_targs.sober`](../../examples/alias_neg_targs.sober)・[`examples/alias_neg_tparams.sober`](../../examples/alias_neg_tparams.sober)・[`examples/alias_neg_label.sober`](../../examples/alias_neg_label.sober)・[`examples/alias_neg_shadow.sober`](../../examples/alias_neg_shadow.sober)・[`examples/alias_neg_dup.sober`](../../examples/alias_neg_dup.sober)・[`examples/alias_neg_identity.sober`](../../examples/alias_neg_identity.sober)
+決定: [language.md 32 節](../language.md)・[syntax.md 決定 15](../syntax.md)

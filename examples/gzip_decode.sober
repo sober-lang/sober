@@ -1,0 +1,40 @@
+package main
+
+// std/compress/gzip・flate の復号の実物: Content-Encoding: gzip の本文の往復・出力の上限（maxSize — 展開爆弾の封: 1 MiB の 0 は 1 KiB ほどに縮むので、
+// 入力の大きさの上限は出力の上限にならない）・壊れた列のラベル（包みの誤り = gzip.Bad・中身の誤り = flate.Bad・上限超え = flate.TooLarge）
+
+import "std/compress/flate"
+import "std/compress/gzip"
+import "std/iter"
+
+func label(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case gzip.Bad{}: "gzip.Bad"
+    case flate.Bad{}: "flate.Bad"
+    case flate.TooLarge{}: "flate.TooLarge"
+    }
+}
+
+func main() {
+    body := bytes("{\"items\": [1, 2, 3], \"note\": \"compress me, compress me, compress me\"}")
+    z := gzip.Encode(body, 6)
+    back := gzip.Decode(z, maxSize: 1 << 20) catch bytes("?")
+    println("${len(body)} -> ${len(z)} -> ${string(back) catch "?"}")
+
+    mut zs := mut []byte{}
+    for i <- iter.Range(0, 1 << 20) {
+        zs = append(zs, byte(0))
+    }
+    bomb := flate.Encode(freeze(zs), 9)
+    println("1 MiB of zeros -> ${len(bomb)} bytes")
+    _, e1 := flate.Decode(bomb, maxSize: 64 * 1024)
+    println(label(e1))
+
+    _, e2 := gzip.Decode(z[0:len(z) - 1])
+    println(label(e2))
+    _, e3 := gzip.Decode(bytes("not gzip at all"))
+    println(label(e3))
+    _, e4 := flate.Decode([]byte{0x07})
+    println(label(e4))
+}

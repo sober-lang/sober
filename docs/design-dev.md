@@ -102,7 +102,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
 | 層 | 性質 | unknown の扱い |
 |---|---|---|
 | コンパイラ（健全必須） | 型検査、sum type の網羅、region の escape 規則、並列スコープの不変値制約、`T?` flow typing | 拒否 |
-| analyzer（受理の定義に含む、degrade 可） | 効果、純粋性、error ラベル網羅、ゼロ値検査、`@noblock` 区間、acquire/release 対応、`Value` の公開境界隔離と変換関数の生成・一致検査 | unknown。注釈で契約に変えて精度を戻す |
+| analyzer（受理の定義に含む、degrade 可） | 効果（language.md 12 節「effect の面」— build に載せるのは効果をコンパイラ / rt が使うときだけ・倒れ先つき）、純粋性、error ラベル網羅、ゼロ値検査、`@noblock` 区間、acquire/release 対応、`Value` の公開境界隔離と変換関数の生成・一致検査 | unknown。注釈で契約に変えて精度を戻す |
 | ランタイム（Zig + asm、数千行） | region の push / pop / bump 割り当て、コルーチンのスタック切替、ワーカーごとの協調的キュー、spawn / join、チャネル（5b: MPMC + futex）、スレッド生成、atomics、abort、syscall シム（mmap / futex / clone / exit）。入る条件は「Sober で書けない（asm / syscall / atomics）」か「コンパイラが直接呼ぶ」の 2 つだけ | — |
 | std（Sober で書く。使った分だけリンク） | Handle、Domain、Pool、Iter、Ord / Key / Layout 等の辞書型、`Value` と変換、io、Executor（M:1 既定とスレッドプールは別モジュール） | — |
 
@@ -204,7 +204,7 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
     第一顧客。検収 = httpcheck の拡張（stream の応答が一括の body の応答と同じバイト列）+ RSS（大きいファイルの送出が本文の大きさに比例しない）。
     **順延（2026-10-17）: この形は関数値の壁 4 枚（report-740）で今の言語に書けない — クロージャの波（下の項）の後に再開**。
     **stream の部分は着地（2026-10-17・report-763）**: Response の length / stream・ServeConn の送出（長さ既知・圧縮しない・HEAD は呼ばない）・
-    httpcheck の stream 12 検査・examples/http_stream。残り = static ハンドラ（FileSize の口の API 裁定と同席）・compress + stream（chunked とセットの裁定）
+    httpcheck の stream 12 検査・examples/http_stream。残り = static ハンドラ（FileSize の口の API 裁定と同席）・compress + stream（chunked とセットの裁定 → 2026-10-22 裁定済み = 0.7.0 便 8〔language.md 28 節 w2 の「応答の枠」— 段 8-1 docs → 8-2 chunked → 8-3 SSE → 8-4 逐次の符号器 → 25 節 L1 → 8-5 compress + stream〕）
     条文の実読の訂正（report-740 4.3）: 本家に素の static 種目は無く static-tls のみ（TLS 前提 — 参戦は TLS 便の後）・ディスクの
     pre-compressed .gz / .br の選択は全エントリ型で許可・長さの口に std/os の FileSize が要る（API の裁定の席）
   - ④ 期限の別ラベル — `io.Expired`（仮決め）を `io.Timeout` から分離（language.md 28 節「壊れ方の規律」）。検収 = @errors の網羅の追従
@@ -241,3 +241,11 @@ Rust の 2 保証（メモリ安全・データ競合自由）を借用検査な
   値形の格子（check ≡ build）・fx/r740-*.sober 6 本の verdict 反転（壁の負例が正例になる）。
   棄てた案（一行）: 案 C = 本物の D3（型付けの面 3 つ + Lean の loc-free の配当を失う）・案 A = fat pointer（参照の寿命が関数型に region を
   持ち込み実質 C・境界コピーが deep copy の新規実装）
+- effect の波（決定 2026-10-21 — 偵察起案の裁定 8 点。裁定の正 = language.md 12 節「effect の面」）: 2 エンジン（関数の効果 = 呼び出しグラフの閉包 / 値の流れ = 不動点）を
+  @errors の 4 点組で揃える。段 0 docs（12 節の面）→ 段 1 名前付き関数型の後置注釈 + @errors（http.Stream の `?`）→ 段 2 ラベル集合の 2 語化 + 値の流れのエンジンの名前空間化 →
+  段 3 `@secret`（第一便の実弾 — std/crypto・ctcheck の関数の表の導出化）→ 段 4 出所の依存（std/http の public 系のキャッシュ）→ 段 5 `@effects` の本体（鎖の段との交差はその時期に裁定）→
+  DB の波（引数つきの効果 + 実行時の守り・SQL は sink の型）。検収の軸: 既存の受理は不変（@errors の黄金・checkverdict）・build の受理は変えない（例外は効果をコンパイラ / rt が使うときだけ —
+  倒れ先が必須）・動的オラクル（観測 ⊆ 導出）。Lean は v1 で開かない
+  着地: 段 0 d51dad84・段 1 baff0211・段 2 448cfa6d・**段 3 完了**（3a b3f176f6 文法 → 3b-1 bc46a644 walker → 3c-1 baffba7c `--secret-dump` → 3b-2 ed70cbf6〜cf4427f1 文脈欄 + std の印〔std の違反 0 件〕
+  → 3c-2 ca6b9c36 ctcheck の表 = 導出の表 T → 3d-1 b852eb8b `cycles` + dudect → 3d-2 dudect の全部の口 + GHA の job〔report-986〕）・段 4 = 出所の依存（起案 report-987 — 値の流れ + 効果のビット・共有の宣言はルートの行だけ）: 4a std/http の構造（保存の方針は型の欄だけ・既定 private・源の口 Authorization / Cookie・検証子の封の型 — report-988 a5a01725）→ 4b analyzer（walker の og のモード・効果のビット・出会い・std の印・Shared の解禁 — report-989 4bfe0b11）→ 4c オラクル（`--origin-dump`・
+  httpcheck の差分の非干渉の観測 — report-990）・**段 4 完了**。次 = 段 5 `@effects` の本体の偵察起案

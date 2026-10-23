@@ -8,7 +8,7 @@ import "std/iter"
 // PKCS#8 の DER（PEM の中身を base64 で戻したもの）の RSA の秘密鍵
 @errors(BadKey)
 func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実需まで足さない（34 節 2 の注記・2026-10-20 ④）
-    bad := PrivateKey{pub: noPublic(), mp: noMont(), mq: noMont(), dp: []int{}, dq: []int{}, qinv: []int{}}
+    bad := PrivateKey{pub: noPublic(), mp: noMont(), mq: noMont(), dp: []int{}, dq: []int{}, qinv: []int{}, pbits: 0, qbits: 0}
     // PrivateKeyInfo ::= SEQUENCE { version INTEGER, algorithm AlgorithmIdentifier, privateKey OCTET STRING }
     top, tl, te := tlv(der, 0, len(der), 0x30)
     if te || top + tl != len(der) {
@@ -75,7 +75,7 @@ func ParsePKCS8(der []byte) (PrivateKey, error?) { // 対の FormatPKCS8 は実�
         return bad, BadKey{}
     }
     pub := newPublic(n, bnFromBytes(ints[2], 1), k)
-    return PrivateKey{pub: pub, mp: newMont(p), mq: newMont(q), dp: bnTrim(bnFromBytes(ints[6], hl), np), dq: bnTrim(bnFromBytes(ints[7], hl), nq), qinv: bnTrim(bnFromBytes(ints[8], hl), np)}, nil
+    return PrivateKey{pub: pub, mp: newMont(p), mq: newMont(q), dp: bnTrim(bnFromBytes(ints[6], hl), np), dq: bnTrim(bnFromBytes(ints[7], hl), nq), qinv: bnTrim(bnFromBytes(ints[8], hl), np), pbits: bnBits(p), qbits: bnBits(q)}, nil
 }
 
 // 大きい端のバイト列の n と e の公開鍵（検証の網の API）

@@ -11,11 +11,15 @@
 //      深く探して一致が伸び、greedy の内部挿入の門〔ml ≤ maxIns〕が閉じて表が疎になる、zlib の level 表との共進化のずれ。
 //      dataset:8/9 は +1〜2 バイト〔長さ 3 の一致はハッシュが見ない — lv8/9 のみ・採点経路の lv6 は無関係〕）、
 //      全形の合算 Sober / zlib ≤ 1.0（zlib より縮むこと）
-//   node --experimental-strip-types check.ts <list> <dir> <golden> [--regen]
+//   ⑥ 復号の双子（report-1021）: 「twin <i> 長さ CRC-32」の行ごとに、index（twin.ts — node:zlib と Go の符号化）の i 番目の列を node:zlib で解いた結果と
+//      <dir>/twin<i>.out（Sober の flate.Decode / gzip.Decode）がバイト一致・index の全部の列に twin の行がある（Sober の自分の符号化の往復と maxSize の境目は main.sober が FAIL の行で出す）
+//   node --experimental-strip-types check.ts <list> <dir> <golden> <index> [--regen]
 import { readFileSync, writeFileSync } from "node:fs";
 import { crc32, deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib";
 
-const [list, dir, golden, flag] = process.argv.slice(2);
+const [list, dir, golden, index, flag] = process.argv.slice(2);
+const twinIndex = readFileSync(index, "utf8").split("\n").filter((l) => l !== "").map((l) => l.split(" "));
+let twins = 0;
 const lines = readFileSync(list, "utf8").split("\n").filter((l) => l !== "");
 let fail = 0;
 const bad = (m: string) => { fail++; if (fail <= 10) console.log("FAIL " + m); };
@@ -23,6 +27,16 @@ const gold: string[] = [];
 const sober = new Array(10).fill(0), zl = new Array(10).fill(0), jgz = new Array(10).fill(0), jzl = new Array(10).fill(0);
 for (const l of lines) {
     if (l.startsWith("FAIL")) { bad(l); continue; }
+    if (l.startsWith("twin ")) {
+        const [, is, len] = l.split(" ");
+        const [path, kind] = twinIndex[Number(is)];
+        const src = readFileSync(path);
+        const want = kind === "gz" ? gunzipSync(src) : inflateRawSync(src);
+        const got = readFileSync(`${dir}/twin${is}.out`);
+        if (!got.equals(want) || got.length !== Number(len)) bad(`twin ${is} ${path}: Sober ${got.length} bytes != zlib ${want.length} bytes`);
+        twins++;
+        continue;
+    }
     const [name, lvs, inlen, incrc, outlen, outcrc] = l.split(" ");
     const lv = Number(lvs);
     const src = readFileSync(`${dir}/${name}.in`);
@@ -57,6 +71,7 @@ for (const l of lines) {
     }
 }
 if (lines.length === 0) bad("no output");
+if (twins !== twinIndex.length) bad(`twins: ${twins} decoded of ${twinIndex.length}`);
 const g = gold.join("\n") + "\n";
 if (flag === "--regen") {
     writeFileSync(golden, g);
@@ -74,5 +89,5 @@ const stot = sober.slice(1).reduce((a, b) => a + b, 0), ztot = zl.slice(1).reduc
 if (stot > ztot) bad(`total size ${stot} > zlib ${ztot}（全形の合算の線 — check.ts ⑤）`);
 const ratio = sober.map((s, i) => `${i}:${(s / zl[i]).toFixed(4)}`).join(" ");
 const json = [1, 6, 9].map((l) => `gzip ${l} ${(jgz[l] / 3).toFixed(1)} vs zlib ${(jzl[l] / 3).toFixed(1)}`).join(" / ");
-console.log(`flatecheck: ${lines.length} encodings (deflate + gzip) round-trip through zlib · size vs zlib (same level) ${ratio} · json-comp mean ${json} · fail=${fail}`);
+console.log(`flatecheck: ${lines.length - twins} encodings (deflate + gzip) round-trip through zlib and Sober's Decode · ${twins} zlib / Go streams decoded ≡ zlib · size vs zlib (same level) ${ratio} · json-comp mean ${json} · fail=${fail}`);
 process.exit(fail === 0 ? 0 : 1);

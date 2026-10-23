@@ -104,13 +104,13 @@ const KImport = 51     // a = alias（文字列、-1 可）, b = path（文字�
 const KTypeDecl = 52   // a = 名前, b = type_params（文字列の列）, c = body, d = span.start, e = span.end, f = 1 なら `@layout`（language.md 36 節）
 const BStruct = 53     // a = fields（列）
 const BUnion = 54      // a = variants（列）
-const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）
+const BFunc = 55       // a = params（列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — TFunc と同じ）, d = 後置の `@errors` のラベル名の列 + 1（0 = 無し）, e = その `@` の字句
 const BError = 56      // a = fields（列）
-const KField = 57      // a = 名前, b = 型
-const KVariant = 58    // a = 名前, b = fields（列）
+const KField = 57      // a = 名前, b = 型, c = 後置の印（1 = `@secret`・2 = `@credential` — struct の欄だけ）
+const KVariant = 58    // a = 名前, b = fields（列）, c = 後置の `@shared` の印（1）
 const KFuncDecl = 59   // a = 名前, b = type_params, c = params, d = results, e = body（KBlock）, f = 付加（列: bodiless, span.start, span.end, sig_end）
 const KParam = 60      // a = 名前, b = 型, c = mutable
-const KConst = 61      // a = 名前, b = 式, c = span.start, d = span.end
+const KConst = 61      // a = 名前, b = 式, c = span.start, d = span.end, e = `@embed` のパターン, f = 印（ビット 0 = `@embed`・ビット 1 = `@secret`）
 const KBlock = 62      // a = stmts（列）
 const KCase = 63       // a = patterns（列）, b = body（KBlock）
 const KElem = 64       // a = key（文字列、-1 可）, b = value
@@ -130,6 +130,9 @@ const BPanic = 73
 // a = 名前, b = 鍵（文字列）, c = params（KParam の列）, d = results（列）, e = span.start, f = span.end。KFile の f の列にだけ現れ、関数の表には入らない
 // （呼び出しは desugar / lower が名前で引いて鍵の実装へ — desugar の SysKey）
 const KIntrinsic = 74
+// BAlias は型の別名の本体（`type A = B` — language.md 32 節「型の別名」）: a = 右辺の型式（loader が TName だけを受ける）。loader/alias.sober が参照を実体の名前へ写し、
+// 検査の束の後で宣言を型の列から外す — desugar 以降の層は見ない（生の木を読む fmt・.sobi・docgen は見る）
+const BAlias = 75
 // EVal は lower が合成する評価済みの値の節（木には現れない — pipe の左辺を引数へ渡す。Zig の ArgSrc.val）: a = 型, b = 値。
 // 番号は木の種類と重ならないように離して置く（desugar の descTable は木の節の欄の付け替えにだけ使い、EVal は引かない）
 const EVal = 90

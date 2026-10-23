@@ -1,0 +1,9 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 右辺が未定義の型
+
+type A = Missing
+
+func main() {
+    println(1)
+}

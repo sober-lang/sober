@@ -1,0 +1,14 @@
+package main
+
+// 負例（language.md 15 節 ② — 同一性の型のゼロ値）: net.Listener を欄に持つ struct のゼロ値 `W{}` は拒否
+
+import "std/net"
+
+type W struct {
+    l net.Listener
+}
+
+func main() {
+    w := W{}
+    println("x")
+}

@@ -51,6 +51,8 @@ std/net（したがって std/http と std/tls）を使うプログラムは、�
 - memlock: ワーカーごとに io_uring の ring を 1 本持ち、古いカーネルは ring のメモリをユーザー全体の `RLIMIT_MEMLOCK` で数えます。ring の作成が ENOMEM で失敗すると上と同じく倒れて遅くなるので、上限を上げてください（`ulimit -l unlimited`・systemd なら `LimitMEMLOCK=infinity`・Docker なら `--ulimit memlock=-1`）。Linux 5.12 以降は cgroup で数えるので、ほぼ問題になりません
 - nofile: 接続 1 本がファイル記述子 1 つです。systemd や多くのシェルの soft の上限は既定で 1024 — 見込む接続の数以上に上げてください（`ulimit -n`・`LimitNOFILE=`・`--ulimit nofile=…`）
 
+コンテナの init（PID 1）として走らせても SIGTERM / SIGINT で止まります（終了コード 143 / 130）— tini や `--init` は要りません。止まるのは即座で、処理中の接続は切れます（接続を流し切る優雅な停止はまだありません）。
+
 ## 開発者向け: 検査の網を回す
 
 コンパイラ自身に手を入れるときは、`scripts/gates.sh --full` が全部の検査を回します。網には追加で次が要ります:

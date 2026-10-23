@@ -149,6 +149,12 @@ def kCallv : Option Ty → Option Ty → Nat → Nat → Option Ty
       if Ty.sub t (p.shiftR d') && decide (b ≤ d') then some (r.relocR d') else none
   | _, _, _, _ => none
 
+/-- callMv（L1）: callv の anchor 版 — anchor a は構文の注釈 -/
+def kCallMv : Nat → Option Ty → Option Ty → Nat → Nat → Option Ty
+  | a, some (.fn p r), some t, b, d' + 1 =>
+      if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') then some (r.relocA a d') else none
+  | _, _, _, _, _ => none
+
 def kLabel : Option Ty → Ty → Nat → Option Ty
   | some t', t, d => if t' = t && t.regionsBelow d then some t else none
   | none, _, _ => none
@@ -418,6 +424,9 @@ def tcStep (Δ : Defs) (f b d : Nat) (Γ : Ctx) (Λ : LCtx) (r1 r2 r3 : Option T
   | .callv ef _, 0 => .sub ef b d Γ Λ
   | .callv _ e, 1 => sCallv1 r1 e b d Γ Λ
   | .callv _ _, _ + 2 => .ret (kCallv r1 r2 b d)
+  | .callMv _ ef _, 0 => .sub ef b d Γ Λ
+  | .callMv _ _ e, 1 => sCallv1 r1 e b d Γ Λ
+  | .callMv a _ _, _ + 2 => .ret (kCallMv a r1 r2 b d)
   | .label t e, 0 => .sub e b d Γ (lctxCons t (d - 1) Λ)
   | .label t _, _ + 1 => .ret (kLabel r1 t d)
   | .unreach t, _ => .ret (some t)

@@ -5,7 +5,7 @@
 # 4096 接続・pipelined = /pipeline を 16 本ずつ・limited-conn = 10 要求ごとに張り直し）。HttpArena の採点は 64 スレッド・3 回の最良・5 秒 —
 # ここは機の大きさに合わせて縮め、最良でなく中央値で読む（比を正にする — PINS の「HttpArena のベンチ環境」の勘所）。
 #
-#   bench/httparena/local.sh [-n 周] [-d 秒] [-c 接続] [--profiles "baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k async"] [-o 結果の TSV] [--summary 要約の md]
+#   bench/httparena/local.sh [-n 周] [-d 秒] [-c 接続] [--profiles "baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k latency-500k-8cpu async"] [-o 結果の TSV] [--summary 要約の md]
 # 種目（meta.json の tests 全 7 つ — 本家 scripts/lib/profiles.sh の形 — と json）:
 #   baseline / pipelined / limited-conn = gcannon・-c（既定 4096）
 #   json           = gcannon・GET /json/{count}?m=（本家 json-comp の (25,4)・(40,8)・(50,6) の巡回を Accept-Encoding なしで — 本家に素の json 種目は無い
@@ -25,6 +25,9 @@
 #                    測る前に同じサーバへ同じ形を $ZRK_WARM 秒（既定 5・0 で無し）流して捨てる（1 周目の p99 がランプの尻〔接続の張り始め・
 #                    ワーカーの起き上がり〕を拾って秒の桁に跳ねた — GHA run 38704859501 の r3 / r4。本家の測りの形〔レート・接続・秒〕は変えない）
 #                    zrk は $ZRK か PATH、無ければ本家の pin（v2.3.0 の静的 tarball・sha256 照合）を取って $W に置く
+#   latency-500k-8cpu = latency-1m の形でレート 500K req/s（$ZRK_RATE_500K）・サーバは 8 論理 CPU（本家 profiles.sh の cpuset 0-3,64-67 = 4 物理コア +
+#                    SMT の兄弟 — ここではサーバ側の物理コアの先頭 4 つ + 兄弟〔$SERVER_CPUS_8 で上書き・SMT の無い箱では先頭 8 CPU〕・SOBER_WORKERS /
+#                    GOMAXPROCS も 8）。本家の箱の 4 コアと手元の 4 コアは同じ桁なので、レートは箱で割り直さない（採点 = rate_ratio・CPU / 要求・p99）
 # 前提: gcannon（PATH か $GCANNON）と HttpArena の requests/（$ARENA_REQ — 無ければ GitHub から取る）・go・bin/sober
 # CPU の割り当て: SMT の兄弟を同じ側に置き、前半の物理コアをサーバ・後半を gcannon（$SERVER_CPUS / $LOAD_CPUS で上書き）
 # 注: seki の seccomp の下では時間（req/s・CPU）が歪む — 値は参考。公式の数字は GH Actions（.github/workflows/httparena.yml）
@@ -60,6 +63,9 @@ trap '[ -n "$SP" ] && kill $SP 2>/dev/null; [ -z "$W_KEEP" ] && rm -rf "$W"' EXI
 
 # CPU の割り当て（cpus.sh — SMT の兄弟を揃えて物理コアの前半 / 後半）
 . ./cpus.sh
+# latency-500k-8cpu のサーバ: サーバ側の CPU の列（cpus.sh — 物理コアの順に兄弟が並ぶ）の先頭 8 つ
+SERVER_CPUS_8=${SERVER_CPUS_8:-$(echo "$SERVER_CPUS" | tr ',' '\n' | head -8 | paste -sd,)}
+nsrv8=$(echo "$SERVER_CPUS_8" | tr ',' '\n' | wc -l)
 
 GC=${GCANNON:-$(command -v gcannon || true)}
 [ -x "$GC" ] || { echo "local.sh: gcannon not found (PATH or \$GCANNON — https://github.com/MDA2AV/gcannon)" >&2; exit 2; }
@@ -134,10 +140,13 @@ CERT=$ROOT/testdata/crypto/httparena-server.crt
 KEY=$ROOT/testdata/crypto/httparena-server.key
 start() {
     local b=$W/$1-srv try
+    # latency-500k-8cpu だけサーバを 8 論理 CPU に絞る（上の注 — $cur_prof は下の周の輪が置く）
+    local scpus=$SERVER_CPUS ns=$nsrv
+    [ "${cur_prof:-}" = latency-500k-8cpu ] && { scpus=$SERVER_CPUS_8; ns=$nsrv8; }
     for try in 1 2 3; do
         port=$((port + 1))
         tport=$((port + 400))
-        env SOBER_WORKERS=$nsrv GOMAXPROCS=$nsrv DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" taskset -c "$SERVER_CPUS" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
+        env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" taskset -c "$scpus" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
         SP=$!
         for i in $(seq 100); do
             if grep -q '^ready' "$W/srv.out" 2> /dev/null; then
@@ -154,6 +163,14 @@ start() {
 stop() { kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=; }
 # cpu_ticks: サーバの utime + stime（clock tick）。走りの間に死んだサーバ（/proc が消える）は 0 — 行は残り、req/s = 0 で見える
 cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0; }
+# rss_row <名前> <種目> <周>: 走りの直後（stop の前）のサーバの VmHWM（ピーク）と VmRSS（終端）を kB で "$out.rss" へ。
+# サーバは周ごとに建て直すので VmHWM = その周のピーク。死んだサーバは行を出さない（欠けで見える）
+rss_row() {
+    local ahp
+    ahp=$(awk '/^AnonHugePages:/ { print $2 }' "/proc/$SP/smaps_rollup" 2> /dev/null)
+    awk -v n="$1" -v p="$2" -v k="$3" -v a="${ahp:-0}" '/^VmHWM:/ { h = $2 } /^VmRSS:/ { r = $2 } END { if (h != "") printf "%s\t%s\t%d\t%d\t%d\t%d\n", n, p, k, h, r, a }' \
+        "/proc/$SP/status" 2> /dev/null >> "$out.rss"
+}
 
 # emit <名前> <種目> <周> <req/s> <応答> <2xx> <tickの差> <p99> <p99.9>: TSV の行（名前 種目 周 req/s 応答 2xx以外 CPUμs/要求 p99 p99.9）
 # p99.9 は分布の尻（report-706 — 本家で p99 と p99.9 が 2 桁割れる実装がある。尻の綺麗さは p99 だけでは見えない）
@@ -166,11 +183,12 @@ emit() {
 run_one() {
     local name=$1 prof=$2 k=$3 url args pc=$conns c0 c1 txt
     # latency-* と 8gbit は zrk（レート固定 — 本家 tools/zrk.sh の形。測るのはサーバの CPU / 要求）
-    if [ "$prof" = latency-1m ] || [ "$prof" = latency-10k ] || [ "$prof" = 8gbit ]; then
+    if [ "$prof" = latency-1m ] || [ "$prof" = latency-10k ] || [ "$prof" = latency-500k-8cpu ] || [ "$prof" = 8gbit ]; then
         # レートは箱に合わせて上書きできる（本家の 1M は 32 コアのベンチ機の値 — 8 コアのサーバでは Go が飽和して rate_ratio が割れる。
         # GHA の 16vcpu は ZRK_RATE_1M=250000〔1M × 8/32〕で両者が運べる水準に）
         local rate=${ZRK_RATE_1M:-1000000} zdur=${ZRK_DUR:-20} zc=1024 zargs=("http://localhost:$port/baseline11?a=1&b=2")
         [ "$prof" = latency-10k ] && rate=${ZRK_RATE_10K:-10000}
+        [ "$prof" = latency-500k-8cpu ] && rate=${ZRK_RATE_500K:-500000}
         if [ "$prof" = 8gbit ]; then
             rate=${ZRK_RATE_8GBIT:-50000}; zdur=${ZRK_DUR_8GBIT:-5}; zc=512
             zargs=(-m POST -b "@$ECHO_BODY" -H "Content-Type: application/octet-stream" -k "https://localhost:$tport/echo")
@@ -241,7 +259,9 @@ run_one() {
 }
 
 printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\n' > "$out"
+printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\n' > "$out.rss"
 for prof in $profiles; do
+    cur_prof=$prof
     for k in $(seq "$n"); do
         # 交互（周ごとに先後を入れ替える — 熱と時間帯の偏りを両側に散らす）
         order="sober go"
@@ -250,6 +270,7 @@ for prof in $profiles; do
             start "$name" || exit 1
             sleep 0.3
             run_one "$name" "$prof" "$k" | tee -a "$out"
+            rss_row "$name" "$prof" "$k"
             stop
             sleep 1
         done
@@ -258,6 +279,22 @@ done
 
 # 要約: 種目ごとの中央値と比（Sober / Go — req/s は大きいほど良い・CPU / 要求は小さいほど良い）
 node --experimental-strip-types --no-warnings summary.ts "$out" > "$W/summary.md"
+# RSS の要約（周の中央値の VmHWM — MB）: 種目 × 名前の表を summary.md に足す
+if [ -s "$out.rss" ]; then
+    {
+        echo
+        echo "## server RSS (VmHWM per round, median, MB)"
+        awk -F'\t' 'NR > 1 { key = $2 "\t" $1; v[key] = v[key] " " $4 }
+            END {
+                for (key in v) {
+                    n = split(v[key], a, " "); asort_n = n
+                    for (i = 1; i < n; i++) for (j = i + 1; j <= n; j++) if (a[j] < a[i]) { t = a[i]; a[i] = a[j]; a[j] = t }
+                    m = a[int((n + 1) / 2)]
+                    printf "%s\t%.1f MB\n", key, m / 1024
+                }
+            }' "$out.rss" | sort
+    } >> "$W/summary.md"
+fi
 # json-comp の応答 1 件のバイト（頭 + 本文・巡回の 3 つの平均 — 本家の採点の Bpr の物差し。gzip を解いた本文が Sober ≡ Go かも見る）
 case " $profiles " in *" json-comp"*)
     for name in sober go; do

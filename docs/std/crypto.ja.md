@@ -11,6 +11,8 @@
 ## Equal
 
 ```sober
+@secret(a, b)
+@bless
 func Equal(a []byte, b []byte) bool
 ```
 
@@ -19,6 +21,7 @@ a と b のバイト列が等しいか。長さは公開の値として扱う（
 ## NonZero
 
 ```sober
+@secret(x)
 func NonZero(x int) int
 ```
 
@@ -27,6 +30,7 @@ x が 0 なら 0、それ以外なら -1（全ビット 1）の mask（x | -x �
 ## Select
 
 ```sober
+@secret(m, a, b)
 func Select(m int, a int, b int) int
 ```
 
@@ -35,6 +39,7 @@ m が -1 なら a、0 なら b（m は NonZero などで作った mask だけ �
 ## Wipe
 
 ```sober
+@secret(b)
 func Wipe(b mut []byte)
 ```
 

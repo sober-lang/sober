@@ -95,6 +95,11 @@ type S struct {
     liftHint int
     // 次の liftLambdaCap が借りの閉包の持ち上げか（(α-L0) — 同一性の型の捕捉を許す。1 回で消費）
     liftBrw int
+    // 借りの実引数のラムダを持ち上げる呼び出しの anchor + 1（0 = callv の呼び出し — (α-L1)。callClosure が置き liftLambdaCap が読んで消す）
+    liftAnchor int
+    // 前走り（closure.sober の shapesFor）か・記録した形が関数値の型を含むか（含めば形が形の U に依るので前走りを固定点まで回す — report-1039）
+    preRun bool
+    shHasFn bool
     // 値の位置のラムダごとの借りの仮引数のビット（loader の Program.cap_brw — capFile と同じ並び）
     capBrw []int
     rdepth int
@@ -230,6 +235,9 @@ type S struct {
     shDecl table.Table[int]
     shTy table.Table[int]
     shBuf table.Table[int]
+    // 届く閉包の印（report-957 — closure.sober の capLive）: capLiveN = 0 まだ・1 全部届く扱い（main が無い）・2 capReach（関数の印の列）で引く
+    capLiveN int
+    capReach int
 }
 
 // ── ヒープの読み書き（st.h = std/table の Table）──
@@ -817,6 +825,48 @@ func FuncErrors(st mut S, fd ast.Node) (ListRef, int) {
         return -1, tok
     }
     return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
+}
+
+// FuncExhaustive は関数宣言 fd に `@exhaustive` の印があるか（付加の列の 9 番目 — parser.funcDecl。language.md 13 節「表の網羅」）
+func FuncExhaustive(st mut S, fd ast.Node) bool {
+    ext := fd.f
+    return ext >= LBASE && lenL(mut st, ListRef(ext)) >= 9 && latI(mut st, ListRef(ext), 8) != 0
+}
+
+// FuncSecret は関数宣言 fd の `@secret(…)` の仮引数の名前の列（文字列の列 — 無ければ -1）と `@` の字句（付加の列の 10・11 番目 — parser.funcDecl。
+// language.md 12 節「秘密の値の宣言」）
+func FuncSecret(st mut S, fd ast.Node) (ListRef, int) {
+    ext := fd.f
+    if ext < LBASE || lenL(mut st, ListRef(ext)) < 12 {
+        return -1, 0
+    }
+    raw := latI(mut st, ListRef(ext), 9)
+    tok := latI(mut st, ListRef(ext), 10)
+    if raw < 0 {
+        return -1, tok
+    }
+    return ListRef(LBASE + LSTRS * LK + refFile(ext) * FW + raw), tok
+}
+
+// FuncBless は関数宣言 fd に `@bless` の印があるか（付加の列の 12 番目）
+func FuncBless(st mut S, fd ast.Node) bool {
+    return (funcMarks(mut st, fd) & 1) != 0
+}
+
+// FuncBlessOrigin は関数宣言 fd が出所の名前空間で祝福されているか（`@bless` か `@bless(origin)` — language.md 12 節「出所の依存」）
+func FuncBlessOrigin(st mut S, fd ast.Node) bool {
+    return (funcMarks(mut st, fd) & 3) != 0
+}
+
+// FuncCredential は関数宣言 fd が `@credential`（結果は認証の源）か
+func FuncCredential(st mut S, fd ast.Node) bool {
+    return (funcMarks(mut st, fd) & 4) != 0
+}
+
+// funcMarks は付加の列の 12 番目（印のビット: 0 = `@bless`・1 = `@bless(origin)`・2 = `@credential` — 無ければ 0）
+func funcMarks(st mut S, fd ast.Node) int {
+    ext := fd.f
+    return if ext >= LBASE && lenL(mut st, ListRef(ext)) >= 12 { latI(mut st, ListRef(ext), 11) } else { 0 }
 }
 
 // ── 表: 関数（st.fns の要素 — 関数表の添字で指す）──

@@ -1,0 +1,14 @@
+package main
+
+// 型の別名と package（language.md 32 節「型の別名」・20 節）: 公開の別名は他の package の型（実体）を公開の名前で出す。
+// 利用者は別名の package だけを import し、実体の package を書かない（loader が合成の import を足す）。公開の別名は非公開の型も指せる
+
+import "testdata/alias/wrap"
+
+func main() {
+    mut w := wrap.Work{}
+    wrap.Feed(mut w, 4)
+    wrap.Feed(mut w, 8)
+    println(wrap.Value(wrap.Mean(w)))
+    println(wrap.Last(wrap.NewAcc(5)))
+}

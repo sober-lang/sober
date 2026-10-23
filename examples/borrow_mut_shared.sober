@@ -1,0 +1,22 @@
+package main
+
+// 借りの閉包の mut 捕捉（(α-L1)）: 1 つの値の呼び出しの借りの実引数 2 本が同じ mut の束縛 n を捕捉するのは受理（呼ばれた側から閉包は不透明 —
+// 片方の本体がもう片方を呼べず、別名の害が生じない）。縛りは「1 つの呼び出しが捕捉する mut の束縛は合わせて 1 つ」
+
+type Two func(a func(b []byte) error?, c func(b []byte) error?) error?
+
+func run(a func(b []byte) error?, c func(b []byte) error?) error? {
+    a(bytes("x"))?
+    return c(bytes("yz"))
+}
+
+func count(t Two) int {
+    mut n := 0
+    e := t((b []byte) => { n += len(b); nil }, (b []byte) => { n += 10 * len(b); nil })
+    if e != nil { return -1 }
+    return n
+}
+
+func main() {
+    println(count((a, c) => run(a, c)))
+}

@@ -44,7 +44,7 @@ const TC_ENTRY = 16  // 始めるときの入口（rt.task_start — M:N は rt.
 const TC_ID = 17     // 通し番号（M:N の trace）
 const TC_KOFF = 18   // 枠の預かりの欄の位置（語 — 結果が region を持つ子だけ・(B1)）
 const TC_SCOPE = 19  // 開いている最内の scope の記録（SR_UP で外へ — 段 6 P4-5。0 = 無し）
-const TC_CUTOK = 20  // 1 = 純な子（切ってよい — 段 6 P4-5 cancel.sober。main・純でない子・走らせ直しは 0）
+const TC_CUTOK = 20  // 1 = 純な子（切ってよい — 段 6 P4-5 cancel.sober）・2 = 純でないが stdout に書かない子（区間を持たない — report-994 F4）。main・それ以外の子・走らせ直しは 0。切ってよいかは 1 のビット
 const TC_IDX = 21    // 生んだ scope の中の番号（生んだ順 — 打ち切りの印 SR_CUT と比べる）
 const TC_SITE = 22   // spawn の点の番号（1 始まり — 0 = 走らせ直し。段 6 P5-1 の計測〔spawn の点ごとの使用量〕・P5-2 の見積もり）
 const TC_ADM = 23    // 入場で台帳に積んだ量（段 6 P5-2 admit.sober — 見積もりのバイト | 1 << LED_TSHIFT。0 = 計上していない〔main・走らせ直し〕）
@@ -61,8 +61,10 @@ const TC_WORDS = TC_FLEN + 5
 // 自前の深度の [スロットの基底, bump] の退避（深度 k → TC_SAVE + 2k・+1）。2 × (MAX_DEPTH + 1) 語 = 16 KiB の列なので記録の末尾に置く —
 // 毎回の io の欄（TC_FLEN〜TC_SLOTSZ・TC_FDS / TC_CHS / TC_DL = 語 27〜34）を TC_NEXT 等と同じ先頭の頁に収め、完了 1 本で TCB の 2 頁を
 // 触らないため（report-678 T8 — 退避の列の後ろに置いていたときは io の欄が 5 頁目で、4096 接続の ring で dTLB の取りこぼし 12 / 要求のうち
-// 3.6 が rt.uring_poll の TC_IORES）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）より後ろ・TC_END × 8 = 16,696 B < TASK_HEAD
-const TC_SAVE = 37
+// 3.6 が rt.uring_poll の TC_IORES）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,704 B < TASK_HEAD
+// 次の spawn 1 回のスロットの大きさの印（バイト — 0 = 印なし。rt.netop 6 が今の task に書き、rt.task_new が親のこの語を読んで消す — std/net の Serve の region:・report-1077）
+const TC_NSLOT = 37
+const TC_SAVE = 38
 const TC_END = TC_SAVE + 2 * (MAX_DEPTH + 1)
 // 開いた fd の鎖の頭（fd + 1・0 = 空 — IO 便 段 2 の登録簿 rt.sober の needOpen）。sysOpen を使うプログラムでだけ使う語（TC_WORDS の外）。main の記録
 // （rt.main_task）は退避の列の末尾まで（TC_END）なので、TC_FDS / TC_CHS / TC_DL はどのプログラムでも中にある。子の塊の記録は TASK_HEAD の頁の中
@@ -73,6 +75,34 @@ const TC_FDS = TC_WORDS
 // スロットの大きさは task ごと（TC_SLOTSZ — main は起動の大きさ・子は既定 W_SLOT_DEF か budget: から導いた 2 の冪。今の task の値が meta の W_SLOT_SIZE）。
 // プールは既定の大きさのスロットだけ — 既定より大きい子は深度ごとに mmap して終わりで munmap。子が終わるとスロットはプールへ返る（先頭から W_MADV を超えて使った頁は MADV_DONTNEED）
 const SLOT_OWN = MAX_DEPTH + 1
+// 予備（park で死んだ深度の返し — region-domain-pool.md の置き場の節・report-1061 / 1062）: 表の (SLOT_SPLO, SLOT_SPHI] の欄はワーカーの予備のスロット
+// （どの task のものでもない — 表に置いたまま）。不変条件: SLOT_SPLO ≥ own（予備は今の task の自前の範囲より深い）。空 = SPLO ≥ SPHI。
+// park（rt.task_wait・協調形の spawn の切替）で、task の (今の深度, own] を予備にして own を今の深度へ（main と既定より大きいスロットの task は返さない）。
+// 次に深度 own + 1 へ入る task は、それが予備なら表の欄をそのまま採る（rt.slot_new の頭 — プールから取らない）。切替で to の自前の範囲が予備に重なれば、
+// 重なった予備はプールへ出す（taskHandover — to の退避が欄を上書きする前に）。プールへ出すときは madvise しない（予備の bump は前の持ち主の値で信用できない）
+const SLOT_SPLO = MAX_DEPTH + 2
+const SLOT_SPHI = MAX_DEPTH + 3
+// 小さいスロット（既定より小さい task — std/net の Serve の region:・report-1077 / 1078）: 既定のスロット 1 本を k = 既定 ÷ 大きさ 本に割り、
+// 深度ごとに 1 本ずつ取る。取りは ① 返された小さいスロットの深度ごとの列（手元 → 共有 — SM_CAP の注）② 切り出しの位置
+// （SLOT_SMC = 次の小さいスロットの番地・SLOT_SMN = 残りの本数・SLOT_SMZ = 大きさ — まだ使っていない小さいスロットには触らない）
+// ③ 既定のスロットを 1 本取って切り出し直す。返したスロットの頁には何も書かない（列はスロットの外 — 中に鎖の語を書く形は、列を 1 度通った
+// スロットの先頭の頁を全部常駐させた: 32000 接続で +6 KB/接続 — report-1079）。既定のプールへは返さない（VA は小さいスロットの高水位で止まる）。
+// 予備の欄の大きさの印 SLOT_SPSZ（名前つきプールを使うプログラムだけ書く）: 予備を採るのは同じ大きさの task だけ
+const SLOT_SPSZ = MAX_DEPTH + 4
+const SLOT_SMC = MAX_DEPTH + 5
+const SLOT_SMN = MAX_DEPTH + 6
+const SLOT_SMZ = MAX_DEPTH + 7
+// 返された小さいスロットの列は深度ごと（列 r = d & DP_MASK — 既定のプールの深度ごとの列と同じ理由: 深度の役が揃い、W_MADV 以下の触った頁を
+// 別の役へ持ち回らない〔1 本の列では 32000 接続で常駐が 2 倍 — report-1078〕）。SLOT_SMH + r = 手元の列 r の数
+const SLOT_SMH = MAX_DEPTH + 8
+// 小さいスロットの手元の列（rt.smslots — ワーカーごと・深度ごとの列 r に SM_CAP 本）と共有の列（rt.ssm = [数の和, 列 r の数 × 32, 列 r の基底 × SSM_CAP × 32]
+// — 鍵 SSM_L〔既定のスロットの MN_RLOCK と別〕・溢れは手元の下半分をまとめて移す・全列の和が SSM_CAP 本まで・越えたら munmap）。既定のスロットの深度ごとのプール（WK_DPS / rt.sdp — mn.sober）と同じ形。基底には大きさの印
+// （smTag — 下位 12 ビット）を足して積み、取りは印が合うものだけ
+const SM_CAP = 256
+const SM_TAGM = 4095
+const SSM_CAP = 65536
+const SSM_S = 2 + DP_MASK
+const SSM_L = SSM_S + (DP_MASK + 1) * SSM_CAP + 8   // 共有の列の鍵（数の和の行と分ける）
 const SLOT_FREE_CAP = 4096
 // プールの冷えた水位（rt.slot_free の SLOT_WM 語 = 下から何本を先頭の W_MADV まで返し済みか・SLOT_WM + 1 語 = そのときの水位の位置のスロット — 番兵。
 // pop / push の道では触らない〔熱い道 — report-575: pop ごとの min で skynet の命令 +1.7%〕。次の刈り込みで、数が水位を割ったか水位の位置の番地が
@@ -107,7 +137,7 @@ func needTaskRt(st mut St) {
     st.rtTaskStart = addFunc(mut st, int(strLit(mut st, "rt.task_start")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtTaskSwitch = addFunc(mut st, int(strLit(mut st, "rt.task_switch")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
     st.sigG = addGlobalInit(mut st, int(strLit(mut st, "rt.sig")), SIG_WORDS, -1)
-    st.slotsG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.slots")), MAX_DEPTH + 2)
+    st.slotsG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.slots")), SLOT_SMH + DP_MASK + 1)
     st.slotFreeG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.slot_free")), 3 + SLOT_FREE_CAP)
     st.rtSlotNew = addFunc(mut st, int(strLit(mut st, "rt.slot_new")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtTaskWait = addFunc(mut st, int(strLit(mut st, "rt.task_wait")), desugar.ListRef(list0(mut st)), -1)
@@ -306,6 +336,7 @@ func taskNext(st mut St) int {
 }
 
 // buildTaskWait は rt.task_wait(): 今の task を待たせて次の走れる task へ切り替える（起こされて順番が来たら返る — 呼び手は条件を見直す）
+// 切り替える前に今の task の死んだ深度を予備へ返す（parkRelease）
 func buildTaskWait(st mut St) {
     begin(mut st, st.rtTaskWait)
     me := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
@@ -319,12 +350,14 @@ func buildTaskWait(st mut St) {
     bRet := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, ptoi(mut st, mx), ptoi(mut st, me)), bRet, -1, bSw, -1)
     setCur(mut st, bSw)
+    parkRelease(mut st, me)
     call(mut st, st.rtTaskSwitch, list2(mut st, me, mx))
     br(mut st, bRet, -1)
     setCur(mut st, bRet)
     ret(mut st, -1)
     setCur(mut st, bCo)
     nx := taskNext(mut st)
+    parkRelease(mut st, me)
     call(mut st, st.rtTaskSwitch, list2(mut st, me, nx))
     ret(mut st, -1)
 }
@@ -368,6 +401,18 @@ func buildSlotNew(st mut St) {
     d := 0
     meta := globaladdr(mut st, st.meta)
     sg := globaladdr(mut st, st.slotsG)
+    // 予備を採る（d = own + 1 が予備 SPLO < d ≤ SPHI で、今の task のスロットが既定の大きさ）: 表の欄をそのまま自前にする
+    bAdopt := newBlock(mut st)
+    bTake := newBlock(mut st)
+    spare := bin(mut st, BAnd, cmp(mut st, CGt, d, load(mut st, sg, SLOT_SPLO)), cmp(mut st, CLe, d, load(mut st, sg, SLOT_SPHI)))
+    // 名前つきプールを使うプログラムは予備の大きさの印と同じ大きさの task だけ（小さいスロットの予備を既定の task が採らない — 逆も）
+    defsz := cmp(mut st, CEq, load(mut st, meta, W_SLOT_SIZE), if st.poolOn { load(mut st, sg, SLOT_SPSZ) } else { load(mut st, meta, W_SLOT_DEF) })
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, spare, defsz), iconst(mut st, 0)), bAdopt, -1, bTake, -1)
+    setCur(mut st, bAdopt)
+    store(mut st, sg, SLOT_OWN, d)
+    store(mut st, sg, SLOT_SPLO, d)
+    ret(mut st, -1)
+    setCur(mut st, bTake)
     fg := globaladdr(mut st, st.slotFreeG)
     curT := load(mut st, globaladdr(mut st, st.taskG), TK_CUR)
     bMain := newBlock(mut st)
@@ -384,13 +429,111 @@ func buildSlotNew(st mut St) {
     bOwn := newBlock(mut st)
     bShared := newBlock(mut st)
     sz := load(mut st, meta, W_SLOT_SIZE)
-    condbr(mut st, cmp(mut st, CNe, sz, load(mut st, meta, W_SLOT_DEF)), bOwn, -1, bShared, -1)
+    def := load(mut st, meta, W_SLOT_DEF)
+    if st.poolOn {
+        bNotDef := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, sz, def), bShared, -1, bNotDef, -1)
+        setCur(mut st, bNotDef)
+        // 既定より小さい子（Serve の接続 — region:）: ワーカーの返された小さいスロットの鎖 → 切り出しの位置 → 既定のスロットの切り出し（SLOT_SMH の注）
+        bSmall := newBlock(mut st)
+        bScut := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CGt, sz, def), bOwn, -1, bSmall, -1)
+        setCur(mut st, bSmall)
+        // 手元の列 r（数 = 表の SLOT_SMH + r・基底 = rt.smslots の r × SM_CAP + i — 印つき）の末尾が同じ大きさなら 1 本
+        bSh := newBlock(mut st)
+        bSpop := newBlock(mut st)
+        bSsh := newBlock(mut st)
+        rr0 := bin(mut st, BAnd, d, iconst(mut st, DP_MASK))
+        hcol := gepWord(mut st, sg, rr0)
+        hc := load(mut st, hcol, SLOT_SMH)
+        tag := smTag(mut st, sz)
+        condbr(mut st, cmp(mut st, CNe, hc, iconst(mut st, 0)), bSh, -1, bSsh, -1)
+        setCur(mut st, bSh)
+        hc1 := bin(mut st, BSub, hc, iconst(mut st, 1))
+        he := load(mut st, gepWord(mut st, globaladdr(mut st, st.smG), bin(mut st, BAdd, bin(mut st, BMul, rr0, iconst(mut st, SM_CAP)), hc1)), 0)
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, he, iconst(mut st, SM_TAGM)), tag), bSpop, -1, bSsh, -1)
+        setCur(mut st, bSpop)
+        store(mut st, hcol, SLOT_SMH, hc1)
+        br(mut st, bEnd, list1(mut st, bin(mut st, BSub, he, tag)))
+        // 手元に無い: 共有の列（rt.ssm — 数の和が 0 なら呼ばない）
+        setCur(mut st, bSsh)
+        bScall := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.ssmG), 0), iconst(mut st, 0)), bScall, -1, bScut, -1)
+        setCur(mut st, bScall)
+        sts := call(mut st, st.rtSmTake, list3(mut st, rr0, tag, hc))
+        condbr(mut st, cmp(mut st, CNe, sts, iconst(mut st, 0)), bEnd, list1(mut st, sts), bScut, -1)
+        // 切り出しの位置に同じ大きさの残りがあれば 1 本（触らない）
+        setCur(mut st, bScut)
+        bCur := newBlock(mut st)
+        bNew := newBlock(mut st)
+        smn := load(mut st, sg, SLOT_SMN)
+        condbr(mut st, bin(mut st, BAnd, cmp(mut st, CGt, smn, iconst(mut st, 0)), cmp(mut st, CEq, load(mut st, sg, SLOT_SMZ), sz)), bCur, -1, bNew, -1)
+        setCur(mut st, bCur)
+        smc := load(mut st, sg, SLOT_SMC)
+        store(mut st, sg, SLOT_SMC, bin(mut st, BAdd, smc, sz))
+        store(mut st, sg, SLOT_SMN, bin(mut st, BSub, smn, iconst(mut st, 1)))
+        br(mut st, bEnd, list1(mut st, smc))
+        // 既定のスロットを 1 本取って切り出し直す（前の切り出しの残り〔大きさ違い〕は捨てる — 大きさの違う小さい task が混ざるときだけ）
+        setCur(mut st, bNew)
+        bCr := newBlock(mut st)
+        bCp := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, load(mut st, fg, 0), iconst(mut st, 0)), bCr, -1, bCp, -1)
+        setCur(mut st, bCr)
+        slotRefill(mut st, meta, fg)
+        br(mut st, bCp, -1)
+        setCur(mut st, bCp)
+        cn := load(mut st, fg, 0)
+        s0 := load(mut st, gepWord(mut st, fg, cn), 0)
+        store(mut st, fg, 0, bin(mut st, BSub, cn, iconst(mut st, 1)))
+        mInc(mut st, 2)
+        store(mut st, sg, SLOT_SMC, bin(mut st, BAdd, s0, sz))
+        store(mut st, sg, SLOT_SMN, bin(mut st, BSub, bin(mut st, BDiv, def, sz), iconst(mut st, 1)))
+        store(mut st, sg, SLOT_SMZ, sz)
+        br(mut st, bEnd, list1(mut st, s0))
+    } else {
+        condbr(mut st, cmp(mut st, CNe, sz, def), bOwn, -1, bShared, -1)
+    }
     setCur(mut st, bOwn)
     a := sysMmap(mut st, sz)
-    syscall(mut st, list4(mut st, iconst(mut st, 28), a, sz, iconst(mut st, 15)))
+    slotVaAdd(mut st, sz)
     pstatVa(mut st, 1)
+    mInc(mut st, 15)
     br(mut st, bEnd, list1(mut st, a))
     setCur(mut st, bShared)
+    // M:N: 深度ごとのプール（列 d & DP_MASK — 役が揃う・report-1018）: 手元の列 → 共有の予備の列（rt.dp_take）→ 単体。協調形は列に積まないので mnOn で飛ばす
+    bDm := newBlock(mut st)
+    bDr := newBlock(mut st)
+    bDhit := newBlock(mut st)
+    bSingle := newBlock(mut st)
+    condbr(mut st, mnOn(mut st), bDm, -1, bSingle, -1)
+    setCur(mut st, bDm)
+    rr := bin(mut st, BAnd, d, iconst(mut st, DP_MASK))
+    br(mut st, bDr, -1)
+    setCur(mut st, bDr)
+    wkd := globaladdr(mut st, st.wkG)
+    cpd := gepWord(mut st, wkd, bin(mut st, BAdd, rr, iconst(mut st, WK_DPC)))
+    cd := load(mut st, cpd, 0)
+    bDsh := newBlock(mut st)
+    bDgot := newBlock(mut st)
+    gs := param(mut st, bDgot, TyI64)
+    condbr(mut st, cmp(mut st, CNe, cd, iconst(mut st, 0)), bDhit, -1, bDsh, -1)
+    setCur(mut st, bDhit)
+    c1 := bin(mut st, BSub, cd, iconst(mut st, 1))
+    store(mut st, cpd, 0, c1)
+    br(mut st, bDgot, list1(mut st, load(mut st, gepWord(mut st, wkd, bin(mut st, BAdd, bin(mut st, BAdd, bin(mut st, BMul, rr, iconst(mut st, DP_CAP)), c1), iconst(mut st, WK_DPS))), 0)))
+    // 手元が空: 共有の予備の深度ごとの列（数の和が 0 なら呼ばない）
+    setCur(mut st, bDsh)
+    bDcall := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.sdpG), 0), iconst(mut st, 0)), bDcall, -1, bSingle, -1)
+    setCur(mut st, bDcall)
+    ts := call(mut st, st.rtDpTake, list1(mut st, rr))
+    condbr(mut st, cmp(mut st, CNe, ts, iconst(mut st, 0)), bDgot, list1(mut st, ts), bSingle, -1)
+    setCur(mut st, bDgot)
+    mInc(mut st, 2)
+    mInc(mut st, 19)
+    mPopRes(mut st, gs)
+    br(mut st, bEnd, list1(mut st, gs))
+    setCur(mut st, bSingle)
     condbr(mut st, cmp(mut st, CEq, load(mut st, fg, 0), iconst(mut st, 0)), bRefill, -1, bPop, -1)
     setCur(mut st, bRefill)
     slotRefill(mut st, meta, fg)
@@ -399,11 +542,143 @@ func buildSlotNew(st mut St) {
     n := load(mut st, fg, 0)
     s := load(mut st, gepWord(mut st, fg, n), 0)
     store(mut st, fg, 0, bin(mut st, BSub, n, iconst(mut st, 1)))
+    mInc(mut st, 2)
+    mPopRes(mut st, s)
     br(mut st, bEnd, list1(mut st, s))
     setCur(mut st, bEnd)
+    // 欄 d が予備（main・既定より大きい task は採らない）ならプールへ出してから上書きする。own = d・SPLO ≥ d に保つ
+    bSp := newBlock(mut st)
+    bSp2 := newBlock(mut st)
+    lo := load(mut st, sg, SLOT_SPLO)
+    condbr(mut st, cmp(mut st, CNe, bin(mut st, BAnd, cmp(mut st, CGt, d, lo), cmp(mut st, CLe, d, load(mut st, sg, SLOT_SPHI))), iconst(mut st, 0)), bSp, -1, bSp2, -1)
+    setCur(mut st, bSp)
+    spareOut(mut st, d, spareSz(mut st, sg, meta))
+    br(mut st, bSp2, -1)
+    setCur(mut st, bSp2)
     store(mut st, gepWord(mut st, sg, d), 0, base)
     store(mut st, sg, SLOT_OWN, d)
+    bLo := newBlock(mut st)
+    bLo2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, lo, d), bLo, -1, bLo2, -1)
+    setCur(mut st, bLo)
+    store(mut st, sg, SLOT_SPLO, d)
+    br(mut st, bLo2, -1)
+    setCur(mut st, bLo2)
     ret(mut st, -1)
+}
+
+// spareOut は表の欄 k のスロット（予備 — 大きさ isz）をプールへ出す（小さいスロットはワーカーの鎖へ）: M:N は深度ごとの手元の列 k & DP_MASK（満杯なら rt.dp_give）・協調形は単体のプール（満杯なら munmap）。
+// madvise はしない（used = 0 — 予備の bump は前の持ち主の値で、スロットの使用量として信用できない）
+func spareOut(st mut St, k int, isz int) {
+    meta := globaladdr(mut st, st.meta)
+    s := load(mut st, gepWord(mut st, globaladdr(mut st, st.slotsG), k), 0)
+    bMn := newBlock(mut st)
+    bCo := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    if st.poolOn {
+        // 小さいスロット（大きさ isz < 既定）はワーカーの小さいスロットの鎖へ
+        bSm := newBlock(mut st)
+        bDf := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CLt, isz, load(mut st, meta, W_SLOT_DEF)), bSm, -1, bDf, -1)
+        setCur(mut st, bSm)
+        smallPush(mut st, globaladdr(mut st, st.slotsG), k, s, isz)
+        br(mut st, bEnd, -1)
+        setCur(mut st, bDf)
+    }
+    condbr(mut st, mnOn(mut st), bMn, -1, bCo, -1)
+    setCur(mut st, bMn)
+    wk := globaladdr(mut st, st.wkG)
+    r := bin(mut st, BAnd, k, iconst(mut st, DP_MASK))
+    cp := gepWord(mut st, wk, bin(mut st, BAdd, r, iconst(mut st, WK_DPC)))
+    c := load(mut st, cp, 0)
+    bPush := newBlock(mut st)
+    bSg := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, c, iconst(mut st, DP_CAP)), bPush, -1, bSg, -1)
+    setCur(mut st, bPush)
+    store(mut st, gepWord(mut st, wk, bin(mut st, BAdd, bin(mut st, BAdd, bin(mut st, BMul, r, iconst(mut st, DP_CAP)), c), iconst(mut st, WK_DPS))), 0, s)
+    store(mut st, cp, 0, bin(mut st, BAdd, c, iconst(mut st, 1)))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bSg)
+    call(mut st, st.rtDpGive, list3(mut st, s, iconst(mut st, 0), r))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bCo)
+    fg := globaladdr(mut st, st.slotFreeG)
+    n := load(mut st, fg, 0)
+    bKeep := newBlock(mut st)
+    bDrop := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, SLOT_FREE_CAP)), bKeep, -1, bDrop, -1)
+    setCur(mut st, bKeep)
+    n1 := bin(mut st, BAdd, n, iconst(mut st, 1))
+    store(mut st, gepWord(mut st, fg, n1), 0, s)
+    store(mut st, fg, 0, n1)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bDrop)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), s, load(mut st, meta, W_SLOT_DEF)))
+    if st.poolOn {
+        slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), load(mut st, meta, W_SLOT_DEF)))
+    }
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
+// parkRelease は park する task me の死んだ深度 (今の深度, own] を予備にして own を今の深度へ下げる（region の 21 節: 今の深度より深い region は
+// 死んでいる — 中身を写さない・置き場を手放すだけ）。予備が空か、今の予備の下端が own にちょうど続くなら範囲を広げるだけ（O(1)）。
+// 続かない（間に他の task の欄がある）ときは返す範囲を 1 本ずつプールへ出す。main（アリーナ）と既定より大きいスロットの task は返さない
+func parkRelease(st mut St, me int) {
+    meta := globaladdr(mut st, st.meta)
+    sg := globaladdr(mut st, st.slotsG)
+    bSkip := newBlock(mut st)
+    bChk := newBlock(mut st)
+    bChk2 := newBlock(mut st)
+    bGo := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, ptoi(mut st, me), ptoi(mut st, globaladdr(mut st, st.mainTcb))), bSkip, -1, bChk, -1)
+    setCur(mut st, bChk)
+    // 既定より大きいスロットの task は返さない（名前つきプールを使うプログラムは既定より小さい task も予備に乗る — 予備の大きさの印 SLOT_SPSZ）
+    if st.poolOn {
+        condbr(mut st, cmp(mut st, CGt, load(mut st, meta, W_SLOT_SIZE), load(mut st, meta, W_SLOT_DEF)), bSkip, -1, bChk2, -1)
+    } else {
+        condbr(mut st, cmp(mut st, CNe, load(mut st, meta, W_SLOT_SIZE), load(mut st, meta, W_SLOT_DEF)), bSkip, -1, bChk2, -1)
+    }
+    setCur(mut st, bChk2)
+    dep := load(mut st, meta, W_DEPTH)
+    own := load(mut st, sg, SLOT_OWN)
+    condbr(mut st, cmp(mut st, CGt, own, dep), bGo, -1, bSkip, -1)
+    setCur(mut st, bGo)
+    lo := load(mut st, sg, SLOT_SPLO)
+    hi := load(mut st, sg, SLOT_SPHI)
+    bEmpty := newBlock(mut st)
+    bNe := newBlock(mut st)
+    bJoin := newBlock(mut st)
+    bGap := newBlock(mut st)
+    bDone := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CGe, lo, hi), bEmpty, -1, bNe, -1)
+    setCur(mut st, bEmpty)
+    store(mut st, sg, SLOT_SPHI, own)
+    if st.poolOn {
+        store(mut st, sg, SLOT_SPSZ, load(mut st, meta, W_SLOT_SIZE))
+    }
+    br(mut st, bJoin, -1)
+    setCur(mut st, bNe)
+    // 続く（予備の下端 = own）うえに予備の大きさが同じなら伸ばすだけ
+    joinable := if st.poolOn { bin(mut st, BAnd, cmp(mut st, CEq, lo, own), cmp(mut st, CEq, load(mut st, sg, SLOT_SPSZ), load(mut st, meta, W_SLOT_SIZE))) } else { cmp(mut st, CEq, lo, own) }
+    condbr(mut st, joinable, bJoin, -1, bGap, -1)
+    setCur(mut st, bJoin)
+    store(mut st, sg, SLOT_SPLO, dep)
+    br(mut st, bDone, -1)
+    setCur(mut st, bGap)
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, dep, iconst(mut st, 1))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, own), body, -1, bDone, -1)
+    setCur(mut st, body)
+    spareOut(mut st, k, load(mut st, meta, W_SLOT_SIZE))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, bDone)
+    store(mut st, sg, SLOT_OWN, dep)
+    br(mut st, bSkip, -1)
+    setCur(mut st, bSkip)
 }
 
 // buildSlotTake は rt.slot_take() i64: プールのスロットを 1 つ取る（空なら SLOT_CHUNK 本ぶんの VA を予約 — rt.slot_new の子の枝と同じ。
@@ -422,6 +697,7 @@ func buildSlotTake(st mut St) {
     n := load(mut st, fg, 0)
     s := load(mut st, gepWord(mut st, fg, n), 0)
     store(mut st, fg, 0, bin(mut st, BSub, n, iconst(mut st, 1)))
+    mInc(mut st, 13)
     ret(mut st, s)
 }
 
@@ -433,13 +709,15 @@ func slotRefill(st mut St, meta int, fg int) {
     condbr(mut st, mnOn(mut st), bMn, -1, bMap, -1)
     setCur(mut st, bMn)
     got := call(mut st, st.rtSresTake, list0(mut st))
+    mAdd(mut st, 7, got)
     condbr(mut st, cmp(mut st, CNe, got, iconst(mut st, 0)), bEnd, -1, bMap, -1)
     setCur(mut st, bMap)
     size := load(mut st, meta, W_SLOT_DEF)
     total := bin(mut st, BMul, size, iconst(mut st, SLOT_CHUNK))
     a := sysMmap(mut st, total)
-    syscall(mut st, list4(mut st, iconst(mut st, 28), a, total, iconst(mut st, 15)))
+    slotVaAdd(mut st, total)
     pstatVa(mut st, SLOT_CHUNK)
+    mInc(mut st, 4)
     for i <- iter.Range(0, SLOT_CHUNK) {
         store(mut st, fg, 1 + i, bin(mut st, BAdd, a, bin(mut st, BMul, size, iconst(mut st, i))))
     }
@@ -500,9 +778,12 @@ func slotRelease(st mut St, tcb int) int {
     bBig := newBlock(mut st)
     bDef := newBlock(mut st)
     sz := load(mut st, meta, W_SLOT_SIZE)
-    condbr(mut st, cmp(mut st, CNe, sz, load(mut st, meta, W_SLOT_DEF)), bBig, -1, bDef, -1)
+    smallRel(mut st, meta, k, s, used, sz, bBig, bDef, next)
     setCur(mut st, bBig)
     syscall(mut st, list3(mut st, iconst(mut st, 11), s, sz))
+    if st.poolOn {
+        slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), sz))
+    }
     br(mut st, next, -1)
     setCur(mut st, bDef)
     // 返すのは先頭から W_MADV を超えた分だけ（region_enter と同じ規則 — task の終わりごとの madvise は M:N で TLB の撃ち落としになる）
@@ -520,6 +801,9 @@ func slotRelease(st mut St, tcb int) int {
     condbr(mut st, cmp(mut st, CLt, n, iconst(mut st, SLOT_FREE_CAP)), keep, -1, bDrop, -1)
     setCur(mut st, bDrop)
     syscall(mut st, list3(mut st, iconst(mut st, 11), s, load(mut st, meta, W_SLOT_DEF)))
+    if st.poolOn {
+        slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), load(mut st, meta, W_SLOT_DEF)))
+    }
     br(mut st, next, -1)
     setCur(mut st, keep)
     n1 := bin(mut st, BAdd, n, iconst(mut st, 1))
@@ -548,6 +832,7 @@ func buildSlotTrim(st mut St) {
     ret(mut st, -1)
     setCur(mut st, bTop)
     fg := globaladdr(mut st, st.slotFreeG)
+    dpDissolve(mut st, globaladdr(mut st, st.wkG), WK_DPC, WK_DPS, DP_CAP, fg, SLOT_FREE_CAP)
     keepB := load(mut st, globaladdr(mut st, st.meta), W_MADV)
     n := load(mut st, fg, 0)
     wm := wmCheck(mut st, fg, n, SLOT_WM)
@@ -583,9 +868,14 @@ func buildSlotTrim(st mut St) {
     setCur(mut st, bMn)
     mn := globaladdr(mut st, st.mnG)
     rs := globaladdr(mut st, st.sresG)
-    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, rs, 0), load(mut st, rs, SRES_WM)), cmp(mut st, CGt, keepB, iconst(mut st, 0))), bLk, -1, out, -1)
+    sdp := globaladdr(mut st, st.sdpG)
+    sdpAny := cmp(mut st, CNe, load(mut st, sdp, 0), iconst(mut st, 0))
+    condbr(mut st, bin(mut st, BAnd, bin(mut st, BOr, cmp(mut st, CNe, load(mut st, rs, 0), load(mut st, rs, SRES_WM)), sdpAny), cmp(mut st, CGt, keepB, iconst(mut st, 0))), bLk, -1, out, -1)
     setCur(mut st, bLk)
     spinLock(mut st, mn, MN_RLOCK)
+    // 共有の予備の深度ごとの鎖を単体の予備へ溶かす（数の上限は合わせて SRES_CAP — 溢れない）。刈りは単体の列の水位で
+    dpDissolve(mut st, sdp, 1, SDP_S, SRES_CAP, rs, SRES_CAP)
+    store(mut st, sdp, 0, iconst(mut st, 0))
     c := load(mut st, rs, 0)
     br(mut st, sl, list1(mut st, bin(mut st, BAdd, wmCheck(mut st, rs, c, SRES_WM), iconst(mut st, 1))))
     setCur(mut st, sl)
@@ -600,6 +890,55 @@ func buildSlotTrim(st mut St) {
     br(mut st, out, -1)
     setCur(mut st, out)
     ret(mut st, -1)
+}
+
+// dpDissolve は深度ごとの列（p[cOff + r] が列 r の数・p[eOff + r × stride + i] が基底・r = 0〜DP_MASK）を全部単体の列 a（[数, 基底…] — 容量 cap）へ移す。
+// 列が満杯なら残りは munmap（report-1018 — slot_trim の刈りは単体の列の水位で行うので、刈る前に溶かす）
+func dpDissolve(st mut St, p int, cOff int, eOff int, stride int, a int, cap int) {
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    def := load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF)
+    rl := newBlock(mut st)
+    r := param(mut st, rl, TyI64)
+    rb := newBlock(mut st)
+    rd := newBlock(mut st)
+    il := newBlock(mut st)
+    i := param(mut st, il, TyI64)
+    ib := newBlock(mut st)
+    bPut := newBlock(mut st)
+    bDrop := newBlock(mut st)
+    bNx := newBlock(mut st)
+    id := newBlock(mut st)
+    br(mut st, rl, list1(mut st, zero))
+    setCur(mut st, rl)
+    condbr(mut st, cmp(mut st, CLe, r, iconst(mut st, DP_MASK)), rb, -1, rd, -1)
+    setCur(mut st, rb)
+    cp := gepWord(mut st, p, bin(mut st, BAdd, r, iconst(mut st, cOff)))
+    n := load(mut st, cp, 0)
+    br(mut st, il, list1(mut st, zero))
+    setCur(mut st, il)
+    condbr(mut st, cmp(mut st, CLt, i, n), ib, -1, id, -1)
+    setCur(mut st, ib)
+    x := load(mut st, gepWord(mut st, p, bin(mut st, BAdd, bin(mut st, BAdd, bin(mut st, BMul, r, iconst(mut st, stride)), i), iconst(mut st, eOff))), 0)
+    an := load(mut st, a, 0)
+    condbr(mut st, cmp(mut st, CLt, an, iconst(mut st, cap)), bPut, -1, bDrop, -1)
+    setCur(mut st, bPut)
+    an1 := bin(mut st, BAdd, an, one)
+    store(mut st, gepWord(mut st, a, an1), 0, x)
+    store(mut st, a, 0, an1)
+    br(mut st, bNx, -1)
+    setCur(mut st, bDrop)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), x, def))
+    if st.poolOn {
+        slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), def))
+    }
+    br(mut st, bNx, -1)
+    setCur(mut st, bNx)
+    br(mut st, il, list1(mut st, bin(mut st, BAdd, i, one)))
+    setCur(mut st, id)
+    store(mut st, cp, 0, zero)
+    br(mut st, rl, list1(mut st, bin(mut st, BAdd, r, one)))
+    setCur(mut st, rd)
 }
 
 // wmCheck はプール p（数 n・水位の語 w / 番兵の語 w + 1）の水位: 水位が数以下で、水位の位置の番地が番兵と同じなら水位・違えば 0（刈り直す）
@@ -621,6 +960,11 @@ func buildSlotGive(st mut St) {
     done := newBlock(mut st)
     // 返すのは先頭から W_MADV を超えた分だけ（region_enter と同じ規則）
     keepB := load(mut st, globaladdr(mut st, st.meta), W_MADV)
+    if st.rtMut == 4 {
+        mInc(mut st, 3)
+        mAdd(mut st, 8, bin(mut st, BSub, 1, bin(mut st, BMul, cmp(mut st, CGt, 1, keepB), bin(mut st, BSub, 1, keepB))))
+        mAdd(mut st, 9, 1)
+    }
     condbr(mut st, cmp(mut st, CGt, 1, keepB), bAdv, -1, bPush, -1)
     setCur(mut st, bAdv)
     if st.rtMut != 5 {
@@ -654,6 +998,7 @@ func buildSlotGive(st mut St) {
     c1 := bin(mut st, BAdd, c, iconst(mut st, 1))
     store(mut st, gepWord(mut st, rs, c1), 0, 0)
     store(mut st, rs, 0, c1)
+    mInc(mut st, 6)
     store(mut st, mn, MN_RLOCK, iconst(mut st, 0))
     br(mut st, done, -1)
     setCur(mut st, bFull)
@@ -661,7 +1006,11 @@ func buildSlotGive(st mut St) {
     br(mut st, bDrop, -1)
     // 予備も満杯: munmap で VA と頁を返す（旧 = 捨てるだけ — 山のたびに VA が漏れて va_exhausted に届いた・report-656 3 節）
     setCur(mut st, bDrop)
+    mInc(mut st, 5)
     syscall(mut st, list3(mut st, iconst(mut st, 11), 0, load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF)))
+    if st.poolOn {
+        slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF)))
+    }
     br(mut st, done, -1)
     setCur(mut st, done)
     ret(mut st, -1)
@@ -876,6 +1225,33 @@ func regionReturn(st mut St, l Loan) {
     store(mut st, l.bp, W_BUMP, l.oldB)
 }
 
+// spareCover は to の自前の範囲 (…, ownT] に重なる予備 (SPLO, min(ownT, SPHI)] をプールへ出し、SPLO = max(SPLO, ownT)（to の退避が欄を上書きする前に —
+// 上書きされた予備は宙に浮く）。重ならなければ比べ 1 つ
+func spareCover(st mut St, ownT int) {
+    sg := globaladdr(mut st, st.slotsG)
+    lo := load(mut st, sg, SLOT_SPLO)
+    bOv := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, lo, ownT), bOv, -1, bEnd, -1)
+    setCur(mut st, bOv)
+    hi := load(mut st, sg, SLOT_SPHI)
+    upto := bin(mut st, BAdd, hi, bin(mut st, BMul, cmp(mut st, CLt, ownT, hi), bin(mut st, BSub, ownT, hi)))
+    loop := newBlock(mut st)
+    k := param(mut st, loop, TyI64)
+    body := newBlock(mut st)
+    done := newBlock(mut st)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, lo, iconst(mut st, 1))))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLe, k, upto), body, -1, done, -1)
+    setCur(mut st, body)
+    spareOut(mut st, k, spareSz(mut st, sg, globaladdr(mut st, st.meta)))
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, k, iconst(mut st, 1))))
+    setCur(mut st, done)
+    store(mut st, sg, SLOT_SPLO, ownT)
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+}
+
 // taskHandover は今の task（from）の状態を退避し、to の状態を戻して今の task を to にする。region の自前の深度の範囲
 // （(TC_BASE, own]）のスロットの基底と bump も退避 / 復元する（R1' — 中断した task の region に他の task が入らない）
 func taskHandover(st mut St, from int, to int) {
@@ -886,6 +1262,7 @@ func taskHandover(st mut St, from int, to int) {
     store(mut st, from, TC_OWN, ownF)
     slotRange(mut st, from, load(mut st, from, TC_BASE), ownF, true)
     ownT := load(mut st, to, TC_OWN)
+    spareCover(mut st, ownT)
     slotRange(mut st, to, load(mut st, to, TC_BASE), ownT, false)
     store(mut st, sg, SLOT_OWN, ownT)
     store(mut st, meta, W_SLOT_SIZE, load(mut st, to, TC_SLOTSZ))
@@ -914,6 +1291,23 @@ func buildTaskNew(st mut St) {
 // buildTaskNewFn は rt.task_new（inPool = false）と rt.task_new_in（inPool = true — task.SpawnIn の入場: 第 3 実引数 = プールの節・節であふれたら 0 = shed）の本体
 func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     begin(mut st, fnr)
+    // SpawnIn: 親（今の task）の次の spawn 1 回のスロットの大きさの印を読んで消す（入場で shed しても消す — rt.netop 6・report-1077）。
+    // 写したスロットの VA が VA_SHED を越えていれば入場の前に shed（va_exhausted の死の代わり — report-1077 A4）
+    mut mk := -1
+    if inPool {
+        parT := itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        mk = load(mut st, parT, TC_NSLOT)
+        store(mut st, parT, TC_NSLOT, iconst(mut st, 0))
+        mnv := globaladdr(mut st, st.mnG)
+        bVaOk := newBlock(mut st)
+        bVaShed := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CGt, load(mut st, mnv, MN_SLOTVA), iconst(mut st, VA_SHED)), bVaShed, -1, bVaOk, -1)
+        setCur(mut st, bVaShed)
+        atomicXadd(mut st, mnv, MN_LSHED, iconst(mut st, 1))
+        atomicXadd(mut st, itop(mut st, 2), PL_SHED, iconst(mut st, 1))
+        ret(mut st, itop(mut st, iconst(mut st, 0)))
+        setCur(mut st, bVaOk)
+    }
     // 入場（段 6 P5-2 / P5-3 admit.sober — 実引数 = [spawn の点 × 4 + 根だけ × 2 + give（0 = 計上しない〔走らせ直し・ワーカーの起動の塊〕）, 宣言の上界（0 = 無し）]。
     // 根だけ = 外の scope の札へ内の budget: の scope の中から spawn する形〔節の寿命が子より短い〕）: 入場できなければ 0（縮退 / shed）
     adm := admitIn(mut st, 0, 1, if inPool { 2 } else { -1 })
@@ -978,7 +1372,23 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
     store(mut st, got, TC_CNODE, adm.node)
     store(mut st, got, TC_DECL, 1)
     store(mut st, got, TC_SITE, bin(mut st, BSar, 0, iconst(mut st, 2)))
-    store(mut st, got, TC_SLOTSZ, slotSizeFor(mut st, 1))
+    if inPool {
+        store(mut st, got, TC_NSLOT, iconst(mut st, 0))
+        // 印があれば min(印, 既定)（印は std が 2 の冪・1 MiB 以上に揃えて渡す — net.Serve の region:）・無ければ宣言から
+        bMk := newBlock(mut st)
+        bNoMk := newBlock(mut st)
+        bSz := newBlock(mut st)
+        szv := param(mut st, bSz, TyI64)
+        condbr(mut st, cmp(mut st, CNe, mk, iconst(mut st, 0)), bMk, -1, bNoMk, -1)
+        setCur(mut st, bMk)
+        br(mut st, bSz, list1(mut st, imin(mut st, mk, load(mut st, globaladdr(mut st, st.meta), W_SLOT_DEF))))
+        setCur(mut st, bNoMk)
+        br(mut st, bSz, list1(mut st, slotSizeFor(mut st, 1)))
+        setCur(mut st, bSz)
+        store(mut st, got, TC_SLOTSZ, szv)
+    } else {
+        store(mut st, got, TC_SLOTSZ, slotSizeFor(mut st, 1))
+    }
     if awFn(st.rtD3) != 0 {
         store(mut st, got, TC_WAIT, iconst(mut st, 0))
     }
@@ -987,6 +1397,213 @@ func buildTaskNewFn(st mut St, fnr FnRef, inPool bool) {
         store(mut st, got, TC_DL, load(mut st, itop(mut st, load(mut st, tk, TK_CUR)), TC_DL))
     }
     ret(mut st, got)
+}
+
+// spareSz は予備の欄の大きさ（名前つきプールを使うプログラムは印 SLOT_SPSZ・使わないプログラムは既定 — 印を読まない）
+func spareSz(st mut St, sg int, meta int) int {
+    return if st.poolOn { load(mut st, sg, SLOT_SPSZ) } else { load(mut st, meta, W_SLOT_DEF) }
+}
+
+// smallPush は深度 k で使った小さいスロット p（大きさ sz）をワーカーの深度ごとの列 r = k & DP_MASK へ積む（数 = 表 sg の SLOT_SMH + r・
+// 基底 = rt.smslots の r × SM_CAP + i — 大きさの印 smTag を下位の語に足す）。列はスロットの外（スロットの頁に書かない — report-1079: 鎖の語を
+// スロットの先頭に書く形は、列を 1 度通ったスロットの先頭の頁を全部常駐させた）。満杯なら rt.sm_give（共有の列 — 越えたら munmap）
+func smallPush(st mut St, sg int, k int, p int, sz int) {
+    r := bin(mut st, BAnd, k, iconst(mut st, DP_MASK))
+    col := gepWord(mut st, sg, r)
+    c := load(mut st, col, SLOT_SMH)
+    tag := smTag(mut st, sz)
+    bPut := newBlock(mut st)
+    bGive := newBlock(mut st)
+    bDone := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, cmp(mut st, CLt, c, iconst(mut st, SM_CAP)), cmp(mut st, CNe, tag, iconst(mut st, 0))), bPut, -1, bGive, -1)
+    setCur(mut st, bPut)
+    store(mut st, gepWord(mut st, globaladdr(mut st, st.smG), bin(mut st, BAdd, bin(mut st, BMul, r, iconst(mut st, SM_CAP)), c)), 0, bin(mut st, BAdd, p, tag))
+    store(mut st, col, SLOT_SMH, bin(mut st, BAdd, c, iconst(mut st, 1)))
+    br(mut st, bDone, -1)
+    setCur(mut st, bGive)
+    call(mut st, st.rtSmGive, list3(mut st, p, sz, r))
+    br(mut st, bDone, -1)
+    setCur(mut st, bDone)
+}
+
+// smTag は小さいスロットの大きさ sz の印（sz ÷ 1 MiB の下位 12 ビット — 基底は頁に揃うので下位 12 ビットに足せる。sz は 1 MiB 以上の 2 の冪なので
+// 4 GiB 未満なら 0 でない。0 = 列に積まない〔rt.sm_give が munmap〕）
+func smTag(st mut St, sz int) int {
+    return bin(mut st, BAnd, bin(mut st, BSar, sz, iconst(mut st, 20)), iconst(mut st, SM_TAGM))
+}
+
+// needSmallRt は小さいスロットの列の宣言（名前つきプールを使うプログラムだけ — needPoolRt から）
+func needSmallRt(st mut St) {
+    st.smG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.smslots")), (DP_MASK + 1) * SM_CAP)
+    st.ssmG = addGlobalInit(mut st, int(strLit(mut st, "rt.ssm")), SSM_L + 1, -1)
+    st.rtSmGive = addFunc(mut st, int(strLit(mut st, "rt.sm_give")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), -1)
+    st.rtSmTake = addFunc(mut st, int(strLit(mut st, "rt.sm_take")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), TyI64)
+}
+
+// buildSmGive は rt.sm_give(p, sz, r): 手元の列 r が満杯のときの返し — 列の下半分（古い側 SM_CAP / 2 本）と p（大きさ sz）を共有の列 r へまとめて移し
+// （鍵 SSM_L — 既定のスロットの鍵 MN_RLOCK とは別・全列の和が SSM_CAP 本まで）、手元の残りを下へ詰める。1 本ずつ移す形は鍵の往復が要求の頻度に
+// 乗り、keep-alive 4096 で cycles +20%（report-1079）。共有も満杯か印が 0 なら p を munmap（既定のスロットの切り出しは既定のプールへ返さないので、
+// 切り出しの 1 本だけを返してよい）
+func buildSmGive(st mut St) {
+    begin(mut st, st.rtSmGive)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    sm := globaladdr(mut st, st.ssmG)
+    smg := globaladdr(mut st, st.smG)
+    sg := globaladdr(mut st, st.slotsG)
+    tag := smTag(mut st, 1)
+    hh := iconst(mut st, SM_CAP / 2)
+    bLk := newBlock(mut st)
+    bPut := newBlock(mut st)
+    bFull := newBlock(mut st)
+    bDrop := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, tag, zero), bLk, -1, bDrop, -1)
+    setCur(mut st, bLk)
+    spinLock(mut st, sm, SSM_L)
+    tot := load(mut st, sm, 0)
+    condbr(mut st, cmp(mut st, CLe, bin(mut st, BAdd, tot, iconst(mut st, SM_CAP / 2 + 1)), iconst(mut st, SSM_CAP)), bPut, -1, bFull, -1)
+    setCur(mut st, bPut)
+    np := gepWord(mut st, sm, bin(mut st, BAdd, 2, one))
+    n := load(mut st, np, 0)
+    eb := bin(mut st, BAdd, bin(mut st, BAdd, bin(mut st, BMul, 2, iconst(mut st, SSM_CAP)), n), iconst(mut st, SSM_S))
+    lb := bin(mut st, BMul, 2, iconst(mut st, SM_CAP))
+    // 手元の列 r の [0, H) を共有の列 r の末尾へ
+    ml := newBlock(mut st)
+    mi := param(mut st, ml, TyI64)
+    mb := newBlock(mut st)
+    md := newBlock(mut st)
+    br(mut st, ml, list1(mut st, zero))
+    setCur(mut st, ml)
+    condbr(mut st, cmp(mut st, CLt, mi, hh), mb, -1, md, -1)
+    setCur(mut st, mb)
+    store(mut st, gepWord(mut st, sm, bin(mut st, BAdd, eb, mi)), 0, load(mut st, gepWord(mut st, smg, bin(mut st, BAdd, lb, mi)), 0))
+    br(mut st, ml, list1(mut st, bin(mut st, BAdd, mi, one)))
+    setCur(mut st, md)
+    store(mut st, gepWord(mut st, sm, bin(mut st, BAdd, eb, hh)), 0, bin(mut st, BAdd, 0, tag))
+    store(mut st, np, 0, bin(mut st, BAdd, n, iconst(mut st, SM_CAP / 2 + 1)))
+    store(mut st, sm, 0, bin(mut st, BAdd, tot, iconst(mut st, SM_CAP / 2 + 1)))
+    store(mut st, sm, SSM_L, zero)
+    // 手元の残り [H, SM_CAP) を [0, SM_CAP − H) へ詰める（手元は持ち主だけが触る — 鍵の外）
+    sl := newBlock(mut st)
+    si := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    sd := newBlock(mut st)
+    br(mut st, sl, list1(mut st, zero))
+    setCur(mut st, sl)
+    condbr(mut st, cmp(mut st, CLt, si, iconst(mut st, SM_CAP - SM_CAP / 2)), sb, -1, sd, -1)
+    setCur(mut st, sb)
+    store(mut st, gepWord(mut st, smg, bin(mut st, BAdd, lb, si)), 0, load(mut st, gepWord(mut st, smg, bin(mut st, BAdd, bin(mut st, BAdd, lb, si), hh)), 0))
+    br(mut st, sl, list1(mut st, bin(mut st, BAdd, si, one)))
+    setCur(mut st, sd)
+    store(mut st, gepWord(mut st, sg, 2), SLOT_SMH, iconst(mut st, SM_CAP - SM_CAP / 2))
+    ret(mut st, -1)
+    setCur(mut st, bFull)
+    store(mut st, sm, SSM_L, zero)
+    br(mut st, bDrop, -1)
+    setCur(mut st, bDrop)
+    syscall(mut st, list3(mut st, iconst(mut st, 11), 0, 1))
+    slotVaAdd(mut st, bin(mut st, BSub, iconst(mut st, 0), 1))
+    ret(mut st, -1)
+}
+
+// buildSmTake は rt.sm_take(r, tag, c) i64: 手元の列 r（数 c）に合う小さいスロットが無いときの取り — 共有の列 r の末尾が印 tag なら 1 本を返し
+// （基底 — 印を引いた値）、手元が空（c = 0）なら続く同じ印の分を SM_CAP − 1 本まで手元へ移す（鍵を取る回数を減らす）。無ければ 0（呼び手は切り出し）
+func buildSmTake(st mut St) {
+    begin(mut st, st.rtSmTake)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    sm := globaladdr(mut st, st.ssmG)
+    smg := globaladdr(mut st, st.smG)
+    sg := globaladdr(mut st, st.slotsG)
+    np := gepWord(mut st, sm, bin(mut st, BAdd, 0, one))
+    bNone := newBlock(mut st)
+    bLk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, load(mut st, np, 0), zero), bLk, -1, bNone, -1)
+    setCur(mut st, bNone)
+    ret(mut st, zero)
+    setCur(mut st, bLk)
+    spinLock(mut st, sm, SSM_L)
+    n := load(mut st, np, 0)
+    eb := bin(mut st, BAdd, bin(mut st, BMul, 0, iconst(mut st, SSM_CAP)), iconst(mut st, SSM_S))
+    bMiss := newBlock(mut st)
+    bChk := newBlock(mut st)
+    bHit := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, n, zero), bChk, -1, bMiss, -1)
+    setCur(mut st, bChk)
+    tv := load(mut st, gepWord(mut st, sm, bin(mut st, BAdd, eb, bin(mut st, BSub, n, one))), 0)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, tv, iconst(mut st, SM_TAGM)), 1), bHit, -1, bMiss, -1)
+    setCur(mut st, bMiss)
+    store(mut st, sm, SSM_L, zero)
+    ret(mut st, zero)
+    setCur(mut st, bHit)
+    // 移す本数の上限 lim = 手元が空なら min(n, SM_CAP) − 1・空でなければ 0。同じ印の間だけ移す
+    mcap := bin(mut st, BAdd, n, bin(mut st, BMul, cmp(mut st, CGt, n, iconst(mut st, SM_CAP)), bin(mut st, BSub, iconst(mut st, SM_CAP), n)))
+    lim := bin(mut st, BMul, cmp(mut st, CEq, 2, zero), bin(mut st, BSub, mcap, one))
+    lb := bin(mut st, BMul, 0, iconst(mut st, SM_CAP))
+    ml := newBlock(mut st)
+    mi := param(mut st, ml, TyI64)
+    mb := newBlock(mut st)
+    mb2 := newBlock(mut st)
+    md := newBlock(mut st)
+    mdn := param(mut st, md, TyI64)
+    br(mut st, ml, list1(mut st, zero))
+    setCur(mut st, ml)
+    condbr(mut st, cmp(mut st, CLt, mi, lim), mb, -1, md, list1(mut st, mi))
+    setCur(mut st, mb)
+    x := load(mut st, gepWord(mut st, sm, bin(mut st, BAdd, eb, bin(mut st, BSub, bin(mut st, BSub, n, iconst(mut st, 2)), mi))), 0)
+    condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, x, iconst(mut st, SM_TAGM)), 1), mb2, -1, md, list1(mut st, mi))
+    setCur(mut st, mb2)
+    store(mut st, gepWord(mut st, smg, bin(mut st, BAdd, lb, mi)), 0, x)
+    br(mut st, ml, list1(mut st, bin(mut st, BAdd, mi, one)))
+    setCur(mut st, md)
+    // 手元の数 = 移した本数（手元は空だった — 空でなければ移していない）・共有の列から 1 + 移した本数を引く
+    bSet := newBlock(mut st)
+    bSet2 := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, mdn, zero), bSet, -1, bSet2, -1)
+    setCur(mut st, bSet)
+    store(mut st, gepWord(mut st, sg, 0), SLOT_SMH, mdn)
+    br(mut st, bSet2, -1)
+    setCur(mut st, bSet2)
+    took := bin(mut st, BAdd, mdn, one)
+    store(mut st, np, 0, bin(mut st, BSub, n, took))
+    store(mut st, sm, 0, bin(mut st, BSub, load(mut st, sm, 0), took))
+    store(mut st, sm, SSM_L, zero)
+    ret(mut st, bin(mut st, BSub, tv, 1))
+}
+
+// smallRel は終わる task の自前の深度 k のスロット（欄 s・使った量 used）の返しの分け: 既定の大きさ → bDef・既定より大きい → bBig・
+// 小さい → 先頭から W_MADV を超えて使った頁を返してワーカーの小さいスロットの鎖へ積み next。名前つきプールを使わないプログラムは小さいスロットが無い
+func smallRel(st mut St, meta int, k int, s int, used int, sz int, bBig BlkRef, bDef BlkRef, next BlkRef) {
+    def := load(mut st, meta, W_SLOT_DEF)
+    if !st.poolOn {
+        condbr(mut st, cmp(mut st, CNe, sz, def), bBig, -1, bDef, -1)
+        return
+    }
+    keepB := load(mut st, meta, W_MADV)
+    bNd := newBlock(mut st)
+    bSm := newBlock(mut st)
+    bAdv := newBlock(mut st)
+    bPut := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, sz, def), bDef, -1, bNd, -1)
+    setCur(mut st, bNd)
+    condbr(mut st, cmp(mut st, CGt, sz, def), bBig, -1, bSm, -1)
+    setCur(mut st, bSm)
+    condbr(mut st, cmp(mut st, CGt, used, keepB), bAdv, -1, bPut, -1)
+    setCur(mut st, bAdv)
+    if st.rtMut != 5 {
+        syscall(mut st, list4(mut st, iconst(mut st, 28), bin(mut st, BAdd, s, keepB), bin(mut st, BSub, used, keepB), iconst(mut st, 4)))
+    }
+    br(mut st, bPut, -1)
+    setCur(mut st, bPut)
+    smallPush(mut st, globaladdr(mut st, st.slotsG), k, s, sz)
+    br(mut st, next, -1)
+}
+
+// slotVaAdd は写したスロットの VA の数え口（MN_SLOTVA — 名前つきプールを使うプログラムだけ・SpawnIn の入場の VA_SHED が読む）に delta バイトを足す
+func slotVaAdd(st mut St, delta int) {
+    if st.poolOn {
+        atomicXadd(mut st, globaladdr(mut st, st.mnG), MN_SLOTVA, delta)
+    }
 }
 
 // slotSizeFor は宣言の上界 decl（バイト — 0 = 無し）の子のスロットの大きさ: 既定 W_SLOT_DEF・decl が既定を超えれば decl 以上の 2 の冪（上限 MAX_SLOT_MB）
@@ -1029,6 +1646,7 @@ func buildTaskGo(st mut St) {
     condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 0)), kid, -1, parB, -1)
     setCur(mut st, kid)
     taskWake(mut st, 0)
+    parkRelease(mut st, 0)
     call(mut st, st.rtTaskSwitch, list2(mut st, 0, 1))
     ret(mut st, -1)
     setCur(mut st, parB)

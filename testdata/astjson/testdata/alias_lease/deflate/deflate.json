@@ -1,0 +1,346 @@
+{
+  "package": "deflate",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/pool",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "tab",
+            "type": {
+              "k": "name",
+              "name": "pool.Scratch"
+            },
+            "tok": 10
+          },
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 15
+          }
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 20
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Prepare",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 28
+                },
+                "field": "NewScratch",
+                "tok": 30
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w.tab",
+                  "tok": 33
+                },
+                {
+                  "k": "int",
+                  "value": 64,
+                  "tok": 37
+                }
+              ],
+              "tok": 31
+            }
+          }
+        ]
+      },
+      "tok": 21,
+      "bodiless": false,
+      "span": {
+        "start": 20,
+        "end": 42
+      },
+      "sig_end": 27
+    },
+    {
+      "name": "EncodeWith",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "pool",
+                      "tok": 55
+                    },
+                    "field": "Cap",
+                    "tok": 57
+                  },
+                  "args": [
+                    {
+                      "k": "mut_arg",
+                      "name": "w.tab",
+                      "tok": 60
+                    }
+                  ],
+                  "tok": 58
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 0,
+                  "tok": 65
+                },
+                "tok": 64
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "pool",
+                          "tok": 67
+                        },
+                        "field": "NewScratch",
+                        "tok": 69
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w.tab",
+                          "tok": 72
+                        },
+                        {
+                          "k": "int",
+                          "value": 64,
+                          "tok": 76
+                        }
+                      ],
+                      "tok": 70
+                    }
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 54
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "pool",
+                  "tok": 81
+                },
+                "field": "Store",
+                "tok": 83
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w.tab",
+                  "tok": 86
+                },
+                {
+                  "k": "binary",
+                  "op": "&",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "x",
+                    "tok": 90
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 63,
+                    "tok": 92
+                  },
+                  "tok": 91
+                },
+                {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 94
+                }
+              ],
+              "tok": 84
+            }
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 97
+                },
+                "field": "n",
+                "tok": 99
+              }
+            ],
+            "op": "+=",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 101
+              }
+            ],
+            "tok": 97
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "binary",
+                  "op": "*",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "pool",
+                        "tok": 104
+                      },
+                      "field": "Load",
+                      "tok": 106
+                    },
+                    "args": [
+                      {
+                        "k": "mut_arg",
+                        "name": "w.tab",
+                        "tok": 109
+                      },
+                      {
+                        "k": "binary",
+                        "op": "&",
+                        "lhs": {
+                          "k": "ident",
+                          "name": "x",
+                          "tok": 113
+                        },
+                        "rhs": {
+                          "k": "int",
+                          "value": 63,
+                          "tok": 115
+                        },
+                        "tok": 114
+                      }
+                    ],
+                    "tok": 107
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 10,
+                    "tok": 118
+                  },
+                  "tok": 117
+                },
+                "rhs": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 120
+                  },
+                  "field": "n",
+                  "tok": 122
+                },
+                "tok": 119
+              }
+            ],
+            "tok": 103
+          }
+        ]
+      },
+      "tok": 43,
+      "bodiless": false,
+      "span": {
+        "start": 42,
+        "end": 126
+      },
+      "sig_end": 53
+    }
+  ],
+  "consts": []
+}

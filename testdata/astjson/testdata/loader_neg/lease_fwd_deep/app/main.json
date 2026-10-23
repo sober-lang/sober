@@ -1,0 +1,161 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/loader_neg/lease_fwd_deep/wrap",
+      "tok": 7
+    },
+    {
+      "alias": "$task",
+      "path": "std/task",
+      "tok": 0
+    },
+    {
+      "alias": "$pool",
+      "path": "std/pool",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "lw"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 16
+                  },
+                  "field": "NewLocal",
+                  "tok": 18
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "w",
+                        "type": {
+                          "k": "name",
+                          "name": "wrap.Work"
+                        },
+                        "mutable": true
+                      }
+                    ],
+                    "body": {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "wrap",
+                          "tok": 28
+                        },
+                        "field": "P5",
+                        "tok": 30
+                      },
+                      "args": [
+                        {
+                          "k": "mut_arg",
+                          "name": "w",
+                          "tok": 33
+                        }
+                      ],
+                      "tok": 31
+                    },
+                    "tok": 27
+                  }
+                ],
+                "tok": 19
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 37
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "task",
+                      "tok": 39
+                    },
+                    "field": "Lease",
+                    "tok": 41
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "lw",
+                      "tok": 43
+                    },
+                    {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "w",
+                          "type": {
+                            "k": "name",
+                            "name": "wrap.Work"
+                          },
+                          "mutable": true
+                        }
+                      ],
+                      "body": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 53
+                      },
+                      "tok": 52
+                    }
+                  ],
+                  "tok": 42
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 59
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

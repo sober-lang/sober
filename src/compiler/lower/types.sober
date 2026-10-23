@@ -22,6 +22,8 @@ const TFunc = 10   // a = FnType（関数型の仮引数 — 値ではない）
 const TFnv = 11    // a = FnType（関数値）・b = 値の位置の印（匿名の関数型の欄 — 工程 5d）・c = 名前付き関数型（型宣言 + 1）
 const TNamed = 12  // named scalar（language.md 32 節）: a = 下地の型（int / bool）, b = 型宣言の節。表現は下地と同じ 1 語
 const TFloat = 14  // float（language.md 37 節）: 1 語に IEEE 754 binary64 のビット列（演算の瞬間だけ xmm へ — x86.sober の xFloat*）
+const TCell = 15   // 借りの閉包の mut の捕捉の env の槽（(α-L1)・closure.sober）: 2 語 = 束縛のセルの番地・束縛の行き先の深度（M5 の格納点の写しの floor）。
+                   // 値ではない — env の形と欄にだけ現れる（形の上では中身の型を持たない — 中身は持ち上げた関数の記録が持つ）
 const TByte = 13   // byte（language.md 33 節）: 語の中の 0〜255（[]byte のセルは段 B まで語のまま）。型なしの整数定数を受ける・比較 6 種・算術なし
 
 // StructInfo / UnionInfo（st.types の鎖）: [tag(TStruct / TUnion), decl, pkg, fields / variants（列）, words, state, next, 型]
@@ -107,6 +109,7 @@ func tWords(st mut St, t int) int {
     case TStruct | TUnion: desugar.HeapGet(mut st.d, desugar.HeapGet(mut st.d, t + 1) + SI_WORDS)
     case TOpt: desugar.HeapGet(mut st.d, t + 2)
     case TSlice: 3
+    case TCell: 2
     // map のヘッダは 4 語目に索引の番地（M0 — rt.sober の buildMapFind。0 = 無し）
     case TMap: 4
     default: 0
@@ -140,7 +143,7 @@ func namedTy(st mut St, td desugar.NodeRef) int {
 
 func isAggregate(st mut St, t int) bool {
     k := desugar.HeapGet(mut st.d, t)
-    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap
+    return k == TStruct || k == TUnion || k == TOpt || k == TSlice || k == TMap || k == TCell
 }
 
 func isString(st mut St, t int) bool {
@@ -373,7 +376,7 @@ func fieldFnv(st mut St, te desugar.NodeRef, ft int) int {
     if !desugar.AnonFieldTE(mut st.d, te) {
         return rec4(mut st, TFnv, ft, 0, 0)
     }
-    ct := closType(mut st, -1, ft, 0)
+    ct := closType(mut st, -2, ft, 0)
     return if ct >= 0 { ct } else { rec4(mut st, TFnv, ft, 1, 0) }
 }
 

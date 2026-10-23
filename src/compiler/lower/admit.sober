@@ -26,6 +26,7 @@ const EST_INIT = 1048576              // 観測の無い spawn の点の見積�
 const EST_FLOOR = 16384               // 見積もりに足す量（16 KiB — 機械スタック・塊の頁）
 const EST_MARK = 2199024304129        // 観測の前の表の値（EST_INIT + 1 task + 1 — 奇数の印: 観測の値は偶数〔確保は 8 の倍数〕）
 const VA_BUDGET = 70368744177664      // task のスロットに使ってよい VA（2^46 = 64 TiB — ユーザー空間 128 TiB の半分）
+const VA_SHED = 105553116266496       // SpawnIn が shed に回る写したスロットの VA（96 TiB — ユーザー空間 128 TiB の 3/4。越えた先は va_exhausted の死の手前 — report-1077 A4）
 
 func needAdmitRt(st mut St) {
     lsNeed(mut st, NEED_ADMIT, 0)
@@ -45,6 +46,8 @@ func buildAdmitRt(st mut St) {
     if st.poolOn {
         buildPoolNew(mut st)
         buildLedger(mut st)
+        buildSmGive(mut st)
+        buildSmTake(mut st)
     }
 }
 
@@ -71,6 +74,7 @@ func needPoolRt(st mut St) {
     st.rtTaskNewIn = addFunc(mut st, int(strLit(mut st, "rt.task_new_in")), desugar.ListRef(list3(mut st, TyI64, TyI64, TyI64)), TyPtr)
     st.rtPoolNew = addFunc(mut st, int(strLit(mut st, "rt.pool_new")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
     st.rtLedger = addFunc(mut st, int(strLit(mut st, "rt.ledger")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
+    needSmallRt(mut st)
 }
 
 // buildPoolNew は rt.pool_new(budget, parent)（std/task の newPool — @intrinsic "par_pool"）: 表から節を 1 つ取って天井 budget バイト・親の節 parent（0 = 無し）で

@@ -58,7 +58,7 @@ func cfgCleanFunc(st mut St, f FnRef) {
     optDce(mut st, f)
     optRenumber(mut st, f)
     // ④ GVN（インラインで入った rt の本体の meta の読み直し・同じ番地の計算 — gvn.sober をそのまま）
-    gvnFunc(mut st, f)
+    gvnFuncK(mut st, f, true)
     // ⑤ ループの中のメモリの積算の昇格（promote.sober — 直後の sroa / m2r が SSA にする。B2 だけの段の末尾に置くのは、elfOutSt / lB2Func に
     // 呼び出し点を足すと自己 check の RSS が跳ねるため）
     promoteFunc(mut st, f)

@@ -1,0 +1,16 @@
+package main
+
+// 利用者の形（http・bench の位置）: 公開の名前 flate.Work だけで lease の窓を書く（実体の package は import しない）
+
+import "std/task"
+import "testdata/alias_lease/flate"
+
+func main() {
+    println(flate.Encode(3))
+    lw := task.NewLocal((w mut flate.Work) => flate.Prepare(mut w))
+    a := task.Lease(lw, (w mut flate.Work) => flate.EncodeWith(mut w, 5))
+    b := task.Lease(lw, (w mut flate.Work) => flate.EncodeWith(mut w, 7))
+    println(a, b)
+    lr := task.NewLocal((w mut flate.Work) => flate.Ready(mut w))
+    println(task.Lease(lr, (w mut flate.Work) => flate.EncodeWith(mut w, 9)))
+}

@@ -1,0 +1,174 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/alias/lib",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "testdata/alias/wrap",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "other",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "wrap.Work"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "v"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "lib.Work",
+                "elems": [
+                  {
+                    "key": "n",
+                    "value": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 27
+                    }
+                  },
+                  {
+                    "key": "sum",
+                    "value": {
+                      "k": "int",
+                      "value": 4,
+                      "tok": 31
+                    }
+                  }
+                ],
+                "tok": 21,
+                "type_args": []
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "keep",
+                    "tok": 35
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "w",
+                      "tok": 37
+                    }
+                  ],
+                  "tok": 36
+                },
+                "rhs": {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "keep",
+                    "tok": 40
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "v",
+                      "tok": 42
+                    }
+                  ],
+                  "tok": 41
+                },
+                "tok": 39
+              }
+            ],
+            "tok": 34
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 47
+      },
+      "sig_end": 18
+    },
+    {
+      "name": "keep",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "lib.Work"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 58
+                },
+                "field": "sum",
+                "tok": 60
+              }
+            ],
+            "tok": 57
+          }
+        ]
+      },
+      "tok": 48,
+      "bodiless": false,
+      "span": {
+        "start": 47,
+        "end": 64
+      },
+      "sig_end": 56
+    }
+  ],
+  "consts": []
+}

@@ -70,7 +70,77 @@ func TrimPrefix(s string, prefix string) string
 
 s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
 
-対の `TrimSuffix` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
+## TrimSuffix
+
+```sober
+func TrimSuffix(s string, suffix string) string
+```
+
+s が suffix で終わればそれを外した残り、でなければ s（Go の strings.TrimSuffix — 残りは suffix の頭で終わるので文字の境目）
+
+## LastIndex
+
+```sober
+func LastIndex(s string, substr string) int
+```
+
+substr が s に最後に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1。substr が空なら len(bytes(s))（Go の strings.LastIndex と同じ）
+
+## Split
+
+```sober
+func Split(s string, sep string) []string
+```
+
+s を sep の出現ごとに割った片の列（Go の strings.Split と同じ）。sep が無ければ [s]・s が空で sep が空でなければ [""]。sep が空なら 1 文字（コードポイント — UTF-8 の列）ずつに割る（s が空なら空の列）。片は検査し直さない（Cut と同じ自己同期の理由）
+
+## Fields
+
+```sober
+func Fields(s string) []string
+```
+
+s を ASCII の空白の連なりで割った空でない片の列（Go の strings.Fields — 空白だけ / 空なら空の列）。空白は ASCII の 6 つだけ（Unicode の空白は片の中身）
+
+## TrimSpace
+
+```sober
+func TrimSpace(s string) string
+```
+
+s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace — Unicode の空白は外さない）
+
+## Replace
+
+```sober
+func Replace(s string, old string, new string, n int) string
+```
+
+s の old の重ならない出現を前から n 個 new に置き換えた string（Go の strings.Replace — n \< 0 なら全部・n == 0 なら s）。old が空なら s の頭と各文字（コードポイント）の後ろに new を差す（Go と同じ — 差す位置は文字の境目なので結果は妥当な UTF-8）
+
+## ToLower
+
+```sober
+func ToLower(s string) string
+```
+
+s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の strings.ToLower の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+
+## ToUpper
+
+```sober
+func ToUpper(s string) string
+```
+
+s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の strings.ToUpper の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+
+## EqualFold
+
+```sober
+func EqualFold(s string, t string) bool
+```
+
+s と t が ASCII の大文字小文字を同一視して等しいか（Go の strings.EqualFold の ASCII の部分 — 非 ASCII のバイトは完全一致で比べる。Go は Unicode の simple folding〔'É' ≡ 'é'・K〔U+212A〕≡ k・ſ ≡ s〕でも等しいとするが、ここでは等しくない）
 
 ## IndexByte
 

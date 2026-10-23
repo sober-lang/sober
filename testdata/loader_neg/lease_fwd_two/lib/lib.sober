@@ -1,0 +1,11 @@
+package lib
+
+import "std/pool"
+
+type Work struct {
+    tab pool.Scratch
+}
+
+func Prepare(w mut Work) {
+    pool.NewScratch(mut w.tab, 64)
+}

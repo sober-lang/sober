@@ -1,0 +1,126 @@
+# dudect — 定数時間の統計の網（scripts/dudect.sh — effect の波 段 3d・report-981 3 節 / 985 / 986）。手動の起動だけ（gates に入れない網の箱の版）。
+# std/internal/dudect の題材（std/crypto の公開の口 + 負例）を 1 本ずつ直列に走らせ、Welch の |t| の表を job の要約に・記録の行（bench/data/dudect.tsv の形）を
+# artifact にする。取り込みは手元で bench/data/dudect.tsv へ追記（env = gha-<runner>/<CPU の型番の短縮> — 箱の CPU の世代が混ざる・report-1027 / 1028）。漏れ（負例でない題材の |t| > 4.5・負例が漏れと出ない）は job の失敗
+name: dudect
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "runs-on label"
+        default: "linux-x64-16vcpu"
+      count:
+        description: "題材ごとの回数（x25519 は 1/10・rsa は 1/500）"
+        default: "1000000"
+      run:
+        description: "回す題材の接頭辞（空白区切り — 例: \"TestExp TestPoly1305Sum\"。空 = 全部。exp_ の題材は判定を印字するが失敗にしない）"
+        default: ""
+      raw:
+        description: "生の (名前, クラス, cycles) を gzip で artifact に残す（dudect-raw.txt.gz — 分位点の解析用）"
+        type: boolean
+        default: false
+      cpu:
+        description: "CPU の型番の指定（lscpu の Model name の部分文字列 — 例: \"EPYC 7763\"。合わなければ測らずに抜ける〔job は成功・要約に印〕。空 = どれでも）。GHA の箱は CPU の世代が混ざる（report-1027）"
+        default: ""
+
+concurrency:
+  group: dudect
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dudect:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CPU gate
+        id: gate
+        env:
+          WANT: ${{ inputs.cpu }}
+        run: |
+          model=$(lscpu | sed -n 's/^Model name: *//p')
+          echo "cpu=$model"
+          if [ -n "$WANT" ] && ! printf '%s' "$model" | grep -qF -- "$WANT"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "## dudect — skipped: CPU は「$model」・指定は「$WANT」" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Zig 0.15.2
+        if: steps.gate.outputs.skip != 'true'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          node-version: "22"
+
+      - name: Environment record
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          DUDECT_RUN: ${{ inputs.run }}
+        run: |
+          mkdir -p out/dudect
+          {
+            echo "run_id=${{ github.run_id }}"
+            echo "count=${{ inputs.count }}"
+            echo "run=$DUDECT_RUN"
+            echo "commit=$(git rev-parse --short=8 HEAD)"
+            echo "runner=${{ inputs.runner }}"
+            echo "cpu=$(lscpu | sed -n 's/^Model name: *//p')"
+            echo "kernel=$(uname -r)"
+            echo "nproc=$(nproc)"
+            echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee out/dudect/dudect-env.txt
+
+      - name: Build stage1 and stage2 (bootstrap chain)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          (cd src/stage1 && zig build)
+          scripts/stage2.sh
+
+      - name: Quiet down
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          for i in $(seq 36); do awk '{ exit !($1 < 1.5) }' /proc/loadavg && break; sleep 5; done
+          cat /proc/loadavg
+
+      - name: dudect
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        env:
+          DUDECT_RUN: ${{ inputs.run }}
+          RAW: ${{ inputs.raw }}
+        run: |
+          if [ "$RAW" = true ]; then export DUDECT_RAW=out/dudect/dudect-raw.txt.gz; fi
+          export DUDECT_CPU="$(sed -n 's/^cpu=//p' out/dudect/dudect-env.txt)"
+          DUDECT_TSV=out/dudect/dudect.tsv DUDECT_ENV="gha-${{ inputs.runner }}" scripts/dudect.sh "${{ inputs.count }}" | tee out/dudect/dudect.txt
+
+      - name: Summary
+        if: always() && steps.gate.outputs.skip != 'true'
+        run: |
+          {
+            echo "## dudect — $(sed -n 's/^cpu=//p' out/dudect/dudect-env.txt)（$(sed -n 's/^kernel=//p' out/dudect/dudect-env.txt)）"
+            echo
+            echo '```'
+            cat out/dudect/dudect.txt 2> /dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dudect-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out/dudect/dudect-env.txt
+            out/dudect/dudect.txt
+            out/dudect/dudect.tsv
+            out/dudect/dudect-raw.txt.gz
+          if-no-files-found: warn

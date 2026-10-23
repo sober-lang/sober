@@ -90,6 +90,11 @@ if ! diff -rq "$tmp/out" "$GOLDEN" > "$tmp/diff"; then
     fi
     exit 1
 fi
+# 双子の照合（型の別名 — language.md 32 節）: 別名で書いた entry と、別名を手で実体の名前へ展開した entry のコアはバイト一致（コアは型の名前を持たない）
+for pair in "examples_alias examples_alias_expanded" "testdata_alias_app testdata_alias_x_app"; do
+    read -r ta tb <<< "$pair"
+    cmp -s "$GOLDEN/$ta.json" "$GOLDEN/$tb.json" || { echo "FAIL: core JSON of $ta differs from its expanded twin $tb (an alias is not transparent)"; fail=1; }
+done
 [ "$fail" = 0 ] || exit 1
 [ $# -eq 0 ] && cache_store
 echo "OK: $n entries match $GOLDEN (deterministic, $(wc -l < "$GOLDEN/EXCLUDED.txt") excluded)"

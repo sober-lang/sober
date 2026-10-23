@@ -1,0 +1,35 @@
+package main
+
+// 借りの閉包の mut 捕捉（(α-L1)）の対象は mut ローカルと mut 仮引数: mut 仮引数 z（割った struct — 欄ごとのセル）と n（int の ref）を
+// それぞれ別の呼び出しの借りのラムダが捕捉する（1 つの呼び出しが捕捉する mut の束縛は 1 つ）
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Z struct {
+    acc mut []byte
+    n int
+}
+
+func fill(z mut Z, n mut int, st Stream) {
+    e := st((b []byte) => {
+        z.acc = append(z.acc, b[0])
+        z.n += len(b)
+        nil
+    })
+    if e != nil { z.n = -1 }
+    f := st((b []byte) => { n += 1; nil })
+    if f != nil { n = -1 }
+}
+
+func two(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    return emit(bytes("de"))
+}
+
+func main() {
+    mut z := Z{acc: mut []byte{}, n: 0}
+    mut n := 0
+    fill(mut z, mut n, (emit) => two(emit))
+    println(z.n * 100 + len(z.acc))
+    println(n)
+}

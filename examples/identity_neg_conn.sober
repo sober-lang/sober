@@ -1,0 +1,10 @@
+package main
+
+// 負例（language.md 15 節 ② — 同一性の型のゼロ値）: net.Conn のゼロ値リテラルは拒否（Accept / Dial の k の仮引数としてだけ生まれる）
+
+import "std/net"
+
+func main() {
+    c := net.Conn{}
+    println("x")
+}

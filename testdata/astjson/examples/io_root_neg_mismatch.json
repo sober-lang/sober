@@ -1,0 +1,115 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 13
+                    },
+                    "field": "OpenRoot",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io",
+                      "tok": 17
+                    }
+                  ],
+                  "tok": 16
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 20
+                },
+                "tok": 19
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 23
+                },
+                "field": "Close",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 27
+                }
+              ],
+              "tok": 26
+            },
+            "tok": 22
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 30
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "opened",
+                  "tok": 32
+                }
+              ],
+              "tok": 31
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 37
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

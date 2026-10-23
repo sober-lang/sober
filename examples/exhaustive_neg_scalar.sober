@@ -1,0 +1,25 @@
+package main
+
+// 負例（language.md 13 節「表の網羅」）: @exhaustive の named scalar の switch が型つきの const Gone を名指していない
+// （型の無い const Plain は Status の集合の外 — 名指さなくてよい）
+
+type Status int
+
+const OK = Status(200)
+const NotFound = Status(404)
+const Gone = Status(410)
+const Plain = 7
+
+@exhaustive
+func reason(s Status) string {
+    return switch s {
+    case OK: "OK"
+    case NotFound: "Not Found"
+    default: ""
+    }
+}
+
+func main() {
+    println(reason(Gone))
+    println(Plain)
+}

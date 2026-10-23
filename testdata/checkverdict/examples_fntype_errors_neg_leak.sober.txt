@@ -1,0 +1,2 @@
+examples/fntype_errors_neg_leak.sober:16:23: error: this function value of type 'F' may return Gone not listed in the @errors of 'F' (Analyzer)
+exit=1

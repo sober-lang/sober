@@ -16,10 +16,12 @@
 | package | 用途 | 主なもの |
 |---|---|---|
 | [`std/utf8`](../std/utf8.ja.md) | 検査済みの UTF-8 の見方 | `Check`（全体を 1 回検査して見方 `View` を得る）・`Str`（検査済みの見方から部分列を写さずに取る）・`Bytes` |
-| [`std/strings`](../std/strings.ja.md) | 文字列の操作 | `Contains`・`HasPrefix`・`HasSuffix`・`Index`・`IndexByte`・`Count`・`Cut`・`CutLast`・`TrimPrefix`・`Join`・`Clone`・UTF-8 の検査 `Valid`・`IndexInvalid`（誤りのラベル `InvalidUtf8`）（`Cut` などで切った片は検査し直さない — 区切りに一致した位置は必ず文字の境界） |
+| [`std/strings`](../std/strings.ja.md) | 文字列の操作 | `Contains`・`HasPrefix`・`HasSuffix`・`Index`・`IndexByte`・`Count`・`LastIndex`・`Cut`・`CutLast`・`Split`・`Fields`・`TrimPrefix`・`TrimSuffix`・`TrimSpace`・`Replace`・`ToLower`・`ToUpper`・`EqualFold`・`Join`・`Clone`・UTF-8 の検査 `Valid`・`IndexInvalid`（誤りのラベル `InvalidUtf8`）（`Cut` などで切った片は検査し直さない — 区切りに一致した位置は必ず文字の境界。空白と大文字小文字は ASCII だけを見る — Unicode の case folding は対象外） |
 | [`std/builder`](../std/builder.ja.md) | 列の組み立て | `Builder[T]` に `Push`・`PushAll`・`PushString` で積み、`Build` で取り出す |
-| [`std/convert`](../std/convert.ja.md) | 数と文字列の変換 | `FormatInt`・`ParseInt`・`ParseFloat`・`FormatFloat`・`FormatFixed` |
+| [`std/convert`](../std/convert.ja.md) | 数と文字列の変換 | `FormatInt`・`ParseInt`・`ParseFloat`・`FormatFloat`・`FormatFixed`・`ParseBool`・`FormatBool` |
 | [`std/hex`](../std/hex.ja.md) | 16 進 | `Format`・`Parse` |
+| [`std/base64`](../std/base64.ja.md) | base64（RFC 4648） | `Encode` ⇄ `Decode`（標準の字母・詰めつき）・`EncodeUrl` ⇄ `DecodeUrl`（URL に安全な字母・詰めなし）— 復号は厳格（綴りは 1 つ） |
+| [`std/url`](../std/url.ja.md) | URL の部品の符号化 | percent-encoding の `Escape` ⇄ `Unescape`・クエリ文字列の全部の組を読む `ParseQuery`（同じキーも別の組・`+` は空白） |
 
 `string` は不変のテキストで、`bytes(s)` でバイト列（`[]byte`）として見られます。文字列の補間は `"x = ${x}"` です。
 
@@ -56,15 +58,15 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 
 | package | 用途 | 主なもの |
 |---|---|---|
-| [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE（RFC 1951）の符号器 | `Encode(data, level)`（level 0〜9 — zlib と同じ目盛り・既定の目安は 6。同じ入力なら常に同じバイト列）。解凍の口はまだありません |
-| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip（RFC 1952）の符号器 | `Encode(data, level)`（頭 10 バイト + DEFLATE + CRC-32 + 長さ。HTTP の `Content-Encoding: gzip` の本文） |
+| [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE（RFC 1951）の符号と復号 | `Encode(data, level)`（level 0〜9 — zlib と同じ目盛り・既定の目安は 6。同じ入力なら常に同じバイト列）・`Decode(data, maxSize:)`（出力の上限 — 信頼できない入力には必ず渡す。越えたら `TooLarge`・壊れた列は `Bad`） |
+| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip（RFC 1952）の符号と復号 | `Encode(data, level)`（頭 10 バイト + DEFLATE + CRC-32 + 長さ。HTTP の `Content-Encoding: gzip` の本文）・`Decode(data, maxSize:)`（CRC-32 と長さを照合・複数メンバは繋ぐ・包みの誤りは `gzip.Bad`） |
 
 ## ネットワーク
 
 | package | 用途 | 主なもの |
 |---|---|---|
 | [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`・`for c <- net.Accept(l)?`・`for c <- net.Dial(addr)?`（本体を抜けたら閉じる）・`for chunk <- net.Recv(c)?`・`Send`・接続 1 本 = task 1 本で走らせる `Serve` |
-| [`std/http`](../std/http.ja.md) | HTTP/1.1 のサーバ | `ServeConn`（net の接続に）/ `ServeWith`（受けと送りの口に — TLS の接続など）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・応答の gzip と stream |
+| [`std/http`](../std/http.ja.md) | HTTP/1.1 のサーバ | `ServeConn`（net の接続に）/ `ServeWith`（受けと送りの口に — TLS の接続など）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `Multipart`（ファイルのアップロード）/ `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・応答の gzip と stream |
 | [`std/tls`](../std/tls.ja.md) | TLS 1.3 のサーバ | `Serve`（handshake が済んだ接続だけを渡す）・`Config` を `Load` / `Parse` で・`Recv` / `Send`（net と同じ形）。誤りは `HandshakeFailed`・`BadRecord`・`Closed`（[`std/tls/record`](../std/tls-record.ja.md) は内側の record 層 — 利用者は import しない） |
 
 ## 暗号

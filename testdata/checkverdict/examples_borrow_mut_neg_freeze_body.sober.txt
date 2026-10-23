@@ -1,0 +1,2 @@
+examples/borrow_mut_neg_freeze_body.sober:19:40: error: `freeze(z.acc)` freezes the contents of `z`, which this lambda captured as a mut binding — the enclosing function still holds them and can write after the call. Freeze in the enclosing function after the call instead, or build a new value here and freeze that (Analyzer)
+exit=1

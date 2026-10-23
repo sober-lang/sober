@@ -1,0 +1,213 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/utf8",
+      "tok": 7
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "rs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "http.Route"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "http.Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 28
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/h",
+                          "tok": 32
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "http",
+                                "tok": 40
+                              },
+                              "field": "Text",
+                              "tok": 42
+                            },
+                            "args": [
+                              {
+                                "k": "interp",
+                                "tmpl": {
+                                  "lits": [
+                                    "",
+                                    "\n"
+                                  ],
+                                  "holes": [
+                                    {
+                                      "k": "call",
+                                      "callee": {
+                                        "k": "ident",
+                                        "name": "len",
+                                        "tok": 44
+                                      },
+                                      "args": [
+                                        {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "utf8",
+                                              "tok": 44
+                                            },
+                                            "field": "Bytes",
+                                            "tok": 44
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "selector",
+                                              "base": {
+                                                "k": "ident",
+                                                "name": "r",
+                                                "tok": 44
+                                              },
+                                              "field": "head",
+                                              "tok": 44
+                                            }
+                                          ],
+                                          "tok": 44
+                                        }
+                                      ],
+                                      "tok": 44
+                                    }
+                                  ]
+                                },
+                                "tok": 44
+                              }
+                            ],
+                            "tok": 43
+                          },
+                          "tok": 39
+                        }
+                      },
+                      {
+                        "key": "cache",
+                        "value": {
+                          "k": "composite",
+                          "type_name": "http.Fresh",
+                          "elems": [
+                            {
+                              "key": "maxAge",
+                              "value": {
+                                "k": "int",
+                                "value": 60,
+                                "tok": 55
+                              }
+                            }
+                          ],
+                          "tok": 49,
+                          "type_args": []
+                        }
+                      }
+                    ],
+                    "tok": 22,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 16
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 60
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 62
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "rs",
+                      "tok": 64
+                    }
+                  ],
+                  "tok": 63
+                }
+              ],
+              "tok": 61
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 70
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

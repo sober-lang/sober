@@ -1,0 +1,2 @@
+sober: load error at examples/identity_neg_tls_field.sober:13:10: this literal leaves a field at its zero value that holds a `tls.Conn`, which has identity: only tls.Serve (the handler's parameter) makes one — set the field, or declare it `T?`
+exit=1

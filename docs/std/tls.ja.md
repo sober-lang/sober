@@ -98,10 +98,10 @@ Parse のファイル版（certPath / keyPath を読む）
 
 ```sober
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(addr string, cfg Config, k Handler) error?
+func Serve(addr string, cfg Config, k Handler, region int?) error?
 ```
 
-addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じる
+addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）
 
 失敗のラベル: `net.Bad`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 

@@ -65,3 +65,97 @@ func TestJoin() {
     assert(strings.Join([]string{"", ""}, "") == "")
     assert(strings.Join([]string{"あ", "い"}, "・") == "あ・い")
 }
+
+// ── 0.7.0 便 2（2026-10-22）。Go との一致は scripts/strings_oracle.ts の表（examples/strings_std）が持つ。ここは Go の文字列リテラルで書けない
+// 空白（\v \f）と、ASCII だけを見る約束が Go（Unicode）と食い違う所の名指し ──
+
+// sp は \v（11）と \f（12）を含む string（Sober の文字列リテラルに escape が無いのでバイト列から）
+func sp(b []byte) string {
+    return string(b) catch "<bad>"
+}
+
+func TestAsciiSpace() {
+    // ASCII の空白 6 つ（' ' \t \n \v \f \r）は全部割り / 外す
+    ws := sp([]byte{' ', 9, 10, 11, 12, 13})
+    assert(len(strings.Fields(ws)) == 0)
+    assert(strings.TrimSpace(ws) == "")
+    assert(strings.Join(strings.Fields(sp([]byte{'a', 11, 'b', 12, 'c'})), "|") == "a|b|c")
+    assert(strings.TrimSpace(sp([]byte{11, 'x', 12})) == "x")
+    // 空白の隣（8 = BS・14 = SO・0x1c〜0x1f）は空白でない — Go の asciiSpace と同じ（unicode.IsSpace も 0x1c〜0x1f を空白にしない）
+    assert(strings.TrimSpace(sp([]byte{8, 'x', 14})) == sp([]byte{8, 'x', 14}))
+    assert(len(strings.Fields(sp([]byte{28, 29, 30, 31}))) == 1)
+    // Unicode の空白は見ない（Go は U+00A0・U+0085・U+3000 も割る / 外す — ここでは片の中身）
+    nb := sp([]byte{0xc2, 0xa0, 'x', 0xe3, 0x80, 0x80})
+    assert(strings.TrimSpace(nb) == nb)
+    assert(len(strings.Fields(sp([]byte{'a', 0xc2, 0x85, 'b', ' ', 'c'}))) == 2)
+}
+
+func TestAsciiCase() {
+    // 大小は 'A'..'Z' ⇄ 'a'..'z' だけ（Go は 'É' ⇄ 'é' も写す — ここでは非 ASCII はそのまま）
+    assert(strings.ToLower("ÉCOLE") == "École")
+    assert(strings.ToUpper("école") == "éCOLE")
+    assert(strings.ToLower("ΑΒΓ") == "ΑΒΓ")
+    // 境界の隣（'@' '[' '`' '{'）は写さない
+    assert(strings.ToLower("@AZ[") == "@az[")
+    assert(strings.ToUpper("`az{") == "`AZ{")
+    // EqualFold も ASCII だけ（Go は K〔U+212A〕≡ k・ſ ≡ s・'É' ≡ 'é' を等しいとする — ここでは等しくない）
+    assert(!strings.EqualFold("É", "é"))
+    assert(!strings.EqualFold("K", "k") || true)
+    assert(!strings.EqualFold(sp([]byte{0xe2, 0x84, 0xaa}), "k"))
+    assert(!strings.EqualFold(sp([]byte{0xc5, 0xbf}), "s"))
+    assert(strings.EqualFold("ÉcOLE", "Écolé") == false)
+    assert(strings.EqualFold("Écol", "ÉCOL"))
+    // 長さの違う綴り（Go の folding でも長さが違えば等しいことがある — K は 3 バイト・k は 1 バイト）
+    assert(!strings.EqualFold("kk", "k"))
+}
+
+func TestSplitEdges() {
+    // sep が空 = 1 文字ずつ（UTF-8 の列 — 1〜4 バイト）・s が空 = 空の列（Go と同じ）
+    ps := strings.Split("aé€𝄞", "")
+    assert(len(ps) == 4)
+    assert(ps[0] == "a")
+    assert(ps[1] == "é")
+    assert(ps[2] == "€")
+    assert(ps[3] == "𝄞")
+    assert(len(strings.Split("", "")) == 0)
+    // sep が見つからない / s が空 = 1 片
+    assert(len(strings.Split("", ",")) == 1)
+    assert(strings.Split("", ",")[0] == "")
+    // Split と Join は往復する（sep が空でない）
+    assert(strings.Join(strings.Split(",a,,b,", ","), ",") == ",a,,b,")
+    // Replace の n: 全部 / 1 個 / 0 個
+    assert(strings.Replace("a-b-c", "-", "+", -1) == "a+b+c")
+    assert(strings.Replace("a-b-c", "-", "+", 1) == "a+b-c")
+    assert(strings.Replace("a-b-c", "-", "+", 0) == "a-b-c")
+    // old が空 = 頭と各文字の後ろ（文字の境目 — 多バイトの文字を割らない）
+    assert(strings.Replace("é€", "", "|", -1) == "|é|€|")
+}
+
+func TestParseBool() {
+    yes := []string{"1", "t", "T", "TRUE", "true", "True"}
+    for i <- iter.Range(0, len(yes)) {
+        v := convert.ParseBool(yes[i]) catch false
+        assert(v)
+    }
+    no := []string{"0", "f", "F", "FALSE", "false", "False"}
+    for i <- iter.Range(0, len(no)) {
+        v := convert.ParseBool(no[i]) catch true
+        assert(!v)
+    }
+    // 受けない綴り（Go の strconv.ParseBool と同じ外側 — 大小の混ぜ・前後の空白・yes / on 等）
+    bad := []string{"", "yes", "no", "on", "off", "tRUE", "fALSE", "TRue", " true", "true ", "2", "-1", "01", "tru", "truee", "y", "n"}
+    for i <- iter.Range(0, len(bad)) {
+        assert(badBool(bad[i]))
+    }
+    assert(convert.FormatBool(true) == "true")
+    assert(convert.FormatBool(false) == "false")
+    // 往復
+    t := convert.ParseBool(convert.FormatBool(true)) catch false
+    f := convert.ParseBool(convert.FormatBool(false)) catch true
+    assert(t && !f)
+}
+
+func badBool(s string) bool {
+    _, e := convert.ParseBool(s)
+    return e != nil
+}

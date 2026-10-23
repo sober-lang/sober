@@ -1,0 +1,27 @@
+package main
+
+// 負例: 借りのラムダの mut の捕捉は作成点の呼び出しへの mut 実引数（language.md 17 節 U2・25 節 (α-L1)）— freeze の後に捕捉すると、
+// 本体が読むだけでも拒否（呼び先へ `mut z` を渡すのと同じ）
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Z struct {
+    acc mut []byte
+    n int
+}
+
+func two(emit func(b []byte) error?) error? {
+    return emit(bytes("de"))
+}
+
+func count(st Stream) int {
+    mut z := Z{acc: mut []byte{1, 2}, n: 0}
+    w := freeze(z.acc)
+    e := st((b []byte) => { println(z.n); nil })
+    if e != nil { return -1 }
+    return len(w)
+}
+
+func main() {
+    println(count((emit) => two(emit)))
+}

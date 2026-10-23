@@ -1,0 +1,7 @@
+true application/json ; charset=utf-8
+debug true false true
+verbose false false false
+dry false true false
+4 THE-QUICK-BROWN-FOX
+10 report.tar.zst report_tar_gz
+CAFé false

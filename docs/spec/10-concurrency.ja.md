@@ -177,7 +177,7 @@ C-19. `task.Run(body, deadline: 500 * task.MS)` は scope の期限（相対・�
 
 ## 10.7 ワーカー局所の lease
 
-C-20. `lp := task.NewLocal((w mut T) => 整え)` はワーカーごとの作業域の置き場を作り、`task.Lease(lp, (w mut T) => 本体)` の窓の中だけで借りる。窓のたびに新しい値 — 前の窓（同じ task でも別の task でも）の書きは見えない（置き場の使い回しは観測に出ない最適化）。T はスカラーと `pool.Scratch` の欄だけの struct。ラムダの mut 仮引数はこの 2 つの窓の位置にだけ書ける。`task.Local` のゼロ値は作れない。
-例: [`examples/lease.sober`](../../examples/lease.sober)・[`examples/lease_iter.sober`](../../examples/lease_iter.sober)・[`examples/lease_bytes.sober`](../../examples/lease_bytes.sober)・[`examples/lease_yield.sober`](../../examples/lease_yield.sober)
+C-20. `lp := task.NewLocal((w mut T) => 整え)` はワーカーごとの作業域の置き場を作り、`task.Lease(lp, (w mut T) => 本体)` の窓の中だけで借りる。窓のたびに新しい値 — 前の窓（同じ task でも別の task でも）の書きは見えない（置き場の使い回しは観測に出ない最適化）。T はスカラーと `pool.Scratch` の欄だけの struct。整えは Scratch の欄ごとに `pool.NewScratch(mut w.f, 定数)` を 1 回ずつ書くか、T の package の関数 1 つ `F(mut w)` を呼ぶ（本体 1 文の転送 `G(mut w)` は T の package の関数に着くまで深さ 4 まで辿る — 別の package の包みからも呼べる）。ラムダの mut 仮引数はこの 2 つの窓の位置にだけ書ける。`task.Local` のゼロ値は作れない。
+例: [`examples/lease.sober`](../../examples/lease.sober)・[`examples/lease_alias.sober`](../../examples/lease_alias.sober)・[`examples/lease_iter.sober`](../../examples/lease_iter.sober)・[`examples/lease_bytes.sober`](../../examples/lease_bytes.sober)・[`examples/lease_yield.sober`](../../examples/lease_yield.sober)
 拒否: [`examples/lease_neg_form.sober`](../../examples/lease_neg_form.sober)・[`examples/lease_neg_mutlam.sober`](../../examples/lease_neg_mutlam.sober)・[`examples/lease_neg_shape.sober`](../../examples/lease_neg_shape.sober)・[`examples/lease_neg_prep.sober`](../../examples/lease_neg_prep.sober)・[`examples/lease_neg_zero.sober`](../../examples/lease_neg_zero.sober)・[`examples/lease_neg_reserved.sober`](../../examples/lease_neg_reserved.sober)
-決定: [language.md 11 節・26 節](../language.md)
+決定: [language.md 11 節・26 節・32 節](../language.md)・[region-domain-pool.md 4d 節](../region-domain-pool.md)

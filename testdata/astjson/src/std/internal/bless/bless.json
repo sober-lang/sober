@@ -1,0 +1,58 @@
+{
+  "package": "bless",
+  "imports": [],
+  "types": [],
+  "funcs": [
+    {
+      "name": "Bytes",
+      "type_params": [],
+      "params": [
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "slice_of",
+          "elem": {
+            "k": "name",
+            "name": "byte"
+          },
+          "mut": false
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "b",
+                "tok": 19
+              }
+            ],
+            "tok": 18
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 23
+      },
+      "sig_end": 17
+    }
+  ],
+  "consts": []
+}

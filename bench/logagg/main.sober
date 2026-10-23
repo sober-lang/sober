@@ -150,12 +150,11 @@ func unq(x string) int {
     return k
 }
 
-func zeros(n int) mut []int {
-    mut xs := mut []int{}
+// xs の末尾に 0 を n 個積む（mut の値は呼び手のゼロ値リテラルで作る — mut の仮引数を持たない関数は mut を返せない・language.md 26 節）
+func zeros(xs mut []int, n int) {
     for _ <- iter.Range(0, n) {
         xs = append(xs, 0)
     }
-    return xs
 }
 
 func main() int {
@@ -169,13 +168,20 @@ func main() int {
     sv := svcs()
     lvs := levels()
     base := days(2026, 10, 10) * 86400
-    mut cnt := zeros(W * 8)
-    mut c4 := zeros(W * 8)
-    mut c5 := zeros(W * 8)
-    mut dsum := zeros(W * 8)
-    mut dmax := zeros(W * 8)
-    mut hist := zeros(8 * H)
-    mut lv := zeros(4)
+    mut cnt := mut []int{}
+    zeros(mut cnt, W * 8)
+    mut c4 := mut []int{}
+    zeros(mut c4, W * 8)
+    mut c5 := mut []int{}
+    zeros(mut c5, W * 8)
+    mut dsum := mut []int{}
+    zeros(mut dsum, W * 8)
+    mut dmax := mut []int{}
+    zeros(mut dmax, W * 8)
+    mut hist := mut []int{}
+    zeros(mut hist, 8 * H)
+    mut lv := mut []int{}
+    zeros(mut lv, 4)
     mut users := mut map[string]int{}
     mut lines := 0
     mut bQuote := 0

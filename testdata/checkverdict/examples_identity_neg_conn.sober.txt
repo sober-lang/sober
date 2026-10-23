@@ -1,0 +1,2 @@
+sober: load error at examples/identity_neg_conn.sober:8:10: `net.Conn` has identity: only net.Accept or net.Dial (the parameter of its function) makes one — a zero value would refer to nothing
+exit=1

@@ -13,6 +13,7 @@ tag := hmac.Sum256(key, msg)
 ## Sum256
 
 ```sober
+@secret(key)
 func Sum256(key []byte, msg []byte) []byte
 ```
 

@@ -1,0 +1,394 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Size",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "string"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "param_names": [
+          "rel"
+        ]
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 15
+      }
+    },
+    {
+      "name": "Table",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "size",
+            "type": {
+              "k": "name",
+              "name": "Size"
+            },
+            "tok": 19
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 24
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "sizeOf",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "io.Root"
+          },
+          "mutable": false
+        },
+        {
+          "name": "rel",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 39
+                    },
+                    "field": "OpenUnder",
+                    "tok": 41
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 43
+                    },
+                    {
+                      "k": "ident",
+                      "name": "rel",
+                      "tok": 45
+                    }
+                  ],
+                  "tok": 42
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [
+                    {
+                      "k": "unary",
+                      "op": "-",
+                      "operand": {
+                        "k": "int",
+                        "value": 1,
+                        "tok": 50
+                      },
+                      "tok": 49
+                    }
+                  ],
+                  "tok": 48
+                },
+                "tok": 47
+              }
+            ],
+            "tok": 37
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 53
+                },
+                "field": "Close",
+                "tok": 55
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "f",
+                  "tok": 57
+                }
+              ],
+              "tok": 56
+            },
+            "tok": 52
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 61
+                    },
+                    "field": "Size",
+                    "tok": 63
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "f",
+                      "tok": 65
+                    }
+                  ],
+                  "tok": 64
+                },
+                "rhs": {
+                  "k": "unary",
+                  "op": "-",
+                  "operand": {
+                    "k": "int",
+                    "value": 1,
+                    "tok": 69
+                  },
+                  "tok": 68
+                },
+                "tok": 67
+              }
+            ],
+            "tok": 60
+          }
+        ]
+      },
+      "tok": 25,
+      "bodiless": false,
+      "span": {
+        "start": 24,
+        "end": 73
+      },
+      "sig_end": 36
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 80
+                    },
+                    "field": "OpenRoot",
+                    "tok": 82
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io",
+                      "tok": 84
+                    }
+                  ],
+                  "tok": 83
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 87
+                },
+                "tok": 86
+              }
+            ],
+            "tok": 78
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 90
+                },
+                "field": "CloseRoot",
+                "tok": 92
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 94
+                }
+              ],
+              "tok": 93
+            },
+            "tok": 89
+          },
+          {
+            "k": "bind",
+            "names": [
+              "t"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Table",
+                "elems": [
+                  {
+                    "key": "size",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "rel",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "sizeOf",
+                          "tok": 107
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "r",
+                            "tok": 109
+                          },
+                          {
+                            "k": "ident",
+                            "name": "rel",
+                            "tok": 111
+                          }
+                        ],
+                        "tok": 108
+                      },
+                      "tok": 106
+                    }
+                  }
+                ],
+                "tok": 99,
+                "type_args": []
+              }
+            ],
+            "tok": 97
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 115
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "t",
+                      "tok": 117
+                    },
+                    "field": "size",
+                    "tok": 119
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "hello.txt",
+                      "tok": 121
+                    }
+                  ],
+                  "tok": 120
+                }
+              ],
+              "tok": 116
+            }
+          }
+        ]
+      },
+      "tok": 74,
+      "bodiless": false,
+      "span": {
+        "start": 73,
+        "end": 127
+      },
+      "sig_end": 77
+    }
+  ],
+  "consts": []
+}

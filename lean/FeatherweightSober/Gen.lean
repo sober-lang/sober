@@ -503,8 +503,12 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
       else
         match t with
         | .int => do
-          match ← rnd 7 with
+          match ← rnd 8 with
           | 0 => return .callv (.fnref 0 []) (← genTyped .int Γ b d fuel)
+          -- L1: anchor つきの関数値の呼び出し（mut を持たない仮引数でも anchor は b〜d - 1 のどこでも型が付く）
+          | 6 => do
+            let a := if (← rnd 1) = 0 then b else d - 1
+            return .callMv a (.fnref 0 []) (← genTyped .int Γ b d fuel)
           | 1 => return .letE (.fnref 0 []) (.callv (.var 0) (← genTyped .int (.fn .int .int :: Γ) b d fuel))
           | 2 => return .call 2 [] (.pair (.fnref 0 []) (← genTyped .int Γ b d fuel))
           -- R0: opt / union の中の slice を別の Def へ転送（中身は呼び手最内 d - 1 に締まる）
@@ -526,7 +530,9 @@ def genTyped (t : Ty) (Γ : Ctx) (b d : Nat) : Nat → Rand Expr
               | 1 => return .lenE (.call 11 [] s)
               | _ => return .call 8 [] (.call 10 [] (← genTyped .int Γ b d fuel))
             | none => return .lenE (.call 10 [] (← genTyped .int Γ b d fuel))
-        | .bool => return .callv (.fnref 1 []) (← genTyped .int Γ b d fuel)
+        | .bool => do
+          if (← rnd 1) = 0 then return .callv (.fnref 1 []) (← genTyped .int Γ b d fuel)
+          else return .callMv (if (← rnd 1) = 0 then b else d - 1) (.fnref 1 []) (← genTyped .int Γ b d fuel)
         | .f64 => return .call 9 [] (← genTyped .f64 Γ b d fuel)
         | .byte => return .index (.call 10 [] (← genTyped .int Γ b d fuel)) (.lit 0)
         | _ => genTyped t Γ b d fuel
@@ -697,7 +703,7 @@ def genChaos : Nat → Rand Expr
     | 6 => return .strlit (← genBytes) (← rnd 2)
     | _ => return .nil (← genChaosTy 1)
   | fuel + 1 => do
-    match ← rnd 64 with
+    match ← rnd 65 with
     | 0 => genChaos 0
     | 1 => return .letE (← genChaos fuel) (← genChaos fuel)
     | 2 => return .add (← genChaos fuel) (← genChaos fuel)
@@ -778,6 +784,7 @@ def genChaos : Nat → Rand Expr
     | 63 => do
       let ot : Option Ty ← (do if (← rnd 1) = 0 then return none else return some (← genChaosTy fuel))
       return .clone ot (← genChaos fuel)
+    | 64 => return .callMv (← rnd 2) (← genChaos fuel) (← genChaos fuel)
     | _ => do
       let op ← pickD [CmpOp.eq, .ne, .le, .gt, .ge]
       return .cmp op (← genChaos fuel) (← genChaos fuel)
@@ -801,6 +808,7 @@ def kids : Expr → List Expr
   | .pair a b => [a, b]
   | .call _ _ e | .callM _ _ e => [e]
   | .callv f e => [f, e]
+  | .callMv _ f e => [f, e]
   | .ann e _ | .block e | .blockR _ e | .copyTo _ _ e | .label _ e | .jump _ _ e => [e]
   | .alloc _ e | .deref e | .freeze e => [e]
   | .assign l e => [l, e]
@@ -838,6 +846,7 @@ def setKids (x : Expr) (cs : List Expr) : Expr :=
   | .call fn ts _, [e] => .call fn ts e
   | .callM fn ts _, [e] => .callM fn ts e
   | .callv _ _, [f, e] => .callv f e
+  | .callMv a _ _, [f, e] => .callMv a f e
   | .ann _ t, [e] => .ann e t
   | .block _, [e] => .block e
   | .blockR t _, [e] => .blockR t e
@@ -902,6 +911,7 @@ def mutKinds : Expr → List String
   | .strlit _ _ | .newchan _ _ | .newch _ _ _ => ["region"]
   | .scope _ _ _ | .tryJ _ _ | .join _ _ => ["annty"]
   | .copyTo _ _ _ => ["region", "annty"]
+  | .callMv _ _ _ => ["region"]
   | .var _ => ["var"]
   | .ann _ _ | .nil _ | .inl _ _ | .inr _ _ | .label _ _ | .unreach _ | .getm _ _ _ | .delm _ _ _ => ["annty"]
   | .jump _ _ _ => ["jump", "annty"]
@@ -933,6 +943,7 @@ def applyMut (kind : String) (e : Expr) : Rand Expr := do
   | "region", .newchan rc t => return .newchan (rc + 1) t
   | "region", .newch r cap t => if (← rnd 1) = 0 then return .newch (← bumpR r) cap t else return .newch r 0 t
   | "region", .copyTo k t x => return .copyTo (← bumpR k) t x
+  | "region", .callMv a f x => return .callMv (← bumpR a) f x
   | "key", .mkmap m (.prod _ v) => return .mkmap m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v)
   | "key", .mkmapAt m (.prod _ v) r => return .mkmapAt m (.prod (← pickD [Ty.bool, .f64, .opt .int]) v) r
   | "var", .var i => return .var (← bumpR i)

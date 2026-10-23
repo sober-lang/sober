@@ -85,3 +85,30 @@ func FormatInt(n int) string
 ```
 
 n の 10 進表記（Go の strconv.Itoa と同じ — ParseInt の対）。文字列補間 `${n}` の int の変換もこれ（parser の合成の暗黙 import $convert — コアに変換 op を足さない）。最小値は符号反転が溢れるので綴りをそのまま返す
+
+## InvalidBool
+
+```sober
+type InvalidBool error
+```
+
+ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
+
+## ParseBool
+
+```sober
+@errors(InvalidBool)
+func ParseBool(s string) (bool, error?)
+```
+
+s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
+
+失敗のラベル: [`InvalidBool`](#invalidbool)
+
+## FormatBool
+
+```sober
+func FormatBool(b bool) string
+```
+
+b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）

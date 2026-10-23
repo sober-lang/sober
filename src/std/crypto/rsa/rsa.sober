@@ -11,6 +11,7 @@ package rsa
 // 合わなければ rsa.Fault）。多倍長は 64 bit の limb（bn.sober — 積の上位は組み込み mulhi・montMul は x86 の専用命令の実装）・定数時間の規律は std/crypto の頭の 4 項
 
 import "std/crypto/sha256"
+import "std/internal/bless"
 import "std/iter"
 
 // 法 n と公開の指数 e（limb の列）・k = n のバイト長・bits = n のビット長・mt = n の Montgomery の文脈（鍵を読むときに 1 回）
@@ -25,11 +26,13 @@ type PublicKey struct {
 // RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
 type PrivateKey struct {
     pub PublicKey
-    mp mont
-    mq mont
-    dp []int
-    dq []int
-    qinv []int
+    mp mont @secret
+    mq mont @secret
+    dp []int @secret
+    dq []int @secret
+    qinv []int @secret
+    pbits int            // p, q の bit 長（鍵の大きさ — 公開の値。CRT の冪の回数。秘密の素数そのものから毎回数えない）
+    qbits int
 }
 
 // 鍵の DER の形が違う（PKCS#8 の RSA でない・長さが合わない）
@@ -42,6 +45,7 @@ type Fault error
 type BadSize error
 
 // k の公開鍵
+@bless
 func Public(k PrivateKey) PublicKey {
     return k.pub
 }
@@ -53,6 +57,7 @@ func Size(pub PublicKey) int {
 
 // msg の RSASSA-PSS の署名（k バイト）。salt の長さが PSS の salt 長（通常は crypto.Rand(32) — ハッシュ〔SHA-256〕と同じ長さの乱数。検証の VerifyPSS の sLen に同じ長さを渡す）
 @errors(BadSize, Fault)
+@bless
 func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
     pub := k.pub
     em, ee := pssEncode(sha256.Sum256(msg), salt, pub.bits - 1)
@@ -63,8 +68,8 @@ func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
     x := bnFromBytes(em, (8 * len(em) + 63) / 64)
     mp := k.mp
     np := len(mp.m)
-    sp := expMont(toMont(x, mp), k.dp, bnBits(mp.m), mp)
-    sq := expMont(toMont(x, k.mq), k.dq, bnBits(k.mq.m), k.mq)
+    sp := expMont(toMont(x, mp), k.dp, k.pbits, mp)
+    sq := expMont(toMont(x, k.mq), k.dq, k.qbits, k.mq)
     // 区画（各 np + 1 語）: 0 = sp_M・1 = sq_M・2 = 差・3 = qinv・4 = h
     l := np + 1
     blk := zeros(5 * l)
@@ -80,10 +85,11 @@ func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?) {
         h = append(h, w[4 * l + i])
     }
     s := bnAddMul(sq, k.mq.m, freeze(h), len(pub.n))
-    sig := bnToBytes(s, pub.k)
+    // 署名は出力（公開の値）・em は公開鍵で署名から誰でも戻せる値 — 自己検証の比較の前に祝福する（秘密の鍵の値は署名の作りの中だけ）
+    sig := bless.Bytes(bnToBytes(s, pub.k))
     // 自己検証: s^e mod n が em（左を 0 で埋めた k バイト）に戻ること
     back := bnToBytes(expPub(toMont(bnFromBytes(sig, len(pub.n)), pub.mt), pub.e, bnBits(pub.e), pub.mt), pub.k)
-    if !sameTail(back, em) {
+    if !sameTail(back, bless.Bytes(em)) {
         return []byte{}, Fault{}
     }
     return sig, nil

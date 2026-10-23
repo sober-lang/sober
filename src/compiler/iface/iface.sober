@@ -8,7 +8,7 @@ package iface
 // - 展開される関数（関数型の引数・mut 引数 — loader の fn_expands）・総称関数 = 宣言ごと（脱糖器の inlineCall・単相化が本体を要る）
 // - 他の関数 = 署名だけ（注釈 `@errors` / `@noinline` つき — 本体なし）
 // - std の `@intrinsic` の宣言 = 載せた範囲（展開される関数の本体）が参照したものだけ（std/io の Chunks — 本体から鍵を呼ぶ展開される関数。stage1 の .sobi には無い — std だけ）
-// - 畳める const = 畳んだ値だけ（`const step = 4`）・他の const（辞書・@embed）は原文の宣言のまま
+// - 畳める const = 畳んだ値だけ（`const step = 4` — `@secret` の印は残す）・他の const（辞書・@embed）は原文の宣言のまま
 // - E2-S の逃げ（callM の Def として型付かなかった関数 — checker.ExclE2）は宣言の前に `@expand`（呼び出し点ごとに展開する — 判定 D'）
 // 載せる範囲 = 根（公開の項目 + error ラベル全部）からのリンク可視の閉包: 載せた範囲の識別子（欄の選択 `x.f` の f と文字列リテラルを除く）が
 // package のトップレベル名（union の variant 名はその union）なら足す。import は載せた範囲が参照したものだけ（暗黙の import は落とす）。
@@ -61,6 +61,10 @@ func Emit(p loader.Program, pk int, excl []int, raw []ast.Tree) []byte {
         if inc[i] && items[i].kind == 2 {
             ci := constIndex(q, items[i])
             if ci >= 0 && !q.c_dict[ci] && q.c_has[ci] {
+                // 畳んだ値でも `@secret` の印は落とさない（源の宣言 — language.md 12 節「秘密の値の宣言」）
+                if (q.trees[items[i].file].nodes[items[i].node].f & 2) != 0 {
+                    obuf.Lit(mut out, "@secret\n")
+                }
                 obuf.Lit(mut out, "const ")
                 obuf.Lit(mut out, items[i].name)
                 obuf.Lit(mut out, " = ")

@@ -1,0 +1,22 @@
+package main
+
+// 負例: 縛りは呼び出しの単位 — 同じ呼び出しの借りの実引数 2 本が別々の mut の束縛を捕捉するのも拒否（language.md 25 節 (α-L1)）
+
+type Two func(a func(b []byte) error?, c func(b []byte) error?) error?
+
+func run(a func(b []byte) error?, c func(b []byte) error?) error? {
+    a(bytes("x"))?
+    return c(bytes("yz"))
+}
+
+func count(t Two) int {
+    mut n := 0
+    mut m := 0
+    e := t((b []byte) => { n += len(b); nil }, (b []byte) => { m += len(b); nil })
+    if e != nil { return -1 }
+    return n + m
+}
+
+func main() {
+    println(count((a, c) => run(a, c)))
+}

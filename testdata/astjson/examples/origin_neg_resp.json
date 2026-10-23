@@ -1,0 +1,181 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "rs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "http.Route"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "http.Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 25
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/x",
+                          "tok": 29
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "composite",
+                            "type_name": "http.Response",
+                            "elems": [
+                              {
+                                "key": "status",
+                                "value": {
+                                  "k": "int",
+                                  "value": 200,
+                                  "tok": 43
+                                }
+                              },
+                              {
+                                "key": "contentType",
+                                "value": {
+                                  "k": "strlit",
+                                  "value": "text/plain",
+                                  "tok": 47
+                                }
+                              },
+                              {
+                                "key": "body",
+                                "value": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "ident",
+                                    "name": "bytes",
+                                    "tok": 51
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "strlit",
+                                      "value": "x",
+                                      "tok": 53
+                                    }
+                                  ],
+                                  "tok": 52
+                                }
+                              },
+                              {
+                                "key": "cache",
+                                "value": {
+                                  "k": "composite",
+                                  "type_name": "http.Fresh",
+                                  "elems": [
+                                    {
+                                      "key": "maxAge",
+                                      "value": {
+                                        "k": "int",
+                                        "value": 60,
+                                        "tok": 64
+                                      }
+                                    }
+                                  ],
+                                  "tok": 58,
+                                  "type_args": []
+                                }
+                              }
+                            ],
+                            "tok": 37,
+                            "type_args": []
+                          },
+                          "tok": 36
+                        }
+                      }
+                    ],
+                    "tok": 19,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 13
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 70
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 72
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "rs",
+                      "tok": 74
+                    }
+                  ],
+                  "tok": 73
+                }
+              ],
+              "tok": 71
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 80
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

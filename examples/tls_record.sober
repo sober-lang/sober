@@ -8,6 +8,7 @@ package main
 // ④ 拒否: 改竄 = bad_record_mac・本体の長さ超過 = record_overflow・内側が全部 0 = unexpected_message・外側の型違い・半端で閉じた = decode_error・
 //    転送路の失敗 = Transport。塊の無い機械（SOBER_NOAES=1）では ① ② を飛ばして印字する
 
+import "std/crypto"
 import "std/crypto/aesgcm"
 import "std/crypto/sha256"
 import "std/hex"
@@ -165,7 +166,12 @@ func main() {
     // 内側が全部 0（内容の型が無い）: 内容の型 0 + 0 埋め 9 で封じた record
     println("zeros", label(openAll(record.ChaCha, secret, zeroInner(secret), 65536, -1)))
     // ExpandLabel（RFC 9846 7.1 の形 — Go の双子と照合）
-    println("label", hex.Format(record.ExpandLabel(secret, "key", []byte{}, 16)), hex.Format(record.ExpandLabel(secret, "traffic upd", gen(9, 3), 32)))
+    // 導いた鍵は秘密 — 印字せず期待値（Go の双子の値）と crypto.Equal で照合
+    l1 := "523ab68875d8759d10c748f3a4ce451f"
+    l2 := "529b4d87467126403a0da83846964bfd717150d7aebb8e3ca6f4930e86bc69e5"
+    w1, _ := hex.Parse(l1)
+    w2, _ := hex.Parse(l2)
+    println("label", if crypto.Equal(record.ExpandLabel(secret, "key", []byte{}, 16), w1) { l1 } else { "MISMATCH" }, if crypto.Equal(record.ExpandLabel(secret, "traffic upd", gen(9, 3), 32), w2) { l2 } else { "MISMATCH" })
 }
 
 func firstN(s []byte, n int) []byte {

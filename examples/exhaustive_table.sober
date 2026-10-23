@@ -1,0 +1,69 @@
+package main
+
+// 表の網羅（language.md 13 節「表の網羅」— `@exhaustive`）: 注釈を付けた関数の switch は、subject の閉じた集合の全員を case に名指す。
+// union = 全 variant / error = 腕のラベルの宣言元の package の全ラベル / named scalar = 型つきの const の全部。default は集合の外の値だけを受ける
+
+type Shape union {
+    Circle{r int}
+    Rect{w int; h int}
+    Tri{}
+}
+
+type Status int
+
+const OK = Status(200)
+const NotFound = Status(404)
+const Gone = Status(410)
+
+type Missing error {}
+type Denied error {}
+type Broken error {}
+
+@exhaustive
+func shapeName(s Shape) string {
+    return switch s {
+    case Circle{}: "circle"
+    case Rect{}: "rect"
+    case Tri{}: "tri"
+    }
+}
+
+@exhaustive
+func reason(s Status) string {
+    return switch s {
+    case OK: "OK"
+    case NotFound: "Not Found"
+    case Gone: "Gone"
+    default: "?"   // 集合の外（Status(500) など）
+    }
+}
+
+// Denied は誰も返さないが、表の一員として名指す（@exhaustive の中では導出集合の外のラベルの腕も拒否しない）
+@exhaustive
+func label(e error?) string {
+    return switch e {
+    case nil: "none"
+    case Missing{}: "missing"
+    case Denied{}: "denied"
+    case Broken{}: "broken"
+    }
+}
+
+func fail(i int) error? {
+    if i == 1 {
+        return Missing{}
+    }
+    if i == 2 {
+        return Broken{}
+    }
+    return nil
+}
+
+func main() {
+    println(shapeName(Rect{w: 1, h: 2}))
+    println(shapeName(Tri{}))
+    println(reason(NotFound))
+    println(reason(Status(500)))
+    println(label(fail(0)))
+    println(label(fail(2)))
+}

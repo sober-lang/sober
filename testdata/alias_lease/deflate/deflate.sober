@@ -1,0 +1,23 @@
+package deflate
+
+// 型の別名の第一顧客の縮図（std の 8-4 の形 — std/internal/deflate の位置）: 作業域の型と核。欄はこの package でだけ書ける
+
+import "std/pool"
+
+type Work struct {
+    tab pool.Scratch
+    n int
+}
+
+func Prepare(w mut Work) {
+    pool.NewScratch(mut w.tab, 64)
+}
+
+func EncodeWith(w mut Work, x int) int {
+    if pool.Cap(mut w.tab) == 0 {
+        pool.NewScratch(mut w.tab, 64)
+    }
+    pool.Store(mut w.tab, x & 63, x)
+    w.n += 1
+    return pool.Load(mut w.tab, x & 63) * 10 + w.n
+}

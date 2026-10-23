@@ -1,0 +1,12 @@
+package main
+
+// 負例: OpenUnder の直後の文が defer io.Close でない（OpenUnder は Open と同じ形の規則 — diag.FileUse・language.md 28 節「根の下の開き」）
+
+import "std/io"
+
+func main() {
+    r := io.OpenRoot("testdata/io") catch return
+    defer io.CloseRoot(r)
+    f := io.OpenUnder(r, "hello.txt") catch return
+    println(io.Size(f) catch -1)
+}

@@ -108,8 +108,8 @@ func Rename(from string, to string) error? {
     return nil
 }
 
-// path の更新時刻（stat(2) の st_mtim — エポックからの ns。シンボリックリンクは辿る）。失敗は io の errno のラベル
-// （sober watch の mtime ポーリング — 時刻の値は比べるためだけに使う: 単位や起点に意味を持たせない）
+// path の更新時刻（stat(2) の st_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。シンボリックリンクは辿る。開いた File の同じ値は io.Stat の modTime）。
+// 失敗は io の errno のラベル（sober watch の mtime ポーリング・http.Static の Last-Modified）
 @errors(io.NotFound, io.Denied, io.Other)
 func ModTime(path string) (int, error?) {
     t := sysStat(path)

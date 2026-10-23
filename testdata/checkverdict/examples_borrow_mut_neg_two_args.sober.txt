@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_mut_neg_two_args.sober:15:64: the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that
+exit=1

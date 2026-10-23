@@ -191,7 +191,7 @@ func EmbedInputs(t ast.Tree) []byte {
     cl := t.nodes[t.file].e
     for k <- iter.Range(0, ast.ListLen(t, cl)) {
         x := t.nodes[ast.ListAt(t, cl, k)]
-        if x.f == 1 {
+        if (x.f & 1) != 0 {
             pat, pok := NameOk(t, x.e)
             if !pok || !validPattern(pat) {
                 lenBytes(mut out, bytes("!pattern"))
@@ -227,7 +227,7 @@ func embedTree(t0 ast.Tree, f int) (ast.Tree, error?) {
     mut k := 0
     while k < ast.ListLen(t, cl) {
         c := ast.ListAt(t, cl, k)
-        if t.nodes[c].f == 1 {
+        if (t.nodes[c].f & 1) != 0 {
             nt, err := embedConst(t, c, f)
             if err != nil {
                 return t, err

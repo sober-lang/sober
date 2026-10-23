@@ -129,6 +129,12 @@ inductive Frame : Type where
   | callvL (e : Expr)
   /-- 関数値呼び出しの引数評価中（評価済みの関数値 fv を保持） -/
   | callvR (fv : Expr)
+  /-- anchor つきの関数値呼び出し（L1）の関数側評価中（anchor a と引数 e を保持） -/
+  | callMvL (a : Nat) (e : Expr)
+  /-- anchor つきの関数値呼び出しの引数評価中（評価済みの関数値 fv を保持） -/
+  | callMvR (a : Nat) (fv : Expr)
+  /-- anchor を注釈で持つ callMK（callMv の委譲先）: 値が戻ったら region 0 を a へ写した本体を同世界で評価する -/
+  | callMKa (a : Nat) (fn : Nat) (ts : List Ty)
   /-- 関数の返り境界。値が戻ったら relocate（境界コピー）して region を pop し、
   結果型 t（呼び手座標の relocR）へ coerceTo で注釈を書き換える（R0: opt / union の中の
   コンテナが締まるので、nil / inl / inr の注釈も締めた型に揃える。codegen では恒等） -/
@@ -827,6 +833,7 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .eval H S (callM fn ts e), K => some (.eval H (.callMK fn ts :: S) e, K)
   | .eval H S (fnref fn ts), K => some (.ret H S (fnref fn ts), K)
   | .eval H S (callv f e), K => some (.eval H (.callvL e :: S) f, K)
+  | .eval H S (callMv a f e), K => some (.eval H (.callMvL a e :: S) f, K)
   | .eval H S (block e), K => some (.eval (H ++ [[]]) (.regionK :: S) e, K)
   | .eval H S (blockR t e), K => some (.eval (H ++ [[]]) (.regionKR t :: S) e, K)
   | .eval H S (copyTo k t e), K => some (.eval H (.copyK k t :: S) e, K)
@@ -952,6 +959,8 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
   | .ret H (.callvL e :: S) v, K => some (.eval H (.callvR v :: S) e, K)
   -- 関数値呼び出し: 関数値が fnref なら、引数値を callK に渡し直して call に委譲する
   | .ret H (.callvR (fnref fn ts) :: S) v, K => some (.ret H (.callK fn ts :: S) v, K)
+  | .ret H (.callMvL a e :: S) v, K => some (.eval H (.callMvR a v :: S) e, K)
+  | .ret H (.callMvR a (fnref fn ts) :: S) v, K => some (.ret H (.callMKa a fn ts :: S) v, K)
   | .ret H (.pairR a :: S) v, K => some (.ret H S (pair a v), K)
   | .ret H (.fstK :: S) (pair a _), K => some (.ret H S a, K)
   | .ret H (.annK t :: S) v, K => some (.ret H S (Expr.coerceTo t v), K)
@@ -1220,6 +1229,14 @@ def step (Δ : Defs) (π : List Bool) : State → ChanSt → Option (State × Ch
       match Δ[fn]? with
       | Option.some dfn =>
           let a := (Expr.anchorV (dfn.inst ts).param v).getD (H.length - 1)
+          some (.eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S)
+            (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR a (H.length - 1)) v)
+              ((dfn.inst ts).body.renTy a (H.length - 1))), K)
+      | Option.none => none
+  -- anchor を注釈で持つ callMK（callMv の委譲先 — L1）: anchor は値から読まず a を使う
+  | .ret H (.callMKa a fn ts :: S) v, K =>
+      match Δ[fn]? with
+      | Option.some dfn =>
           some (.eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S)
             (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR a (H.length - 1)) v)
               ((dfn.inst ts).body.renTy a (H.length - 1))), K)

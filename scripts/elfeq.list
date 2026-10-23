@@ -2,12 +2,12 @@
 # B-2（2026-10-02）: 凍結コーパス（scripts/frozen/entries.list）と testdata の entry のうち、今の stage2 が受理するもので obs の列に無いもの。
 # 受理しないもの（frozen_src の byte 段より前の言語・負例・ライブラリの部分 package）は入れない
 # 2026-10-13（report-590）: testdata/frozen_src/examples/io_readdir を外した — std の EntryKind の File → Regular（io.File と衝突）で今の stage2 が受理しない。同じ観測は examples/io_readdir（obs の列）が持つ
+# 2026-10-21（report-982）: testdata/checkneg/ret_mut を外した — F-bt の修理（案 A）で build も「mut の仮引数を持たない関数は mut を返せない」を拒否する
 examples/union.sober
 testdata/analyzer_neg/errors_cause.sober
 testdata/analyzer_neg/errors_decl.sober
 testdata/analyzer_neg/errors_switch.sober
 testdata/analyzer_neg/switch_nil_nonexh.sober
-testdata/checkneg/ret_mut.sober
 testdata/checkneg/ret_ty.sober
 testdata/constpkg/app
 testdata/errpkg/app

@@ -179,6 +179,16 @@ func UbfStat(p loader.Program) ([]byte, error?) {
     return lowerWith(p, k)
 }
 
+// FrameStat は ElfPasses と同じ形の実行ファイル（1 本の経路）を建て、関数ごとのフレームの内訳を `frame …` で stdout へ印字する
+// （開発の口 `sober build --frame-stat` — x86.sober xFrameStat・scripts/framestat.sh・report-1003）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
+func FrameStat(p loader.Program) ([]byte, error?) {
+    mut k := knob(KElf, true, true, false, false, 0, VfyLast)
+    k.xseq = true
+    k.frStat = true
+    return lowerWith(p, k)
+}
+
 // ElfRaw は IR パスを何も掛けない実行ファイル（`--emit=elf --no-opt` — stage1 の `build x.ir --no-opt` とバイト一致）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
 func ElfRaw(p loader.Program) ([]byte, error?) {
@@ -301,6 +311,7 @@ type Knob struct {
     noVec bool
     noSpec bool
     ubStat bool
+    frStat bool
     dumpIr bool
     trapProbe bool
     rtMut int
@@ -312,7 +323,7 @@ type Knob struct {
 
 func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode int) Knob {
     return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, xseq: false,
-        mvRound: false, noVec: false, noSpec: false, ubStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
+        mvRound: false, noVec: false, noSpec: false, ubStat: false, frStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
 }
 
 // lowerWith は p を k の形で下ろす
@@ -337,6 +348,7 @@ func lowerCore(p loader.Program, k Knob) (LowOut, error?) {
     st.noVec = k.noVec
     st.noSpec = k.noSpec
     st.ubStat = k.ubStat
+    st.frStat = k.frStat
     st.dumpIr = k.dumpIr
     st.trapUse = k.trapProbe
     st.trapProbe = k.trapProbe
@@ -464,6 +476,8 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
         // IR インライナー（M6 — rtlower の後・最適化のバックエンドだけ）
         irInlineModule(mut st)
         vfyModule(mut st, "inline")
+        // 戻らない呼び出しの終端化（report-ct2 (i) — noret.sober。束の前に親で: 呼び先の本体が要る）。検証は cfgClean の後（届かないブロックを外してから）
+        noretModule(mut st)
         // 死んだ仮引数の除去と直列のブロックの併合（第二便 M8 — cfgclean.sober）
         if st.stopAt == 0 && lParBatch(mut st, true) {
             vfyModule(mut st, "the parallel passes (cfg clean .. cmp dup)")
@@ -668,6 +682,7 @@ func buildPre(st mut St, p loader.Program) error? {
     st.parDiscard = -1
     st.nkid = 0
     st.cutSites = -1
+    st.mnExtra = -1
     st.cutRecs = -1
     st.chanFns = -1
     st.cutKids = 0
@@ -1094,6 +1109,12 @@ func bindName(st mut St, name desugar.StrRef, t int, v int, mutable bool, at des
         return nil
     }
     if isAggregate(mut st, t) {
+        if mutable && rcellOk(mut st, name, t, at) {
+            // 借りの閉包が mut で捕捉する大きい集合値（report-1068）: セルを熱いフレームの外 = 今の深度の region へ（全語を書く）
+            rp := regionAlloc(mut st, regionDepth(mut st), iconst(mut st, tWords(mut st, t)))
+            storeVal(mut st, rp, 0, t, v)
+            return declareNew(mut st, name, LCell, t, rp, at)
+        }
         c := copyVal(mut st, t, v)
         return declareNew(mut st, name, if mutable { LCell } else { LVal }, t, c, at)
     }
@@ -1103,6 +1124,21 @@ func bindName(st mut St, name desugar.StrRef, t int, v int, mutable bool, at des
     p := newSlotAddr(mut st, 1)
     store(mut st, p, 0, v)
     return declareNew(mut st, name, LCell, t, p, at)
+}
+
+// RCELL_MIN は region に置く捕捉セルの下限の語数（report-1065 — 8-5 の圧縮の状態 72 語を拾い、tls の handshake の状態〔32〜127 語・捕捉されない〕は元々対象外）
+const RCELL_MIN = 64
+
+// rcellOk は mut の集合値の束縛 name（型 t）のセルを region に置くか（8-5 の compiler 便 段 2 (c-i) — report-1063 / 1065 / 1068・置き場だけ）:
+// 借りの閉包が mut で捕捉し（番地が逃げてスロットは彩色できない）、RCELL_MIN 語以上で、今の深度が束縛の繰り返しを区切る region のとき —
+// 字面の region の入れ子の中（反復の region・式ブロック・task の scope）か region 透過でない関数の本体（入口の自前の region）。
+// region 透過の関数の本体の直下は呼び手の深度に積もりうるのでスロットのまま（倒れ先）。セルは束縛のスコープの間だけ使われ（mut 仮引数・
+// 借りの閉包は番地を保持しない）、その region はスコープ以上に生きる
+func rcellOk(st mut St, name desugar.StrRef, t int, at desugar.NodeRef) bool {
+    if tWords(mut st, t) < RCELL_MIN || (st.rnest == 0 && st.curTransp) {
+        return false
+    }
+    return desugar.CapMutAfter(mut st.d, name, at)
 }
 
 // deferCtx は defer を書いた所の名前の文脈 [鎖, package, inline 列, 型の環境]。鎖の開いた末尾（VOPEN）は今のスコープの番号で閉じる —
@@ -1227,6 +1263,9 @@ func funcBody(st mut St, fi int) error? {
     }
     st.destOk = !(infoAt(mut st, fi).pkg == desugar.MainPkg(mut st.d) && strIs(mut st, sA(nodeOf(mut st, infoAt(mut st, fi).decl)), "main"))
     st.destDepth = st.entryDepth
+    // 持ち上げたラムダ（liftLambdaFn の合成の宣言 — 名前 "lambda"）の本体はラムダの印（2）を使う（report-1006 a3）。結果が slice を持つラムダだけ
+    // （結果なし / スカラーのラムダは入口で宛先を読まず、印の確保の置き場が入口の深度 = 呼び手の region になる — 捨てる値が呼び手に積もる・report-1008）
+    st.lamDest = strIs(mut st, sA(nodeOf(mut st, decl)), "lambda") && resultsHoldSlice(mut st, desugar.ListRef(infoAt(mut st, fi).results))
     body := nE(nodeOf(mut st, decl))
     if st.transparent && st.destOk && int(body) >= 0 && nodeOf(mut st, body).e == 1 && resultsHoldSlice(mut st, desugar.ListRef(infoAt(mut st, fi).results)) {
         // 宛先の深度のレジスタ（M1c）: 呼び手が書いた深度 dd（0 = 無し）が 1 以上・入口の深度以下なら使い、レジスタを 0 に戻す

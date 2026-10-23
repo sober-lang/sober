@@ -86,6 +86,7 @@ declare -A GTAG=(
     [pool_oracle]="load desugar analyzer"
     [errtrace]="load desugar analyzer lower backend"
     [analyzer_neg]="parse load desugar analyzer"
+    [secretdump]="load desugar analyzer"
     [uniqfreeze]="desugar analyzer lean"
     [implicitfreeze]="desugar analyzer lower backend"
     [sobertest]="load lower backend"
@@ -106,9 +107,10 @@ declare -A GTAG=(
     [maprepr]="lower"
     [streq]="lower"
     [ubfstat]="lower"
+    [framestat]="lower"
     [sortcheck]="lower backend"
     [flatecheck]="lower backend"
-    [ctcheck]="lower backend"
+    [ctcheck]="lower backend analyzer"
     [cryptocheck]="lower backend"
     [tlsfsm]="lean lower backend"
     [iterregion]="lower backend"
@@ -116,6 +118,7 @@ declare -A GTAG=(
     [fitcheck]="lower backend"
     [iouring]="lower backend"
     [httpcheck]="lower backend"
+    [pid1stop]="lower backend"
     [vaslot]="lower backend"
     [selfpar]="check desugar load"
     [elfeq]="lex parse load desugar lower backend"
@@ -124,7 +127,7 @@ declare -A GTAG=(
     [stdref]="docs"
 )
 # 長いものから（並列の詰め順）
-ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat sortcheck flatecheck ctcheck cryptocheck tlsfsm iterregion fitcheck iouring httpcheck vaslot refs stdref corevec extract obs_zig hermetic_zig ir_roundtrip)
+ORDER=(zigtest stages selfpar selfhost_ll selfhost_e2e leanbatch sobi selfhost_check selfhost_lower selfhost_fmt selfhost_load toolcheck pkgcheck selfhost_parse hermetic obs elfeq io_args errtrace passes regionbound checkverdict checksplit cachesplit cachekey panicmsg optdiff typerdiff corejson irtext lltext llcheck astjson loaderjson selfhost_lex pool_oracle analyzer_neg secretdump uniqfreeze implicitfreeze sobertest jsonsuite unittest x86enc trapprobe seqpar lparcfg schedvec schedfuzz parbudget cutstat mapfuse partinl docsync benchsync maprepr streq ubfstat framestat sortcheck flatecheck ctcheck cryptocheck tlsfsm iterregion fitcheck iouring httpcheck pid1stop vaslot refs stdref corevec extract obs_zig hermetic_zig ir_roundtrip)
 
 auto_tags() { # 変更ファイル → タグ（推定できない変更は all）
     local f
@@ -147,7 +150,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             src/compiler/printer/*|src/compiler/tools/fmtdump/*) echo fmt ;;
             src/compiler/loader/*|src/compiler/tools/loaderdump/*) echo load ;;
             src/compiler/desugar/*|src/compiler/tools/desugardump/*) echo desugar ;;
-            src/compiler/analyzer/*|scripts/pool_oracle.sh|scripts/errtrace.sh|scripts/analyzer_neg.sh) echo analyzer ;;
+            src/compiler/analyzer/*|scripts/pool_oracle.sh|scripts/errtrace.sh|scripts/analyzer_neg.sh|scripts/secretdump.sh|testdata/secretdump/*) echo analyzer ;;
             src/compiler/checker/*|src/compiler/tools/checkdump/*|src/compiler/tools/sobercheck/*) echo check ;;
             scripts/selfpar.sh|testdata/selfpar/*|scripts/checkstats.sh) echo check ;;
             src/compiler/lower/*|src/compiler/tools/lowerdump/*|src/compiler/tools/lldump/*|src/compiler/app/*) echo lower ;;
@@ -160,7 +163,7 @@ auto_tags() { # 変更ファイル → タグ（推定できない変更は all�
             scripts/selfhost_desugar.sh|scripts/corejson.sh) echo desugar ;;
             scripts/selfhost_check.sh|scripts/selfhost_e2e.sh|scripts/checkmut.ts|scripts/corevec.sh) echo check ;;
             scripts/obs.sh|scripts/hermetic.sh|scripts/pkgcheck.sh|scripts/io_args.sh|scripts/x86enc.sh|scripts/elfeq.sh|scripts/elfeq.list) echo backend ;;
-            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/sortcheck.sh|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/fitcheck.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/vaslot.sh|testdata/vaslot/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
+            scripts/selfhost_lower.sh|scripts/lparcfg.sh|scripts/lparcfg.ts|scripts/trapprobe.sh|testdata/trapprobe/*|scripts/seqpar.sh|scripts/seqpar.list|scripts/schedvec.sh|scripts/schedvec.ts|scripts/schedvec.list|scripts/schedfuzz.sh|scripts/schedfuzz.list|scripts/parbudget.sh|testdata/parbudget/*|scripts/cutstat.sh|scripts/mapfuse.sh|scripts/partinl.sh|scripts/maprepr.sh|scripts/streq.sh|scripts/sortcheck.sh|scripts/iterregion.sh|testdata/sortcheck/*|scripts/flatecheck.sh|testdata/flatecheck/*|scripts/ctcheck.sh|testdata/ctcheck/*|scripts/cryptocheck.sh|scripts/ubfstat.sh|scripts/ubfstat.list|scripts/framestat.sh|scripts/framestat.list|scripts/fitcheck.sh|scripts/iouring.sh|scripts/httpcheck.sh|testdata/httpcheck/*|scripts/pid1stop.*|testdata/pid1stop/*|scripts/vaslot.sh|testdata/vaslot/*|testdata/cutstat/*|scripts/optdiff.sh|scripts/typerdiff.sh|scripts/irtext.sh|scripts/lltext.sh|scripts/llcheck.sh|scripts/selfhost_ll.sh|scripts/stages.sh|scripts/selfhost_cli.sh|scripts/passes.sh|scripts/regionbound.sh) echo lower ;;
             scripts/checkverdict.sh|testdata/checkverdict/*) echo check; echo docs ;;
             scripts/refs.sh|scripts/alphacheck.sh|scripts/alphamap.ts|src/compiler/tools/refs/*|testdata/refs/*) echo load ;;
             scripts/stdref.sh|scripts/stdref/*|src/compiler/tools/docgen/*|testdata/stdref/*|docs/std/*) echo docs ;;

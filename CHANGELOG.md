@@ -2,6 +2,146 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.1 — 2026-10-23
+
+A follow-up to the Web release.
+
+- The HTTP layer now covers:
+  - static files and conditional GET
+  - chunked responses and SSE
+  - multipart forms
+  - compressed streams
+- std gains encoding and decoding building blocks.
+- The analyzer gets the first three parts of the effect surface:
+  - `@errors` on function types
+  - secret-value flow (`@secret`)
+  - credential-derived responses meeting shared caches
+- Servers with many connections use less memory and address space; the 48k-connection death is gone.
+
+### Language
+
+- Type aliases `type A = B`: A is another name for B and is interchangeable with it everywhere — assignment, type arguments, closures and leases.
+  - The right-hand side must be a single declared type name (`N` / `ref.N`). Builtin types, composite types and instantiated generics are not allowed.
+  - An alias of a generic type takes its type arguments at the use site (`type Box = lib.Box` → `Box[int]`).
+  - Package-sensitive rules (field writes, sealed types, …) follow the declaration the alias points to.
+- Borrowed closures may capture mut bindings: a lambda in a borrow position of a function-value call (`st((p) => …)`) can capture a mut local or mut parameter.
+  - The capture is the binding itself, not a copy, and lasts only for the duration of the call.
+  - The borrowed lambdas of one call capture at most one mut binding in total.
+  - Closures in value positions, which can escape, are still rejected.
+- `@errors` can follow a named function type: `type Stream func(…) error? @errors(emit, io.NotFound, …)`.
+  - A lambda that becomes a value of that type is rejected if it fails with a label outside the declaration.
+  - Calls through such values take their failure set from the declaration.
+- `@exhaustive`: a switch inside an annotated function must name every member of the subject's closed set (all variants of a union, the error labels of one package, or the typed consts of a named scalar). Missing cases are reported by name. This is a check-only rule.
+- Typed constants: `const OK = Status(200)` has type `Status`.
+- `@secret` (check only — what `build` accepts does not change): declare parameters, struct fields or consts as secret sources, and the analyzer rejects secret values that reach a branch condition, an index or a division.
+  - The key material in std/crypto and std/tls is marked.
+  - A gate (ctcheck) checks that the generated machine code has no secret-dependent branches, and statistical timing tests (dudect) also run.
+- Origin check (check only): rejects code where credential-derived values (`http.Authorization` / `http.Cookie` and values built from them) meet a response that a shared cache may store.
+- A function without a mut parameter that returns a mut value (a type containing a mut slice or map) is now rejected by `build` with the same message as `check`. Previously only `build` accepted it.
+- Zero values of `io.Root`, `net.Listener`, `net.Conn` and `tls.Conn` (such as `io.Root{}`) are rejected. Previously they could forge a handle to fd 0.
+- A leading `@errors` on a non-function declaration (type / const) is now a syntax error. It used to be silently ignored.
+
+### Standard library
+
+- net / tls: `net.Serve` / `tls.Serve` take `region:`, a per-region limit for connection tasks (default 128 MiB).
+  - A connection task that exceeds it dies alone; Serve absorbs the death, which counts as died in `task.Ledger()`.
+  - Address space reserved per connection drops to a quarter. The `RegionExceeded{cause: va_exhausted}` death at 48k concurrent connections is gone (see Fixes).
+- http — static files: `http.Static(prefix, root, precompressed:, cache:)`.
+  - It never leaves `root`; the kernel guarantees this (see io below).
+  - `precompressed:` picks `.br` / `.gz` variants by Accept-Encoding and serves them as is.
+  - Weak ETags, Last-Modified, and preconditions (If-Match / If-None-Match / If-Modified-Since / If-Unmodified-Since → 304 / 412).
+- http — cache policy: `Response.cache` / `Route.cache`, of type `http.Cache` (`Revalidate` / `Fresh{maxAge, immutable}` / `Private{maxAge}` / `NoStore`). Responses without a policy get `Cache-Control: private`.
+- http — response framing: a stream response of unknown length (`Response.length` is now `int?`; nil means unknown) is sent with `Transfer-Encoding: chunked` over HTTP/1.1. HTTP/1.0 responses are delimited by closing the connection (`Connection: close`).
+- http — compressed streams: `Response{stream:}` is now subject to `compress:`. Clients that accept gzip get gzip chunks; others get plain chunks with `Vary`.
+- http — SSE: `http.Event` / `http.FormatEvent`.
+  - Newlines in data are split into separate `data:` lines.
+  - Newlines in event or id panic (`BadEvent`).
+  - `text/event-stream` is never compressed.
+- http — also new:
+  - `http.Multipart(r)` (multipart/form-data, RFC 7578)
+  - `http.Authorization(r)` and `http.Cookie(r, name)`
+  - the `http.StatusCode` type with typed consts (`http.OK`, …)
+- io: `io.OpenRoot` / `io.CloseRoot` / `io.OpenUnder` use openat2 with RESOLVE_BENEATH, so the kernel rejects `..`, absolute paths and symlinks that point outside. Also new: `io.Stat` (size, modTime, kind).
+- compress: `flate.Decode` / `gzip.Decode`, with `maxSize:` against decompression bombs.
+- base64 (new): standard and URL-safe alphabets, strict decoding.
+- url (new): `Escape` / `Unescape` / `ParseQuery`.
+- strings: `Split` / `Fields` / `TrimSpace` / `TrimSuffix` / `ToLower` / `ToUpper` / `EqualFold` / `Replace` / `LastIndex`. Signatures match Go; whitespace and case are ASCII only.
+- convert: `ParseBool` / `FormatBool`.
+- crypto: `SealTo` takes a positional `tail` (plaintext = pt ‖ tail — aesgcm / chacha20poly1305), which saves one copy.
+- When running as a container's init (PID 1), SIGTERM / SIGINT now stop the program with exit 143 / 130. Previously it was SIGKILLed after the `docker stop` / `podman stop` grace period. No tini / `--init` needed.
+
+### Breaking changes
+
+- `http.Response.status` and `http.Status(code)` are `http.StatusCode`. Integer literals still work.
+- `http.Response.length` is `int?` (nil means unknown length → chunked).
+- `SealTo(…)` in crypto takes a trailing `tail` (`[]byte{}` if none).
+- Setting `Cache-Control`, `CDN-Cache-Control`, `Surrogate-Control`, `ETag` or `Last-Modified` as custom headers panics (`BadHeader`). Use `cache:` for the policy; `http.Static` sets ETag / Last-Modified.
+- `http.Header(r, …)` returns nil for `Authorization`, `Proxy-Authorization` and `Cookie`. Use `http.Authorization` / `http.Cookie`.
+- Responses without a cache policy carry `Cache-Control: private`, including 404, 405 and errors.
+- 1xx, 204 and 304 responses no longer carry `Content-Length` (RFC 9110 §8.6; `Content-Length: 0` on 204 was a violation).
+- The three new rejections under Language: mut-returning functions, zero values of identity types, and `@errors` on non-function declarations.
+- Level-6 (default) `compress:` output bytes change: the lazy-match threshold went from 16 to 12. The compression ratio stays on par with zlib.
+
+### Performance
+
+- HTTP — measured on bench/httparena, our own harness rather than an official HttpArena result. It uses the HttpArena load generators and request files on a 64-vCPU GitHub Actions runner, with 32 server cores, and compares against Go's net/http. Sober / Go ratios:
+
+  | Test | Sober / Go |
+  |---|---|
+  | baseline | 3.0× |
+  | pipelined | 16× |
+  | limited-conn | 7.2× |
+  | json | 3.1× |
+  | json-tls | 2.3× |
+  | json-comp | 1.3× |
+  | async | 1.9× |
+
+  - latency-500k-8cpu holds the 500K req/s target at p99 0.28 ms, while Go falls behind the rate and its p99 grows to seconds.
+  - latency-1m sustains 998K req/s at p99 0.13 ms.
+  - No non-2xx responses in any test.
+- Memory: server RSS, compared with a run earlier in this cycle (before the two fixes below):
+
+  | Test | Before | After |
+  |---|---|---|
+  | baseline | 321 MB | 140 MB |
+  | latency-10k | 254 MB | 89 MB |
+  | json-comp | 432 MB | 191 MB |
+  | json-tls | 637 MB | 388 MB |
+  | async | 898 MB | 814 MB |
+
+  Two changes account for most of this:
+  - region pages are kept out of transparent huge pages on THP=always machines
+  - a waiting task releases the regions of dead depths
+- Connections: async at 32k connections runs five rounds with no errors or reconnects. 48k connections locally also run with no reconnects (previously a va_exhausted death).
+- Timers: `os.Sleep` waits are kept in a per-worker clock table instead of one io_uring entry each. async moves from 1.7× to 1.9× of Go between the GHA runs before and after; locally, async uses 13–16% less CPU per request, and rps is up 17% at 16k connections.
+- Compiler:
+  - fixed a hole where calls through function values paid for extra zeroing of the result slot (HTTP keep-alive cycles −5–6% locally)
+  - frame-slot and spill-slot coloring
+  - calls that never return now end their block
+  - deflate level-6 tuning (json-comp instructions −5%)
+- HTTP: request headers are scanned once, there is a fast path for response headers, and Accept-Encoding is read only for compressible responses.
+
+### Fixes
+
+- `RegionExceeded{cause: va_exhausted}` at 48k concurrent connections (per-connection address space — see `region:` above).
+- Not stopping on SIGTERM as a container's PID 1 (above).
+- 204 responses carried `Content-Length: 0`.
+- Five cases where `sober check` and `sober build` disagreed:
+  - if branches in a `T?`-expected position
+  - closures capturing a value narrowed by a nil check
+  - a trailing nil in a block-bodied lambda
+  - `g(x)?` on a closure value in a value position
+  - mut-returning functions
+- `sober check std/<pkg> --test` did not check test bodies.
+- Three constant-time fixes in std/tls and std/crypto, all found by the `@secret` check:
+  - the X25519 all-zero check now uses a constant-time compare
+  - early exit on the long zero-padding path in the TLS record layer
+  - RSA-PSS self-verification
+
+### Distribution
+
+- Each tag publishes a toolchain image to ghcr.io/sober-lang/sober (alpine + sober, byte-identical to the release tarball). `FROM ghcr.io/sober-lang/sober:0.6.1` works.
+
 ## v0.6.0 — 2026-10-20
 
 The Web release: networking, an HTTP/1.1 server, TLS 1.3 and the cryptography under it are now part of std, written in Sober. The language gains closures, and the whole std API went through a naming review (breaking — see "Renamed" below). The language specification is now written down as rules (docs/spec), and the std reference is generated from the sources.

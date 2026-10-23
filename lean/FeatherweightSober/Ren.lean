@@ -845,6 +845,21 @@ theorem ren_typing {ρ0 δ : Nat} (h0 : ρ0 ≤ δ) {e : Expr} {Δ : Defs} {f b 
       simp only [Ty.renR] at hf'
       exact .callv (by rw [← hdd]; exact hf') (by rw [← hdd]; exact ihe harg hd hs.2) hsub'
         (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 hbd; rw [rmap_pos hd1] at this; exact this)
+  | callMv a ef e ihf ihe =>
+    simp only [Expr.src, Bool.and_eq_true] at hs
+    cases he with
+    | callMv hf harg hsub hbd had =>
+      rename_i d' p r ta
+      have hd1 : 1 ≤ d' := by omega
+      simp only [Expr.renTy]
+      have hdd : d' + 1 + δ = (d' + δ) + 1 := by omega
+      rw [hdd, Ty.relocA_renR hd1]
+      have hsub' := Ty.sub_renR h0 hsub
+      rw [Ty.renR_renR hd1] at hsub'
+      have hf' := ihf hf hd hs.1
+      simp only [Ty.renR] at hf'
+      exact .callMv (by rw [← hdd]; exact hf') (by rw [← hdd]; exact ihe harg hd hs.2) hsub' (rmap_le h0 hbd)
+        (by have := rmap_le (ρ0 := ρ0) (δ := δ) h0 had; rw [rmap_pos hd1] at this; exact this)
   | call fn ts e ihe =>
     simp only [Expr.src] at hs
     cases he with

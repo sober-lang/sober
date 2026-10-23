@@ -1,0 +1,2 @@
+examples/exhaustive_neg_error.sober:11:12: error: @exhaustive: switch does not name every error label of package main: missing C — add the cases (a default covers only values outside the closed set) (Analyzer)
+exit=1

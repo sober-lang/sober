@@ -64,7 +64,6 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | if / switch の初期化文 `if v, ok := m[k]; ok {` | 持たない。1 行前に `:=`。`v, ok` イディオムは `T?` + flow typing で消える | 決定 12 |
 | シャドーイング、`:=` の宣言 / 再代入混在 | シャドーイング禁止（コンパイルエラー。トップレベル名と同名のローカルも含む）。`:=` は左辺全部を新規宣言 | 決定 13 |
 | `init()`、副作用 import `import _ "p"`、dot import `import . "p"` | 持たない。トップレベルの束縛は const 式のみ（実行時初期化なし） | 決定 14、design-dev.md 第 2 の審査基準 |
-| 型エイリアス `type A = B` | v0 では持たない。定義型 `type A B` のみ | 決定 15 |
 | 組み込み識別子の再束縛 `len := 3` | `len` `shape` `println` `await` `freeze` `keys` `bytes` `true` `false` `append` `delete` は予約語扱いで再束縛不可（ローカル束縛・型パラメータ・トップレベルの宣言の名前のすべて。検査は loader — 決定 13 と同じ置き場） | 決定 16・22・language.md 22・23・24 |
 | `defer` の「引数は defer 時、本体は出口」の二段階評価 | 式全体を出口で評価（Zig） | 決定 17 |
 | 旧 8 進リテラル `0755` | `0o755` のみ | 決定 18 |
@@ -85,6 +84,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | `[T]`（型パラメータ） | `[T any]` 制約つき | `[T]` のみ、制約構文なし。振る舞いは辞書引数 |
 | 文字列 `"..."` | 補間なし | `${expr}` 補間あり |
 | `return` | 関数から戻る | `func` 本体は `return` 必須（末尾式は戻り値にならない。決定 9）。ラムダ内の `return` は常に囲みの名前付き関数から戻る（inline ラムダのみ合法。ラムダ自身の値は末尾式。決定 10） |
+| `type A = B` | 型の別名（右辺は任意の型・総称の別名も — 1.24） | 型宣言の別名だけ: 右辺は型宣言の名前（`N` / `ref.N`）・型パラメータなし・トップレベルだけ（決定 15 の改訂・language.md 32 節） |
 | `func F(params) results`（本体なし） | 関数本体を別に（アセンブリで）与える宣言 | interface ファイル `.sobi` の中だけ（language.md 29 節 — 非展開の関数の署名）。`.sober` では拒否。文法は本体を省略可能なまま受け、拒否は AST 層（ファイル名が `.sobi` のときだけ許す） |
 
 ---
@@ -103,7 +103,7 @@ Go と同じ: 識別子、整数 / 浮動小数 / 文字リテラル（n 進は 
 | scope | `scope { }`、`scope(timeout: 200 * time.ms) { }`、`parallel scope { }` | 11 節 |
 | spawn / await | `spawn f(x)` → `Task[T]`、`await(t)?` | 11 節 |
 | shield | `shield { ... }`（式ブロック。`defer shield { }` と合成） | 11 節 |
-| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }` | 10 節 |
+| 注釈 | `@pure`、`@errors(NotFound, Timeout)`、`@layout(c)`、`@recursion(depth: 8)`、`@noblock { }`、`@exhaustive`（関数 — 表の網羅。language.md 13 節の補）、`@secret(k)`（関数 — 仮引数の源）・`k []byte @secret`（struct の欄）・`@secret const`、`@bless`（関数 — std だけ。language.md 12 節「秘密の値の宣言」）、`@credential`（関数 / struct の欄 — std だけ）・`Fresh { … } @shared`（union の variant — std だけ）・`@bless(origin)`（関数 — std だけ。12 節「出所の依存」） | 10 節 |
 | 名前付き引数 | `f(x, sep: ",")`、`scope(timeout: 200 * time.ms)`、`@json(name: "x")`。位置が先・名前が後、省略は `T?` 引数のみ、直接呼び出しと名前付き関数型のみ（決定 7） | 決定 7 |
 
 ---
@@ -118,19 +118,19 @@ ImportDecl   = "import" ( ImportSpec | "(" { ImportSpec ";" } ")" ) .
 ImportSpec   = [ identifier ] string_lit .                 (* 別名のみ。"_" と "." は無い（決定 14）。init() も無い *)
 TopLevelDecl = { Annotation } ( ConstDecl | TypeDecl | FuncDecl | BindDecl ) .
 
-Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .
+Annotation   = "@" identifier [ "(" [ AnnotArgs ] ")" ] .   (* 名前は閉じた集合 — errors・noinline・layout・embed・exhaustive〔関数の印 — 表の網羅〕・secret〔関数は仮引数の名前の列（空にしない）・const は引数なし〕・bless〔関数 — 引数なしか `(origin)`〕・credential〔関数〕ほか。知らない名前は文法の外 *)
 AnnotArgs    = AnnotArg { "," AnnotArg } .
 AnnotArg     = [ identifier ":" ] ConstExpr .            (* 名前付き / 位置。Argument と同じ並びで引数が const 式に限られるだけ *)
 
 ConstDecl    = "const" IdentifierList "=" ExpressionList .   (* Go の ( ) グループ形は持たない *)
 BindDecl     = [ "mut" ] IdentifierList ":=" ExpressionList .  (* トップレベルは右辺が const 式のみ、mut 不可（決定 14）。左辺は全部新規宣言、シャドーイング禁止（決定 13） *)
 
-TypeDecl     = "type" identifier [ TypeParams ] TypeSpecBody .
-TypeSpecBody = StructType | UnionType | ErrorType | PanicType | FuncType { Annotation } | Type .   (* 最後は Go の defined type — 下地は int / bool に限る（language.md 32 節）。エイリアス "=" は無い（決定 15） *)
+TypeDecl     = "type" identifier ( [ TypeParams ] TypeSpecBody | "=" TypeName ) .   (* "=" は型の別名（決定 15 の改訂 — language.md 32 節）: 右辺は型宣言の名前だけ・型パラメータなし・トップレベルだけ *)
+TypeSpecBody = StructType | UnionType | ErrorType | PanicType | FuncType { Annotation } | Type .   (* FuncType の後置の注釈は `@errors(…)` だけ（名前付き関数型の契約 — language.md 13 節）。 最後は Go の defined type — 下地は int / bool に限る（language.md 32 節・宣言の位置で検査） *)
 TypeParams   = "[" identifier { "," identifier } "]" .
 
 StructType   = "struct" "{" { FieldDecl ";" } "}" .
-FieldDecl    = IdentifierList Type { Annotation } .        (* タグなし。注釈は後置 *)
+FieldDecl    = IdentifierList Type { Annotation } .        (* タグなし。注釈は後置 — 今受けるのは struct の欄の `@secret` / `@credential` だけ（union の variant・error・panic の欄は注釈なし）。union の variant そのものは後置の `@shared` を受ける *)
 
 UnionType    = "union" "{" { Variant ";" } "}" .
 Variant      = identifier VariantBody .
@@ -331,7 +331,7 @@ Go の綴りを継ぐと一緒に持ち込むものを、Go 自身のポリシ�
     | 型パラメータ | トップレベルの型名 | エラー（追加裁定 2026-09-27） |
 
 14. `init()`、副作用 import、dot import は持たない。トップレベルの束縛は const 式のみ。ソースを読んでも実行されることが分からない隠れた実行の代表で、design-dev.md 第 2 の審査基準に正面から反する。実行時初期化が要るなら `main` から明示的に呼ぶ。const 式の範囲は language.md 未決「const 式の範囲」の決定が正（辞書 const への拡張は 25 節）。
-15. 型エイリアス `type A = B` は v0 では持たない。`=` 1 文字で nominal かどうかが変わる。定義型のみ。移行用途で要ることが分かったら再考
+15. ~~型エイリアス `type A = B` は v0 では持たない。`=` 1 文字で nominal かどうかが変わる。定義型のみ。移行用途で要ることが分かったら再考~~ → 改訂 2026-10-22（report-1041 の実需 — std の実装の型を std/internal へ下ろしたまま公開の名前を残す・report-1043）: 型宣言の別名に限って持つ（`type A = B` — B は型宣言の名前だけ・型パラメータなし・トップレベルだけ。language.md 32 節）。「`=` 1 文字」への答え: 定義型の右辺（int / bool）と別名の右辺（型宣言の名前）が交わらないので、取り違えはほぼ宣言の位置の拒否で大声で落ちる。棄てた案: `alias` キーワード（Go の読み手の予想から外れる）・型式の別名（Go 同等 — 実需なし）
 16. `len` `shape` `println` `await` `freeze` `keys` `bytes` `true` `false` `append` `delete` は予約語扱いで再束縛不可（`bytes` / `true` / `false` は 2026-09-26、language.md 23・24 節。`keys` は 2026-09-28、language.md 22 節。`append` / `delete` は 2026-09-30 — 局所に束縛すると build は組み込み、check は束縛と読む順序の食い違いが観測できた。入れて順序を観測不能にした）。Go は組み込み識別子を隠せる（`len := 3`）。`await` は 2026-09-18 の裁定（9 節）で、`freeze` は 2026-09-19（language.md 22 節）でこちらへ
 17. `defer` は式全体をブロック出口で評価（Zig）。Go の「引数は defer 時、本体は出口」の二段階は読み手に見えない。const 既定で差が出る場面は稀
 18. 8 進リテラルは `0o755` のみ。旧形 `0755` は継がない

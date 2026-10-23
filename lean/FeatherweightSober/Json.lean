@@ -32,7 +32,7 @@ Zig 側はこの形を吐く。スキーマ（"k" が種別タグ）:
   `{"k":"strlit","bs":[Int...],"r":Nat}`（string リテラル — region r の imm int セル列。strlit の段） /
   `{"k":"call","f":Nat,"e":E}` / `{"k":"callm","f":Nat,"e":E}`（R2 の anchor つき呼び出し） /
   `{"k":"fnref","f":Nat}`（型引数があれば `"ts":[T...]`。
-  無いときは省略 = 単相の呼び出し。V3-2） / `{"k":"callv","f":E,"e":E}` /
+  無いときは省略 = 単相の呼び出し。V3-2） / `{"k":"callv","f":E,"e":E}` / `{"k":"callmv","r":N,"f":E,"e":E}`（L1 — anchor つきの関数値の呼び出し）/
   `{"k":"ann","e":E,"t":T}`（V3-5 の型注釈） /
   `{"k":"label","t":T,"e":E}` / `{"k":"jump","n":Nat,"t":T,"e":E}`（V4 の脱出。jump の t は結果型の注釈） /
   `{"k":"unreach","t":T}`（A5 — 到達しない。t は結果型の注釈） /
@@ -137,6 +137,7 @@ def exprToJson : Expr → Json
       if ts.isEmpty then Json.mkObj [("k", "fnref"), ("f", (fn : Nat))]
       else Json.mkObj [("k", "fnref"), ("f", (fn : Nat)), ("ts", Json.arr (ts.map tyToJson).toArray)]
   | .callv f e => Json.mkObj [("k", "callv"), ("f", exprToJson f), ("e", exprToJson e)]
+  | .callMv a f e => Json.mkObj [("k", "callmv"), ("r", (a : Nat)), ("f", exprToJson f), ("e", exprToJson e)]
   | .ann e t => Json.mkObj [("k", "ann"), ("e", exprToJson e), ("t", tyToJson t)]
   | .block e => Json.mkObj [("k", "block"), ("e", exprToJson e)]
   | .blockR t e => Json.mkObj [("k", "block"), ("e", exprToJson e), ("t", tyToJson t)]
@@ -431,6 +432,11 @@ def exprFromJson : Nat → Json → Except String Expr
         let f ← j.getObjVal? "f" >>= exprFromJson fuel
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         pure (.callv f e)
+    | "callmv" => do
+        let a ← j.getObjValAs? Nat "r"
+        let f ← j.getObjVal? "f" >>= exprFromJson fuel
+        let e ← j.getObjVal? "e" >>= exprFromJson fuel
+        pure (.callMv a f e)
     | "ann" => do
         let e ← j.getObjVal? "e" >>= exprFromJson fuel
         let t ← j.getObjVal? "t" >>= tyFromJson fuel

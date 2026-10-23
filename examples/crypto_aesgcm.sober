@@ -143,7 +143,7 @@ func record() {
     for seq <- iter.Range(0, 301) {
         n := if seq == 300 { 16384 } else { seq }
         hd := recHead(n + aesgcm.Overhead)
-        rec, _ := aesgcm.SealTo(k, seqNonce(iv, seq), hd, gen(seq + 4000, n), hd)
+        rec, _ := aesgcm.SealTo(k, seqNonce(iv, seq), hd, gen(seq + 4000, n), hd, []byte{})
         sha256.Write(mut acc, rec)
         w := wrap(rec, 5, seq % 5)
         o, oe := aesgcm.OpenAt(k, seqNonce(iv, seq), hd, w, seq % 5, len(rec) - 5)
@@ -152,10 +152,27 @@ func record() {
         }
     }
     println("record", rt, hex.Format(sha256.Sum(acc)))
+    // tail: 平文を pt ‖ tail に割っても（割る点 0〜n・16 の境界をまたぐ長さ）pt ‖ tail を 1 本で渡したものとバイト一致
+    mut tsame := 0
+    mut tall := 0
+    for n <- iter.Range(0, 140) {
+        p := gen(n + 5000, n)
+        th := recHead(n + aesgcm.Overhead)
+        r, _ := aesgcm.SealTo(k, seqNonce(iv, n), th, p, th, []byte{})
+        for c <- iter.Range(0, 4) {
+            at := if c == 0 { 0 } else if c == 1 { n } else if c == 2 { n / 2 } else { if n > 3 { n - 3 } else { n } }
+            q, _ := aesgcm.SealTo(k, seqNonce(iv, n), th, p[0:at], th, p[at:n])
+            tall = tall + 1
+            if hex.Format(q) == hex.Format(r) {
+                tsame = tsame + 1
+            }
+        }
+    }
+    println("record tail", tall, tsame)
     // 改竄: 切片の中（暗号文と tag）の 48 か所は Auth・切片の外（前後の屑）は通る
     hd := recHead(100 + aesgcm.Overhead)
     nn := seqNonce(iv, 7)
-    rec, _ := aesgcm.SealTo(k, nn, hd, gen(42, 100), hd)
+    rec, _ := aesgcm.SealTo(k, nn, hd, gen(42, 100), hd, []byte{})
     w := wrap(rec, 5, 4)
     span := len(rec) - 5
     mut rej := 0
@@ -172,7 +189,7 @@ func record() {
     _, b0 := aesgcm.OpenAt(k, nn, hd, w, 8, span)
     _, b1 := aesgcm.OpenAt(k, nn, hd, w, 4, 15)
     _, b2 := aesgcm.OpenAt(k, nn, hd, w, -1, span)
-    _, b3 := aesgcm.SealTo(k, gen(43, 11), hd, gen(44, 3), hd)
+    _, b3 := aesgcm.SealTo(k, gen(43, 11), hd, gen(44, 3), hd, []byte{})
     _, b4 := aesgcm.Prepare(gen(45, 32))
     println("record badsize", b0 != nil, b1 != nil, b2 != nil, b3 != nil, b4 != nil)
 }

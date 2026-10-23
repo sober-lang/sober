@@ -1,0 +1,95 @@
+package stdurl
+
+// std/url の black-box テスト: percent-encoding（RFC 3986 2.1・2.3）の Escape / Unescape の表と往復・負例、ParseQuery の切り方（空の項目・'=' の無い項目・
+// 同じキー・'+' の空白・';' は区切りでない）と負例
+
+import "std/iter"
+import "std/url"
+
+type Case struct {
+    in string
+    want string
+}
+
+func TestEscape() {
+    cases := []Case{
+        Case{in: "", want: ""},
+        Case{in: "AZaz09-._~", want: "AZaz09-._~"},
+        Case{in: " ", want: "%20"},
+        Case{in: "a b&c=d/é", want: "a%20b%26c%3Dd%2F%C3%A9"},
+        Case{in: ":/?#[]@!$&'()*+,;=", want: "%3A%2F%3F%23%5B%5D%40%21%24%26%27%28%29%2A%2B%2C%3B%3D"},
+        Case{in: "%", want: "%25"},
+        Case{in: "あ", want: "%E3%81%82"},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        assert(url.Escape(c.in) == c.want)
+        assert((url.Unescape(c.want) catch "<bad>") == c.in)
+    }
+}
+
+func TestUnescape() {
+    cases := []Case{
+        Case{in: "%41", want: "A"},
+        Case{in: "%7e%7E", want: "~~"},
+        Case{in: "a+b", want: "a+b"},
+        Case{in: "100%25", want: "100%"},
+        Case{in: "%E3%81%82", want: "あ"},
+        Case{in: "plain", want: "plain"},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        assert((url.Unescape(c.in) catch "<bad>") == c.want)
+    }
+}
+
+func badUnescape(s string) bool {
+    _, e := url.Unescape(s)
+    return e != nil
+}
+
+func TestUnescapeRejects() {
+    xs := []string{"%", "%4", "a%2", "%zz", "%G1", "%-1", "%ff", "%E3%81", "%C0%AF"}
+    for i <- iter.Range(0, len(xs)) {
+        assert(badUnescape(xs[i]))
+    }
+}
+
+func show(ps []url.Pair) string {
+    mut s := ""
+    for i <- iter.Range(0, len(ps)) {
+        s = s + "[" + ps[i].key + "|" + ps[i].value + "]"
+    }
+    return s
+}
+
+func TestParseQuery() {
+    cases := []Case{
+        Case{in: "", want: ""},
+        Case{in: "q=a+b&tag=x&tag=%E3%81%82", want: "[q|a b][tag|x][tag|あ]"},
+        Case{in: "&&a&", want: "[a|]"},
+        Case{in: "a=", want: "[a|]"},
+        Case{in: "=b", want: "[|b]"},
+        Case{in: "a=b=c", want: "[a|b=c]"},
+        Case{in: "a;b=c", want: "[a;b|c]"},
+        Case{in: "%2B=%2b+", want: "[+|+ ]"},
+        Case{in: "k%3Dx=v%26w", want: "[k=x|v&w]"},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        ps := url.ParseQuery(c.in) catch []url.Pair{url.Pair{key: "<bad>", value: ""}}
+        assert(show(ps) == c.want)
+    }
+}
+
+func badQuery(s string) bool {
+    _, e := url.ParseQuery(s)
+    return e != nil
+}
+
+func TestParseQueryRejects() {
+    xs := []string{"a=%zz", "a%=b", "x=%ff", "ok=1&b=%"}
+    for i <- iter.Range(0, len(xs)) {
+        assert(badQuery(xs[i]))
+    }
+}

@@ -1,0 +1,30 @@
+package main
+
+// std/base64 と std/url の実物: Basic 認証のヘッダの値の組み立てと読み戻し（標準の字母）・トークンの URL に安全な綴り（詰めなし）・
+// クエリの値の percent-encoding と、デコードした全部の組の読み（同じキー・'+' の空白）・壊れた入力は Bad
+
+import "std/base64"
+import "std/iter"
+import "std/url"
+
+func main() {
+    auth := base64.Encode(bytes("alice:s3cr&t"))
+    println("Authorization: Basic ${auth}")
+    back := base64.Decode(auth) catch bytes("?")
+    println(string(back) catch "?")
+
+    token := base64.EncodeUrl([]byte{0xfb, 0xef, 0xff, 0x00, 0x10})
+    println("token=${token}")
+
+    q := "q=${url.Escape("café & bar")}&tag=a&tag=b+c"
+    println(q)
+    ps := url.ParseQuery(q) catch []url.Pair{}
+    for i <- iter.Range(0, len(ps)) {
+        println("${ps[i].key} = ${ps[i].value}")
+    }
+
+    _, e1 := base64.Decode("Zh==")
+    println(e1 != nil)
+    _, e2 := url.Unescape("100%")
+    println(e2 != nil)
+}

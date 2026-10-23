@@ -1,0 +1,113 @@
+package stdbase64
+
+// std/base64 の black-box テスト: RFC 4648 10 節のテストベクタ（標準と URL の字母）・全 256 バイトの往復・厳格な復号の負例（長さ・字母・詰め・使わない bit・空白）
+
+import "std/base64"
+import "std/hex"
+import "std/iter"
+
+type Vec struct {
+    plain string
+    std string
+    url string
+}
+
+func TestRfc4648Vectors() {
+    cases := []Vec{
+        Vec{plain: "", std: "", url: ""},
+        Vec{plain: "f", std: "Zg==", url: "Zg"},
+        Vec{plain: "fo", std: "Zm8=", url: "Zm8"},
+        Vec{plain: "foo", std: "Zm9v", url: "Zm9v"},
+        Vec{plain: "foob", std: "Zm9vYg==", url: "Zm9vYg"},
+        Vec{plain: "fooba", std: "Zm9vYmE=", url: "Zm9vYmE"},
+        Vec{plain: "foobar", std: "Zm9vYmFy", url: "Zm9vYmFy"},
+    }
+    for i <- iter.Range(0, len(cases)) {
+        c := cases[i]
+        assert(base64.Encode(bytes(c.plain)) == c.std)
+        assert(base64.EncodeUrl(bytes(c.plain)) == c.url)
+        d := base64.Decode(c.std) catch bytes("<bad>")
+        assert(hex.Format(d) == hex.Format(bytes(c.plain)))
+        u := base64.DecodeUrl(c.url) catch bytes("<bad>")
+        assert(hex.Format(u) == hex.Format(bytes(c.plain)))
+    }
+}
+
+// 字母の 62・63 番（'+' '/' ⇄ '-' '_'）
+func TestAlphabetTail() {
+    b := []byte{0xfb, 0xff, 0xbf}
+    assert(base64.Encode(b) == "+/+/")
+    assert(base64.EncodeUrl(b) == "-_-_")
+    assert(base64.Encode([]byte{0xfb, 0xff}) == "+/8=")
+    assert(base64.EncodeUrl([]byte{0xfb, 0xff}) == "-_8")
+}
+
+// 全 256 バイトを長さ 0〜256 の各接頭辞で往復（端の 0・1・2 バイトの形を全部通る）
+func TestRoundTrip() {
+    mut all := mut []byte{}
+    for i <- iter.Range(0, 256) {
+        all = append(all, byte(i))
+    }
+    src := freeze(all)
+    for n <- iter.Range(0, 257) {
+        p := src[0:n]
+        e := base64.Encode(p)
+        assert(len(bytes(e)) == (n + 2) / 3 * 4)
+        d := base64.Decode(e) catch bytes("<bad>")
+        assert(hex.Format(d) == hex.Format(p))
+        eu := base64.EncodeUrl(p)
+        assert(len(bytes(eu)) == (4 * n + 2) / 3)
+        du := base64.DecodeUrl(eu) catch bytes("<bad>")
+        assert(hex.Format(du) == hex.Format(p))
+    }
+}
+
+func bad(s string) bool {
+    _, e := base64.Decode(s)
+    return e != nil
+}
+
+func badUrl(s string) bool {
+    _, e := base64.DecodeUrl(s)
+    return e != nil
+}
+
+func TestDecodeRejects() {
+    xs := []string{
+        "Zg=",       // 長さが 4 の倍数でない
+        "Zg",        // 詰めが無い（標準は詰めを要る）
+        "Z===",      // 組の 1 文字だけ
+        "====",
+        "Zg=a",      // 詰めの後に字母
+        "Z=g=",      // 詰めが端でない
+        "Zg==Zg==",  // 詰めが途中
+        "Zh==",      // 最後の文字の使わない 4 bit が 0 でない（RFC 4648 3.5）
+        "Zm9=",      // 最後の文字の使わない 2 bit が 0 でない
+        "Zm9v\n",    // 改行
+        " Zm9v",     // 空白
+        "Zm 9v",
+        "-_8=",      // URL の字母
+        "Zm9v*A==",  // 字母の外
+        "Zm9vYg===", // 詰め 3 つ
+    }
+    for i <- iter.Range(0, len(xs)) {
+        assert(bad(xs[i]))
+    }
+}
+
+func TestDecodeUrlRejects() {
+    xs := []string{
+        "Zg==",  // 詰めは受けない
+        "Zm8=",
+        "+/8",   // 標準の字母
+        "Z",     // 組の 1 文字だけ
+        "Zm9vY",
+        "Zh",    // 使わない bit
+        "Zm9",
+        "Zm9 ",
+        "Zm9v\r\n",
+    }
+    for i <- iter.Range(0, len(xs)) {
+        assert(badUrl(xs[i]))
+    }
+}

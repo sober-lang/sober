@@ -1,0 +1,2 @@
+examples/fntype_errors_neg_label.sober:7:27: error: @errors: 'recv' is not an error label (Analyzer)
+exit=1

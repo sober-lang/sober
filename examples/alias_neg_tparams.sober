@@ -1,0 +1,13 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 別名は型パラメータを持たない
+
+type Box[T] struct {
+    v T
+}
+
+type B[T] = Box
+
+func main() {
+    println(1)
+}

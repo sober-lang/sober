@@ -1,0 +1,13 @@
+package main
+
+// SSE のイベントの差し込みの封（language.md 28 節の「SSE」）: Event の event / id に改行を書けると、受け手に別のイベントや欄（`data:` の行・`id:` の上書き）を
+// 足せる — http.FormatEvent は event / id の CR・LF・NUL を panic(BadEvent) で断る（応答の頭の BadHeader と同じ線）。data の改行は割って送るので書ける。
+// 要求の値（ここでは query の名前）をそのまま event に入れる形が入口 — 1 つ目のイベントは組めて、2 つ目で死ぬ（終了 101）
+
+import "std/http"
+
+func main() {
+    println(http.FormatEvent(http.Event{event: "greet", data: "line 1\nline 2"}))
+    name := "x\ndata: injected"
+    println(http.FormatEvent(http.Event{event: name, data: "hello"}))
+}

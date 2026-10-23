@@ -1,2 +1,2 @@
-sober: load error at examples/borrow_pkg_neg.sober:15:33: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)
+sober: load error at examples/borrow_pkg_neg.sober:15:33: a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)
 exit=1

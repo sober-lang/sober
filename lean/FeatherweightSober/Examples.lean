@@ -979,7 +979,7 @@ example : programFromJson 200 (programToJson fnΔc ec2) = .ok (fnΔc, ec2) := rf
 /-! ## 借りの関数型仮引数（(α-L0) — 2026-10-17・language.md 25 節「借り」・report-754）: 値の閉包の匿名の関数型の仮引数 = 借りの閉包
 
 借りの閉包は env に同一性の型（io.File / net.Conn — コアでは封のデータ `prod int int`〔fd + 封の空 struct〕）と imm の値だけを持つので、
-既存の callv の paramOk（regionsBelow 1 ∧ mutFree ∧ chanFree）にそのまま乗る — コアの変更なしの検証。「格納しない」は表層の規則（filecheck）が持つ -/
+既存の callv の paramOk（regionsBelow 1 ∧ chanFree）と call の anchor（呼び手の最内）にそのまま乗る — コアの変更なしの検証。「格納しない」は表層の規則（filecheck）が持つ -/
 
 /-- 封のデータ（Conn の fd + 封）と借りの閉包の型（emit — 引数 int は送るバイト列の代役） -/
 def connTy : Ty := .prod .int .int
@@ -1006,6 +1006,57 @@ def eb1 : Expr :=
 example : typecheck fnΔb ∅ [] 0 0 0 [] [] eb1 = some .int := rfl
 example : (stepN fnΔb 256 (load eb1) ∅).1 = .ret [] [] (lit 42) := by native_decide
 example : programFromJson 200 (programToJson fnΔb eb1) = .ok (fnΔb, eb1) := rfl
+
+/-! ## 借りの閉包の mut 捕捉（L1 — 2026-10-22・language.md 25 節 (α-L1)・formal.md「callMv の段」）
+
+借りの env の union（借りの位置の関数型の構造ごと）の片方の variant に mut の束縛（ref true）が入る。env に ref が入ると callv は
+region 0 を呼び手の最内へ固定するので型が付かず、anchor を構文の注釈で持つ callMv で呼ぶ（callM の委譲 — anchor は値から読まない）。
+emit の仮引数 b は送るバイト列の代役の int、env の union = {int（Conn の代役）| ref true 0 int（捕捉した mut の数）} -/
+
+def envU : Ty := .union .int (.ref true 0 .int)
+def emitMTy : Ty := .prod (.fn (.prod envU .int) .int) envU
+
+/-- 関数表: 0 = emit の持ち上げた本体（env の variant で場合分け — 素の variant は fd + b を返し、mut の variant は捕捉した数に b を足して 0 を返す）、
+1 = stream の持ち上げた本体（借りの emit を 2 回 callMv で呼ぶ — anchor = 0〔呼び手空間〕） -/
+def fnΔm : Defs :=
+  [ { param := .prod envU .int, ret := .int,
+      body := Expr.case (Expr.fst (var 0))
+        (add (var 0) (Expr.snd (var 1)))
+        (letE (assign (var 0) (add (deref (var 0)) (Expr.snd (var 1)))) (lit 0)) }
+  , { param := .prod .int emitMTy, ret := .int,
+      body := letE (Expr.callMv 0 (Expr.fst (Expr.snd (var 0))) (pair (Expr.snd (Expr.snd (var 0))) (Expr.fst (var 0))))
+        (Expr.callMv 0 (Expr.fst (Expr.snd (var 1))) (pair (Expr.snd (Expr.snd (var 1))) (Expr.fst (var 1)))) } ]
+
+example : checkDefs fnΔm = true := by native_decide
+
+/-- mut の数（region 0）を捕捉した emit を stream（b = 5）へ借りの実引数として渡し、内側の block（深さ 2 — anchor 0 < 呼び手の最内 1）から callMv で呼ぶ。
+stream は emit を 2 回呼ぶので数は 10 -/
+def em1 : Expr :=
+  block (letE (alloc true (lit 0))
+    (letE (block (Expr.callMv 0 (Expr.fnref 1 []) (pair (lit 5) (pair (Expr.fnref 0 []) (inr .int (var 0))))))
+      (deref (var 1))))
+
+example : typecheck fnΔm ∅ [] 0 0 0 [] [] em1 = some .int := by native_decide
+example : (stepN fnΔm 400 (load em1) ∅).1 = .ret [] [] (lit 10) := by native_decide
+example : programFromJson 200 (programToJson fnΔm em1) = .ok (fnΔm, em1) := rfl
+
+/-- 同じ callMv で mut を持たない variant（Conn の代役 fd = 7）の env も呼べる: emit は 7 + 5 を返し、stream は 2 回目の結果 12 を返す -/
+def em2 : Expr :=
+  block (letE (alloc true (lit 0))
+    (block (Expr.callMv 0 (Expr.fnref 1 []) (pair (lit 5) (pair (Expr.fnref 0 []) (inl (.ref true 0 .int) (lit 7)))))))
+
+example : typecheck fnΔm ∅ [] 0 0 0 [] [] em2 = some .int := by native_decide
+example : (stepN fnΔm 400 (load em2) ∅).1 = .ret [] [] (lit 12) := by native_decide
+
+/-- 否定例 1: anchor の注釈を呼び手の最内（1）にすると、mut は正確一致なので捕捉した数の region 0 と合わず拒否 -/
+example : typecheck fnΔm ∅ [] 0 0 0 [] []
+    (block (letE (alloc true (lit 0))
+      (block (Expr.callMv 1 (Expr.fnref 1 []) (pair (lit 5) (pair (Expr.fnref 0 []) (inr .int (var 0)))))))) = none := by native_decide
+
+/-- 否定例 2: anchor なしの callv で呼ぶと拒否（call は region 0 を呼び手の最内 1 に固定する — L1 で callMv が要る理由） -/
+example : typecheck fnΔm ∅ [] 0 0 0 [] []
+    (block (letE (alloc true (lit 0))
+      (block (Expr.callv (Expr.fnref 1 []) (pair (lit 5) (pair (Expr.fnref 0 []) (inr .int (var 0)))))))) = none := by native_decide
 
 /-! ## Def の型パラメータ（V3-2 — tvar・明示の型適用・型代入）
 

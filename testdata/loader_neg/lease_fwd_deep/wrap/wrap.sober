@@ -1,0 +1,27 @@
+package wrap
+
+// 負例（region-domain-pool.md 4d）: 整えの転送の鎖は深さ 4 まで（P5 → P4 → … → lib.Prepare は 5 段）
+
+import "testdata/loader_neg/lease_fwd_deep/lib"
+
+type Work = lib.Work
+
+func P5(w mut Work) {
+    P4(mut w)
+}
+
+func P4(w mut Work) {
+    P3(mut w)
+}
+
+func P3(w mut Work) {
+    P2(mut w)
+}
+
+func P2(w mut Work) {
+    P1(mut w)
+}
+
+func P1(w mut Work) {
+    lib.Prepare(mut w)
+}

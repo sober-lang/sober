@@ -132,6 +132,12 @@ inductive HasType (Δ : Defs) : ChanTy → StoreTy → Nat → Nat → Nat → C
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ ef (.fn p r) → HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
       Ty.sub ta (p.shiftR d) = true → b ≤ d →
       HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callv ef e) (r.relocR d)
+  /-- anchor つきの関数値の呼び出し（L1 — 借りの閉包の mut 捕捉）: callv の anchor 版。anchor a は構文の注釈で、
+  前提は callM の規則からシグネチャを関数値の型へ置き換えたもの。機械は `callMv a (fnref i) v ⟶ callM の入口（anchor = a）` -/
+  | callMv {Ξ Ψ f b d Γ Λ} {a : Nat} {ef e : Expr} {p r ta : Ty} :
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ ef (.fn p r) → HasType Δ Ξ Ψ f b (d + 1) Γ Λ e ta →
+      Ty.sub ta (p.renR a d) = true → b ≤ a → a ≤ d →
+      HasType Δ Ξ Ψ f b (d + 1) Γ Λ (.callMv a ef e) (r.relocA a d)
   /-- 型注釈（V3-5）: 部分型へ緩める。値は変えない（imm 上界の slack と注釈値の coerceTo） -/
   | ann {Ξ Ψ f b d Γ Λ} {e : Expr} {ta t : Ty} :
       HasType Δ Ξ Ψ f b d Γ Λ e ta → Ty.sub ta t = true → HasType Δ Ξ Ψ f b d Γ Λ (.ann e t) t

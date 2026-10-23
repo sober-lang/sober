@@ -294,7 +294,7 @@ func isDir(path string) bool {
 
 // Load は Manifest の entry（.sober ファイルか main package のディレクトリ）から Program を組む（失敗なら拒否 — diag のラベル。
 // 位置つきの拒否なら Program はファイルのパスだけを持つ — SourceFs）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func Load(m Manifest) (Program, error?) {
     return load(m, false, map[string]string{})
 }
@@ -302,7 +302,7 @@ func Load(m Manifest) (Program, error?) {
 // LoadFs は stage2 の CLI の入口: entry（.sober ファイルか main package のディレクトリ — cwd 相対）から、package のディレクトリを
 // io.ReadDir で読み、`std/` の中身は焼き込んだ表 sm（パス → ソース — `@embed("std/**/*.sober")`）から取る。
 // std の package のファイル一覧も表のキーから引く（keysm の段 — R35-2 の暫定 ReadDir を撤去）
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func LoadFs(entry string, sm map[string]string) (Program, error?) {
     return load(Manifest{entry, "", []string{}, "", ""}, true, sm)
 }
@@ -424,7 +424,7 @@ func load(m Manifest, fsm bool, sm map[string]string) (Program, error?) {
 
 // finish はファイルの集合（ロード順 — package ごとに連続）から Program を組む（@layout・@embed・固定テンプレートの写し・表・検査）。
 // load（import を辿って集める）と LoadView（link.txt の順に .sobi とソースを読む）が共用する
-@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.JsonShape, diag.Intrinsic, diag.Par)
+@errors(diag.ReadFail, diag.GrammarMismatch, diag.NoPkgDir, diag.NoStd, diag.EmbedReceiver, diag.EmbedPattern, diag.EmbedNoMatch, diag.EmbedRead, diag.EmbedFileUtf8, diag.PkgName, diag.RefCollide, diag.NotImported, diag.ImportCycle, diag.Noinline, diag.ErrorHoldsError, diag.RecursiveType, diag.ConstExpr, diag.LocalBuiltin, diag.LocalImport, diag.InternalImport, diag.LocalTop, diag.TParamBuiltin, diag.TParamTop, diag.DeclBuiltin, diag.VariantDup, diag.TopDup, diag.Shadow, diag.PureExprStmt, diag.NilCase, diag.NamedArg, diag.CatchLhs, diag.MultiBind, diag.MutAlias, diag.ForFallible, diag.FnArg, diag.FnCap, diag.Sealed, diag.Identity, diag.PanicLabel, diag.LeadingZero, diag.AssertOutsideTest, diag.Layout, diag.TypeDecl, diag.JsonShape, diag.Intrinsic, diag.Par)
 func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool) (Program, error?) {
     // std/internal/… の検問（20 節 — load は import を辿る巡で先に止める。LoadView〔.sobi の小分け〕の道はここで）。
     // .sobi の木は fstd が立たないので package のパスでも std を見る（std/tls の .sobi は公開の型の欄のために std/internal/hs を import する — intrinsicAll と同じ形）
@@ -440,14 +440,20 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool) (Progr
             }
         }
     }
+    // 型の別名（alias.sober — language.md 32 節）: 別名を指す名前を実体の名前へ写し・定義型の下地を検査する。以降の段は写した後の木（trees1）だけを読む
+    //（別名の宣言は検査の束の後で剥がす — 名前の規則が別名の名前を型の名前として見る）
+    trees1, atab, alerr := aliasAll(trees, fpkg)
+    if alerr != nil {
+        return located(fpath, fstd), alerr
+    }
     // `@intrinsic("鍵")` の宣言（intrinsic.sober — 息継ぎ ③）: std の中だけ・閉じた鍵・署名の一致
-    xerr := intrinsicAll(trees, fpkg, fstd)
+    xerr := intrinsicAll(trees1, fpkg, fstd)
     if xerr != nil {
         return located(fpath, fstd), xerr
     }
     // @layout（layout.sober — language.md 36 節）: 欄の型の写し・`layout.X[T]` の差し替え・写しの関数の合成ファイルを package の末尾に足す。
     // 以降の段は足した後の列（lay）だけを読む
-    lay0, lerr := layoutAll(trees, fpkg, fpath, fstd)
+    lay0, lerr := layoutAll(trees1, fpkg, fpath, fstd)
     if lerr != nil {
         return located(fpath, fstd), lerr
     }
@@ -506,6 +512,8 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool) (Progr
     if bh.file >= 0 {
         return located(lay.path, lay.std), bh.err
     }
+    // 別名の宣言を型の列から外す（alias.sober — 以降の段と desugar・lower・analyzer は別名を見ない）
+    cx = aliasStripCx(cx, atab)
 
     // ── 名前付き実引数と `T?` 仮引数の省略を位置引数へ写し、関数型の実引数に置いた名前付き関数を η 展開する（namedargs.sober — 決定 7・eta.sober — 25 節。以降の段は写した後の木だけを読む）──
     // 関数表（namedargs.sober の fnTab）は写す前の木で 1 回組み、namedargs・η 展開・fnval・noderules が共有する（木の写しは節を足すだけ —
@@ -562,6 +570,11 @@ func finish(trees []ast.Tree, fpkg []string, fpath []string, fstd []bool) (Progr
         return located(lay.path, lay.std), diag.ConstExpr{at: cs.bad}
     }
 
+    // 書き換えの後の木に別名を指す名前・剥がし残りが無いこと（alias.sober — fail-closed）
+    left := aliasLeftCx(cx, atab)
+    if left.file >= 0 {
+        return located(lay.path, lay.std), diag.TypeDecl{at: left, kind: TD_LEFT}
+    }
     return Program{cx.trees, cx.file_pkg, pt.path, pnames, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path,
         fs.file, fs.node, fs.expands, fs.mut_def, fs.closed, fs.has_try, fs.clo, fs.chi, fs.callees,
         cs.file, cs.node, cs.value, cs.has, cs.dict, et.name, et.pkg, lay.path, lay.std, map[string]string{},

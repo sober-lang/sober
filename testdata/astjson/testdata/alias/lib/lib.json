@@ -1,0 +1,297 @@
+{
+  "package": "lib",
+  "imports": [],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "n",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          },
+          {
+            "name": "sum",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 10
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 15
+      }
+    },
+    {
+      "name": "Res",
+      "type_params": [],
+      "body": {
+        "k": "union",
+        "variants": [
+          {
+            "name": "Ok",
+            "fields": [
+              {
+                "name": "v",
+                "type": {
+                  "k": "name",
+                  "name": "int"
+                },
+                "tok": 21
+              }
+            ],
+            "tok": 19
+          },
+          {
+            "name": "Bad",
+            "fields": [],
+            "tok": 25
+          }
+        ]
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 31
+      }
+    },
+    {
+      "name": "Step",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ]
+      },
+      "tok": 32,
+      "span": {
+        "start": 31,
+        "end": 39
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Feed",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 50
+                },
+                "field": "n",
+                "tok": 52
+              }
+            ],
+            "op": "+=",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 54
+              }
+            ],
+            "tok": 50
+          },
+          {
+            "k": "assign",
+            "targets": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "w",
+                  "tok": 56
+                },
+                "field": "sum",
+                "tok": 58
+              }
+            ],
+            "op": "+=",
+            "values": [
+              {
+                "k": "ident",
+                "name": "x",
+                "tok": 60
+              }
+            ],
+            "tok": 56
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 39,
+        "end": 64
+      },
+      "sig_end": 49
+    },
+    {
+      "name": "Mean",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Res"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "if",
+                "cond": {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "w",
+                      "tok": 74
+                    },
+                    "field": "n",
+                    "tok": 76
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 0,
+                    "tok": 78
+                  },
+                  "tok": 77
+                },
+                "then": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "composite",
+                        "type_name": "Bad",
+                        "elems": [],
+                        "tok": 80,
+                        "type_args": []
+                      }
+                    }
+                  ]
+                },
+                "else": {
+                  "k": "block",
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "composite",
+                        "type_name": "Ok",
+                        "elems": [
+                          {
+                            "key": "v",
+                            "value": {
+                              "k": "binary",
+                              "op": "/",
+                              "lhs": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "w",
+                                  "tok": 90
+                                },
+                                "field": "sum",
+                                "tok": 92
+                              },
+                              "rhs": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "w",
+                                  "tok": 94
+                                },
+                                "field": "n",
+                                "tok": 96
+                              },
+                              "tok": 93
+                            }
+                          }
+                        ],
+                        "tok": 86,
+                        "type_args": []
+                      }
+                    }
+                  ]
+                },
+                "tok": 73
+              }
+            ],
+            "tok": 72
+          }
+        ]
+      },
+      "tok": 65,
+      "bodiless": false,
+      "span": {
+        "start": 64,
+        "end": 102
+      },
+      "sig_end": 71
+    }
+  ],
+  "consts": []
+}

@@ -326,7 +326,8 @@ func fdWaitRing(st mut St, rg int) {
 }
 
 // sleepRing は rt.sleep（ms > 0）の net の ring の道（report-690 / 691 — 1 回ごとの timerfd_create / settime / close と fd の生成破棄を消す）:
-// IORING_OP_TIMEOUT（ABS・CLOCK_MONOTONIC・count 0 = 純な timer・user_data = TCB | UDT_POLL）を積んで待つ。目標 = min(今 + ms, TC_DL) を積む時点で決める
+// 目標の時刻をワーカーの時計の表（rt.tmr_push — report-ct1: SQE も カーネルの hrtimer も無い。眠りの関門 urNetGate が満了を起こし、次の満了を enter の timeout に）に積んで待つ。
+// 表が満杯なら IORING_OP_TIMEOUT（ABS・CLOCK_MONOTONIC・count 0 = 純な timer・user_data = TCB | UDT_POLL）を積んで待つ（前の形）。目標 = min(今 + ms, TC_DL) を積む時点で決める
 // — timerfd と同じく呼んだ時点で時計が走る（相対 timeout は提出が次の enter まで遅れる分〔D2〕だけ眠りが伸びる）。期限は timeout が運ぶので期限の鎖
 // （UR_DLQ）に積まず、取り消しも無い（待ち手は自分の CQE 1 つでだけ起きる — TC_DL は待つ間に変わらない）。完了の -ETIME（-62）は uring_poll の
 // UDT_POLL の腕をそのまま通る（-125 の読み替えに当たらない）ので、ここで 0（満了）/ 110（目標が期限 = 期限で切れた）に読む。ts は自分の枠の一時スロット
@@ -344,11 +345,18 @@ func sleepRing(st mut St, rg int, ms int) {
         cut = bin(mut st, BAnd, cmp(mut st, CNe, dl, zero), cmp(mut st, CLt, dl, tgt0))
         tgt = bin(mut st, BAdd, tgt0, bin(mut st, BMul, cut, bin(mut st, BSub, dl, tgt0)))
     }
+    // 時計の表（ワーカーごとの 4 分ヒープ — buildTmr）に積む。満杯なら IORING_OP_TIMEOUT 1 本（ABS — 前の形のまま）。どちらも満了は -62 で起こす
+    bSq := newBlock(mut st)
+    bIn := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, call(mut st, st.rtTmrPush, list2(mut st, tgt, me)), zero), bIn, -1, bSq, -1)
+    setCur(mut st, bSq)
     ts := newSlotAddr(mut st, 2)
     store(mut st, ts, 0, bin(mut st, BDiv, tgt, iconst(mut st, 1000000000)))
     store(mut st, ts, 1, bin(mut st, BRem, tgt, iconst(mut st, 1000000000)))
     // len = 1・timeout_flags（上位 32 ビット）= IORING_TIMEOUT_ABS
     urSqe(mut st, rg, iconst(mut st, 11), ptoi(mut st, ts), iconst(mut st, 4294967297), bin(mut st, BOr, me, iconst(mut st, UDT_POLL)), zero)
+    br(mut st, bIn, -1)
+    setCur(mut st, bIn)
     store(mut st, tp, TC_IORES, iconst(mut st, IO_PENDING))
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
     _ = dlWait(mut st, rg, -1, me, IO_PENDING)
@@ -390,4 +398,161 @@ func sleepClock(st mut St) int {
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
     return bin(mut st, BAdd, bin(mut st, BMul, load(mut st, ts, 0), iconst(mut st, 1000000000)), load(mut st, ts, 1))
+}
+
+// 時計の表（report-ct1 — C timer）: net の ring の道の sleep の目標の時刻を、ワーカーごとの 4 分ヒープ（要素 = {目標 ns, TCB} の 2 語・キーを要素に持つ —
+// 比べるのに冷えた TCB を触らない）に置く。表の番地は WK_TMR（0 = まだ — 初回の push で NORESERVE の mmap・触った分だけ常駐）・表の語 0 = 要素の数・
+// 要素 i は語 2 + 2i。持ち主のワーカーだけが読み書きする（sleep する task は走り始めた task — 盗まれない・TC_WORKER に固定）。取り消しは無い
+// （sleep の待ちを外から終わらせる道が無い — 期限は目標に畳む・孤児の登録に入らない）ので削除・decrease-key は持たない。
+// 満了は眠りの関門（uring.sober urNetGate — enter の前）と enter の後で rt.tmr_fire が起こす（-62 = -ETIME と同じ値 — sleepRing の読みは共通）。
+// 起こす順は目標の順（取り出した順に繋いで TK_READY の頭へ — 同じ回に満ちた分は早い目標から走る）
+const WK_TMR = 23
+const TMR_CAP = 1048576 // 表の容量（ワーカーごと — 16 MiB の VA。溢れた sleep は IORING_OP_TIMEOUT の道）
+
+// tmrEnt は表 hp の要素 i の番地（語 2 + 2i）
+func tmrEnt(st mut St, hp int, i int) int {
+    return gepWord(mut st, hp, bin(mut st, BAdd, bin(mut st, BShl, i, iconst(mut st, 1)), iconst(mut st, 2)))
+}
+
+// buildTmr は rt.tmr_push(目標, TCB) → 0（積んだ）/ 1（満杯）と rt.tmr_fire() → 次の満了までの ns（表が空なら −1）— 満了した待ち手を起こす
+func buildTmr(st mut St) {
+    if st.rtTmrPush == -1 {
+        return
+    }
+    cap := if st.rtMut == 16 { 2 } else { TMR_CAP }
+    begin(mut st, st.rtTmrPush)
+    zero := iconst(mut st, 0)
+    wk := globaladdr(mut st, st.wkG)
+    bA := branchIf(mut st, cmp(mut st, CEq, load(mut st, wk, WK_TMR), zero))
+    store(mut st, wk, WK_TMR, sysMmap(mut st, iconst(mut st, (TMR_CAP + 4) * 16 + 16)))
+    br(mut st, bA, -1)
+    setCur(mut st, bA)
+    hp := itop(mut st, load(mut st, wk, WK_TMR))
+    n := load(mut st, hp, 0)
+    bRoom := branchIf(mut st, cmp(mut st, CGe, n, iconst(mut st, cap)))
+    ret(mut st, iconst(mut st, 1))
+    setCur(mut st, bRoom)
+    store(mut st, hp, 0, urAdd(mut st, n, 1))
+    // 篩い上げ（目標は呼ぶ順にほぼ単調に増えるので、たいてい親と 1 回比べて止まる）
+    bL := newBlock(mut st)
+    i := param(mut st, bL, TyI64)
+    bNz := newBlock(mut st)
+    bUp := newBlock(mut st)
+    bPut := newBlock(mut st)
+    ip := param(mut st, bPut, TyI64)
+    br(mut st, bL, list1(mut st, n))
+    setCur(mut st, bL)
+    condbr(mut st, cmp(mut st, CEq, i, zero), bPut, list1(mut st, i), bNz, -1)
+    setCur(mut st, bNz)
+    par := bin(mut st, BSar, urAdd(mut st, i, -1), iconst(mut st, 2))
+    pe := tmrEnt(mut st, hp, par)
+    pk := load(mut st, pe, 0)
+    condbr(mut st, cmp(mut st, CLe, pk, 0), bPut, list1(mut st, i), bUp, -1)
+    setCur(mut st, bUp)
+    ie := tmrEnt(mut st, hp, i)
+    store(mut st, ie, 0, pk)
+    store(mut st, ie, 1, load(mut st, pe, 1))
+    br(mut st, bL, list1(mut st, par))
+    setCur(mut st, bPut)
+    de := tmrEnt(mut st, hp, ip)
+    store(mut st, de, 0, 0)
+    store(mut st, de, 1, 1)
+    ret(mut st, zero)
+
+    begin(mut st, st.rtTmrFire)
+    z := iconst(mut st, 0)
+    wf := globaladdr(mut st, st.wkG)
+    tk := globaladdr(mut st, st.taskG)
+    hv := load(mut st, wf, WK_TMR)
+    bH := branchIf(mut st, cmp(mut st, CEq, hv, z))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bH)
+    h := itop(mut st, hv)
+    // 表が空なら時計を読まない（sleep の無い要求の道の眠り — baseline の形）
+    bHz := branchIf(mut st, cmp(mut st, CEq, load(mut st, h, 0), z))
+    ret(mut st, iconst(mut st, -1))
+    setCur(mut st, bHz)
+    now := sleepClock(mut st)
+    // 取り出しの輪（f / l = 起こした待ち手の列の頭と尾 — 目標の順）
+    bP := newBlock(mut st)
+    f := param(mut st, bP, TyI64)
+    l := param(mut st, bP, TyI64)
+    bDone := newBlock(mut st)
+    dres := param(mut st, bDone, TyI64)
+    bNe := newBlock(mut st)
+    bPop := newBlock(mut st)
+    br(mut st, bP, list2(mut st, z, z))
+    setCur(mut st, bP)
+    nn := load(mut st, h, 0)
+    condbr(mut st, cmp(mut st, CEq, nn, z), bDone, list1(mut st, iconst(mut st, -1)), bNe, -1)
+    setCur(mut st, bNe)
+    re := tmrEnt(mut st, h, z)
+    k0 := load(mut st, re, 0)
+    condbr(mut st, cmp(mut st, CGt, k0, now), bDone, list1(mut st, bin(mut st, BSub, k0, now)), bPop, -1)
+    setCur(mut st, bPop)
+    t := load(mut st, re, 1)
+    n1 := urAdd(mut st, nn, -1)
+    store(mut st, h, 0, n1)
+    le := tmrEnt(mut st, h, n1)
+    lk := load(mut st, le, 0)
+    lv := load(mut st, le, 1)
+    // 篩い下げ（最後の要素 lk / lv を根から — 4 つの子の最小を分岐なしで選ぶ。子の番地は容量 + 4 要素の内なので数の外も読める）
+    bD := newBlock(mut st)
+    di := param(mut st, bD, TyI64)
+    bCh := newBlock(mut st)
+    bMv := newBlock(mut st)
+    bPl := newBlock(mut st)
+    pi := param(mut st, bPl, TyI64)
+    br(mut st, bD, list1(mut st, z))
+    setCur(mut st, bD)
+    c := urAdd(mut st, bin(mut st, BShl, di, iconst(mut st, 2)), 1)
+    condbr(mut st, cmp(mut st, CGe, c, n1), bPl, list1(mut st, di), bCh, -1)
+    setCur(mut st, bCh)
+    mut m := c
+    mut mk := load(mut st, tmrEnt(mut st, h, c), 0)
+    if st.rtMut != 17 {
+        mut j := 1
+        while j < 4 {
+            cj := urAdd(mut st, c, j)
+            kj := load(mut st, tmrEnt(mut st, h, cj), 0)
+            lt := bin(mut st, BAnd, cmp(mut st, CLt, cj, n1), cmp(mut st, CLt, kj, mk))
+            m = bin(mut st, BAdd, m, bin(mut st, BMul, lt, bin(mut st, BSub, cj, m)))
+            mk = bin(mut st, BAdd, mk, bin(mut st, BMul, lt, bin(mut st, BSub, kj, mk)))
+            j += 1
+        }
+    }
+    condbr(mut st, cmp(mut st, CLt, mk, lk), bMv, -1, bPl, list1(mut st, di))
+    setCur(mut st, bMv)
+    dd := tmrEnt(mut st, h, di)
+    store(mut st, dd, 0, mk)
+    store(mut st, dd, 1, load(mut st, tmrEnt(mut st, h, m), 1))
+    br(mut st, bD, list1(mut st, m))
+    setCur(mut st, bPl)
+    pl := tmrEnt(mut st, h, pi)
+    store(mut st, pl, 0, lk)
+    store(mut st, pl, 1, lv)
+    // 起こす: 結果 = -62（sleepRing の読みは OP_TIMEOUT の -ETIME と共通）・列の尾に繋ぐ・WK_NETW − 1
+    tp := itop(mut st, t)
+    store(mut st, tp, TC_IORES, iconst(mut st, -62))
+    store(mut st, wf, WK_NETW, urAdd(mut st, load(mut st, wf, WK_NETW), -1))
+    bJ := newBlock(mut st)
+    jf := param(mut st, bJ, TyI64)
+    bFs := newBlock(mut st)
+    bLk := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, l, z), bFs, -1, bLk, -1)
+    setCur(mut st, bFs)
+    br(mut st, bJ, list1(mut st, t))
+    setCur(mut st, bLk)
+    store(mut st, itop(mut st, l), TC_NEXT, t)
+    br(mut st, bJ, list1(mut st, f))
+    setCur(mut st, bJ)
+    br(mut st, bP, list2(mut st, jf, t))
+    // 起こした列を TK_READY の頭へ（早い目標から走る）
+    setCur(mut st, bDone)
+    bS := branchIf(mut st, cmp(mut st, CNe, f, z))
+    store(mut st, itop(mut st, l), TC_NEXT, load(mut st, tk, TK_READY))
+    store(mut st, tk, TK_READY, f)
+    br(mut st, bS, -1)
+    setCur(mut st, bS)
+    ret(mut st, dres)
 }

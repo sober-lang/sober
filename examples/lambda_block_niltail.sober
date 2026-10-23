@@ -1,0 +1,26 @@
+package main
+
+// ブロック本体のラムダの末尾 nil（F-bw — 2026-10-22）: 結果が T? の関数型の実引数では、文の後の末尾 nil を期待型の nil に寄せる
+// （単独の `{ nil }` と同じ線）。展開待ちの的へ流れるラムダ（借りの位置のラムダの中で呼ぶ send）でも同じ
+
+type Stream func(emit func(b []byte) error?) error?
+
+func run(send func(b []byte) error?) error? {
+    return send(bytes("abc"))
+}
+
+func serveBuf(send func(b []byte) error?, st Stream) error? {
+    return st((p []byte) => send(p))
+}
+
+func one(emit func(b []byte) error?) error? {
+    return emit(bytes("de"))
+}
+
+func main() {
+    mut total := 0
+    e := run((b []byte) => { total += len(b); nil })
+    f := serveBuf((b []byte) => { println(len(b)); nil }, (emit) => one(emit))
+    g := run((b []byte) => { x := len(b) * 2; println(x); nil })
+    println(e == nil, f == nil, g == nil, total)
+}

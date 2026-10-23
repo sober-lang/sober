@@ -456,10 +456,13 @@ func emitCall(st mut St, irf FnRef, fv int, params desugar.ListRef, results desu
     // 宛先構築（M1c）: 印のある呼び出し（結果が return に流れ着く）は直前に自分の宛先の深度をレジスタへ — 呼ばれた側の印のある確保がそこに作る。
     // 書くのは呼ばれた側が入口で読んで 0 に戻す関数（destReads）のときだけ — 読まない関数（印の無い本体・関数値）へ書くと値が残り、後の印の無い
     // 呼び出し（ループの中）の入口が拾って結果を外の region に作る（反復ごとに積もる — report-692）
-    if int(at) >= 0 && kindN(mut st, at) == ast.ECall && destHere(mut st, at) && int(fi) >= 0 && destReads(mut st, fi, results) {
+    // 関数値の呼び出し（report-1006 a1）: 呼び先は結果が slice を持てば全部入口で読んで 0 に戻す（持ち上げたラムダ・関数値として使われうる名前付き関数 —
+    // loader/dest.sober の valueFnNames と liftLambdaFn の印）ので、印のある呼び出しは書いてよい
+    ind := irf == -1 && st.transparent && resultsHoldSlice(mut st, results)
+    if int(at) >= 0 && kindN(mut st, at) == ast.ECall && destHere(mut st, at) && (ind || int(fi) >= 0 && destReads(mut st, fi, results)) {
         store(mut st, globaladdr(mut st, st.meta), W_DEST, st.destDepth)
     }
-    r := if irf != -1 { call(mut st, irf, argl) } else { callIndirect(mut st, fv, argl, if sret || nr == 0 { -1 } else { TyI64 }) }
+    r := if irf != -1 { call(mut st, irf, argl) } else { callIndirect(mut st, fv, argl, if sret { CALLI_SRET } else if nr == 0 { -1 } else { TyI64 }) }
     out := listN(mut st, nr * 2)
     desugar.HeapSet(mut st.d, out, nr)
     if sret {
@@ -882,7 +885,9 @@ func constOrFn(st mut St, r desugar.TopRef, at desugar.NodeRef) (Val, error?) {
         if !conHas(mut st, c) {
             return Val{}, diag.Unsupported{at: posOf(mut st, at)}
         }
-        return Val{t: tInt(mut st), v: iconst(mut st, conValue(mut st, c))}, nil
+        // 型つきの const（値の式が named scalar への変換 — language.md 32 節）は型宣言の型
+        td := desugar.ConNamed(mut st.d, c)
+        return Val{t: if td != -1 { namedTy(mut st, td) } else { tInt(mut st) }, v: iconst(mut st, conValue(mut st, c))}, nil
     }
     fi := fnOf(r)
     if fi >= 0 {

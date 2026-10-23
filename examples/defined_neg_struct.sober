@@ -1,0 +1,13 @@
+package main
+
+// 負例（language.md 32 節）: 定義型の下地は int / bool だけ — struct の上の定義型は宣言の位置で拒否する（同じ型の別の名前は型の別名 type V = W）
+
+type W struct {
+    n int
+}
+
+type V W
+
+func main() {
+    println(1)
+}

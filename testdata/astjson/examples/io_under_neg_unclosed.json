@@ -1,0 +1,190 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/io",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 13
+                    },
+                    "field": "OpenRoot",
+                    "tok": 15
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "testdata/io",
+                      "tok": 17
+                    }
+                  ],
+                  "tok": 16
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 20
+                },
+                "tok": 19
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "defer",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "io",
+                  "tok": 23
+                },
+                "field": "CloseRoot",
+                "tok": 25
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 27
+                }
+              ],
+              "tok": 26
+            },
+            "tok": 22
+          },
+          {
+            "k": "bind",
+            "names": [
+              "f"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "io",
+                      "tok": 32
+                    },
+                    "field": "OpenUnder",
+                    "tok": 34
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "r",
+                      "tok": 36
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "hello.txt",
+                      "tok": 38
+                    }
+                  ],
+                  "tok": 35
+                },
+                "rhs": {
+                  "k": "ret",
+                  "values": [],
+                  "tok": 41
+                },
+                "tok": 40
+              }
+            ],
+            "tok": 30
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 43
+              },
+              "args": [
+                {
+                  "k": "catch",
+                  "e": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "io",
+                        "tok": 45
+                      },
+                      "field": "Size",
+                      "tok": 47
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "f",
+                        "tok": 49
+                      }
+                    ],
+                    "tok": 48
+                  },
+                  "rhs": {
+                    "k": "unary",
+                    "op": "-",
+                    "operand": {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 53
+                    },
+                    "tok": 52
+                  },
+                  "tok": 51
+                }
+              ],
+              "tok": 44
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 58
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

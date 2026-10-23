@@ -69,6 +69,7 @@ const CSend = 60     // a = 送り端, b = 値
 const CRecv = 61     // a = 受け端（型は T? — 閉じて空なら nil）
 const CClose = 62    // a = 送り端（P3b-4 ③ — 閉じる）
 const CClone = 63    // a = e, b = 読み出しの注釈の型（-1 = 注釈なし — CIndex と同じ）（clone の段 — slice / map の浅い写しを最内 region の mut へ）
+const CCallMv = 64   // a = f, b = e, c = anchor の region（anchor つきの関数値の呼び出し — Lean の callMv・借りの閉包の mut 捕捉 (α-L1)）
 
 // float の二項の種類（FAdd..FDiv は farith、FEq..FGe は fcmp）
 const FAdd = 1
@@ -292,6 +293,11 @@ func cRecv(st mut S, c CoreRef) CoreRef {
 
 func cClose(st mut S, c CoreRef) CoreRef {
     return ce(mut st, CClose, int(c), 0, 0, 0)
+}
+
+// cCallMv は anchor つきの関数値の呼び出し（anchor = region a — env か引数に mut の束縛を持つ閉包の呼び出し）
+func cCallMv(st mut S, a int, f CoreRef, e CoreRef) CoreRef {
+    return ce(mut st, CCallMv, int(f), int(e), a, 0)
 }
 
 // cCopyTo は e を外側の region k へ写す境界コピー式（型 t は k 以下しか指さない）

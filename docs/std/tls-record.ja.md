@@ -254,6 +254,7 @@ func Plain(r Frame) (int, []byte)
 
 ```sober
 @errors(Alert)
+@bless
 func Open(d mut Dir, r Frame) (int, []byte, error?)
 ```
 

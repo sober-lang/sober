@@ -224,6 +224,16 @@ partial def ev (env : List AV) (e : Expr) (s : St) : AV × St :=
     let (v, s) := ev env a s
     let (b, s) := s.fresh
     (.bufs (union (D s v) [b]), s)
+  | .callMv _ f a =>
+    -- anchor つきの関数値の呼び出し（L1）: 閉包の env の mut のセル（借りの mut の捕捉）を呼び先が書きうる — 呼び先の Def は
+    -- 静的に分からないので、実引数の届くセル全部を書きうるとみなす（callM の保守側）
+    let (_, s) := ev env f s
+    let (v, s) := ev env a s
+    let s := if (D s (.refs v.allRefs)).any (fun b => s.frozen.contains b) then
+      s.fail "callMv: a captured mut reaches a frozen buffer" else s
+    let s := v.allRefs.foldl (fun s c => let (b, s) := s.fresh; s.setCell c ((s.cell c).join (.bufs [b]))) s
+    let (b, s) := s.fresh
+    (.bufs (union (deep s 4 v.allBufs) [b]), s)
   | .callM fn _ a =>
     let (v, s) := ev env a s
     -- 呼び先は mut の実引数のセル（仮引数の型が mut のコンテナの位置）を書きうる: 凍結した buffer に届くなら拒否（U2 の mut 渡し）。

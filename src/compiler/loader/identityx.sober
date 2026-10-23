@@ -17,8 +17,14 @@ func idBase(path string, base string) int {
     if path == "std/task" {
         return if base == "Scope" { 1 } else if base == "Handle" { 2 } else if base == "Sender" { 3 } else if base == "Receiver" { 4 } else if base == "Pool" { 5 } else if base == "Local" { 7 } else { 0 }
     }
-    if path == "std/io" && base == "File" {
-        return 6
+    if path == "std/io" {
+        return if base == "File" { 6 } else if base == "Root" { 8 } else { 0 }
+    }
+    if path == "std/net" {
+        return if base == "Listener" { 9 } else if base == "Conn" { 10 } else { 0 }
+    }
+    if path == "std/tls" && base == "Conn" {
+        return 11
     }
     return 0
 }
@@ -165,7 +171,7 @@ func idHolds(cx Cx, es []int, nm []string, hold mut []int) {
     }
 }
 
-// idComposite はファイル f の composite x が作るゼロ値の同一性の族（1〜6 = 型そのもの・11〜16 = 省いた欄 — 無ければ 0）
+// idComposite はファイル f の composite x が作るゼロ値の同一性の族（1〜11 = 型そのもの・101〜111 = 省いた欄 — 無ければ 0）
 func idComposite(cx Cx, es []int, nm []string, hold mut []int, f int, x ast.Node) int {
     t := cx.trees[f]
     pk, base := idResolve(cx, f, Name(t, x.a))
@@ -195,14 +201,14 @@ func idComposite(cx Cx, es []int, nm []string, hold mut []int, f int, x ast.Node
         if !idGiven(t, x.b, Name(te, fd.a)) {
             fk := idTy(cx, es, nm, mut hold, fe, tps, fd.b)
             if fk > 0 {
-                return 10 + fk
+                return 100 + fk
             }
             // 裸の型パラメータの欄: composite の型引数（x.c — 書いたファイルの型式）が同一性の型を持つか
             ti := idTParam(te, tps, te.nodes[fd.b])
             if ti >= 0 && x.c >= 0 && ti < ast.ListLen(t, x.c) {
                 ak := idTy(cx, es, nm, mut hold, f, 0 - 1, ast.ListAt(t, x.c, ti))
                 if ak > 0 {
-                    return 10 + ak
+                    return 100 + ak
                 }
             }
         }

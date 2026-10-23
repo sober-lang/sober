@@ -1,0 +1,2 @@
+examples/fntype_errors_neg_flow.sober:25:38: error: this function value of type 'S' may return the errors of its parameter 'emit' not listed in the @errors of 'S' (Analyzer)
+exit=1

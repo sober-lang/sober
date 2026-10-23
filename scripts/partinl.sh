@@ -14,12 +14,12 @@ trap 'rm -rf "$W"' EXIT
 fail=0
 n=0
 # want = ファイル:関数:呼ばれる関数:比較:数（eq = ちょうど・ge = 以上）。関数が '/' を含めば完全修飾（std の関数）・'*' はファイル全体
-#   ④ 戻らない利用者の種（730 — report-728 A）: flate.insert は lazy / greedy の中へ写す（0 本）
+#   ④ 戻らない利用者の種（730 — report-728 A）: deflate.insert（std/internal/deflate — 8-4a で flate から移した核） は lazy / greedy の中へ写す（0 本）
 #   ⑤ rt.* は種にしない（730 の負例の網）: rt.deadlock を呼ぶ rt.task_wait（眠りの器）が写らず呼び出しのまま残る（ファイル全体で ≥ 1 本）
 for want in examples/str_partial_inline.sober:main:std/utf8.Str:eq:0 examples/str_partial_inline.sober:cut:std/utf8.Str:eq:1 \
     bench/1brc/main.sober:main:std/utf8.Str:eq:0 bench/knucleotide/main.sober:frequencies:std/utf8.Str:eq:0 bench/fasta/main.sober:randomChunk:rt.slice_grow8:ge:1 \
-    bench/httparena/main.sober:std/compress/flate.lazy:std/compress/flate.insert:eq:0 \
-    bench/httparena/main.sober:std/compress/flate.greedy:std/compress/flate.insert:eq:0 \
+    bench/httparena/main.sober:std/internal/deflate.lazy:std/internal/deflate.insert:eq:0 \
+    bench/httparena/main.sober:std/internal/deflate.greedy:std/internal/deflate.insert:eq:0 \
     bench/httparena/main.sober:*:rt.task_wait:ge:1; do
     IFS=: read -r src fn callee op k <<< "$want"
     ir=$W/$(echo "$src" | tr '/' '_').ir

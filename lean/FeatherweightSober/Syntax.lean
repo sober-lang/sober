@@ -1304,6 +1304,10 @@ inductive Expr : Type where
   /-- 関数値の呼び出し `callv f e`。f を値（fnref）にしてから e を値にし、
   `call` へ 1 歩で委譲する（世界の機構は call と共有） -/
   | callv (f e : Expr)
+  /-- anchor つきの関数値の呼び出し `callMv a f e`（L1 — 借りの閉包の mut 捕捉・formal.md「callMv の段」）。callv と同じく f → e の順に値にし、
+  fnref なら callM の本体の入口へ委譲する。anchor a は構文の region の注釈（copyTo k と同じく shiftTy / renTy で写る）— env の union の
+  片方の variant の中の mut は Ty.anchorOf / anchorV に見えないので、型からでなく注釈で持つ -/
+  | callMv (a : Nat) (f e : Expr)
   /-- 型注釈 `ann e t`（V3-5）: e の型 ta を部分型 t へ緩める（`Ty.sub ta t`）。値は変えない
   （機械は注釈値だけ coerceTo で書き換える — call の引数境界と同じ）。脱糖器が inline 展開で
   消える仮引数の型・ラムダの引数 / 結果型を書き込み、検査を Lean に返すための op。
@@ -1499,6 +1503,7 @@ def shift (c : Nat) : Expr → Expr
   | callM fn ts e => callM fn ts (shift c e)
   | fnref fn ts => fnref fn ts
   | callv f e => callv (shift c f) (shift c e)
+  | callMv a f e => callMv a (shift c f) (shift c e)
   | ann e t => ann (shift c e) t
   | block e => block (shift c e)
   | blockR t e => blockR t (shift c e)
@@ -1581,6 +1586,7 @@ def subst (k : Nat) (v : Expr) : Expr → Expr
   | callM fn ts e => callM fn ts (subst k v e)
   | fnref fn ts => fnref fn ts
   | callv f e => callv (subst k v f) (subst k v e)
+  | callMv a f e => callMv a (subst k v f) (subst k v e)
   | ann e t => ann (subst k v e) t
   | block e => block (subst k v e)
   | blockR t e => blockR t (subst k v e)
@@ -1667,6 +1673,7 @@ def shiftTy (ρ : Nat) : Expr → Expr
   | callM fn ts e => callM fn (ts.map (Ty.shiftR ρ)) (shiftTy ρ e)
   | fnref fn ts => fnref fn (ts.map (Ty.shiftR ρ))
   | callv f e => callv (shiftTy ρ f) (shiftTy ρ e)
+  | callMv a f e => callMv (a + ρ) (shiftTy ρ f) (shiftTy ρ e)
   | ann e t => ann (shiftTy ρ e) (t.shiftR ρ)
   | block e => block (shiftTy ρ e)
   | blockR t e => blockR (t.shiftR ρ) (shiftTy ρ e)
@@ -1750,6 +1757,7 @@ def tsubstTy (ts : List Ty) : Expr → Expr
   | callM fn ts' e => callM fn (ts'.map (Ty.tsubst ts)) (tsubstTy ts e)
   | fnref fn ts' => fnref fn (ts'.map (Ty.tsubst ts))
   | callv f e => callv (tsubstTy ts f) (tsubstTy ts e)
+  | callMv a f e => callMv a (tsubstTy ts f) (tsubstTy ts e)
   | ann e t => ann (tsubstTy ts e) (t.tsubst ts)
   | block e => block (tsubstTy ts e)
   | blockR t e => blockR (t.tsubst ts) (tsubstTy ts e)
@@ -1835,6 +1843,7 @@ def noNewchan : Expr → Bool
   | callM _ _ e => noNewchan e
   | fnref _ _ => true
   | callv f e => noNewchan f && noNewchan e
+  | callMv _ f e => noNewchan f && noNewchan e
   | ann e _ => noNewchan e
   | block e => noNewchan e
   | blockR _ e => noNewchan e
@@ -1921,6 +1930,7 @@ def renTy (ρ0 δ : Nat) : Expr → Expr
   | callM fn ts e => callM fn (ts.map (Ty.renR ρ0 δ)) (renTy ρ0 δ e)
   | fnref fn ts => fnref fn (ts.map (Ty.renR ρ0 δ))
   | callv f e => callv (renTy ρ0 δ f) (renTy ρ0 δ e)
+  | callMv a f e => callMv (rmap ρ0 δ a) (renTy ρ0 δ f) (renTy ρ0 δ e)
   | ann e t => ann (renTy ρ0 δ e) (t.renR ρ0 δ)
   | block e => block (renTy ρ0 δ e)
   | blockR t e => blockR (t.renR ρ0 δ) (renTy ρ0 δ e)
@@ -2033,6 +2043,7 @@ def src : Expr → Bool
   | .callM _ _ e => e.src
   | .fnref _ _ => true
   | .callv ef e => ef.src && e.src
+  | .callMv _ ef e => ef.src && e.src
   | .ann e _ => e.src
   | .label _ e => e.src
   | .jump _ _ e => e.src

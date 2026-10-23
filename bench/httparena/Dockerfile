@@ -1,16 +1,18 @@
-# Dockerfile — HttpArena の本家の形（ソースから建てる — frameworks/sober/ に置く）。
-# TODO（0.6.0 の公開リリースの後 — std/http を含む版）: 下の SOBER_VERSION のリリースの tarball（静的 ELF の sober — std は焼き込み）を取り、
-# main.sober を建てる。それまでは Dockerfile.local（手元で建てた ELF を COPY）で計測する — 本家への参戦は 0.6.0 の話（report-671）
-FROM alpine:3.20 AS build
-ARG SOBER_VERSION=0.6.0
-RUN apk add --no-cache curl tar
-# 資産名は v0.5.4 の Release CI の形（sober-v<版>-x86_64-linux.tar.gz — 中身は sober の静的 ELF 1 本〔std は焼き込み〕と LICENSE / README）
-RUN curl -fsSL "https://github.com/sober-lang/sober/releases/download/v${SOBER_VERSION}/sober-v${SOBER_VERSION}-x86_64-linux.tar.gz" | tar -xz -C /opt
+# The sober toolchain is pulled as an image (built by the release CI from the release tarball,
+# sha256-checked - alpine with the single static ELF compiler on PATH). A registry pull only:
+# nothing is downloaded from github.com at docker-build time.
+FROM ghcr.io/sober-lang/sober:0.6.0 AS build
 WORKDIR /app
 COPY main.sober ./
-RUN /opt/sober-v${SOBER_VERSION}-x86_64-linux/sober build main.sober -o server
+RUN sober build main.sober -o server
 
+# Runtime notes (the HttpArena harness already runs every entry this way):
+#   - io_uring is blocked by Docker's default seccomp profile; run with --security-opt seccomp=unconfined.
+#     Where it stays blocked (default seccomp, gVisor), the server falls back to epoll automatically.
+#   - Each worker owns an io_uring ring; on kernels before 5.12 the ring memory counts against RLIMIT_MEMLOCK
+#     (--ulimit memlock=-1:-1).
+#   - One fd per connection: raise RLIMIT_NOFILE (--ulimit nofile=1048576:1048576).
 FROM scratch
 COPY --from=build /app/server /server
-EXPOSE 8080
+EXPOSE 8080 8081
 CMD ["/server"]

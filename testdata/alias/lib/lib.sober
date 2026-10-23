@@ -1,0 +1,24 @@
+package lib
+
+// 型の別名の網（testdata/alias — language.md 32 節「型の別名」）: 実体の package（std では std/internal の位置）
+
+type Work struct {
+    n int
+    sum int
+}
+
+type Res union {
+    Ok { v int }
+    Bad {}
+}
+
+type Step func(int) int
+
+func Feed(w mut Work, x int) {
+    w.n += 1
+    w.sum += x
+}
+
+func Mean(w Work) Res {
+    return if w.n == 0 { Bad{} } else { Ok{v: w.sum / w.n} }
+}

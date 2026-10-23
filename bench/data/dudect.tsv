@@ -1,0 +1,17 @@
+# dudect の記録（scripts/dudect.sh — 1 題材 1 行・追記）。max_t = 上位の切りの段ごとの Welch の |t| の最大値・crop = その段（全体の分位点）・verdict = ok / LEAK（閾値 4.5）
+# 2026-10-22（report-1028）: env の列は以後「<箱>/<CPU の型番の短縮>」（例: gha-linux-x64-16vcpu/EPYC-9V74）。それより前の行の wsl2 = RYZEN-AI-MAX-PRO-390（Zen 5）。
+# poly1305_sum の行は旧形（固定鍵 対 乱数 — 今は exp_poly_fixed として informational）。判定の口は poly1305_sum_otk（1 回限りの鍵の形 — 鍵の性質の差を検定）に移した
+# 2026-10-22（report-1029）: GHA の Zen 3 / Zen 4（EPYC 7763 / 9V74）で exp_poly_fixed・exp_poly_ff が LEAK と出るのは既知（固定の入力の繰り返しに付く 0.1 cycle 級の持ち越し — 仕組みは未特定・実害なし）。判定の口 poly1305_sum_otk は Zen 3 / 4 / 5 で白
+env	name	n0	n1	max_t	crop	mean0	mean1	verdict	date	commit
+wsl2	ct_equal	499158	500842	0.94	1	212.5	207.2	ok	2026-10-21	b852eb8b+
+wsl2	neg_eq_early	499158	500842	1330.01	0.95	143.9	92.6	LEAK	2026-10-21	b852eb8b+
+wsl2	ct_select	500090	499910	1.30	1	95.1	93.6	ok	2026-10-21	b852eb8b+
+wsl2	ct_nonzero	499605	500395	0.98	0.95	159.3	162.1	ok	2026-10-21	b852eb8b+
+wsl2	aesgcm_sealto	499996	500004	1.61	0.8	843.3	838.5	ok	2026-10-21	b852eb8b+
+wsl2	aesgcm_openat	499933	500067	2.34	0.95	1391.3	1374.7	ok	2026-10-21	b852eb8b+
+wsl2	chacha_sealto	500849	499151	0.52	0.999	8314.5	8311.8	ok	2026-10-21	b852eb8b+
+wsl2	chacha_openat	500186	499814	1.67	1	9535.7	9753.1	ok	2026-10-21	b852eb8b+
+wsl2	poly1305_sum	499500	500500	1.62	0.99	507.4	506.2	ok	2026-10-21	b852eb8b+
+wsl2	x25519_shared	50152	49848	2.24	0.7	461622.1	460423.6	ok	2026-10-21	b852eb8b+
+wsl2	hmac_sum256	500242	499758	1.81	0.999	22021.6	21998.8	ok	2026-10-21	b852eb8b+
+wsl2	rsa_signpss	1020	980	2.04	0.99	3390404.3	3340177.9	ok	2026-10-21	b852eb8b+

@@ -150,30 +150,26 @@ func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
     return freeze(out)
 }
 
-// sealOne は pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）
+// sealOne は pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
+// ctype と詰め物は SealTo の tail で後ろに繋ぐ（写しは SealTo の宛先への 1 回だけ）
 func sealOne(d mut Dir, ctype int, pt []byte, at int, m int, pad int) []byte {
-    mut in := mut []byte{}
-    e := at + m
-    mut j := at
-    while j < e {
-        in = append(in, pt[j])
-        j += 1
-    }
-    in = append(in, byte(ctype))
+    mut tl := mut []byte{}
+    tl = append(tl, byte(ctype))
     mut z := 0
     while z < pad {
-        in = append(in, 0)
+        tl = append(tl, 0)
         z += 1
     }
-    inner := freeze(in)
-    hd := head(len(inner) + 16)
+    tail := freeze(tl)
+    body := pt[at:at + m]
+    hd := head(m + len(tail) + 16)
     nonce := nonceOf(d.iv, d.seq)
     d.seq += 1
     if d.suite == AesGcm {
-        r, _ := aesgcm.SealTo(d.aes, nonce, hd, inner, hd)
+        r, _ := aesgcm.SealTo(d.aes, nonce, hd, body, hd, tail)
         return r
     }
-    r, _ := chacha20poly1305.SealTo(d.cc, nonce, hd, inner, hd)
+    r, _ := chacha20poly1305.SealTo(d.cc, nonce, hd, body, hd, tail)
     return r
 }
 
@@ -203,6 +199,7 @@ func Plain(r Frame) (int, []byte) {
 // 枠 r（外側の内容の型 = application_data）を d の鍵で検証・復号して、内側の内容の型と中身（0 埋めを剥がした平文）を返す。
 // tag の不一致は bad_record_mac・本体が tag より短い / 長すぎるは record_overflow / decode_error・内側が全部 0（内容の型が無い）は unexpected_message
 @errors(Alert)
+@bless
 func Open(d mut Dir, r Frame) (int, []byte, error?) {
     if int(r.b[r.off]) != CtApp {
         return 0, []byte{}, Alert{desc: AlertUnexpected}
@@ -243,7 +240,8 @@ func openBody(d Dir, nonce []byte, ad []byte, r Frame) (bool, []byte) {
 }
 
 // strip は内側の平文 p の内容の型と中身の長さ（末尾から 0 でない最初のバイト — RFC 9846 5.4。無ければ (0, -1)）。末尾 256 バイトは固定回数で
-// 舐め（stripTail — 0 埋めの長さを時間に出さない）、そこが全部 0 のときだけ前を普通に探す（256 を超える 0 埋めは「長い」ことだけが時間に出る）
+// 舐め（stripTail — 0 埋めの長さを時間に出さない）、そこが全部 0 のときだけ前の全部を同じく固定回数で舐める（256 を超える 0 埋めは
+// 「長い」ことだけが時間に出る — 前の探索は早く抜けない。通常の record は末尾で決まるので値札なし）
 func strip(p []byte) (int, int) {
     m := len(p)
     lo := if m > 256 { m - 256 } else { 0 }
@@ -251,17 +249,15 @@ func strip(p []byte) (int, int) {
     if at >= 0 {
         return ct, at
     }
-    mut i := lo - 1
-    while i >= 0 {
-        if p[i] != 0 {
-            return int(p[i]), i
-        }
-        i -= 1
+    at2, ct2 := stripTail(p, 0, lo)
+    if at2 >= 0 {
+        return ct2, at2
     }
     return 0, 0 - 1
 }
 
 // stripTail は p[lo, m) で最後の 0 でないバイトの位置と値（無ければ (-1, 0)）。回数は m - lo（公開の長さ）だけで決まり、選択は mask（定数時間 — ctcheck）
+@bless
 func stripTail(p []byte, lo int, m int) (int, int) {
     mut at := 0 - 1
     mut ct := 0

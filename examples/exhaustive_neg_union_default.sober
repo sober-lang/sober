@@ -1,0 +1,21 @@
+package main
+
+// 負例（language.md 13 節「表の網羅」）: @exhaustive の union の switch が全 variant を名指していて default が到達しない（default は集合の外専用 — union に外は無い）
+
+type Shape union {
+    Circle{r int}
+    Tri{}
+}
+
+@exhaustive
+func name(s Shape) string {
+    return switch s {
+    case Circle{}: "circle"
+    case Tri{}: "tri"
+    default: "other"
+    }
+}
+
+func main() {
+    println(name(Tri{}))
+}

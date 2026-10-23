@@ -1,0 +1,1209 @@
+{
+  "package": "http",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "TestFormatEvent",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 8
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 10
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "hello",
+                              "tok": 16
+                            }
+                          }
+                        ],
+                        "tok": 12,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 11
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: hello\n\n",
+                    "tok": 20
+                  },
+                  "tok": 19
+                }
+              ],
+              "tok": 9
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 25
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "",
+                              "tok": 31
+                            }
+                          }
+                        ],
+                        "tok": 27,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 26
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: \n\n",
+                    "tok": 35
+                  },
+                  "tok": 34
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 40
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\nb",
+                              "tok": 46
+                            }
+                          }
+                        ],
+                        "tok": 42,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 41
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: b\n\n",
+                    "tok": 50
+                  },
+                  "tok": 49
+                }
+              ],
+              "tok": 39
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 53
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 55
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\r\nb",
+                              "tok": 61
+                            }
+                          }
+                        ],
+                        "tok": 57,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 56
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: b\n\n",
+                    "tok": 65
+                  },
+                  "tok": 64
+                }
+              ],
+              "tok": 54
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 68
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 70
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\rb",
+                              "tok": 76
+                            }
+                          }
+                        ],
+                        "tok": 72,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 71
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: b\n\n",
+                    "tok": 80
+                  },
+                  "tok": 79
+                }
+              ],
+              "tok": 69
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 83
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 85
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\n\nb",
+                              "tok": 91
+                            }
+                          }
+                        ],
+                        "tok": 87,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 86
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: \ndata: b\n\n",
+                    "tok": 95
+                  },
+                  "tok": 94
+                }
+              ],
+              "tok": 84
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 98
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 100
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\r\rb",
+                              "tok": 106
+                            }
+                          }
+                        ],
+                        "tok": 102,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 101
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: \ndata: b\n\n",
+                    "tok": 110
+                  },
+                  "tok": 109
+                }
+              ],
+              "tok": 99
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 113
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 115
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\n",
+                              "tok": 121
+                            }
+                          }
+                        ],
+                        "tok": 117,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 116
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: \n\n",
+                    "tok": 125
+                  },
+                  "tok": 124
+                }
+              ],
+              "tok": 114
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 128
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 130
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "a\r\n",
+                              "tok": 136
+                            }
+                          }
+                        ],
+                        "tok": 132,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 131
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: a\ndata: \n\n",
+                    "tok": 140
+                  },
+                  "tok": 139
+                }
+              ],
+              "tok": 129
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 143
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 145
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "\n",
+                              "tok": 151
+                            }
+                          }
+                        ],
+                        "tok": 147,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 146
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: \ndata: \n\n",
+                    "tok": 155
+                  },
+                  "tok": 154
+                }
+              ],
+              "tok": 144
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 158
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 160
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": " x",
+                              "tok": 166
+                            }
+                          }
+                        ],
+                        "tok": 162,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 161
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data:  x\n\n",
+                    "tok": 170
+                  },
+                  "tok": 169
+                }
+              ],
+              "tok": 159
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 173
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 175
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "event",
+                            "value": {
+                              "k": "strlit",
+                              "value": "tick",
+                              "tok": 181
+                            }
+                          },
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "1",
+                              "tok": 185
+                            }
+                          },
+                          {
+                            "key": "id",
+                            "value": {
+                              "k": "strlit",
+                              "value": "7",
+                              "tok": 189
+                            }
+                          },
+                          {
+                            "key": "retry",
+                            "value": {
+                              "k": "int",
+                              "value": 3000,
+                              "tok": 193
+                            }
+                          }
+                        ],
+                        "tok": 177,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 176
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "event: tick\nid: 7\nretry: 3000\ndata: 1\n\n",
+                    "tok": 197
+                  },
+                  "tok": 196
+                }
+              ],
+              "tok": 174
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 200
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 202
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "event",
+                            "value": {
+                              "k": "strlit",
+                              "value": "",
+                              "tok": 208
+                            }
+                          },
+                          {
+                            "key": "id",
+                            "value": {
+                              "k": "strlit",
+                              "value": "",
+                              "tok": 212
+                            }
+                          },
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "x",
+                              "tok": 216
+                            }
+                          }
+                        ],
+                        "tok": 204,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 203
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "event: \nid: \ndata: x\n\n",
+                    "tok": 220
+                  },
+                  "tok": 219
+                }
+              ],
+              "tok": 201
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 223
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "FormatEvent",
+                      "tok": 225
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Event",
+                        "elems": [
+                          {
+                            "key": "data",
+                            "value": {
+                              "k": "strlit",
+                              "value": "日本\n語",
+                              "tok": 231
+                            }
+                          }
+                        ],
+                        "tok": 227,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 226
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "data: 日本\ndata: 語\n\n",
+                    "tok": 235
+                  },
+                  "tok": 234
+                }
+              ],
+              "tok": 224
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 240
+      },
+      "sig_end": 7
+    },
+    {
+      "name": "TestEventBad",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 245
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "eventBad",
+                      "tok": 248
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "tick",
+                        "tok": 250
+                      }
+                    ],
+                    "tok": 249
+                  },
+                  "tok": 247
+                }
+              ],
+              "tok": 246
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 254
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "eventBad",
+                      "tok": 257
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 259
+                      }
+                    ],
+                    "tok": 258
+                  },
+                  "tok": 256
+                }
+              ],
+              "tok": 255
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 263
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "eventBad",
+                      "tok": 266
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "a b:c",
+                        "tok": 268
+                      }
+                    ],
+                    "tok": 267
+                  },
+                  "tok": 265
+                }
+              ],
+              "tok": 264
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 272
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "eventBad",
+                    "tok": 274
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "a\nb",
+                      "tok": 276
+                    }
+                  ],
+                  "tok": 275
+                }
+              ],
+              "tok": 273
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 280
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "eventBad",
+                    "tok": 282
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "a\rb",
+                      "tok": 284
+                    }
+                  ],
+                  "tok": 283
+                }
+              ],
+              "tok": 281
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 288
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "eventBad",
+                    "tok": 290
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "\n",
+                      "tok": 292
+                    }
+                  ],
+                  "tok": 291
+                }
+              ],
+              "tok": 289
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 296
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "eventBad",
+                    "tok": 298
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "x\u0000",
+                      "tok": 300
+                    }
+                  ],
+                  "tok": 299
+                }
+              ],
+              "tok": 297
+            }
+          }
+        ]
+      },
+      "tok": 241,
+      "bodiless": false,
+      "span": {
+        "start": 240,
+        "end": 306
+      },
+      "sig_end": 244
+    },
+    {
+      "name": "TestEventStreamNotCompressible",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 311
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "compressible",
+                    "tok": 313
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "text/plain",
+                      "tok": 315
+                    }
+                  ],
+                  "tok": 314
+                }
+              ],
+              "tok": 312
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 319
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "compressible",
+                    "tok": 321
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "application/json",
+                      "tok": 323
+                    }
+                  ],
+                  "tok": 322
+                }
+              ],
+              "tok": 320
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 327
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "compressible",
+                      "tok": 330
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "text/event-stream",
+                        "tok": 332
+                      }
+                    ],
+                    "tok": 331
+                  },
+                  "tok": 329
+                }
+              ],
+              "tok": 328
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 336
+              },
+              "args": [
+                {
+                  "k": "unary",
+                  "op": "!",
+                  "operand": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "compressible",
+                      "tok": 339
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "Text/Event-Stream; charset=utf-8",
+                        "tok": 341
+                      }
+                    ],
+                    "tok": 340
+                  },
+                  "tok": 338
+                }
+              ],
+              "tok": 337
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 345
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "compressible",
+                    "tok": 347
+                  },
+                  "args": [
+                    {
+                      "k": "strlit",
+                      "value": "text/event-streams",
+                      "tok": 349
+                    }
+                  ],
+                  "tok": 348
+                }
+              ],
+              "tok": 346
+            }
+          }
+        ]
+      },
+      "tok": 307,
+      "bodiless": false,
+      "span": {
+        "start": 306,
+        "end": 355
+      },
+      "sig_end": 310
+    }
+  ],
+  "consts": []
+}

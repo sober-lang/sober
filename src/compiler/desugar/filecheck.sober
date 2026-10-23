@@ -4,11 +4,12 @@ package desugar
 // File はコアでは封のデータ（fd 1 語）で、同一性は表層のこの規則が持つ。check と build が同じ層（ParCheck / ParCheckTyped — 表層型つき）:
 // - 開く: `f := io.Open(path)?` か `f := io.Open(path) catch D`（loader の catchx が `$ctKv, $ctKe := io.Open(path)` + `f := if … else { $ctKv }` に写した形）。
 //   直後の文は `defer io.Close(f)`（30 節の acquire / release の局所照合 R-a の形の移植 — 間に脱出が挟まる漏れが形で起きない）。
-//   Open はこの束縛の形の外に書けず、Close はこの defer の形の外に書けない
+//   Open はこの束縛の形の外に書けず、Close はこの defer の形の外に書けない。根の下の開き（static 便 — 28 節）も同じ形: `f := io.OpenUnder(r, rel)?` +
+//   `defer io.Close(f)`・`r := io.OpenRoot(path)?` + `defer io.CloseRoot(r)`（Root は File と同じ同一性の型）
 // - 許す使い方: io の口・利用者の関数の実引数（受けた仮引数も同じ規則の下 — 外へは出せない）
 // - 拒否: 写しの束縛・代入・return と File を持つ値を返す呼び出し・composite（struct / slice / map — 型が File を持つリテラル）・append・閉包の捕獲・
 //   give:（scope の本体で開いた File を子へ渡すと、本体の defer Close が子の合流より先に走る — 子は path から自分で開く）
-// io.Open を書かないプログラムでは走らない（File の値はほかに作れない — compiler 自身は書かないので自己 build の仕事は増えない）
+// io.Open / io.OpenRoot を書かないプログラムでは走らない（File / Root の値はほかに作れない — compiler 自身は書かないので自己 build の仕事は増えない）
 
 import "ast"
 import "diag"
@@ -27,7 +28,8 @@ const FC_CAPTURE = 9   // 閉包の捕獲
 const FC_GIVE = 10     // give:
 const FC_BORROW = 11   // 借りの関数値を呼ぶ・借りの位置へ渡す以外に使った（(α-L0)）
 
-// fcFn は呼び出し先の節 callee が std/io の Open（1）・Close（2）か（違えば 0）
+// fcFn は呼び出し先の節 callee が std/io の Open / OpenUnder（1 — File を開く）・Close（2）・OpenRoot（3 — Root を開く）・CloseRoot（4）か（違えば 0。
+// 奇数 = 開く・偶数 = 閉じる — 開く口 k の対の閉じる口は k + 1）
 func fcFn(st mut S, callee NodeRef) int {
     k := kindN(mut st, callee)
     if k != ast.EIdent && k != ast.ESelector {
@@ -38,10 +40,10 @@ func fcFn(st mut S, callee NodeRef) int {
         return 0
     }
     nm := fnName(mut st, fk)
-    return if strIs(mut st, nm, "Open") { 1 } else if strIs(mut st, nm, "Close") { 2 } else { 0 }
+    return if strIs(mut st, nm, "Open") || strIs(mut st, nm, "OpenUnder") { 1 } else if strIs(mut st, nm, "Close") { 2 } else if strIs(mut st, nm, "OpenRoot") { 3 } else if strIs(mut st, nm, "CloseRoot") { 4 } else { 0 }
 }
 
-// fcIsFile は表層型 y が同一性を持つ資源の型か — std/io の File と std/net の Listener / Conn（net 段 4a-1 — 28 節の net）・std/tls の Conn（TLS 便 R4 — 28 節。
+// fcIsFile は表層型 y が同一性を持つ資源の型か — std/io の File・Root（static 便 — 28 節「根の下の開き」）と std/net の Listener / Conn（net 段 4a-1 — 28 節の net）・std/tls の Conn（TLS 便 R4 — 28 節。
 // net の 2 つは for の束縛でだけ生まれ Close の口を持たないので、Open / Close の対の照合は File だけ — 写し・持ち出し・捕獲・give: の規則は共通）
 func fcIsFile(st mut S, y int) bool {
     if yk(mut st, y) != YDecl {
@@ -49,7 +51,7 @@ func fcIsFile(st mut S, y int) bool {
     }
     x := YAt(mut st, y)
     nm := sA(nodeOf(mut st, yNa(x)))
-    return (strIs(mut st, PkgPath(mut st, x.b), "std/io") && strIs(mut st, nm, "File")) || (strIs(mut st, PkgPath(mut st, x.b), "std/net") && (strIs(mut st, nm, "Listener") || strIs(mut st, nm, "Conn"))) || (strIs(mut st, PkgPath(mut st, x.b), "std/tls") && strIs(mut st, nm, "Conn"))
+    return (strIs(mut st, PkgPath(mut st, x.b), "std/io") && (strIs(mut st, nm, "File") || strIs(mut st, nm, "Root"))) || (strIs(mut st, PkgPath(mut st, x.b), "std/net") && (strIs(mut st, nm, "Listener") || strIs(mut st, nm, "Conn"))) || (strIs(mut st, PkgPath(mut st, x.b), "std/tls") && strIs(mut st, nm, "Conn"))
 }
 
 // fcHolds は表層型 y が File を持つか（`T?`・slice / map の要素・多値・struct の欄・型引数を fuel 段まで）
@@ -110,7 +112,7 @@ func fcOpenCall(st mut S, v NodeRef, try bool) NodeRef {
         }
         c = nA(nodeOf(mut st, c))
     }
-    if kindN(mut st, c) != ast.ECall || fcFn(mut st, nA(nodeOf(mut st, c))) != 1 {
+    if kindN(mut st, c) != ast.ECall || fcFn(mut st, nA(nodeOf(mut st, c))) % 2 != 1 {
         return -1
     }
     return c
@@ -148,13 +150,13 @@ func fcOpenAt(st mut S, l ListRef, i int) (int, NodeRef, StrRef) {
     return 2, c, latS(mut st, lA(b2), 0)
 }
 
-// fcCloseOf は文 d が `defer io.Close(x)` なら x の節（違えば -1 — 実引数が名前でなければ実引数の節）
-func fcCloseOf(st mut S, d NodeRef) NodeRef {
+// fcCloseOf は文 d が `defer io.Close(x)`（want = 2 — CloseRoot は 4）なら x の節（違えば -1 — 実引数が名前でなければ実引数の節）
+func fcCloseOf(st mut S, d NodeRef, want int) NodeRef {
     if d == -1 || kindN(mut st, d) != ast.SDefer {
         return -1
     }
     c := nA(nodeOf(mut st, d))
-    if kindN(mut st, c) != ast.ECall || fcFn(mut st, nA(nodeOf(mut st, c))) != 2 || lenL(mut st, lB(nodeOf(mut st, c))) != 1 {
+    if kindN(mut st, c) != ast.ECall || fcFn(mut st, nA(nodeOf(mut st, c))) != want || lenL(mut st, lB(nodeOf(mut st, c))) != 1 {
         return -1
     }
     return latN(mut st, lB(nodeOf(mut st, c)), 0)
@@ -164,7 +166,7 @@ func fcCloseOf(st mut S, d NodeRef) NodeRef {
 // （違えば拒否 — 再帰しない: fcWalk の相互再帰を作らない〔mut 引数の関数の展開〕）
 func fcPaired(st mut S, l ListRef, i int, k int, c NodeRef, name StrRef) PcHit {
     d := if i + k < lenL(mut st, l) { latN(mut st, l, i + k) } else { NodeRef(-1) }
-    x := fcCloseOf(mut st, d)
+    x := fcCloseOf(mut st, d, fcFn(mut st, nA(nodeOf(mut st, c))) + 1)
     if x == -1 {
         return PcHit{at: c, kind: FC_UNCLOSED}
     }
@@ -184,11 +186,8 @@ func fcWalk(st mut S, n NodeRef) PcHit {
     if k == ast.ECall {
         cal := if kindN(mut st, nA(x)) == ast.EIndex { nA(nodeOf(mut st, nA(x))) } else { nA(x) }
         f := fcFn(mut st, cal)
-        if f == 1 {
-            return PcHit{at: n, kind: FC_OPEN}
-        }
-        if f == 2 {
-            return PcHit{at: n, kind: FC_CLOSE}
+        if f != 0 {
+            return PcHit{at: n, kind: if f % 2 == 1 { FC_OPEN } else { FC_CLOSE }}
         }
         args := lB(x)
         fk := findFn(mut st, cal, -1)
@@ -257,13 +256,13 @@ func fcWalk(st mut S, n NodeRef) PcHit {
         // 呼び出しの外の Open / Close（関数値として取り出す形）
         f := fcFn(mut st, n)
         if f != 0 {
-            return PcHit{at: n, kind: if f == 1 { FC_OPEN } else { FC_CLOSE }}
+            return PcHit{at: n, kind: if f % 2 == 1 { FC_OPEN } else { FC_CLOSE }}
         }
     }
     if k == ast.EPipe {
         f := fcFn(mut st, nB(x))
         if f != 0 {
-            return PcHit{at: n, kind: if f == 1 { FC_OPEN } else { FC_CLOSE }}
+            return PcHit{at: n, kind: if f % 2 == 1 { FC_OPEN } else { FC_CLOSE }}
         }
         if fcNodeHolds(mut st, n) {
             return PcHit{at: n, kind: FC_ESCAPE}

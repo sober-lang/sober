@@ -1,0 +1,9 @@
+package main
+
+// pid1stop の相手（逐次 — std/task なし）: 眠って待つ。SIGTERM / SIGINT で止まるか（PID 1 では rt のハンドラが exit_group(128 + sig) — language.md 27 節）
+import "std/os"
+
+func main() {
+    println("up")
+    os.Sleep(30000)
+}

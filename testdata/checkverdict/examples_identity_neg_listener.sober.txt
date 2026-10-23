@@ -1,0 +1,2 @@
+sober: load error at examples/identity_neg_listener.sober:12:10: this literal leaves a field at its zero value that holds a `net.Listener`, which has identity: only net.Listen (the parameter of its function) makes one — set the field, or declare it `T?`
+exit=1

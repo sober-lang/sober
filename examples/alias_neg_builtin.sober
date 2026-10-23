@@ -1,0 +1,9 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 右辺は型宣言の名前だけ — 組み込みの型は置けない
+
+type I = int
+
+func main() {
+    println(1)
+}

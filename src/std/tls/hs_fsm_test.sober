@@ -13,6 +13,7 @@ import "std/crypto/pem"
 import "std/crypto/rsa"
 import "std/crypto/sha256"
 import "std/hex"
+import "std/internal/bless"
 import "std/iter"
 import "std/strings"
 import "std/internal/hs"
@@ -240,7 +241,8 @@ func fmKeyOf(h hs.Hs) (string, int) {
             sha256.Write(mut acc, freeze(b))
         }
     }
-    s := sha256.Sum(acc)
+    // 鍵の指紋はテストの観測口（故意の開示）— 祝福してから 16 進にする
+    s := bless.Bytes(sha256.Sum(acc))
     return hex.Format(s[0:8]), record.Seq(wr)
 }
 

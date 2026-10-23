@@ -366,7 +366,7 @@ func Lease[U](lp Local, body func() U) U {
 // ストレージの列の形: [T の指紋, Scratch の欄の数 n, 欄ごとの容量 × n, ワーカーの数 W, ワーカーごとの区画 × W]。区画 = [印, 鎖, 欄ごとに (tag, 語 × 容量)]
 // （印と鎖は rt の lease_op が書く・tag と語は pool.LeaseAttach が付けた窓の Scratch が書く — imm の列の語を rt の口だけが書く）
 
-// leaseOp は rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き）
+// leaseOp は rt の口（op 0 = ワーカーの数・1 = 今のワーカーの番号・2 = blk[off] の印を取る〔1 / 0 = 使用中〕・3 = 返す・4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す — std/tls の handshake の後）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

@@ -1,0 +1,115 @@
+package url
+
+// URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の
+// 全部の組を読む ParseQuery。std/http の Query / Form は生のまま（デコードしない）の 1 キーの読み — デコードした値・同じキーの全部が要るときはこちら
+
+import "std/iter"
+
+// Unescape / ParseQuery の入力が読めない（'%' の後が 16 進の 2 桁でない・復号したバイト列が UTF-8 でない）
+type Bad error
+
+// クエリの 1 組（ParseQuery の結果 — 書かれた順・同じ key も別の組）
+type Pair struct {
+    key string
+    value string
+}
+
+// s の percent-encoding（RFC 3986 2.3 の unreserved = 英数字と '-' '.' '_' '~' はそのまま・他のバイトは "%XX" — 16 進は大文字 2.1。空白は "%20"）。
+// パスの 1 区切りにもクエリの値にもそのまま置ける（'/' '?' '&' '=' '+' も符号化する）
+//
+//     url.Escape("a b&c=d/é")   // "a%20b%26c%3Dd%2F%C3%A9"
+func Escape(s string) string {
+    hex := bytes("0123456789ABCDEF")
+    b := bytes(s)
+    mut out := mut []byte{}
+    for i <- iter.Range(0, len(b)) {
+        c := b[i]
+        if unreserved(int(c)) {
+            out = append(out, c)
+        } else {
+            out = append(out, '%')
+            out = append(out, hex[int(c) >> 4])
+            out = append(out, hex[int(c) & 15])
+        }
+    }
+    return string(freeze(out)) catch ""
+}
+
+// s の "%XX"（16 進は大小どちらも）を 1 バイトに戻した文字列（'+' はそのまま — 空白に読むのは ParseQuery だけ）
+@errors(Bad)
+func Unescape(s string) (string, error?) {
+    b, ok := unescape(bytes(s), false)
+    if !ok {
+        return "", Bad{}
+    }
+    v := string(b) catch return "", Bad{}
+    return v, nil
+}
+
+// クエリ文字列 s（先頭の '?' は含めない）の全部の組（'&' で切る・空の項目は飛ばす・'=' の無い項目は値 ""・key と value は '+' を空白に読んでから
+// Unescape と同じ復号 — WHATWG URL の application/x-www-form-urlencoded の読み）。';' は区切りにしない
+//
+//     url.ParseQuery("q=a+b&tag=x&tag=%E3%81%82")   // [{q, "a b"}, {tag, "x"}, {tag, "あ"}]
+@errors(Bad)
+func ParseQuery(s string) ([]Pair, error?) {
+    b := bytes(s)
+    mut out := mut []Pair{}
+    mut p := 0
+    while p <= len(b) {
+        mut q := p
+        while q < len(b) && b[q] != '&' {
+            q += 1
+        }
+        if q > p {
+            mut eq := p
+            while eq < q && b[eq] != '=' {
+                eq += 1
+            }
+            k, kok := unescape(b[p:eq], true)
+            v, vok := unescape(b[if eq < q { eq + 1 } else { q }:q], true)
+            if !kok || !vok {
+                return []Pair{}, Bad{}
+            }
+            ks := string(k) catch return []Pair{}, Bad{}
+            vs := string(v) catch return []Pair{}, Bad{}
+            out = append(out, Pair{key: ks, value: vs})
+        }
+        p = q + 1
+    }
+    return freeze(out), nil
+}
+
+// unescape は b の "%XX" を 1 バイトに戻したもの（plus なら '+' を空白に。第 2 の値 = '%' の後が 16 進の 2 桁）
+func unescape(b []byte, plus bool) ([]byte, bool) {
+    mut out := mut []byte{}
+    mut i := 0
+    while i < len(b) {
+        c := b[i]
+        if c == '%' {
+            if i + 2 >= len(b) {
+                return []byte{}, false
+            }
+            hi := nib(int(b[i + 1]))
+            lo := nib(int(b[i + 2]))
+            if hi < 0 || lo < 0 {
+                return []byte{}, false
+            }
+            out = append(out, byte(hi * 16 + lo))
+            i += 3
+        } else {
+            out = append(out, if plus && c == '+' { ' ' } else { c })
+            i += 1
+        }
+    }
+    return freeze(out), true
+}
+
+// unreserved は c が RFC 3986 2.3 の unreserved（ALPHA / DIGIT / '-' / '.' / '_' / '~'）か
+func unreserved(c int) bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 45 || c == 46 || c == 95 || c == 126
+}
+
+// nib は 16 進の 1 文字の値（綴りでなければ -1）
+func nib(c int) int {
+    return if c >= 48 && c <= 57 { c - 48 } else if c >= 97 && c <= 102 { c - 87 } else if c >= 65 && c <= 70 { c - 55 } else { -1 }
+}

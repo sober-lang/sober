@@ -1,0 +1,14 @@
+package main
+
+// 負例: io.Root の写しの束縛（同一性の型 — diag.FileUse・language.md 28 節「根の下の開き」）
+
+import "std/io"
+
+func main() {
+    r := io.OpenRoot("testdata/io") catch return
+    defer io.CloseRoot(r)
+    r2 := r
+    f := io.OpenUnder(r2, "hello.txt") catch return
+    defer io.Close(f)
+    println("opened")
+}

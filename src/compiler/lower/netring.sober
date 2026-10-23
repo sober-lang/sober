@@ -357,7 +357,8 @@ func buildNetRecv(st mut St) {
 // op 2 = 閉じ（a = 1 は task の出口 → 0 / 負の errno — ring の道は RECV / ACCEPT を止めてスロット〔listener なら列の fd〕を始末し記録を消してから close・
 // task の出口なら close も ring へ）・
 // op 3 = accept（fd = listener → 受けた fd / 負の errno — ring の道は multishot ACCEPT の列から・でなければ accept4〔EAGAIN は呼び手が待つ〕）・
-// op 5 = 置き場の印（→ 0 — 今の task の次の spawn 1 回を巡回でワーカーへ配る。rt.task_go_mn が消費・report-709〜711）
+// op 5 = 置き場の印（→ 0 — 今の task の次の spawn 1 回を巡回でワーカーへ配る。rt.task_go_mn が消費・report-709〜711）・
+// op 6 = スロットの大きさの印（fd = バイト → 0 — 今の task の次の spawn 1 回のスロット。rt.task_new_in が消費・report-1077）
 func buildNetOp(st mut St) {
     begin(mut st, chF(mut st, NETF_OP))
     op := 0
@@ -373,6 +374,16 @@ func buildNetOp(st mut St) {
     bPlace := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 3)), bAcc, -1, bNa, -1)
     setCur(mut st, bNa)
+    // op 6: 次の spawn 1 回のスロットの大きさの印（fd の位置 = バイト — 今の task の TC_NSLOT。rt.task_new_in が消費・report-1077）
+    bNb := newBlock(mut st)
+    bSlot := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 6)), bSlot, -1, bNb, -1)
+    setCur(mut st, bSlot)
+    if st.taskUse {
+        store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_NSLOT, fd)
+    }
+    ret(mut st, zero)
+    setCur(mut st, bNb)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 5)), bPlace, -1, bClose, -1)
     // op 5: 印の持ち主 = 今の task（持ち主で縛る — 入場の待ちで譲った間に同じワーカーの別の task が spawn しても消費しない）。ワーカーが 1 本なら置かない
     setCur(mut st, bPlace)

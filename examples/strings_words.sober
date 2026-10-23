@@ -1,0 +1,31 @@
+package main
+
+// std/strings の語彙（0.7.0 便 2）と convert.ParseBool の実物: ヘッダ風の行を割って名前を大小を無視して比べる・
+// クエリの真偽の旗・空白で割った語・拡張子の付け替え。空白と大小は ASCII だけを見る（Unicode の case folding は対象外）
+
+import "std/convert"
+import "std/iter"
+import "std/strings"
+
+func main() {
+    line := "  Content-Type:  application/json ; charset=utf-8  "
+    name, value, _ := strings.Cut(strings.TrimSpace(line), ":")
+    println(strings.EqualFold(name, "content-type"), strings.ToLower(strings.TrimSpace(value)))
+
+    parts := strings.Split("debug=true&verbose=0&dry=yes", "&")
+    for i <- iter.Range(0, len(parts)) {
+        k, v, _ := strings.Cut(parts[i], "=")
+        on, err := convert.ParseBool(v)
+        println(k, on, err != nil, convert.FormatBool(on))
+    }
+
+    words := strings.Fields(" the  quick\tbrown\nfox ")
+    println(len(words), strings.ToUpper(strings.Join(words, "-")))
+
+    file := "report.tar.gz"
+    at := strings.LastIndex(file, ".")
+    println(at, strings.TrimSuffix(file, ".gz") + ".zst", strings.Replace(file, ".", "_", -1))
+
+    // 非 ASCII は大小を写さない・EqualFold も等しくしない
+    println(strings.ToUpper("café"), strings.EqualFold("É", "é"))
+}

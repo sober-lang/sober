@@ -71,7 +71,7 @@ func ParCheckTyped(st mut S, p loader.Program) error? {
     return nil
 }
 
-// pcImports は p が std/task を import するか（しなければ ParCheck の std/task の検査は走らない）と、`X.Open` の形の選択を書くか（std/io の外 —
+// pcImports は p が std/task を import するか（しなければ ParCheck の std/task の検査は走らない）と、`X.Open` / `X.OpenRoot` の形の選択を書くか（std/io の外 —
 // 書かなければ io.File の値は作れないので filecheck は走らない。1 回の走査で両方を引く）
 func pcImports(p loader.Program) (bool, bool) {
     mut par := false
@@ -85,7 +85,8 @@ func pcImports(p loader.Program) (bool, bool) {
             } else if x.kind == ast.KImport && x.b >= 0 && t.data[x.b] == 7 && dataIs(t.data, x.b + 1, bytes("std/net")) {
                 // std/net の Listener / Conn も同じ検査（net 段 4a-1）
                 file = true
-            } else if x.kind == ast.ESelector && x.b >= 0 && t.data[x.b] == 4 && dataIs(t.data, x.b + 1, bytes("Open")) {
+            } else if x.kind == ast.ESelector && x.b >= 0 && ((t.data[x.b] == 4 && dataIs(t.data, x.b + 1, bytes("Open"))) || (t.data[x.b] == 8 && dataIs(t.data, x.b + 1, bytes("OpenRoot")))) {
+                // OpenUnder は Root を受けるので OpenRoot を書くプログラムにしか現れない（static 便）
                 file = true
             }
         }

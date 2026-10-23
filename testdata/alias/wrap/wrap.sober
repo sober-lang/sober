@@ -1,0 +1,47 @@
+package wrap
+
+// 公開の package: 実体の型を別名で約束の面に出す（欄は書けない — 別名は宣言の package を変えない。関数は包みにする）
+
+import "testdata/alias/lib"
+
+type Work = lib.Work
+type Res = lib.Res
+type Step = lib.Step
+
+// 公開の別名が非公開の型を指す
+type Acc = acc
+
+type acc struct {
+    last int
+}
+
+// 別名の別名（package をまたぐ鎖）
+type W2 = Work
+
+func Feed(w mut Work, x int) {
+    lib.Feed(mut w, x)
+}
+
+func Mean(w W2) Res {
+    return lib.Mean(w)
+}
+
+// Value は Res の値（union の variant は実体の package の名前で書く — 利用者は lib を書けないので、分解は包みの関数に置く）
+func Value(r Res) int {
+    return switch r {
+    case lib.Ok{v}: v
+    default: -1
+    }
+}
+
+func Twice(s Step, x int) int {
+    return s(s(x))
+}
+
+func Last(a Acc) int {
+    return a.last
+}
+
+func NewAcc(x int) Acc {
+    return acc{last: x}
+}

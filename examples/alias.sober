@@ -1,0 +1,77 @@
+package main
+
+// 型の別名（language.md 32 節「型の別名」）: `type A = B` の A は B と同じ型の別の名前。右辺は型宣言の名前だけで、別名の別名は実体まで辿る。
+// 別名の値は実体の仮引数・欄・mut 仮引数・リテラルにそのまま置ける（loader が別名の参照を実体の名前へ写す — 手で展開した alias_expanded と同じコア）
+
+type Point struct {
+    x int
+    y int
+}
+
+type Pt = Point
+type P2 = Pt
+
+type Shape union {
+    Dot { p Point }
+    Line { a Point; b Point }
+}
+
+type Sh = Shape
+
+type Meters int
+
+type M = Meters
+
+const Limit = M(10)
+
+type Scale func(int) int
+
+type Sc = Scale
+
+type Box[T] struct {
+    v T
+}
+
+type B = Box
+
+type Pair struct {
+    p Pt
+    m M
+    f Sc
+}
+
+func len2(p Pt) int {
+    return p.x * p.x + p.y * p.y
+}
+
+func bump(p mut P2) {
+    p.x += 1
+}
+
+func area(s Sh) int {
+    return switch s {
+    case Dot{p}: 0
+    case Line{a, b}: (b.x - a.x) * (b.y - a.y)
+    }
+}
+
+func apply(f Scale, x int) int {
+    return f(x)
+}
+
+func main() {
+    mut p := Pt{x: 3, y: 4}
+    println(len2(p))
+    bump(mut p)
+    q := Point{1, 2}
+    println(len2(p), len2(q))
+    l := Line{a: q, b: P2{4, 6}}
+    println(area(l), area(Dot{p: p}))
+    m := M(7)
+    println(int(m), m == 7, m != Limit, Limit == Meters(10))
+    k := Pair{p: q, m: Meters(3), f: (x int) => x * 2}
+    println(apply(k.f, int(k.m)))
+    b := B[int]{v: 5}
+    c := Box[int]{v: b.v + 1}
+    println(b.v, c.v)
+}

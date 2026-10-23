@@ -1,0 +1,36 @@
+package main
+
+// 借りの閉包の mut 捕捉（(α-L1)）の第一顧客の縮図: serveBuf の mut ローカル z（圧縮器の状態の代役 — 溜めの slice + 数）を借りのラムダが捕捉し、
+// emit をまたいで mut 関数へ渡して更新する。送り先 send は展開待ちの捕捉（(α-L0) の borrow_pend の形）・入れ子の展開ラムダの中から呼ぶ。
+// 期待の出力 505（build は L1-4 まで止まる）
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Z struct {
+    acc mut []byte
+    n int
+}
+
+func feed(z mut Z, p []byte, out func(q []byte) error?) error? {
+    for c <- p {
+        z.acc = append(z.acc, c)
+    }
+    z.n += len(p)
+    return out(p)
+}
+
+func serveBuf(send func(b []byte) error?, st Stream) int {
+    mut z := Z{acc: mut []byte{}, n: 0}
+    e := st((p []byte) => feed(mut z, p, (q) => send(q)))
+    if e != nil { return -1 }
+    return z.n * 100 + len(z.acc)
+}
+
+func two(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    return emit(bytes("de"))
+}
+
+func main() {
+    println(serveBuf((b []byte) => nil, (emit) => two(emit)))
+}

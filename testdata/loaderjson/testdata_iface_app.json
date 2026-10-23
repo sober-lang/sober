@@ -279,6 +279,155 @@
           ]
         },
         {
+          "name": "TrimSuffix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "LastIndex",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "lastIndexAt"
+          ]
+        },
+        {
+          "name": "isSpace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "runeEnd",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "Split",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "indexAt",
+            "len",
+            "runeEnd"
+          ]
+        },
+        {
+          "name": "Fields",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "isSpace",
+            "len"
+          ]
+        },
+        {
+          "name": "TrimSpace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "isSpace",
+            "len"
+          ]
+        },
+        {
+          "name": "Replace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "indexAt",
+            "len",
+            "runeEnd"
+          ]
+        },
+        {
+          "name": "ToLower",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "mapCase"
+          ]
+        },
+        {
+          "name": "ToUpper",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "mapCase"
+          ]
+        },
+        {
+          "name": "mapCase",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "EqualFold",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "foldByte",
+            "len"
+          ]
+        },
+        {
+          "name": "foldByte",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "byte",
+            "int"
+          ]
+        },
+        {
           "name": "IndexByte",
           "expands": false,
           "mut_def": false,

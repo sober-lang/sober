@@ -1,0 +1,103 @@
+package main
+
+// 借りの閉包が mut で捕捉する大きい集合値（64 語以上）のセルは熱いフレームの外 = 今の深度の region に置く（8-5 の compiler 便 段 2 (c-i) —
+// report-1068・置き場だけ）。回帰の形 3 つ: ① 関数の本体の束縛（run — 関数の自前の region に置く）② ゼロ値の束縛（`mut y := Big{}` — region の頁は
+// 前の持ち主の値を持ちうるので、読みが 0 から始まることを結果で確かめる）③ 反復の本体の束縛（add は mut 仮引数の関数で main の while の本体へ展開される —
+// セルは反復の region に置かれ、反復ごとに捨てられる。関数の region に積もると RSS が反復の数に比例する）。反復の数は引数で変えられる
+// （既定 2000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
+
+import "std/os"
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Q struct {
+    a int
+    b int
+    c int
+    d int
+    e int
+    f int
+    g int
+    h int
+}
+
+// Big は 73 語（8 語 × 9 + 1）
+type Big struct {
+    q1 Q
+    q2 Q
+    q3 Q
+    q4 Q
+    q5 Q
+    q6 Q
+    q7 Q
+    q8 Q
+    q9 Q
+    n int
+}
+
+func feed(z mut Big, b []byte) error? {
+    z.q1.a += len(b)
+    z.q9.h += 1
+    z.n += z.q5.c + 1
+    return nil
+}
+
+func sum(z Big) int {
+    return z.q1.a + z.q1.h + z.q5.c + z.q9.a + z.q9.h + z.n
+}
+
+func three(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    emit(bytes(""))?
+    return emit(bytes("de"))
+}
+
+// run は関数の本体の束縛（①）と、ゼロ値の束縛（②）
+func run(st Stream, k int) int {
+    mut z := Big{n: k}
+    e := st((b []byte) => feed(mut z, b))
+    if e != nil {
+        return -1
+    }
+    mut y := Big{}
+    e2 := st((b []byte) => feed(mut y, b))
+    if e2 != nil {
+        return -1
+    }
+    return sum(z) + sum(y)
+}
+
+// add は mut 仮引数の関数 — 呼び出し点（main の while の本体）へ展開される（③）
+func add(acc mut int, st Stream) {
+    mut z := Big{}
+    e := st((b []byte) => feed(mut z, b))
+    if e == nil {
+        acc += sum(z)
+    }
+}
+
+func iters() int {
+    args := os.Args() catch return 2000
+    if len(args) != 2 {
+        return 2000
+    }
+    mut n := 0
+    for c <- bytes(args[1]) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func main() int {
+    n := iters()
+    mut total := 0
+    mut i := 0
+    while i < n {
+        total += run((emit) => three(emit), i % 7)
+        add(mut total, (emit) => three(emit))
+        i += 1
+    }
+    println(total)
+    println(run((emit) => three(emit), 0))
+    return 0
+}

@@ -14,6 +14,7 @@ okm := hkdf.Expand(prk, info, 42)?   // 255 × 32 バイトを超える長さは
 ## Extract
 
 ```sober
+@secret(ikm)
 func Extract(salt []byte, ikm []byte) []byte
 ```
 
@@ -31,6 +32,7 @@ Expand の長さが RFC の上限（255 × 32 バイト）を超えた（また�
 
 ```sober
 @errors(TooLong)
+@secret(prk)
 func Expand(prk []byte, info []byte, n int) ([]byte, error?)
 ```
 

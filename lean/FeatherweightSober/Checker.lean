@@ -150,6 +150,20 @@ def typecheck (Δ : Defs) (Ξ : ChanTy) (Ψ : StoreTy) (f : Nat) : Nat → Nat �
                   else none
               | none => none
           | _ => none
+  | b, d, Γ, Λ, .callMv a ef e =>
+      -- callv の anchor 版（L1）: anchor a は構文の注釈。前提は callM と同じ形でシグネチャを関数値の型から取る
+      match d with
+      | 0 => none
+      | d' + 1 =>
+          match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ ef with
+          | some (.fn p r) =>
+              match typecheck Δ Ξ Ψ f b (d' + 1) Γ Λ e with
+              | some t =>
+                  if Ty.sub t (p.renR a d') && decide (b ≤ a) && decide (a ≤ d') then
+                    some (r.relocA a d')
+                  else none
+              | none => none
+          | _ => none
   | b, d, Γ, Λ, .label t e =>
       match typecheck Δ Ξ Ψ f b d Γ ((t, d - 1) :: Λ) e with
       | some t' => if t' = t && t.regionsBelow d then some t else none
@@ -537,6 +551,16 @@ theorem typecheck_sound {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     rename_i hcond
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
     exact .callv (ihf ‹_›) (ihe ‹_›) hcond.1 hcond.2
+  | callMv a ef e ihf ihe =>
+    intro b d Γ Λ t h
+    simp only [typecheck] at h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    split at h <;> try cases h
+    split at h <;> cases h
+    rename_i hcond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
+    exact .callMv (ihf ‹_›) (ihe ‹_›) hcond.1.1 hcond.1.2 hcond.2
   | label t₀ e ih =>
     intro b d Γ Λ t h
     simp only [typecheck] at h
@@ -1038,6 +1062,10 @@ theorem typecheck_complete {Δ : Defs} {Ξ : ChanTy} {Ψ : StoreTy} {f : Nat} :
     intro hs
     simp only [Expr.src, Bool.and_eq_true] at hs
     simp [typecheck, ihf hs.1, ihe hs.2, hsub, hbd]
+  | callMv hf harg hsub hbd had ihf ihe =>
+    intro hs
+    simp only [Expr.src, Bool.and_eq_true] at hs
+    simp [typecheck, ihf hs.1, ihe hs.2, hsub, hbd, had]
   | label h1 hrb ih =>
     intro hs
     simp only [Expr.src] at hs

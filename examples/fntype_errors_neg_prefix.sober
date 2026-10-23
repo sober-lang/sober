@@ -1,0 +1,13 @@
+package main
+
+// 負例（load が拒否 — 文法）: 名前付き関数型の @errors は結果の後に書く。型宣言の前置の @errors は文法の外（syntax.md — 黙って捨てない）
+
+type Bad error
+
+@errors(Bad)
+type F func(x int) error?
+
+func main() {
+    f: F = (x) => if x > 0 { Bad{} } else { nil }
+    println(if f(1) != nil { "bad" } else { "ok" })
+}

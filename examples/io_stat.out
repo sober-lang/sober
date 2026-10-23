@@ -1,0 +1,4 @@
+a.txt: regular size=11 modTime=1700000000123456789 same-as-os=true
+empty: regular size=0 modTime=1700000000123456789 same-as-os=true
+sub: dir modTime=1700000000123456789 same-as-os=true
+pipe: irregular modTime=1700000000123456789 same-as-os=true

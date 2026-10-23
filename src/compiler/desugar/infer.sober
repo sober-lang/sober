@@ -1456,9 +1456,13 @@ func caseTy(st mut S, c NodeRef, eb int, ef int) TyRef {
 // ifTy は if 式の値の型（then → else の順に分かる方）。両腕の型が読めて region の合流（ifExpr の F-g）が掛かるなら、合流した型
 // （値が実際に置かれる座標 — F-f: `{ if c { p } else { p } }` のブロックの出口の付け替えがこれを見る）
 func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
+    nt, some := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
+    if nt != -1 {
+        return ifnilTy(mut st, e, nt, some, eb, ef)
+    }
     t0, o0 := ifTy0(mut st, e, eb, ef)
     els := nC(nodeOf(mut st, e))
-    if t0 == -1 || els == -1 || nilTestOf(mut st, e, eb) {
+    if t0 == -1 || els == -1 {
         return t0
     }
     tt := armTy(mut st, lA(nodeOf(mut st, nB(nodeOf(mut st, e)))), eb, ef)
@@ -1469,10 +1473,31 @@ func ifTy(st mut S, e NodeRef, eb int, ef int) TyRef {
     return if up != -1 { up } else { t0 }
 }
 
-// nilTestOf は if の条件が flow typing の nil 判定か（ifnil — 腕の型は絞った束縛で読むので、ここでは合流を見ない）
-func nilTestOf(st mut S, e NodeRef, eb int) bool {
-    nt, some := nilTest(mut st, nA(nodeOf(mut st, e)), eb)
-    return nt != -1 || some
+// ifnilTy は nil 判定の if 式（`if x != nil { A } else { B }` — ifnilExpr の形）の値の型: 絞った腕は x を中身の型に束縛し直して読む（脱糖の ifnilExpr の
+// eb2 と同じ束縛）。腕の読みと合流は ifTy0 / ifTy と同じ（then が型なしの定数なら else の byte・合流は upJoin2）。F-br: 絞った腕を外の束縛（T?）で読むと
+// `q := if p != nil { p } else { "" }` の q が T? になり、q を捕捉するラムダの本体の中で型が食い違った（check だけ拒否 — build は受理していた）
+func ifnilTy(st mut S, e NodeRef, name StrRef, some bool, eb int, ef int) TyRef {
+    els := nC(nodeOf(mut st, e))
+    if els == -1 {
+        return -1
+    }
+    b := lookup(mut st, eb, name)
+    bt := bnd(mut st, b).ty
+    pty := if isTag(mut st, bt, TOpt) { tInner(mut st, bt) } else { TyRef(-1) }
+    eb2 := bind(mut st, eb, name, bnd(mut st, b).level, false, bnd(mut st, b).decl, pty, -1, 0, -1, false, bnd(mut st, b).sty)
+    then := lA(nodeOf(mut st, nB(nodeOf(mut st, e))))
+    tt := armTy(mut st, then, if some { eb2 } else { eb }, ef)
+    eo := if some { eb } else { eb2 }
+    ot := if kindN(mut st, els) == ast.EBlock { armTy(mut st, lA(nodeOf(mut st, els)), eo, ef) } else { computeTy(mut st, els, eo, ef) }
+    if tt == -1 {
+        return ot
+    }
+    se := singleExpr(mut st, then)
+    if se != -1 && isUntypedConst(mut st, se, eb, st.curPkg) && isTag(mut st, ot, TByte) {
+        return ot
+    }
+    up := upJoin2(mut st, tt, ot)
+    return if up != -1 { up } else { tt }
 }
 
 // ifTy0 は if 式 e の腕の型の読み（then → 型なしの定数なら else の byte・then が読めなければ else）と、読んだなら else の腕の型（読まなければ -2）

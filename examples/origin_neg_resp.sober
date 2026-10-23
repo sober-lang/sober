@@ -1,0 +1,9 @@
+package main
+
+import "std/http"
+
+// 応答 1 件に共有の方針を書く（共有の宣言はルートの行だけ）
+func main() {
+    rs := []http.Route{http.Route{method: "GET", path: "/x", handler: (r) => http.Response{status: 200, contentType: "text/plain", body: bytes("x"), cache: http.Fresh{maxAge: 60}}}}
+    println(len(rs))
+}

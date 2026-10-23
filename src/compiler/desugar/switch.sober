@@ -284,7 +284,7 @@ func unionSwitch(st mut S, sw NodeRef, eb int, ef int, depth int) (CoreRef, erro
     }
     // 到達しない腕（前の腕で覆われる — 同じ variant の腕の重複・`_` の後の腕）と網羅（union は全 variant を入れ子の欄まで — error は要求しない:
     // 網羅は analyzer が導出集合で判定し、覆っていない値の行き先はコアの到達しない項 — formal.md「到達しない項の段」）
-    sdom := if decl == NodeRef(ERRS) { PmCol{kind: PmErr, a: PmAllLabels(mut st), b: 0} } else { PmCol{kind: PmSum, a: int(decl), b: dpk} }
+    sdom := if decl == NodeRef(ERRS) { PmAllErr(mut st, 0) } else { PmCol{kind: PmSum, a: int(decl), b: dpk, h: 0} }
     pats := PmList(mut st, nrow)
     for r <- iter.Range(0, nrow) {
         PmSet(mut st, pats, r, hget(mut st, arms + 1 + r * 3))

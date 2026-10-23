@@ -1,0 +1,17 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 別名の名前は package のトップレベルの名前の中で一意
+
+type Point struct {
+    x int
+}
+
+type Pt = Point
+
+func Pt() int {
+    return 1
+}
+
+func main() {
+    println(1)
+}

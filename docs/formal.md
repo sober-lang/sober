@@ -1754,6 +1754,28 @@ callM へ — .pair/fx/r767-ba-residual-mutfield）で、language.md 21 節の�
 α' と同じ大きさ）・E2-D（DAG + メモつき検査器 — 展開の再脱糖が残る。関数型の引数の展開の残り 6.8% 向きとして後で）。
 （S0 スパイク — コア −85%）
 
+### callMv の段（借りの閉包の mut 捕捉 — L1・2026-10-22、決定 = report-1034）
+
+問題: 借りの位置のラムダが mut の束縛を捕捉すると（language.md 25 節 (α-L1)）、閉包の env に ref true が入る。値の呼び出し callv は call に委譲し、
+Def の region 0 を呼び手の最内 d へ写す（`p.shiftR d`）。mut は正確一致なので、env の ref の region（捕捉した束縛の region）が d でなければ型が付かない
+— stream の Def の中で emit を呼ぶ点では、捕捉した束縛は region 0（呼び手空間）で呼び出しは深さ ≥ 2 なので必ず食い違う。
+（paramOk は R2 以降 `regionsBelow 1 ∧ chanFree` で mut を許す — 落ちる理由は paramOk ではない。旧記述の訂正）
+
+形（Lean・コアの規則 1 本）: `callMv (a : Nat) (f e : Expr)` — callv の anchor つき版。a は構文の region の注釈（copyTo k と同じく shiftTy / renTy / tsubstTy で写る）。
+
+- 型付け: `ef : fn p r`・`e : ta`・`Ty.sub ta (p.renR a d)`・`b ≤ a`・`a ≤ d` ⇒ `callMv a ef e : r.relocA a d`（深さ d + 1）。
+  callM から Δ の参照と anchorOf の前提を抜き、シグネチャを関数値の型から取る形（callv が call から作られたのと同じ作り方）
+- 機械: `callMv a f e` は f → e の順に値にし（枠 callMvL / callMvR）、`fnref fn ts` なら callM の本体の入口へ a をそのまま渡して委譲する
+  （callMK は anchor を実引数の値から `anchorV` で読むが、callMv は注釈の a を使う — env の union〔借りの位置の関数型の構造ごと〕の片方の variant の中の mut は
+  anchorV / anchorOf〔prod だけを辿る〕に見えないため）
+- preservation: callM の腕は anchor a について一様で、`anchorOf = some a`（hanc）は実行時の anchor が型の anchor と一致することにだけ使う。
+  注釈で持てば hanc は要らず、callvR の canonical_fn + callMK の腕の写しで閉じる。progress / 決定性は callv の腕の写し
+- 脱糖器の使い方: 関数型の仮引数が（閉じた世界の env の union を通して）mut を含む値の呼び出しだけ callMv、それ以外は callv（既存の出力不変）。
+  a = 捕捉した束縛の region（作成点）・実引数の型の mut の region（借りの値を呼ぶ点 — Def の中では 0）。imm の成分が a より深ければ copyTo a（M4 (a)）
+
+棄てた案: anchorOf / anchorV を union へ広げる（inl / inr の注釈から反対側の型の mutTop を読む — 既存の callM の hanc の補題〔anchorV_eq〕を一般化する仕事になり callM の証明の腕に触る）・
+2 slot の anchor（language.md 31 節の積みのまま — 深い imm は形式コピーで足りる）。
+
 ## 実装との照合（決定: Lean 製型検査器を最初の本番にする）
 
 「証明した性質が実装でも成り立つか」を機械化する方法は 3 段ある。3 → 2 の順で使う。

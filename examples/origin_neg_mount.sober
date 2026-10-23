@@ -1,0 +1,10 @@
+package main
+
+import "std/http"
+
+// 共有の静的ファイルを認証の middleware の Mount に入れる（Mount の出会い）
+func main() {
+    auth := http.Middleware{before: (r) => if http.Authorization(r) == nil { http.Status(401) } else { nil }}
+    rs := http.Mount("/members", http.Static("/files", "/srv/members", cache: http.Fresh{maxAge: 86400}), []http.Middleware{auth})
+    println(len(rs))
+}

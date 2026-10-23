@@ -1,13 +1,16 @@
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 37
 
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 37
 
 streamed from a file, chunk by chunk
 HTTP/1.1 404 Not Found
+Cache-Control: private
 Content-Length: 0
 Connection: close
 

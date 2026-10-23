@@ -16,7 +16,8 @@ const MAX_SLOT_MB = 65536
 // 子 task の region のスロットの既定（MiB — net 4a-4 の直し 案 C・report-655）: 宣言（budget:）の無い子の深度ごとの region 1 つの上限。
 // 宣言があればそれ以上の 2 の冪（既定より小さくはしない — 宣言の超過は記帳だけの約束〔11 節〕を変えない）。main は SOBER_REGION_MB（4 GiB）のまま。
 // 512 = 自己 check-par の子の region の高水位 217 MB の 2.4 倍（64 MiB ではコンパイラ自身が死ぬ・256 は余白 1.23 倍で薄い — ユーザー裁定 2026-10-14）・
-// C10k の VA = 16k 接続 × 5 深度 × 512 MiB = 40 TiB（VA_BUDGET 64 TiB の中）。
+// std/net の Serve の接続の task は region:（既定 128 MiB）の小さいスロット — 既定のスロットを割った小さいスロットを深度ごとに 1 本（task.sober の slot_new・report-1076〜1078）。
+// VA の実測（2026-10-23）: 接続あたり ≈6 本 — 既定 512 MiB のままだと 32000 接続で 93〜101 TiB・48000 接続で va_exhausted（旧の前提「16k × 5 深度 = 40 TiB」は外れ）。
 // 環境変数 SOBER_TASK_REGION_MB で上書き（main のスロットより大きくはしない）
 const DEFAULT_TASK_SLOT_MB = 512
 // 捨てた region のページを OS へ返す閾値（MiB — スロットの先頭からこの量は触れたまま残す。環境変数 SOBER_MADV_MB で上書き・0 = 全部返す）。
@@ -103,6 +104,10 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     f := addFunc(mut st, int(strLit(mut st, "sober_entry")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     irSetFnExport(mut st, f, 1)
     st.entryFn = int(f)
+    // PID 1 の停止の口（language.md 27 節「終了コード」— report-959 / 960）: rt.sigterm / rt.sigint と sigaction の置き場（本体は入口の後で組む）
+    fTerm := addFunc(mut st, int(strLit(mut st, "rt.sigterm")), desugar.ListRef(list0(mut st)), -1)
+    fInt := addFunc(mut st, int(strLit(mut st, "rt.sigint")), desugar.ListRef(list0(mut st)), -1)
+    actG := addGlobalInit(mut st, int(strLit(mut st, "rt.sigact")), 4, -1)
     begin(mut st, f)
     sp := 0
     // ワーカー 0 の記録を %fs へ（段 6 P4-3 — 以降の rt の表は fsaddr で引く）
@@ -146,6 +151,24 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     // madvise(アリーナ, スロット × MAX_DEPTH, MADV_NOHUGEPAGE)（RSS 回収便）: 透過的 huge page だと深度のスロットに 1 バイト触るだけで 2 MB が
     // RSS に乗る（小さいプログラムでも 4〜6 MB・触った深度ごとに 2 MB）。題材の cycles は揺れの範囲だった。失敗は無視
     syscall(mut st, list4(mut st, iconst(mut st, 28), bs, a2, iconst(mut st, 15)))
+    // PID 1（コンテナの init）ではカーネルが既定の動作のシグナルを届けない — SIGTERM / SIGINT で止まらない。PID 1 のときだけ両方にハンドラを張り、
+    // 既定の動作の終了を exit_group(128 + sig) で再現する（143 / 130 — defer も行バッファも走らない既定の死と同じ）。PID 1 でなければ何も張らない
+    // （振る舞いは今と同じ — 既定の動作のまま）。sigaction = [handler, flags = SA_RESTORER, restorer, mask 0]（ハンドラは戻らない）
+    pid := syscall(mut st, list1(mut st, iconst(mut st, 39)))
+    notInit := branchIf(mut st, cmp(mut st, CEq, pid, iconst(mut st, 1)))
+    sa := globaladdr(mut st, actG)
+    hTerm := funcaddr(mut st, fTerm)
+    store(mut st, sa, 0, hTerm)
+    store(mut st, sa, 1, iconst(mut st, 67108864))
+    store(mut st, sa, 2, hTerm)
+    store(mut st, sa, 3, iconst(mut st, 0))
+    syscall(mut st, list5(mut st, iconst(mut st, 13), iconst(mut st, 15), ptoi(mut st, sa), iconst(mut st, 0), iconst(mut st, 8)))
+    hInt := funcaddr(mut st, fInt)
+    store(mut st, sa, 0, hInt)
+    store(mut st, sa, 2, hInt)
+    syscall(mut st, list5(mut st, iconst(mut st, 13), iconst(mut st, 2), ptoi(mut st, sa), iconst(mut st, 0), iconst(mut st, 8)))
+    br(mut st, notInit, -1)
+    setCur(mut st, notInit)
     store(mut st, meta, W_SLOTS, bs)
     store(mut st, meta, W_SLOT_SIZE, slot)
     store(mut st, meta, W_DEPTH, iconst(mut st, 0))
@@ -175,6 +198,13 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
         syscall(mut st, list2(mut st, iconst(mut st, 231), code))
     }
     exit(mut st, 0)
+    // 停止のハンドラ: exit_group(128 + sig)（戻らない・flush しない — async-signal-safe）
+    begin(mut st, fTerm)
+    syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 143)))
+    exit(mut st, 143)
+    begin(mut st, fInt)
+    syscall(mut st, list2(mut st, iconst(mut st, 231), iconst(mut st, 130)))
+    exit(mut st, 130)
 }
 
 // envMb は環境変数 key（`NAME=` の形）の値（MiB の 10 進 — 無い・空・数字以外・MAX_SLOT_MB 超なら既定 dflt。0 は zeroOk のときだけ採る）。
@@ -1015,6 +1045,9 @@ func needSleep(st mut St) {
         if st.taskUse {
             // std/task のプログラムは fd の無い期限つき待ち（ring の道 = OP_TIMEOUT・epoll の道 = timerfd を rt.fdwait で待つ — buildSleep）
             _ = needNet(mut st)
+            // net の ring の道の sleep は時計の表（ワーカーごとの 4 分ヒープ — netpoll.sober の sleepRing / buildTmr）に積む
+            st.rtTmrPush = addFunc(mut st, int(strLit(mut st, "rt.tmr_push")), desugar.ListRef(list2(mut st, TyI64, TyI64)), TyI64)
+            st.rtTmrFire = addFunc(mut st, int(strLit(mut st, "rt.tmr_fire")), desugar.ListRef(list0(mut st)), TyI64)
             if dlFn(st.rtD3) == 0 {
                 // ABS の目標に今の時刻が要る — deadline: の無いプログラムは vDSO を起動で引かない（エントリは関数本体より先に組む）ので初回の sleep で引く
                 st.vdsoG = addGlobalInit(mut st, int(strLit(mut st, "rt.vdso")), 1, -1)
@@ -1086,6 +1119,7 @@ func buildSleep(st mut St) {
         r := call(mut st, chF(mut st, NETF_WAIT), list2(mut st, tfd, iconst(mut st, 1)))
         syscall(mut st, list2(mut st, iconst(mut st, 3), tfd))
         ret(mut st, bin(mut st, BSub, zero, r))
+        buildTmr(mut st)
         return
     }
     ts := newSlotAddr(mut st, 2)

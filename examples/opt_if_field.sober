@@ -1,0 +1,43 @@
+package main
+
+// T? の欄・実引数の位置の if 式で、腕の一方が nil・他方がリテラル / 別の region の値（F-bv — report-1023: nil の腕は欄の型の region・
+// リテラルの腕は最内の region で、核の検査器が腕の型の食い違いで拒否し build だけが受理していた）。腕の region を合流させて両方が受理する
+
+type P struct {
+    f string?
+}
+
+func or(s string?) string {
+    return if s != nil { s } else { "-" }
+}
+
+func mk(c bool, name string) []P {
+    mut s := ""
+    if c {
+        s = name + "!"
+    }
+    mut out := mut []P{}
+    out = append(out, P{f: if c { s } else { nil }})
+    out = append(out, P{f: if c { nil } else { "lit" }})
+    out = append(out, P{f: if c { "a" } else if name == "z" { "b" } else { nil }})
+    out = append(out, P{f: if c {
+        t := s + "?"
+        t
+    } else {
+        nil
+    }})
+    return freeze(out)
+}
+
+func show(ps []P) {
+    for p <- ps {
+        println(or(p.f))
+    }
+}
+
+func main() {
+    show(mk(true, "x"))
+    show(mk(false, "z"))
+    q := P{f: if len(bytes("ab")) == 2 { "two" } else { nil }}
+    println(or(q.f))
+}

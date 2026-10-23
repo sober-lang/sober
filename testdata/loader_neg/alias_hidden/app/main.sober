@@ -1,0 +1,11 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 別名の右辺は宣言の場所から見えること — 他の package の非公開の型は指せない
+
+import "testdata/loader_neg/alias_hidden/lib"
+
+type S = lib.secret
+
+func main() {
+    println(1)
+}

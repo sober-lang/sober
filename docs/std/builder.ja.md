@@ -28,9 +28,9 @@ nodes := builder.Build(mut nb)
 ```
 
 表現:
-- chunks は chunk ヘッダの列。初回の Push で空ヘッダ seed の写しを seeds 本まとめて積む（連続した append なので先端一致 = コピーなし）
-- chunk k の容量は 8 \<\< k。新しい chunk は seed へ容量ぶん連続 append して確保し（seed は Builder の region にあるので、確保先は Push を呼んだ深さに依らない）、以降は添字で書く
-- seed を使い切ると（8 × (2^seeds − 1) 要素を超えると）範囲外で panic する
+- chunks は chunk ヘッダの列。初回の Push で空ヘッダ seed の写しを seeds 本まとめて積み、使い切ったら同じ本数を足す（倍々）
+- chunk k の容量は 8 \<\< k を maxChunk で頭打ち（8, 16, …, 512, 1024, 1024, …）。新しい chunk は seed へ容量ぶん連続 append して確保し（seed は Builder の region にあるので、確保先は Push を呼んだ深さに依らない）、以降は添字で書く
+- 頭打ちは最後の chunk の空き（倍々のままだと最大で積んだ量と同じだけ）を maxChunk 未満に抑える — 確保は書いて埋めるので、空きもそのまま頁を触る（json.Encode の作業域: 8.4 KB の本文で 16 KB → 9 KB）
 
 ## Push
 
@@ -38,7 +38,7 @@ nodes := builder.Build(mut nb)
 func Push[T](b mut Builder[T], x T)
 ```
 
-x を末尾に積む
+x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。初期化と新しい chunk は pushSlow）
 
 ## PushAll
 

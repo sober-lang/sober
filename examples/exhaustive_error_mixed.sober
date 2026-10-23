@@ -1,0 +1,37 @@
+package main
+
+// 表の網羅（language.md 13 節「表の網羅」）: 腕のラベルが 2 つの package に跨る error の switch は閉じた集合が定まらないので素通し
+// （main の Busy と std/io の NotFound — io の他のラベルも main の他のラベルも名指さなくてよい）
+
+import "std/io"
+
+type Busy error {}
+type Idle error {}
+
+@exhaustive
+func name(e error?) string {
+    return switch e {
+    case nil: "ok"
+    case Busy{}: "busy"
+    case io.NotFound{}: "not found"
+    default: "other"
+    }
+}
+
+func open(p string) error? {
+    if p == "" {
+        return Busy{}
+    }
+    if p == "-" {
+        return Idle{}
+    }
+    f := io.Open(p)?
+    defer io.Close(f)
+    return nil
+}
+
+func main() {
+    println(name(open("")))
+    println(name(open("-")))
+    println(name(open("/nonexistent/x")))
+}

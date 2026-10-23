@@ -1,0 +1,13 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: error ラベルは別名の右辺に置けない
+
+type NotFound error {
+    id int
+}
+
+type NF = NotFound
+
+func main() {
+    println(1)
+}

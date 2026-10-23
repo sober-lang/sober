@@ -1,0 +1,55 @@
+package main
+
+// sleep の時計の表（ワーカーごとの 4 分ヒープ — report-ct1・lower/netpoll.sober の buildTmr）の網: 目標の散らばった短い sleep を 48 本の子が 10 回ずつ繰り返し、
+// 同じ表に期限で起きる長い sleep が 16 本いる。表の順が崩れると、根より早い目標が根の時刻まで起きず、子の期限（300 ms — 眠りの合計 ≤ 130 ms の 2 倍以上）に切られる。
+// W1（協調形）でも W8 でも同じ出力
+
+import "std/os"
+import "std/task"
+
+func main() {
+    n, _ := task.Run((s task.Scope) => {
+        mut ls := mut []task.Handle[bool]{}
+        mut hs := mut []task.Handle[bool]{}
+        mut i := 0
+        while i < 16 {
+            ls = append(ls, task.Spawn(s, () => os.SleepExpired(3600000)))
+            i += 1
+        }
+        i = 0
+        while i < 48 {
+            k := i
+            hs = append(hs, task.Spawn(s, () => quick(k)))
+            i += 1
+        }
+        mut ok := 0
+        for v <- task.Gather(hs) {
+            if v {
+                ok += 1
+            }
+        }
+        mut cut := 0
+        for v <- task.Gather(ls) {
+            if v {
+                cut += 1
+            }
+        }
+        ok * 100 + cut
+    }, deadline: 500 * task.MS)
+    println("quick sleepers on time: ${n / 100}")
+    println("long sleepers cut: ${n % 100}")
+}
+
+// quick は期限 300 ms の scope の中で 10 回眠る（1 回 1〜13 ms — 子ごとに目標が散らばる）。期限に切られずに眠り終えたら true
+func quick(k int) bool {
+    r, _ := task.Run((s task.Scope) => {
+        mut j := 0
+        mut cut := false
+        while j < 10 && !cut {
+            cut = os.SleepExpired(1 + (k * 7 + j * 5) % 13)
+            j += 1
+        }
+        !cut
+    }, deadline: 300 * task.MS)
+    return r
+}

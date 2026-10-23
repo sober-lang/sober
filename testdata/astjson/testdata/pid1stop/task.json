@@ -1,0 +1,296 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/os",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/task",
+      "tok": 7
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "_"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "task",
+                    "tok": 18
+                  },
+                  "field": "Run",
+                  "tok": 20
+                },
+                "args": [
+                  {
+                    "k": "lambda",
+                    "params": [
+                      {
+                        "name": "s",
+                        "type": {
+                          "k": "name",
+                          "name": "task.Scope"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "k": "block",
+                      "stmts": [
+                        {
+                          "k": "bind",
+                          "names": [
+                            "h"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 32
+                                },
+                                "field": "Spawn",
+                                "tok": 34
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 36
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "os",
+                                              "tok": 42
+                                            },
+                                            "field": "Sleep",
+                                            "tok": 44
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "int",
+                                              "value": 30000,
+                                              "tok": 46
+                                            }
+                                          ],
+                                          "tok": 45
+                                        }
+                                      },
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "int",
+                                          "value": 1,
+                                          "tok": 49
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "tok": 40
+                                }
+                              ],
+                              "tok": 35
+                            }
+                          ],
+                          "tok": 30
+                        },
+                        {
+                          "k": "bind",
+                          "names": [
+                            "g"
+                          ],
+                          "mutable": false,
+                          "values": [
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 55
+                                },
+                                "field": "Spawn",
+                                "tok": 57
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 59
+                                },
+                                {
+                                  "k": "lambda",
+                                  "params": [],
+                                  "body": {
+                                    "k": "block",
+                                    "stmts": [
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "call",
+                                          "callee": {
+                                            "k": "selector",
+                                            "base": {
+                                              "k": "ident",
+                                              "name": "os",
+                                              "tok": 65
+                                            },
+                                            "field": "Sleep",
+                                            "tok": 67
+                                          },
+                                          "args": [
+                                            {
+                                              "k": "int",
+                                              "value": 30000,
+                                              "tok": 69
+                                            }
+                                          ],
+                                          "tok": 68
+                                        }
+                                      },
+                                      {
+                                        "k": "expr",
+                                        "expr": {
+                                          "k": "int",
+                                          "value": 2,
+                                          "tok": 72
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "tok": 63
+                                }
+                              ],
+                              "tok": 58
+                            }
+                          ],
+                          "tok": 53
+                        },
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 76
+                                },
+                                "field": "Join",
+                                "tok": 78
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "h",
+                                  "tok": 80
+                                }
+                              ],
+                              "tok": 79
+                            },
+                            "rhs": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "task",
+                                  "tok": 83
+                                },
+                                "field": "Join",
+                                "tok": 85
+                              },
+                              "args": [
+                                {
+                                  "k": "ident",
+                                  "name": "g",
+                                  "tok": 87
+                                }
+                              ],
+                              "tok": 86
+                            },
+                            "tok": 82
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 28
+                  }
+                ],
+                "tok": 21
+              }
+            ],
+            "tok": 14
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 93
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "r",
+                  "tok": 95
+                }
+              ],
+              "tok": 94
+            }
+          }
+        ]
+      },
+      "tok": 10,
+      "bodiless": false,
+      "span": {
+        "start": 9,
+        "end": 100
+      },
+      "sig_end": 13
+    }
+  ],
+  "consts": []
+}

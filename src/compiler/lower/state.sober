@@ -103,6 +103,7 @@ type St struct {
     // M:N の rt（段 6 P4-4 — mn.sober）
     mnG int
     sresG int
+    sdpG int
     wkG int
     rtMnStart FnRef
     rtWorkerMain FnRef
@@ -113,6 +114,8 @@ type St struct {
     rtMnKick FnRef
     rtMnDelay FnRef
     rtSresTake FnRef
+    rtDpGive FnRef
+    rtDpTake FnRef
     rtMnPullPop FnRef
     rtPstatSpawn FnRef
     rtPstatEnd FnRef
@@ -135,6 +138,10 @@ type St struct {
     rtTaskNewIn FnRef
     rtPoolNew FnRef
     rtLedger FnRef
+    smG int            // 小さいスロットの手元の列（rt.smslots）・共有の列（rt.ssm）— 名前つきプールを使うプログラムだけ（task.sober needSmallRt）
+    ssmG int
+    rtSmGive FnRef
+    rtSmTake FnRef
     parIn int          // task.SpawnIn の (handle?) の置き場（parSpawn の形の切り替え — -1 = Spawn）
     parInShed BlkRef   // task.SpawnIn の shed の道のブロック（parSpawn が作る）
     parDiscard int     // handle を `_` に捨てる束縛の右辺の節（bindStmt / assignStmt が書き、parSpawn が自分の呼び出しの節と比べて読んだら戻す — -1 = 無し。report-697）
@@ -168,6 +175,8 @@ type St struct {
     cutSites int
     chanFns int
     cutKids int
+    // acceptor の担い手（report-997）: mnInit のワーカー数に足す 1 の即値の命令（cutPatch が置き場の印〔rt.netop 5 — Serve〕の呼び出しを見つけたら 1 に）
+    mnExtra int
     // 検査点の間引き（cancel.sober cutThin）: cutStat = 間引きの表を出力にする（開発用 `sober build --cut-stat`）・cutRecs = 表の鎖
     // （[次, 関数, 頭のブロックの番号, 本体の重み B, N, 形]）
     cutStat bool
@@ -196,6 +205,8 @@ type St struct {
     ubCheck FnRef
     ubBound FnRef
     ubStat bool
+    // フレームの内訳の印字（開発の口 --frame-stat — 1 本の経路だけ。x86.sober xFunc が関数ごとに `frame …` を stdout へ — report-1003 F-1 段 0）
+    frStat bool
     // lower の束縛の事実（lower.sober の ubBind — `$k, $e := utf8.Check(b)` の直後の `v := if $e != nil { 脱出 } else { $k }`）: 文の通し番号・
     // 待ちの束縛の文の番号・$k / $e の名前・b の値（スロットの番地）
     ubSeq int
@@ -247,6 +258,9 @@ type St struct {
     retFloor int
     // 宛先構築（loader/dest.sober の印）を使ってよい関数か — main は使わない（入口の深度 0 の region は確保の場所にならない）
     destOk bool
+    // ラムダの本体の印（loader/dest.sober の 2 — そのラムダの値へ流れ着く節）を使ってよいか: 持ち上げたラムダの本体を下ろしている間だけ真
+    // （展開されるラムダの本体の間は偽 — report-1006 a3）
+    lamDest bool
     // 宛先の深度（印のある確保の置き場 — 入口の深度か、呼び手がレジスタで渡したより浅い深度 — M1c）
     destDepth int
     // ラムダの塊の本体の末尾の式の期待型 + 1（0 = 無し — F-bh）: lambdaCall が armValue の直前に置き、blockTail が入口で読んで消す（文の中の塊へは届かない）
@@ -319,6 +333,8 @@ type St struct {
     rtEnv FnRef
     rtStat FnRef   // rt.stat / rt.sleep（std/os の sysStat / sysSleep — sober watch の mtime ポーリング）
     rtSleep FnRef
+    rtTmrPush FnRef // rt.tmr_push / rt.tmr_fire（sleep の時計の表 — ワーカーごとの 4 分ヒープ・netpoll.sober の sleepRing。-1 = 組まない — report-ct1）
+    rtTmrFire FnRef
     vdsoG int      // rt.vdso（sleep の ring の道の時計の口 — deadline: の無い std/task のプログラムが sleep で初回に引く vDSO の番地 + 1・0 = まだ。-1 = 組まない — report-691）
     hwFold bool    // x86 の最適化のバックエンドの ELF（crc32 の CLMUL の道 — clmul.sober。他の出力では cpuclmul = 0）
     cpuG int       // rt.cpu（CPUID の判定 + 1・0 = まだ — clmul.sober。-1 = 組まない）
@@ -418,6 +434,8 @@ func initScalars(st mut St) {
     st.rtEnv = -1
     st.rtStat = -1
     st.rtSleep = -1
+    st.rtTmrPush = -1
+    st.rtTmrFire = -1
     st.vdsoG = -1
     st.cpuG = -1
     st.rtCpuProbe = -1

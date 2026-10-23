@@ -1,0 +1,405 @@
+package analyzer
+
+// 出所の依存（effect の波 段 4b — language.md 12 節「出所の依存」・13 節の補 3）: 値の流れのエンジンの 3 本目。秘密の walker（secret.sober）を
+// og のモードで同じ解き手 az.er の 3 区間目に走らせる（秘密の解きの後 — Run が az.sv を作り直す）。モードの差:
+// 値は丸ごと（struct の値は欄の中身の合併を持ち、欄の読みは基底の丸ごと — 道・別名・型 × 名前のスロットは使わない）・分岐 / 番地 / 除算は sink にしない。
+// 原子: O = `@credential` の関数の結果と `@credential` の欄の読み（std の外の package の読みだけ — std の中の読み〔Header・condOf・Dispatch の写し〕は源にしない）・
+// SH = `@shared` の variant のリテラル・C = 呼ぶと源に届きうる関数値（Eff[f] — 源の口を呼ぶ・Eff の呼び先を呼ぶ・C を持つ関数値を呼ぶ）。
+// 拒否 = 出会い: std の外の struct の構築（リテラル・欄の書き込み）で SH の欄（`@shared` の variant を持つ union の型の欄）の値と他の欄の値の
+// O / C が出会う・利用者が応答 1 件の方針の欄（std/http の Response.cache）へ SH を書く・std/http の Mount（名指しの出会いの口）の routes の SH と mw の O / C。
+// 仮引数由来の値は Pin で文脈に鈍く具体化して照合する（違反の名指しは構築の位置）
+
+import "ast"
+import "desugar"
+import "diag"
+import "loader"
+import "std/iter"
+import "std/table"
+
+const MOrgMeet = 42  // 出所の出会い（at = 構築 / 呼び出しの節, 付帯 = 違反の記録の添字）
+const MOrgStd = 43   // std の外の `@credential` / `@shared` / `@bless(origin)`（at = 宣言, 付帯 = 種類 0 関数 / 1 欄 / 2 variant / 3 祝福）
+
+// 違反の種類
+const OgRoute = 0  // 共有の方針の欄と、源に届く欄が 1 つの struct の値で出会う
+const OgResp = 1   // 応答 1 件の方針の欄へ SH
+const OgMount = 2  // Mount の routes の SH と mw の O / C
+
+// ── 準備（svInit から） ──
+
+// ogInitFn は関数 fi の `@credential` の原子と std 限定の検査・Mount の名指し
+func ogInitFn(az mut Az, fi int, fd ast.Node) {
+    pk := desugar.FnAt(mut az.d, fi).pkg
+    std := desugar.IsStdPkg(mut az.d, pk)
+    if desugar.FuncCredential(mut az.d, fd) {
+        table.Push(mut az.sv.credf, az.sv.natom)
+        az.sv.oMask = az.sv.oMask | (1 << az.sv.natom)
+        svPushAtom(mut az, 3, fi, 0)
+        if !std {
+            report(mut az, MOrgStd, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(0))
+        }
+    } else {
+        table.Push(mut az.sv.credf, -1)
+    }
+    if !std && desugar.FuncBlessOrigin(mut az.d, fd) && !desugar.FuncBless(mut az.d, fd) {
+        report(mut az, MOrgStd, desugar.FnAt(mut az.d, fi).node, desugar.NodeRef(3))
+    }
+    if std && desugar.StrIs(mut az.d, desugar.StrRef(fd.a), "Mount") && desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http") {
+        az.sv.mountFn = fi
+    }
+}
+
+// ogInitField は欄の項の型の式 ty（SH の欄の判定の材料 — 名前付き関数型の仮引数の項は -1）と std 限定の検査（td = 型宣言・f = ファイル・cred = `@credential` の欄）
+func ogInitField(az mut Az, td desugar.NodeRef, ty desugar.NodeRef, f int, cred bool) {
+    pk := desugar.FilePkg(mut az.d, f)
+    table.Push(mut az.sv.ftn, int(ty))
+    table.Push(mut az.sv.ftn, pk)
+    if cred && !desugar.IsStdPkg(mut az.d, pk) {
+        report(mut az, MOrgStd, td, desugar.NodeRef(1))
+    }
+}
+
+// ogInitUnion は union の型宣言 td の `@shared` の variant の原子
+func ogInitUnion(az mut Az, td desugar.NodeRef, body desugar.NodeRef, f int) {
+    vs := desugar.ListRef(node(mut az, body).a)
+    for i <- iter.Range(0, desugar.LenL(mut az.d, vs)) {
+        if node(mut az, nat(mut az, vs, i)).c != 0 {
+            table.Push(mut az.sv.shv, int(td))
+            table.Push(mut az.sv.shv, i)
+            table.Push(mut az.sv.shv, az.sv.natom)
+            az.sv.shMask = az.sv.shMask | (1 << az.sv.natom)
+            svPushAtom(mut az, 4, int(td), i)
+            if !desugar.IsStdPkg(mut az.d, desugar.FilePkg(mut az.d, f)) {
+                report(mut az, MOrgStd, td, desugar.NodeRef(2))
+            }
+        }
+    }
+}
+
+// ogInitRest は原子 C と欄の項ごとの SH の欄の印（源が 1 本以上あるときだけ）
+func ogInitRest(az mut Az) {
+    az.sv.catom = az.sv.natom
+    az.sv.oMask = az.sv.oMask | (1 << az.sv.natom)
+    svPushAtom(mut az, 5, 0, 0)
+    for q <- iter.Range(0, table.Len(mut az.sv.fl) / 3) {
+        tn := desugar.NodeRef(table.Get(mut az.sv.ftn, q * 2))
+        pk := table.Get(mut az.sv.ftn, q * 2 + 1)
+        mut flag := 0
+        if ogSharedType(mut az, tn, pk) {
+            td := node(mut az, desugar.NodeRef(table.Get(mut az.sv.fl, q * 3)))
+            nm := desugar.StrRef(table.Get(mut az.sv.fl, q * 3 + 1))
+            resp := nm != -1 && desugar.StrIs(mut az.d, nm, "cache") && desugar.StrIs(mut az.d, desugar.StrRef(td.a), "Response") &&
+                desugar.StrIs(mut az.d, desugar.PkgPath(mut az.d, pk), "std/http")
+            flag = if resp { 2 } else { 1 }
+        }
+        table.Push(mut az.sv.shf, flag)
+    }
+}
+
+// ogSharedType は型の式 tn（package pk の文脈 — option は中身）が `@shared` の variant を持つ union か
+func ogSharedType(az mut Az, tn desugar.NodeRef, pk int) bool {
+    mut t := tn
+    while t != -1 && kind(mut az, t) == ast.TOpt {
+        t = desugar.NodeRef(node(mut az, t).a)
+    }
+    if t == -1 || kind(mut az, t) != ast.TName {
+        return false
+    }
+    r := desugar.ResolveType(mut az.d, pk, desugar.StrRef(node(mut az, t).a))
+    if r.kind != desugar.TopType {
+        return false
+    }
+    for i <- iter.Range(0, table.Len(mut az.sv.shv) / 3) {
+        if table.Get(mut az.sv.shv, i * 3) == r.idx {
+            return true
+        }
+    }
+    return false
+}
+
+// ── 効果のビット ──
+
+// ogEff は今の関数（と今のラムダ）が源に届いた
+func ogEff(az mut Az) {
+    addSlot(mut az, az.sv.effBase + az.cur, LSet{lo: 1, hi: 0})
+    az.sv.effHit = true
+}
+
+// ogEffOf は関数 fi を呼ぶと源に届きうるか（`@bless(origin)` の関数は届かない側 — 祝福した std の口）
+func ogEffOf(az mut Az, fi int) bool {
+    if desugar.FuncBlessOrigin(mut az.d, fnDecl(mut az, fi)) {
+        return false
+    }
+    return table.Get(mut az.sv.credf, fi) != -1 || readSlot(mut az, az.sv.effBase + fi).lo != 0
+}
+
+// ogCall は直の呼び出し e（呼び先 fi・実引数の値 fv）の効果のビットと Mount の出会い
+func ogCall(az mut Az, e desugar.NodeRef, fi int, fv []LSet) {
+    if ogEffOf(mut az, fi) {
+        ogEff(mut az)
+    }
+    if fi == az.sv.mountFn && len(fv) >= 3 && !desugar.IsStdPkg(mut az.d, az.pk) {
+        a := svConcrete(mut az, fv[1])
+        b := svConcrete(mut az, fv[2])
+        if (a.lo & az.sv.shMask) != 0 && (b.lo & az.sv.oMask) != 0 {
+            ogViol(mut az, e, OgMount, a, b)
+        }
+    }
+}
+
+// ── 欄と構築 ──
+
+// ogFieldRead は欄の読み base.name の源（`@credential` の欄 — std の外の package の読みだけ）
+func ogFieldRead(az mut Az, base desugar.NodeRef, name desugar.StrRef) LSet {
+    q := svField(mut az, desugar.ExprDecl(mut az.d, base), name)
+    if q == -1 || desugar.IsStdPkg(mut az.d, az.pk) {
+        return lsNone()
+    }
+    a := table.Get(mut az.sv.fl, q * 3 + 2)
+    if a == -1 {
+        return lsNone()
+    }
+    ogEff(mut az)
+    return svAtom(a)
+}
+
+// ogFieldWrite は欄の書き込み t（base.name = m）の出会い（std の外だけ）
+func ogFieldWrite(az mut Az, t desugar.NodeRef, base desugar.NodeRef, name desugar.StrRef, m LSet) {
+    if desugar.IsStdPkg(mut az.d, az.pk) {
+        return
+    }
+    d := desugar.ExprDecl(mut az.d, base)
+    q := svField(mut az, d, name)
+    if q == -1 {
+        return
+    }
+    flag := table.Get(mut az.sv.shf, q)
+    mc := svConcrete(mut az, m)
+    if flag == 2 {
+        if (mc.lo & az.sv.shMask) != 0 {
+            ogViol(mut az, t, OgResp, mc, lsNone())
+        }
+        return
+    }
+    if !ogMeetDecl(mut az, d) {
+        return
+    }
+    whole := svConcrete(mut az, sv(mut az, base))
+    if flag == 1 && (mc.lo & az.sv.shMask) != 0 && (whole.lo & az.sv.oMask) != 0 {
+        ogViol(mut az, t, OgRoute, mc, whole)
+    } else if flag == 0 && (mc.lo & az.sv.oMask) != 0 && (whole.lo & az.sv.shMask) != 0 {
+        ogViol(mut az, t, OgRoute, whole, mc)
+    }
+}
+
+// ogMeetDecl は型宣言 d が SH の欄（印 1）を持つか
+func ogMeetDecl(az mut Az, d desugar.NodeRef) bool {
+    if d == -1 {
+        return false
+    }
+    i := svDeclAt(mut az, int(d))
+    if table.Get(mut az.sv.hk, i * 3) == 0 {
+        return false
+    }
+    first := table.Get(mut az.sv.hk, i * 3 + 1)
+    for k <- iter.Range(0, table.Get(mut az.sv.hk, i * 3 + 2)) {
+        if table.Get(mut az.sv.shf, first + k) == 1 {
+            return true
+        }
+    }
+    return false
+}
+
+// ogComposite はリテラル e（節 x）: 値は要素の合併（struct の値は欄の中身を持つ）・`@shared` の variant は SH・std の外の struct は出会いを照合する
+func ogComposite(az mut Az, e desugar.NodeRef, x ast.Node) LSet {
+    els := desugar.ListRef(x.b)
+    r := desugar.ResolveType(mut az.d, az.pk, desugar.StrRef(x.a))
+    body := if r.kind == desugar.TopType { desugar.NodeRef(node(mut az, desugar.NodeRef(r.idx)).c) } else { desugar.NodeRef(-1) }
+    st := body != -1 && kind(mut az, body) == ast.BStruct
+    fs := if st { desugar.ListRef(node(mut az, body).a) } else { desugar.ListRef(-1) }
+    user := !desugar.IsStdPkg(mut az.d, az.pk)
+    mut v := lsNone()
+    mut shV := lsNone()
+    mut rest := lsNone()
+    for i <- iter.Range(0, desugar.LenL(mut az.d, els)) {
+        el := node(mut az, nat(mut az, els, i))
+        m := sv(mut az, desugar.NodeRef(el.b))
+        v = lsOr(v, m)
+        fname := if el.a == -1 && st && i < desugar.LenL(mut az.d, fs) { desugar.StrRef(node(mut az, nat(mut az, fs, i)).a) } else { desugar.StrRef(el.a) }
+        q := if st && fname != -1 { svField(mut az, desugar.NodeRef(r.idx), fname) } else { -1 }
+        flag := if q != -1 { table.Get(mut az.sv.shf, q) } else { 0 }
+        if flag == 1 {
+            shV = lsOr(shV, m)
+        } else if flag == 2 {
+            mc := svConcrete(mut az, m)
+            if user && (mc.lo & az.sv.shMask) != 0 {
+                ogViol(mut az, desugar.NodeRef(el.b), OgResp, mc, lsNone())
+            }
+        } else {
+            rest = lsOr(rest, m)
+        }
+    }
+    if !st {
+        vr := desugar.ResolveVariant(mut az.d, az.pk, desugar.StrRef(x.a))
+        if vr.kind == desugar.TopVariant {
+            for i <- iter.Range(0, table.Len(mut az.sv.shv) / 3) {
+                if table.Get(mut az.sv.shv, i * 3) == vr.idx && table.Get(mut az.sv.shv, i * 3 + 1) == vr.sub {
+                    v = lsOr(v, svAtom(table.Get(mut az.sv.shv, i * 3 + 2)))
+                }
+            }
+        }
+        return v
+    }
+    if user {
+        a := svConcrete(mut az, shV)
+        b := svConcrete(mut az, rest)
+        if (a.lo & az.sv.shMask) != 0 && (b.lo & az.sv.oMask) != 0 {
+            ogViol(mut az, e, OgRoute, a, b)
+        }
+    }
+    return v
+}
+
+// ogViol は出会いの違反を記録する（最後の 1 周・同じ節は 1 回 — sh = SH 側の値・o = 源の側の値）
+func ogViol(az mut Az, at desugar.NodeRef, k int, sh LSet, o LSet) {
+    if !az.sv.rec {
+        return
+    }
+    for i <- iter.Range(0, table.Len(mut az.sv.ov) / 4) {
+        if table.Get(mut az.sv.ov, i * 4) == int(at) {
+            return
+        }
+    }
+    table.Push(mut az.sv.ov, int(at))
+    table.Push(mut az.sv.ov, k)
+    table.Push(mut az.sv.ov, ogFirst(sh.lo & az.sv.shMask))
+    table.Push(mut az.sv.ov, ogFirst(o.lo & (az.sv.oMask - (1 << az.sv.catom))))
+}
+
+// ogFirst は lo のビットの最小の原子（無ければ -1）
+func ogFirst(b int) int {
+    for a <- iter.Range(0, 62) {
+        if (b & (1 << a)) != 0 {
+            return a
+        }
+    }
+    return -1
+}
+
+// ── 文面 ──
+
+// ogShName は SH の原子 a の variant の名前
+func ogShName(az mut Az, a int) string {
+    if a < 0 {
+        return "a shared cache policy"
+    }
+    td := desugar.NodeRef(table.Get(mut az.sv.atoms, a * 3 + 1))
+    sub := table.Get(mut az.sv.atoms, a * 3 + 2)
+    body := desugar.NodeRef(node(mut az, td).c)
+    v := node(mut az, nat(mut az, desugar.ListRef(node(mut az, body).a), sub))
+    return "the shared cache policy '${str(mut az, desugar.StrRef(v.a))}'"
+}
+
+// ogSrcName は源の原子 a の綴り（-1 = C だけ — 源の口を呼ぶ関数値）
+func ogSrcName(az mut Az, a int) string {
+    if a < 0 {
+        return "a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head)"
+    }
+    k := table.Get(mut az.sv.atoms, a * 3)
+    x := table.Get(mut az.sv.atoms, a * 3 + 1)
+    if k == 3 {
+        return "the credential source '${fnName(mut az, x)}'"
+    }
+    td := node(mut az, desugar.NodeRef(table.Get(mut az.sv.fl, x * 3)))
+    return "the credential field '${str(mut az, desugar.StrRef(td.a))}.${str(mut az, desugar.StrRef(table.Get(mut az.sv.fl, x * 3 + 1)))}'"
+}
+
+// ogMessage は出所の違反の記録 i の本文
+func ogMessage(az mut Az, i int) string {
+    k := table.Get(mut az.sv.ov, i * 4 + 1)
+    sh := ogShName(mut az, table.Get(mut az.sv.ov, i * 4 + 2))
+    src := ogSrcName(mut az, table.Get(mut az.sv.ov, i * 4 + 3))
+    why := "a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」)"
+    if k == OgResp {
+        return "${sh} is written into a single response — declare a shared cache policy on the route (Route.cache / Static's cache:), where the analyzer checks that the route does not read credentials; a single response can say http.Private or http.NoStore (language.md 12 節「出所の依存」)"
+    }
+    if k == OgMount {
+        return "Mount puts routes with ${sh} under middleware that reaches ${if table.Get(mut az.sv.ov, i * 4 + 3) < 0 { "a credential source (http.Authorization / http.Cookie / Request.head)" } else { src }} — ${why}"
+    }
+    return "${sh} meets ${src} in one route — ${why}; use http.Private / http.NoStore for this route, or move the credential read out of it"
+}
+
+// ogStdMessage は std の外の印の本文
+func ogStdMessage(x int) string {
+    w := switch x {
+    case 0: "@credential (a function)"
+    case 1: "@credential (a field)"
+    case 2: "@shared"
+    case _: "@bless(origin)"
+    }
+    return "${w} is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)"
+}
+
+// OriginDump は出所の導出（開発用 `check --origin-dump` — 段 4c のオラクル）: 源の口（`@credential` の関数と欄）・`@shared` の variant・SH の欄（route = ルートの行 /
+// response = 応答 1 件の方針の欄）・出会いの口（Mount）・Eff の関数（呼ぶと源に届きうる — 源の口そのものと `@bless(origin)` を除く）・違反を 1 件 1 行、最後に要約（位置の無い 1 行）。
+// 源の無い木（std/http を import しない — compiler/ 自身）では表は空
+func OriginDump(p loader.Program) []Finding {
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
+        pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: true, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}}
+    desugar.Typed(mut az.d, p)
+    errInit(mut az)
+    errSolve(mut az)
+    svInit(mut az)
+    svSolve(mut az)
+    mut fs := mut []Finding{}
+    on := az.sv.on
+    mut nc := 0
+    mut ne := 0
+    for fi <- iter.Range(0, if on { az.nfn } else { 0 }) {
+        at := desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node)
+        if table.Get(mut az.sv.credf, fi) != -1 {
+            nc += 1
+            fs = append(fs, Finding{warn: false, at: at, what: "credential ${fnName(mut az, fi)}"})
+        } else if slotGet(mut az, az.sv.effBase + fi).lo != 0 && !desugar.FuncBlessOrigin(mut az.d, fnDecl(mut az, fi)) {
+            ne += 1
+            fs = append(fs, Finding{warn: false, at: at, what: "eff ${fnName(mut az, fi)}"})
+        }
+    }
+    mut nsf := 0
+    for q <- iter.Range(0, if on { table.Len(mut az.sv.fl) / 3 } else { 0 }) {
+        nm := desugar.StrRef(table.Get(mut az.sv.fl, q * 3 + 1))
+        td := desugar.NodeRef(table.Get(mut az.sv.fl, q * 3))
+        if nm != -1 && table.Get(mut az.sv.fl, q * 3 + 2) != -1 {
+            nc += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "credential field ${str(mut az, desugar.StrRef(node(mut az, td).a))}.${str(mut az, nm)}"})
+        }
+        f := table.Get(mut az.sv.shf, q)
+        if nm != -1 && f != 0 {
+            nsf += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "shared-field ${str(mut az, desugar.StrRef(node(mut az, td).a))}.${str(mut az, nm)} ${if f == 2 { "response" } else { "route" }}"})
+        }
+    }
+    for i <- iter.Range(0, if on { table.Len(mut az.sv.shv) / 3 } else { 0 }) {
+        a := table.Get(mut az.sv.shv, i * 3 + 2)
+        td := desugar.NodeRef(table.Get(mut az.sv.shv, i * 3))
+        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, td), what: "shared ${str(mut az, desugar.StrRef(node(mut az, td).a))} ${ogShName(mut az, a)}"})
+    }
+    if on && az.sv.mountFn != -1 {
+        fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, az.sv.mountFn).node), what: "meet-point ${fnName(mut az, az.sv.mountFn)}"})
+    }
+    mut nv := 0
+    for i <- iter.Range(0, table.Len(mut az.out) / 3) {
+        k := table.Get(mut az.out, i * 3)
+        at := desugar.NodeRef(table.Get(mut az.out, i * 3 + 1))
+        x := table.Get(mut az.out, i * 3 + 2)
+        if k == MOrgMeet {
+            nv += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: "violation ${ogMessage(mut az, x)}"})
+        } else if k == MOrgStd {
+            nv += 1
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: "violation ${ogStdMessage(x)}"})
+        }
+    }
+    fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary atoms=${az.sv.natom} credentials=${nc} eff-fns=${ne} shared=${table.Len(mut az.sv.shv) / 3} shared-fields=${nsf} violations=${nv} walks=${az.sv.walks}"})
+    return freeze(fs)
+}

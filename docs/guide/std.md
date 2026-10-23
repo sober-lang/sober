@@ -16,10 +16,12 @@ A map of the packages you use with `import "std/<name>"`. The exact signature an
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/utf8`](../std/utf8.ja.md) | Validated UTF-8 views | `Check` (validate the whole input once and get a `View`), `Str` (take a substring from a validated view without copying), `Bytes` |
-| [`std/strings`](../std/strings.ja.md) | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `Cut`, `CutLast`, `TrimPrefix`, `Join`, `Clone`, UTF-8 validation `Valid`, `IndexInvalid` (error label `InvalidUtf8`) (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary) |
+| [`std/strings`](../std/strings.ja.md) | String operations | `Contains`, `HasPrefix`, `HasSuffix`, `Index`, `IndexByte`, `Count`, `LastIndex`, `Cut`, `CutLast`, `Split`, `Fields`, `TrimPrefix`, `TrimSuffix`, `TrimSpace`, `Replace`, `ToLower`, `ToUpper`, `EqualFold`, `Join`, `Clone`, UTF-8 validation `Valid`, `IndexInvalid` (error label `InvalidUtf8`) (the pieces `Cut` and friends return are not re-validated — a position that matches a separator is always a character boundary; whitespace and case are ASCII only — no Unicode case folding) |
 | [`std/builder`](../std/builder.ja.md) | Building sequences | push onto a `Builder[T]` with `Push`, `PushAll`, `PushString`, and take the result with `Build` |
-| [`std/convert`](../std/convert.ja.md) | Converting between numbers and strings | `FormatInt`, `ParseInt`, `ParseFloat`, `FormatFloat`, `FormatFixed` |
+| [`std/convert`](../std/convert.ja.md) | Converting between numbers and strings | `FormatInt`, `ParseInt`, `ParseFloat`, `FormatFloat`, `FormatFixed`, `ParseBool`, `FormatBool` |
 | [`std/hex`](../std/hex.ja.md) | Hexadecimal | `Format`, `Parse` |
+| [`std/base64`](../std/base64.ja.md) | base64 (RFC 4648) | `Encode` / `Decode` (standard alphabet, padded), `EncodeUrl` / `DecodeUrl` (URL-safe alphabet, unpadded) — decoding is strict (one spelling per byte sequence) |
+| [`std/url`](../std/url.ja.md) | Encoding URL components | percent-encoding `Escape` / `Unescape`, `ParseQuery` for every pair of a query string (a repeated key gives separate pairs, `+` reads as a space) |
 
 `string` is immutable text, and `bytes(s)` views it as a byte sequence (`[]byte`). String interpolation is `"x = ${x}"`.
 
@@ -56,15 +58,15 @@ Only immutable values and channels can be passed to a child task. The output is 
 
 | Package | Purpose | Main items |
 |---|---|---|
-| [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE (RFC 1951) encoder | `Encode(data, level)` (level 0–9 on the zlib scale — 6 is the usual default; the same input always gives the same bytes). There is no decoder yet |
-| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip (RFC 1952) encoder | `Encode(data, level)` (10-byte header + DEFLATE + CRC-32 + length — the body for HTTP `Content-Encoding: gzip`) |
+| [`std/compress/flate`](../std/compress-flate.ja.md) | DEFLATE (RFC 1951) encoder and decoder | `Encode(data, level)` (level 0–9 on the zlib scale — 6 is the usual default; the same input always gives the same bytes), `Decode(data, maxSize:)` (an output limit — always pass one for untrusted input; exceeding it gives `TooLarge`, a broken stream gives `Bad`) |
+| [`std/compress/gzip`](../std/compress-gzip.ja.md) | gzip (RFC 1952) encoder and decoder | `Encode(data, level)` (10-byte header + DEFLATE + CRC-32 + length — the body for HTTP `Content-Encoding: gzip`), `Decode(data, maxSize:)` (checks the CRC-32 and length, joins multiple members; wrapper errors are `gzip.Bad`) |
 
 ## Networking
 
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, and `Serve` (one task per connection) |
-| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
+| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
 | [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net). Errors are `HandshakeFailed`, `BadRecord`, `Closed` ([`std/tls/record`](../std/tls-record.ja.md) is the record layer inside — not for direct import) |
 
 ## Cryptography

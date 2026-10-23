@@ -1,0 +1,2 @@
+examples/exhaustive_neg_scalar.sober:15:12: error: @exhaustive: switch does not name every const of the type Status: missing Gone — add the cases (a default covers only values outside the closed set) (Analyzer)
+exit=1

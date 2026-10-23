@@ -291,7 +291,9 @@ type FnArg error {
 
 // FnCap は値の位置（値化可能な named fn type の struct の欄 — language.md 25 節 クロージャの波 2026-10-17）のラムダの、値になれない形
 // （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
-// 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）
+// 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）・
+// 6 1 つの値の呼び出しの借りの実引数のラムダが 2 つ目の mut の束縛を捕捉（(α-L1) の縛り — loader/fnval.sober の fvMutOne）・
+// 7 借りの値をそのまま実引数に渡す値の呼び出しの借りのラムダが mut の束縛を捕捉（同じ縛りの (b) — anchor が転送する借りの region 0 と割れうる）
 type FnCap error {
     at Pos
     kind int
@@ -308,6 +310,14 @@ type ForFallible error {
 // AssertOutsideTest は `_test.sober` の外の `assert(…)`（T7 — assert はテストの語彙）
 type AssertOutsideTest error {
     at Pos
+}
+
+// TypeDecl は型宣言の形の拒否（loader/alias.sober — language.md 32 節）。kind = 0 定義型の下地が int / bool でない・1 別名の右辺が型宣言の名前でない
+// （組み込みの型・合成の型・型引数つき・error / panic ラベル）・2 別名の循環・3 型パラメータつきの別名・4 別名の右辺が未定義か見えない・
+// 5 書き換えの後に別名を指す名前が残った（fail-closed — loader の段の漏れ）
+type TypeDecl error {
+    at Pos
+    kind int
 }
 
 // Layout は @layout（language.md 36 節）の拒否（loader/layout.sober）。kind = 1 `[N]T` の欄が @layout の struct の外・2 @layout が struct でない型宣言に付いている・
@@ -432,6 +442,7 @@ func At(err error?) Pos {
     case Sealed{at}: at
     case Identity{at}: at
     case Layout{at}: at
+    case TypeDecl{at}: at
     case JsonShape{at}: at
     case Intrinsic{at}: at
     case PanicLabel{at}: at
@@ -501,10 +512,10 @@ func Format(err error?, where string) string {
     case AssertOutsideTest{at}: loadLine(err, where, "assert is only available in _test.sober files")
     case CatchLhs{at}: loadLine(err, where, "the left of catch must be a call that returns (T, error?)")
     case Sealed{at}: loadLine(err, where, "this type is sealed (a field has a non-public type of its package): only its own package builds it with fields — write T{} for the zero value, or use the package's constructor")
-    case Identity{at, kind}: loadLine(err, where, if kind < 10 {
+    case Identity{at, kind}: loadLine(err, where, if kind < 100 {
         "`${identityName(kind)}` has identity: only ${identityMaker(kind)} makes one — a zero value would refer to nothing"
     } else {
-        "this literal leaves a field at its zero value that holds a `${identityName(kind - 10)}`, which has identity: only ${identityMaker(kind - 10)} makes one — set the field, or declare it `T?`"
+        "this literal leaves a field at its zero value that holds a `${identityName(kind - 100)}`, which has identity: only ${identityMaker(kind - 100)} makes one — set the field, or declare it `T?`"
     })
     case FnArg{at, kind}: loadLine(err, where, if kind == 1 {
         "a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)"
@@ -512,7 +523,9 @@ func Format(err error?, where string) string {
         "this function takes a different number of parameters than the function type expects"
     })
     case FnCap{at, kind}: loadLine(err, where, switch kind {
-        case 1: "a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation"
+        case 1: "a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one"
+        case 7: "this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call"
+        case 6: "the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that"
         case 2: "a lambda in a value position (a function-typed field) cannot use return — its body is an expression; return would escape the enclosing function"
         case 3: "a lambda in a value position (a function-typed field) cannot use `?` — the error would escape the enclosing function"
         case 5: "a lambda in a value position (a function-typed field) can only capture plain values (scalars, strings, immutable slices / maps and structs of them) — not a value with identity (task.Scope, task.Handle, a channel end, io.File, net.Conn …), a function value or a mutable container"
@@ -535,6 +548,14 @@ func Format(err error?, where string) string {
         case 6: "the type argument of layout.Decode / DecodeAt / Encode / Size must be a @layout struct"
         case 7: "layout.Decode / DecodeAt / Encode are called with a type argument (layout.Decode[T](…)); layout.Size[T] is a constant"
         default: "an integer literal does not fit the width of its @layout field"
+    })
+    case TypeDecl{at, kind}: loadLine(err, where, switch kind {
+        case 0: "the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W"
+        case 1: "an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type"
+        case 2: "an alias refers back to itself through other aliases"
+        case 3: "an alias has no type parameters — write the type arguments where the alias is used (type B = lib.Box, then B[int])"
+        case 4: "the type an alias names is not declared or not visible here (a type from another package must be exported)"
+        default: "internal: a name still refers to an alias after the loader rewrote aliases to the types they name"
     })
     case JsonShape{at, kind}: loadLine(err, where, switch kind {
         case 1: "the type argument of json.Decode / Encode must be a struct type without type parameters"
@@ -575,17 +596,17 @@ func Format(err error?, where string) string {
         default: "task.Scope and task.Handle do not cross a function boundary (pass values to the function and spawn in the scope body)"
     }) }
     case FileUse{at, kind}: loadLine(err, where, switch kind {
-        case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`"
-        case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line"
-        case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes"
+        case 1: "io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)` (io.OpenUnder the same way; io.OpenRoot closed by `defer io.CloseRoot(r)`)"
+        case 2: "the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line"
+        case 3: "io.Close may only appear as `defer io.Close(f)` right after the `f := io.Open(…)` it closes (io.CloseRoot likewise after `r := io.OpenRoot(…)`)"
         case 4: "this defer must close the file opened just before it: write `defer io.Close(f)` with the name bound by io.Open"
-        case 5: "an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
-        case 6: "an io.File, net.Conn, net.Listener or tls.Conn cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
-        case 7: "an io.File, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
-        case 8: "an io.File, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
-        case 9: "a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
+        case 5: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)"
+        case 6: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be assigned (it has identity — keep using the name bound by io.Open or by the for)"
+        case 7: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead"
+        case 8: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)"
+        case 9: "a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)"
         case 11: "a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task"
-        default: "an io.File, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
+        default: "an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be given to a task with give: (the opener's defer closes it when its block ends, which can be before the child is done) — give the path and open it in the child"
     })
     case PanicLabel{at, kind}: loadLine(err, where, switch kind {
         case 1: "panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})"
@@ -630,6 +651,10 @@ func identityName(k int) string {
     case 4: "task.Receiver"
     case 5: "task.Pool"
     case 7: "task.Local"
+    case 8: "io.Root"
+    case 9: "net.Listener"
+    case 10: "net.Conn"
+    case 11: "tls.Conn"
     default: "io.File"
     }
 }
@@ -642,6 +667,10 @@ func identityMaker(k int) string {
     case 4: "task.NewChannel"
     case 5: "task.NewPool"
     case 7: "task.NewLocal"
+    case 8: "io.OpenRoot"
+    case 9: "net.Listen (the parameter of its function)"
+    case 10: "net.Accept or net.Dial (the parameter of its function)"
+    case 11: "tls.Serve (the handler's parameter)"
     default: "io.Open"
     }
 }

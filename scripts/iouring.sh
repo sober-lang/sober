@@ -102,22 +102,26 @@ done
 # 期限が待ちを切る両端・相手がもういない（Closed）の 3 経路
 # net 段 4c（report-670）: std/http の例（http_arena — 切片をまたぐ要求・パイプライン・誤りの応答の後の読み捨て）も同じ格子
 # net 段 4b-0（report-664）: net の例と期限つきの Sleep（timerfd の待ち）は SOBER_NET ∈ {自動〔net の ring — カーネルが受ければ〕, 1〔epoll の道に固定〕} も掛ける
-for ex in io_chunks_par io_chunks_par_die io_chunks_at_par net_echo net_multi net_deadline net_deadline_spawn net_orphan net_orphan_dl net_closed net_serve net_reject net_accept_break http_arena task_sleep_deadline; do
+for ex in io_chunks_par io_chunks_par_die io_chunks_at_par net_echo net_multi net_deadline net_deadline_spawn net_orphan net_orphan_dl net_closed net_serve net_reject net_region net_region_mix net_accept_break http_arena task_sleep_deadline task_sleep_many; do
     "$S2" build examples/$ex.sober --emit=elf --passes -o "$W/$ex" > "$W/build4.log" 2>&1 || { echo "iouring: FAIL build $ex ($(head -c 200 "$W/build4.log"))"; exit 1; }
     { cat examples/$ex.out; echo "exit=0"; } > "$W/$ex.want"
     case $ex in net_*|http_*|par_sleep_*) nets="0 1" ;; *) nets="0" ;; esac
+    # net_region_mix（report-1077）: 子の既定のスロットを 4 MiB に縮めて（SOBER_TASK_REGION_MB=4）region: 1 MiB の区画の組を 4 深度にする形も — 組の境目をまたぐ
+    case $ex in net_region_mix) trs="0 4" ;; *) trs="0" ;; esac
+    for tr in $trs; do
     for nt in $nets; do
         for io in "" 1 2; do
             for w in 1 2 8; do
                 ec=0
-                env SOBER_WORKERS=$w ${io:+SOBER_IO=$io} SOBER_NET=$nt timeout 60 "$W/$ex" < /dev/null > "$W/$ex.got" 2> "$W/$ex.err" || ec=$?
+                env SOBER_WORKERS=$w ${io:+SOBER_IO=$io} SOBER_NET=$nt $([ "$tr" != 0 ] && echo SOBER_TASK_REGION_MB=$tr) timeout 60 "$W/$ex" < /dev/null > "$W/$ex.got" 2> "$W/$ex.err" || ec=$?
                 echo "exit=$ec" >> "$W/$ex.got"
                 n=$((n + 1))
                 if ! cmp -s "$W/$ex.want" "$W/$ex.got"; then
-                    echo "iouring: FAIL $ex SOBER_IO=${io:-auto} SOBER_NET=$nt W$w"; diff "$W/$ex.want" "$W/$ex.got" | head -5; fail=1
+                    echo "iouring: FAIL $ex SOBER_IO=${io:-auto} SOBER_NET=$nt W$w${tr/#0/}"; diff "$W/$ex.want" "$W/$ex.got" | head -5; fail=1
                 fi
             done
         done
+    done
     done
 done
 # net の ring の選択: net_serve を W2 で走らせ、自動は `backend=uring+net`・SOBER_NET=1 は `backend=uring` がワーカーごとに 1 行（setup が通らない環境では自動の照合を飛ばす）
@@ -133,7 +137,7 @@ if [ "$auto" = uring ]; then
     done
 fi
 if [ $fail = 0 ]; then
-    echo "iouring: $n runs — observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_accept_break + http_arena + task_sleep_deadline — net / http の例は SOBER_NET ∈ {auto, 1} も), one probe line per worker, net ring selection, fail=0"
+    echo "iouring: $n runs — observation ≡ W1 for SOBER_IO ∈ {auto(${auto}), 1, 2} × W ∈ {1, 2, 8} (collatz_par + io_par + io_par_stdin + io_chunks_par + io_chunks_par_die + io_chunks_at_par + net_echo + net_multi + net_deadline + net_deadline_spawn + net_orphan + net_orphan_dl + net_closed + net_serve + net_reject + net_region + net_region_mix〔SOBER_TASK_REGION_MB ∈ {既定, 4} も〕 + net_accept_break + http_arena + task_sleep_deadline + task_sleep_many — net / http の例は SOBER_NET ∈ {auto, 1} も), one probe line per worker, net ring selection, fail=0"
 else
     echo "iouring: FAIL"
 fi

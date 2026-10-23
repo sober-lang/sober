@@ -1,0 +1,9 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 自分自身の別名
+
+type A = A
+
+func main() {
+    println(1)
+}

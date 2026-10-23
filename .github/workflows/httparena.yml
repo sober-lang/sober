@@ -1,0 +1,168 @@
+# HttpArena (HTTP/1.1 profiles) — Sober vs. a Go net/http control, measured in the same job.
+# Manual trigger only. Builds the compiler from source (same bootstrap as release.yml), builds HttpArena's load generator
+# (gcannon on liburing 2.9 — the versions HttpArena's docker/gcannon.Dockerfile uses), then runs bench/httparena/local.sh:
+# both servers alternate round by round on the same pinned CPUs, and the job summary gets the per-profile medians and the
+# Sober/Go ratio. Read the ratio, not the absolute numbers (a shared 4-vCPU runner — PINS: "HttpArena のベンチ環境 = GitHub Actions").
+name: httparena
+
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "rounds per profile (alternating Sober / Go — the summary is the median)"
+        default: "5"
+      duration:
+        description: "seconds per run"
+        default: "5"
+      conns:
+        description: "connections (HttpArena's baseline uses 4096)"
+        default: "4096"
+      profiles:
+        description: "space-separated: baseline pipelined limited-conn json json-comp json-comp-16k latency-1m latency-10k latency-500k-8cpu json-tls async (async last — it leaves ~32K sockets in TIME_WAIT; json = the /json/{count} endpoint uncompressed, local comparison only; json-comp = gzip at 4096 conns, json-comp-16k = 16384; json-tls = wrk over TLS 1.3 at 4096 conns; 8gbit = zrk POST /echo 10 KB over TLS at a fixed 50K req/s, 512 conns; latency-500k-8cpu = the latency-1m GET at a fixed 500K req/s with the server on 8 logical CPUs — 4 cores + SMT siblings, as upstream)"
+        default: "baseline pipelined limited-conn json json-comp json-comp-16k json-tls 8gbit latency-1m latency-10k latency-500k-8cpu async"
+      sober_net:
+        description: "SOBER_NET for the Sober server: 0 = io_uring net ring when the kernel accepts it, 1 = epoll path"
+        default: "0"
+      runner:
+        description: "runs-on label (linux-x64-16vcpu = the org's larger runner, 8 server / 8 load cores; ubuntu-24.04 = free 2-vCPU)"
+        default: "linux-x64-16vcpu"
+      perf:
+        description: "1 = also sample the Sober server with perf (cpu-clock, kernel symbols) under the perf_profiles loads"
+        default: "1"
+      perf_profiles:
+        description: "profiles for the perf step, space-separated: baseline pipelined async (async = GET /delay/10 at $ASYNC_CONNS = 32000 conns — the sys / user split of the timer-holding shape; put it last, it leaves ~32K sockets in TIME_WAIT)"
+        default: "baseline pipelined"
+      perf_nets:
+        description: "SOBER_NET values for the perf step, space-separated (e.g. \"1 0\" = epoll then ring — the same binary, one profile each); empty = sober_net"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  httparena:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build stage1 and stage2 (bootstrap chain)
+        run: |
+          (cd src/stage1 && zig build)
+          scripts/stage2.sh
+
+      - name: Build gcannon (liburing 2.9)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gc" && cd "$RUNNER_TEMP/gc"
+          git clone --quiet --branch liburing-2.9 --depth 1 https://github.com/axboe/liburing.git
+          (cd liburing && ./configure --prefix="$RUNNER_TEMP/gc/usr" > /dev/null && make -s -j"$(nproc)" -C src && make -s install -C src)
+          git clone --quiet --depth 1 https://github.com/MDA2AV/gcannon.git
+          cd gcannon
+          make -s -j"$(nproc)" CFLAGS="-O2 -march=native -Iinclude -DUSE_PICO -Iexternal/picohttpparser -I$RUNNER_TEMP/gc/usr/include" \
+            LDFLAGS="-L$RUNNER_TEMP/gc/usr/lib -Wl,-rpath,$RUNNER_TEMP/gc/usr/lib -luring -lpthread"
+          echo "GCANNON=$RUNNER_TEMP/gc/gcannon/gcannon" >> "$GITHUB_ENV"
+
+      - name: Install wrk (json-tls — HttpArena's load generator for the TLS profiles)
+        run: sudo apt-get -qq update && sudo apt-get -qq install -y wrk
+
+      - name: Kernel and CPU
+        run: |
+          uname -r
+          lscpu -e=CPU,CORE,ONLINE
+          # THP の設定（report-1053 — 固定床 ≈250 MB の 2/3 が THP の水増しの読み。local.sh の rss 行の AnonHugePages と対で読む）
+          echo "thp: enabled=$(cat /sys/kernel/mm/transparent_hugepage/enabled) defrag=$(cat /sys/kernel/mm/transparent_hugepage/defrag)"
+          sudo sysctl -w net.core.somaxconn=65535 net.ipv4.tcp_max_syn_backlog=65535 net.ipv4.ip_local_port_range="1024 65535"
+          # サーバの listen port（local.sh の 18000 番台）を ephemeral の配布から外す — 広げた範囲と重なると
+          # TIME_WAIT の客側 port に bind して黙って失敗する（run 38696245258 — latency-1m の後の起動失敗）
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=18000-18999
+          # runner VM の Docker の netfilter 規則が loopback のベンチに ~7% 乗る（nf_conntrack 4.5% +
+          # nf_nat + nf_tables + nf_hook_slow — run 38651314997 の perf）。規則を流してモジュールを外す
+          # （外せなければ無視 — Sober / Go の両方に等しく乗るので比は中立・絶対値の掃除）
+          sudo systemctl stop docker docker.socket 2> /dev/null || true
+          sudo nft flush ruleset 2> /dev/null || true
+          sudo iptables -F 2> /dev/null || true
+          sudo iptables -t nat -F 2> /dev/null || true
+          # モジュールが外れなくても loopback の追跡だけ外す（raw の NOTRACK — run 38652999799 で
+          # modprobe -r が効かず nf_conntrack 3.9% が残った）
+          sudo iptables -t raw -I PREROUTING -i lo -j NOTRACK 2> /dev/null || true
+          sudo iptables -t raw -I OUTPUT -o lo -j NOTRACK 2> /dev/null || true
+          sudo modprobe -r nf_nat nf_conntrack 2> /dev/null || echo "conntrack module still loaded (NOTRACK applied)"
+
+      - name: Validate (std/http gate — the same checks as scripts/httpcheck.sh)
+        run: scripts/httpcheck.sh
+
+      - name: Run (alternating Sober / Go)
+        env:
+          SOBER_NET: ${{ inputs.sober_net }}
+          # latency-1m の 1M req/s は本家の 32 コア箱の値 — 8 サーバコアでは Go が飽和（~460K・rate_ratio 0.46）するので
+          # コア比で 250K に（1M × 8/32）。64vcpu（32 サーバコア = 本家と同格）では本家と同じ 1M で「保てるか」を見る
+          ZRK_RATE_1M: ${{ inputs.runner == 'linux-x64-64vcpu' && '1000000' || '250000' }}
+        run: |
+          # 64vcpu: gcannon の 32 スレッドの io_uring_queue_init が memlock 上限で ENOMEM（run 39027897300 の gc-*.txt）。
+          # prlimit はこのステップのシェルに掛け、子（local.sh → gcannon / サーバ）が継承する
+          sudo prlimit --pid $$ --memlock=unlimited --nofile=1048576:1048576 || true
+          ulimit -n 1048576 || ulimit -n 65536
+          {
+            echo "## HttpArena HTTP/1.1 — Sober / Go (kernel $(uname -r), SOBER_NET=${SOBER_NET})"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          ulimit -n
+          HTTPARENA_WORK="$RUNNER_TEMP/work" \
+          bench/httparena/local.sh -n "${{ inputs.rounds }}" -d "${{ inputs.duration }}" -c "${{ inputs.conns }}" \
+            --profiles "${{ inputs.profiles }}" -o "$RUNNER_TEMP/httparena.tsv" --summary "$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Kernel profile (perf cpu-clock — where the sys side of CPU/req goes; report-673)
+        if: ${{ inputs.perf == '1' }}
+        env:
+          NETS: ${{ inputs.perf_nets != '' && inputs.perf_nets || inputs.sober_net }}
+          PROFS: ${{ inputs.perf_profiles }}
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y linux-tools-common "linux-tools-$(uname -r)" 2> /dev/null || sudo apt-get -qq install -y linux-tools-generic
+          sudo sysctl -w kernel.perf_event_paranoid=-1 kernel.kptr_restrict=0
+          # SOBER_NET ごとに同じ実行ファイルを測る（perf_nets — 例 "1 0" = epoll と ring を 1 run で並べる・report-681）。
+          # pipelined の同じ内訳 — baseline との差分が「パケット数に比例する成分」を分離する
+          # async（perf_profiles に async）は 32000 接続 — nofile を Run のステップと同じに上げる（prlimit はこのシェルに掛け子が継承）
+          sudo prlimit --pid $$ --memlock=unlimited --nofile=1048576:1048576 || true
+          ulimit -n 1048576 || ulimit -n 65536
+          for net in $NETS; do
+            for prof in $PROFS; do
+              # 出力の名前は baseline だけ接尾辞なし（前の run の perf-report-net<N>.txt と同じ名前を保つ）
+              sfx=$([ "$prof" = baseline ] && echo "" || echo "-$prof")
+              SOBER_NET=$net bench/httparena/perf.sh -d 10 -c "${{ inputs.conns }}" --profile "$prof" -o "$RUNNER_TEMP/perf-report-net$net$sfx.txt"
+              {
+                echo
+                echo "## perf (cpu-clock, $prof, Sober server, SOBER_NET=$net)"
+                echo '```'
+                head -$([ "$prof" = pipelined ] && echo 40 || echo 60) "$RUNNER_TEMP/perf-report-net$net$sfx.txt"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            done
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: httparena-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/httparena.tsv
+            ${{ runner.temp }}/httparena.tsv.rss
+            ${{ runner.temp }}/perf-report-net*.txt
+            ${{ runner.temp }}/work/gc-*.txt
+            ${{ runner.temp }}/work/*.err
+          if-no-files-found: warn

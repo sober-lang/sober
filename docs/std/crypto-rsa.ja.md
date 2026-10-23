@@ -65,15 +65,21 @@ type PublicKey struct {
 ```sober
 type PrivateKey struct {
     pub PublicKey
-    mp mont
-    mq mont
-    dp []int
-    dq []int
-    qinv []int
+    mp mont @secret
+    mq mont @secret
+    dp []int @secret
+    dq []int @secret
+    qinv []int @secret
+    pbits int
+    qbits int
 }
 ```
 
 RSAPrivateKey の成分（RFC 8017 A.1.2 — d は使わない・CRT の p, q〔の Montgomery の文脈 mp, mq〕, dp, dq, qinv）
+
+欄:
+
+- `pbits` — p, q の bit 長（鍵の大きさ — 公開の値。CRT の冪の回数。秘密の素数そのものから毎回数えない）
 
 ## BadKey
 
@@ -102,6 +108,7 @@ salt の長さや鍵の大きさが PSS に足りない
 ## Public
 
 ```sober
+@bless
 func Public(k PrivateKey) PublicKey
 ```
 
@@ -119,6 +126,7 @@ pub の法のバイト長（署名の長さ）
 
 ```sober
 @errors(BadSize, Fault)
+@bless
 func SignPSS(k PrivateKey, msg []byte, salt []byte) ([]byte, error?)
 ```
 

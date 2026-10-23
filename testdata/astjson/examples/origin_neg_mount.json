@@ -1,0 +1,260 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/http",
+      "tok": 4
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "auth"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "http.Middleware",
+                "elems": [
+                  {
+                    "key": "before",
+                    "value": {
+                      "k": "lambda",
+                      "params": [
+                        {
+                          "name": "r",
+                          "type": null
+                        }
+                      ],
+                      "body": {
+                        "k": "if",
+                        "cond": {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "http",
+                                "tok": 24
+                              },
+                              "field": "Authorization",
+                              "tok": 26
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "r",
+                                "tok": 28
+                              }
+                            ],
+                            "tok": 27
+                          },
+                          "rhs": {
+                            "k": "nil",
+                            "tok": 31
+                          },
+                          "tok": 30
+                        },
+                        "then": {
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "call",
+                                "callee": {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "http",
+                                    "tok": 33
+                                  },
+                                  "field": "Status",
+                                  "tok": 35
+                                },
+                                "args": [
+                                  {
+                                    "k": "int",
+                                    "value": 401,
+                                    "tok": 37
+                                  }
+                                ],
+                                "tok": 36
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "k": "block",
+                          "stmts": [
+                            {
+                              "k": "expr",
+                              "expr": {
+                                "k": "nil",
+                                "tok": 42
+                              }
+                            }
+                          ]
+                        },
+                        "tok": 23
+                      },
+                      "tok": 22
+                    }
+                  }
+                ],
+                "tok": 13,
+                "type_args": []
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "rs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "http",
+                    "tok": 48
+                  },
+                  "field": "Mount",
+                  "tok": 50
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/members",
+                    "tok": 52
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "http",
+                        "tok": 54
+                      },
+                      "field": "Static",
+                      "tok": 56
+                    },
+                    "args": [
+                      {
+                        "k": "strlit",
+                        "value": "/files",
+                        "tok": 58
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "/srv/members",
+                        "tok": 60
+                      },
+                      {
+                        "k": "named_arg",
+                        "name": "cache",
+                        "value": {
+                          "k": "composite",
+                          "type_name": "http.Fresh",
+                          "elems": [
+                            {
+                              "key": "maxAge",
+                              "value": {
+                                "k": "int",
+                                "value": 86400,
+                                "tok": 70
+                              }
+                            }
+                          ],
+                          "tok": 64,
+                          "type_args": []
+                        },
+                        "tok": 62
+                      }
+                    ],
+                    "tok": 57
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "http.Middleware"
+                    },
+                    "elems": [
+                      {
+                        "k": "ident",
+                        "name": "auth",
+                        "tok": 80
+                      }
+                    ],
+                    "mut": false,
+                    "tok": 74
+                  }
+                ],
+                "tok": 51
+              }
+            ],
+            "tok": 46
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 84
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "len",
+                    "tok": 86
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "rs",
+                      "tok": 88
+                    }
+                  ],
+                  "tok": 87
+                }
+              ],
+              "tok": 85
+            }
+          }
+        ]
+      },
+      "tok": 7,
+      "bodiless": false,
+      "span": {
+        "start": 6,
+        "end": 94
+      },
+      "sig_end": 10
+    }
+  ],
+  "consts": []
+}

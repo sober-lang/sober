@@ -1,0 +1,22 @@
+package main
+
+import "std/http"
+
+// 受理: 共有の静的ファイル + 認証の middleware の API（別の Mount）・共有のルートで認証でないヘッダ（Accept-Language）を読む・
+// 認証つきの API の応答は Private / NoStore / 既定の private・認証つきのルートの Revalidate（共有可の宣言の外）
+func api(r http.Request) http.Response {
+    return http.Response{status: 200, contentType: "text/plain", body: bytes("hi ${if http.Cookie(r, "sid") != nil { "member" } else { "guest" }}\n"), cache: http.Private{maxAge: 30}}
+}
+
+func lang(r http.Request) http.Response {
+    l := http.Header(r, "accept-language")
+    return http.Text(if l != nil { l } else { "en" })
+}
+
+func main() {
+    auth := http.Middleware{before: (r) => if http.Cookie(r, "sid") == nil { http.Status(401) } else { nil }}
+    apis := http.Mount("/api", []http.Route{http.Route{method: "GET", path: "/me", handler: api}, http.Route{method: "GET", path: "/feed", handler: api, cache: http.Revalidate{}}}, []http.Middleware{auth})
+    pub := http.Merge(http.Static("/assets", "/srv/www", cache: http.Shared{maxAge: 3600, sMaxAge: 86400}), []http.Route{http.Route{method: "GET", path: "/lang", handler: lang, cache: http.Fresh{maxAge: 60}}})
+    rs := http.Merge(apis, pub)
+    println(len(rs))
+}

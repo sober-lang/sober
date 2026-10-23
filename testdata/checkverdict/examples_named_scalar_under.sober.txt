@@ -1,2 +1,2 @@
-sober: desugar error at examples/named_scalar_under.sober:8:14 (TypeMismatch)
+sober: load error at examples/named_scalar_under.sober:5:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
 exit=1

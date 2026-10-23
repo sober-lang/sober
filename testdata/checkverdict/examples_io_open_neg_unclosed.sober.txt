@@ -1,2 +1,2 @@
-sober: load error at examples/io_open_neg_unclosed.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line
+sober: load error at examples/io_open_neg_unclosed.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
 exit=1

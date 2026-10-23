@@ -1,0 +1,2 @@
+examples/origin_neg_mount.sober:8:21: error: Mount puts routes with the shared cache policy 'Fresh' under middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head) — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」) (Analyzer)
+exit=1

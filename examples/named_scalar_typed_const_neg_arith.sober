@@ -1,0 +1,12 @@
+package main
+
+// 負例（language.md 32 節 — 型つきの const）: 型つきの const にも named scalar の演算の制限が掛かる（算術は無い）
+
+type Status int
+
+const OK = Status(200)
+
+func main() {
+    x := OK + 1
+    println(int(x))
+}

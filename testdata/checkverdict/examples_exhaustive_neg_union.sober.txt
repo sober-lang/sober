@@ -1,0 +1,2 @@
+examples/exhaustive_neg_union.sober:13:12: error: @exhaustive: switch does not name every variant of the union Shape: missing Tri — add the cases (a default covers only values outside the closed set) (Analyzer)
+exit=1

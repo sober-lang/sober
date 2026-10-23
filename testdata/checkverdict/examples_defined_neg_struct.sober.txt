@@ -1,0 +1,2 @@
+sober: load error at examples/defined_neg_struct.sober:9:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
+exit=1

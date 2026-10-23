@@ -1,0 +1,12 @@
+package main
+
+// 負例（language.md 32 節「型の別名」・28 節）: 同一性の型の別名でもゼロ値は作れない（別名は実体の規則を素通しにしない）
+
+import "std/io"
+
+type F = io.File
+
+func main() {
+    f := F{}
+    println(1)
+}

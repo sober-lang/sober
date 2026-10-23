@@ -1,0 +1,12 @@
+package main
+
+import "std/http"
+
+// 共有のルートのハンドラが表の関数値を呼び、その中で Cookie を読む（C を持つ関数値の呼び出し）
+type Check func(r http.Request) bool
+
+func main() {
+    checks := []Check{(r) => http.Cookie(r, "sid") != nil}
+    rs := []http.Route{http.Route{method: "GET", path: "/p", handler: (r) => http.Text(if checks[0](r) { "a" } else { "b" }), cache: http.Fresh{maxAge: 60}}}
+    println(len(rs))
+}

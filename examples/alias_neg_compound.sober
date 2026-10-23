@@ -1,0 +1,9 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 右辺は型宣言の名前だけ — 合成の型は置けない
+
+type Bytes = []byte
+
+func main() {
+    println(1)
+}

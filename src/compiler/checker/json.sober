@@ -172,9 +172,11 @@ const W_CLOSE = 142
 const W_EPS = 143
 // clone の段で足した語（Lean の clone — 読み出しの注釈 "t" は省略可）
 const W_CLONE = 144
-const NW = 145
+// L1 で足した語（Lean の callMv — anchor つきの関数値の呼び出し。記録は [callmv, nc, f, e, a]）
+const W_CALLMV = 145
+const NW = 146
 // 注釈つき block（Lean の blockR）の式の kind。綴りは持たない（JSON では "block" + "t"）
-const K_BLOCKR = 145
+const K_BLOCKR = 146
 
 // 綴りの表は switch（if 式の鎖は F-22 の形 — 入れ子が深くなる）
 func wordStr(c int) string {
@@ -320,6 +322,7 @@ func wordStr(c int) string {
     case W_TX: "tx"
     case W_RX: "rx"
     case W_CLOSE: "close"
+    case W_CALLMV: "callmv"
     case W_EPS: "eps"
     case W_CLONE: "clone"
     default: "byte" // W_BYTE
@@ -327,7 +330,7 @@ func wordStr(c int) string {
 }
 
 func isExprKind(c int) bool {
-    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE
+    return c == W_NIL || c == W_SOME || (c >= W_LIT && c <= W_RECV) || c == W_STRLIT || c == W_COPYTO || c == W_KEYSM || c == W_CLONE || c == W_UNREACH || c == W_TOBYTE || c == W_TOINT || (c >= W_FLIT && c <= W_FFROMBITS) || (c >= W_SCOPE && c <= W_NEWCH) || c == W_CLOSE || c == W_CALLMV
 }
 
 func isTyKind(c int) bool {
@@ -651,6 +654,15 @@ func buildExpr(st mut S, fb int, c int) int {
             return if t < 0 { -1 } else { node(mut st, K_BLOCKR, nc(mut st, e), e, t, 0) }
         }
         return node(mut st, c, nc(mut st, e), e, 0, 0)
+    case W_CALLMV:
+        // {"k":"callmv","r":a,"f":F,"e":E} — 記録は [callmv, nc, f, e, a]
+        k := fN(mut st, fb, W_R)
+        f := fE(mut st, fb, W_F)
+        e := fE(mut st, fb, W_E)
+        if k < 0 || f < 0 || e < 0 {
+            return -1
+        }
+        return node(mut st, c, nc(mut st, f) | nc(mut st, e), f, e, k)
     case W_COPYTO:
         // {"k":"copyto","r":k,"t":T,"e":E} — 記録は [copyto, nc, e, t, k]
         k := fN(mut st, fb, W_R)

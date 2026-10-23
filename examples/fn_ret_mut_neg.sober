@@ -1,0 +1,21 @@
+package main
+
+// 負例（check も build も拒否）: mut の仮引数を持たない関数は、mut の中身（mut の slice / map — struct の欄の中も）を持つ値を返せない（language.md 26 節）。
+// 作るのは呼び手のゼロ値リテラル（`mut e := Eng{}`）
+
+import "std/table"
+
+type Eng struct {
+    sets table.Table[int]
+    n int
+}
+
+func newEng() Eng {
+    return Eng{sets: table.Table[int]{}, n: 0}
+}
+
+func main() {
+    mut e := newEng()
+    table.Push(mut e.sets, 3)
+    println(table.Get(mut e.sets, 0))
+}

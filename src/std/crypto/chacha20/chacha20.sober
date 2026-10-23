@@ -8,6 +8,7 @@ import "std/iter"
 const mask32 = 0xffffffff
 
 // 鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）。key は 32 バイト・nonce は 12 バイト（短ければ添字の境界の panic・長い分は読まない — 下の 2 つも同じ）
+@secret(key)
 func Block(key []byte, nonce []byte, counter int) []byte {
     mut x := mut []int{}
     for i <- iter.Range(0, 16) {
@@ -24,11 +25,13 @@ func Block(key []byte, nonce []byte, counter int) []byte {
 }
 
 // src を鍵ストリーム（ブロック番号 counter から）と xor したもの（暗号化 = 復号）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない
+@secret(key)
 func XorKeyStream(key []byte, nonce []byte, counter int, src []byte) []byte {
     return XorKeyStreamAt(key, nonce, counter, src, 0, len(src))
 }
 
 // src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。同じ鍵・nonce の鍵ストリームを 2 つの平文に使ってはならない
+@secret(key)
 func XorKeyStreamAt(key []byte, nonce []byte, counter int, src []byte, at int, n int) []byte {
     mut x := mut []int{}
     for i <- iter.Range(0, 16) {

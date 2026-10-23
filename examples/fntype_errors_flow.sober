@@ -1,0 +1,53 @@
+package main
+
+// 名前付き関数型の @errors の仮引数の名前の項（std/http の Stream の形）: S の @errors(emit, Bad) は「自分の Bad + emit に渡した実引数の失敗」。
+// Serve の `st((b) => send(b))?` の導出は Bad ∪ send の {Gone}（呼び手の switch はそれで網羅する）。
+// 負例 fntype_errors_neg_flow（emit の項を書かずにラムダが emit の失敗を返す形）
+
+type Bad error
+
+type Gone error
+
+type S func(emit func(b int) error?) error? @errors(emit, Bad)
+
+type Resp struct {
+    n int
+    stream S?
+}
+
+func gen(n int, emit func(b int) error?) error? {
+    if n > 9 {
+        return Bad{}
+    }
+    emit(n)?
+    return nil
+}
+
+func route(n int) Resp {
+    return Resp{n: n, stream: (emit) => gen(n, emit)}
+}
+
+func send(b int) error? {
+    return if b > 5 { Gone{} } else { nil }
+}
+
+@errors(Bad, Gone)
+func Serve(n int) error? {
+    r := route(n)
+    st := r.stream
+    if st != nil {
+        st((b) => send(b))?
+    }
+    return nil
+}
+
+func main() {
+    xs := []int{3, 7, 12}
+    for n <- xs {
+        println(switch Serve(n) {
+        case nil: "ok"
+        case Bad{}: "bad"
+        case Gone{}: "gone"
+        })
+    }
+}

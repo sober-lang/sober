@@ -1,20 +1,46 @@
-# bench/httparena — HttpArena の Sober のエントリ（net 4c）
+# sober
 
-[HttpArena](https://github.com/MDA2AV/HttpArena)（TechEmpower の後継のコミュニティのベンチ）の HTTP/1.1 の種目のうち、std/http の範囲で出られるもの（`meta.json` の `tests` — baseline・pipelined・limited-conn・latency-1m / latency-10k・async・json-comp〔応答の gzip は std/http の組み込み — `http.ServeConn(c, route, compress: http.Gzip{})`・report-714〕）のエントリ。HttpArena の `frameworks/<名前>/` の慣例の形（meta.json + Dockerfile + ソース）に合わせてある。
+[Sober](https://github.com/sober-lang/sober)'s standard library HTTP/1.1 server (`std/http` on `std/net`, TLS 1.3 from `std/tls`), default configuration.
 
-| ファイル | 役 |
-|---|---|
-| `main.sober` | サーバ（`/baseline11`・`/pipeline`・`/delay/{ms}` を 0.0.0.0:8080 で — 引数で番号を上書き） |
-| `meta.json` | HttpArena のエントリの宣言 |
-| `Dockerfile` | 本家の形（リリースの tarball から建てる）— **0.6.0（std/http を含む公開リリース）の後の TODO**。今の v0.5.x には std/http が無い |
-| `Dockerfile.local` | 手元・自前の fork の形（手元で建てた静的 ELF を `server` に置いて COPY — FROM scratch） |
-| `go/` | Go の対照（HttpArena の go-stdlib のハンドラの写し — 標準ライブラリだけ） |
-| `local.sh` / `summary.ts` | 素のプロセスで Sober と Go を交互に回して比を出す（負荷 = HttpArena と同じ gcannon と要求のファイル。latency-1m / latency-10k は本家と同じ zrk〔レート固定・v2.3.0 の pin を自動で取る〕・async は 32000 接続の GET /delay/10 — 種目 7 つ全部に対応。json = /json/{count}?m= を Accept-Encoding なしで〔本家に素の json 種目は無い — json-comp / json-tls / json-h2c の端点。手元の直列化の比だけ・meta.json には載せない〕・json-comp = 同じ巡回を Accept-Encoding: gzip, br で 4096 接続〔json-comp-16k = 16384〕・要約の末尾に応答 1 件のバイトと本家の採点の係数 (min Bpr / Bpr)²・latency はウォームアップ周つき・report-703） |
+## Stack
 
-計測:
+- **Language:** Sober 0.6.0
+- **Framework:** none beyond the standard library: `std/http` (server, router, middleware, gzip), `std/json`, `std/tls`
+- **Build:** the release tarball of the compiler (one static ELF, standard library built in) on `alpine`, static binary on `scratch`
 
-```sh
-GCANNON=/path/to/gcannon bench/httparena/local.sh -n 3 -d 5     # 手元（値は参考 — seccomp の下では時間が歪む）
-```
+## Endpoints
 
-公式の数字は GitHub Actions（`.github/workflows/httparena.yml` — 手動トリガ・同じジョブの中の交互計測の比の中央値）。検証は `scripts/httpcheck.sh`（HttpArena の validate.sh / validate-frag.py を模した網）。
+| Endpoint | Method | Port | Description |
+|----------|--------|------|-------------|
+| `/pipeline` | GET | 8080 | Returns `ok` (plain text) |
+| `/baseline11` | GET | 8080 | Sums query parameter values |
+| `/baseline11` | POST | 8080 | Sums query parameters + request body |
+| `/delay/{ms}` | GET | 8080 | Sleeps `ms` milliseconds, returns `ms` |
+| `/json/{count}?m=N` | GET | 8080, 8081 | First `count` dataset items with `total = price * quantity * m` |
+| `/echo` | POST | 8080, 8081 | Returns the request body back verbatim |
+
+## Notes
+
+- Routing through a plain table of `http.Route` values (method, `:param` / `*rest` patterns, per-route
+  `before` / `after` middleware, `Mount` / `Merge` to compose tables), dispatched with `http.Dispatch`
+- The request arrives parsed: `http.Param`, `http.Query`, `http.Header`, a buffered body
+  (Content-Length or chunked), `http.Form` and `http.JsonDoc`. The response is a value
+  (`http.Text`, `http.Json`, or `http.Response{status, contentType, body | stream, headers}`)
+- JSON serialized per request by `std/json` (`json.Encode`)
+- gzip is the server's built-in response compression (`http.ServeConn(..., compress: http.Gzip{})`),
+  at the default level, negotiated per request off `Accept-Encoding`, with `Vary: Accept-Encoding`
+- `json-tls` and `8gbit` listen on `8081` when `/certs/server.crt` and `/certs/server.key` (or `TLS_CERT` /
+  `TLS_KEY`) can be read: `tls.Serve` hands each connection to the same route table only after the handshake,
+  and `http.ServeWith` serves it over `tls.Recv` / `tls.Send`. TLS 1.3 only, X25519, AES-128-GCM and
+  ChaCha20-Poly1305, no session resumption
+- One task per connection (`net.Serve`), on a work-stealing scheduler with one worker per CPU in the
+  affinity mask (capped by the cgroup `cpu.max` quota). io_uring with an acceptor per worker, epoll fallback
+- Missing dataset file means an empty item list, the server still starts
+
+## Deployment
+
+The harness already runs entries this way; outside it:
+
+- io_uring is blocked by Docker's default seccomp profile: `--security-opt seccomp=unconfined`
+- the per-worker rings count against `RLIMIT_MEMLOCK` on kernels before 5.12: `--ulimit memlock=-1:-1`
+- one fd per connection: `--ulimit nofile=1048576:1048576`

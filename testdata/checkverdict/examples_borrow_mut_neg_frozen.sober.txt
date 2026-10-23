@@ -1,0 +1,2 @@
+examples/borrow_mut_neg_frozen.sober:20:37: error: this lambda captures `z` as a mut binding (it is passed to the call like `mut z`) after its contents were frozen by `freeze(z.acc)` — the frozen value could change. Capture it before the freeze, or freeze after the call (Analyzer)
+exit=1

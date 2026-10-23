@@ -51,6 +51,8 @@ Programs that use std/net (and so std/http and std/tls) need three things from t
 - memlock: each worker owns an io_uring ring, and older kernels charge ring memory to `RLIMIT_MEMLOCK` for the whole user. When ring setup fails with ENOMEM, Sober falls back as above (slower); raise the limit (`ulimit -l unlimited`, `LimitMEMLOCK=infinity` under systemd, `--ulimit memlock=-1` under Docker). From Linux 5.12 the memory is charged to the cgroup instead and this rarely matters
 - nofile: one connection is one file descriptor. systemd and many shells default to a soft limit of 1024 — raise it to at least the number of connections you expect (`ulimit -n`, `LimitNOFILE=`, `--ulimit nofile=…`)
 
+Run as a container's init (PID 1), a Sober program still stops on SIGTERM / SIGINT (exit codes 143 / 130) — no tini or `--init` is needed. The stop is immediate and in-flight connections are cut (there is no graceful drain yet).
+
 ## For developers: running the verification net
 
 When you work on the compiler itself, `scripts/gates.sh --full` runs every check. The net additionally needs:

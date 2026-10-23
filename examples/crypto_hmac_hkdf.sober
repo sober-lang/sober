@@ -4,11 +4,18 @@ package main
 // 切り方の全部（長さ 0〜200 を 1〜70 バイトずつ書いて一回の口と一致）と途中の Sum が状態を変えないこと。Go の双子 = scripts/oracles/crypto_hmac_hkdf.go
 // （crypto/hmac・crypto/hkdf・crypto/sha256 の値 + RFC の期待値の照合）
 
+import "std/crypto"
 import "std/crypto/hkdf"
 import "std/crypto/hmac"
 import "std/crypto/sha256"
 import "std/hex"
 import "std/iter"
+
+// show は鍵から導いた値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
+func show(got []byte, want string) string {
+    w, _ := hex.Parse(want)
+    return if crypto.Equal(got, w) { want } else { "MISMATCH" }
+}
 
 func rep(b int, n int) []byte {
     mut out := mut []byte{}
@@ -43,26 +50,26 @@ func sub(b []byte, from int, to int) []byte {
 }
 
 func main() {
-    println("hmac 1", hex.Format(hmac.Sum256(rep(0x0b, 20), bytes("Hi There"))))
-    println("hmac 2", hex.Format(hmac.Sum256(bytes("Jefe"), bytes("what do ya want for nothing?"))))
-    println("hmac 3", hex.Format(hmac.Sum256(rep(0xaa, 20), rep(0xdd, 50))))
-    println("hmac 4", hex.Format(hmac.Sum256(seq(1, 25), rep(0xcd, 50))))
-    println("hmac 5", hex.Format(sub(hmac.Sum256(rep(0x0c, 20), bytes("Test With Truncation")), 0, 16)))
-    println("hmac 6", hex.Format(hmac.Sum256(rep(0xaa, 131), bytes("Test Using Larger Than Block-Size Key - Hash Key First"))))
-    println("hmac 7", hex.Format(hmac.Sum256(rep(0xaa, 131), bytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm."))))
+    println("hmac 1", show(hmac.Sum256(rep(0x0b, 20), bytes("Hi There")), "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"))
+    println("hmac 2", show(hmac.Sum256(bytes("Jefe"), bytes("what do ya want for nothing?")), "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"))
+    println("hmac 3", show(hmac.Sum256(rep(0xaa, 20), rep(0xdd, 50)), "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"))
+    println("hmac 4", show(hmac.Sum256(seq(1, 25), rep(0xcd, 50)), "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"))
+    println("hmac 5", show(sub(hmac.Sum256(rep(0x0c, 20), bytes("Test With Truncation")), 0, 16), "a3b6167473100ee06e0c796c2955552b"))
+    println("hmac 6", show(hmac.Sum256(rep(0xaa, 131), bytes("Test Using Larger Than Block-Size Key - Hash Key First")), "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"))
+    println("hmac 7", show(hmac.Sum256(rep(0xaa, 131), bytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.")), "9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2"))
     // RFC 5869 A.1〜A.3
     p1 := hkdf.Extract(seq(0, 12), rep(0x0b, 22))
-    println("hkdf 1 prk", hex.Format(p1))
+    println("hkdf 1 prk", show(p1, "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"))
     o1, _ := hkdf.Expand(p1, seq(0xf0, 0xf9), 42)
-    println("hkdf 1 okm", hex.Format(o1))
+    println("hkdf 1 okm", show(o1, "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"))
     p2 := hkdf.Extract(seq(0x60, 0xaf), seq(0, 0x4f))
-    println("hkdf 2 prk", hex.Format(p2))
+    println("hkdf 2 prk", show(p2, "06a6b88c5853361a06104c9ceb35b45cef760014904671014a193f40c15fc244"))
     o2, _ := hkdf.Expand(p2, seq(0xb0, 0xff), 82)
-    println("hkdf 2 okm", hex.Format(o2))
+    println("hkdf 2 okm", show(o2, "b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87"))
     p3 := hkdf.Extract(bytes(""), rep(0x0b, 22))
-    println("hkdf 3 prk", hex.Format(p3))
+    println("hkdf 3 prk", show(p3, "19ef24a32c717b167f33a91d6f648bdf96596776afdb6377ac434c1c293ccb04"))
     o3, _ := hkdf.Expand(p3, bytes(""), 42)
-    println("hkdf 3 okm", hex.Format(o3))
+    println("hkdf 3 okm", show(o3, "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"))
     om, em := hkdf.Expand(p1, bytes(""), 8160)
     println("hkdf max", len(om), em == nil)
     _, eo := hkdf.Expand(p1, bytes(""), 8161)

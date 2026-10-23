@@ -55,7 +55,7 @@ func foldConsts(cx Cx, fs Funcs) Consts {
 
 // isDict は const 宣言 c の式が struct リテラルか、`@embed` で畳んだ map リテラルか
 func isDict(t ast.Tree, c int) bool {
-    return t.nodes[unparen(t, t.nodes[c].b)].kind == ast.EComposite || t.nodes[c].f == 1
+    return t.nodes[unparen(t, t.nodes[c].b)].kind == ast.EComposite || (t.nodes[c].f & 1) != 0
 }
 
 // lookupConst は package pk の const name（(ファイル, 宣言の節)。無ければファイル -1）
@@ -108,24 +108,69 @@ func resolveConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
     }
     t := cx.trees[f]
     // `@embed` の const は embedAll が畳み済み（検査も済み）
-    if t.nodes[c].f == 1 {
+    if (t.nodes[c].f & 1) != 0 {
         return 0, true
     }
     e := unparen(t, t.nodes[c].b)
     if t.nodes[e].kind == ast.EComposite {
         return 0, checkDict(cx, fs, f, e, fuel)
     }
-    return foldExpr(cx, fs, f, e, fuel)
+    return foldTop(cx, fs, f, e, fuel)
 }
 
-// foldConst は int const の値（辞書 const は拒否）
+// foldTop は const の値の式 e を畳む: 型つきの const（`T(定数式)` — T は下地 int の named scalar。language.md 32 節「型つきの const」）は中の定数式の値、
+// 他は foldExpr。変換は値の式の一番外にだけ置ける（定数式の中の変換・型つきの const の参照は foldExpr が拒否 — 型つきの値の算術は無い）
+func foldTop(cx Cx, fs Funcs, f int, e int, fuel int) (int, bool) {
+    a := namedConvArg(cx, f, e)
+    return foldExpr(cx, fs, f, if a >= 0 { a } else { e }, fuel)
+}
+
+// namedConvArg は式 e が下地 int の named scalar への変換 `T(x)` / `ref.T(x)` なら実引数 x の節（でなければ -1）
+func namedConvArg(cx Cx, f int, e int) int {
+    t := cx.trees[f]
+    x := t.nodes[e]
+    if x.kind != ast.ECall || ast.ListLen(t, x.b) != 1 {
+        return 0 - 1
+    }
+    cal := t.nodes[unparen(t, x.a)]
+    mut n := ""
+    if cal.kind == ast.EIdent {
+        n = Name(t, cal.a)
+    } else if cal.kind == ast.ESelector {
+        b := t.nodes[unparen(t, cal.a)]
+        if b.kind != ast.EIdent {
+            return 0 - 1
+        }
+        n = Name(t, b.a) + "." + Name(t, cal.b)
+    } else {
+        return 0 - 1
+    }
+    tf, td := typeDeclAt(cx, f, n)
+    if tf < 0 {
+        return 0 - 1
+    }
+    tt := cx.trees[tf]
+    sp := tt.nodes[tt.nodes[td].c]
+    if sp.kind != ast.BDefined || tt.nodes[sp.a].kind != ast.TName || !StrIs(tt, tt.nodes[sp.a].a, "int") {
+        return 0 - 1
+    }
+    return ast.ListAt(t, x.b, 0)
+}
+
+// typedConst は const（ファイル f の宣言 c）が型つきか（値の式が named scalar への変換）
+func typedConst(cx Cx, f int, c int) bool {
+    t := cx.trees[f]
+    return namedConvArg(cx, f, unparen(t, t.nodes[c].b)) >= 0
+}
+
+// foldConst は int const の値（定数式の中の参照 — 辞書 const と型つきの const は拒否）
 func foldConst(cx Cx, fs Funcs, f int, c int, fuel int) (int, bool) {
     if fuel == 0 {
         return 0, false
     }
     t := cx.trees[f]
     e := unparen(t, t.nodes[c].b)
-    if t.nodes[e].kind == ast.EComposite {
+    if t.nodes[e].kind == ast.EComposite || typedConst(cx, f, c) {
         return 0, false
     }
     return foldExpr(cx, fs, f, e, fuel)

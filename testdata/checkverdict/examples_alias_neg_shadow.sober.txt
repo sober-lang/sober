@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_shadow.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
+exit=1

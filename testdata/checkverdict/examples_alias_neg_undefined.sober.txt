@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_undefined.sober:5:6: the type an alias names is not declared or not visible here (a type from another package must be exported)
+exit=1

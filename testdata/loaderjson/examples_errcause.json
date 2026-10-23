@@ -166,6 +166,20 @@
             "freeze",
             "len"
           ]
+        },
+        {
+          "name": "ParseBool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "FormatBool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
         }
       ],
       "consts": []
@@ -539,6 +553,10 @@
     },
     {
       "name": "IntOutOfRange",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "InvalidBool",
       "pkg": "std/convert"
     },
     {

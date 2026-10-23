@@ -1,0 +1,26 @@
+package main
+
+// 匿名の関数型の欄の閉包の値を値の呼び出しの借りの実引数へそのまま渡す形 `st(s.put)` は、loader が η `st((b) => s.put(b))` に写す（language.md 25 節 5d —
+// 欄と借りの位置は env の鍵が別なので値をそのまま渡せない。η の借りのラムダは関数値を持つ s を捕捉する — 借りの閉包は関数値を持つ値も捕捉できる）
+
+type Stream func(emit func(b []byte) error?) error?
+
+type Sink struct {
+    put func(b []byte) error?
+}
+
+func two(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    return emit(bytes("de"))
+}
+
+func pump(st Stream, s Sink) error? {
+    return st(s.put)
+}
+
+func main() {
+    pre := "got "
+    s := Sink{put: (b []byte) => { println("${pre}${len(b)}"); nil }}
+    e := pump((emit) => two(emit), s)
+    println(e == nil)
+}

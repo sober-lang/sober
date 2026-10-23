@@ -6,7 +6,9 @@
 # PMU の無い VM（GH Actions / WSL2）向けに -e cpu-clock。カーネルのシンボルには
 # kernel.perf_event_paranoid=-1 と kernel.kptr_restrict=0 が要る（workflow が sysctl で設定）。
 #
-#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline] [-o レポートの出力先]
+#   bench/httparena/perf.sh [-d 秒] [-c 接続] [--profile baseline|pipelined|async] [-o レポートの出力先]
+# async = local.sh と同じ形（GET /delay/10・接続は -c でなく $ASYNC_CONNS 既定 32000 — 保留のタイマーを運ぶ接続の数が種目の形。
+# TIME_WAIT を大量に残すので、並べるなら最後に）。nofile は呼び手が上げておく（workflow は prlimit）
 # 前提: perf・gcannon（PATH か $GCANNON）・go は不要（Sober 側だけ）。CPU の割りは cpus.sh と同じ。
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -38,7 +40,7 @@ command -v perf > /dev/null || { echo "perf.sh: perf not found" >&2; exit 2; }
 REQ=${ARENA_REQ:-$W/req}
 if [ ! -f "$REQ/get.raw" ]; then
     mkdir -p "$REQ"
-    for f in get.raw post_cl.raw post_chunked.raw pipeline.raw; do
+    for f in get.raw post_cl.raw post_chunked.raw pipeline.raw async-delay.raw; do
         curl -fsSL -o "$REQ/$f" "https://raw.githubusercontent.com/MDA2AV/HttpArena/main/requests/$f" || { echo "perf.sh: cannot fetch requests/$f" >&2; exit 2; }
     done
 fi
@@ -61,6 +63,7 @@ done
 case "$prof" in
     baseline) args=(--raw "$REQ/get.raw,$REQ/post_cl.raw,$REQ/post_chunked.raw" -p 1); url=http://localhost:$port ;;
     pipelined) args=(-p 16); url=http://localhost:$port/pipeline ;;
+    async) args=(--raw "$REQ/async-delay.raw" -p 1); url=http://localhost:$port; conns=${ASYNC_CONNS:-32000} ;;
     *) echo "perf.sh: unknown profile $prof" >&2; exit 2 ;;
 esac
 timeout $((dur + 30)) taskset -c "$LOAD_CPUS" "$GC" "$url" "${args[@]}" -c "$conns" -t "$nload" -d "$((dur + 2))s" > "$W/gc.txt" 2>&1 &

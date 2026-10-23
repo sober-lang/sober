@@ -20,10 +20,11 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 
 | package | 概要 |
 |---|---|
+| [std/base64](base64.ja.md) | base64（RFC 4648）の符号化と復号: 標準の字母（RFC 4648 4 節 — 詰め '=' つき）の Encode ⇄ Decode と、URL・ファイル名に安全な字母（RFC 4648 5 節 — '-' '\_'・詰めなし）のEncodeUrl ⇄ DecodeUrl。 |
 | [std/binary](binary.ja.md) | バイト列の語単位の読み（1 バイトずつの読みを 1 回の検査 + 1 回の load に）。 |
 | [std/builder](builder.ja.md) | コピーせずに成長する可変長の列 Builder[T]（積んでから Build で 1 本の slice にする — 添字で読み書きする大きな表なら std/table） |
-| [std/compress/flate](compress-flate.ja.md) | DEFLATE（RFC 1951）の符号化（圧縮だけ — 解凍の API は持たない） |
-| [std/compress/gzip](compress-gzip.ja.md) | gzip（RFC 1952）の符号化（圧縮だけ — 中身は std/compress/flate） |
+| [std/compress/flate](compress-flate.ja.md) | DEFLATE（RFC 1951）の符号化（Encode）と復号（Decode — inflate.sober） |
+| [std/compress/gzip](compress-gzip.ja.md) | gzip（RFC 1952）の符号化と復号（中身は std/compress/flate） |
 | [std/convert](convert.ja.md) | 数値と文字列の変換（[language.md 37 節](../language.md)・[language.md 34 節](../language.md)の Format… / Parse…）。 |
 | [std/crypto](crypto.ja.md) | 暗号プリミティブの集約パッケージ。 |
 | [std/crypto/aesgcm](crypto-aesgcm.ja.md) | AES-128-GCM（NIST SP 800-38D — 鍵 16 バイト・nonce 12 バイト・tag 16 バイト）。 |
@@ -40,7 +41,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/hash/crc32](hash-crc32.ja.md) | CRC-32（IEEE 802.3 の多項式）の検査和 |
 | [std/hex](hex.ja.md) | バイト列の小文字の 16 進表記（Format）と、その逆向きの読み（Parse） |
 | [std/http](http.ja.md) | HTTP/1.1 のサーバの最小形: 接続 1 本の要求を順に route へ渡し、応答を書く。 |
-| [std/io](io.ja.md) | ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）。 |
+| [std/io](io.ja.md) | ファイル・標準ストリーム・ディレクトリの読み書き（[language.md 28 節](../language.md)）と根の下の開き（OpenRoot / OpenUnder）。 |
 | [std/iter](iter.ja.md) | push 型の生産者 Iter[T] と、for 式の生成元（Slice・Range）・消費（Each・Count・Sum） |
 | [std/json](json.ja.md) | JSON（RFC 8259）の読みと決定的な印字（[language.md 16 節](../language.md)）。 |
 | [std/layout](layout.ja.md) | @layout（[language.md 36 節](../language.md)）の裏方: 利用者は `layout.Decode[T](b, off)`・`layout.DecodeAt[T](b, off, i)`・`layout.Encode[T](mut out, v)`・`layout.Size[T]` を書き、loader の固定テンプレート（compiler/loader/layout.sober）が @layout の struct ごとの写しの関数（普通の Sober）を合成してその呼び出しに写す。 |
@@ -56,6 +57,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 | [std/testing](testing.ja.md) | テストの語彙の裏方: `_test.sober` の `assert(e)` は loader の固定テンプレート（compiler/loader/assert.sober）が「部分式を束縛 → 偽なら Fail」に写す。 |
 | [std/tls](tls.ja.md) | TLS 1.3 のサーバ（RFC 9846 — X25519・AES-128-GCM / ChaCha20-Poly1305・RSA-PSS の証明書・resumption / 0-RTT なし）。 |
 | [std/tls/record](tls-record.ja.md) | TLS 1.3 の record 層（RFC 9846 5 節 — 8446bis）。 |
+| [std/url](url.ja.md) | URL の部品の符号化: percent-encoding（RFC 3986 2.1）の Escape ⇄ Unescape と、クエリ文字列（application/x-www-form-urlencoded — `k=v&…`）の全部の組を読む ParseQuery。 |
 | [std/utf8](utf8.ja.md) | 検査済みの UTF-8 のビュー（View — 全体を 1 回検査すれば、文字境界で切った部分列は検査し直さずに string にできる）。 |
 
 ## 索引
@@ -72,14 +74,19 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`aesgcm.Overhead`](crypto-aesgcm.ja.md#overhead) — 長さの定数（バイト）
 - [`aesgcm.Prepare`](crypto-aesgcm.ja.md#prepare) — key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 - [`aesgcm.Seal`](crypto-aesgcm.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
-- [`aesgcm.SealTo`](crypto-aesgcm.ja.md#sealto) — head ‖ 暗号文 ‖ tag。
+- [`aesgcm.SealTo`](crypto-aesgcm.ja.md#sealto) — head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。
+- [`base64.Bad`](base64.ja.md#bad) — Decode / DecodeUrl の入力が綴りの規則に合わない（字母の外の文字・長さ・詰めの位置と数・最後の文字の使わない bit が 0 でない — RFC 4648 3.3・3.5）
+- [`base64.Decode`](base64.ja.md#decode) — 標準の字母の base64 の s のバイト列（長さは 4 の倍数・'=' の詰めは端の 1〜2 文字だけ — Encode の綴りだけを受ける）
+- [`base64.DecodeUrl`](base64.ja.md#decodeurl) — URL・ファイル名に安全な字母の base64 の s のバイト列（詰めの '=' は受けない — EncodeUrl の綴りだけを受ける）
+- [`base64.Encode`](base64.ja.md#encode) — b の標準の字母の base64（4 文字ずつ・端は '=' で詰める — Go の base64.StdEncoding.EncodeToString と同じ綴り）
+- [`base64.EncodeUrl`](base64.ja.md#encodeurl) — b の URL・ファイル名に安全な字母の base64（'+' '/' の代わりに '-' '\_'・詰めの '=' を書かない — Go の base64.RawURLEncoding と同じ綴り）
 - [`binary.Load64`](binary.ja.md#load64) — b[i]〜b[i + 7] の 8 バイトを little-endian で読んだ int（b[i] が最下位のバイト）。
 - [`binary.OutOfRange`](binary.ja.md#outofrange) — Load64 の読みが b の外にはみ出した（呼び手の契約違反 — panic ラベル。
 - [`builder.Build`](builder.ja.md#build) — 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
 - [`builder.Builder`](builder.ja.md#builder) — コピーせずに成長する可変長の列（[language.md 21 節](../language.md)の緩和策 2）。
 - [`builder.Get`](builder.ja.md#get) — i 番目（0 起点）に積んだ要素。
 - [`builder.Len`](builder.ja.md#len) — 積んだ要素の個数
-- [`builder.Push`](builder.ja.md#push) — x を末尾に積む
+- [`builder.Push`](builder.ja.md#push) — x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。
 - [`builder.PushAll`](builder.ja.md#pushall) — xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが要素ごとでなく chunk ごと。
 - [`builder.PushString`](builder.ja.md#pushstring) — s のバイト列を末尾に積む（PushAll(b, bytes(s))）
 - [`chacha20.Block`](crypto-chacha20.ja.md#block) — 鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）。
@@ -95,14 +102,17 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`chacha20poly1305.Overhead`](crypto-chacha20poly1305.ja.md#overhead) — 長さの定数（バイト）
 - [`chacha20poly1305.Prepare`](crypto-chacha20poly1305.ja.md#prepare) — key の Key（鍵の長さはここで見る）
 - [`chacha20poly1305.Seal`](crypto-chacha20poly1305.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
-- [`chacha20poly1305.SealTo`](crypto-chacha20poly1305.ja.md#sealto) — head ‖ 暗号文 ‖ tag。
+- [`chacha20poly1305.SealTo`](crypto-chacha20poly1305.ja.md#sealto) — head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。
 - [`convert.FloatOutOfRange`](convert.ja.md#floatoutofrange) — ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
+- [`convert.FormatBool`](convert.ja.md#formatbool) — b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
 - [`convert.FormatFixed`](convert.ja.md#formatfixed) — f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.\<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）
 - [`convert.FormatFloat`](convert.ja.md#formatfloat) — f の最短の往復表現（読み戻すと同じビットになる最短の 10 進 — Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴り・println と同じ）
 - [`convert.FormatInt`](convert.ja.md#formatint) — n の 10 進表記（Go の strconv.Itoa と同じ — ParseInt の対）。
 - [`convert.IntOutOfRange`](convert.ja.md#intoutofrange) — ParseInt の溢れ（int〔64 ビット〕の範囲の外 — Go の ErrRange と同じ。
+- [`convert.InvalidBool`](convert.ja.md#invalidbool) — ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
 - [`convert.InvalidFloat`](convert.ja.md#invalidfloat) — ParseFloat の構文の違い（10 進の数字・小数点・指数、または inf / infinity / nan でない）
 - [`convert.InvalidInt`](convert.ja.md#invalidint) — ParseInt の構文の違い（[+-]? と 10 進の数字の列でない — 空・空白・\_・16 進は受けない）
+- [`convert.ParseBool`](convert.ja.md#parsebool) — s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。
 - [`convert.ParseFloat`](convert.ja.md#parsefloat) — s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。
 - [`convert.ParseInt`](convert.ja.md#parseint) — s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`）
 - [`crc32.Sum`](hash-crc32.ja.md#sum) — data の CRC-32（IEEE 802.3 の多項式 — 反転形 0xedb88320・初期値と終わりの反転 0xffffffff。
@@ -112,11 +122,16 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`crypto.Rand`](crypto.ja.md#rand) — OS の暗号論的な乱数 n バイト（getrandom — 呼ぶのはこの 1 か所だけ。
 - [`crypto.Select`](crypto.ja.md#select) — m が -1 なら a、0 なら b（m は NonZero などで作った mask だけ — 他の値は契約違反で結果は不定）
 - [`crypto.Wipe`](crypto.ja.md#wipe) — b の全バイトを 0 にする（用済みの鍵の後始末）
+- [`flate.Bad`](compress-flate.ja.md#bad) — Decode の入力が DEFLATE の列でない（ブロックの型 3・stored の LEN と NLEN の不一致・Huffman の符号の長さの表が過剰 / 不完全・使えない記号〔長さ 286 / 287・距離 30 / 31〕・出力の頭より前を指す距離・最後のブロックの前で入力が尽きた〔切り詰め〕・最後のブロックの後に余りのバイト）
 - [`flate.BadLevel`](compress-flate.ja.md#badlevel) — Encode の level が 0〜9 の外（呼び手の契約違反 — panic ラベル。
+- [`flate.Decode`](compress-flate.ja.md#decode) — DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。
 - [`flate.Encode`](compress-flate.ja.md#encode) — data を DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列）に符号化する。
 - [`flate.EncodeWith`](compress-flate.ja.md#encodewith) — Encode と同じ符号化を作業域 w で行う（w の中身は入口で捨てる — 結果は w に依らず Encode(data, level) と同じバイト列）
 - [`flate.Prepare`](compress-flate.ja.md#prepare) — w を最大の入力（窓 32 KiB の鎖・2^15 のハッシュの表・ブロック 1 つの記号）の容量に整える（task.NewLocal の整え方）
+- [`flate.TooLarge`](compress-flate.ja.md#toolarge) — Decode の出力が maxSize バイトを越える（展開爆弾の封 — 越える書きの手前で止める。
 - [`flate.Work`](compress-flate.ja.md#work) — 符号器の作業域（ハッシュ鎖と記号の溜め — 8 KiB の本文で ≈ 150 KB・最大 ≈ 650 KB）。
+- [`gzip.Bad`](compress-gzip.ja.md#bad) — Decode の入力の gzip の包みが違う（ID が 1f 8b でない・CM が 8 でない・FLG の予約ビット・頭の欄の途中で尽きた・FHCRC の不一致・末尾の CRC-32 / 長さ〔ISIZE〕が中身と合わない・メンバの後に余りのバイト）。
+- [`gzip.Decode`](compress-gzip.ja.md#decode) — gzip（RFC 1952）の data を復号したバイト列（Encode の対）。
 - [`gzip.Encode`](compress-gzip.ja.md#encode) — data を gzip（RFC 1952 — 1 個のメンバ）に符号化する: 10 バイトの頭（ID 1f 8b・CM 8 = deflate・FLG 0・MTIME 0・XFL・OS 255 = 不明）+ flate.Encode(data, level) + CRC-32 + 長さ（mod 2^32）の 8 バイト（どちらも little endian）。
 - [`gzip.EncodeWith`](compress-gzip.ja.md#encodewith) — Encode と同じ符号化を flate の作業域 w で行う（flate.EncodeWith と同じ API — ワーカー局所の lease で借りた w を渡す。
 - [`hash.Sha256`](hash.ja.md#sha256) — data の SHA-256 の値（32 バイト — FIPS 180-4）。
@@ -128,53 +143,90 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`hkdf.TooLong`](crypto-hkdf.ja.md#toolong) — Expand の長さが RFC の上限（255 × 32 バイト）を超えた（または負）
 - [`hmac.Sum256`](crypto-hmac.ja.md#sum256) — key で msg の HMAC-SHA256（32 バイト）。
 - [`http.After`](http.ja.md#after) — ハンドラの後に走るコールバック（内側が返した応答 w を受けて応答を返す）
+- [`http.Authorization`](http.ja.md#authorization) — r の Authorization ヘッダの値（認証の源 — 最初の行。
+- [`http.BadEvent`](http.ja.md#badevent) — Event の event / id に CR・LF・NUL がある（呼び手の契約違反 — イベントの差し込みの封: 行の区切りを値に書けると、受け手に別のイベントや欄を足せる。
 - [`http.BadHeader`](http.ja.md#badheader) — Response の headers の 1 本が書けない（名前が空か tchar でない・値に CR / LF / NUL・std/http が書く名前 — 呼び手の契約違反。
 - [`http.BadLevel`](http.ja.md#badlevel) — Gzip の level が 0〜9 の外（呼び手の契約違反 — panic ラベル。
+- [`http.BadMultipart`](http.ja.md#badmultipart) — Multipart が読めない本文（Content-Type が multipart/form-data でない・boundary が無いか形が違う・境界の行や部分の頭の形の誤り・閉じの境界が無い・部分の数か部分の頭の大きさが上限を超える）。
+- [`http.BadRequest`](http.ja.md#badrequest) — 400 Bad Request（要求の頭が読めない）
 - [`http.Before`](http.ja.md#before) — ハンドラの前に走るコールバック（nil = 続ける・応答を返すと short-circuit — 内側の middleware とハンドラは走らない）
+- [`http.Cache`](http.ja.md#cache) — 保存の方針（Cache-Control の値）。
+- [`http.Coded`](http.ja.md#coded) — 応答の本文が要求の Accept-Encoding で選ばれたこと（encoding = 選んだ符号化〔"br" / "gzip"〕・"" = 候補を見たが元のまま）。
+- [`http.ContentTooLarge`](http.ja.md#contenttoolarge) — 413 Content Too Large（本文が上限を超える）
+- [`http.Cookie`](http.ja.md#cookie) — r の Cookie ヘッダの name の値（認証の源 — RFC 6265 5.4 の `name=value; name2=value2` を `;` で切り、前後の空白を除いて名前がちょうど等しい〔大文字小文字を区別する〕最初の組の値。
+- [`http.Created`](http.ja.md#created) — 201 Created
 - [`http.Dispatch`](http.ja.md#dispatch) — routes から r に一致する行を選んで middleware とハンドラを走らせる。
+- [`http.Event`](http.ja.md#event) — Server-Sent Events のイベント 1 つ（WHATWG HTML 9.2 の text/event-stream — FormatEvent で組んで stream の emit に渡す）。
 - [`http.Field`](http.ja.md#field) — 任意ヘッダの 1 本
+- [`http.Forbidden`](http.ja.md#forbidden) — 403 Forbidden
 - [`http.Form`](http.ja.md#form) — 本文（Content-Type が application/x-www-form-urlencoded のとき）の key の値（Query と同じ切り方 — `k=v&…` の最初の一致・デコードしない。
+- [`http.FormatEvent`](http.ja.md#formatevent) — e の text/event-stream の 1 イベント（`event:`・`id:`・`retry:`・`data:` の行と、終わりの空行）。
+- [`http.Found`](http.ja.md#found) — 302 Found
 - [`http.Gzip`](http.ja.md#gzip) — ServeConn の compress: の値（応答の gzip — RFC 1952。
+- [`http.HTTPVersionNotSupported`](http.ja.md#httpversionnotsupported) — 505 HTTP Version Not Supported
 - [`http.Handler`](http.ja.md#handler) — 要求 1 件の処理（ルートの表の行が持つ）
 - [`http.Header`](http.ja.md#header) — r のヘッダ name の値（名前は大文字小文字を区別しない — 最初の一致。
 - [`http.Headers`](http.ja.md#headers) — 任意ヘッダの列（Response の欄を option の包みにしてあるのは、欄を持たない応答〔大半〕の道に空の列の確保と region の付け替えを積まないため）
+- [`http.InternalServerError`](http.ja.md#internalservererror) — 500 Internal Server Error（handler の失敗）
 - [`http.Json`](http.ja.md#json) — 200・application/json の応答（s は組み上がった JSON — std/json の Put… / Done）
 - [`http.JsonDoc`](http.ja.md#jsondoc) — 本文を JSON として読んだ表（std/json の Doc — 型へは `json.Decode[T](d, json.Root(d))`。
 - [`http.Merge`](http.ja.md#merge) — a と b を繋いだ表
+- [`http.MethodNotAllowed`](http.ja.md#methodnotallowed) — 405 Method Not Allowed（Dispatch — Allow を付ける）
 - [`http.Middleware`](http.ja.md#middleware) — ルートの前後に挟む処理（before と after の組 — どちらも省ける）。
 - [`http.Mount`](http.ja.md#mount) — routes の各行の path の前に prefix を付け、mw を各行の middleware の列の頭に足した表（純関数 — 足した mw は元の行の mw より外側で走る）。
+- [`http.MovedPermanently`](http.ja.md#movedpermanently) — 301 Moved Permanently
+- [`http.Multipart`](http.ja.md#multipart) — r の本文（Content-Type が multipart/form-data — boundary つき）の部分の列（本文の順）。
+- [`http.NoContent`](http.ja.md#nocontent) — 204 No Content（本文なし・Content-Length を書かない）
+- [`http.NotFound`](http.ja.md#notfound) — 404 Not Found（Dispatch の一致なし・Static のファイルなし）
+- [`http.NotImplemented`](http.ja.md#notimplemented) — 501 Not Implemented（知らない Transfer-Encoding）
+- [`http.NotModified`](http.ja.md#notmodified) — 304 Not Modified（条件付き GET の一致 — 本文なし）
+- [`http.OK`](http.ja.md#ok) — 200 OK
 - [`http.Param`](http.ja.md#param) — r のパターンの :key / \*key の値（Dispatch が一致させたパターンと path を並べて歩く — パターンに key が無い・ルーターを通らない要求は nil）
+- [`http.Part`](http.ja.md#part) — multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
+- [`http.PreconditionFailed`](http.ja.md#preconditionfailed) — 412 Precondition Failed（If-Match / If-Unmodified-Since の不一致）
 - [`http.Query`](http.ja.md#query) — r の query の key の値（`k=v&…` の最初の一致・= の無い項目は値 ""・デコードしない。
 - [`http.Request`](http.ja.md#request) — 要求 1 件（この反復の region — route が返ったら消える。
+- [`http.RequestHeaderFieldsTooLarge`](http.ja.md#requestheaderfieldstoolarge) — 431 Request Header Fields Too Large（要求の頭が上限を超える）
 - [`http.Response`](http.ja.md#response) — 応答（status・Content-Type〔"" なら書かない〕・本文）。
 - [`http.Route`](http.ja.md#route) — ルートの表の 1 行（method + path のパターン → ハンドラ・ルート単位の middleware）。
 - [`http.ServeConn`](http.ja.md#serveconn) — c の要求を順に route に渡して応答を書く（keep-alive）。
 - [`http.ServeWith`](http.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。
-- [`http.Status`](http.ja.md#status) — 本文なしの応答（404 / 405 …）
+- [`http.ServiceUnavailable`](http.ja.md#serviceunavailable) — 503 Service Unavailable
+- [`http.Static`](http.ja.md#static) — prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。
+- [`http.Status`](http.ja.md#status) — 本文なしの応答（http.NotFound / http.MethodNotAllowed …）
+- [`http.StatusCode`](http.ja.md#statuscode) — 応答の状態の番号（RFC 9110 15 節）。
 - [`http.Stream`](http.ja.md#stream) — 応答の本文の供給（emit は借り — 呼ぶ・借りの位置へ渡すだけ。
 - [`http.Text`](http.ja.md#text) — 200・text/plain の応答
+- [`http.Unauthorized`](http.ja.md#unauthorized) — 401 Unauthorized
+- [`http.Validators`](http.ja.md#validators) — 応答の検証子（ETag と Last-Modified — Static が作る。
 - [`http.WorkNoCompress`](http.ja.md#worknocompress) — ServeConn の work: を compress: なしで渡した（作業域は圧縮の符号器のもの — 呼び手の契約違反。
 - [`io.Bytes`](io.ja.md#bytes) — 読むだけのバイト列の View（Chunks / Lines の切片 — [language.md 28 節](../language.md)「読みのストリーム」）。
 - [`io.Chunks`](io.ja.md#chunks) — f を今の位置から EOF まで切片ずつ k へ渡す（失敗しうる生成元 — `for c <- io.Chunks(f)? { … }`）。
 - [`io.ChunksAt`](io.ja.md#chunksat) — f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同じ切片・先読み — 読みは pread の形で f の位置を動かさない。
 - [`io.Close`](io.ja.md#close) — f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。
+- [`io.CloseRoot`](io.ja.md#closeroot) — r を閉じる（OpenRoot の直後の defer でだけ書ける — desugar/filecheck）
 - [`io.Closed`](io.ja.md#closed) — 相手がもういない（[language.md 28 節](../language.md)の net — 送信の EPIPE / ECONNRESET・受信の RST・接続の拒否を 1 本で。
 - [`io.Denied`](io.ja.md#denied) — 許可が無い（errno の EACCES / EPERM / EROFS）
 - [`io.DirEntry`](io.ja.md#direntry) — ReadDir が返すディレクトリの項目 1 つ（名前と種類）
 - [`io.EntryKind`](io.ja.md#entrykind) — ディレクトリの項目の種類（getdents64 の d\_type）。
 - [`io.Expired`](io.ja.md#expired) — 自分の期限が尽きた（[language.md 28 節](../language.md)「デッドライン」）: 囲む task.Run の deadline: が過ぎた後に I/O 呼び出しを行った。
 - [`io.File`](io.ja.md#file) — Open で開いたファイル（[language.md 28 節](../language.md)「資源とストリーム」— 同一性を持つ型: 作る関数は Open だけ・後始末は同じブロックの`defer io.Close(f)`・写せない・外へ出せない・give: では渡せない — 子は path から自分で開く。
+- [`io.FileInfo`](io.ja.md#fileinfo) — Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体を見て path を引き直さない。
 - [`io.Flush`](io.ja.md#flush) — バッファに残った分を書き出し、それまでの書き出しの失敗を返す（返したら失敗は消える）
 - [`io.Lines`](io.ja.md#lines) — f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす・最後の行は改行が無くても渡す — Go の bufio.ScanLines と同じ）。
 - [`io.NotFound`](io.ja.md#notfound) — ファイルかディレクトリが無い（errno の ENOENT / ENOTDIR）
 - [`io.Open`](io.ja.md#open) — path のファイルを読むために開く（O\_RDONLY）。
+- [`io.OpenRoot`](io.ja.md#openroot) — path のディレクトリを OpenUnder の根として開く（openat の O\_PATH | O\_DIRECTORY）。
+- [`io.OpenUnder`](io.ja.md#openunder) — r の下の rel のファイルを読むために開く（openat2 の RESOLVE\_BENEATH | RESOLVE\_NO\_MAGICLINKS）。
 - [`io.Other`](io.ja.md#other) — 上のラベルに当たらない errno の開いたバケツ（[language.md 13 節](../language.md)「正直な宣言」）。
 - [`io.Raw`](io.ja.md#raw) — v のバイト列（読むだけ — 同じ反復の中の View）
 - [`io.ReadAll`](io.ja.md#readall) — f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。
 - [`io.ReadDir`](io.ja.md#readdir) — path の項目を名前のバイト順で返す（`.` / `..` は含めない — Go の os.ReadDir と同じ）。
 - [`io.ReadFile`](io.ja.md#readfile) — path のファイルを全部読む
 - [`io.ReadStdin`](io.ja.md#readstdin) — 標準入力（fd 0）を EOF まで全部読む（同期 — Unix フィルタの入口。
+- [`io.Root`](io.ja.md#root) — 根として開いたディレクトリ（[language.md 28 節](../language.md)「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの`defer io.CloseRoot(r)`・写せない・外へ出せない・give: では渡せない）。
 - [`io.SetFile`](io.ja.md#setfile) — 書き出す先を f に変える（io.Stdout / io.Stderr — 番号は Stream の中に閉じる）
+- [`io.Stat`](io.ja.md#stat) — f の属性（fstat(2) の大きさ・更新時刻・種類 — 通常のファイルでなくても誤りにしない: 判定は kind で呼び手が）
 - [`io.Stderr`](io.ja.md#stderr) — 標準ストリーム（開いている fd 0 / 1 / 2）
 - [`io.Stdin`](io.ja.md#stdin) — 標準ストリーム（開いている fd 0 / 1 / 2）
 - [`io.Stdout`](io.ja.md#stdout) — 標準ストリーム（開いている fd 0 / 1 / 2）
@@ -258,7 +310,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`os.Args`](os.ja.md#args) — プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。
 - [`os.Getenv`](os.ja.md#getenv) — 環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。
 - [`os.Mkdir`](os.ja.md#mkdir) — path のディレクトリを作る（mkdir(2) — 許可の bit は 0o755。
-- [`os.ModTime`](os.ja.md#modtime) — path の更新時刻（stat(2) の st\_mtim — エポックからの ns。
+- [`os.ModTime`](os.ja.md#modtime) — path の更新時刻（stat(2) の st\_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。
 - [`os.Rename`](os.ja.md#rename) — from を to へ付け替える（rename(2) — 同じファイルシステムの中では原子的で、to が既にあれば置き換える）。
 - [`os.Run`](os.ja.md#run) — path のプログラムを args（argv[1:] — argv[0] は path）で子プロセスとして走らせ、終了を待って終了コードを返す（シグナルで死んだら 128 + 番号 — シェルと同じ）。
 - [`os.Sleep`](os.ja.md#sleep) — ms ミリ秒眠る（負の値は 0 と同じ）。
@@ -353,6 +405,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`strings.Count`](strings.ja.md#count) — s に含まれる substr の重ならない出現数を返す。
 - [`strings.Cut`](strings.ja.md#cut) — s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s・""・false）。
 - [`strings.CutLast`](strings.ja.md#cutlast) — s を最後の sep の前と後に割る（無ければ s・""・false — Cut の最後の出現版。
+- [`strings.EqualFold`](strings.ja.md#equalfold) — s と t が ASCII の大文字小文字を同一視して等しいか（Go の strings.EqualFold の ASCII の部分 — 非 ASCII のバイトは完全一致で比べる。
+- [`strings.Fields`](strings.ja.md#fields) — s を ASCII の空白の連なりで割った空でない片の列（Go の strings.Fields — 空白だけ / 空なら空の列）。
 - [`strings.HasPrefix`](strings.ja.md#hasprefix) — s が prefix で始まるかを返す
 - [`strings.HasSuffix`](strings.ja.md#hassuffix) — s が suffix で終わるかを返す
 - [`strings.Index`](strings.ja.md#index) — substr が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。
@@ -360,7 +414,14 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`strings.IndexInvalid`](strings.ja.md#indexinvalid) — 最初の不正なシーケンスの位置、妥当なら -1
 - [`strings.InvalidUtf8`](strings.ja.md#invalidutf8) — 不正な UTF-8（pos = 最初の不正なシーケンスの先頭バイトのオフセット）
 - [`strings.Join`](strings.ja.md#join) — ps を sep で繋いだ string（Go の strings.Join と同じ）。
+- [`strings.LastIndex`](strings.ja.md#lastindex) — substr が s に最後に現れる位置を bytes(s) 上のバイトオフセットで返す。
+- [`strings.Replace`](strings.ja.md#replace) — s の old の重ならない出現を前から n 個 new に置き換えた string（Go の strings.Replace — n \< 0 なら全部・n == 0 なら s）。
+- [`strings.Split`](strings.ja.md#split) — s を sep の出現ごとに割った片の列（Go の strings.Split と同じ）。
+- [`strings.ToLower`](strings.ja.md#tolower) — s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の strings.ToLower の ASCII の部分 — 非 ASCII の文字はそのまま。
+- [`strings.ToUpper`](strings.ja.md#toupper) — s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の strings.ToUpper の ASCII の部分 — 非 ASCII の文字はそのまま。
 - [`strings.TrimPrefix`](strings.ja.md#trimprefix) — s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
+- [`strings.TrimSpace`](strings.ja.md#trimspace) — s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace — Unicode の空白は外さない）
+- [`strings.TrimSuffix`](strings.ja.md#trimsuffix) — s が suffix で終わればそれを外した残り、でなければ s（Go の strings.TrimSuffix — 残りは suffix の頭で終わるので文字の境目）
 - [`strings.Valid`](strings.ja.md#valid) — b 全体が有効な UTF-8 か（IndexInvalid(b) \< 0 と同じ）
 - [`table.At`](table.ja.md#at) — 凍った表の i 番目（0 起点）の要素。
 - [`table.CHUNK`](table.ja.md#chunk) — 表現の定数: chunk 1 本の要素数 CHUNK（= 1 \<\< CHUNK\_BITS）と、初回の Push で積む chunk ヘッダの本数 DIR0
@@ -431,6 +492,11 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`tls.Recv`](tls.ja.md#recv) — c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。
 - [`tls.Send`](tls.ja.md#send) — b を application の record にして c へ送る（空の b は送らない）。
 - [`tls.Serve`](tls.ja.md#serve) — addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
+- [`url.Bad`](url.ja.md#bad) — Unescape / ParseQuery の入力が読めない（'%' の後が 16 進の 2 桁でない・復号したバイト列が UTF-8 でない）
+- [`url.Escape`](url.ja.md#escape) — s の percent-encoding（RFC 3986 2.3 の unreserved = 英数字と '-' '.' '\_' '~' はそのまま・他のバイトは "%XX" — 16 進は大文字 2.1。
+- [`url.Pair`](url.ja.md#pair) — クエリの 1 組（ParseQuery の結果 — 書かれた順・同じ key も別の組）
+- [`url.ParseQuery`](url.ja.md#parsequery) — クエリ文字列 s（先頭の '?' は含めない）の全部の組（'&' で切る・空の項目は飛ばす・'=' の無い項目は値 ""・key と value は '+' を空白に読んでからUnescape と同じ復号 — WHATWG URL の application/x-www-form-urlencoded の読み）。
+- [`url.Unescape`](url.ja.md#unescape) — s の "%XX"（16 進は大小どちらも）を 1 バイトに戻した文字列（'+' はそのまま — 空白に読むのは ParseQuery だけ）
 - [`utf8.Bytes`](utf8.ja.md#bytes) — View のバイト列（読むだけ）
 - [`utf8.CHECK_GRAIN`](utf8.ja.md#check_grain) — 大きい入力の Check を区間に割って並列に検査するときの大きさ（バイト）。
 - [`utf8.CHECK_PAR_MIN`](utf8.ja.md#check_par_min) — 大きい入力の Check を区間に割って並列に検査するときの大きさ（バイト）。

@@ -1,0 +1,2 @@
+sober: load error at examples/io_root_neg_capture.sober:23:38: a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)
+exit=1

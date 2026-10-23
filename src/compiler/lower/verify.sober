@@ -403,6 +403,9 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
         return if m != "" { m } else { vfyList(mut st, mut v, mut w, b, -1, "task switch operand") }
     case OpSyscall:
         n := xLen(mut st, a)
+        if b == CY_B {
+            return if n != 0 { "cycles with ${n} operands" } else { "" }
+        }
         if b == MM_B {
             nm := if c == MK_CPU { 0 } else if c == MK_MUL { 6 } else { -1 }
             return if n != nm { "montmul op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "montmul") }

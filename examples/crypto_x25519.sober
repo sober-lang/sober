@@ -3,6 +3,7 @@ package main
 // std/crypto/x25519（report-794）: RFC 7748 5.2 の 2 例・反復（1 回・100 回 — 1000 回は Go の双子が RFC の値と照合〔passes の 10 秒に収めるため〕）・6.1 の Diffie-Hellman の例と、擬似乱数の鍵 16 組の
 // 対称性（a × (b × 9) = b × (a × 9)）と Go の crypto/ecdh の値。Go の双子 = scripts/oracles/crypto_x25519.go
 
+import "std/crypto"
 import "std/crypto/x25519"
 import "std/hex"
 import "std/iter"
@@ -23,9 +24,24 @@ func key(i int) []byte {
     return freeze(out)
 }
 
+// show は共有値 got（秘密 — 印字しない）を期待値 want（16 進）と crypto.Equal で照合し、一致なら want・違えば MISMATCH
+func show(got []byte, want string) string {
+    return if crypto.Equal(got, unhex(want)) { want } else { "MISMATCH" }
+}
+
+// pairWant は対称性の組 i（0・4・8・12）の共有値の期待値（Go の crypto/ecdh の値）
+func pairWant(i int) string {
+    return switch i {
+    case 0: "ae457b23bba53b72eb68a00177f34b0c08cec5f01984fa8cb1ece1fcadab0354"
+    case 4: "4426a9a27cbe80270d93d1a5fd1be65ab6e8369939fb276c254172752988f152"
+    case 8: "ec15fdd7899bd7ef6408c05ecf11fbecb58f69573cc25b10486425c2c9d9c135"
+    case _: "cc4b4e44dd793f9176fc794b099b9229da76415d063ff202c9ee033074de0601"
+    }
+}
+
 func main() {
-    println("rfc1", hex.Format(x25519.Shared(unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"), unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"))))
-    println("rfc2", hex.Format(x25519.Shared(unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"), unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493"))))
+    println("rfc1", show(x25519.Shared(unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"), unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"))
+    println("rfc2", show(x25519.Shared(unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d"), unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")), "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957"))
     mut k := unhex("0900000000000000000000000000000000000000000000000000000000000000")
     mut u := k
     for i <- iter.Range(0, 100) {
@@ -33,26 +49,27 @@ func main() {
         u = k
         k = r
         if i == 0 {
-            println("iter1", hex.Format(k))
+            println("iter1", show(k, "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079"))
         }
     }
-    println("iter100", hex.Format(k))
+    println("iter100", show(k, "b1a5a73158904c020866c13939dd7e1aa26852ee1d2609c92e5a8f1debe2150a"))
     ap := unhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
     bp := unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
     println("alice", hex.Format(x25519.Base(ap)))
     println("bob", hex.Format(x25519.Base(bp)))
-    println("shared", hex.Format(x25519.Shared(ap, x25519.Base(bp))), hex.Format(x25519.Shared(bp, x25519.Base(ap))))
+    sh := "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+    println("shared", show(x25519.Shared(ap, x25519.Base(bp)), sh), show(x25519.Shared(bp, x25519.Base(ap)), sh))
     mut same := 0
     for i <- iter.Range(0, 16) {
         a := key(2 * i)
         b := key(2 * i + 1)
         s1 := x25519.Shared(a, x25519.Base(b))
         s2 := x25519.Shared(b, x25519.Base(a))
-        if hex.Format(s1) == hex.Format(s2) {
+        if crypto.Equal(s1, s2) {
             same = same + 1
         }
         if i % 4 == 0 {
-            println("pair", i, hex.Format(x25519.Base(a)), hex.Format(s1))
+            println("pair", i, hex.Format(x25519.Base(a)), show(s1, pairWant(i)))
         }
     }
     println("symmetric", same)

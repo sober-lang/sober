@@ -6,8 +6,10 @@ package main
 // <dir>/<名前>.in と <dir>/<名前>.<level>.z（生の DEFLATE）・.gz（gzip）に書き、1 行ずつ「名前 level 入力の長さ 入力の CRC-32 出力の長さ 出力の CRC-32」を出す。
 // 照合（外の zlib で解いて一致・CRC-32 の一致・大きさの黄金）は testdata/flatecheck/check.ts。作業域の口（report-720）も照合する: ワーカー局所の lease で
 // 借りた作業域（flate.Prepare）・入力をまたいで使い回す 1 つの作業域（最初の入力の長さで取られ、足りない入力では新しい作業域に倒れる）の EncodeWith が
-// Encode とバイト一致（違えば FAIL の行）
-//   main <dataset.json> <dir>
+// Encode とバイト一致（違えば FAIL の行）。復号（report-1021）: 各符号化を flate.Decode / gzip.Decode で解いて入力と一致・maxSize がちょうどの長さなら通り
+// 1 バイト足りなければ TooLarge（違えば FAIL の行）。第 3 引数（twin.ts の index — node:zlib と Go の符号化）があれば各列を解いて <dir>/twin<i>.out に書き、
+// 「twin <i> 長さ CRC-32」を出す（解けなければ FAIL の行 — 照合は check.ts）
+//   main <dataset.json> <dir> [<index>]
 
 import "std/compress/flate"
 import "std/compress/gzip"
@@ -17,6 +19,7 @@ import "std/io"
 import "std/iter"
 import "std/json"
 import "std/os"
+import "std/strings"
 import "std/task"
 
 type Rating struct {
@@ -133,6 +136,19 @@ func words(n int, seed int) []byte {
     return freeze(b)
 }
 
+// noisy は短い句の繰り返しに 1/11 の無作為のバイトを挟む（std/internal/deflate の TestStreamSizes の text と同じ形 — 長さ 4 前後の一致が主の入力。
+// report-1059: 5 バイトのハッシュがこの形で率を zlib × 1.04 まで落とした — 23 形の corpus の穴の塞ぎ）
+func noisy(n int, seed int) []byte {
+    w := bytes("sober deflate stream window sync flush huffman lazy greedy ")
+    mut b := mut []byte{}
+    mut x := seed
+    for i <- iter.Range(0, n) {
+        x = (x * 1103515245 + 12345) & 0x7fffffff
+        b = append(b, if x % 11 == 0 { byte((x >> 8) & 255) } else { w[(i + seed) % len(w)] })
+    }
+    return freeze(b)
+}
+
 func cat(a []byte, b []byte) []byte {
     mut r := mut []byte{}
     for i <- iter.Range(0, len(a)) {
@@ -169,9 +185,75 @@ func one(dir string, lw task.Local, sw mut flate.Work, name string, data []byte)
         if !same(z, flate.EncodeWith(mut sw, data, lv)) {
             println("FAIL reuse ${name} ${convert.FormatInt(lv)}: EncodeWith differs from Encode")
         }
+        decoded(name, lv, data, z, g)
         io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.z", z)?
         io.WriteFile("${dir}/${name}.${convert.FormatInt(lv)}.gz", g)?
         println("${name} ${convert.FormatInt(lv)} ${convert.FormatInt(len(data))} ${convert.FormatInt(crc32.Sum(data))} ${convert.FormatInt(len(z))} ${convert.FormatInt(crc32.Sum(z))}")
+    }
+    return nil
+}
+
+// decoded は data の符号化 z（生の DEFLATE）・g（gzip）の復号の照合（往復・maxSize の境目）
+func decoded(name string, lv int, data []byte, z []byte, g []byte) {
+    at := "${name} ${convert.FormatInt(lv)}"
+    d := flate.Decode(z) catch bytes("<Bad>")
+    if !same(d, data) {
+        println("FAIL decode ${at}: flate.Decode differs from the input")
+    }
+    e := gzip.Decode(g) catch bytes("<Bad>")
+    if !same(e, data) {
+        println("FAIL decode ${at}: gzip.Decode differs from the input")
+    }
+    d2 := flate.Decode(z, maxSize: len(data)) catch bytes("<Bad>")
+    e2 := gzip.Decode(g, maxSize: len(data)) catch bytes("<Bad>")
+    if !same(d2, data) || !same(e2, data) {
+        println("FAIL decode ${at}: maxSize = length rejected")
+    }
+    if len(data) > 0 {
+        _, x := flate.Decode(z, maxSize: len(data) - 1)
+        _, y := gzip.Decode(g, maxSize: len(data) - 1)
+        if !isLarge(x) || !isLarge(y) {
+            println("FAIL decode ${at}: maxSize = length − 1 is not TooLarge")
+        }
+    }
+}
+
+// isLarge は e が flate.TooLarge か
+func isLarge(e error?) bool {
+    return switch e {
+    case nil: false
+    case flate.TooLarge{}: true
+    case flate.Bad{}: false
+    case gzip.Bad{}: false
+    }
+}
+
+// decodeAs は種類 kind（gz = gzip・他 = 生の DEFLATE）の b の復号
+func decodeAs(kind string, b []byte) ([]byte, error?) {
+    if kind == "gz" {
+        return gzip.Decode(b)
+    }
+    return flate.Decode(b)
+}
+
+// twins は index の各列（「パス 種類」— 種類 z = 生の DEFLATE・gz = gzip）を解いて <dir>/twin<i>.out に書く
+func twins(dir string, index string) error? {
+    text := string(io.ReadFile(index)?) catch ""
+    mut rest := text
+    mut i := 0
+    while rest != "" {
+        line, tail, _ := strings.Cut(rest, "\n")
+        rest = tail
+        path, kind, _ := strings.Cut(line, " ")
+        b := io.ReadFile(path)?
+        out, e := decodeAs(kind, b)
+        if e != nil {
+            println("FAIL twin ${convert.FormatInt(i)} ${path}: decode error")
+        } else {
+            io.WriteFile("${dir}/twin${convert.FormatInt(i)}.out", out)?
+            println("twin ${convert.FormatInt(i)} ${convert.FormatInt(len(out))} ${convert.FormatInt(crc32.Sum(out))}")
+        }
+        i += 1
     }
     return nil
 }
@@ -205,14 +287,18 @@ func run(ds string, dir string) error? {
     one(dir, lw, mut sw, "abc", rep("abcdefghij", 100003))?
     one(dir, lw, mut sw, "words", words(200000, 21))?
     one(dir, lw, mut sw, "mixed", cat(cat(words(20000, 22), rnd(5000, 256, 23)), rep("0123456789", 20000)))?
+    one(dir, lw, mut sw, "noisy", noisy(300000, 5))?
     return nil
 }
 
 func main() int {
     args := os.Args() catch return 2
-    if len(args) != 3 {
+    if len(args) != 3 && len(args) != 4 {
         return 2
     }
-    e := run(args[1], args[2])
+    mut e := run(args[1], args[2])
+    if e == nil && len(args) == 4 {
+        e = twins(args[2], args[3])
+    }
     return if e != nil { 1 } else { 0 }
 }

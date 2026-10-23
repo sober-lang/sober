@@ -1,0 +1,13 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 右辺に型引数は書けない — 型引数は使う側に書く（type B = Box の B[int]）
+
+type Box[T] struct {
+    v T
+}
+
+type IntBox = Box[int]
+
+func main() {
+    println(1)
+}

@@ -1,0 +1,2633 @@
+{
+  "package": "http",
+  "imports": [
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    },
+    {
+      "alias": "$utf8",
+      "path": "std/internal/utf8",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "rq",
+      "type_params": [],
+      "params": [
+        {
+          "name": "h",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Request"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "b"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "bytes",
+                  "tok": 13
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "h",
+                    "tok": 15
+                  }
+                ],
+                "tok": 14
+              }
+            ],
+            "tok": 11
+          },
+          {
+            "k": "bind",
+            "names": [
+              "r",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "request",
+                  "tok": 22
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "b",
+                    "tok": 24
+                  },
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "frameAt",
+                      "tok": 26
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "b",
+                        "tok": 28
+                      },
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 30
+                      },
+                      {
+                        "k": "int",
+                        "value": 8192,
+                        "tok": 32
+                      },
+                      {
+                        "k": "int",
+                        "value": 8192,
+                        "tok": 34
+                      }
+                    ],
+                    "tok": 27
+                  }
+                ],
+                "tok": 23
+              }
+            ],
+            "tok": 18
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "e",
+                    "tok": 40
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 42
+                  },
+                  "tok": 41
+                }
+              ],
+              "tok": 39
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "r",
+                "tok": 46
+              }
+            ],
+            "tok": 45
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 50
+      },
+      "sig_end": 10
+    },
+    {
+      "name": "is",
+      "type_params": [],
+      "params": [
+        {
+          "name": "v",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "name",
+              "name": "string"
+            }
+          },
+          "mutable": false
+        },
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "v",
+                  "tok": 63
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 65
+                },
+                "tok": 64
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "ident",
+                        "name": "false",
+                        "tok": 68
+                      }
+                    ],
+                    "tok": 67
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 62
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "v",
+                  "tok": 73
+                },
+                "rhs": {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 75
+                },
+                "tok": 74
+              }
+            ],
+            "tok": 72
+          }
+        ]
+      },
+      "tok": 51,
+      "bodiless": false,
+      "span": {
+        "start": 50,
+        "end": 79
+      },
+      "sig_end": 61
+    },
+    {
+      "name": "TestCookie",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "rq",
+                  "tok": 86
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "GET / HTTP/1.1\r\nHost: x\r\nCookie: a=1; sid=\"ab cd\" ;  b = 2;flag; Sid=up\r\nCookie: c=3\r\n\r\n",
+                    "tok": 88
+                  }
+                ],
+                "tok": 87
+              }
+            ],
+            "tok": 84
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 91
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 93
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 95
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 97
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "a",
+                          "tok": 99
+                        }
+                      ],
+                      "tok": 96
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "1",
+                      "tok": 102
+                    }
+                  ],
+                  "tok": 94
+                }
+              ],
+              "tok": 92
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 106
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 108
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 110
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 112
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "sid",
+                          "tok": 114
+                        }
+                      ],
+                      "tok": 111
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "ab cd",
+                      "tok": 117
+                    }
+                  ],
+                  "tok": 109
+                }
+              ],
+              "tok": 107
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 121
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 123
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 125
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 127
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "Sid",
+                          "tok": 129
+                        }
+                      ],
+                      "tok": 126
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "up",
+                      "tok": 132
+                    }
+                  ],
+                  "tok": 124
+                }
+              ],
+              "tok": 122
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 136
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 138
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 140
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 142
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "b",
+                          "tok": 144
+                        }
+                      ],
+                      "tok": 141
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "2",
+                      "tok": 147
+                    }
+                  ],
+                  "tok": 139
+                }
+              ],
+              "tok": 137
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 151
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 153
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 155
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 157
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "c",
+                          "tok": 159
+                        }
+                      ],
+                      "tok": 156
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "3",
+                      "tok": 162
+                    }
+                  ],
+                  "tok": 154
+                }
+              ],
+              "tok": 152
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 166
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Cookie",
+                      "tok": 168
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 170
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "flag",
+                        "tok": 172
+                      }
+                    ],
+                    "tok": 169
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 175
+                  },
+                  "tok": 174
+                }
+              ],
+              "tok": 167
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 178
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Cookie",
+                      "tok": 180
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 182
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "SID",
+                        "tok": 184
+                      }
+                    ],
+                    "tok": 181
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 187
+                  },
+                  "tok": 186
+                }
+              ],
+              "tok": 179
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 190
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Cookie",
+                      "tok": 192
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 194
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 196
+                      }
+                    ],
+                    "tok": 193
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 199
+                  },
+                  "tok": 198
+                }
+              ],
+              "tok": 191
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "rq",
+                  "tok": 204
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "GET / HTTP/1.1\r\nHost: x\r\n\r\n",
+                    "tok": 206
+                  }
+                ],
+                "tok": 205
+              }
+            ],
+            "tok": 202
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 209
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Cookie",
+                      "tok": 211
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "e",
+                        "tok": 213
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "a",
+                        "tok": 215
+                      }
+                    ],
+                    "tok": 212
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 218
+                  },
+                  "tok": 217
+                }
+              ],
+              "tok": 210
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "z"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "rq",
+                  "tok": 223
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "GET / HTTP/1.1\r\nCookie: a=; =b; c=\"\"\r\n\r\n",
+                    "tok": 225
+                  }
+                ],
+                "tok": 224
+              }
+            ],
+            "tok": 221
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 228
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 230
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 232
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "z",
+                          "tok": 234
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "a",
+                          "tok": 236
+                        }
+                      ],
+                      "tok": 233
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 239
+                    }
+                  ],
+                  "tok": 231
+                }
+              ],
+              "tok": 229
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 243
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 245
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Cookie",
+                        "tok": 247
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "z",
+                          "tok": 249
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "c",
+                          "tok": 251
+                        }
+                      ],
+                      "tok": 248
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "",
+                      "tok": 254
+                    }
+                  ],
+                  "tok": 246
+                }
+              ],
+              "tok": 244
+            }
+          }
+        ]
+      },
+      "tok": 80,
+      "bodiless": false,
+      "span": {
+        "start": 79,
+        "end": 260
+      },
+      "sig_end": 83
+    },
+    {
+      "name": "TestCredentialHeaders",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "r"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "rq",
+                  "tok": 267
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t0k\r\nProxy-Authorization: Basic eA==\r\nCookie: a=1\r\nAccept: */*\r\n\r\n",
+                    "tok": 269
+                  }
+                ],
+                "tok": 268
+              }
+            ],
+            "tok": 265
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 272
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Header",
+                      "tok": 274
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 276
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "authorization",
+                        "tok": 278
+                      }
+                    ],
+                    "tok": 275
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 281
+                  },
+                  "tok": 280
+                }
+              ],
+              "tok": 273
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 284
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Header",
+                      "tok": 286
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 288
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "Authorization",
+                        "tok": 290
+                      }
+                    ],
+                    "tok": 287
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 293
+                  },
+                  "tok": 292
+                }
+              ],
+              "tok": 285
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 296
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Header",
+                      "tok": 298
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 300
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "PROXY-AUTHORIZATION",
+                        "tok": 302
+                      }
+                    ],
+                    "tok": 299
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 305
+                  },
+                  "tok": 304
+                }
+              ],
+              "tok": 297
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 308
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Header",
+                      "tok": 310
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "r",
+                        "tok": 312
+                      },
+                      {
+                        "k": "strlit",
+                        "value": "cookie",
+                        "tok": 314
+                      }
+                    ],
+                    "tok": 311
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 317
+                  },
+                  "tok": 316
+                }
+              ],
+              "tok": 309
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 320
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 322
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Header",
+                        "tok": 324
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 326
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "accept",
+                          "tok": 328
+                        }
+                      ],
+                      "tok": 325
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "*/*",
+                      "tok": 331
+                    }
+                  ],
+                  "tok": 323
+                }
+              ],
+              "tok": 321
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 335
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 337
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Header",
+                        "tok": 339
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 341
+                        },
+                        {
+                          "k": "strlit",
+                          "value": "host",
+                          "tok": 343
+                        }
+                      ],
+                      "tok": 340
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "x",
+                      "tok": 346
+                    }
+                  ],
+                  "tok": 338
+                }
+              ],
+              "tok": 336
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 350
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "is",
+                    "tok": 352
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "Authorization",
+                        "tok": 354
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "r",
+                          "tok": 356
+                        }
+                      ],
+                      "tok": 355
+                    },
+                    {
+                      "k": "strlit",
+                      "value": "Bearer t0k",
+                      "tok": 359
+                    }
+                  ],
+                  "tok": 353
+                }
+              ],
+              "tok": 351
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 363
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "Authorization",
+                      "tok": 365
+                    },
+                    "args": [
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "rq",
+                          "tok": 367
+                        },
+                        "args": [
+                          {
+                            "k": "strlit",
+                            "value": "GET / HTTP/1.1\r\n\r\n",
+                            "tok": 369
+                          }
+                        ],
+                        "tok": 368
+                      }
+                    ],
+                    "tok": 366
+                  },
+                  "rhs": {
+                    "k": "nil",
+                    "tok": 373
+                  },
+                  "tok": 372
+                }
+              ],
+              "tok": 364
+            }
+          }
+        ]
+      },
+      "tok": 261,
+      "bodiless": false,
+      "span": {
+        "start": 260,
+        "end": 378
+      },
+      "sig_end": 264
+    },
+    {
+      "name": "TestCacheDefault",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 383
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 385
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Private",
+                        "elems": [],
+                        "tok": 387,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 386
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "private",
+                    "tok": 392
+                  },
+                  "tok": 391
+                }
+              ],
+              "tok": 384
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 395
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 397
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Private",
+                        "elems": [
+                          {
+                            "key": "maxAge",
+                            "value": {
+                              "k": "int",
+                              "value": 60,
+                              "tok": 403
+                            }
+                          }
+                        ],
+                        "tok": 399,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 398
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "private, max-age=60",
+                    "tok": 407
+                  },
+                  "tok": 406
+                }
+              ],
+              "tok": 396
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 410
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 412
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Private",
+                        "elems": [
+                          {
+                            "key": "maxAge",
+                            "value": {
+                              "k": "unary",
+                              "op": "-",
+                              "operand": {
+                                "k": "int",
+                                "value": 1,
+                                "tok": 419
+                              },
+                              "tok": 418
+                            }
+                          }
+                        ],
+                        "tok": 414,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 413
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "private, max-age=0",
+                    "tok": 423
+                  },
+                  "tok": 422
+                }
+              ],
+              "tok": 411
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 426
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 428
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Shared",
+                        "elems": [
+                          {
+                            "key": "maxAge",
+                            "value": {
+                              "k": "int",
+                              "value": 60,
+                              "tok": 434
+                            }
+                          }
+                        ],
+                        "tok": 430,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 429
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "public, max-age=60",
+                    "tok": 438
+                  },
+                  "tok": 437
+                }
+              ],
+              "tok": 427
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 441
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 443
+                    },
+                    "args": [
+                      {
+                        "k": "composite",
+                        "type_name": "Shared",
+                        "elems": [
+                          {
+                            "key": "maxAge",
+                            "value": {
+                              "k": "int",
+                              "value": 60,
+                              "tok": 449
+                            }
+                          },
+                          {
+                            "key": "sMaxAge",
+                            "value": {
+                              "k": "int",
+                              "value": 600,
+                              "tok": 453
+                            }
+                          }
+                        ],
+                        "tok": 445,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 444
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "public, max-age=60, s-maxage=600",
+                    "tok": 457
+                  },
+                  "tok": 456
+                }
+              ],
+              "tok": 442
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "h"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "$utf8",
+                      "tok": 462
+                    },
+                    "field": "Parse",
+                    "tok": 462
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "respHead",
+                        "tok": 464
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Text",
+                            "tok": 466
+                          },
+                          "args": [
+                            {
+                              "k": "strlit",
+                              "value": "x",
+                              "tok": 468
+                            }
+                          ],
+                          "tok": 467
+                        },
+                        {
+                          "k": "ident",
+                          "name": "true",
+                          "tok": 471
+                        },
+                        {
+                          "k": "ident",
+                          "name": "false",
+                          "tok": 473
+                        },
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 475
+                        }
+                      ],
+                      "tok": 465
+                    }
+                  ],
+                  "tok": 463
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 479
+                },
+                "tok": 478
+              }
+            ],
+            "tok": 460
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 481
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "h",
+                    "tok": 483
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nCache-Control: private\r\nContent-Length: 1\r\n\r\n",
+                    "tok": 485
+                  },
+                  "tok": 484
+                }
+              ],
+              "tok": 482
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "n"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "catch",
+                "e": {
+                  "k": "call",
+                  "callee": {
+                    "k": "selector",
+                    "base": {
+                      "k": "ident",
+                      "name": "$utf8",
+                      "tok": 490
+                    },
+                    "field": "Parse",
+                    "tok": 490
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "respHead",
+                        "tok": 492
+                      },
+                      "args": [
+                        {
+                          "k": "composite",
+                          "type_name": "Response",
+                          "elems": [
+                            {
+                              "key": "status",
+                              "value": {
+                                "k": "ident",
+                                "name": "OK",
+                                "tok": 498
+                              }
+                            },
+                            {
+                              "key": "contentType",
+                              "value": {
+                                "k": "strlit",
+                                "value": "",
+                                "tok": 502
+                              }
+                            },
+                            {
+                              "key": "body",
+                              "value": {
+                                "k": "slicelit",
+                                "elem": {
+                                  "k": "name",
+                                  "name": "byte"
+                                },
+                                "elems": [],
+                                "mut": false,
+                                "tok": 506
+                              }
+                            },
+                            {
+                              "key": "cache",
+                              "value": {
+                                "k": "composite",
+                                "type_name": "NoStore",
+                                "elems": [],
+                                "tok": 514,
+                                "type_args": []
+                              }
+                            }
+                          ],
+                          "tok": 494,
+                          "type_args": []
+                        },
+                        {
+                          "k": "ident",
+                          "name": "true",
+                          "tok": 519
+                        },
+                        {
+                          "k": "ident",
+                          "name": "false",
+                          "tok": 521
+                        },
+                        {
+                          "k": "int",
+                          "value": 0,
+                          "tok": 523
+                        }
+                      ],
+                      "tok": 493
+                    }
+                  ],
+                  "tok": 491
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 527
+                },
+                "tok": 526
+              }
+            ],
+            "tok": 488
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 529
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "n",
+                    "tok": 531
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "HTTP/1.1 200 OK\r\nCache-Control: no-store\r\nContent-Length: 0\r\n\r\n",
+                    "tok": 533
+                  },
+                  "tok": 532
+                }
+              ],
+              "tok": 530
+            }
+          }
+        ]
+      },
+      "tok": 379,
+      "bodiless": false,
+      "span": {
+        "start": 378,
+        "end": 538
+      },
+      "sig_end": 382
+    },
+    {
+      "name": "TestRouteCache",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "rs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "Route"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 553
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/a",
+                          "tok": 557
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "Text",
+                              "tok": 565
+                            },
+                            "args": [
+                              {
+                                "k": "strlit",
+                                "value": "a",
+                                "tok": 567
+                              }
+                            ],
+                            "tok": 566
+                          },
+                          "tok": 564
+                        }
+                      },
+                      {
+                        "key": "middleware",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "Middleware"
+                          },
+                          "elems": [],
+                          "mut": false,
+                          "tok": 572
+                        }
+                      },
+                      {
+                        "key": "cache",
+                        "value": {
+                          "k": "composite",
+                          "type_name": "Fresh",
+                          "elems": [
+                            {
+                              "key": "maxAge",
+                              "value": {
+                                "k": "int",
+                                "value": 60,
+                                "tok": 584
+                              }
+                            }
+                          ],
+                          "tok": 580,
+                          "type_args": []
+                        }
+                      }
+                    ],
+                    "tok": 549,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 592
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/b",
+                          "tok": 596
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "composite",
+                            "type_name": "Response",
+                            "elems": [
+                              {
+                                "key": "status",
+                                "value": {
+                                  "k": "ident",
+                                  "name": "OK",
+                                  "tok": 608
+                                }
+                              },
+                              {
+                                "key": "contentType",
+                                "value": {
+                                  "k": "strlit",
+                                  "value": "",
+                                  "tok": 612
+                                }
+                              },
+                              {
+                                "key": "body",
+                                "value": {
+                                  "k": "slicelit",
+                                  "elem": {
+                                    "k": "name",
+                                    "name": "byte"
+                                  },
+                                  "elems": [],
+                                  "mut": false,
+                                  "tok": 616
+                                }
+                              },
+                              {
+                                "key": "cache",
+                                "value": {
+                                  "k": "composite",
+                                  "type_name": "NoStore",
+                                  "elems": [],
+                                  "tok": 624,
+                                  "type_args": []
+                                }
+                              }
+                            ],
+                            "tok": 604,
+                            "type_args": []
+                          },
+                          "tok": 603
+                        }
+                      },
+                      {
+                        "key": "middleware",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "Middleware"
+                          },
+                          "elems": [],
+                          "mut": false,
+                          "tok": 631
+                        }
+                      },
+                      {
+                        "key": "cache",
+                        "value": {
+                          "k": "composite",
+                          "type_name": "Fresh",
+                          "elems": [
+                            {
+                              "key": "maxAge",
+                              "value": {
+                                "k": "int",
+                                "value": 60,
+                                "tok": 643
+                              }
+                            }
+                          ],
+                          "tok": 639,
+                          "type_args": []
+                        }
+                      }
+                    ],
+                    "tok": 588,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 651
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/c",
+                          "tok": 655
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "Text",
+                              "tok": 663
+                            },
+                            "args": [
+                              {
+                                "k": "strlit",
+                                "value": "c",
+                                "tok": 665
+                              }
+                            ],
+                            "tok": 664
+                          },
+                          "tok": 662
+                        }
+                      },
+                      {
+                        "key": "middleware",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "Middleware"
+                          },
+                          "elems": [],
+                          "mut": false,
+                          "tok": 670
+                        }
+                      }
+                    ],
+                    "tok": 647,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Route",
+                    "elems": [
+                      {
+                        "key": "method",
+                        "value": {
+                          "k": "strlit",
+                          "value": "GET",
+                          "tok": 681
+                        }
+                      },
+                      {
+                        "key": "path",
+                        "value": {
+                          "k": "strlit",
+                          "value": "/d",
+                          "tok": 685
+                        }
+                      },
+                      {
+                        "key": "handler",
+                        "value": {
+                          "k": "lambda",
+                          "params": [
+                            {
+                              "name": "r",
+                              "type": null
+                            }
+                          ],
+                          "body": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "Status",
+                              "tok": 693
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "NotFound",
+                                "tok": 695
+                              }
+                            ],
+                            "tok": 694
+                          },
+                          "tok": 692
+                        }
+                      },
+                      {
+                        "key": "middleware",
+                        "value": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "Middleware"
+                          },
+                          "elems": [],
+                          "mut": false,
+                          "tok": 700
+                        }
+                      },
+                      {
+                        "key": "cache",
+                        "value": {
+                          "k": "composite",
+                          "type_name": "Fresh",
+                          "elems": [
+                            {
+                              "key": "maxAge",
+                              "value": {
+                                "k": "int",
+                                "value": 60,
+                                "tok": 712
+                              }
+                            }
+                          ],
+                          "tok": 708,
+                          "type_args": []
+                        }
+                      }
+                    ],
+                    "tok": 677,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 545
+              }
+            ],
+            "tok": 543
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 717
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 719
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Dispatch",
+                            "tok": 721
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "rs",
+                              "tok": 723
+                            },
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "rq",
+                                "tok": 725
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "GET /a HTTP/1.1\r\n\r\n",
+                                  "tok": 727
+                                }
+                              ],
+                              "tok": 726
+                            }
+                          ],
+                          "tok": 722
+                        },
+                        "field": "cache",
+                        "tok": 731
+                      }
+                    ],
+                    "tok": 720
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "max-age=60",
+                    "tok": 734
+                  },
+                  "tok": 733
+                }
+              ],
+              "tok": 718
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 737
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 739
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Dispatch",
+                            "tok": 741
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "rs",
+                              "tok": 743
+                            },
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "rq",
+                                "tok": 745
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "GET /b HTTP/1.1\r\n\r\n",
+                                  "tok": 747
+                                }
+                              ],
+                              "tok": 746
+                            }
+                          ],
+                          "tok": 742
+                        },
+                        "field": "cache",
+                        "tok": 751
+                      }
+                    ],
+                    "tok": 740
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "no-store",
+                    "tok": 754
+                  },
+                  "tok": 753
+                }
+              ],
+              "tok": 738
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 757
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 759
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Dispatch",
+                            "tok": 761
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "rs",
+                              "tok": 763
+                            },
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "rq",
+                                "tok": 765
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "GET /c HTTP/1.1\r\n\r\n",
+                                  "tok": 767
+                                }
+                              ],
+                              "tok": 766
+                            }
+                          ],
+                          "tok": 762
+                        },
+                        "field": "cache",
+                        "tok": 771
+                      }
+                    ],
+                    "tok": 760
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "private",
+                    "tok": 774
+                  },
+                  "tok": 773
+                }
+              ],
+              "tok": 758
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 777
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 779
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Dispatch",
+                            "tok": 781
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "rs",
+                              "tok": 783
+                            },
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "rq",
+                                "tok": 785
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "GET /d HTTP/1.1\r\n\r\n",
+                                  "tok": 787
+                                }
+                              ],
+                              "tok": 786
+                            }
+                          ],
+                          "tok": 782
+                        },
+                        "field": "cache",
+                        "tok": 791
+                      }
+                    ],
+                    "tok": 780
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "private",
+                    "tok": 794
+                  },
+                  "tok": 793
+                }
+              ],
+              "tok": 778
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "m"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "Mount",
+                  "tok": 799
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "/p",
+                    "tok": 801
+                  },
+                  {
+                    "k": "ident",
+                    "name": "rs",
+                    "tok": 803
+                  },
+                  {
+                    "k": "slicelit",
+                    "elem": {
+                      "k": "name",
+                      "name": "Middleware"
+                    },
+                    "elems": [],
+                    "mut": false,
+                    "tok": 805
+                  }
+                ],
+                "tok": 800
+              }
+            ],
+            "tok": 797
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "assert",
+                "tok": 812
+              },
+              "args": [
+                {
+                  "k": "binary",
+                  "op": "==",
+                  "lhs": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "cacheValue",
+                      "tok": 814
+                    },
+                    "args": [
+                      {
+                        "k": "selector",
+                        "base": {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "Dispatch",
+                            "tok": 816
+                          },
+                          "args": [
+                            {
+                              "k": "ident",
+                              "name": "m",
+                              "tok": 818
+                            },
+                            {
+                              "k": "call",
+                              "callee": {
+                                "k": "ident",
+                                "name": "rq",
+                                "tok": 820
+                              },
+                              "args": [
+                                {
+                                  "k": "strlit",
+                                  "value": "GET /p/a HTTP/1.1\r\n\r\n",
+                                  "tok": 822
+                                }
+                              ],
+                              "tok": 821
+                            }
+                          ],
+                          "tok": 817
+                        },
+                        "field": "cache",
+                        "tok": 826
+                      }
+                    ],
+                    "tok": 815
+                  },
+                  "rhs": {
+                    "k": "strlit",
+                    "value": "max-age=60",
+                    "tok": 829
+                  },
+                  "tok": 828
+                }
+              ],
+              "tok": 813
+            }
+          }
+        ]
+      },
+      "tok": 539,
+      "bodiless": false,
+      "span": {
+        "start": 538,
+        "end": 834
+      },
+      "sig_end": 542
+    }
+  ],
+  "consts": []
+}

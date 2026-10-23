@@ -1,2 +1,2 @@
-sober: load error at examples/io_open_neg_return.sober:11:12: an io.File, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead
+sober: load error at examples/io_open_neg_return.sober:11:12: an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead
 exit=1

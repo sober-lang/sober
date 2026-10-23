@@ -1,0 +1,1 @@
+testdata/analyzer_neg/ret_mut_build.sober:3:6: error: a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument (Analyzer)

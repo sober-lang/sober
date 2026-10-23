@@ -1,0 +1,293 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Status",
+      "type_params": [],
+      "body": {
+        "k": "defined",
+        "type": {
+          "k": "name",
+          "name": "int"
+        }
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "reason",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "Status"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 49
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "const",
+                        "alts": [
+                          {
+                            "k": "ident",
+                            "name": "OK",
+                            "tok": 52
+                          }
+                        ]
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "strlit",
+                            "value": "OK",
+                            "tok": 54
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 51
+                  },
+                  {
+                    "patterns": [
+                      {
+                        "k": "const",
+                        "alts": [
+                          {
+                            "k": "ident",
+                            "name": "NotFound",
+                            "tok": 57
+                          }
+                        ]
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "strlit",
+                            "value": "Not Found",
+                            "tok": 59
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 56
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 63
+                      }
+                    }
+                  ]
+                },
+                "tok": 48
+              }
+            ],
+            "tok": 47
+          }
+        ]
+      },
+      "tok": 40,
+      "bodiless": false,
+      "span": {
+        "start": 36,
+        "end": 69
+      },
+      "sig_end": 46
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 74
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "reason",
+                    "tok": 76
+                  },
+                  "args": [
+                    {
+                      "k": "ident",
+                      "name": "Gone",
+                      "tok": 78
+                    }
+                  ],
+                  "tok": 77
+                }
+              ],
+              "tok": 75
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 82
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "Plain",
+                  "tok": 84
+                }
+              ],
+              "tok": 83
+            }
+          }
+        ]
+      },
+      "tok": 70,
+      "bodiless": false,
+      "span": {
+        "start": 69,
+        "end": 89
+      },
+      "sig_end": 73
+    }
+  ],
+  "consts": [
+    {
+      "name": "OK",
+      "expr": {
+        "k": "call",
+        "callee": {
+          "k": "ident",
+          "name": "Status",
+          "tok": 10
+        },
+        "args": [
+          {
+            "k": "int",
+            "value": 200,
+            "tok": 12
+          }
+        ],
+        "tok": 11
+      },
+      "tok": 8,
+      "span": {
+        "start": 7,
+        "end": 15
+      }
+    },
+    {
+      "name": "NotFound",
+      "expr": {
+        "k": "call",
+        "callee": {
+          "k": "ident",
+          "name": "Status",
+          "tok": 18
+        },
+        "args": [
+          {
+            "k": "int",
+            "value": 404,
+            "tok": 20
+          }
+        ],
+        "tok": 19
+      },
+      "tok": 16,
+      "span": {
+        "start": 15,
+        "end": 23
+      }
+    },
+    {
+      "name": "Gone",
+      "expr": {
+        "k": "call",
+        "callee": {
+          "k": "ident",
+          "name": "Status",
+          "tok": 26
+        },
+        "args": [
+          {
+            "k": "int",
+            "value": 410,
+            "tok": 28
+          }
+        ],
+        "tok": 27
+      },
+      "tok": 24,
+      "span": {
+        "start": 23,
+        "end": 31
+      }
+    },
+    {
+      "name": "Plain",
+      "expr": {
+        "k": "int",
+        "value": 7,
+        "tok": 34
+      },
+      "tok": 32,
+      "span": {
+        "start": 31,
+        "end": 36
+      }
+    }
+  ]
+}

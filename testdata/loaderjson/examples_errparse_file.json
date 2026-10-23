@@ -205,6 +205,94 @@
           ]
         },
         {
+          "name": "OpenRoot",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "cstr",
+            "errOf",
+            "len",
+            "owned",
+            "sysAddr",
+            "sysCall",
+            "sysDeadline"
+          ]
+        },
+        {
+          "name": "CloseRoot",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysClose"
+          ]
+        },
+        {
+          "name": "OpenUnder",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "cstr",
+            "errOf",
+            "len",
+            "owned",
+            "sysAddr",
+            "sysCall",
+            "sysDeadline"
+          ]
+        },
+        {
+          "name": "Stat",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "errOf",
+            "int",
+            "kindOf",
+            "le64",
+            "len",
+            "sysAddr",
+            "sysCall",
+            "sysDeadline"
+          ]
+        },
+        {
+          "name": "le64",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int"
+          ]
+        },
+        {
+          "name": "cstr",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "freeze",
+            "len"
+          ]
+        },
+        {
+          "name": "owned",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "sysCall",
+            "sysFdOwn"
+          ]
+        },
+        {
           "name": "ReadAll",
           "expands": false,
           "mut_def": false,
@@ -705,6 +793,20 @@
             "freeze",
             "len"
           ]
+        },
+        {
+          "name": "ParseBool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "FormatBool",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
         }
       ],
       "consts": []
@@ -850,6 +952,155 @@
             "bytesToString",
             "hasPrefixAt",
             "len"
+          ]
+        },
+        {
+          "name": "TrimSuffix",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "hasPrefixAt",
+            "len"
+          ]
+        },
+        {
+          "name": "LastIndex",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "lastIndexAt"
+          ]
+        },
+        {
+          "name": "isSpace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": []
+        },
+        {
+          "name": "runeEnd",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "Split",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "indexAt",
+            "len",
+            "runeEnd"
+          ]
+        },
+        {
+          "name": "Fields",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "isSpace",
+            "len"
+          ]
+        },
+        {
+          "name": "TrimSpace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "bytesToString",
+            "isSpace",
+            "len"
+          ]
+        },
+        {
+          "name": "Replace",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "indexAt",
+            "len",
+            "runeEnd"
+          ]
+        },
+        {
+          "name": "ToLower",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "mapCase"
+          ]
+        },
+        {
+          "name": "ToUpper",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "mapCase"
+          ]
+        },
+        {
+          "name": "mapCase",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "append",
+            "byte",
+            "bytes",
+            "bytesToString",
+            "freeze",
+            "int",
+            "len"
+          ]
+        },
+        {
+          "name": "EqualFold",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "bytes",
+            "foldByte",
+            "len"
+          ]
+        },
+        {
+          "name": "foldByte",
+          "expands": false,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "byte",
+            "int"
           ]
         },
         {
@@ -1639,6 +1890,10 @@
     },
     {
       "name": "IntOutOfRange",
+      "pkg": "std/convert"
+    },
+    {
+      "name": "InvalidBool",
       "pkg": "std/convert"
     },
     {

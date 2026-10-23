@@ -263,6 +263,11 @@ func fields(out mut []byte, t ast.Tree, l int, d int, flat bool) {
         raw(mut out, t, fd.a)
         out = append(out, ' ')
         typeExpr(mut out, t, fd.b)
+        if fd.c == 1 {
+            obuf.Lit(mut out, " @secret")
+        } else if fd.c == 2 {
+            obuf.Lit(mut out, " @credential")
+        }
     }
 }
 
@@ -297,6 +302,9 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
                 fields(mut out, t, v.b, 0, true)
                 obuf.Lit(mut out, " }")
             }
+            if v.c != 0 {
+                obuf.Lit(mut out, " @shared")
+            }
             i += 1
         }
         if t.data[body.a] > 0 {
@@ -312,29 +320,52 @@ func typeDecl(out mut []byte, t ast.Tree, x ast.Node) {
         }
     } else if k == ast.BDefined {
         typeExpr(mut out, t, body.a)
+    } else if k == ast.BAlias {
+        obuf.Lit(mut out, "= ")
+        typeExpr(mut out, t, body.a)
     } else {
         obuf.Lit(mut out, "func(")
         funcTypeParams(mut out, t, body.a, body.c)
         out = append(out, ')')
         results(mut out, t, body.b)
+        if body.d != 0 {
+            // 後置の `@errors(…)`（名前付き関数型の契約）
+            out = append(out, ' ')
+            errorsList(mut out, t, body.d - 1)
+        }
     }
 }
 
 // errorsAnnot は `@errors(A, ref.B)` の行（ラベル名の列 l — 読めなかった項 "?" もそのまま印字する: 再 parse で同じ "?" に戻る）
 func errorsAnnot(out mut []byte, t ast.Tree, l int) {
-    obuf.Lit(mut out, "@errors(")
+    errorsList(mut out, t, l)
+    out = append(out, '\n')
+}
+
+// errorsList は `@errors(A, ref.B)`（改行なし — 名前付き関数型の後置にも使う）
+func errorsList(out mut []byte, t ast.Tree, l int) {
+    obuf.Lit(mut out, "@errors")
+    argList(mut out, t, l)
+}
+
+// argList は注釈の括弧の中の名前の列 `(A, ref.B)`（@errors / @secret）
+func argList(out mut []byte, t ast.Tree, l int) {
+    out = append(out, '(')
     for i <- iter.Range(0, t.data[l]) {
         if i > 0 {
             obuf.Lit(mut out, ", ")
         }
         raw(mut out, t, t.data[l + 1 + i])
     }
-    obuf.Lit(mut out, ")\n")
+    out = append(out, ')')
 }
 
 // constLine は const 宣言 1 つ（`@embed` の行つき・末尾の改行なし）
 func constLine(out mut []byte, t ast.Tree, c ast.Node) {
-    if c.f == 1 {
+    if (c.f & 2) != 0 {
+        obuf.Lit(mut out, "@secret\n")
+    }
+    if (c.f & 1) != 0 {
         obuf.Lit(mut out, "@embed(\"")
         quoted(mut out, t, c.e)
         obuf.Lit(mut out, "\")\n")
@@ -357,9 +388,28 @@ func funcDeclX(out mut []byte, t ast.Tree, x ast.Node, sig bool, expand bool) {
     if t.data[x.f] >= 5 && t.data[x.f + 5] != 0 {
         obuf.Lit(mut out, "@noinline\n")
     }
+    // `@secret(k, …)` / `@bless`（付加の列の 10〜12 番 — 署名の契約なので .sobi にも書く）
+    if t.data[x.f] >= 12 && t.data[x.f + 10] >= 0 {
+        obuf.Lit(mut out, "@secret")
+        argList(mut out, t, t.data[x.f + 10])
+        out = append(out, '\n')
+    }
+    if t.data[x.f] >= 12 && (t.data[x.f + 12] & 1) != 0 {
+        obuf.Lit(mut out, "@bless\n")
+    }
+    if t.data[x.f] >= 12 && (t.data[x.f + 12] & 2) != 0 {
+        obuf.Lit(mut out, "@bless(origin)\n")
+    }
+    if t.data[x.f] >= 12 && (t.data[x.f + 12] & 4) != 0 {
+        obuf.Lit(mut out, "@credential\n")
+    }
     // .sobi の `@expand`（付加の列の 7 番 — parser の ParseIface）
     if expand || (t.data[x.f] >= 8 && t.data[x.f + 8] != 0) {
         obuf.Lit(mut out, "@expand\n")
+    }
+    // `@exhaustive`（付加の列の 9 番 — 本体の検査の印なので署名だけの .sobi には書かない）
+    if !sig && t.data[x.f] >= 9 && t.data[x.f + 9] != 0 {
+        obuf.Lit(mut out, "@exhaustive\n")
     }
     obuf.Lit(mut out, "func ")
     raw(mut out, t, x.a)

@@ -70,7 +70,7 @@ from を to へ付け替える（rename(2) — 同じファイルシステムの
 func ModTime(path string) (int, error?)
 ```
 
-path の更新時刻（stat(2) の st\_mtim — エポックからの ns。シンボリックリンクは辿る）。失敗は io の errno のラベル（sober watch の mtime ポーリング — 時刻の値は比べるためだけに使う: 単位や起点に意味を持たせない）
+path の更新時刻（stat(2) の st\_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。シンボリックリンクは辿る。開いた File の同じ値は io.Stat の modTime）。失敗は io の errno のラベル（sober watch の mtime ポーリング・http.Static の Last-Modified）
 
 失敗のラベル: `io.NotFound`・`io.Denied`・`io.Other`
 

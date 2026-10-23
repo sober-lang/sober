@@ -1,0 +1,35 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 34
+
+sid=s-42 auth=Bearer abc header=-
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private
+Content-Length: 22
+
+sid=- auth=- header=-
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: private, max-age=30
+Content-Length: 5
+
+feed
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: no-store
+Content-Length: 2
+
+t
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Cache-Control: max-age=86400, immutable
+Content-Length: 5
+
+logo
+HTTP/1.1 404 Not Found
+Cache-Control: private
+Content-Length: 0
+
+

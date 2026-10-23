@@ -1,0 +1,50 @@
+package main
+
+// 負例（check が拒否 — analyzer）: S の @errors に emit の項が無いのに、S の値のラムダが emit の失敗を返しうる（Flow の漏れ — language.md 13 節）
+
+type Bad error
+
+type Gone error
+
+type S func(emit func(b int) error?) error? @errors(Bad)
+
+type Resp struct {
+    n int
+    stream S?
+}
+
+func gen(n int, emit func(b int) error?) error? {
+    if n > 9 {
+        return Bad{}
+    }
+    emit(n)?
+    return nil
+}
+
+func route(n int) Resp {
+    return Resp{n: n, stream: (emit) => gen(n, emit)}
+}
+
+func send(b int) error? {
+    return if b > 5 { Gone{} } else { nil }
+}
+
+@errors(Bad)
+func Serve(n int) error? {
+    r := route(n)
+    st := r.stream
+    if st != nil {
+        st((b) => send(b))?
+    }
+    return nil
+}
+
+func main() {
+    xs := []int{3, 7, 12}
+    for n <- xs {
+        println(switch Serve(n) {
+        case nil: "ok"
+        case Bad{}: "bad"
+        })
+    }
+}

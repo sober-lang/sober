@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_identity.sober:10:10: `io.File` has identity: only io.Open makes one — a zero value would refer to nothing
+exit=1

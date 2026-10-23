@@ -1,0 +1,5 @@
+package lib
+
+type secret struct {
+    n int
+}

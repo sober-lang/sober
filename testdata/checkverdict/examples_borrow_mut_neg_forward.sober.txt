@@ -1,0 +1,2 @@
+sober: load error at examples/borrow_mut_neg_forward.sober:16:46: this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call
+exit=1

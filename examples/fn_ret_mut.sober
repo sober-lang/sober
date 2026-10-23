@@ -1,0 +1,23 @@
+package main
+
+// mut の仮引数を持つ関数は mut の値を返せる（置き場は呼び手の mut の実引数の region — language.md 26 節）。
+// mut の仮引数も関数型の仮引数も持たない関数は返せない（examples/fn_ret_mut_neg.sober）
+
+import "std/iter"
+
+// b の要素の 2 倍を新しい mut の slice に積んで返す（b の末尾に印を足す）
+func doubled(b mut []int) mut []int {
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(b)) {
+        out = append(out, b[i] * 2)
+    }
+    b = append(b, 0)
+    return out
+}
+
+func main() {
+    mut b := mut []int{1, 2, 3}
+    mut d := doubled(mut b)
+    d = append(d, 8)
+    println("${len(b)} ${len(d)} ${d[2]}")
+}

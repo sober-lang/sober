@@ -1,2 +1,2 @@
-sober: load error at examples/tls_neg_field.sober:14:10: an io.File, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
+sober: load error at examples/tls_neg_field.sober:14:10: an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be put in a struct, slice, map or channel, or appended (it has identity — keep it in the binding made by io.Open)
 exit=1

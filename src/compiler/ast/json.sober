@@ -256,6 +256,9 @@ func emit(out mut []byte, t Tree, n0 int, d int) {
     } else if k == BDefined {
         tag(mut out, e, "defined")
         kNode(mut out, t, e, false, "type", x.a)
+    } else if k == BAlias {
+        tag(mut out, e, "alias")
+        kNode(mut out, t, e, false, "type", x.a)
     } else if k == BError {
         tag(mut out, e, "error")
         kList(mut out, t, e, false, "fields", x.a)

@@ -193,7 +193,11 @@ const OpSlotaddr = 12 // a = スロット番号
 const OpGlobal = 13   // a = グローバルの記録
 const OpCall = 14     // a = 関数の記録, b = 引数
 const OpFuncaddr = 15 // a = 関数の記録
-const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 / TyPtr）
+const OpCallI = 16    // a = callee, b = 引数, c = 結果の型（-1 / TyI64 / TyPtr / CALLI_SRET）
+// CALLI_SRET は OpCallI の c の印: 結果なし（-1 と同じ — IR テキストも同じ）で、引数 0 が sret の受け皿（呼ばれた関数は受け皿の全語を書き、書く前に
+// 読まない — 直接呼び出しの F_SRET_BIT と同じ約束。関数値の呼び先は全部 lower が建てた関数で、sret の規約は同じ）。zeroinit / slotcolor が
+// 受け皿を「全語の書き」と読む口（無いと受け皿は逃げで、呼び出しごとに要零の専用スロットになる — report-1069）
+const CALLI_SRET = -2
 const OpSyscall = 17  // a = 引数・b = 1 なら vDSO の呼び出し（a の頭 = 関数の番地・残り = 引数 — C の呼び出し規約。vdsoCall）・b = 2 なら AES-GCM の塊（c = 種類 — aes.sober）
 const OpREnter = 18
 const OpRDepth = 19
@@ -1035,6 +1039,10 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         out = append(out, ')')
         return
     case OpSyscall:
+        if b == CY_B {
+            obuf.Lit(mut out, "cycles()")
+            return
+        }
         if b == MM_B {
             obuf.Lit(mut out, mmName(c))
             out = append(out, '(')

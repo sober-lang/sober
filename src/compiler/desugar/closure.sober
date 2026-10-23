@@ -42,7 +42,7 @@ func closTyOfKey(st mut S, pk int, sig NodeRef, key NodeRef, at NodeRef, fuel in
     ps := ListRef(listN(mut st, lenL(mut st, pl)))
     for i <- iter.Range(0, lenL(mut st, pl)) {
         pe := latN(mut st, pl, i)
-        pt := if kindN(mut st, pe) == ast.TFunc { closTyOfKey(mut st, pk, pe, brwKey(mut st, pk, pe, at, fuel - 1)?, at, fuel - 1)? } else { tyOf(mut st, pk, pe, at, fuel - 1)? }
+        pt := if kindN(mut st, pe) == ast.TFunc { closTyOfKey(mut st, pk, pe, brwKey(mut st, pk, pe, at, fuel - 1, false)?, at, fuel - 1)? } else { tyOf(mut st, pk, pe, at, fuel - 1)? }
         hsetTy(mut st, int(ps) + 1 + i, pt)
     }
     rl := lB(nodeOf(mut st, sig))
@@ -57,8 +57,11 @@ func closTyOfKey(st mut S, pk int, sig NodeRef, key NodeRef, at NodeRef, fuel in
 }
 
 // brwKey は借りの位置の型式 te（匿名の関数型・package pk）の env の鍵: 関数型の構造（核の型 `fn P R` — hash-cons で同一）が同じ借りの位置は
-// 最初に出会った型式の節を共有する（構造の鍵 — 別の F の借りの位置へ借りの値を転送できる。lower の構造の鍵と揃える — 工程 5c）
-func brwKey(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (NodeRef, error?) {
+// 最初に出会った型式の節を共有する（構造の鍵 — 別の F の借りの位置へ借りの値を転送できる。lower の構造の鍵と揃える — 工程 5c）。
+// af = 値の位置の匿名の関数型の欄（工程 5d）の鍵: 欄どうしで構造の鍵を共有し、借りの位置とは分ける（2026-10-22 ユーザー裁定・report-1038 (c) 案 A —
+// 借りの mut の捕捉〔(α-L1)〕の形が欄の型の env の union に入って、欄を持つ struct が遠くの mut の借りで mutFree でなくなる遠隔作用を断つ。
+// 欄の閉包の値を借りの位置へ渡す形は loader の η が借りのラムダに写す — fnValAnonArgScan）
+func brwKey(st mut S, pk int, te NodeRef, at NodeRef, fuel int, af bool) (NodeRef, error?) {
     pl := lA(nodeOf(mut st, te))
     ps := ListRef(listN(mut st, lenL(mut st, pl)))
     for i <- iter.Range(0, lenL(mut st, pl)) {
@@ -69,7 +72,7 @@ func brwKey(st mut S, pk int, te NodeRef, at NodeRef, fuel int) (NodeRef, error?
     for i <- iter.Range(0, lenL(mut st, rl)) {
         hsetTy(mut st, int(rs) + 1 + i, retTy(mut st, tyOf(mut st, pk, latN(mut st, rl, i), at, fuel - 1)?))
     }
-    sig := int(tFn(mut st, tyChain(mut st, ps), tyChain(mut st, rs)))
+    sig := int(tFn(mut st, tyChain(mut st, ps), tyChain(mut st, rs))) * 2 + b2i(af)
     for i <- iter.Range(0, table.Len(mut st.bkSig)) {
         if table.Get(mut st.bkSig, i) == sig {
             return NodeRef(table.Get(mut st.bkNode, i)), nil
@@ -159,6 +162,15 @@ func tyEnc(st mut S, t TyRef) {
         table.Push(mut st.shBuf, x.b)
         tyEnc(mut st, TyRef(x.c))
         tyEnc(mut st, TyRef(x.d))
+    case TRef:
+        // mut の捕捉のセル（(α-L1)）
+        table.Push(mut st.shBuf, x.a)
+        table.Push(mut st.shBuf, x.b)
+        tyEnc(mut st, TyRef(x.c))
+    case TFn:
+        st.shHasFn = true
+        tyEnc(mut st, TyRef(x.a))
+        tyEnc(mut st, TyRef(x.b))
     default:
         table.Push(mut st.shBuf, x.a)
         table.Push(mut st.shBuf, x.b)
@@ -184,6 +196,13 @@ func tyDec(st mut S, xs []int, at int) (TyRef, int) {
         c, p := tyDec(mut st, xs, at + 3)
         d, q := tyDec(mut st, xs, p)
         return mkTy(mut st, TMp, xs[at + 1], xs[at + 2], int(c), int(d)), q
+    case TRef:
+        c, p := tyDec(mut st, xs, at + 3)
+        return mkTy(mut st, TRef, xs[at + 1], xs[at + 2], int(c), 0), p
+    case TFn:
+        a, p := tyDec(mut st, xs, at + 1)
+        b, q := tyDec(mut st, xs, p)
+        return mkTy(mut st, TFn, int(a), int(b), 0, 0), q
     default:
         return mkTy(mut st, tag, xs[at + 1], xs[at + 2], xs[at + 3], xs[at + 4]), at + 5
     }
@@ -230,15 +249,43 @@ func shapesFor(p loader.Program, e2s bool, excl []int, only int, trust bool) []i
     if !needShapes(p) {
         return []int{}
     }
-    mut st := S{}
-    initState(mut st, p)
-    st.e2s = e2s
-    st.e2sExcl = excl
-    st.only = only
-    st.onlySet = only >= 0
-    st.trustStd = trust
-    _, _, _ = run(mut st)
-    return shapesOut(mut st)
+    // 形が関数値（閉包の値 — 借りの閉包の捕捉・report-1038 (c) 案 A の η）を含むと、形の型が他の鍵の U に依る: 前の周の形を読み込んで回し直し、
+    // 形が変わらなくなるまで（固定点 — 4 周まで。収まらない循環は本走りの食い違いで断る）。関数値を含まない形は今どおり 1 周
+    mut prev := []int{}
+    mut out := []int{}
+    mut round := 0
+    while round < 4 {
+        mut st := S{}
+        initState(mut st, p)
+        st.e2s = e2s
+        st.e2sExcl = excl
+        st.only = only
+        st.onlySet = only >= 0
+        st.trustStd = trust
+        st.preRun = true
+        loadShapes(mut st, prev)
+        _, _, _ = run(mut st)
+        out = shapesOut(mut st)
+        if !st.shHasFn || intsEq(out, prev) {
+            return out
+        }
+        prev = out
+        round += 1
+    }
+    return out
+}
+
+// intsEq は 2 つの int の列が等しいか
+func intsEq(a []int, b []int) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
 }
 
 // closParam / closRet は閉包の型の元の引数鎖 P と結果 R
@@ -274,7 +321,7 @@ func fieldFnValDecl(st mut S, pk int, fenv int, ftype NodeRef) (int, error?) {
     if anonFieldTE(mut st, ftype) {
         saved := st.tenv
         st.tenv = fenv
-        bk, err := brwKey(mut st, pk, ftype, ftype, EXPANDFUEL)
+        bk, err := brwKey(mut st, pk, ftype, ftype, EXPANDFUEL, true)
         st.tenv = saved
         if err != nil {
             return 0, err
@@ -331,6 +378,35 @@ func capEntry(st mut S, lam NodeRef) int {
     return -1
 }
 
+// capLive は値の位置のラムダの行 row が main から届く関数の中にあるか（report-957）。届かない関数の中の閉包の env の形は U_F に入れない —
+// import しただけで呼ばない std の閉包（http.Static の stream）が、そのプログラムの全部の値の型を太らせない（閉じた union は世界全体でなく届く世界で閉じる）。
+// 届く = mainReach（名前の参照の辺 — 呼び出しに限らず関数値も・ラムダの中の参照は囲む関数から — 保守的）。届かない関数の本体は実行されないので
+// 作成点は unreach、持ち上げた Def は自分の形を直に受ける（本体の検査は今どおり）。lower は main から届く関数だけを下ろす（作業列）ので、
+// 届く扱いの誤り（脱糖テンプレートの暗黙の呼び出しの先の std が値の位置の捕捉つき閉包を作る形 — 今は無い）は build の Mismatch で表に出る
+func capLive(st mut S, row int) bool {
+    if st.capLiveN == 0 {
+        mk, ok := mainReach(mut st)
+        st.capReach = int(mk)
+        st.capLiveN = if ok { 2 } else { 1 }
+    }
+    if st.capLiveN == 1 || row < 0 {
+        return true
+    }
+    f := st.capFile[row]
+    fi := e2sEnclosing(mut st, f, st.trees[f].nodes[st.capNode[row]].tok)
+    return fi < 0 || latI(mut st, ListRef(st.capReach), fi) == 1
+}
+
+// CapRow は値の位置のラムダ lam の捕捉の表の行（無ければ -1 — analyzer の口。U1 の捕捉の判定）
+func CapRow(st mut S, lam NodeRef) int {
+    return capEntry(mut st, lam)
+}
+
+// CapLive は lower の口（closPrep — check と同じ判定で形を集める）
+func CapLive(st mut S, i int) bool {
+    return capLive(mut st, i)
+}
+
 // capTyOk は捕捉できる核の型か（スカラー・string・imm の slice / map と、その struct / option / union の組。関数値・能力〔端点〕・mut の器・
 // 型変数は値として写せないので不可）
 func capTyOk(st mut S, t TyRef) bool {
@@ -341,6 +417,20 @@ func capTyOk(st mut S, t TyRef) bool {
     case TOpt: return capTyOk(mut st, tInner(mut st, t))
     case TSl: return tMutBit(mut st, t) == 0 && capTyOk(mut st, tElem(mut st, t))
     case TMp: return tMutBit(mut st, t) == 0 && capTyOk(mut st, tKey(mut st, t)) && capTyOk(mut st, tVal(mut st, t))
+    default: return false
+    }
+}
+
+// capBrwTyOk は借りの閉包が捕捉できる核の型か: capTyOk に関数値（閉包の値 — fnref と env の組）を足したもの（寿命は借りの呼び出しの内側。
+// 匿名の欄の閉包の値を借りの位置へ渡す η `(…) => x.f(…)` が欄を持つ値 x を捕捉する — report-1038 (c) 案 A）
+func capBrwTyOk(st mut S, t TyRef) bool {
+    k := tg(mut st, t)
+    switch k {
+    case TInt | TBool | TByte | TFloat | TUnit | TFn: return true
+    case TPr | TUn: return capBrwTyOk(mut st, tLeft(mut st, t)) && capBrwTyOk(mut st, tRight(mut st, t))
+    case TOpt: return capBrwTyOk(mut st, tInner(mut st, t))
+    case TSl: return tMutBit(mut st, t) == 0 && capBrwTyOk(mut st, tElem(mut st, t))
+    case TMp: return tMutBit(mut st, t) == 0 && capBrwTyOk(mut st, tKey(mut st, t)) && capBrwTyOk(mut st, tVal(mut st, t))
     default: return false
     }
 }
@@ -395,6 +485,8 @@ func idDecl(st mut S, dr int, fuel int) bool {
 func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, outer_f int, depth int, at NodeRef) (CoreRef, error?) {
     brwLift := st.liftBrw != 0
     st.liftBrw = 0
+    anc := st.liftAnchor - 1
+    st.liftAnchor = 0
     cr := capEntry(mut st, lam)
     if cr < 0 {
         return 0, diag.CoreFragment{at: posOf(mut st, at)}
@@ -405,23 +497,31 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     cbs := ListRef(listN(mut st, ncap))
     cvals := ListRef(listN(mut st, ncap))
     ctys := ListRef(listN(mut st, ncap))
-    _ = capFlatFill(mut st, cr, outer_b, outer_f, 0, cbs, cvals, ctys, depth)
+    _ = capFlatFill(mut st, cr, outer_b, outer_f, 0, cbs, cvals, ctys, depth, anc, lam)?
     envT := if ncap == 0 { st.tInt } else { tyChain(mut st, ctys) }
     envV0 := if ncap == 0 { cLit(mut st, 0) } else { pairChain(mut st, cvals) }
-    // 形の記録と U の中の位置（前走りに無い形 = 本走りと前走りの食い違い — 断片として断る）
-    shapeRec(mut st, fdecl, envT)
-    sh := shapeList(mut st, fdecl)
+    // 形の記録と U の中の位置（前走りに無い形 = 本走りと前走りの食い違い — 断片として断る）。main から届かない関数の閉包は形を記録せず、
+    // 持ち上げた Def が自分の形を直に受け、作成点は unreach（capLive）
+    live := capLive(mut st, cr)
+    if live {
+        shapeRec(mut st, fdecl, envT)
+    }
+    sh := if live { shapeList(mut st, fdecl) } else { []int{} }
     mut kk := 0 - 1
     for j <- iter.Range(0, len(sh)) {
         if sh[j] == int(envT) {
             kk = j
         }
     }
-    if len(sh) > 0 && kk < 0 {
+    if len(sh) > 0 && kk < 0 && !st.preRun {
         return 0, diag.CoreFragment{at: posOf(mut st, lam)}
     }
-    envV := if len(sh) == 0 { envV0 } else { injectFrom(mut st, sh, kk, 0, envV0) }
-    uT := if len(sh) == 0 { st.tInt } else { unionFrom(mut st, sh, 0) }
+    // anchor つきの呼び出し（(α-L1)）の実引数は Def の region 0 が anchor へ写るので、union の他の腕の注釈（Def の座標 — region 0）も anchor へ
+    // （mut は正確一致 — 他の作成点の mut の捕捉の形の ref の region が anchor と揃うこと）
+    sha := if anc < 0 { sh } else { shapesAt(mut st, sh, anc) }
+    // 前走りの固定点の途中（読み込んだ形が前の周の U の座標 — 関数値を捕捉する形）では食い違いを断らず、形の記録を続ける
+    envV := if len(sh) == 0 || kk < 0 { envV0 } else { injectFrom(mut st, sha, kk, 0, envV0) }
+    uT := if !live { envT } else if len(sh) == 0 { st.tInt } else { unionFrom(mut st, sh, 0) }
     pT := closParam(mut st, ct)
     rT := closRet(mut st, ct)
 
@@ -515,7 +615,11 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
     lbody := nB(nodeOf(mut st, lam))
     mut body := CoreRef(-1)
     if kindN(mut st, lbody) == ast.EBlock {
-        body = scoped(mut st, lA(nodeOf(mut st, lbody)), benv, fenv, d, false, false, -1)?
+        // 末尾の式の型が取れない（`{ n += len(b); nil }` の nil — report-755 懸念 2・F-bw の値の位置版）なら末尾の期待型（結果 R）を渡す
+        bl := lA(nodeOf(mut st, lbody))
+        nb := lenL(mut st, bl)
+        tw := nb > 0 && kindN(mut st, latN(mut st, bl, nb - 1)) == ast.SExpr && armTy(mut st, bl, benv, fenv) == -1
+        body = scoped(mut st, bl, benv, fenv, d, false, false, if tw { rT } else { TyRef(-1) })?
     } else {
         body = coerceExpr(mut st, lbody, rT, benv, fenv, d, at)?
     }
@@ -541,6 +645,9 @@ func liftLambdaCap(st mut S, lam NodeRef, ct TyRef, fdecl NodeRef, outer_b int, 
         }
     }
     st.rdepth = saved_rd
+    if !live {
+        return cUnreach(mut st, ct), nil
+    }
     return c2(mut st, CPair, cFnref(mut st, idx, ts), envV), nil
 }
 
@@ -570,8 +677,14 @@ func capFlatN(st mut S, row int, eb int, ef int, brw bool, lam NodeRef, fuel int
                 return 0, diag.FnCap{at: posOf(mut st, lam), kind: 5}
             }
             x := bnd(mut st, b)
-            // 借りの閉包（(α-L0)）は同一性の型を捕捉してよい（寿命は借りの呼び出しの内側 — 使い方は filecheck）
-            if x.mutable || x.split || x.ty == -1 || !capTyOk(mut st, x.ty) || !brw && (idDecl(mut st, x.decl, 8) || idDecl(mut st, x.elem, 8)) {
+            // 借りの閉包（(α-L0)）は同一性の型を捕捉してよい（寿命は借りの呼び出しの内側 — 使い方は filecheck）。
+            // mut の束縛も捕捉してよい（(α-L1) — 束縛そのもの〔ref・欄ごとのセルの木〕を env に積む。資格は loader が見た — 借りの実引数のラムダだけ・
+            // 呼び出しごとに束縛 1 つ）。チャネルを持つ mut は Def の仮引数に置けない（paramOk の chanFree）
+            if x.mutable && brw {
+                if x.ty == -1 || !tyChanFree(mut st, x.ty) {
+                    return 0, diag.FnCap{at: posOf(mut st, lam), kind: 5}
+                }
+            } else if x.mutable || x.split || x.ty == -1 || !(capTyOk(mut st, x.ty) || brw && capBrwTyOk(mut st, x.ty)) || !brw && (idDecl(mut st, x.decl, 8) || idDecl(mut st, x.elem, 8)) {
                 return 0, diag.FnCap{at: posOf(mut st, lam), kind: 5}
             }
             n += 1
@@ -580,24 +693,84 @@ func capFlatN(st mut S, row int, eb int, ef int, brw bool, lam NodeRef, fuel int
     return n, nil
 }
 
-// capFlatFill は行 row の平たい捕捉を k 番目から埋める（束縛・作成点の値・Def の中の型）。次の k を返す（検査は capFlatN が済ませている）
-func capFlatFill(st mut S, row int, eb int, ef int, k0 int, cbs ListRef, cvals ListRef, ctys ListRef, depth int) int {
+// capFlatFill は行 row の平たい捕捉を k 番目から埋める（束縛・作成点の値・Def の中の型）。次の k を返す（検査は capFlatN が済ませている）。
+// anc = anchor つきの呼び出しの anchor（-1 = callv）: imm の捕捉が anchor より深ければ anchor へ形式コピー（M4 (a) の写し — callM の imm の実引数と同じ）。
+// mut の捕捉（(α-L1)）は束縛そのもの: 値 = 束縛の ref（mut 実引数の mutParamArg と同じ ann — 割った束縛はセルの木そのまま）・Def の中の型 = region 0 の ref / セルの木
+func capFlatFill(st mut S, row int, eb int, ef int, k0 int, cbs ListRef, cvals ListRef, ctys ListRef, depth int, anc int, at NodeRef) (int, error?) {
     mut k := k0
     for j <- iter.Range(st.capLo[row], st.capHi[row]) {
         nm := strOf(mut st, bytes(st.capNames[j]))
         if capPkAt(mut st, j) >= 0 {
             c := clo(mut st, lookupF(mut st, ef, nm))
-            k = capFlatFill(mut st, capEntry(mut st, c.lambda), c.envB, c.envF, k, cbs, cvals, ctys, depth)
+            k = capFlatFill(mut st, capEntry(mut st, c.lambda), c.envB, c.envF, k, cbs, cvals, ctys, depth, anc, at)?
         } else {
             b := lookup(mut st, eb, nm)
             x := bnd(mut st, b)
             lput(mut st, cbs, k, b)
-            hsetCore(mut st, int(cvals) + 1 + k, cVar(mut st, depth - 1 - x.level))
-            hsetTy(mut st, int(ctys) + 1 + k, tyClamp(mut st, x.ty, 0))
+            v := cVar(mut st, depth - 1 - x.level)
+            if x.mutable {
+                hsetCore(mut st, int(cvals) + 1 + k, if x.split { v } else { cAnn(mut st, v, mutCellTy(mut st, x, x.region)) })
+                hsetTy(mut st, int(ctys) + 1 + k, if x.split { splitTy(mut st, x.decl, 0, true, at)? } else { mutCellTy(mut st, x, 0) })
+            } else {
+                mut cv := v
+                if anc >= 0 {
+                    saved := st.rdepth
+                    st.rdepth = anc + 1
+                    et := pointTy(mut st, x.ty)
+                    st.rdepth = saved
+                    c := storeCopy(mut st, v, x.ty, et, anc)
+                    if c != -1 {
+                        cv = c
+                    }
+                }
+                hsetCore(mut st, int(cvals) + 1 + k, cv)
+                hsetTy(mut st, int(ctys) + 1 + k, tyClamp(mut st, x.ty, 0))
+            }
             k += 1
         }
     }
-    return k
+    return k, nil
+}
+
+// mutCellTy は割っていない mut の束縛 x のセル（ref）の region r の型（mutParamArg の ann と同じ — 中身の型は束縛点の座標へ）
+func mutCellTy(st mut S, x Binding, r int) TyRef {
+    saved := st.rdepth
+    st.rdepth = r + 1
+    inner := pointTy(mut st, x.ty)
+    st.rdepth = saved
+    return tRefOf(mut st, 1, r, inner)
+}
+
+// shapesAt は env の形の列 sh（Def の座標 — region 0）を region a の座標へ写した列（anchor つきの呼び出しの作成点の union の注釈）
+func shapesAt(st mut S, sh []int, a int) []int {
+    saved := st.rdepth
+    st.rdepth = a + 1
+    mut out := mut []int{}
+    for i <- iter.Range(0, len(sh)) {
+        out = append(out, int(pointTy(mut st, TyRef(sh[i]))))
+    }
+    st.rdepth = saved
+    return freeze(out)
+}
+
+// mutRegion は型 t の mut のコンテナ・参照の region の最小（関数型の中は見ない — 閉じた型スキーム。無ければ -1）
+func mutRegion(st mut S, t TyRef) int {
+    if t == -1 {
+        return -1
+    }
+    x := tg(mut st, t)
+    return switch x {
+    case TOpt: mutRegion(mut st, tInner(mut st, t))
+    case TUn | TPr: minAnc(mutRegion(mut st, tLeft(mut st, t)), mutRegion(mut st, tRight(mut st, t)))
+    case TSl | TRef: minAnc(if tMutBit(mut st, t) != 0 { tRegion(mut st, t) } else { -1 }, mutRegion(mut st, tElem(mut st, t)))
+    case TMp: minAnc(if tMutBit(mut st, t) != 0 { tRegion(mut st, t) } else { -1 }, minAnc(mutRegion(mut st, tKey(mut st, t)), mutRegion(mut st, tVal(mut st, t))))
+    default: -1
+    }
+}
+
+// minAnc は region の最小（-1 = 無し）
+func minAnc(a int, b int) int {
+    return if a < 0 { b } else if b < 0 || a <= b { a } else { b }
 }
 
 // CapChains は capFlatBind の結果: 値の束縛の鎖・関数型の束縛の鎖・次の k
@@ -623,7 +796,16 @@ func capFlatBind(st mut S, row int, src int, cbs ListRef, ctys ListRef, k0 int) 
             k = sub.k
         } else {
             x := bnd(mut st, latI(mut st, cbs, k))
-            eb = bind(mut st, eb, x.name, k + 1, false, x.decl, latTy(mut st, ctys, k), x.elem, 0, -1, false, x.sty)
+            if x.mutable {
+                // 捕捉した mut の束縛（(α-L1)）: Def の中では region 0 の mut の束縛（mut 仮引数と同じ — 中身の型は region 0 の座標）
+                saved := st.rdepth
+                st.rdepth = 1
+                vt := pointTy(mut st, x.ty)
+                st.rdepth = saved
+                eb = bind(mut st, eb, x.name, k + 1, true, x.decl, vt, x.elem, 0, -1, x.split, x.sty)
+            } else {
+                eb = bind(mut st, eb, x.name, k + 1, false, x.decl, latTy(mut st, ctys, k), x.elem, 0, -1, false, x.sty)
+            }
             k += 1
         }
     }
@@ -676,6 +858,9 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
     n := lenL(mut st, args)
     vs := ListRef(listN(mut st, n))
     mut p := closParam(mut st, ct)
+    // 実引数の組 prod U P（U = 呼び先の env・P = 元の引数鎖）が mut を持つ（借りの閉包の mut 捕捉が閉じた世界の env の union を通して届く — (α-L1)）なら
+    // anchor つきの callMv（callv は Def の region 0 を呼び手の最内へ固定し、mut の正確一致で落ちる）
+    anchor := if tyMutFreeD(mut st, tRight(mut st, ct)) && tyMutFreeD(mut st, p) { -1 } else { closAnchor(mut st, ct, args, eb, ef) }
     for i <- iter.Range(0, n) {
         mut want := p
         if i + 1 != n {
@@ -690,19 +875,62 @@ func callClosure(st mut S, callee NodeRef, ct TyRef, args ListRef, at NodeRef, e
         if bte != -1 && kindN(mut st, bte) == ast.TFunc && kindN(mut st, a) == ast.ELambda {
             // 借りの実引数のラムダ（(α-L0)）: 借りの位置 bte を鍵に持ち上げる（作成点 = let の内側の深さ depth + 1）
             st.liftHint = rec5(mut st, hget(mut st, dr + 1), hget(mut st, dr + 2), int(bte), 0, 0)
-            bk := brwKey(mut st, hget(mut st, dr + 1), bte, at, EXPANDFUEL)?
+            bk := brwKey(mut st, hget(mut st, dr + 1), bte, at, EXPANDFUEL, false)?
             st.liftBrw = 1
+            st.liftAnchor = anchor + 1
             hsetCore(mut st, int(vs) + 1 + i, liftLambdaCap(mut st, a, want, bk, eb, ef, depth + 1, at)?)
         } else {
-            hsetCore(mut st, int(vs) + 1 + i, coerceExpr(mut st, a, want, eb, ef, depth + 1, at)?)
+            av := coerceExpr(mut st, a, want, eb, ef, depth + 1, at)?
+            hsetCore(mut st, int(vs) + 1 + i, if anchor >= 0 { copyAt(mut st, av, computeTy(mut st, a, eb, ef), want, anchor) } else { av })
         }
     }
     if n == 0 && tg(mut st, p) != TUnit {
         return 0, diag.Malformed{at: posOf(mut st, at)}
     }
     fv := cVar(mut st, 0)
+    if anchor >= 0 {
+        // imm の実引数・呼び先の env は anchor より深ければ anchor へ形式コピー（M4 (a) — callM の実引数と同じ）
+        u := tRight(mut st, ct)
+        env := copyAt(mut st, c1(mut st, CSnd, cVar(mut st, 0)), u, u, anchor)
+        return cLet(mut st, f, cCallMv(mut st, anchor, c1(mut st, CFst, fv), c2(mut st, CPair, env, pairChain(mut st, vs)))), nil
+    }
     cv := c2(mut st, CCallv, c1(mut st, CFst, fv), c2(mut st, CPair, c1(mut st, CSnd, cVar(mut st, 0)), pairChain(mut st, vs)))
     return cLet(mut st, f, cv), nil
+}
+
+// copyAt は値 v（型 vt — -1 = 不明）を region a へ形式コピーした式（期待型 want を a の座標へ写した型で — 写す要の無い値・写せない型〔mut を持つ〕はそのまま）
+func copyAt(st mut S, v CoreRef, vt TyRef, want TyRef, a int) CoreRef {
+    saved := st.rdepth
+    st.rdepth = a + 1
+    et := pointTy(mut st, want)
+    st.rdepth = saved
+    c := storeCopy(mut st, v, vt, et, a)
+    return if c != -1 { c } else { v }
+}
+
+// closAnchor は anchor つきの閉包の呼び出しの anchor の region: 借りの実引数のラムダが捕捉する mut の束縛の region・実引数と呼び先の env の型の
+// mut の region の最小（(α-L1) — 1 つの呼び出しの mut は 1 つの束縛〔loader の縛り〕か Def の仮引数の region 0）。無ければ最内（callv と同じ写し）
+func closAnchor(st mut S, ct TyRef, args ListRef, eb int, ef int) int {
+    mut a := mutRegion(mut st, tRight(mut st, ct))
+    for i <- iter.Range(0, lenL(mut st, args)) {
+        x := latN(mut st, args, i)
+        if kindN(mut st, x) == ast.ELambda {
+            row := capEntry(mut st, x)
+            if row >= 0 {
+                for j <- iter.Range(st.capLo[row], st.capHi[row]) {
+                    if capPkAt(mut st, j) < 0 {
+                        b := lookup(mut st, eb, strOf(mut st, bytes(st.capNames[j])))
+                        if b >= 0 && bnd(mut st, b).mutable {
+                            a = minAnc(a, bnd(mut st, b).region)
+                        }
+                    }
+                }
+            }
+        } else {
+            a = minAnc(a, mutRegion(mut st, computeTy(mut st, x, eb, ef)))
+        }
+    }
+    return if a < 0 { st.rdepth - 1 } else { a }
 }
 
 // closureCalleeDr は閉包の値の callee の named fn type の宣言の参照（借りの閉包・解決できない形は -1）
@@ -748,6 +976,34 @@ func LamKey(st mut S, lam NodeRef) int {
     return if i < 0 { -1 } else { table.Get(mut st.ylamK, i) }
 }
 
+// FnTypeOf は式 e の表層型が名前付き関数型（option なら中身）ならその型宣言の節（でなければ -1 — analyzer が関数値の呼び出しの契約を引く口。
+// effect の波 段 1 — language.md 12 節の面「高階」）
+func FnTypeOf(st mut S, e NodeRef) int {
+    y0 := yGet(mut st, int(e))
+    y := if yk(mut st, y0) == YOpt { YAt(mut st, y0).a } else { y0 }
+    k := yk(mut st, y)
+    d := if k == YDecl { YAt(mut st, y).a } else if k == YFn { YAt(mut st, y).c - 1 } else { -1 }
+    return if d >= 0 && isTreeNode(d) && kindN(mut st, nC(nodeOf(mut st, NodeRef(d)))) == ast.BFunc { d } else { -1 }
+}
+
+// ExprDecl は式 e の表層型が型宣言（struct / union / named scalar / 名前付き関数型 — option なら中身）ならその型宣言の節（でなければ -1 —
+// analyzer の値の流れが欄のスロットを型 × 名前で引く口。language.md 13 節の補 2）
+func ExprDecl(st mut S, e NodeRef) NodeRef {
+    y0 := yGet(mut st, int(e))
+    y := if yk(mut st, y0) == YOpt { YAt(mut st, y0).a } else { y0 }
+    return if yk(mut st, y) == YDecl { NodeRef(YAt(mut st, y).a) } else { NodeRef(-1) }
+}
+
+// FnTypeErrors は名前付き関数型の型宣言 decl の後置 `@errors` のラベル名の列（無ければ -1）と `@` の字句・宣言の package
+func FnTypeErrors(st mut S, decl NodeRef) (ListRef, int, int) {
+    body := nodeOf(mut st, nC(nodeOf(mut st, decl)))
+    pk := FilePkg(mut st, refFile(int(decl)))
+    if body.d == 0 {
+        return -1, 0, pk
+    }
+    return ListRef(LBASE + LSTRS * LK + refFile(int(decl)) * FW + body.d - 1), body.e, pk
+}
+
 // LamYFn は値の位置のラムダ lam の期待型の表層型（関数型 YFn — 記録なしは -1）
 func LamYFn(st mut S, lam NodeRef) int {
     i := lamRec(mut st, lam)
@@ -787,12 +1043,48 @@ func capFlowAt(st mut S, i int) bool {
     if len(st.capPend) == 0 {
         return false
     }
-    return st.capPend[2 + st.capPend[0] + i] != 0
+    return st.capPend[2 + st.capPend[0] + i] == 1
+}
+
+// CapBorrowArg は捕捉の表の i 行目が借りの実引数のラムダ（値の呼び出しの実引数 — loader の行の印 2）か（lower の口 — 匿名の関数型の鍵を借りの位置と
+// 匿名の欄に分ける・report-1038 (c) 案 A）
+func CapBorrowArg(st mut S, i int) bool {
+    return len(st.capPend) > 0 && st.capPend[2 + st.capPend[0] + i] == 2
 }
 
 // CapPend は捕捉の表の i 行目の j 番目の捕捉の展開待ちの的（-1 = 普通の捕捉）
 func CapPend(st mut S, i int, j int) int {
     return capPkAt(mut st, st.capLo[i] + j)
+}
+
+// CapMut は捕捉の表の i 行目の j 番目の捕捉が mut の束縛の捕捉（(α-L1) — loader の印 -2）か
+func CapMut(st mut S, i int, j int) bool {
+    return capPkAt(mut st, st.capLo[i] + j) == -2
+}
+
+// CapMutAfter は名前 name の束縛（木の節 at）を、同じファイルで at より後ろの値の位置のラムダが mut で捕捉するか（lower の置き場の口 —
+// 大きい捕捉セルを region に置く・report-1068）。名前で照合する近似（同じファイルの後ろの別の関数の同名の捕捉も拾う）— 外れても置き場だけ
+func CapMutAfter(st mut S, name StrRef, at NodeRef) bool {
+    if !isTreeNode(int(at)) || len(st.capPend) == 0 {
+        return false
+    }
+    f := refFile(int(at))
+    ix := refIdx(int(at))
+    for i <- iter.Range(0, len(st.capFile)) {
+        if st.capFile[i] == f && st.capNode[i] > ix {
+            for j <- iter.Range(st.capLo[i], st.capHi[i]) {
+                if capPkAt(mut st, j) == -2 && strIs(mut st, name, st.capNames[j]) {
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+// CapNameRef は捕捉の表の i 行目の j 番目の捕捉の名前（ヒープの文字列 — `mut z` の実引数だけの捕捉は識別子の節が無い）
+func CapNameRef(st mut S, i int, j int) StrRef {
+    return strOf(mut st, bytes(st.capNames[st.capLo[i] + j]))
 }
 
 // CapFlow は capFlowAt の lower の口
@@ -820,13 +1112,26 @@ func CapIdents(st mut S, i int) ListRef {
     out := ListRef(listN(mut st, hi - lo))
     body := nB(nodeOf(mut st, CapLam(mut st, i)))
     for j <- iter.Range(lo, hi) {
-        lput(mut st, out, j - lo, int(identNamed(mut st, body, st.capNames[j])))
+        lput(mut st, out, j - lo, int(identNamed(mut st, body, st.capNames[j], false)))
+    }
+    return out
+}
+
+// CapNodes は CapIdents の、`mut x` / `mut x.f` の実引数（EMutArg — 根の名前）にも当たる版（analyzer の口 — 借りのラムダの mut の捕捉は
+// `mut z` で渡すだけのこともある。(α-L1)）
+func CapNodes(st mut S, i int) ListRef {
+    lo := st.capLo[i]
+    hi := st.capHi[i]
+    out := ListRef(listN(mut st, hi - lo))
+    body := nB(nodeOf(mut st, CapLam(mut st, i)))
+    for j <- iter.Range(lo, hi) {
+        lput(mut st, out, j - lo, int(identNamed(mut st, body, st.capNames[j], true)))
     }
     return out
 }
 
 // identNamed は木 n の中で名前が s の最初の識別子の節（無ければ -1 — 影の禁止により中の束縛と衝突しない）
-func identNamed(st mut S, n NodeRef, s string) NodeRef {
+func identNamed(st mut S, n NodeRef, s string, m bool) NodeRef {
     if n == -1 {
         return -1
     }
@@ -834,18 +1139,21 @@ func identNamed(st mut S, n NodeRef, s string) NodeRef {
     if x.kind == ast.EIdent {
         return if strIs(mut st, sA(x), s) { n } else { -1 }
     }
+    if m && x.kind == ast.EMutArg {
+        return if strIs(mut st, latS(mut st, DotParts(mut st, x.a), 0), s) { n } else { -1 }
+    }
     c := pcDesc(mut st, x)
     for j <- iter.Range(0, 6) {
         d := c / pow8(j) % 8
         v := pcField(x, j)
         if d == 1 && v != -1 {
-            r := identNamed(mut st, NodeRef(v), s)
+            r := identNamed(mut st, NodeRef(v), s, m)
             if r != -1 {
                 return r
             }
         } else if d == 3 && v != -1 {
             for k <- iter.Range(0, lenL(mut st, ListRef(v))) {
-                r := identNamed(mut st, latN(mut st, ListRef(v), k), s)
+                r := identNamed(mut st, latN(mut st, ListRef(v), k), s, m)
                 if r != -1 {
                     return r
                 }

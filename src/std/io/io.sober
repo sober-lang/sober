@@ -1,6 +1,6 @@
 package io
 
-// ファイル・標準ストリーム・ディレクトリの読み書き（language.md 28 節）。どの関数も同期の形で、バイト列は []byte で受け渡す。
+// ファイル・標準ストリーム・ディレクトリの読み書き（language.md 28 節）と根の下の開き（OpenRoot / OpenUnder）。どの関数も同期の形で、バイト列は []byte で受け渡す。
 // 失敗は errno を写したラベル（NotFound・Denied・Timeout・Other）か、囲む task.Run の期限が尽きた後の Expired で返る。
 // text として読むなら `s := string(io.ReadFile(p)?)?`（UTF-8 の検査つき）
 
@@ -44,6 +44,17 @@ func sysChunkClose(rec int) int
 // deadline: を書かないプログラムでは定数 0（判定ごと畳まれる）
 @intrinsic("deadline")
 func sysDeadline() int
+
+// std 専用の生の syscall（language.md 28 節「生の syscall の囲い」— std/net と同じ信頼の島。根の下の開き OpenRoot / OpenUnder / Size が使う）
+@intrinsic("syscall")
+func sysCall(nr int, a int, b int, c int, d int, e int, f int) int
+
+@intrinsic("addr")
+func sysAddr(b []byte) int
+
+// fd を今の task の登録簿に積む（std/task のプログラムで task が死んでも出口で閉じる — sysOpen の積み方と同じ。逐次のプログラムでは何もしない）
+@intrinsic("fd_own")
+func sysFdOwn(fd int) int
 
 // ファイルの読み書きは同期 syscall の直呼び（Executor・block 効果は持ち込まない）
 
@@ -129,6 +140,138 @@ func Open(path string) (File, error?) {
 // f を閉じる（Open の直後の defer でだけ書ける — desugar/filecheck。閉じる失敗は返さない: 読むためだけに開いた fd の close の失敗に打つ手は無い）
 func Close(f File) {
     _ = sysClose(f.fd)
+}
+
+// 根として開いたディレクトリ（language.md 28 節「根の下の開き」— File と同じ同一性の型: 作る関数は OpenRoot だけ・後始末は同じブロックの
+// `defer io.CloseRoot(r)`・写せない・外へ出せない・give: では渡せない）。OpenUnder の根になる capability で、中身は O_PATH の fd（読み書きの口は無い）。
+// ディレクトリの項目の種類 EntryKind の Dir とは別物
+type Root struct {
+    fd int
+    seal rootSeal
+}
+
+// rootSeal は Root の封（非公開 — 外で値を書けない）
+type rootSeal struct {
+}
+
+// path のディレクトリを OpenUnder の根として開く（openat の O_PATH | O_DIRECTORY）。開いたら同じブロックの直後の文で `defer io.CloseRoot(r)` を書く。
+// ディレクトリでなければ NotFound（ENOTDIR）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func OpenRoot(path string) (Root, error?) {
+    if sysDeadline() != 0 {
+        return Root{fd: -1, seal: rootSeal{}}, Expired{}
+    }
+    p := cstr(path)
+    if len(p) == 0 {
+        return Root{fd: -1, seal: rootSeal{}}, Other{errno: 22}
+    }
+    // 2686976 = O_PATH | O_DIRECTORY | O_CLOEXEC・-100 = AT_FDCWD
+    fd := owned(sysCall(257, -100, sysAddr(p), 2686976, 0, 0, 0))
+    if fd < 0 {
+        return Root{fd: -1, seal: rootSeal{}}, errOf(0 - fd)
+    }
+    return Root{fd: fd, seal: rootSeal{}}, nil
+}
+
+// r を閉じる（OpenRoot の直後の defer でだけ書ける — desugar/filecheck）
+func CloseRoot(r Root) {
+    _ = sysClose(r.fd)
+}
+
+// r の下の rel のファイルを読むために開く（openat2 の RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS）。開いたら同じブロックの直後の文で `defer io.Close(f)` を書く。
+// r の外へ出ないのはカーネルの保証: `..`・絶対パス・r の外を指す symlink は解決の途中で拒否されて Denied（EXDEV）— rel を文字列として検査しない。
+// r の中を指す symlink は辿る。fifo などを開いても塞がない（O_NONBLOCK — 通常のファイルの読みには効かない）。openat2 の無いカーネルでは
+// Other{errno: 38}（openat へ倒れない — 倒れると根の外へ出ない保証が消える）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func OpenUnder(r Root, rel string) (File, error?) {
+    if sysDeadline() != 0 {
+        return File{fd: -1, seal: fileSeal{}}, Expired{}
+    }
+    p := cstr(rel)
+    if len(p) == 0 {
+        return File{fd: -1, seal: fileSeal{}}, Other{errno: 22}
+    }
+    // struct open_how（24 B）: flags = O_RDONLY | O_NONBLOCK | O_CLOEXEC（526336）・mode = 0・resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_BENEATH（10）
+    mut how := mut []byte{0, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0}
+    fd := owned(sysCall(437, r.fd, sysAddr(p), sysAddr(how), 24, 0, 0))
+    if fd == -18 {
+        return File{fd: -1, seal: fileSeal{}}, Denied{}
+    }
+    if fd < 0 {
+        return File{fd: -1, seal: fileSeal{}}, errOf(0 - fd)
+    }
+    return File{fd: fd, seal: fileSeal{}}, nil
+}
+
+// Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体を見て path を引き直さない。kind に Symlink は来ない — 開くときに辿る）
+type FileInfo struct {
+    // 大きさ（バイト — st_size。通常のファイル以外は意味を持たない）
+    size int
+    // 更新時刻（st_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。std/os の ModTime と同じ値）
+    modTime int
+    // 種類（Regular・Dir・Irregular〔fifo・socket・デバイス〕— Stat は必ず入れる。option にしてあるのは FileInfo にゼロ値を持たせるため
+    // 〔union はゼロ値を持たない — `(FileInfo, error?)` を返す関数の `?` の早期 return が FileInfo{} を要る〕）
+    kind EntryKind?
+}
+
+// f の属性（fstat(2) の大きさ・更新時刻・種類 — 通常のファイルでなくても誤りにしない: 判定は kind で呼び手が）
+@errors(NotFound, Denied, Other, Timeout, Expired)
+func Stat(f File) (FileInfo, error?) {
+    if sysDeadline() != 0 {
+        return FileInfo{}, Expired{}
+    }
+    // struct stat（144 B — x86-64）: st_mode は 24 B 目の 4 B・st_size は 48 B 目の 8 B・st_mtim は 88 B 目（秒 8 B + ns 8 B）
+    mut sb := mut []byte{}
+    while len(sb) < 144 {
+        sb = append(sb, byte(0))
+    }
+    r := sysCall(5, f.fd, sysAddr(sb), 0, 0, 0, 0)
+    if r < 0 {
+        return FileInfo{}, errOf(0 - r)
+    }
+    mode := (int(sb[25]) * 256 + int(sb[24])) & 61440
+    k := if mode == 32768 { 8 } else if mode == 16384 { 4 } else { 0 }
+    return FileInfo{size: le64(sb, 48), modTime: le64(sb, 88) * 1000000000 + le64(sb, 96), kind: kindOf(k)}, nil
+}
+
+// le64 は b[at:at+8) の little endian の 64 ビット
+func le64(b []byte, at int) int {
+    mut n := 0
+    mut i := at + 7
+    while i >= at {
+        n = n * 256 + int(b[i])
+        i -= 1
+    }
+    return n
+}
+
+// cstr は s のバイト + 0（カーネルへ渡す C 文字列 — s が NUL を含めば空）
+func cstr(s string) []byte {
+    sb := bytes(s)
+    mut b := mut []byte{}
+    mut i := 0
+    while i < len(sb) {
+        if sb[i] == 0 {
+            return []byte{}
+        }
+        b = append(b, sb[i])
+        i += 1
+    }
+    b = append(b, 0)
+    return freeze(b)
+}
+
+// owned は開いた fd（負なら errno のまま返す）を今の task の登録簿に積む（番号が登録簿の上限以上なら閉じて EMFILE — sysOpen と同じ）
+func owned(fd int) int {
+    if fd < 0 {
+        return fd
+    }
+    if fd >= 65536 {
+        _ = sysCall(3, fd, 0, 0, 0, 0, 0)
+        return -24
+    }
+    _ = sysFdOwn(fd)
+    return fd
 }
 
 // f を今の位置から EOF まで全部読む（ReadFile の開いた File 版）。途中で失敗したら error（読めた分は捨てる）

@@ -404,6 +404,15 @@ func exprJson(st mut S, out mut []byte, e0 CoreRef) {
             sp = spush(mut st, sp, OE, b)
             sp = spush(mut st, sp, OS, J_A)
             sp = spush(mut st, sp, OE, a)
+        } else if k == CCallMv {
+            // {"k":"callmv","r":a,"f":F,"e":E}（a = f, b = e, c = anchor）
+            obuf.Lit(mut out, "{\"k\":\"callmv\",\"r\":")
+            obuf.Int(mut out, cx.c)
+            obuf.Lit(mut out, ",\"f\":")
+            sp = spush(mut st, sp, OS, J_CLOSE)
+            sp = spush(mut st, sp, OE, b)
+            sp = spush(mut st, sp, OS, J_E)
+            sp = spush(mut st, sp, OE, a)
         } else if k == CCopyTo {
             // {"k":"copyto","r":k,"t":T,"e":E}（a = 型, b = e, c = k）
             obuf.Lit(mut out, "{\"k\":\"copyto\",\"r\":")

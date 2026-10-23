@@ -1,0 +1,11 @@
+package main
+
+import "std/http"
+
+// 共有のルートのハンドラが要求の頭（Request.head — 認証のヘッダを含む）を直に読む
+import "std/utf8"
+
+func main() {
+    rs := []http.Route{http.Route{method: "GET", path: "/h", handler: (r) => http.Text("${len(utf8.Bytes(r.head))}\n"), cache: http.Fresh{maxAge: 60}}}
+    println(len(rs))
+}

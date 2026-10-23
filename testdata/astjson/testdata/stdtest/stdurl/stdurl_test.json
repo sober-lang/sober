@@ -1,0 +1,1973 @@
+{
+  "package": "stdurl",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/iter",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/url",
+      "tok": 7
+    },
+    {
+      "alias": "iter#",
+      "path": "std/iter",
+      "tok": 0
+    },
+    {
+      "alias": "$testing",
+      "path": "std/testing",
+      "tok": 0
+    },
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [
+    {
+      "name": "Case",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "in",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 13
+          },
+          {
+            "name": "want",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 16
+          }
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "TestEscape",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "cases"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "Case"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 36
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 40
+                        }
+                      }
+                    ],
+                    "tok": 32,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "AZaz09-._~",
+                          "tok": 47
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "AZaz09-._~",
+                          "tok": 51
+                        }
+                      }
+                    ],
+                    "tok": 43,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": " ",
+                          "tok": 58
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%20",
+                          "tok": 62
+                        }
+                      }
+                    ],
+                    "tok": 54,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a b&c=d/é",
+                          "tok": 69
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a%20b%26c%3Dd%2F%C3%A9",
+                          "tok": 73
+                        }
+                      }
+                    ],
+                    "tok": 65,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": ":/?#[]@!$&'()*+,;=",
+                          "tok": 80
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%3A%2F%3F%23%5B%5D%40%21%24%26%27%28%29%2A%2B%2C%3B%3D",
+                          "tok": 84
+                        }
+                      }
+                    ],
+                    "tok": 76,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%",
+                          "tok": 91
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%25",
+                          "tok": 95
+                        }
+                      }
+                    ],
+                    "tok": 87,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "あ",
+                          "tok": 102
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%E3%81%82",
+                          "tok": 106
+                        }
+                      }
+                    ],
+                    "tok": 98,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 28
+              }
+            ],
+            "tok": 26
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 114
+                      },
+                      "field": "Range",
+                      "tok": 116
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 118
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 120
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "cases",
+                            "tok": 122
+                          }
+                        ],
+                        "tok": 121
+                      }
+                    ],
+                    "tok": 117
+                  },
+                  "guards": [],
+                  "tok": 112
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "c"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "cases",
+                          "tok": 128
+                        },
+                        "idx": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 130
+                        },
+                        "tok": 129
+                      }
+                    ],
+                    "tok": 126
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 133
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "url",
+                                "tok": 135
+                              },
+                              "field": "Escape",
+                              "tok": 137
+                            },
+                            "args": [
+                              {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "c",
+                                  "tok": 139
+                                },
+                                "field": "in",
+                                "tok": 141
+                              }
+                            ],
+                            "tok": 138
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 144
+                            },
+                            "field": "want",
+                            "tok": 146
+                          },
+                          "tok": 143
+                        }
+                      ],
+                      "tok": 134
+                    }
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 149
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "catch",
+                            "e": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "url",
+                                  "tok": 152
+                                },
+                                "field": "Unescape",
+                                "tok": 154
+                              },
+                              "args": [
+                                {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "c",
+                                    "tok": 156
+                                  },
+                                  "field": "want",
+                                  "tok": 158
+                                }
+                              ],
+                              "tok": 155
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "<bad>",
+                              "tok": 161
+                            },
+                            "tok": 160
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 164
+                            },
+                            "field": "in",
+                            "tok": 166
+                          },
+                          "tok": 163
+                        }
+                      ],
+                      "tok": 150
+                    }
+                  }
+                ]
+              },
+              "tok": 111
+            }
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 173
+      },
+      "sig_end": 25
+    },
+    {
+      "name": "TestUnescape",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "cases"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "Case"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%41",
+                          "tok": 188
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "A",
+                          "tok": 192
+                        }
+                      }
+                    ],
+                    "tok": 184,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%7e%7E",
+                          "tok": 199
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "~~",
+                          "tok": 203
+                        }
+                      }
+                    ],
+                    "tok": 195,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a+b",
+                          "tok": 210
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a+b",
+                          "tok": 214
+                        }
+                      }
+                    ],
+                    "tok": 206,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "100%25",
+                          "tok": 221
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "100%",
+                          "tok": 225
+                        }
+                      }
+                    ],
+                    "tok": 217,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%E3%81%82",
+                          "tok": 232
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "あ",
+                          "tok": 236
+                        }
+                      }
+                    ],
+                    "tok": 228,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "plain",
+                          "tok": 243
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "plain",
+                          "tok": 247
+                        }
+                      }
+                    ],
+                    "tok": 239,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 180
+              }
+            ],
+            "tok": 178
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 255
+                      },
+                      "field": "Range",
+                      "tok": 257
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 259
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 261
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "cases",
+                            "tok": 263
+                          }
+                        ],
+                        "tok": 262
+                      }
+                    ],
+                    "tok": 258
+                  },
+                  "guards": [],
+                  "tok": 253
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "c"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "cases",
+                          "tok": 269
+                        },
+                        "idx": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 271
+                        },
+                        "tok": 270
+                      }
+                    ],
+                    "tok": 267
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 274
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "catch",
+                            "e": {
+                              "k": "call",
+                              "callee": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "ident",
+                                  "name": "url",
+                                  "tok": 277
+                                },
+                                "field": "Unescape",
+                                "tok": 279
+                              },
+                              "args": [
+                                {
+                                  "k": "selector",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "c",
+                                    "tok": 281
+                                  },
+                                  "field": "in",
+                                  "tok": 283
+                                }
+                              ],
+                              "tok": 280
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "<bad>",
+                              "tok": 286
+                            },
+                            "tok": 285
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 289
+                            },
+                            "field": "want",
+                            "tok": 291
+                          },
+                          "tok": 288
+                        }
+                      ],
+                      "tok": 275
+                    }
+                  }
+                ]
+              },
+              "tok": 252
+            }
+          }
+        ]
+      },
+      "tok": 174,
+      "bodiless": false,
+      "span": {
+        "start": 173,
+        "end": 298
+      },
+      "sig_end": 177
+    },
+    {
+      "name": "badUnescape",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "_",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "url",
+                    "tok": 310
+                  },
+                  "field": "Unescape",
+                  "tok": 312
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 314
+                  }
+                ],
+                "tok": 313
+              }
+            ],
+            "tok": 306
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 318
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 320
+                },
+                "tok": 319
+              }
+            ],
+            "tok": 317
+          }
+        ]
+      },
+      "tok": 299,
+      "bodiless": false,
+      "span": {
+        "start": 298,
+        "end": 324
+      },
+      "sig_end": 305
+    },
+    {
+      "name": "TestUnescapeRejects",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "xs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "elems": [
+                  {
+                    "k": "strlit",
+                    "value": "%",
+                    "tok": 335
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%4",
+                    "tok": 337
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "a%2",
+                    "tok": 339
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%zz",
+                    "tok": 341
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%G1",
+                    "tok": 343
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%-1",
+                    "tok": 345
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%ff",
+                    "tok": 347
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%E3%81",
+                    "tok": 349
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "%C0%AF",
+                    "tok": 351
+                  }
+                ],
+                "mut": false,
+                "tok": 331
+              }
+            ],
+            "tok": 329
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 357
+                      },
+                      "field": "Range",
+                      "tok": 359
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 361
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 363
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "xs",
+                            "tok": 365
+                          }
+                        ],
+                        "tok": 364
+                      }
+                    ],
+                    "tok": 360
+                  },
+                  "guards": [],
+                  "tok": 355
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 369
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "badUnescape",
+                            "tok": 371
+                          },
+                          "args": [
+                            {
+                              "k": "index",
+                              "base": {
+                                "k": "ident",
+                                "name": "xs",
+                                "tok": 373
+                              },
+                              "idx": {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 375
+                              },
+                              "tok": 374
+                            }
+                          ],
+                          "tok": 372
+                        }
+                      ],
+                      "tok": 370
+                    }
+                  }
+                ]
+              },
+              "tok": 354
+            }
+          }
+        ]
+      },
+      "tok": 325,
+      "bodiless": false,
+      "span": {
+        "start": 324,
+        "end": 384
+      },
+      "sig_end": 328
+    },
+    {
+      "name": "show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "ps",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "url.Pair"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "s"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "strlit",
+                "value": "",
+                "tok": 399
+              }
+            ],
+            "tok": 396
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 404
+                      },
+                      "field": "Range",
+                      "tok": 406
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 408
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 410
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "ps",
+                            "tok": 412
+                          }
+                        ],
+                        "tok": 411
+                      }
+                    ],
+                    "tok": 407
+                  },
+                  "guards": [],
+                  "tok": 402
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "assign",
+                    "targets": [
+                      {
+                        "k": "ident",
+                        "name": "s",
+                        "tok": 416
+                      }
+                    ],
+                    "op": "=",
+                    "values": [
+                      {
+                        "k": "binary",
+                        "op": "+",
+                        "lhs": {
+                          "k": "binary",
+                          "op": "+",
+                          "lhs": {
+                            "k": "binary",
+                            "op": "+",
+                            "lhs": {
+                              "k": "binary",
+                              "op": "+",
+                              "lhs": {
+                                "k": "binary",
+                                "op": "+",
+                                "lhs": {
+                                  "k": "ident",
+                                  "name": "s",
+                                  "tok": 418
+                                },
+                                "rhs": {
+                                  "k": "strlit",
+                                  "value": "[",
+                                  "tok": 420
+                                },
+                                "tok": 419
+                              },
+                              "rhs": {
+                                "k": "selector",
+                                "base": {
+                                  "k": "index",
+                                  "base": {
+                                    "k": "ident",
+                                    "name": "ps",
+                                    "tok": 422
+                                  },
+                                  "idx": {
+                                    "k": "ident",
+                                    "name": "i",
+                                    "tok": 424
+                                  },
+                                  "tok": 423
+                                },
+                                "field": "key",
+                                "tok": 427
+                              },
+                              "tok": 421
+                            },
+                            "rhs": {
+                              "k": "strlit",
+                              "value": "|",
+                              "tok": 429
+                            },
+                            "tok": 428
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "index",
+                              "base": {
+                                "k": "ident",
+                                "name": "ps",
+                                "tok": 431
+                              },
+                              "idx": {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 433
+                              },
+                              "tok": 432
+                            },
+                            "field": "value",
+                            "tok": 436
+                          },
+                          "tok": 430
+                        },
+                        "rhs": {
+                          "k": "strlit",
+                          "value": "]",
+                          "tok": 438
+                        },
+                        "tok": 437
+                      }
+                    ],
+                    "tok": 416
+                  }
+                ]
+              },
+              "tok": 401
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "s",
+                "tok": 443
+              }
+            ],
+            "tok": 442
+          }
+        ]
+      },
+      "tok": 385,
+      "bodiless": false,
+      "span": {
+        "start": 384,
+        "end": 447
+      },
+      "sig_end": 395
+    },
+    {
+      "name": "TestParseQuery",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "cases"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "Case"
+                },
+                "elems": [
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 462
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "",
+                          "tok": 466
+                        }
+                      }
+                    ],
+                    "tok": 458,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "q=a+b&tag=x&tag=%E3%81%82",
+                          "tok": 473
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[q|a b][tag|x][tag|あ]",
+                          "tok": 477
+                        }
+                      }
+                    ],
+                    "tok": 469,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "&&a&",
+                          "tok": 484
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[a|]",
+                          "tok": 488
+                        }
+                      }
+                    ],
+                    "tok": 480,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a=",
+                          "tok": 495
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[a|]",
+                          "tok": 499
+                        }
+                      }
+                    ],
+                    "tok": 491,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "=b",
+                          "tok": 506
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[|b]",
+                          "tok": 510
+                        }
+                      }
+                    ],
+                    "tok": 502,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a=b=c",
+                          "tok": 517
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[a|b=c]",
+                          "tok": 521
+                        }
+                      }
+                    ],
+                    "tok": 513,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "a;b=c",
+                          "tok": 528
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[a;b|c]",
+                          "tok": 532
+                        }
+                      }
+                    ],
+                    "tok": 524,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "%2B=%2b+",
+                          "tok": 539
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[+|+ ]",
+                          "tok": 543
+                        }
+                      }
+                    ],
+                    "tok": 535,
+                    "type_args": []
+                  },
+                  {
+                    "k": "composite",
+                    "type_name": "Case",
+                    "elems": [
+                      {
+                        "key": "in",
+                        "value": {
+                          "k": "strlit",
+                          "value": "k%3Dx=v%26w",
+                          "tok": 550
+                        }
+                      },
+                      {
+                        "key": "want",
+                        "value": {
+                          "k": "strlit",
+                          "value": "[k=x|v&w]",
+                          "tok": 554
+                        }
+                      }
+                    ],
+                    "tok": 546,
+                    "type_args": []
+                  }
+                ],
+                "mut": false,
+                "tok": 454
+              }
+            ],
+            "tok": 452
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 562
+                      },
+                      "field": "Range",
+                      "tok": 564
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 566
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 568
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "cases",
+                            "tok": 570
+                          }
+                        ],
+                        "tok": 569
+                      }
+                    ],
+                    "tok": 565
+                  },
+                  "guards": [],
+                  "tok": 560
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "bind",
+                    "names": [
+                      "c"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "index",
+                        "base": {
+                          "k": "ident",
+                          "name": "cases",
+                          "tok": 576
+                        },
+                        "idx": {
+                          "k": "ident",
+                          "name": "i",
+                          "tok": 578
+                        },
+                        "tok": 577
+                      }
+                    ],
+                    "tok": 574
+                  },
+                  {
+                    "k": "bind",
+                    "names": [
+                      "ps"
+                    ],
+                    "mutable": false,
+                    "values": [
+                      {
+                        "k": "catch",
+                        "e": {
+                          "k": "call",
+                          "callee": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "url",
+                              "tok": 583
+                            },
+                            "field": "ParseQuery",
+                            "tok": 585
+                          },
+                          "args": [
+                            {
+                              "k": "selector",
+                              "base": {
+                                "k": "ident",
+                                "name": "c",
+                                "tok": 587
+                              },
+                              "field": "in",
+                              "tok": 589
+                            }
+                          ],
+                          "tok": 586
+                        },
+                        "rhs": {
+                          "k": "slicelit",
+                          "elem": {
+                            "k": "name",
+                            "name": "url.Pair"
+                          },
+                          "elems": [
+                            {
+                              "k": "composite",
+                              "type_name": "url.Pair",
+                              "elems": [
+                                {
+                                  "key": "key",
+                                  "value": {
+                                    "k": "strlit",
+                                    "value": "<bad>",
+                                    "tok": 604
+                                  }
+                                },
+                                {
+                                  "key": "value",
+                                  "value": {
+                                    "k": "strlit",
+                                    "value": "",
+                                    "tok": 608
+                                  }
+                                }
+                              ],
+                              "tok": 598,
+                              "type_args": []
+                            }
+                          ],
+                          "mut": false,
+                          "tok": 592
+                        },
+                        "tok": 591
+                      }
+                    ],
+                    "tok": 581
+                  },
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 612
+                      },
+                      "args": [
+                        {
+                          "k": "binary",
+                          "op": "==",
+                          "lhs": {
+                            "k": "call",
+                            "callee": {
+                              "k": "ident",
+                              "name": "show",
+                              "tok": 614
+                            },
+                            "args": [
+                              {
+                                "k": "ident",
+                                "name": "ps",
+                                "tok": 616
+                              }
+                            ],
+                            "tok": 615
+                          },
+                          "rhs": {
+                            "k": "selector",
+                            "base": {
+                              "k": "ident",
+                              "name": "c",
+                              "tok": 619
+                            },
+                            "field": "want",
+                            "tok": 621
+                          },
+                          "tok": 618
+                        }
+                      ],
+                      "tok": 613
+                    }
+                  }
+                ]
+              },
+              "tok": 559
+            }
+          }
+        ]
+      },
+      "tok": 448,
+      "bodiless": false,
+      "span": {
+        "start": 447,
+        "end": 628
+      },
+      "sig_end": 451
+    },
+    {
+      "name": "badQuery",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "bool"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "_",
+              "e"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "url",
+                    "tok": 640
+                  },
+                  "field": "ParseQuery",
+                  "tok": 642
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 644
+                  }
+                ],
+                "tok": 643
+              }
+            ],
+            "tok": 636
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "e",
+                  "tok": 648
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 650
+                },
+                "tok": 649
+              }
+            ],
+            "tok": 647
+          }
+        ]
+      },
+      "tok": 629,
+      "bodiless": false,
+      "span": {
+        "start": 628,
+        "end": 654
+      },
+      "sig_end": 635
+    },
+    {
+      "name": "TestParseQueryRejects",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "xs"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "slicelit",
+                "elem": {
+                  "k": "name",
+                  "name": "string"
+                },
+                "elems": [
+                  {
+                    "k": "strlit",
+                    "value": "a=%zz",
+                    "tok": 665
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "a%=b",
+                    "tok": 667
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "x=%ff",
+                    "tok": 669
+                  },
+                  {
+                    "k": "strlit",
+                    "value": "ok=1&b=%",
+                    "tok": 671
+                  }
+                ],
+                "mut": false,
+                "tok": 661
+              }
+            ],
+            "tok": 659
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "for",
+              "gens": [
+                {
+                  "names": [
+                    "i"
+                  ],
+                  "src": {
+                    "k": "call",
+                    "callee": {
+                      "k": "selector",
+                      "base": {
+                        "k": "ident",
+                        "name": "iter",
+                        "tok": 677
+                      },
+                      "field": "Range",
+                      "tok": 679
+                    },
+                    "args": [
+                      {
+                        "k": "int",
+                        "value": 0,
+                        "tok": 681
+                      },
+                      {
+                        "k": "call",
+                        "callee": {
+                          "k": "ident",
+                          "name": "len",
+                          "tok": 683
+                        },
+                        "args": [
+                          {
+                            "k": "ident",
+                            "name": "xs",
+                            "tok": 685
+                          }
+                        ],
+                        "tok": 684
+                      }
+                    ],
+                    "tok": 680
+                  },
+                  "guards": [],
+                  "tok": 675
+                }
+              ],
+              "body": {
+                "k": "block",
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "call",
+                      "callee": {
+                        "k": "ident",
+                        "name": "assert",
+                        "tok": 689
+                      },
+                      "args": [
+                        {
+                          "k": "call",
+                          "callee": {
+                            "k": "ident",
+                            "name": "badQuery",
+                            "tok": 691
+                          },
+                          "args": [
+                            {
+                              "k": "index",
+                              "base": {
+                                "k": "ident",
+                                "name": "xs",
+                                "tok": 693
+                              },
+                              "idx": {
+                                "k": "ident",
+                                "name": "i",
+                                "tok": 695
+                              },
+                              "tok": 694
+                            }
+                          ],
+                          "tok": 692
+                        }
+                      ],
+                      "tok": 690
+                    }
+                  }
+                ]
+              },
+              "tok": 674
+            }
+          }
+        ]
+      },
+      "tok": 655,
+      "bodiless": false,
+      "span": {
+        "start": 654,
+        "end": 704
+      },
+      "sig_end": 658
+    }
+  ],
+  "consts": []
+}

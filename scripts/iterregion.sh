@@ -22,12 +22,19 @@
 #   ⑨ 形 + RSS: iter_region_nonret（戻らない関数は「確保しうる」に数えない — #8 report-725 / 726）: task のプログラムで、反復の本体の確保が
 #      死ぬ道の panic の値（ラベル panic の冷たい関数 — binary.outOfRange）だけのループは enter が消える（入口 + 0 = 1。旧形 = 2 が負例 —
 #      flate の longest / lazy の lloop ≈ 20 命令 / 反復の税）。RSS は N と 10N で比例しない（消した enter の region への漏れの番）
+#   ⑫ RSS: iter_region_fnval_dest（関数値の呼び出しの宛先の深度のレジスタ — report-1006 a1 / a2・report-1007）: 印のある関数値の呼び出しは呼び手の
+#      宛先を書くので、関数値の呼び先（関数値として使われる名前付き関数・持ち上げたラムダ）は入口で読んで 0 に戻す。読まない呼び先が残すと ④ と同じ形で
+#      反復ごとに外の region へ積もる（2000 → 20000 で 24 → 240 MB / ラムダの読みだけ外すと 8 → 80 MB — 負例は確認済み）。nested = 持ち上げたラムダの
+#      本体の中で展開されるラムダ（段 2 のラムダの印は展開の本体では使わない — 使うと 8 → 80 MB）。nores = 結果の無い持ち上げたラムダ（形: 末尾の式の
+#      連結〔rt.cat8〕の深度が入口で読んだ region.depth = 呼び手の region でないこと — report-1008。反復の region があるので RSS には出ない）
 #   ⑩ 形 + RSS: iter_region_writer（入口で region を開く関数の自分の深度での呼び出しは「確保しうる」を伝えない — report-874）: 外の io.Writer へ
 #      1 バイトずつ書く反復は enter が消え、反復の中で作る Writer の反復は残る（入口 + 1 = 2。旧形 = 3 が負例 — writerByteSlow の枠の空けを
 #      数えて反復ごとに軽い enter）。RSS は N と 10N で比例しない（反復の中の Writer の枠が関数の region に積もらないこと）
 #   ⑪ 形 + RSS: map_dest（map の宛先構築 — report-875・knucleotide の frequencies の形）: return に流れ着く `mut map[string]V{}` の空のヘッダは
 #      呼び手の宛先の深度に作る — build / counts の最初の region.bump の深度が enter の後に読んだ region.depth（自分の深度）でないこと（旧形 = 自分の
 #      深度に作って戻りでセル列を写す — 負例）。RSS は呼び手の反復の N と 10N で比例しない（宛先 = 呼び手の反復の region に積もらない）
+#   ⑫ 形 + RSS: iter_region_rcell（借りの閉包が mut で捕捉する 64 語以上の集合値のセルは今の深度の region — report-1068）: main に 73 語の
+#      region.alloc があること。RSS は N と 10N で比例しない（セルを関数の region に置く変異 = 20000 → 200000 で 11 → 114 MB — 負例は確認済み）
 #   scripts/iterregion.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -62,6 +69,23 @@ if [ "$r2" -gt $((r1 + 1024)) ]; then
     echo "FAIL: iter_region_inner: RSS grows with the iterations ($r1 KB at 20000 → $r2 KB at 200000)"
     fail=$((fail + 1))
 fi
+"$S2" build examples/iter_region_rcell.sober --emit=elf --passes --stop-after=llight --dump-ir -o "$W/rc.ir" > /dev/null 2>&1 || { echo "FAIL: dump-ir iter_region_rcell"; fail=$((fail + 1)); }
+rcn=$(awk '/^func @main\.main\(/ { on = 1; n = 0; delete c; next }
+    on && /^}/ { print n; on = 0 }
+    on && / = const 73$/ { c[$1] = 1 }
+    on && /= region\.alloc / { if ($NF in c) n++ }' "$W/rc.ir")
+if [ "$rcn" = 0 ]; then
+    echo "FAIL: iter_region_rcell: the 73-word cell captured by mut is not allocated in a region (want region.alloc of 73 words in main)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/iter_region_rcell.sober -o "$W/rcell" > /dev/null 2>&1 || { echo "FAIL: build iter_region_rcell"; exit 1; }
+/usr/bin/time -f %M -o "$W/c1" "$W/rcell" 20000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/c2" "$W/rcell" 200000 > /dev/null || fail=$((fail + 1))
+c1=$(cat "$W/c1"); c2=$(cat "$W/c2")
+if [ "$c2" -gt $((c1 + 1024)) ]; then
+    echo "FAIL: iter_region_rcell: RSS grows with the iterations ($c1 KB at 20000 → $c2 KB at 200000 — the region cell must go to the iteration's region)"
+    fail=$((fail + 1))
+fi
 "$S2" build examples/iter_region_inline_dest.sober -o "$W/idest" > /dev/null 2>&1 || { echo "FAIL: build iter_region_inline_dest"; exit 1; }
 /usr/bin/time -f %M -o "$W/d1" "$W/idest" 2000 > /dev/null || fail=$((fail + 1))
 /usr/bin/time -f %M -o "$W/d2" "$W/idest" 20000 > /dev/null || fail=$((fail + 1))
@@ -76,6 +100,26 @@ fi
 g1=$(cat "$W/g1"); g2=$(cat "$W/g2")
 if [ "$g2" -gt $((g1 + 1024)) ]; then
     echo "FAIL: iter_region_dest_reg: RSS grows with the iterations ($g1 KB at 2000 → $g2 KB at 20000)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/iter_region_fnval_dest.sober --emit=elf --passes -o "$W/fvd" > /dev/null 2>&1 || { echo "FAIL: build iter_region_fnval_dest"; exit 1; }
+/usr/bin/time -f %M -o "$W/v1" "$W/fvd" 2000 > /dev/null || fail=$((fail + 1))
+/usr/bin/time -f %M -o "$W/v2" "$W/fvd" 20000 > /dev/null || fail=$((fail + 1))
+v1=$(cat "$W/v1"); v2=$(cat "$W/v2")
+if [ "$v2" -gt $((v1 + 1024)) ]; then
+    echo "FAIL: iter_region_fnval_dest: RSS grows with the iterations ($v1 KB at 2000 → $v2 KB at 20000)"
+    fail=$((fail + 1))
+fi
+"$S2" build examples/iter_region_fnval_dest.sober --emit=elf --passes --stop-after=llight --dump-ir -o "$W/fvd.ir" > /dev/null 2>&1 || { echo "FAIL: dump-ir iter_region_fnval_dest"; fail=$((fail + 1)); }
+nr=$(awk '/^func / { fn = 0; pre = ""; ent = 0 }
+    /^func @lambda#/ { fn = 1 }
+    fn && !ent && /= region\.depth$/ && pre == "" { pre = $1 }
+    fn && /region\.enter$/ { ent = 1 }
+    fn && /call @main\.note\(/ { note = 1 }
+    fn && pre != "" && /call @rt\.cat8\(/ { x = $0; if (index(x, pre ",") || index(x, pre ")")) bad++ }
+    END { print (note ? bad + 0 : "none") }' "$W/fvd.ir")
+if [ "$nr" != "0" ]; then
+    echo "FAIL: iter_region_fnval_dest: the result-less lifted lambda builds its tail's concat at its entry depth ($nr — want 0: its own region)"
     fail=$((fail + 1))
 fi
 "$S2" build examples/iter_region_nonret.sober -o "$W/nonret" > /dev/null 2>&1 || { echo "FAIL: build iter_region_nonret"; exit 1; }
@@ -148,5 +192,5 @@ for w in 1 4; do
     fi
     eval "pl$w=\"$l1 → $l2\""
 done
-echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + discarded spawn RSS W1 $pd1 / W4 $pd4 KB + discarded deaths RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB, fail=$fail"
+echo "iterregion: 4 loop shapes (enters kept/removed after llight) + inline dest direct (entry-depth allocs ${got}) + RSS $r1 → $r2 KB at 10x iterations + nonret RSS $n1 → $n2 KB + writer RSS $w1 → $w2 KB + map dest RSS $m1 → $m2 KB + region cell RSS $c1 → $c2 KB + inline dest RSS $d1 → $d2 KB + dest reg RSS $g1 → $g2 KB + fnval dest RSS $v1 → $v2 KB + discarded spawn RSS W1 $pd1 / W4 $pd4 KB + discarded deaths RSS W1 $pe1 / W4 $pe4 KB + lease RSS W1 $pl1 / W4 $pl4 KB, fail=$fail"
 [ "$fail" = 0 ]

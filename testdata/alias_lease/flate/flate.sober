@@ -1,0 +1,26 @@
+package flate
+
+// 公開の package（std/compress/flate の位置）: 作業域の型は別名で約束の面に残し、関数は本体 1 文の包み。
+// task.NewLocal の整えは包み（Prepare）を名指してよい — loader が 1 文の転送を実体の package の Prepare まで辿る（region-domain-pool.md 4d）
+
+import "testdata/alias_lease/deflate"
+
+type Work = deflate.Work
+
+func Encode(x int) int {
+    mut w := Work{}
+    return EncodeWith(mut w, x)
+}
+
+func Prepare(w mut Work) {
+    deflate.Prepare(mut w)
+}
+
+// 包みの包み（転送の鎖 — 同じ package の中）
+func Ready(w mut Work) {
+    Prepare(mut w)
+}
+
+func EncodeWith(w mut Work, x int) int {
+    return deflate.EncodeWith(mut w, x)
+}

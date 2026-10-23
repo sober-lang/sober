@@ -322,6 +322,41 @@ func ExpCost(st mut S, own []int) []int {
 }
 
 
+// mainReach は入口（main package の main）と const の初期化式から参照の辺（refGraph — ParReach と同じ保守的な辺）で届く関数の印。
+// main が無ければ ok = false（部分検査・package の検査 — 呼び手は全部届く扱いにする）
+func mainReach(st mut S) (ListRef, bool) {
+    g := refGraph(mut st)
+    mark := ListRef(listN(mut st, st.nfn))
+    mut work := mut []int{}
+    for i <- iter.Range(0, st.nfn) {
+        if fnPkg(mut st, i) == st.mainPkg && strIs(mut st, fnName(mut st, i), "main") {
+            lput(mut st, mark, i, 1)
+            work = append(work, i)
+        }
+    }
+    if len(work) == 0 {
+        return mark, false
+    }
+    for e <- iter.Range(g.head[0], g.head[1]) {
+        if latI(mut st, mark, g.adj[e]) == 0 {
+            lput(mut st, mark, g.adj[e], 1)
+            work = append(work, g.adj[e])
+        }
+    }
+    mut h := 0
+    while h < len(work) {
+        f := work[h]
+        h += 1
+        for e <- iter.Range(g.head[f + 1], g.head[f + 2]) {
+            if latI(mut st, mark, g.adj[e]) == 0 {
+                lput(mut st, mark, g.adj[e], 1)
+                work = append(work, g.adj[e])
+            }
+        }
+    }
+    return mark, true
+}
+
 // ParReach は入口（main package の main）と const の初期化式から参照の辺で届く関数に std/task の口（ParKey）があるか（並列 1.0× 段 2）。
 // lower の並列モード（task の大域・M:N の rt・罠）の判定: import しただけで届かないプログラム（std/utf8 の内側が par を使っても、それを呼ばない
 // プログラム）は逐次のまま — trap.sober の「使わないプログラムの IR は不変」。辺は refGraph（名前の参照 — 呼び出しに限らず関数値として渡す形も・

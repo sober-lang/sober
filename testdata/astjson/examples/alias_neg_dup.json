@@ -1,0 +1,116 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Point",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 12
+      }
+    },
+    {
+      "name": "Pt",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "Point"
+        }
+      },
+      "tok": 13,
+      "span": {
+        "start": 12,
+        "end": 17
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Pt",
+      "type_params": [],
+      "params": [],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "int",
+                "value": 1,
+                "tok": 24
+              }
+            ],
+            "tok": 23
+          }
+        ]
+      },
+      "tok": 18,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 28
+      },
+      "sig_end": 22
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 33
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 35
+                }
+              ],
+              "tok": 34
+            }
+          }
+        ]
+      },
+      "tok": 29,
+      "bodiless": false,
+      "span": {
+        "start": 28,
+        "end": 40
+      },
+      "sig_end": 32
+    }
+  ],
+  "consts": []
+}

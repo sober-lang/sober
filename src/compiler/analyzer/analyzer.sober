@@ -4,7 +4,7 @@ package analyzer
 // 入力はローダの後の表層 AST（脱糖後は defer が出口ごとに展開され関数名も消えるので、照合はここでしかできない）。
 // 読みは desugar の公開の口（Init が立てる表 — 名前解決・関数表・ラベル表）。出力は指摘の列（1 件で止めない — Zig 版 src/stage1/analyzer.zig と同じ）。
 // 規則: pool.sober（acquire / release の局所照合 R-a — Zig 版の移植）・annot.sober（`@errors` の項の解決）・freeze.sober（freeze の健全性 U1〜U3 —
-// 健全性の規則なのでこれだけは build でも走る: Freeze）。導出: errors.sober（今は影）
+// 健全性の規則なのでこれだけは build でも走る: Freeze）・exhaustive.sober（`@exhaustive` の表の網羅）・secret.sober（秘密の値の流れ — `@secret`）。導出: errors.sober（今は影）
 
 import "ast"
 import "desugar"
@@ -29,23 +29,16 @@ type Az struct {
     // error のラベル集合の導出（errors.sober）
     nfn int
     nerr int
-    sets table.Table[int]    // スロットの集合
-    rhead table.Table[int]   // スロットの読み手の鎖の頭（-1 = 無し）
-    rnode table.Table[int]   // 読み手の鎖の項 [関数, 次]
+    er Eng                   // 解き手（スロット・読み手・作業の列・局所 — flow.sober）
     pbase table.Table[int]   // 関数の仮引数のスロットの基底
     errfn table.Table[int]   // 関数の結果に error があるか（0 / 1）
     ffield table.Table[int]  // error 型の欄 [名前, スロット]…
-    work table.Table[int]    // 作業の列
-    inq table.Table[int]     // 関数が作業の列にいるか
-    env table.Table[int]     // 今の関数の局所 [名前, 集合]…（envN 個が有効）
-    envN int
-    envChanged bool
     cur int                  // 今歩いている関数
     rec bool                 // 最後の 1 周（switch を記録する）
-    sw table.Table[int]      // error の switch の記録 [節, S, 覆った, default]…
+    sw table.Table[int]      // error の switch の記録 [節, S.lo, S.hi, 覆った.lo, 覆った.hi, default]…（SW_W 語ずつ）
     unknown int              // 関数値の呼び出し（TOP に倒した数 — 最後の 1 周も含む延べ）
     walks int                // 不動点までに本体を歩いた回数
-    declared table.Table[int] // 関数の @errors の集合（無し -1）— package をまたぐ呼び出しは導出でなくこれを読む（裁定 E2）
+    declared table.Table[int] // 関数の @errors の集合 [有無, lo, hi]…— package をまたぐ呼び出しは導出でなくこれを読む（裁定 E2）
     swpk table.Table[int]    // error の switch の記録ごとの package（診断の綴り）
     swarms table.Table[int]  // error の switch の腕 [switch の記録の添字, 腕のパターンの節, タグ]…
     lit table.Table[int]     // ラベルごとにリテラルの構築があるか（0 / 1 — あれば cause が nil の値がある。cause の入れ子の網羅の領域）
@@ -56,6 +49,13 @@ type Az struct {
     flowBase int             // Flow のスロットの基底（関数 fi の Flow = スロット flowBase + fi — ビット j = 匿名の関数型の仮引数 j の呼び出しの失敗が漏れうる）
     cand table.Table[int]    // 関数が呼んだ Flow の対象の仮引数（ビット j — FLOW が戻りに届けば Flow になる）
     dflow table.Table[int]   // 関数の @errors に書いた仮引数の名前の集合（ビット j = 仮引数 j）— package をまたぐ呼び出しは Flow でなくこれを読む
+    exsw table.Table[int]    // @exhaustive の関数の switch の記録 [節, package]…（exhaustive.sober）
+    lamf table.Table[int]    // F の値のラムダの Flow の対象の仮引数 [名前, 添字]…（[lamBase, lamFN) が今のラムダの分 — fntype.sober）
+    lamFN int
+    lamBase int
+    lamCand int              // 今の F の値のラムダが失敗を漏らしうる仮引数（ビット j）
+    lamck table.Table[int]   // F の値のラムダの記録 [ラムダ, 型宣言, 集合.lo, 集合.hi, 呼んだ仮引数]…（最後の 1 周）
+    sv Sv                    // 秘密の値の流れ（secret.sober — error の解きの後に同じ az.er へ区間を積む）
     trySink int              // task.Run の本体の中（> 0）: `?` は scope の失敗で関数の戻り R[cur] に流れない（scope の err は開いた集合 — language.md 11 節「本体の `?`」）
 }
 
@@ -68,10 +68,9 @@ func Run(p loader.Program) []Finding {
 // runAz は Run の本体（only = freeze の規則〔健全性 — build でも走る〕だけ）。表層型の表（TypeAll）は暗黙の freeze の点を引くのに要る。
 // freeze の規則の作業域（Fz）は Az の外の局所に置き、規則には d を別の引数で通す（build は lower の表の上で FreezeCount — report-489）
 func runAz(p loader.Program, only bool) []Finding {
-    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
-        rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0}
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
+        pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, exsw: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}}
     desugar.Typed(mut az.d, p)
     mut z := Fz{names: table.Table[int]{}, param: table.Table[int]{}, ptype: table.Table[int]{}, decl: table.Table[int]{}, hold: table.Table[int]{},
         esc: table.Table[int]{}, ev: table.Table[int]{}, loops: table.Table[int]{}, seq: 0, inRet: false, exempt: false, imp: table.Table[int]{}, nImp: 0, roots: table.Table[int]{},
@@ -97,10 +96,26 @@ func runAz(p loader.Program, only bool) []Finding {
     }
     if !only {
         checkAnnots(mut az)
+        checkFnAnnots(mut az)
         errInit(mut az)
         errSolve(mut az)
         checkErrors(mut az)
+        checkFnTypes(mut az)
         checkSwitches(mut az)
+        checkExhaustive(mut az)
+        svInit(mut az)
+        svSolve(mut az)
+    }
+    // 秘密の違反の文面は出所の解きの前に組む（出所は同じ walker を az.sv の作り直しで走らせる — 秘密の状態はここで消える）
+    mut pre := mut []string{}
+    for i <- iter.Range(0, table.Len(mut az.out) / 3) {
+        k := table.Get(mut az.out, i * 3)
+        pre = append(pre, if k == MSecSink || k == MSecNote { svMessage(mut az, table.Get(mut az.out, i * 3 + 2), k == MSecNote) } else { "" })
+    }
+    if !only {
+        az.sv = Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: true, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}
+        svInit(mut az)
+        svSolve(mut az)
         freezeRules(mut z, mut az.d, false)
     }
     // 綴りはここで組む（走査の mut の関数の中で作った文字列を az に積むと、region の座標が呼び手の外へ出る）
@@ -118,6 +133,26 @@ func runAz(p loader.Program, only bool) []Finding {
             fs = append(fs, Finding{warn: true, at: desugar.PosOf(mut az.d, at), what: leaseMessage(mut az, k, at, x)})
         } else if k == MSwGap || k == MSwDeadDefault {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: swMessage(mut az, k, int(x))})
+        } else if k == MExhMissing || k == MExhDeadDefault {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: exhMessage(mut az, k, int(x))})
+        } else if k == MFnLeak || k == MFnFlowLeak {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: fnMessage(mut az, k, int(x))})
+        } else if k == MSecSink || k == MSecNote {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: pre[i]})
+        } else if k == MOrgMeet {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: ogMessage(mut az, int(x))})
+        } else if k == MOrgStd {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: ogStdMessage(int(x))})
+        } else if k == MSecAnn {
+            l, t := desugar.FuncSecret(mut az.d, node(mut az, at))
+            pos := desugar.PosOf(mut az.d, at)
+            fs = append(fs, Finding{warn: false, at: diag.Pos{file: pos.file, tok: t}, what: svAnnMessage(mut az, at, int(x))})
+        } else if k == MSecBless {
+            fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: "@bless is for std only (it cuts the flow of secrets — a program's own code cannot declare its results public)"})
+        } else if k == MFnAnn {
+            l, t, pk := desugar.FnTypeErrors(mut az.d, at)
+            pos := desugar.PosOf(mut az.d, at)
+            fs = append(fs, Finding{warn: false, at: diag.Pos{file: pos.file, tok: t}, what: fnAnnMessage(mut az, at, int(x))})
         } else if k == MSwDeadArm || k == MSwDeadCase {
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: armMessage(mut az, k, int(x))})
         } else if k >= MErrMissing {
@@ -144,6 +179,9 @@ func runAz(p loader.Program, only bool) []Finding {
 
 // fieldMessage は欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み）
 func fieldMessage(az mut Az, k int, f desugar.StrRef, decl desugar.NodeRef, pk int) string {
+    if k == 2 {
+        return "a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument"
+    }
     fname := str(mut az, f)
     tname := str(mut az, desugar.StrRef(node(mut az, decl).a))
     pkg := str(mut az, desugar.PkgPath(mut az.d, pk))
@@ -374,11 +412,11 @@ func entries(az mut Az, l desugar.ListRef) {
 // ErrorsDump は error のラベル集合の導出の結果（開発用 `check --errors-dump` — A2 の影）: error を返す関数ごとの集合・
 // error の switch ごとの S / 覆ったラベル / default の有無、最後に要約（位置の無い 1 行）
 func ErrorsDump(p loader.Program) []Finding {
-    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, sets: table.Table[int]{},
-        rhead: table.Table[int]{}, rnode: table.Table[int]{}, pbase: table.Table[int]{}, errfn: table.Table[int]{},
-        ffield: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0,
-        envChanged: false, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0}
-    desugar.Init(mut az.d, p)
+    mut az := Az{d: desugar.S{}, pk: 0, out: table.Table[int]{}, ok: table.Table[int]{}, nfn: 0, nerr: 0, er: Eng{sets: table.Table[int]{}, rhead: table.Table[int]{}, rnode: table.Table[int]{}, work: table.Table[int]{}, inq: table.Table[int]{}, env: table.Table[int]{}, envN: 0, envChanged: false},
+        pbase: table.Table[int]{}, errfn: table.Table[int]{},
+        ffield: table.Table[int]{}, cur: 0, rec: false, sw: table.Table[int]{}, unknown: 0, walks: 0, declared: table.Table[int]{}, swpk: table.Table[int]{}, swarms: table.Table[int]{}, lit: table.Table[int]{}, wins: table.Table[int]{}, winN: 0, winBase: 0, blk: table.Table[int]{}, flowBase: 0, cand: table.Table[int]{}, dflow: table.Table[int]{}, trySink: 0, lamf: table.Table[int]{}, lamFN: 0, lamBase: 0, lamCand: 0, lamck: table.Table[int]{}, sv: Sv{on: false, rec: false, natom: 0, atoms: table.Table[int]{}, resBase: 0, sinkBase: 0, pbase: table.Table[int]{}, npar: 0, pinBase: 0, secp: table.Table[int]{}, rpos: table.Table[int]{}, nres: 0, mres: table.Table[int]{}, mresN: 0, sinkAt: table.Table[int]{}, sinkK: table.Table[int]{}, fl: table.Table[int]{}, flBase: 0, hk: table.Table[int]{}, cons: table.Table[int]{}, lamIn: LSet{lo: 0, hi: 0}, viol: table.Table[int]{}, walks: 0, touch: table.Table[int]{}, pe: table.Table[int]{}, peN: 0, al: table.Table[int]{}, alN: 0, fmh: table.Table[int]{}, fm: table.Table[int]{}, fbn: table.Table[int]{}, mal: table.Table[int]{}, malN: 0, nodump: false, bind: false, og: false, effBase: 0, effHit: false, catom: -1, shMask: 0, oMask: 0, mountFn: -1, shv: table.Table[int]{}, shf: table.Table[int]{}, ftn: table.Table[int]{}, ov: table.Table[int]{}, credf: table.Table[int]{}}}
+    // 表層型検査器を通す（名前付き関数型の @errors — F の値の呼び出し・F の値のラムダの記録は Typed の表を読む: check と同じ導出）
+    desugar.Typed(mut az.d, p)
     errInit(mut az)
     errSolve(mut az)
     mut fs := mut []Finding{}
@@ -387,10 +425,10 @@ func ErrorsDump(p loader.Program) []Finding {
     for fi <- iter.Range(0, az.nfn) {
         if table.Get(mut az.errfn, fi) != 0 && desugar.NodeRef(fnDecl(mut az, fi).e) != -1 {
             // Flow のある関数（展開される — 匿名の関数型の仮引数の失敗は呼び出し点ごとに実引数のラベル）は関数の集合として言えない: TOP（errtrace の観測 ⊆ 導出の側）
-            fl := if table.Get(mut az.sets, az.flowBase + fi) != 0 { TOP } else { 0 }
-            m := (table.Get(mut az.sets, fi) & ^flowBit()) | fl
+            fl := if slotGet(mut az, az.flowBase + fi).lo != 0 { lsTop() } else { lsNone() }
+            m := lsOr(lsNoFlow(slotGet(mut az, fi)), fl)
             nerrfn += 1
-            if (m & TOP) != 0 {
+            if lsIsTop(m) {
                 ntop += 1
             }
             fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, desugar.FnAt(mut az.d, fi).node), what: "errors ${fnName(mut az, fi)} fi=${fi} tags=${tagList(mut az, m)} ${setStr(mut az, m)}"})
@@ -400,15 +438,15 @@ func ErrorsDump(p loader.Program) []Finding {
     mut nnot := 0
     mut nunr := 0
     mut ndead := 0
-    for i <- iter.Range(0, table.Len(mut az.sw) / 4) {
-        at := desugar.NodeRef(table.Get(mut az.sw, i * 4))
+    for i <- iter.Range(0, table.Len(mut az.sw) / SW_W) {
+        at := desugar.NodeRef(table.Get(mut az.sw, i * SW_W))
         if seenBefore(mut az, i) {
             continue
         }
-        S := table.Get(mut az.sw, i * 4 + 1)
-        cov := table.Get(mut az.sw, i * 4 + 2)
-        def := table.Get(mut az.sw, i * 4 + 3) != 0
-        byS := (S & TOP) == 0 && (S & cov) == S
+        S := swS(mut az, i)
+        cov := swCov(mut az, i)
+        def := table.Get(mut az.sw, i * SW_W + 5) != 0
+        byS := !lsIsTop(S) && lsSub(S, cov)
         nsw += 1
         if !byS {
             nnot += 1
@@ -416,13 +454,13 @@ func ErrorsDump(p loader.Program) []Finding {
         if byS && def {
             nunr += 1
         }
-        dead := cov & ^S
-        if (S & TOP) == 0 && dead != 0 {
+        dead := lsMinus(cov, S)
+        if !lsIsTop(S) && !lsEmpty(dead) {
             ndead += 1
         }
         verdict := if byS { if def { "covered-by-S default-unreachable" } else { "covered-by-S" } } else { if def { "not-covered default-needed" } else { "not-covered" } }
         pos := desugar.PosOf(mut az.d, at)
-        fs = append(fs, Finding{warn: false, at: pos, what: "switch at=${pos.file}:${pos.tok} tags=${tagList(mut az, S)} S=${setStr(mut az, S)} covered=${setStr(mut az, cov)} default=${def} ${verdict}${if (S & TOP) == 0 && dead != 0 { " dead-arms=" + setStr(mut az, dead) } else { "" }}"})
+        fs = append(fs, Finding{warn: false, at: pos, what: "switch at=${pos.file}:${pos.tok} tags=${tagList(mut az, S)} S=${setStr(mut az, S)} covered=${setStr(mut az, cov)} default=${def} ${verdict}${if !lsIsTop(S) && !lsEmpty(dead) { " dead-arms=" + setStr(mut az, dead) } else { "" }}"})
     }
     fs = append(fs, Finding{warn: false, at: diag.None(), what: "summary labels=${az.nerr} errfns=${nerrfn} top=${ntop} switches=${nsw} not-covered=${nnot} default-unreachable=${nunr} dead-arms=${ndead} unknown-calls=${az.unknown} walks=${az.walks}"})
     return freeze(fs)
@@ -430,9 +468,9 @@ func ErrorsDump(p loader.Program) []Finding {
 
 // seenBefore は switch の記録 i が前の記録と同じ節か（最後の 1 周でも局所の不動点のために本体を 2 度以上歩く）
 func seenBefore(az mut Az, i int) bool {
-    at := table.Get(mut az.sw, i * 4)
+    at := table.Get(mut az.sw, i * SW_W)
     for j <- iter.Range(0, i) {
-        if table.Get(mut az.sw, j * 4) == at {
+        if table.Get(mut az.sw, j * SW_W) == at {
             return true
         }
     }
@@ -445,32 +483,32 @@ func fnName(az mut Az, fi int) string {
 }
 
 // tagList は集合のタグの列 `0,3,…`（TOP は `T` — scripts/errtrace.sh が読む）
-func tagList(az mut Az, m int) string {
+func tagList(az mut Az, m LSet) string {
     mut s := ""
     for L <- iter.Range(0, az.nerr) {
-        if L < NBITS && (m & (1 << L)) != 0 {
+        if lsHas(m, L) {
             s = if s == "" { "${L}" } else { s + ",${L}" }
         }
     }
-    if (m & TOP) != 0 {
+    if lsIsTop(m) {
         s = if s == "" { "T" } else { s + ",T" }
     }
     return if s == "" { "-" } else { s }
 }
 
 // setStr は集合の綴り `{pkg.L, …}`（TOP を含めば `{…, TOP}`）
-func setStr(az mut Az, m int) string {
+func setStr(az mut Az, m LSet) string {
     mut s := "{"
     mut first := true
     for L <- iter.Range(0, az.nerr) {
-        if L < NBITS && (m & (1 << L)) != 0 {
+        if lsHas(m, L) {
             td := desugar.ErrNode(mut az.d, L)
             nm := "${str(mut az, desugar.PkgPath(mut az.d, desugar.ErrPkg(mut az.d, L)))}.${str(mut az, desugar.StrRef(node(mut az, td).a))}"
             s = if first { s + nm } else { s + ", " + nm }
             first = false
         }
     }
-    if (m & TOP) != 0 {
+    if lsIsTop(m) {
         s = if first { s + "TOP" } else { s + ", TOP" }
     }
     return s + "}"

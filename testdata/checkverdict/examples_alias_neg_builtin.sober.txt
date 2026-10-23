@@ -1,0 +1,2 @@
+sober: load error at examples/alias_neg_builtin.sober:5:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
+exit=1

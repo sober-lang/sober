@@ -29,45 +29,55 @@ GET /health mw=1
   log after
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 8
 
 user 42
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 me
 HTTP/1.1 401 Unauthorized
+Cache-Control: private
 Content-Length: 0
 
 HTTP/1.1 201 Created
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 abcHTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 17
 
 file [css/a.css]
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 8
 
 file []
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 10
 
 top a.css
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 HTTP/1.1 405 Method Not Allowed
+Cache-Control: private
 Allow: GET, HEAD
 Content-Length: 0
 
 HTTP/1.1 404 Not Found
+Cache-Control: private
 Content-Length: 0
 Connection: close
 
@@ -99,45 +109,55 @@ true
   log after
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 8
 
 user 42
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 me
 HTTP/1.1 401 Unauthorized
+Cache-Control: private
 Content-Length: 0
 
 HTTP/1.1 201 Created
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 abcHTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 17
 
 file [css/a.css]
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 8
 
 file []
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 10
 
 top a.css
 HTTP/1.1 200 OK
 Content-Type: text/plain
+Cache-Control: private
 Content-Length: 3
 
 HTTP/1.1 405 Method Not Allowed
+Cache-Control: private
 Allow: GET, HEAD
 Content-Length: 0
 
 HTTP/1.1 404 Not Found
+Cache-Control: private
 Content-Length: 0
 Connection: close
 

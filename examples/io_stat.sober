@@ -1,0 +1,67 @@
+package main
+
+// 開いた File の属性（language.md 28 節「根の下の開き」）: `io.Stat(f)?` は fstat 1 回の io.FileInfo{size, modTime, kind}。
+// modTime はエポックからの ns で、同じ path の os.ModTime と同じ値。通常のファイルでなくても誤りにしない（kind で見分ける — kind は option: FileInfo がゼロ値を持つため。Stat は必ず入れる）。
+// リポジトリのルートを cwd にして実行する（作業域は out/io_stat — mtime は touch -d で固定・fifo は mkfifo で作る）
+
+import "std/io"
+import "std/os"
+
+func kindName(kind io.EntryKind?) string {
+    k := kind
+    if k == nil {
+        return "none"
+    }
+    return switch k {
+    case io.Regular{}: "regular"
+    case io.Dir{}: "dir"
+    case io.Symlink{}: "symlink"
+    case io.Irregular{}: "irregular"
+    }
+}
+
+func why(e error) string {
+    return switch e {
+    case io.NotFound{}: "not found"
+    case io.Denied{}: "denied"
+    case io.Other{errno}: "errno ${errno}"
+    default: "other"
+    }
+}
+
+// show は r の下の rel を開いて属性を印字する（size は通常のファイルだけ・modTime は os.ModTime と照合）
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func show(w string, r io.Root, rel string) error? {
+    f := io.OpenUnder(r, rel)?
+    defer io.Close(f)
+    st := io.Stat(f)?
+    m := os.ModTime(w + "/" + rel)?
+    kn := kindName(st.kind)
+    sz := if kn == "regular" { " size=${st.size}" } else { "" }
+    println("${rel}: ${kn}${sz} modTime=${st.modTime} same-as-os=${st.modTime == m}")
+    return nil
+}
+
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func run(w string) error? {
+    _ = os.Run("/bin/rm", []string{"-rf", w})?
+    _ = os.Run("/bin/mkdir", []string{"-p", w + "/sub"})?
+    io.WriteFile(w + "/a.txt", bytes("hello, stat"))?
+    io.WriteFile(w + "/empty", []byte{})?
+    _ = os.Run("/usr/bin/mkfifo", []string{w + "/pipe"})?
+    _ = os.Run("/usr/bin/touch", []string{"-d", "@1700000000.123456789", w + "/a.txt", w + "/empty", w + "/sub", w + "/pipe"})?
+    r := io.OpenRoot(w)?
+    defer io.CloseRoot(r)
+    show(w, r, "a.txt")?
+    show(w, r, "empty")?
+    show(w, r, "sub")?
+    show(w, r, "pipe")?
+    return nil
+}
+
+func main() {
+    e := run("out/io_stat")
+    if e != nil {
+        println("run: ${why(e)}")
+    }
+}

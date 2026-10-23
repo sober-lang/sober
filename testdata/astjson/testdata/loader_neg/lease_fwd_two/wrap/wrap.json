@@ -1,0 +1,105 @@
+{
+  "package": "wrap",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/loader_neg/lease_fwd_two/lib",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "lib.Work"
+        }
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 13
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Prepare",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "lib",
+                  "tok": 21
+                },
+                "field": "Prepare",
+                "tok": 23
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w",
+                  "tok": 26
+                }
+              ],
+              "tok": 24
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "lib",
+                  "tok": 29
+                },
+                "field": "Prepare",
+                "tok": 31
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w",
+                  "tok": 34
+                }
+              ],
+              "tok": 32
+            }
+          }
+        ]
+      },
+      "tok": 14,
+      "bodiless": false,
+      "span": {
+        "start": 13,
+        "end": 39
+      },
+      "sig_end": 20
+    }
+  ],
+  "consts": []
+}

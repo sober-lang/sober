@@ -124,11 +124,196 @@ func CutLast(s string, sep string) (string, string, bool) {
     return bytesToString(b[0:at]), bytesToString(b[at + len(p):len(b)]), true
 }
 
-// s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）（対の TrimSuffix は実需まで足さない — language.md 34 節 2 の注記・2026-10-20 ④）
+// s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
 func TrimPrefix(s string, prefix string) string {
     b := bytes(s)
     p := bytes(prefix)
     return if len(b) >= len(p) && hasPrefixAt(b, 0, p) { bytesToString(b[len(p):len(b)]) } else { s }
+}
+
+// s が suffix で終わればそれを外した残り、でなければ s（Go の strings.TrimSuffix — 残りは suffix の頭で終わるので文字の境目）
+func TrimSuffix(s string, suffix string) string {
+    b := bytes(s)
+    p := bytes(suffix)
+    return if len(b) >= len(p) && hasPrefixAt(b, len(b) - len(p), p) { bytesToString(b[0:len(b) - len(p)]) } else { s }
+}
+
+// substr が s に最後に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1。substr が空なら len(bytes(s))（Go の strings.LastIndex と同じ）
+func LastIndex(s string, substr string) int {
+    return lastIndexAt(bytes(s), bytes(substr))
+}
+
+// ── 割る・置き換える・空白と大小（追記 2026-10-22 — 0.7.0 便 2。Go の strings が仕様のオラクル〔scripts/strings_oracle.ts〕）。
+// 空白と大文字小文字は ASCII だけを見る: 空白 = ' ' '\t' '\n' '\v' '\f' '\r'（Go の Fields / TrimSpace は加えて U+0085・U+00A0 ほか Unicode の空白も見る）、
+// 大小 = 'A'..'Z' ⇄ 'a'..'z'（Go の ToLower / ToUpper / EqualFold は Unicode の case folding — 'É' ⇄ 'é'・K〔U+212A〕≡ k などは対象外）。
+// 非 ASCII のバイトはそのまま写すので、結果は妥当な UTF-8 のまま ──
+
+// isSpace は c が ASCII の空白か（' ' '\t' '\n' '\v' '\f' '\r' — Go の asciiSpace と同じ 6 つ）
+func isSpace(c byte) bool {
+    return c == ' ' || (c >= 9 && c <= 13)
+}
+
+// runeEnd は b[i]（文字の頭）から始まる文字の終わりの位置（次の継続バイトでないバイトの位置 — 妥当な UTF-8 を前提）
+func runeEnd(b []byte, i int) int {
+    mut j := i + 1
+    while j < len(b) && (int(b[j]) & 192) == 128 {
+        j += 1
+    }
+    return j
+}
+
+// s を sep の出現ごとに割った片の列（Go の strings.Split と同じ）。sep が無ければ [s]・s が空で sep が空でなければ [""]。
+// sep が空なら 1 文字（コードポイント — UTF-8 の列）ずつに割る（s が空なら空の列）。片は検査し直さない（Cut と同じ自己同期の理由）
+func Split(s string, sep string) []string {
+    b := bytes(s)
+    p := bytes(sep)
+    mut out := mut []string{}
+    if len(p) == 0 {
+        mut i := 0
+        while i < len(b) {
+            j := runeEnd(b, i)
+            out = append(out, bytesToString(b[i:j]))
+            i = j
+        }
+        return freeze(out)
+    }
+    mut from := 0
+    mut at := indexAt(b, 0, p)
+    while at >= 0 {
+        out = append(out, bytesToString(b[from:at]))
+        from = at + len(p)
+        at = indexAt(b, from, p)
+    }
+    out = append(out, bytesToString(b[from:len(b)]))
+    return freeze(out)
+}
+
+// s を ASCII の空白の連なりで割った空でない片の列（Go の strings.Fields — 空白だけ / 空なら空の列）。空白は ASCII の 6 つだけ（Unicode の空白は片の中身）
+func Fields(s string) []string {
+    b := bytes(s)
+    mut out := mut []string{}
+    mut i := 0
+    while i < len(b) {
+        while i < len(b) && isSpace(b[i]) {
+            i += 1
+        }
+        start := i
+        while i < len(b) && !isSpace(b[i]) {
+            i += 1
+        }
+        if i > start {
+            out = append(out, bytesToString(b[start:i]))
+        }
+    }
+    return freeze(out)
+}
+
+// s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace — Unicode の空白は外さない）
+func TrimSpace(s string) string {
+    b := bytes(s)
+    mut i := 0
+    mut j := len(b)
+    while i < j && isSpace(b[i]) {
+        i += 1
+    }
+    while j > i && isSpace(b[j - 1]) {
+        j -= 1
+    }
+    return if i == 0 && j == len(b) { s } else { bytesToString(b[i:j]) }
+}
+
+// s の old の重ならない出現を前から n 個 new に置き換えた string（Go の strings.Replace — n < 0 なら全部・n == 0 なら s）。
+// old が空なら s の頭と各文字（コードポイント）の後ろに new を差す（Go と同じ — 差す位置は文字の境目なので結果は妥当な UTF-8）
+func Replace(s string, old string, new string, n int) string {
+    b := bytes(s)
+    o := bytes(old)
+    w := bytes(new)
+    if n == 0 {
+        return s
+    }
+    if len(o) > 0 && indexAt(b, 0, o) < 0 {
+        return s
+    }
+    mut out := mut []byte{}
+    mut done := 0
+    // i = 次に写す b の位置・at = 次に new を差す位置（old が空なら文字の境目を頭から順に — 末尾の後は -1）
+    mut i := 0
+    mut at := if len(o) == 0 { 0 } else { indexAt(b, 0, o) }
+    while at >= 0 && (n < 0 || done < n) {
+        mut k := i
+        while k < at {
+            out = append(out, b[k])
+            k += 1
+        }
+        mut m := 0
+        while m < len(w) {
+            out = append(out, w[m])
+            m += 1
+        }
+        done += 1
+        if len(o) == 0 {
+            i = at
+            at = if at == len(b) { -1 } else { runeEnd(b, at) }
+        } else {
+            i = at + len(o)
+            at = indexAt(b, i, o)
+        }
+    }
+    while i < len(b) {
+        out = append(out, b[i])
+        i += 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の strings.ToLower の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+func ToLower(s string) string {
+    return mapCase(s, 'A', 'Z', 32)
+}
+
+// s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の strings.ToUpper の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+func ToUpper(s string) string {
+    return mapCase(s, 'a', 'z', -32)
+}
+
+// mapCase は s の lo..hi のバイトに d を足した string（変わる所が無ければ s）
+func mapCase(s string, lo byte, hi byte, d int) string {
+    b := bytes(s)
+    mut i := 0
+    while i < len(b) && (b[i] < lo || b[i] > hi) {
+        i += 1
+    }
+    if i == len(b) {
+        return s
+    }
+    mut out := mut []byte{}
+    mut k := 0
+    while k < len(b) {
+        c := b[k]
+        out = append(out, if c >= lo && c <= hi { byte(int(c) + d) } else { c })
+        k += 1
+    }
+    return bytesToString(freeze(out))
+}
+
+// s と t が ASCII の大文字小文字を同一視して等しいか（Go の strings.EqualFold の ASCII の部分 — 非 ASCII のバイトは完全一致で比べる。
+// Go は Unicode の simple folding〔'É' ≡ 'é'・K〔U+212A〕≡ k・ſ ≡ s〕でも等しいとするが、ここでは等しくない）
+func EqualFold(s string, t string) bool {
+    a := bytes(s)
+    b := bytes(t)
+    if len(a) != len(b) {
+        return false
+    }
+    mut i := 0
+    while i < len(a) && foldByte(a[i]) == foldByte(b[i]) {
+        i += 1
+    }
+    return i == len(a)
+}
+
+// foldByte は c の ASCII の大文字を小文字にしたもの（他はそのまま）
+func foldByte(c byte) byte {
+    return if c >= 'A' && c <= 'Z' { byte(int(c) + 32) } else { c }
 }
 
 // c が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1

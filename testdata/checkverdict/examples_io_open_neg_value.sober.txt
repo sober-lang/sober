@@ -1,2 +1,2 @@
-sober: load error at examples/io_open_neg_value.sober:8:14: io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`
+sober: load error at examples/io_open_neg_value.sober:8:14: io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)` (io.OpenUnder the same way; io.OpenRoot closed by `defer io.CloseRoot(r)`)
 exit=1

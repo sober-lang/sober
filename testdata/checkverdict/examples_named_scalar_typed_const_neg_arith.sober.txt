@@ -1,0 +1,2 @@
+sober: desugar error at examples/named_scalar_typed_const_neg_arith.sober:10:10 (TypeMismatch)
+exit=1

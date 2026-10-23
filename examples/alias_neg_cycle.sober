@@ -1,0 +1,10 @@
+package main
+
+// 負例（language.md 32 節「型の別名」）: 別名の循環（A → B → A）
+
+type A = B
+type B = A
+
+func main() {
+    println(1)
+}

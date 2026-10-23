@@ -1,0 +1,156 @@
+package main
+
+// 反復の region の約束と関数値の呼び出しの宛先の深度のレジスタ（W_DEST — report-1006 a1 / a2・report-1007）の回帰例: 関数値の呼び出しは、印があれば
+// （結果が return に流れ着く）直前に呼び手の宛先の深度をレジスタへ書く。呼び先は呼び出し点で分からないので、関数値の呼び先は全部入口で読んで 0 に
+// 戻す（関数値として使われる名前付き関数 — work・持ち上げたラムダ）。読まずに値が残ると、呼び先の中のループの印の無い呼び出し（tag）の入口が拾って、
+// 反復ごとの結果を外の region（run の宛先）に作る（1 反復 4 KiB — 壊れると 2000 → 20000 回で RSS が比例 — report-692 の形の関数値版）。
+// 回数は引数で変えられる（既定 2000 — scripts/iterregion.sh が 10 倍にして RSS が比例しないことを見る）
+
+import "std/os"
+
+type Step func(s string, big string) string
+
+type Box struct {
+    f Step
+}
+
+// keep は印を持たない（return の式に確保も呼び出しも無い）— 関数値として使われるので入口で宛先のレジスタを読んで 0 に戻す（a2）
+func keep(s string, big string) string {
+    return s
+}
+
+// first は keep と同じ形で、関数値としては使わない（ラムダの本体から呼ぶだけ — 持ち上げたラムダの入口の読みの網）
+func first(s string, big string) string {
+    return s
+}
+
+// tag は印つき（return の連結）— 入口で宛先のレジスタを読む。連結の左の f(s, big) は印のある関数値の呼び出し（a1 — 直前に tag の宛先を書く）。
+// f が読まない呼び先だと値が残り、次の反復の tag の入口が拾って連結を外の region に作る（tag は同じ値を書き直すので反復ごとに積もる）
+func tag(f Step, s string, big string) string {
+    return f(s, big) + big + "."
+}
+
+// tagLocal は tag の名前付き関数の値（束縛 — 関数のアドレスそのもの）の形
+func tagLocal(s string, big string) string {
+    g := keep
+    return g(s, big) + big + "."
+}
+
+// runLocal は run の名前付き関数の値の形
+func runLocal(n int) string {
+    mut big := "a"
+    while len(bytes(big)) < 4096 {
+        big = big + big
+    }
+    g := keep
+    x := g("ab", big)
+    mut t := 0
+    mut i := 0
+    while i < n {
+        r := tagLocal("ab", big)
+        b := bytes(r)
+        t += len(b) + int(b[len(b) - 1])
+        i += 1
+    }
+    return x + "${t}"
+}
+
+// run は関数値の印のある呼び出しで宛先のレジスタを書いてから（x — 結果が return に流れ着く）、ループで tag を呼ぶ
+func run(f Step, n int) string {
+    mut big := "a"
+    while len(bytes(big)) < 4096 {
+        big = big + big
+    }
+    x := f("ab", big)
+    mut t := 0
+    mut i := 0
+    while i < n {
+        r := tag(f, "ab", big)
+        b := bytes(r)
+        t += len(b) + int(b[len(b) - 1])
+        i += 1
+    }
+    return x + "${t}"
+}
+
+// each は f を n 回呼んで結果の長さを足す（f は展開される無名の関数型の仮引数 — 呼び出し点にループごと展開される）
+func each(n int, f func(i int) string) int {
+    mut t := 0
+    mut i := 0
+    while i < n {
+        t += len(bytes(f(i)))
+        i += 1
+    }
+    return t
+}
+
+// nested は持ち上げたラムダの本体の中で展開されるラムダ（report-1007 段 2）: 展開されるラムダの本体の値（tag の連結）はラムダの印が付いても
+// 使わない — 使うと展開の宛先（持ち上げたラムダの宛先 = ループの外）に反復ごとの連結が積もる
+func nested(n int) string {
+    mut b0 := "e"
+    while len(bytes(b0)) < 4096 {
+        b0 = b0 + b0
+    }
+    big := b0
+    g := Box{f: (s, b) => "${each(n, (i) => tag(first, s, big))}"}
+    r := g.f("g", "h")
+    return r
+}
+
+// Act は結果を持たない関数値（report-1008 — 結果の無い持ち上げたラムダはラムダの印を使わない: 本体の末尾の式の確保〔note の実引数の連結〕は
+// 自分の region に作る。使うと宛先 = 入口の深度 = 呼び手の region に、捨てる値が置かれる）
+type Act func(s string, big string)
+
+type Hold struct {
+    f Act
+}
+
+// note は s を読むだけ（結果なし）
+func note(s string) {
+    if len(bytes(s)) == 0 {
+        println("empty")
+    }
+}
+
+// nores は結果の無い持ち上げたラムダを n 回呼ぶ
+func nores(n int) string {
+    h := Hold{f: (s, big) => note(s + big)}
+    mut i := 0
+    while i < n {
+        h.f("i", "j")
+        i += 1
+    }
+    return "k"
+}
+
+// wrap は run を印のある呼び出しで呼ぶ（run の宛先が wrap の呼び手の深度 = ループの外になる）。名前付き関数の値（束縛）・仮引数の関数値・欄の関数値・
+// 持ち上げたラムダの 4 通り +
+// 持ち上げたラムダの中で展開されるラムダ（nested）・結果の無い持ち上げたラムダ（nores）
+func wrap(n int) string {
+    a := runLocal(n)
+    b := run(keep, n)
+    x := Box{f: keep}
+    c := run(x.f, n)
+    d := run((s, big) => first(s, big), n)
+    e := nested(n)
+    f := nores(n)
+    return a + b + c + d + e + f
+}
+
+func count() int {
+    args := os.Args() catch return 2000
+    if len(args) != 2 {
+        return 2000
+    }
+    mut n := 0
+    for c <- bytes(args[1]) {
+        n = n * 10 + int(c) - 48
+    }
+    return n
+}
+
+func main() int {
+    r := wrap(count())
+    println(r)
+    return 0
+}

@@ -1,0 +1,176 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 8
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "start",
+                  "tok": 10
+                }
+              ],
+              "tok": 9
+            }
+          },
+          {
+            "k": "bind",
+            "names": [
+              "i"
+            ],
+            "mutable": true,
+            "values": [
+              {
+                "k": "int",
+                "value": 0,
+                "tok": 16
+              }
+            ],
+            "tok": 13
+          },
+          {
+            "k": "while",
+            "cond": {
+              "k": "binary",
+              "op": "<",
+              "lhs": {
+                "k": "ident",
+                "name": "i",
+                "tok": 19
+              },
+              "rhs": {
+                "k": "int",
+                "value": 4,
+                "tok": 21
+              },
+              "tok": 20
+            },
+            "body": {
+              "stmts": [
+                {
+                  "k": "expr",
+                  "expr": {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "println",
+                      "tok": 23
+                    },
+                    "args": [
+                      {
+                        "k": "interp",
+                        "tmpl": {
+                          "lits": [
+                            "kid ",
+                            ""
+                          ],
+                          "holes": [
+                            {
+                              "k": "ident",
+                              "name": "i",
+                              "tok": 25
+                            }
+                          ]
+                        },
+                        "tok": 25
+                      }
+                    ],
+                    "tok": 24
+                  }
+                },
+                {
+                  "k": "assign",
+                  "targets": [
+                    {
+                      "k": "ident",
+                      "name": "i",
+                      "tok": 28
+                    }
+                  ],
+                  "op": "+=",
+                  "values": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 30
+                    }
+                  ],
+                  "tok": 28
+                }
+              ]
+            },
+            "tok": 18
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 34
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "parent",
+                  "tok": 36
+                }
+              ],
+              "tok": 35
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 39
+              },
+              "args": [
+                {
+                  "k": "strlit",
+                  "value": "done 0",
+                  "tok": 41
+                }
+              ],
+              "tok": 40
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 46
+      },
+      "sig_end": 7
+    }
+  ],
+  "consts": []
+}

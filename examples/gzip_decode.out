@@ -1,0 +1,6 @@
+69 -> 67 -> {"items": [1, 2, 3], "note": "compress me, compress me, compress me"}
+1 MiB of zeros -> 1033 bytes
+flate.TooLarge
+gzip.Bad
+gzip.Bad
+flate.Bad

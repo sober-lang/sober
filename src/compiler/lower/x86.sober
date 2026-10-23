@@ -484,7 +484,7 @@ type XGroup struct {
 // xParCfg は子の St に写す欄（xFunc が読む St の欄の全部 — 上の注意）
 func xParCfg(st mut St) []int {
     return []int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }}
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }}
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -633,6 +633,7 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     st.rtPanic = FnRef(cfg[13])
     st.rtPanicMem = FnRef(cfg[14])
     st.slotPoison = cfg[15] == 1
+    st.frStat = cfg[16] == 1
     // 段 3 の例外の印（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -828,6 +829,39 @@ type xF struct {
     u8x int
 }
 
+// xFrameStat は関数 f のフレームの内訳を 1 行で stdout へ（開発の口 --frame-stat — report-1003 F-1 段 0）:
+// `frame <関数> <フレーム B> <スロット B> <入口の零初期化 B> <退避 B> <spill ほか B> <spill した部分区間の数>`（フレームの無い関数は印字しない）
+func xFrameStat(st mut St, f FnRef, xs []int) {
+    s := xfName(mut st, f)
+    mut out := mut []byte{}
+    // 名前はヒープの文字列なら凍結した表（xg）から読む。木の文字列（desugar.LBASE 以上 — 凍結の後は読まない約束・lparcfg）は '#' + 関数の番号
+    if s >= desugar.LBASE {
+        out = append(out, '#')
+        xPutDec(mut out, int(f))
+    } else {
+        for i <- iter.Range(0, xg(mut st, s)) {
+            out = append(out, byte(xg(mut st, s + 1 + i)))
+        }
+    }
+    for k <- iter.Range(0, len(xs)) {
+        out = append(out, ' ')
+        xPutDec(mut out, xs[k])
+    }
+    println("frame", string(freeze(out)) catch "?")
+}
+
+// xPutDec は非負の n の 10 進を out へ
+func xPutDec(out mut []byte, n int) {
+    mut p := 1
+    while p * 10 <= n {
+        p = p * 10
+    }
+    while p > 0 {
+        out = append(out, byte(48 + n / p % 10))
+        p = p / 10
+    }
+}
+
 // xFunc は関数 f を c / fx へ吐く（ab = c の位置 0 の絶対の番地 — 親は elf.CodeOffset・群の子は 0〔子の表は親の 64 B に整列した位置へ
 // 連結されるので、子の中の位置の mod 64 が絶対と同じ — xParMerge〕。線の跨ぎの詰め物と整列が読む）。返り値 = 関数の入口の位置（入口の手前に
 // 線の跨ぎの詰め物を置くことがあるので、呼び手は吐く前の位置でなくこれを関数の先頭にする）
@@ -899,7 +933,25 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     e.zTop = slotWords
     e.zCnt = slotWords
     if e.opt && slotWords > 0 {
-        zn := xZeroNeed(mut st, f, freeze(sws))
+        zn0 := xZeroNeed(mut st, f, freeze(sws))
+        // スロットの彩色（F-1 段 2 — slotcolor.sober）: 置き場を置き直し、要零の位置を新しい並びへ移す（要零のスロットは頭に固まる）
+        nc := xSlotColor(mut st, f, freeze(sws), zn0)
+        ns := len(sws)
+        mut zn := mut []int{}
+        xFill(mut zn, nc[ns] + 1, 0)
+        mut cum := 0
+        for k <- iter.Range(0, ns) {
+            cum += sws[k]
+            e.slotDisp[k] = -8 * nc[k]
+            for j <- iter.Range(0, sws[k]) {
+                if zn0[cum - j] == 1 {
+                    zn[nc[k] - j] = 1
+                }
+            }
+        }
+        slotWords = nc[ns]
+        e.zTop = slotWords
+        e.zCnt = slotWords
         mut lo := 0
         mut hi := 0
         for p <- iter.Range(1, slotWords + 1) {
@@ -963,6 +1015,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
         xSlotValid(mut st, mut e)
     }
     frame := (0 - bottom + 15) / 16 * 16
+    if st.frStat && frame > 0 {
+        xFrameStat(mut st, f, []int{frame, 8 * slotWords, 8 * e.zCnt, 8 * e.nsave, 0 - bottom - 8 * slotWords - 8 * e.nsave, nsp})
+    }
     e.nofr = e.opt && slotWords == 0 && e.nsave == 0 && nsp == 0 && xNoCall(mut st, mut e)
     xFill(mut e.blockAt, e.nb, 0)
     xFill(mut e.jAt, 4 * e.nb, 0)
@@ -4310,7 +4365,7 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
                 used[x86.R8] = 1
                 used[x86.R9] = 1
                 used[x86.R10] = 1
-            } else if xiOp(mut st, i) == OpSyscall && xiB(mut st, i) != AES_B && xiB(mut st, i) != MM_B {
+            } else if xiOp(mut st, i) == OpSyscall && xiB(mut st, i) != AES_B && xiB(mut st, i) != MM_B && xiB(mut st, i) != CY_B {
                 mut k5 := 0
                 k5End := xLen(mut st, xiA(mut st, i)) - 1
                 while k5 < k5End {
@@ -4359,10 +4414,12 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         }
         k7 += 1
     }
-    // spill 先は値ごとに 1 つ（同じ値の部分区間で共有 — 最初に spill された部分区間の順に変位を配る）。opt は合流した値の組で 1 つ（xSpillJoin）
+    // spill 先は値ごとに 1 つ（同じ値の部分区間で共有 — 最初に spill された部分区間の順に変位を配る）。opt は合流した値の組で 1 つ（xSpillJoin）、
+    // さらに区間が重ならない群どうしで枠を共有する（xSpillColor — F-1 段 1）
     xFill(mut e.spd, e.nv, 0)
     if e.opt && nsp > 0 {
         xSpillJoin(mut st, mut e)
+        d = xSpillColor(mut e, mut spills, nsp, d)
     }
     mut k := 0
     while k < nsp {
@@ -4391,6 +4448,150 @@ func xAllocFrame(st mut St, e mut xF, frameTop int, used mut []int, spills mut [
         v += 1
     }
     return if d < frameTop - 8 { d } else { frameTop - 8 }
+}
+
+// xSpillColor は spill の枠の彩色（F-1 段 1 — report-1002 2.2・report-1003）: spill 先を持つ群（xSpillJoin の群 — 群でない値は自身 1 つ）の
+// 区間 = 群の全部の値の全部の部分区間（レジスタに置いたものも — xSlotValid の前提で spill 先はそこでも値を持つ）の外包 [最小の始まり, 最大の終わり)。
+// 外包の穴は使わない（安全側）。重なりの規則は xIvMeet と同じ（始まり < 相手の終わり かつ 相手の始まり < 終わり・同じ点で始まるなら重なる —
+// 長さ 0 の外包は 1 に延ばして「同じ点で始まる」を拾う）。重ならない群は同じ枠でよい — レジスタの共有（xPrioFits）と同じ干渉なので、辺の写しの
+// 書き点の論証（xSpillJoin の注）もそのまま継ぐ。算法 = 線形走査: 始まりの順（同じ位置は群の番号の順）に、終わりが今の始まり以下の群の枠を
+// 空きの列へ戻してから、空きの列の頭（無ければ新しい枠）を配る。v128（fcls 2 — 16 B）は別の空きの列。決定的（鍵と群の番号だけ — ハッシュ・
+// 並列なし）。結果は群の代表の e.spd に負の変位で書く（xAllocFrame の配りの道はそれを読むだけ）。返り値 = 新しいフレームの底（fb 以下 — fb = 退避域の下の今の底）。
+// 区間を持たない群（どの部分区間も始まりが無い）は専用の枠
+func xSpillColor(e mut xF, spills mut []int, nsp int, fb int) int {
+    // gid[x] = -1（未見）・代表 x の群の番号 i なら 2i・外包へ足した値は下位ビット 1（代表でない群の値は 1 だけ）— 作業域は値の数の表 1 本
+    mut gid := mut []int{}
+    xFill(mut gid, e.nv, -1)
+    mut gv := mut []int{}
+    mut glo := mut []int{}
+    mut ghi := mut []int{}
+    for k <- iter.Range(0, nsp) {
+        u := e.pv[spills[k]]
+        if u >= e.np || u < e.nreg {
+            g := if e.spd[u] > 0 { e.spd[u] - 1 } else { u }
+            if gid[g] < 0 {
+                gid[g] = 2 * len(gv)
+                gv = append(gv, g)
+                glo = append(glo, -1)
+                ghi = append(ghi, -1)
+            }
+            if gid[u] < 0 || gid[u] % 2 == 0 {
+                i := gid[g] / 2
+                gid[u] = if u == g { gid[u] + 1 } else { 1 }
+                mut q := u
+                while q >= 0 {
+                    if e.ivS[q] >= 0 {
+                        if glo[i] < 0 || e.ivS[q] < glo[i] {
+                            glo[i] = e.ivS[q]
+                        }
+                        if e.ivE[q] > ghi[i] {
+                            ghi[i] = e.ivE[q]
+                        }
+                    }
+                    q = e.pnx[q]
+                }
+            }
+        }
+    }
+    ng := len(gv)
+    mut ids := mut []int{}
+    mut disp := mut []int{}
+    xFill(mut disp, ng, 0)
+    mut d := fb
+    for i <- iter.Range(0, ng) {
+        if glo[i] >= 0 {
+            if ghi[i] <= glo[i] {
+                ghi[i] = glo[i] + 1
+            }
+            ids = append(ids, i)
+        } else {
+            d = d - (if e.fcls[gv[i]] == 2 { 16 } else { 8 })
+            disp[i] = d
+        }
+    }
+    // 始まりの順 / 終わりの順（同じ位置は群の番号の順 — 安定なマージ）。作業域は群の数だけ（関数の位置の数に比例する表を作らない — 自己 build の仕事）
+    oS := xOrderBy(freeze(glo), freeze(ids))
+    oE := xOrderBy(freeze(ghi), freeze(ids))
+    // 空きの列（8 B / 16 B — 積みの高さ n8 / n16・後に戻した枠から配る）
+    mut f8 := mut []int{}
+    xFill(mut f8, ng, 0)
+    mut f16 := mut []int{}
+    xFill(mut f16, ng, 0)
+    mut n8 := 0
+    mut n16 := 0
+    mut r := 0
+    for a <- iter.Range(0, len(oS)) {
+        j := oS[a]
+        // 終わりが j の始まり以下の群の枠を空きへ（重なり = 始まり < 相手の終わり — 終わり == 始まりは重ならない）
+        while r < len(oE) && ghi[oE[r]] <= glo[j] {
+            x := oE[r]
+            if e.fcls[gv[x]] == 2 {
+                f16[n16] = disp[x]
+                n16 += 1
+            } else {
+                f8[n8] = disp[x]
+                n8 += 1
+            }
+            r += 1
+        }
+        if e.fcls[gv[j]] == 2 {
+            if n16 > 0 {
+                n16 -= 1
+                disp[j] = f16[n16]
+            } else {
+                d = d - 16
+                disp[j] = d
+            }
+        } else if n8 > 0 {
+            n8 -= 1
+            disp[j] = f8[n8]
+        } else {
+            d = d - 8
+            disp[j] = d
+        }
+    }
+    for g <- iter.Range(0, ng) {
+        e.spd[gv[g]] = disp[g]
+    }
+    return d
+}
+
+// xOrderBy は ids を key[id] の昇順に並べた列（同じ鍵は ids の並びのまま — 下から上へのマージ）
+func xOrderBy(key []int, ids []int) []int {
+    n := len(ids)
+    mut a := mut []int{}
+    mut b := mut []int{}
+    for i <- iter.Range(0, n) {
+        a = append(a, ids[i])
+        b = append(b, 0)
+    }
+    mut w := 1
+    while w < n {
+        mut lo := 0
+        while lo < n {
+            m := if lo + w < n { lo + w } else { n }
+            hi := if lo + 2 * w < n { lo + 2 * w } else { n }
+            mut x := lo
+            mut y := m
+            mut k := lo
+            while k < hi {
+                if x < m && (y >= hi || key[a[x]] <= key[a[y]]) {
+                    b[k] = a[x]
+                    x += 1
+                } else {
+                    b[k] = a[y]
+                    y += 1
+                }
+                k += 1
+            }
+            lo = hi
+        }
+        for k <- iter.Range(0, n) {
+            a[k] = b[k]
+        }
+        w = w * 2
+    }
+    return freeze(a)
 }
 
 // xSpillJoin は spill 先の合流（置き場の往復レーン 段 4a — opt）: 辺の実引数と行き先の仮引数がどちらも spill 先を持ち、区間（全部の部分区間 —
@@ -4977,6 +5178,8 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xClone(mut st, mut e, mut c, res, a, b)
     } else if op == OpSyscall && b == AES_B {
         xAes(mut st, mut e, mut c, res, a, xiC(mut st, i))
+    } else if op == OpSyscall && b == CY_B {
+        xCycles(mut e, mut c, res)
     } else if op == OpSyscall && b == MM_B {
         xMontMul(mut st, mut e, mut c, res, a, xiC(mut st, i))
     } else if op == OpSyscall {
@@ -5612,6 +5815,12 @@ func xDirectBin(e mut xF, c mut table.Table[byte], res int, a int, b int, cc int
         x86.ImulRegRegImm(mut c, d, x, e.constV[cc])
         return true
     }
+    // 下位 32 ビットの仮面（and x, 0xffffffff — imm32 に収まらず定数がレジスタかスロットに置かれる）は mov d32, x32（report-ct2 — 4 バイトのハッシュの語）
+    if a == BAnd && e.isConst[cc] == 1 && e.constV[cc] == 4294967295 && e.flg[res] == 0 {
+        x := if e.isConst[b] == 0 && e.remat[b] == 0 && xIsGpr(bl) { xLocVal(bl) } else { xGet(mut e, mut c, b, d) }
+        x86.MovRegReg32(mut c, d, x)
+        return true
+    }
     // 右が d にある可換の演算は op d, 左（rax を経由しない — report-508 R4b）。sub は rax 経由の形へ
     if xIsReg(yl) && xLocVal(yl) == d && b != cc && a == BSub {
         return false
@@ -6177,6 +6386,16 @@ func xAes(st mut St, e mut xF, c mut table.Table[byte], res int, ops int, kind i
     }
     x86.XorRegReg(mut c, x86.Rcx, x86.Rcx)
     xPut(mut e, mut c, res, x86.Rcx)
+}
+
+// xCycles は計時（OpSyscall の b = CY_B — cycles.sober）: lfence（前の命令を終える）・rdtscp（edx:eax・ecx を壊す）・lfence（後ろの命令を始めない）→ rax = edx << 32 | eax
+func xCycles(e mut xF, c mut table.Table[byte], res int) {
+    x86.Lfence(mut c)
+    x86.Rdtscp(mut c)
+    x86.Lfence(mut c)
+    x86.ShlRegImm(mut c, x86.Rdx, 32)
+    x86.OrRegReg(mut c, x86.Rax, x86.Rdx)
+    xPut(mut e, mut c, res, x86.Rax)
 }
 
 // xMontMul は多倍長の塊（OpSyscall の b = MM_B — mulx.sober・report-864 / 866）。MK_MUL: ops = [d, a, b, m, m0i, n]（d / a / b / m は語の番地）→

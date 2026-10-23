@@ -1,0 +1,12 @@
+package main
+
+// 負例（language.md 32 節 — 型つきの const）: 型つきの const は定数式の中で参照できない（型つきの値の算術は無い — 変換は値の式の一番外にだけ置ける）
+
+type Status int
+
+const OK = Status(200)
+const Next = OK + 1
+
+func main() {
+    println(Next)
+}

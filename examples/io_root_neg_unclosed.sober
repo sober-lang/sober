@@ -1,0 +1,10 @@
+package main
+
+// 負例: OpenRoot の直後の文が defer io.CloseRoot でない（diag.FileUse — desugar/filecheck・language.md 28 節「根の下の開き」）
+
+import "std/io"
+
+func main() {
+    r := io.OpenRoot("testdata/io") catch return
+    println("opened")
+}

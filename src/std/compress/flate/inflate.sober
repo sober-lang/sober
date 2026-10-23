@@ -1,0 +1,33 @@
+package flate
+
+// DEFLATE（RFC 1951）の復号（inflate — 核は std/internal/inflate）
+
+import "std/internal/inflate"
+
+// Decode の入力が DEFLATE の列でない（ブロックの型 3・stored の LEN と NLEN の不一致・Huffman の符号の長さの表が過剰 / 不完全・使えない記号〔長さ 286 / 287・距離 30 / 31〕・
+// 出力の頭より前を指す距離・最後のブロックの前で入力が尽きた〔切り詰め〕・最後のブロックの後に余りのバイト）
+type Bad error
+
+// Decode の出力が maxSize バイトを越える（展開爆弾の封 — 越える書きの手前で止める。それまでの出力は返さない）
+type TooLarge error
+
+// DEFLATE（RFC 1951 — 頭も検査和もない生の圧縮列。Encode の対）の data を復号したバイト列。data は最後のブロック（BFINAL）でちょうど終わる
+// （最後のバイトの使わないビットは見ない・その後にバイトが余れば Bad）。maxSize を渡すと、出力がそれを越える時点で TooLarge（省略 = 上限なし —
+// 信頼できない入力〔要求の本文・外から来たファイル〕には必ず渡す: DEFLATE は 1 バイトで最大 258 バイトに伸びるので、入力の大きさの上限は出力の上限にならない）:
+//
+//     b := flate.Decode(z, maxSize: 1 << 20)?
+//
+// 作業域は符号の表（数 KB）だけで、ブロックごとに作り直す（対の DecodeWith は実需まで足さない — lease で借りる大きさでない。34 節 2 の注記）
+@errors(Bad, TooLarge)
+func Decode(data []byte, maxSize int?) ([]byte, error?) {
+    lim := if maxSize != nil { maxSize } else { -1 }
+    out, end, st := inflate.At(data, 0, lim)
+    if st == inflate.Large {
+        return []byte{}, TooLarge{}
+    }
+    if st != inflate.Ok || end != len(data) {
+        return []byte{}, Bad{}
+    }
+    return out, nil
+}
+

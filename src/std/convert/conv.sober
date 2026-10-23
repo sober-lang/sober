@@ -42,11 +42,10 @@ func ParseFloat(s string) (float, error?) {
     }
     bits, err := floatfmt.ParseBits(bytes(s))
     if err != nil {
-        // ParseBits の誤りは InvalidSyntax と OutOfRange だけ（default = InvalidSyntax — compiler/ の閉包では読み込みの遅い package のラベルの通し番号が
-        // analyzer の 1 語の集合の上限〔62〕を越えて TOP に倒れ、switch のラベルを導出できないため、網羅を default で受ける）
+        // ParseBits の誤りは InvalidSyntax と OutOfRange だけ（analyzer が導出して網羅を検査する）
         syntax := switch err {
+        case floatfmt.InvalidSyntax{}: true
         case floatfmt.OutOfRange{}: false
-        default: true
         }
         if syntax {
             return 0.0, InvalidFloat{}
@@ -197,4 +196,26 @@ func formatUint(n int) string {
         i -= 1
     }
     return bytesToString(freeze(out))
+}
+
+// ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSyntax と同じ）
+type InvalidBool error {
+}
+
+// s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。
+// 他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
+@errors(InvalidBool)
+func ParseBool(s string) (bool, error?) {
+    if s == "1" || s == "t" || s == "T" || s == "TRUE" || s == "true" || s == "True" {
+        return true, nil
+    }
+    if s == "0" || s == "f" || s == "F" || s == "FALSE" || s == "false" || s == "False" {
+        return false, nil
+    }
+    return false, InvalidBool{}
+}
+
+// b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
+func FormatBool(b bool) string {
+    return if b { "true" } else { "false" }
 }

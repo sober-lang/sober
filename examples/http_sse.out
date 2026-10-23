@@ -1,0 +1,90 @@
+-- HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-store
+Transfer-Encoding: chunked
+
+
+-- 30
+event: tick
+id: 1
+data: n = 1
+data: square = 1
+
+
+
+-- 8
+: ping
+
+
+
+-- 30
+event: tick
+id: 2
+data: n = 2
+data: square = 4
+
+
+
+-- 30
+event: tick
+id: 3
+data: n = 3
+data: square = 9
+
+
+
+-- 17
+retry: 5000
+data: bye
+
+
+
+-- 0
+
+
+-- HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-store
+Transfer-Encoding: chunked
+Connection: close
+
+
+-- 35
+event: tick
+id: 42
+data: n = 42
+data: square = 1764
+
+
+
+-- 8
+: ping
+
+
+
+-- 35
+event: tick
+id: 43
+data: n = 43
+data: square = 1849
+
+
+
+-- 35
+event: tick
+id: 44
+data: n = 44
+data: square = 1936
+
+
+
+-- 17
+retry: 5000
+data: bye
+
+
+
+-- 0
+
+
+true

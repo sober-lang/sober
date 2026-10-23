@@ -2,6 +2,75 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.6.1 — 2026-10-23
+
+Web の版の続き: HTTP の口が静的ファイル・条件付き GET・chunked と SSE・multipart・圧縮つきの stream まで広がり、std にエンコーディングと復号の部品が入った。analyzer には effect の面の最初の 3 つ（関数型の `@errors`・秘密の値の流れ `@secret`・認証由来の応答と共有キャッシュの出会い）が入った。接続の多いサーバのメモリとアドレス空間の使い方を直し、48000 同時接続で死んでいた形が消えた。
+
+### 言語
+
+- 型の別名 `type A = B`: A は B と同じ型の別の名前で、どこでも区別しない（代入・型引数・閉包・lease）。右辺は型宣言の名前 1 つ（`N` / `ref.N`）。組み込みの型・合成の型・型引数つきの名前は置けない。総称の型の別名は、使う側で型引数を書く（`type Box = lib.Box` → `Box[int]`）。欄の書き・封の型などの「どの package の型か」は実体の宣言で決まる
+- 借りの閉包の mut 捕捉: 値の呼び出しの借りの位置に置いたラムダ（`st((p) => …)` の形）は mut の束縛（mut のローカル・mut の仮引数）を捕捉できる。捕捉は写しでなく束縛そのもので、寿命は呼び出しの内側に限る。1 つの呼び出しの借りのラムダが捕捉する mut の束縛は、合わせて 1 つまで。値の位置の閉包（逃げうる側）は今までどおり拒否する
+- `@errors` を名前付きの関数型に後置できる: `type Stream func(…) error? @errors(emit, io.NotFound, …)`。その型の値になるラムダは、宣言の外のラベルを返すと拒否される。関数型の値の呼び出しの失敗の集合は宣言から導出する
+- `@exhaustive`: 付けた関数の中の switch は、subject の閉じた集合（union の全 variant・1 つの package の error のラベル・named scalar の型つきの const）を全部 case に名指す。欠けは名指して拒否する（check だけ）
+- 型つきの const: `const OK = Status(200)` は型 `Status` を持つ
+- `@secret`（check だけ — build の受理は変えない）: 仮引数・struct の欄・const を秘密の源と宣言すると、analyzer は秘密の値が分岐の条件・添字・除算に届く形を拒否する。std/crypto と std/tls の鍵の材料には印が付き、生成した機械語に秘密依存の分岐が無いことはゲート（ctcheck）と定数時間の統計の計測（dudect）が見る
+- 出所の検査（check だけ）: 認証由来の値（`http.Authorization` / `http.Cookie` とその上に組んだ値）が、共有キャッシュに置かれうる応答（`http.Cache` の共有の方針）と出会う形を拒否する
+- mut の仮引数を持たない関数が mut の値（mut の slice / map を含む型）を返す形は、build も check と同じ文面で拒否する（今までは build だけ通っていた）
+- `io.Root`・`net.Listener`・`net.Conn`・`tls.Conn` のゼロ値（`io.Root{}` など）は拒否する。今までは fd 0 を指す偽物が作れた
+- 関数でない宣言（type / const）に付けた前置の `@errors` は文法の誤りになった。今までは黙って捨てていた
+
+### 標準ライブラリ
+
+- net / tls: `net.Serve` / `tls.Serve` に名前付き引数 `region:`。接続の task の region 1 つあたりの上限で、既定は 128 MiB。超えた接続はその task だけが死に、Serve が吸収する（`task.Ledger()` の died に数える）。接続ごとに確保するアドレス空間が 1/4 になり、48000 同時接続で `RegionExceeded{cause: va_exhausted}` で死んでいた形が消えた（下の「修理」）
+- http — 静的ファイル: `http.Static(prefix, root, precompressed:, cache:)`。根の外へは出ない（カーネルの保証 — 下の io）。`precompressed:` は `.br` / `.gz` の変種を Accept-Encoding で選んで素通しする。弱い ETag・Last-Modified・前提条件（If-Match / If-None-Match / If-Modified-Since / If-Unmodified-Since → 304 / 412）に対応した
+- http — キャッシュの方針: `Response.cache` / `Route.cache`（`http.Cache` = `Revalidate` / `Fresh{maxAge, immutable}` / `Private{maxAge}` / `NoStore`）。方針の無い応答は `Cache-Control: private`
+- http — 応答の枠: 長さの分からない stream の応答（`Response.length` は `int?` に — nil = 長さ不定）は HTTP/1.1 では `Transfer-Encoding: chunked` で送る。HTTP/1.0 の要求には `Connection: close` で閉じて区切る
+- http — 圧縮つきの stream: `Response{stream:}` も `compress:` の対象になる。受ける要求には gzip の chunked で、受けない要求には平文の chunked と `Vary` で返す
+- http — SSE: `http.Event` / `http.FormatEvent`。data の改行は行に割り、event / id の改行は panic（`BadEvent`）にする。`text/event-stream` は圧縮しない
+- http — `http.Multipart(r)`（multipart/form-data — RFC 7578）・`http.Authorization(r)`・`http.Cookie(r, name)`・`http.StatusCode` 型と型つきの const（`http.OK` …）
+- io: `io.OpenRoot` / `io.CloseRoot` / `io.OpenUnder`（openat2 + RESOLVE_BENEATH — `..`・絶対パス・外を指す symlink はカーネルが拒否する）、`io.Stat`（size・modTime・kind）
+- compress: `flate.Decode` / `gzip.Decode`（`maxSize:` で展開爆弾を封じる）
+- base64（新設 — 標準 / URL 安全の字母・厳格な復号）・url（新設 — `Escape` / `Unescape` / `ParseQuery`）
+- strings: `Split` / `Fields` / `TrimSpace` / `TrimSuffix` / `ToLower` / `ToUpper` / `EqualFold` / `Replace` / `LastIndex`（Go に揃えた署名・空白と大小は ASCII だけ）。convert: `ParseBool` / `FormatBool`
+- crypto: `SealTo` に位置引数 `tail` を足した（平文 = pt ‖ tail — aesgcm / chacha20poly1305。写し 1 回を省く口）
+- コンテナの init（PID 1）として走るときだけ、SIGTERM / SIGINT で exit 143 / 130 で止まる。今までは `docker stop` / `podman stop` の猶予の後に SIGKILL されていた。tini / `--init` は要らない
+
+### 破壊的変更
+
+- `http.Response.status` と `http.Status(code)` は `http.StatusCode` 型に（整数のリテラルは今までどおり書ける）
+- `http.Response.length` は `int?` に（nil = 長さ不定 → chunked）
+- `crypto` の `SealTo(…)` は最後に `tail` を取る（無ければ `[]byte{}`）
+- 任意ヘッダの `Cache-Control`・`CDN-Cache-Control`・`Surrogate-Control`・`ETag`・`Last-Modified` は panic（`BadHeader`）にする。方針は `cache:` で書く（ETag / Last-Modified は `http.Static` が付ける）
+- `http.Header(r, …)` は `Authorization`・`Proxy-Authorization`・`Cookie` に nil を返す。`http.Authorization` / `http.Cookie` を使う
+- 方針の無い応答に `Cache-Control: private` が付く（404 / 405 / 誤りも）
+- 1xx・204・304 の応答に `Content-Length` を書かない（RFC 9110 8.6 — 204 の `Content-Length: 0` は違反だった）
+- 上の「言語」の 3 つの拒否（mut を返す形・同一性の型のゼロ値・関数でない宣言の `@errors`）
+- `compress:` の level 6（既定）の出力のバイト列が変わる（lazy の閾値 16 → 12 — 圧縮率は zlib と同等の線の中）
+
+### 性能
+
+- HTTP（bench/httparena — HttpArena の負荷発生器と要求のファイル・GitHub Actions の 64 vCPU でサーバ 32 コア・Go の net/http と比べた自前のハーネスで、HttpArena の公式の結果ではない）: Sober / Go の比は baseline 3.0×・pipelined 16×・limited-conn 7.2×・json 3.1×・json-tls 2.3×・json-comp 1.3×・async 1.9×。latency-500k-8cpu は 50 万 req/s の目標を保ち p99 0.28 ms（Go は速さに遅れて p99 が秒に伸びる）。latency-1m は 99.8 万 req/s で p99 0.13 ms。non-2xx は全種目で 0
+- メモリ: サーバの RSS は、この版の開発の途中（下の 2 つの直しの前）の run と比べて baseline 321 → 140 MB・latency-10k 254 → 89 MB・json-comp 432 → 191 MB・json-tls 637 → 388 MB・async 898 → 814 MB。主に 2 つの直しによる
+  - 透過的 huge page が always の箱で、region の頁を huge page にしない
+  - 待ちに入った task が、死んだ深度の region を手放す
+- 接続数: async（32000 接続）は 5 周を通してエラー・再接続 0。手元で 48000 接続も再接続 0（以前は va_exhausted で死んだ）
+- タイマー: `os.Sleep` の待ちを、ワーカーごとの時計の表（io_uring に 1 件ずつ積まない）で管理する。async の Go 比が 1.7× → 1.9×（GHA の前後の run）・手元の async で CPU/要求 −13〜16%・16000 接続で rps +17%
+- コンパイラ: 間接呼び出しの結果の受け皿の穴（関数値の呼び出しが余計な零初期化を払っていた — 手元の HTTP の keep-alive で cycles −5〜6%）、フレームのスロットと spill の枠の彩色、戻らない呼び出しの終端化、deflate の level 6 の調整（json-comp の命令 −5%）など
+- HTTP の要求の頭を 1 回だけなめる・応答の頭の早道・Accept-Encoding を読むのは圧縮しうる応答のときだけ
+
+### 修理
+
+- 48000 同時接続の `RegionExceeded{cause: va_exhausted}`（接続ごとのアドレス空間 — 上の `region:`）
+- コンテナの PID 1 として SIGTERM で止まらなかった（上）
+- 204 の応答に `Content-Length: 0` を書いていた
+- `sober check` と `sober build` の食い違い 5 形（片方だけが受理していた形 — `T?` を期待する位置の if の腕・nil 判定で絞った値を捕捉する閉包・ブロック本体のラムダの末尾の nil・値の位置の閉包の `g(x)?`・mut を返す形）
+- `sober check std/<pkg> --test` がテストの本体を検査していなかった
+- std/tls と std/crypto の定数時間の 3 か所（x25519 の全 0 の検査を定数時間の比べへ・record の 0 埋めの長い道の早期脱出・RSA-PSS の自己検証）。どれも `@secret` の検査が見つけた
+
+### 配布
+
+- タグごとに ghcr.io/sober-lang/sober のツールチェーンのイメージを publish する（alpine + sober・リリースの tarball と byte 同一）。`FROM ghcr.io/sober-lang/sober:0.6.1` で build できる
+
 ## v0.6.0 — 2026-10-20
 
 Web の版: ネットワーク・HTTP/1.1 のサーバ・TLS 1.3 とその下の暗号が、Sober で書いた std に入った。言語には閉包が入り、std の API は命名の総再審を通った（破壊的変更 — 下の「改名」）。言語仕様は規則として書き起こし（docs/spec）、std のリファレンスはソースから生成する。

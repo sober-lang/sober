@@ -105,17 +105,31 @@ func emptyConfig() Config {
 
 // addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
 // handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close_notify を送って閉じる。k が死んだときは close_notify を送らずに閉じる
+// region = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(addr string, cfg Config, k Handler) error? {
+func Serve(addr string, cfg Config, k Handler, region int?) error? {
     for l <- net.Listen(addr)? {
-        net.Serve(l, (c) => accept(c, cfg, k))?
+        net.Serve(l, (c) => accept(c, cfg, k), region: if region != nil { region } else { 128 * 1048576 })?
     }
     return nil
 }
 
-// accept は 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）。Connected になった切片の残り（クライアントは Finished と
-// 最初の要求を同じ flight で送るのが普通）を置き場に置いてから、外の net.Recv の for の本体の中で k を呼ぶ（k の中の tls.Recv が同じ fd の続きを読む）
+// accept は 1 接続の handshake（handshake）の後に k を呼ぶ。handshake の作業域（受けの溜め・Hs・署名の作業）は handshake の region に置き、
+// k を呼ぶ前に返す — 接続の寿命いっぱい（k の間）抱えない（report-1004 — 置き場の列だけが外へ写る）
 func accept(nc net.Conn, cfg Config, k Handler) error? {
+    blk := handshake(nc, cfg)?
+    // handshake の深い作業（署名・鍵の導出 — 1 回きり）の頁を返す: スロットの頁は task の寿命いっぱい残るので、要求の道より深い高水位が接続の常駐になる
+    _ = leaseOp(6, []int{}, 0, 0)
+    c := Conn{c: nc, blk: blk, seal: tlsSeal{}}
+    ke := k(c)
+    _ = net.Send(nc, closeRecord(c))
+    return ke
+}
+
+// handshake は 1 接続の handshake（handshake の record は小さいので、切片を写して溜める）→ 置き場の列（newBlk）。Connected になった切片の残り
+// （クライアントは Finished と最初の要求を同じ flight で送るのが普通）は置き場に置く — k の中の tls.Recv が同じ fd の続きを読む
+@errors(HandshakeFailed, Closed)
+func handshake(nc net.Conn, cfg Config) ([]int, error?) {
     p := hs.NewParams(cfg.chain, cfg.key, cfg.alpn, []int{record.AesGcm, record.ChaCha}, []byte{})
     mut h := hs.New()
     mut acc := []byte{}
@@ -128,30 +142,27 @@ func accept(nc net.Conn, cfg Config, k Handler) error? {
             if e != nil {
                 d := alertOf(e)
                 _ = net.Send(nc, hs.AlertRecord(mut h, d))
-                return HandshakeFailed{alert: d}
+                return []int{}, HandshakeFailed{alert: d}
             }
             if len(o.send) > 0 {
                 net.Send(nc, o.send)? Closed{}
             }
             at += n
             if o.closed {
-                return Closed{}
+                return []int{}, Closed{}
             }
             if o.done {
-                c := Conn{c: nc, blk: newBlk(h, rest(acc, at)), seal: tlsSeal{}}
-                ke := k(c)
-                _ = net.Send(nc, closeRecord(c))
-                return ke
+                return newBlk(h, rest(acc, at)), nil
             }
             n = frameLen(acc, at)
         }
         if n < 0 {
             _ = net.Send(nc, hs.AlertRecord(mut h, record.AlertOverflow))
-            return HandshakeFailed{alert: record.AlertOverflow}
+            return []int{}, HandshakeFailed{alert: record.AlertOverflow}
         }
         acc = rest(acc, at)
     }
-    return Closed{}
+    return []int{}, Closed{}
 }
 
 // frameLen は acc[at:] の先頭の record の長さ（頭込み — 0 = まだ揃わない・−1 = 本体が上限を超える）
@@ -250,10 +261,17 @@ func Recv(c Conn, k func([]byte)) error? {
     return nil
 }
 
-// pump は handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）
+// pump は handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）。
+// 残りは net.Recv と同じ入れ子（反復の region + 式ブロックの region）の中で k へ渡す — 直に k(left) と呼ぶと最初の要求の道だけが
+// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残した（report-1013 3 節）
 func pump(nc net.Conn, left []byte, k func([]byte)) error? {
-    if len(left) > 0 {
-        k(left)
+    mut once := len(left) > 0
+    while once {
+        n := {
+            k(left)
+            len(left)
+        }
+        once = n < 0
     }
     return net.Recv(nc, k)
 }
@@ -370,7 +388,7 @@ func rest(a []byte, at int) []byte {
     return freeze(o)
 }
 
-// leaseOp / leaseView は rt の口（std/task・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き）
+// leaseOp / leaseView は rt の口（std/task・std/pool と同じ鍵 — op 4 = 生の読み・5 = 生の書き・6 = 今の深度より深い死んだスロットの頁を返す）
 @intrinsic("lease_op")
 func leaseOp(op int, blk []int, off int, v int) int
 

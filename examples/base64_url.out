@@ -1,0 +1,9 @@
+Authorization: Basic YWxpY2U6czNjciZ0
+alice:s3cr&t
+token=--__ABA
+q=caf%C3%A9%20%26%20bar&tag=a&tag=b+c
+q = café & bar
+tag = a
+tag = b c
+true
+true

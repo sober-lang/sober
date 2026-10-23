@@ -32,7 +32,7 @@ func desc(k int) int {
     case ast.EFor: d6(3, 0, 0, 0, 0, 0)
     case ast.SBind: d6(4, 0, 3, 0, 0, 0)
     case ast.SAssign: d6(3, 0, 3, 0, 0, 0)
-    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined: d6(1, 0, 0, 0, 0, 0)
+    case ast.SExpr | ast.SDefer | ast.SYield | ast.TOpt | ast.EParen | ast.TSlice | ast.BDefined | ast.BAlias: d6(1, 0, 0, 0, 0, 0)
     case ast.TFunc | ast.BFunc: d6(3, 3, 4, 0, 0, 0)
     case ast.TGeneric | ast.KVariant: d6(2, 3, 0, 0, 0, 0)
     case ast.TTuple: d6(3, 0, 0, 0, 0, 0)

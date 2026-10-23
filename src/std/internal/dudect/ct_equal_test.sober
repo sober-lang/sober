@@ -1,0 +1,59 @@
+package dudect
+
+// dudect の題材（report-985）: crypto.Equal（32 バイト — 固定の参照と比べる）。クラス 0 = 参照と同じ値・クラス 1 = 乱数。
+// 負例 = 食い違いで早く抜ける比較（ctcheck の negEqEarly と同じ形）— 同じハーネスで |t| が閾値を越える（網が鳴ることの証明）
+
+import "std/crypto"
+import "std/iter"
+import "std/rand"
+
+func ref() []byte {
+    mut b := mut []byte{}
+    for i <- iter.Range(0, 32) {
+        b = append(b, byte((i * 37 + 11) & 0xff))
+    }
+    return freeze(b)
+}
+
+// input はクラス c の i 回目の入力（0 = 参照の写し・1 = 乱数）
+func input(c int, i int) []byte {
+    if c == 0 {
+        return ref()
+    }
+    mut r := rand.New(i * 2654435761 + 7)
+    mut b := mut []byte{}
+    for k <- iter.Range(0, 32) {
+        b = append(b, byte(rand.Intn(mut r, 256)))
+    }
+    return freeze(b)
+}
+
+func eqEarly(a []byte, b []byte) bool {
+    if len(a) != len(b) {
+        return false
+    }
+    for i <- iter.Range(0, len(a)) {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+func TestCtEqual() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    want := ref()
+    Measure("ct_equal", n, 1, (c, i) => input(c, i), (x) => crypto.Equal(x, want))
+}
+
+func TestNegEqEarly() {
+    n := Count()
+    if n == 0 {
+        return
+    }
+    want := ref()
+    Measure("neg_eq_early", n, 1, (c, i) => input(c, i), (x) => eqEarly(x, want))
+}

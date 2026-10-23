@@ -1,0 +1,2 @@
+sober: load error at examples/identity_neg_root.sober:9:10: `io.Root` has identity: only io.OpenRoot makes one — a zero value would refer to nothing
+exit=1

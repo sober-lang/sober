@@ -1,0 +1,12 @@
+a.txt: 6 bytes: inside
+sub/b.txt: 6 bytes: nested
+sub/../a.txt: 6 bytes: inside
+in: 6 bytes: inside
+../outside.txt: denied
+sub/../../outside.txt: denied
+/etc/passwd: denied
+esc: denied
+sub: not a regular file
+nope: not found
+root on a file: not found
+fds leaked: 0

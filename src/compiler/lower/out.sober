@@ -105,8 +105,9 @@ func outFork(st mut St, me int, tcb int) {
     setCur(mut st, bEnd)
 }
 
-// outNoSeg は spawn の子 tcb が区間を持たないか（段 6 P4-6）: 純な子（TC_CUTOK — io に届かない・子孫も）か、親が区間を持たない（純な子の
-// 中の走らせ直し）。区間を持たない task は何も書かないので、先行順の列に席が要らない — spawn / 終わりの区間の操作（M:N では鍵）を踏まない
+// outNoSeg は spawn の子 tcb が区間を持たないか（段 6 P4-6）: TC_CUTOK ≠ 0（純な子 = 1・stdout に書かない子 = 2 — 子孫も・cancel.sober の
+// cutPatch が閉世界で決める — report-994 F4）か、親が区間を持たない（区間を持たない task の子孫・純な子の中の走らせ直し）。区間を持たない task は
+// stdout に何も書かないので、先行順の列に席が要らない — spawn / 終わりの区間の操作（M:N では全ワーカー共通の鍵 MN_OLOCK）を踏まない
 func outNoSeg(st mut St, me int, tcb int) int {
     return bin(mut st, BOr, cmp(mut st, CNe, load(mut st, tcb, TC_CUTOK), iconst(mut st, 0)), cmp(mut st, CEq, load(mut st, me, TC_SEG), iconst(mut st, 0)))
 }
@@ -170,7 +171,8 @@ func outRoute(st mut St, meta int) {
     spinLock(mut st, mn, MN_OLOCK)
     lnM := load(mut st, meta, W_LINE_LEN)
     svM := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SEG)
-    awayM := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, svM, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
+    // 区間を持たない task（svM = 0）は直接書く: 導出（cancel.sober の outSolve）が印字する子を取りこぼしたときの倒れ先 = 順が崩れるだけ（区間 0 へ積むと固まる）
+    awayM := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, svM, iconst(mut st, 0))), cmp(mut st, CNe, svM, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
     bKeepM := newBlock(mut st)
     bGoM := newBlock(mut st)
     condbr(mut st, bin(mut st, BAnd, awayM, cmp(mut st, CGt, lnM, iconst(mut st, 0))), bKeepM, -1, bGoM, -1)
@@ -186,7 +188,7 @@ func outRoute(st mut St, meta int) {
     setCur(mut st, bCo)
     ln := load(mut st, meta, W_LINE_LEN)
     sv := load(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_SEG)
-    away := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, sv, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
+    away := bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, meta, W_FD), iconst(mut st, 1)), cmp(mut st, CNe, sv, iconst(mut st, 0))), cmp(mut st, CNe, sv, load(mut st, globaladdr(mut st, st.outG), OUT_HEAD)))
     bKeep := newBlock(mut st)
     bGo := newBlock(mut st)
     condbr(mut st, bin(mut st, BAnd, away, cmp(mut st, CGt, ln, iconst(mut st, 0))), bKeep, -1, bGo, -1)
@@ -224,7 +226,9 @@ func buildOutNode(st mut St) {
     ret(mut st, itop(mut st, a))
 }
 
-// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）
+// sysMmap は無名・NORESERVE の size バイト（失敗は region の超過と同じ死 102 — 種類 va_exhausted）。写したら madvise(MADV_NOHUGEPAGE)
+// （report-1053 — 透過的 huge page が always の箱では、隣同士で溶け合ったワーカーごとの小さい写像〔PBUF・環の記録・slab ほか〕に
+// 1 頁触るだけで 2 MiB 窓ごと常駐し、ワーカーあたり +5 MB 前後 RSS が膨らんでいた。失敗は無視）
 func sysMmap(st mut St, size int) int {
     args := listN(mut st, 7)
     desugar.HeapSet(mut st.d, args + 1, iconst(mut st, 9))
@@ -241,6 +245,7 @@ func sysMmap(st mut St, size int) int {
     setCur(mut st, bad)
     memPanic(mut st, PM_VA)
     setCur(mut st, good)
+    syscall(mut st, list4(mut st, iconst(mut st, 28), a, size, iconst(mut st, 15)))
     return a
 }
 

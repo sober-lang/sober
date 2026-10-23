@@ -1,0 +1,2 @@
+sober: load error at examples/fntype_errors_neg_prefix.sober:5:10: source does not match the grammar
+exit=1

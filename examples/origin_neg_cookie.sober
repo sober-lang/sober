@@ -1,0 +1,9 @@
+package main
+
+import "std/http"
+
+// 共有のルートのハンドラが Cookie を読む（直）
+func main() {
+    rs := []http.Route{http.Route{method: "GET", path: "/me", handler: (r) => http.Text(if http.Cookie(r, "sid") != nil { "in" } else { "out" }), cache: http.Fresh{maxAge: 60}}}
+    println(len(rs))
+}

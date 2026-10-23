@@ -1,0 +1,42 @@
+package main
+
+// 借りの閉包の mut 捕捉（(α-L1)）と env の union: 借りの位置 `func(b []byte) error?` の env は、プログラム中の全部の借りの形の閉じた union。
+// 同じ Stream を素の借り（imm の捕捉だけ）と mut の借り（mut int の捕捉）の 2 か所から呼ぶ — mut の ref は union の片方の variant の中に入り、
+// 両方の呼び出しが anchor つきの callMv になる（anchor は構文の注釈 — Ty.anchorOf は union の中を見ない）。count2 はループの中で別の mut s を捕捉する
+// 3 つ目の作成点（union の ref の variant が 2 つ — 作成点の union の注釈は anchor の座標へ写す）
+
+type Stream func(emit func(b []byte) error?) error?
+
+func two(emit func(b []byte) error?) error? {
+    emit(bytes("abc"))?
+    return emit(bytes("de"))
+}
+
+func show(st Stream, pre string) {
+    e := st((b []byte) => { println("${pre}${len(b)}"); nil })
+    if e != nil { println("error") }
+}
+
+func count(st Stream) int {
+    mut n := 0
+    e := st((b []byte) => { n += len(b); nil })
+    if e != nil { return -1 }
+    return n
+}
+
+func count2(st Stream) int {
+    mut s := 7
+    mut k := 0
+    while k < 2 {
+        e := st((b []byte) => { s += 2 * len(b); nil })
+        if e != nil { return -1 }
+        k += 1
+    }
+    return s
+}
+
+func main() {
+    println(count2((emit) => two(emit)))
+    show((emit) => two(emit), "len ")
+    println(count((emit) => two(emit)))
+}

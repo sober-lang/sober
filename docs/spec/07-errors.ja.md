@@ -132,7 +132,7 @@ E-13. `(T, error?)` の 2 位置の switch（`switch f() { … }` か `switch v,
 拒否: [`examples/switch_multi_nil_order.sober`](../../examples/switch_multi_nil_order.sober)・[`examples/switch_multi_nil_value.sober`](../../examples/switch_multi_nil_value.sober)・[`examples/switch_multi_nil_cover.sober`](../../examples/switch_multi_nil_cover.sober)・[`examples/switch_multi_nil_default.sober`](../../examples/switch_multi_nil_default.sober)・[`examples/switch_multi_nil_noerr.sober`](../../examples/switch_multi_nil_noerr.sober)
 決定: [language.md 13 節](../language.md)
 
-E-14. error の switch の網羅の対象は、subject が持ちうるラベルの集合（analyzer が導出する — package の中は return の経路から・package をまたぐ呼び先は `@errors` の宣言から）。集合を覆えば default は要らない。覆っていなければ、覆っていないラベルを名指して拒否する。集合を導出できない subject（関数値の呼び出し・要素の読みなど）には default が要る。subject が持ちえないラベルの腕と、集合を覆った上での default は到達しないので拒否する。
+E-14. error の switch の網羅の対象は、subject が持ちうるラベルの集合（analyzer が導出する — package の中は return の経路から・package をまたぐ呼び先は `@errors` の宣言から）。集合を覆えば default は要らない。覆っていなければ、覆っていないラベルを名指して拒否する。集合を導出できない subject（関数値の呼び出し・要素の読みなど）には default が要る。subject が持ちえないラベルの腕と、集合を覆った上での default は到達しないので拒否する（`@exhaustive` の関数の中の例外は A-8）。
 例: [`examples/errors_derived.sober`](../../examples/errors_derived.sober)・[`examples/tour_05_errors.sober`](../../examples/tour_05_errors.sober)
 拒否: [`examples/errors_neg_nonexh.sober`](../../examples/errors_neg_nonexh.sober)・[`examples/errors_neg_unreach.sober`](../../examples/errors_neg_unreach.sober)
 決定: [language.md 13 節](../language.md)
@@ -191,6 +191,11 @@ E-16. error を返す公開関数（名前が大文字で始まる関数）は `
 
 E-17. 匿名の関数型の仮引数 r（結果に `error?` を持つ）を呼ぶ関数は、`@errors` に仮引数の名前を書ける: `@errors(Bad, recv, send)` は「Bad と、recv / send に渡したものが返すもの」。呼び手から見た集合は、呼び出し点ごとに、その点で r に渡した実引数のラベルを代入したもの。包み替え（E-8）で返した r の失敗は漏れに数えない。
 例: [`examples/errors_param.sober`](../../examples/errors_param.sober)
+決定: [language.md 13 節](../language.md)
+
+E-23. 名前付き関数型は結果の後に `@errors(…)` を書ける（`type F func(x int) error? @errors(Bad, emit)` — 型宣言の前に置く `@errors` は文法の外）。項は宣言の package のラベルと、F の仮引数のうち匿名の関数型で結果に `error?` を持つものの名前。宣言は F の値の失敗の上界: F の値を通した呼び出しの集合は、宣言のラベルと、仮引数の名前の項の位置に渡した実引数のラベル。F の値になるラムダの本体が宣言の外のラベル・宣言に書いていない仮引数の失敗を返しうるなら、そのラムダの位置で拒否する。宣言が導出より広くても拒否しない。`@errors` の無い F の値を通した呼び出しのラベルは導出できない（公開関数の `@errors` の照合と switch の網羅は default を求める）。
+例: [`examples/fntype_errors.sober`](../../examples/fntype_errors.sober)・[`examples/fntype_errors_flow.sober`](../../examples/fntype_errors_flow.sober)
+拒否: [`examples/fntype_errors_neg_leak.sober`](../../examples/fntype_errors_neg_leak.sober)・[`examples/fntype_errors_neg_flow.sober`](../../examples/fntype_errors_neg_flow.sober)・[`examples/fntype_errors_neg_label.sober`](../../examples/fntype_errors_neg_label.sober)・[`examples/fntype_errors_neg_prefix.sober`](../../examples/fntype_errors_neg_prefix.sober)
 決定: [language.md 13 節](../language.md)
 
 ## 7.7 panic

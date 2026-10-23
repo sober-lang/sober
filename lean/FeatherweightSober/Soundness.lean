@@ -2605,6 +2605,11 @@ theorem preservation_eval {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : 
       cases he with
       | callv hf harg hsub hbd =>
         exact ⟨Ξ, .refl Ξ, .eval' hD hf (.callvL (harg.to_take_full hD) hsub hbd hS) hH, hC⟩
+    | callMv a ef e =>
+      simp only [step] at hs; cases hs
+      cases he with
+      | callMv hf harg hsub hbd had =>
+        exact ⟨Ξ, .refl Ξ, .eval' hD hf (.callMvL (harg.to_take_full hD) hsub hbd had hS) hH, hC⟩
     | call fn ts e =>
       simp only [step] at hs; cases hs
       cases he with
@@ -4017,6 +4022,13 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
       obtain ⟨fn, ts, dfn, rfl, hfn, hl, ha, rfl, rfl⟩ := canonical_fn hva (hb.of_take_full hD)
       simp only [step] at hs; cases hs
       exact ⟨Ξ, .refl Ξ, .ret' hD hv he (.callK hfn hl ha hsub hbd hS') hH, hC⟩
+    | callMvL hb hsub hbd had hS' =>
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .eval' hD (hb.of_take_full hD) (.callMvR hv (he.to_take_full hD) hsub hbd had hS') hH, hC⟩
+    | callMvR hva hb hsub hbd had hS' =>
+      obtain ⟨fn, ts, dfn, rfl, hfn, hl, ha, rfl, rfl⟩ := canonical_fn hva (hb.of_take_full hD)
+      simp only [step] at hs; cases hs
+      exact ⟨Ξ, .refl Ξ, .ret' hD hv he (.callMKa hfn hl ha hsub hbd had hS') hH, hC⟩
     | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
       -- round4: region を push し、coerce した引数をシフト済み本体へ代入して同世界で評価
       simp only [step] at hs
@@ -4060,6 +4072,42 @@ theorem preservation_ret {Δ : Defs} {Ξ : ChanTy} {Λ : LCtx} {b : Nat} {Ψ : S
       simp only [step] at hs
       rw [hfn] at hs
       simp only [hav, Option.getD_some] at hs
+      cases hs
+      have hHl : H.length = d + 1 := by rw [hH.len, hD]
+      have hρ : H.length - 1 = d := by omega
+      rw [hρ]
+      obtain ⟨hp, hro, hnc, hsrc, hbody⟩ := defsOk_inst hΔ hfn hargs
+      obtain ⟨hva', hta'⟩ := HasType.value_coerce hv he hsub
+      have hbΨ : b ≤ Ψ.length := by rw [hD]; omega
+      have harg1 : HasType Δ Ξ (Ψ ++ [[]]) b b (d + 1) [] Λ
+          (Expr.coerceTo ((dfn.inst ts).param.renR a d) v) ((dfn.inst ts).param.renR a d) :=
+        hta'.store_mono (storeLE_append Ψ [[]])
+          (storePre_of_take_eq (take_append_left_of_le hbΨ [[]]))
+      have harg2 := HasType.value_depth_weaken hva' harg1 (Nat.le_succ (d + 1))
+      -- 本体を base から写して（region 0 ↦ a、それ以外 +d）現在世界へ、b / f を実行時のタスク境界へ下げる
+      have hsh := HasType.ren_typing (ρ0 := a) (δ := d) had hbody (Nat.le_refl 2) hsrc
+      have hsh1 := hsh.chan_mono (chanLE_nil Ξ)
+      have hsh2 : HasType Δ Ξ (Ψ ++ [[]]) (rmap a d 1) (rmap a d 0) (2 + d)
+          [(dfn.inst ts).param.renR a d] [] ((dfn.inst ts).body.renTy a d) ((dfn.inst ts).ret.renR a d) :=
+        hsh1.store_mono (storeLE_nil _) (fun n _ hl => by
+          have hn0 : n = 0 := Nat.le_zero.mp (by simpa using hl)
+          subst hn0
+          rfl)
+      have hsh3 := HasType.b_lower (b' := b) (by simp only [rmap]; omega) hsh2
+      have hsh4 := HasType.f_lower (f' := b) (Expr.noNewchan_renTy hnc) hsh3
+      have h2d : 2 + d = d + 2 := by omega
+      rw [h2d] at hsh4
+      have hsub0 := HasType.subst0 hsh4 hva' (HasType.value_ctx hva' harg2)
+      have hSf : StackTy Δ Ξ (Ψ ++ [[]]) b (.fretK ((dfn.inst ts).ret.relocA a d) :: S') _ (d + 2)
+          ((dfn.inst ts).ret.renR a d) tf :=
+        .fretKA hro hbd had (hS'.mono (fun d' _ => (storeLE_append Ψ [[]]).take_take d')
+          (take_append_left_of_le hbΨ [[]]))
+      exact ⟨Ξ, .refl Ξ, .eval' (Ψ := Ψ ++ [[]]) (D := d + 2) (by simp [hD])
+        hsub0 hSf (heapOk_push hH), hC⟩
+    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
+      -- L1: callMv の委譲先 — anchor a は注釈（値から読まない）。callMK の腕と同じく region を push して本体を写す
+      simp only [step] at hs
+      rw [hfn] at hs
       cases hs
       have hHl : H.length = d + 1 := by rw [hH.len, hD]
       have hρ : H.length - 1 = d := by omega
@@ -5416,6 +5464,16 @@ theorem progress {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} {tf : Ty} {K : 
     | callvR hva hb hsub hbd hS' =>
       obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
       exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | callMvL hb hsub hbd had hS' => exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | callMvR hva hb hsub hbd had hS' =>
+      obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
+      exact .inr (.inr (.inr ⟨[], _, _, rfl⟩))
+    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
+      exact .inr (.inr (.inr ⟨[], .eval (H ++ [[]])
+        (.fretK ((dfn.inst ts).ret.relocA a (H.length - 1)) :: S')
+        (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.renR a (H.length - 1)) v)
+          ((dfn.inst ts).body.renTy a (H.length - 1))), K,
+        by simp only [step, hfn]⟩))
     | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
       exact .inr (.inr (.inr ⟨[], .eval (H ++ [[]]) (.fretK ((dfn.inst ts).ret.relocR (H.length - 1)) :: S')
         (Expr.subst 0 (Expr.coerceTo ((dfn.inst ts).param.shiftR (H.length - 1)) v)
@@ -6063,6 +6121,7 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | close c => simp only [step] at hs; cases hs; rfl
     | fnref fn ts => simp only [step] at hs; cases hs; rfl
     | callv ef e => simp only [step] at hs; cases hs; rfl
+    | callMv a ef e => simp only [step] at hs; cases hs; rfl
     | call fn ts e => simp only [step] at hs; cases hs; rfl
     | callM fn ts e => simp only [step] at hs; cases hs; rfl
     | mkslice m t₀ =>
@@ -6296,6 +6355,17 @@ theorem step_shared_stable_leaf {Δ : Defs} {Ξ : ChanTy} {b : Nat} {s : State} 
     | callvR hva hb hsub hbd hS' =>
       obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
       simp only [step] at hs; cases hs; rfl
+    | callMvL hb hsub hbd had hS' => simp only [step] at hs; cases hs; rfl
+    | callMvR hva hb hsub hbd had hS' =>
+      obtain ⟨fn, ts, dfn, rfl, -, -, -, -, -⟩ := canonical_fn hva (hb.of_take_full hD)
+      simp only [step] at hs; cases hs; rfl
+    | @callMKa _ S' d a fn ts dfn ta _ hfn hlen hargs hsub hbd had hS' =>
+      simp only [step] at hs
+      rw [hfn] at hs
+      cases hs
+      have hbH : b ≤ H.length := by rw [hH.len, hD]; omega
+      simp only [State.heap]
+      exact take_append_left_of_le hbH [[]]
     | @callK _ S' d fn ts dfn ta _ hfn hlen hargs hsub hbd hS' =>
       simp only [step] at hs
       rw [hfn] at hs

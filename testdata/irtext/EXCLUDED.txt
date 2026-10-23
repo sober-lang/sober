@@ -1,15 +1,32 @@
+examples/alias_neg_builtin.sober: sober: load error at examples/alias_neg_builtin.sober:5:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
+examples/alias_neg_compound.sober: sober: load error at examples/alias_neg_compound.sober:5:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
+examples/alias_neg_cycle.sober: sober: load error at examples/alias_neg_cycle.sober:5:6: an alias refers back to itself through other aliases
+examples/alias_neg_dup.sober: sober: load error at examples/alias_neg_dup.sober:11:6: a top-level name is declared more than once in the package
+examples/alias_neg_identity.sober: sober: load error at examples/alias_neg_identity.sober:10:10: `io.File` has identity: only io.Open makes one — a zero value would refer to nothing
+examples/alias_neg_label.sober: sober: load error at examples/alias_neg_label.sober:9:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
+examples/alias_neg_self.sober: sober: load error at examples/alias_neg_self.sober:5:6: an alias refers back to itself through other aliases
+examples/alias_neg_shadow.sober: sober: load error at examples/alias_neg_shadow.sober:12:5: a local binding cannot reuse a top-level name (const, func or type)
+examples/alias_neg_targs.sober: sober: load error at examples/alias_neg_targs.sober:9:6: an alias names a type declaration (N or pkg.N — a struct, union, named function type, named scalar or another alias): not a builtin, composite, instantiated or error / panic label type
+examples/alias_neg_tparams.sober: sober: load error at examples/alias_neg_tparams.sober:9:6: an alias has no type parameters — write the type arguments where the alias is used (type B = lib.Box, then B[int])
+examples/alias_neg_undefined.sober: sober: load error at examples/alias_neg_undefined.sober:5:6: the type an alias names is not declared or not visible here (a type from another package must be exported)
 examples/annot.sober: examples/annot.sober:12:1: error: annotation (Unsupported)
 examples/annot_neg_unknown.sober: sober: load error: source does not match the grammar
 examples/assert_outside.sober: sober: load error at examples/assert_outside.sober:5:5: assert is only available in _test.sober files
 examples/bind.sober: examples/bind.sober:3:1: error: top-level declaration kind (Unsupported)
 examples/bind_neg_assign.sober: sober: lower error at examples/bind_neg_assign.sober:7:5 (Mismatch)
+examples/borrow_mut_neg_forward.sober: sober: load error at examples/borrow_mut_neg_forward.sober:16:46: this call passes on a borrowed function as it is, so the lambdas passed to it cannot also capture a mut binding — call the borrowed function inside the lambda instead, or capture the mut binding in a separate call
+examples/borrow_mut_neg_freeze_body.sober: examples/borrow_mut_neg_freeze_body.sober:19:40: error: `freeze(z.acc)` freezes the contents of `z`, which this lambda captured as a mut binding — the enclosing function still holds them and can write after the call. Freeze in the enclosing function after the call instead, or build a new value here and freeze that (Analyzer)
+examples/borrow_mut_neg_frozen.sober: examples/borrow_mut_neg_frozen.sober:20:37: error: this lambda captures `z` as a mut binding (it is passed to the call like `mut z`) after its contents were frozen by `freeze(z.acc)` — the frozen value could change. Capture it before the freeze, or freeze after the call (Analyzer)
+examples/borrow_mut_neg_two.sober: sober: load error at examples/borrow_mut_neg_two.sober:15:42: the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that
+examples/borrow_mut_neg_two_args.sober: sober: load error at examples/borrow_mut_neg_two_args.sober:15:64: the lambdas passed to one call of a function value can capture only one mut binding between them, and this is a second one — put both in one struct (`mut s := S{…}`) and capture that
+examples/borrow_mut_neg_value.sober: sober: load error at examples/borrow_mut_neg_value.sober:14:32: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/borrow_neg_bind.sober: sober: load error at examples/borrow_neg_bind.sober:13:14: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
 examples/borrow_neg_return.sober: sober: load error at examples/borrow_neg_return.sober:14:38: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
 examples/borrow_neg_spawn.sober: sober: load error at examples/borrow_neg_spawn.sober:14:38: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
 examples/borrow_neg_spawn_callee.sober: sober: load error at examples/borrow_neg_spawn_callee.sober:11:51: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope and a lambda passed straight to a call may capture it)
 examples/borrow_neg_store.sober: sober: load error at examples/borrow_neg_store.sober:16:50: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
 examples/borrow_neg_valcap.sober: sober: load error at examples/borrow_neg_valcap.sober:17:58: a borrowed function (a parameter of anonymous function type of a function value) can only be called, passed on to a call, or captured by a lambda passed to a call — it cannot be stored, returned, bound, or handed to another task
-examples/borrow_pend_mut.sober: sober: load error at examples/borrow_pend_mut.sober:13:30: a lambda in a value position (a function-typed field) cannot capture a mut binding — captures are immutable copies taken at creation
+examples/borrow_pend_mut.sober: sober: load error at examples/borrow_pend_mut.sober:13:30: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/borrow_pend_value.sober: sober: lower error at examples/borrow_pend_value.sober:12:28 (Unsupported)
 examples/borrow_pkg_neg.sober: sober: load error at examples/borrow_pkg_neg.sober:15:33: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope and a lambda passed straight to a call may capture it)
 examples/builtin_decl.sober: sober: load error at examples/builtin_decl.sober:5:6: a top-level declaration cannot reuse a builtin name
@@ -39,20 +56,23 @@ examples/closure_anon_field_bound.sober: sober: lower error at examples/closure_
 examples/closure_bound_named_fn.sober: sober: lower error at examples/closure_bound_named_fn.sober:19:15 (Mismatch)
 examples/closure_bound_named_fn_nocap.sober: sober: lower error at examples/closure_bound_named_fn_nocap.sober:16:15 (Mismatch)
 examples/closure_field_cap_identity.sober: sober: lower error at examples/closure_field_cap_identity.sober:17:14 (UndefinedType)
-examples/closure_field_cap_mut.sober: sober: load error at examples/closure_field_cap_mut.sober:14:30: a lambda in a value position (a named function type field) cannot capture a mut binding — captures are immutable copies taken at creation
+examples/closure_field_cap_mut.sober: sober: load error at examples/closure_field_cap_mut.sober:14:30: a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one
 examples/closure_field_return.sober: sober: load error at examples/closure_field_return.sober:12:42: a lambda in a value position (a named function type field) cannot use return — its body is an expression; return would escape the enclosing function
 examples/composite_dup.sober: sober: lower error at examples/composite_dup.sober:11:10 (Mismatch)
 examples/composite_field_ty.sober: sober: lower error at examples/composite_field_ty.sober:12:15 (Mismatch)
 examples/composite_mixed.sober: sober: lower error at examples/composite_mixed.sober:11:10 (Unsupported)
 examples/composite_slice_elem_ty.sober: sober: lower error at examples/composite_slice_elem_ty.sober:10:15 (Mismatch)
 examples/const_neg_call.sober: sober: load error at examples/const_neg_call.sober:9:7: const expression
+examples/defined_neg_struct.sober: sober: load error at examples/defined_neg_struct.sober:9:6: the underlying type of a defined type is int or bool — to give another type a second name, write an alias: type V = W
 examples/embed_neg_nomatch.sober: sober: load error at examples/embed_neg_nomatch.sober:6:7: @embed pattern matches no file
 examples/errors_neg_try_dest.sober: sober: lower error at examples/errors_neg_try_dest.sober:16:18 (Mismatch)
 examples/exprstmt_pure.sober: sober: load error at examples/exprstmt_pure.sober:6:7: an expression statement must be a call: the value of a pure expression is unused (bind or assign it, or remove it)
 examples/float_neg_mapkey.sober: sober: lower error at examples/float_neg_mapkey.sober:6:18 (Unsupported)
 examples/float_neg_mix.sober: sober: lower error at examples/float_neg_mix.sober:6:14 (Mismatch)
+examples/fn_ret_mut_neg.sober: examples/fn_ret_mut_neg.sober:13:6: error: a function without mut parameters cannot return a value with mutable contents (a mut slice / map, or a struct or option holding one — language.md 26 節): build it in the caller with a zero-value literal (`mut t := table.Table[int]{}`) and pass it as a mut argument (Analyzer)
 examples/fnarg_arity.sober: sober: load error at examples/fnarg_arity.sober:14:13: this function takes a different number of parameters than the function type expects
 examples/fnarg_mut.sober: sober: load error at examples/fnarg_mut.sober:15:13: a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)
+examples/fntype_errors_neg_prefix.sober: sober: load error at examples/fntype_errors_neg_prefix.sober:5:10: source does not match the grammar
 examples/for.sober: examples/for.sober:7:6: error: Iter (UndefinedType)
 examples/for_closure_gen_named.sober: sober: load error at examples/for_closure_gen_named.sober:18:20: only a parameter of anonymous function type (`recv func(k func(T)) error?` — expanded at the call) can be called as a for generator; a parameter of named function type is a value and is not expanded — call it with a lambda instead (`recv((x) => { … })`)
 examples/for_closure_gen_result.sober: sober: load error at examples/for_closure_gen_result.sober:14:20: `?` on a generator needs a generator that returns error? only
@@ -68,9 +88,13 @@ examples/func_neg_noreturn.sober: sober: lower error at examples/func_neg_noretu
 examples/func_neg_recursive_fnparam.sober: sober: lower error at examples/func_neg_recursive_fnparam.sober:6:43 (Unsupported)
 examples/generic_union_arity.sober: sober: lower error at examples/generic_union_arity.sober:11:10 (Mismatch)
 examples/generic_union_noargs.sober: sober: lower error at examples/generic_union_noargs.sober:18:17 (Undefined)
+examples/identity_neg_conn.sober: sober: load error at examples/identity_neg_conn.sober:8:10: `net.Conn` has identity: only net.Accept or net.Dial (the parameter of its function) makes one — a zero value would refer to nothing
 examples/identity_neg_field.sober: sober: load error at examples/identity_neg_field.sober:14:10: this literal leaves a field at its zero value that holds a `par.Rx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
 examples/identity_neg_generic.sober: sober: load error at examples/identity_neg_generic.sober:13:10: this literal leaves a field at its zero value that holds a `par.Tx`, which has identity: only par.NewChan makes one — set the field, or declare it `T?`
+examples/identity_neg_listener.sober: sober: load error at examples/identity_neg_listener.sober:12:10: this literal leaves a field at its zero value that holds a `net.Listener`, which has identity: only net.Listen (the parameter of its function) makes one — set the field, or declare it `T?`
 examples/identity_neg_nested.sober: sober: load error at examples/identity_neg_nested.sober:17:10: this literal leaves a field at its zero value that holds a `par.Pool`, which has identity: only par.NewPool makes one — set the field, or declare it `T?`
+examples/identity_neg_root.sober: sober: load error at examples/identity_neg_root.sober:9:10: `io.Root` has identity: only io.OpenRoot makes one — a zero value would refer to nothing
+examples/identity_neg_tls_field.sober: sober: load error at examples/identity_neg_tls_field.sober:13:10: this literal leaves a field at its zero value that holds a `tls.Conn`, which has identity: only tls.Serve (the handler's parameter) makes one — set the field, or declare it `T?`
 examples/identity_neg_tx.sober: sober: load error at examples/identity_neg_tx.sober:10:11: `par.Tx` has identity: only par.NewChan makes one — a zero value would refer to nothing
 examples/if_neg_noelse_value.sober: sober: lower error at examples/if_neg_noelse_value.sober:6:5 (Mismatch)
 examples/imm_write.sober: sober: error at examples/imm_write.sober:8:9 (ImmWrite): cannot write into an imm map / slice — create it writable (`mut m := mut map[K]V{}`, `mut xs := mut []T{}`)
@@ -90,6 +114,11 @@ examples/io_open_neg_hold.sober: sober: load error at examples/io_open_neg_hold.
 examples/io_open_neg_return.sober: sober: load error at examples/io_open_neg_return.sober:11:12: an io.File cannot leave the block that opened it (no return, and no call that returns one) — pass it down as an argument instead
 examples/io_open_neg_unclosed.sober: sober: load error at examples/io_open_neg_unclosed.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here) right after this line
 examples/io_open_neg_value.sober: sober: load error at examples/io_open_neg_value.sober:8:14: io.Open must be bound as a statement of its own — `f := io.Open(path)?` or `f := io.Open(path) catch …` — and closed by the next statement `defer io.Close(f)`
+examples/io_root_neg_capture.sober: sober: load error at examples/io_root_neg_capture.sober:23:38: a closure cannot capture an io.File, io.Root, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of task.Run and a lambda passed straight to a call may capture it)
+examples/io_root_neg_copy.sober: sober: load error at examples/io_root_neg_copy.sober:10:11: an io.File, io.Root, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
+examples/io_root_neg_mismatch.sober: sober: load error at examples/io_root_neg_mismatch.sober:8:21: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
+examples/io_root_neg_unclosed.sober: sober: load error at examples/io_root_neg_unclosed.sober:8:21: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
+examples/io_under_neg_unclosed.sober: sober: load error at examples/io_under_neg_unclosed.sober:10:22: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
 examples/json_decode_neg_field.sober: sober: load error at examples/json_decode_neg_field.sober:9:9: json.Decode supports struct fields of int, float, bool, string, nested structs, []T and T? (generic structs, unions, maps and named scalars come later)
 examples/json_decode_neg_type.sober: sober: load error at examples/json_decode_neg_type.sober:12:28: the type argument of json.Decode must be a struct type without type parameters
 examples/json_doc_forge.sober: sober: lower error at examples/json_doc_forge.sober:9:10 (Mismatch)
@@ -139,6 +168,9 @@ examples/named_scalar_mix.sober: sober: lower error at examples/named_scalar_mix
 examples/named_scalar_order.sober: sober: lower error at examples/named_scalar_order.sober:10:15 (Mismatch)
 examples/named_scalar_targ.sober: sober: lower error at examples/named_scalar_targ.sober:16:16 (Mismatch)
 examples/named_scalar_targ_union.sober: sober: lower error at examples/named_scalar_targ_union.sober:24:19 (Mismatch)
+examples/named_scalar_typed_const_neg_arith.sober: sober: lower error at examples/named_scalar_typed_const_neg_arith.sober:10:13 (Mismatch)
+examples/named_scalar_typed_const_neg_constexpr.sober: sober: load error at examples/named_scalar_typed_const_neg_constexpr.sober:8:7: const expression
+examples/named_scalar_typed_const_neg_int.sober: sober: lower error at examples/named_scalar_typed_const_neg_int.sober:14:14 (Mismatch)
 examples/named_scalar_under.sober: sober: lower error at examples/named_scalar_under.sober:8:14 (Mismatch)
 examples/net_neg_capture.sober: sober: load error at examples/net_neg_capture.sober:16:46: a closure cannot capture an io.File, net.Conn, net.Listener or tls.Conn — pass it as an argument (only the body of par.Scope may capture it)
 examples/net_neg_copy.sober: sober: load error at examples/net_neg_copy.sober:13:14: an io.File, net.Conn, net.Listener or tls.Conn cannot be copied to another binding (it has identity — keep using the name bound by io.Open or by the for)
@@ -150,6 +182,7 @@ examples/nominal_struct_arg.sober: sober: lower error at examples/nominal_struct
 examples/nominal_struct_eq.sober: sober: lower error at examples/nominal_struct_eq.sober:10:15 (Mismatch)
 examples/nominal_struct_slice.sober: sober: lower error at examples/nominal_struct_slice.sober:20:16 (Mismatch)
 examples/opt_compare.sober: sober: lower error at examples/opt_compare.sober:7:26 (Mismatch)
+examples/origin_neg_fnvalue.sober: sober: lower error at examples/origin_neg_fnvalue.sober:10:91 (Mismatch)
 examples/panic_neg_arg.sober: sober: load error at examples/panic_neg_arg.sober:5:10: the argument of panic is a single panic label literal L{…}
 examples/panic_neg_bare.sober: sober: load error at examples/panic_neg_bare.sober:5:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
 examples/panic_neg_builtin.sober: sober: load error at examples/panic_neg_builtin.sober:4:6: Unreachable, InvariantBroken and RegionExceeded are built-in panic labels
@@ -169,6 +202,10 @@ examples/pkg_neg_private.sober: sober: lower error at examples/pkg_neg_private.s
 examples/pkg_neg_unimported.sober: sober: lower error at examples/pkg_neg_unimported.sober:6:13 (UndefinedName)
 examples/println_opt.sober: sober: lower error at examples/println_opt.sober:8:12 (Unsupported)
 examples/scope.sober: examples/scope.sober:10:13: error: primary expression kind (Unsupported)
+examples/secret_neg_empty.sober: sober: load error: source does not match the grammar
+examples/secret_neg_func_bare.sober: sober: load error: source does not match the grammar
+examples/secret_neg_type.sober: sober: load error: source does not match the grammar
+examples/secret_neg_variant.sober: sober: load error at examples/secret_neg_variant.sober:6:15: source does not match the grammar
 examples/shadow_block.sober: sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
 examples/shadow_lambda.sober: sober: load error at examples/shadow_lambda.sober:7:14: a local binding cannot shadow or redeclare another local binding
 examples/shadow_pattern.sober: sober: load error at examples/shadow_pattern.sober:13:12: a local binding cannot shadow or redeclare another local binding

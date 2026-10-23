@@ -1,7 +1,8 @@
 package main
 
 // HttpArena の題材のサーバ（gate httpcheck の相手 — srv <port>〔0 = 空いている番号〕）: /baseline11・/pipeline・/delay/{ms}・/json/{count}?m=・
-// /stream/{n}・/file（応答の stream — report-763）・POST /echo（要求の本文をそのまま返す — HttpArena の 8gbit の端点・CL と chunked の受けの byte 一致の網 — report-848）。
+// /stream/{n}・/file（応答の stream — report-763）・/sse・/sse-body（SSE — 便 8 の段 8-3）・/static/*（http.Static — STATIC_ROOT の下・precompressed — report-956）・POST /echo（要求の本文をそのまま返す — HttpArena の 8gbit の端点・CL と chunked の受けの byte 一致の網 — report-848）・POST /upload（http.Multipart の部分の列を
+// 1 行 1 部分〔name TAB filename か - TAB Content-Type TAB 長さ TAB 本文の和〕で返す — 読めなければ 400・report-1022）。
 // "ready <port>" を出してから受ける（bench/httparena/main.sober と同じ route — /json の dataset は DATASET_PATH〔httpcheck.sh が testdata/httpcheck/dataset.json を渡す〕）。
 // 応答の gzip は既定の level（compress: http.Gzip{} — json-comp の検査は check.ts の jsonComp）。SRV_WORK が空でなければ符号器の作業域を
 // ワーカー局所の lease で借りる（ServeConn の work: — report-720。httpcheck.sh が両方の構成で回す）。SRV_MAXBODY（バイト）があれば ServeConn の maxBody:
@@ -135,10 +136,117 @@ func stream(dp string, dl int, r http.Request) http.Response {
     return http.Response{status: 200, contentType: "text/plain", length: n, stream: (emit) => genBytes(n, emit)}
 }
 
-func route(ds []Item, dp string, dl int, r http.Request) http.Response {
+// chunked は /chunked/{n}?k=&e=&fail= の応答（長さ不定の stream — chunked で送る・HTTP/1.0 は閉じで区切る — 便 8 の段 8-2）: 'a' + i % 26 の n バイトを
+// k バイト（既定 1000）ずつ emit・e=1 なら各 emit の前に空の emit を挟む（送られないこと）・fail=m なら m バイト送った後で誤りを返す（終端を書かずに閉じる）。
+// len=L なら長さ既知（length: L — n と食い違えば合計の検査で閉じる・compress + stream の段 8-5）・bin=1 なら application/octet-stream（圧縮しない Content-Type）
+func chunked(r http.Request) http.Response {
+    n0 := num(strings.TrimPrefix(r.path, "/chunked/"))
+    n := if n0 < 0 { 0 } else { n0 }
+    k0 := num(http.Query(r, "k"))
+    k := if k0 <= 0 { 1000 } else { k0 }
+    em := http.Query(r, "e") != nil
+    fl := if http.Query(r, "fail") != nil { num(http.Query(r, "fail")) } else { 0 - 1 }
+    ct := if http.Query(r, "bin") != nil { "application/octet-stream" } else { "text/plain" }
+    if http.Query(r, "len") != nil {
+        ln := num(http.Query(r, "len"))
+        return http.Response{status: 200, contentType: ct, length: ln, stream: (emit) => genChunks(n, k, em, fl, emit)}
+    }
+    return http.Response{status: 200, contentType: ct, stream: (emit) => genChunks(n, k, em, fl, emit)}
+}
+
+// genChunks は chunked の本文（genBytes の切り方を k で・空の emit・途中の誤り）
+func genChunks(n int, k int, em bool, fl int, emit func(b []byte) error?) error? {
+    mut i := 0
+    while i < n {
+        if fl >= 0 && i >= fl {
+            return io.Other{errno: 5}
+        }
+        m := if n - i < k { n - i } else { k }
+        mut b := mut []byte{}
+        for j <- iter.Range(0, m) {
+            b = append(b, byte(97 + (i + j) % 26))
+        }
+        if em {
+            emit([]byte{})?
+        }
+        emit(freeze(b))?
+        i += m
+    }
+    return nil
+}
+
+// slow は /chunked-slow の応答（"first" を emit してから 300 ms 待って "second" — emit 1 回 = 送り 1 回の網: 受け手は stream が返る前に 1 つ目を受ける）
+func slow(r http.Request) http.Response {
+    return http.Response{status: 200, contentType: "text/plain", stream: (emit) => slowBody(emit)}
+}
+
+func slowBody(emit func(b []byte) error?) error? {
+    emit(bytes("first"))?
+    os.Sleep(300)
+    emit(bytes("second"))?
+    return nil
+}
+
+// sse は /sse?n= の応答（Server-Sent Events — 便 8 の段 8-3）: Last-Event-ID の次の番号から n 個（既定 2）のイベント（event: tick・data は 2 行・id = 番号）。
+// 1 つ目の後に 300 ms 待つ（到着の網: 1 つ目は stream が返る前に届く）・最後に retry: 100 の終わりのイベント。保存させない（NoStore）
+func sse(r http.Request) http.Response {
+    n0 := num(http.Query(r, "n"))
+    n := if n0 <= 0 { 2 } else { n0 }
+    from := num(http.Header(r, "Last-Event-ID"))
+    return http.Response{status: 200, contentType: "text/event-stream", cache: http.NoStore{}, stream: (emit) => sseBody(from, n, emit)}
+}
+
+func sseBody(from int, n int, emit func(b []byte) error?) error? {
+    mut i := from + 1
+    while i <= from + n {
+        emit(bytes(http.FormatEvent(http.Event{event: "tick", data: "n=${i}\r\nsq=${i * i}", id: convert.FormatInt(i)})))?
+        if i == from + 1 {
+            os.Sleep(300)
+        }
+        i += 1
+    }
+    emit(bytes(http.FormatEvent(http.Event{event: "end", data: "", retry: 100})))?
+    return nil
+}
+
+// sseFlat は /sse-body の応答（text/event-stream の body 2000 バイト — compress: の対象外: Content-Encoding も Vary も付かない）
+func sseFlat(r http.Request) http.Response {
+    mut b := mut []byte{}
+    for x <- bytes(": pad\n\n") {
+        b = append(b, x)
+    }
+    while len(b) < 2000 {
+        for x <- bytes(http.FormatEvent(http.Event{data: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"})) {
+            b = append(b, x)
+        }
+    }
+    return http.Response{status: 200, contentType: "text/event-stream", body: freeze(b)}
+}
+
+// me は認証に届く応答（Cookie の sid を返す — 共有の宣言をしない: 既定の private。出所の動的オラクルの「網が鳴る」側 — check.ts の originEp）
+func me(r http.Request) http.Response {
+    s := http.Cookie(r, "sid")
+    return http.Text("sid=${if s != nil { s } else { "-" }}")
+}
+
+// sharedRoutes は共有キャッシュも保存してよいルート（Static の Shared・動的な Fresh — 認証に届かない: analyzer が受理する）と /me
+func sharedRoutes(root string) []http.Route {
+    pub := []http.Route{http.Route{method: "GET", path: "/pub", handler: (r) => http.Text("pub ${if http.Query(r, "x") != nil { "x" } else { "-" }}"), cache: http.Fresh{maxAge: 60}},
+        http.Route{method: "GET", path: "/me", handler: me}}
+    return http.Merge(http.Static("/shared", root, cache: http.Shared{maxAge: 60, sMaxAge: 600}), pub)
+}
+
+func route(ds []Item, st []http.Route, sh []http.Route, dp string, dl int, r http.Request) http.Response {
     return switch {
+    case strings.HasPrefix(r.path, "/static/"): http.Dispatch(st, r)
+    case strings.HasPrefix(r.path, "/shared/") || r.path == "/pub" || r.path == "/me": http.Dispatch(sh, r)
     case r.path == "/file" || strings.HasPrefix(r.path, "/stream/"): stream(dp, dl, r)
+    case strings.HasPrefix(r.path, "/chunked/"): chunked(r)
+    case r.path == "/chunked-slow": slow(r)
+    case r.path == "/sse": sse(r)
+    case r.path == "/sse-body": sseFlat(r)
     case r.path == "/pipeline": http.Text("ok")
+    case r.path == "/upload": if r.method == "POST" { upload(r) } else { http.Status(405) }
     case r.path == "/echo": if r.method == "POST" { http.Response{status: 200, contentType: "application/octet-stream", body: r.body} } else { http.Status(405) }
     case r.path == "/baseline11": {
         body := if r.method == "POST" { num(string(r.body) catch "") } else { 0 }
@@ -152,6 +260,23 @@ func route(ds []Item, dp string, dl int, r http.Request) http.Response {
     case strings.HasPrefix(r.path, "/json/"): items(ds, r)
     default: http.Status(404)
     }
+}
+
+// upload は POST /upload の応答（部分ごとに name・filename〔nil は "-"〕・Content-Type・本文の長さ・本文の和〔Σ b[i] × (i + 1) mod 1000000007〕の 1 行）
+func upload(r http.Request) http.Response {
+    parts := http.Multipart(r) catch return http.Status(http.BadRequest)
+    mut out := ""
+    for i <- iter.Range(0, len(parts)) {
+        p := parts[i]
+        f := p.filename
+        fname := if f == nil { "-" } else { f }
+        mut sum := 0
+        for k <- iter.Range(0, len(p.body)) {
+            sum = (sum + int(p.body[k]) * (k + 1)) % 1000000007
+        }
+        out = out + "${p.name}\t${fname}\t${p.contentType}\t${convert.FormatInt(len(p.body))}\t${convert.FormatInt(sum)}\n"
+    }
+    return http.Text(out)
 }
 
 // workOf は work: の値（SRV_WORK が無いか空なら nil — 要求ごとに作業域を取る形）
@@ -170,9 +295,12 @@ func run(port string) error? {
     wk := workOf(sw, task.NewLocal((w mut flate.Work) => flate.Prepare(mut w)))
     mb0 := num(os.Getenv("SRV_MAXBODY") catch nil)
     mb := if mb0 > 0 { mb0 } else { 16384 }
+    sr := os.Getenv("STATIC_ROOT") catch nil
+    st := http.Static("/static", if sr != nil { sr } else { "/nonexistent" }, precompressed: true)
+    sh := sharedRoutes(if sr != nil { sr } else { "/nonexistent" })
     for l <- net.Listen("0.0.0.0:${port}")? {
         println("ready ${net.Port(l)}")
-        net.Serve(l, (c net.Conn) => http.ServeConn(c, (r http.Request) => route(ds, dp, dl, r), maxBody: mb, compress: http.Gzip{}, work: wk), conns: 40000)?
+        net.Serve(l, (c net.Conn) => http.ServeConn(c, (r http.Request) => route(ds, st, sh, dp, dl, r), maxBody: mb, compress: http.Gzip{}, work: wk), conns: 40000)?
     }
     return nil
 }

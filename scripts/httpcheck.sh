@@ -12,6 +12,8 @@ S2=${STAGE2:-out/stage2/sober2}
 W=$(mktemp -d)
 SP=
 trap '[ -n "$SP" ] && kill $SP 2>/dev/null; rm -rf "$W"' EXIT
+# 出所の動的オラクルの前提: srv は analyzer が受理したプログラム（共有のルートは源に届かない — check.ts の originEp が観測 ⊆ 導出を見る）
+"$S2" check testdata/httpcheck/srv.sober > "$W/check.log" 2>&1 || { echo "httpcheck: FAIL check — srv must pass the analyzer ($(head -c 300 "$W/check.log"))"; exit 1; }
 "$S2" build testdata/httpcheck/srv.sober --emit=elf --passes -o "$W/srv" > "$W/build.log" 2>&1 || { echo "httpcheck: FAIL build ($(head -c 200 "$W/build.log"))"; exit 1; }
 fail=0
 sum=
@@ -19,7 +21,8 @@ sum=
 # maxBody: で check.ts --echo-big — HttpArena の 8gbit の validate の 100 KB と上限ちょうどの 128 KiB を Content-Length と chunked で・超えた 1 本〔+1 B・1 MB〕は 413。
 # 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）
 for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072"; do
-    env $cfg DATASET_PATH=testdata/httpcheck/dataset.json "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
+    rm -rf "$W/static" && mkdir -p "$W/static/www"
+    env $cfg DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static/www" "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
     SP=$!
     port=
     for i in $(seq 100); do
@@ -32,7 +35,7 @@ for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOB
     else
         big=
         case "$cfg" in *SRV_MAXBODY*) big=--echo-big ;; esac
-        out=$(timeout 120 node --experimental-strip-types --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big 2>&1) || { echo "httpcheck: FAIL $cfg"; echo "$out" | tail -20; fail=1; }
+        out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big --static "$W/static" 2>&1) || { echo "httpcheck: FAIL $cfg"; echo "$out" | tail -20; fail=1; }
         sum="$sum [$cfg: $(echo "$out" | sed -n 's/^check: \([0-9]* passed, [0-9]* failed\).*/\1/p')]"
     fi
     kill $SP 2>/dev/null

@@ -1,0 +1,507 @@
+{
+  "package": "wrap",
+  "imports": [
+    {
+      "alias": null,
+      "path": "testdata/alias/lib",
+      "tok": 4
+    }
+  ],
+  "types": [
+    {
+      "name": "Work",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "lib.Work"
+        }
+      },
+      "tok": 7,
+      "span": {
+        "start": 6,
+        "end": 13
+      }
+    },
+    {
+      "name": "Res",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "lib.Res"
+        }
+      },
+      "tok": 14,
+      "span": {
+        "start": 13,
+        "end": 20
+      }
+    },
+    {
+      "name": "Step",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "lib.Step"
+        }
+      },
+      "tok": 21,
+      "span": {
+        "start": 20,
+        "end": 27
+      }
+    },
+    {
+      "name": "Acc",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "acc"
+        }
+      },
+      "tok": 28,
+      "span": {
+        "start": 27,
+        "end": 32
+      }
+    },
+    {
+      "name": "acc",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "last",
+            "type": {
+              "k": "name",
+              "name": "int"
+            },
+            "tok": 36
+          }
+        ]
+      },
+      "tok": 33,
+      "span": {
+        "start": 32,
+        "end": 41
+      }
+    },
+    {
+      "name": "W2",
+      "type_params": [],
+      "body": {
+        "k": "alias",
+        "type": {
+          "k": "name",
+          "name": "Work"
+        }
+      },
+      "tok": 42,
+      "span": {
+        "start": 41,
+        "end": 46
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "Feed",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "Work"
+          },
+          "mutable": true
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "lib",
+                  "tok": 57
+                },
+                "field": "Feed",
+                "tok": 59
+              },
+              "args": [
+                {
+                  "k": "mut_arg",
+                  "name": "w",
+                  "tok": 62
+                },
+                {
+                  "k": "ident",
+                  "name": "x",
+                  "tok": 64
+                }
+              ],
+              "tok": 60
+            }
+          }
+        ]
+      },
+      "tok": 47,
+      "bodiless": false,
+      "span": {
+        "start": 46,
+        "end": 69
+      },
+      "sig_end": 56
+    },
+    {
+      "name": "Mean",
+      "type_params": [],
+      "params": [
+        {
+          "name": "w",
+          "type": {
+            "k": "name",
+            "name": "W2"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Res"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "lib",
+                    "tok": 78
+                  },
+                  "field": "Mean",
+                  "tok": 80
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "w",
+                    "tok": 82
+                  }
+                ],
+                "tok": 81
+              }
+            ],
+            "tok": 77
+          }
+        ]
+      },
+      "tok": 70,
+      "bodiless": false,
+      "span": {
+        "start": 69,
+        "end": 87
+      },
+      "sig_end": 76
+    },
+    {
+      "name": "Value",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "Res"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "switch",
+                "subjects": [
+                  {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 97
+                  }
+                ],
+                "cases": [
+                  {
+                    "patterns": [
+                      {
+                        "k": "type",
+                        "bind": null,
+                        "variant": "lib.Ok",
+                        "fields": [
+                          {
+                            "name": "v",
+                            "sub": null,
+                            "tok": 104
+                          }
+                        ],
+                        "tok": 100
+                      }
+                    ],
+                    "body": {
+                      "stmts": [
+                        {
+                          "k": "expr",
+                          "expr": {
+                            "k": "ident",
+                            "name": "v",
+                            "tok": 107
+                          }
+                        }
+                      ]
+                    },
+                    "tok": 99
+                  }
+                ],
+                "default": {
+                  "stmts": [
+                    {
+                      "k": "expr",
+                      "expr": {
+                        "k": "unary",
+                        "op": "-",
+                        "operand": {
+                          "k": "int",
+                          "value": 1,
+                          "tok": 112
+                        },
+                        "tok": 111
+                      }
+                    }
+                  ]
+                },
+                "tok": 96
+              }
+            ],
+            "tok": 95
+          }
+        ]
+      },
+      "tok": 88,
+      "bodiless": false,
+      "span": {
+        "start": 87,
+        "end": 118
+      },
+      "sig_end": 94
+    },
+    {
+      "name": "Twice",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "Step"
+          },
+          "mutable": false
+        },
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "s",
+                  "tok": 130
+                },
+                "args": [
+                  {
+                    "k": "call",
+                    "callee": {
+                      "k": "ident",
+                      "name": "s",
+                      "tok": 132
+                    },
+                    "args": [
+                      {
+                        "k": "ident",
+                        "name": "x",
+                        "tok": 134
+                      }
+                    ],
+                    "tok": 133
+                  }
+                ],
+                "tok": 131
+              }
+            ],
+            "tok": 129
+          }
+        ]
+      },
+      "tok": 119,
+      "bodiless": false,
+      "span": {
+        "start": 118,
+        "end": 140
+      },
+      "sig_end": 128
+    },
+    {
+      "name": "Last",
+      "type_params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": {
+            "k": "name",
+            "name": "Acc"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "selector",
+                "base": {
+                  "k": "ident",
+                  "name": "a",
+                  "tok": 149
+                },
+                "field": "last",
+                "tok": 151
+              }
+            ],
+            "tok": 148
+          }
+        ]
+      },
+      "tok": 141,
+      "bodiless": false,
+      "span": {
+        "start": 140,
+        "end": 155
+      },
+      "sig_end": 147
+    },
+    {
+      "name": "NewAcc",
+      "type_params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Acc"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "acc",
+                "elems": [
+                  {
+                    "key": "last",
+                    "value": {
+                      "k": "ident",
+                      "name": "x",
+                      "tok": 168
+                    }
+                  }
+                ],
+                "tok": 164,
+                "type_args": []
+              }
+            ],
+            "tok": 163
+          }
+        ]
+      },
+      "tok": 156,
+      "bodiless": false,
+      "span": {
+        "start": 155,
+        "end": 173
+      },
+      "sig_end": 162
+    }
+  ],
+  "consts": []
+}

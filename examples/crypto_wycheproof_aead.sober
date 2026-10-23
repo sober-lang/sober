@@ -3,6 +3,7 @@ package main
 // Wycheproof（testdata/wycheproof/README.md）の AEAD を std/crypto に通す（report-793 — ChaCha20-Poly1305 325 件）。
 // valid = Seal の出力（暗号文 ‖ tag）が一致し Open が平文を返す・invalid = Open が拒否する（nonce の長さ違いは Seal も BadSize）。食い違った tcId を印字する
 
+import "std/crypto"
 import "std/crypto/chacha20poly1305"
 import "std/hex"
 import "std/iter"
@@ -67,7 +68,7 @@ func main() {
             sealed, se := chacha20poly1305.Seal(key, iv, aad, unhex(t.msg))
             sealOk := se == nil && hex.Format(sealed) == want
             pt, oe := chacha20poly1305.Open(key, iv, aad, unhex(want))
-            openOk := oe == nil && hex.Format(pt) == t.msg
+            openOk := oe == nil && crypto.Equal(pt, unhex(t.msg))
             valid := t.result == "valid"
             ok := if valid { sealOk && openOk } else { oe != nil }
             if !ok {

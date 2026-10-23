@@ -12,7 +12,7 @@
 // node / go は開発時依存（GNU as オラクルと同格）。ビルドには使わない。
 import { writeFileSync } from "node:fs";
 
-type Case = [fn: string, a: string, b: string | number];
+type Case = [fn: string, ...args: (string | number)[]];
 const cases: Case[] = [
   // HasPrefix
   ["HasPrefix", "hello world", "hello"], ["HasPrefix", "hello world", "world"],
@@ -46,29 +46,63 @@ const cases: Case[] = [
   // CutLast（Go に無い — 双子は strings.LastIndex で同じ形を書く）
   ["CutLast", "a/b/c", "/"], ["CutLast", "abc", "/"], ["CutLast", "/abc", "/"], ["CutLast", "abc/", "/"], ["CutLast", "abc", ""],
   ["CutLast", "", ""], ["CutLast", "aXXbXXc", "XX"], ["CutLast", "あ/い/う", "/"], ["CutLast", "aaa", "aa"],
+  // ── 0.7.0 便 2（2026-10-22）。空白と大小は ASCII だけを見るので、Go（Unicode）と食い違う非 ASCII の大小・空白はここに置かない
+  // （食い違いの約束は testdata/stdtest/stdstrings の表で名指し）。非 ASCII は大小の無い文字（あいう）と UTF-8 の境目の確認にだけ使う
+  // TrimSuffix
+  ["TrimSuffix", "a.go", ".go"], ["TrimSuffix", "a.go", ".rs"], ["TrimSuffix", "abc", ""], ["TrimSuffix", "", ""],
+  ["TrimSuffix", "bc", "abc"], ["TrimSuffix", "あいう", "う"], ["TrimSuffix", "abcabc", "abc"],
+  // LastIndex
+  ["LastIndex", "go gopher", "go"], ["LastIndex", "go gopher", "rodent"], ["LastIndex", "abc", ""], ["LastIndex", "", ""],
+  ["LastIndex", "", "a"], ["LastIndex", "aaa", "aa"], ["LastIndex", "あいあい", "あ"], ["LastIndex", "ab", "abc"],
+  // Split（片の数と "|" で繋いだ片 — 助け手 showSplit）
+  ["Split", "a,b,c", ","], ["Split", "a,b,,c,", ","], ["Split", "", ","], ["Split", "abc", ""], ["Split", "", ""],
+  ["Split", "abc", "abc"], ["Split", "abc", "x"], ["Split", "aXXbXXXc", "XX"], ["Split", "あいう", ""], ["Split", "a,あ,", ","],
+  ["Split", "aaa", "a"], ["Split", "aaaa", "aa"], ["Split", "€𝄞x", ""],
+  // Fields
+  ["Fields", "  foo bar  baz   "], ["Fields", ""], ["Fields", " \t\n\r "], ["Fields", "a"], ["Fields", "\ta\nb\rc"],
+  ["Fields", "あ い\tう"], ["Fields", "x  "],
+  // TrimSpace
+  ["TrimSpace", " \t\n Hello, Gophers \n\t\r\n"], ["TrimSpace", ""], ["TrimSpace", "   "], ["TrimSpace", "a b"],
+  ["TrimSpace", "\r\nx\t"], ["TrimSpace", " あ "],
+  // Replace（n < 0 = 全部・0 = そのまま・old が空 = 頭と各文字の後ろ）
+  ["Replace", "oink oink oink", "k", "ky", 2], ["Replace", "oink oink oink", "oink", "moo", -1], ["Replace", "abc", "", "-", -1],
+  ["Replace", "abc", "", "-", 2], ["Replace", "", "", "x", -1], ["Replace", "", "", "x", 0], ["Replace", "abc", "b", "", -1],
+  ["Replace", "aaa", "a", "aa", -1], ["Replace", "aaaa", "aa", "b", 1], ["Replace", "abc", "x", "y", -1], ["Replace", "abc", "b", "B", 0],
+  ["Replace", "あいう", "", "|", -1], ["Replace", "あいあい", "い", "う", -1], ["Replace", "abc", "abc", "", -1], ["Replace", "abab", "ab", "ab", -1],
+  // ToLower / ToUpper（ASCII と大小の無い文字だけ）
+  ["ToLower", "Gopher"], ["ToLower", ""], ["ToLower", "ABC-XYZ@[`{"], ["ToLower", "already"], ["ToLower", "あA"],
+  ["ToUpper", "Gopher"], ["ToUpper", ""], ["ToUpper", "abc-xyz@[`{"], ["ToUpper", "ALREADY"], ["ToUpper", "あa"],
+  // EqualFold（ASCII の大小だけ）
+  ["EqualFold", "Go", "GO"], ["EqualFold", "Go", "Ga"], ["EqualFold", "", ""], ["EqualFold", "a", ""], ["EqualFold", "@", "`"],
+  ["EqualFold", "[", "{"], ["EqualFold", "Content-Type", "content-type"], ["EqualFold", "あA", "あa"], ["EqualFold", "abc", "abcd"],
 ];
 
-const q = (s: string) => JSON.stringify(s); // 両言語とも "..." のエスケープで足りる範囲に留める
+const q = (s: string) => JSON.stringify(s); // 両言語とも "..." のエスケープで足りる範囲に留める（\t \n \r まで — Sober の文字列に \v \f の escape は無いので、その 2 つの空白は stdstrings の表で）
 const arg = (b: string | number) => (typeof b === "number" ? String(b) : q(b));
+const args = (xs: (string | number)[]) => xs.map(arg).join(", ");
 
 // 3 つの結果を返す Cut / CutLast は助け手（showCut / showCutLast）が並べて印字する（両言語とも空白区切り）
-const multi = (f: string) => f === "Cut" || f === "CutLast";
+// 片の列を返す Split / Fields は助け手（showSplit / showFields）が片の数と "|" で繋いだ片を印字する
+const multi = (f: string) => f === "Cut" || f === "CutLast" || f === "Split" || f === "Fields";
 const sober = [
   "package main", "", "// Go の strings パッケージとの突き合わせ。生成物 — scripts/strings_oracle.ts から再生成する",
   "", 'import "std/strings"', "",
   "func showCut(s string, sep string) {", "    a, b, ok := strings.Cut(s, sep)", "    println(a, b, ok)", "}", "",
   "func showCutLast(s string, sep string) {", "    a, b, ok := strings.CutLast(s, sep)", "    println(a, b, ok)", "}", "",
+  "func showSplit(s string, sep string) {", "    ps := strings.Split(s, sep)", "    println(len(ps), strings.Join(ps, \"|\"))", "}", "",
+  "func showFields(s string) {", "    ps := strings.Fields(s)", "    println(len(ps), strings.Join(ps, \"|\"))", "}", "",
   "func main() {",
-  ...cases.map(([f, a, b]) => multi(f) ? `    show${f}(${q(a)}, ${arg(b)})` : `    println(strings.${f}(${q(a)}, ${arg(b)}))`),
+  ...cases.map(([f, ...xs]) => multi(f) ? `    show${f}(${args(xs)})` : `    println(strings.${f}(${args(xs)}))`),
   "}", "",
 ].join("\n");
 
 // IndexByte の c は両言語とも byte（範囲外の定数は Sober でもコンパイルエラー — std 命名規則 5）
-const goCall = ([f, a, b]: Case) => f === "CutLast" ? `cutLast(${q(a)}, ${arg(b)})` : `strings.${f}(${q(a)}, ${arg(b)})`;
+const goCall = ([f, ...xs]: Case) => f === "CutLast" ? `cutLast(${args(xs)})` : multi(f) && f !== "Cut" ? `show(strings.${f}(${args(xs)}))` : `strings.${f}(${args(xs)})`;
 const go = [
   "package main", "", 'import (\n\t"fmt"\n\t"strings"\n)', "",
   "func cutLast(s, sep string) (string, string, bool) {",
   "\ti := strings.LastIndex(s, sep)", "\tif i < 0 {", "\t\treturn s, \"\", false", "\t}", "\treturn s[:i], s[i+len(sep):], true", "}", "",
+  "func show(ps []string) string {", "\treturn fmt.Sprint(len(ps), \" \", strings.Join(ps, \"|\"))", "}", "",
   "func main() {",
   ...cases.map((c) => `\tfmt.Println(${goCall(c)})`),
   "}", "",
