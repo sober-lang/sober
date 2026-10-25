@@ -38,29 +38,29 @@
                 "callee": {
                   "k": "ident",
                   "name": "sysFSqrt",
-                  "tok": 54
+                  "tok": 59
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "x",
-                    "tok": 56
+                    "tok": 61
                   }
                 ],
-                "tok": 55
+                "tok": 60
               }
             ],
-            "tok": 53
+            "tok": 58
           }
         ]
       },
-      "tok": 46,
+      "tok": 51,
       "bodiless": false,
       "span": {
         "start": 45,
-        "end": 61
+        "end": 66
       },
-      "sig_end": 52
+      "sig_end": 57
     },
     {
       "name": "Abs",
@@ -91,7 +91,7 @@
                 "callee": {
                   "k": "ident",
                   "name": "FromBits",
-                  "tok": 70
+                  "tok": 80
                 },
                 "args": [
                   {
@@ -102,39 +102,39 @@
                       "callee": {
                         "k": "ident",
                         "name": "Bits",
-                        "tok": 72
+                        "tok": 82
                       },
                       "args": [
                         {
                           "k": "ident",
                           "name": "x",
-                          "tok": 74
+                          "tok": 84
                         }
                       ],
-                      "tok": 73
+                      "tok": 83
                     },
                     "rhs": {
                       "k": "int",
                       "value": 9223372036854775807,
-                      "tok": 77
+                      "tok": 87
                     },
-                    "tok": 76
+                    "tok": 86
                   }
                 ],
-                "tok": 71
+                "tok": 81
               }
             ],
-            "tok": 69
+            "tok": 79
           }
         ]
       },
-      "tok": 62,
+      "tok": 72,
       "bodiless": false,
       "span": {
-        "start": 61,
-        "end": 82
+        "start": 66,
+        "end": 92
       },
-      "sig_end": 68
+      "sig_end": 78
     },
     {
       "name": "Bits",
@@ -165,29 +165,29 @@
                 "callee": {
                   "k": "ident",
                   "name": "sysFBits",
-                  "tok": 91
+                  "tok": 106
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "x",
-                    "tok": 93
+                    "tok": 108
                   }
                 ],
-                "tok": 92
+                "tok": 107
               }
             ],
-            "tok": 90
+            "tok": 105
           }
         ]
       },
-      "tok": 83,
+      "tok": 98,
       "bodiless": false,
       "span": {
-        "start": 82,
-        "end": 98
+        "start": 92,
+        "end": 113
       },
-      "sig_end": 89
+      "sig_end": 104
     },
     {
       "name": "FromBits",
@@ -218,29 +218,29 @@
                 "callee": {
                   "k": "ident",
                   "name": "sysFFromBits",
-                  "tok": 107
+                  "tok": 127
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "b",
-                    "tok": 109
+                    "tok": 129
                   }
                 ],
-                "tok": 108
+                "tok": 128
               }
             ],
-            "tok": 106
+            "tok": 126
           }
         ]
       },
-      "tok": 99,
+      "tok": 119,
       "bodiless": false,
       "span": {
-        "start": 98,
-        "end": 114
+        "start": 113,
+        "end": 134
       },
-      "sig_end": 105
+      "sig_end": 125
     }
   ],
   "consts": [],

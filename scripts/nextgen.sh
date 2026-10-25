@@ -3,10 +3,10 @@
 # stage2 の rt は stage2 を建てた boot の lower が下ろすので、rt を触った便は鎖の段を足すまで compiler 自身の並列の道を通らない
 # （L1-R の park の穴 — 9aac6f67 — は鎖の段 35 で初めて露出した）。ここでは段を待たずに:
 #   1. B  = stage2 で今の木を建てる（lower = 今の木・rt = stage2 の）
-#   2. B2 = B で今の木を建てる（rt = 今の木 + 検査 --rt-mutant=19: rt.slot_new が深度を飛ばしたら exit 81）
+#   2. B2 = B で今の木を建てる（rt = 今の木 — rt.slot_new の常設の検査つき: 深度を飛ばしたら exit 81・report-1088）
 #   3. B2 の自己 build: W1 ≡ W2（1 本の経路）≡ W8 ≡ W8（1 本の経路）の ELF・全部 rc 0
 #   4. B2 の自己 check: W1 ≡ W8 の判定
-#   5. 網の自己検査: 変異 20（park が task の基底より深い region を全部手放して毒を塗る）・21（read_file を今の深度を宛先へ切り替えて呼ぶ旧形 — report-1086 の穴）— どちらも 19 の検査つき — で
+#   5. 網の自己検査: 変異 20（park が task の基底より深い region を全部手放して毒を塗る）・21（read_file を今の深度を宛先へ切り替えて呼ぶ旧形 — report-1086 の穴）— どちらも常設の検査つき — で
 #      建てた B2 では W2（1 本の経路）の自己 build が割れる（rc ≠ 0 か ELF の食い違い）
 # 実行ファイルは毎回別の名前で建てる（M:N で走らせた直後に同じパスへ書くと ETXTBSY — NOTES の地雷）
 set -uo pipefail
@@ -23,11 +23,11 @@ cp -r src/std "$W/tree/std"
 T=$W/tree
 (cd "$T" && SOBER_WORKERS=1 "$S2" build app/main.sober --emit=elf --passes -o "$W/B") > "$W/b.log" 2>&1 || { echo "FAIL: nextgen — stage2 で今の木が建たない: $(head -c 300 "$W/b.log")"; exit 1; }
 chmod +x "$W/B"
-gen() { # gen <名前> <変異の番号>: B で今の木を変異つきで建てる
-    (cd "$T" && SOBER_WORKERS=1 "$W/B" build app/main.sober "--rt-mutant=$2" -o "$W/$1") > "$W/$1.log" 2>&1 || { echo "FAIL: nextgen — B で $1 が建たない: $(head -c 300 "$W/$1.log")"; return 1; }
+gen() { # gen <名前> [変異の番号]: B で今の木を（変異つきで）建てる
+    (cd "$T" && SOBER_WORKERS=1 "$W/B" build app/main.sober ${2:+"--rt-mutant=$2"} -o "$W/$1") > "$W/$1.log" 2>&1 || { echo "FAIL: nextgen — B で $1 が建たない: $(head -c 300 "$W/$1.log")"; return 1; }
     chmod +x "$W/$1"
 }
-gen B2 19 || exit 1
+gen B2 || exit 1
 self() { # self <バイナリ> <出力の名前> <環境…>: 自己 build（rc を返す）
     local b=$1 o=$2
     shift 2
@@ -58,4 +58,4 @@ done
 if [ "$fail" -gt 0 ]; then
     exit 1
 fi
-echo "nextgen: ok（B2 = 今の rt + 検査 — 自己 build W1 ≡ W2 ≡ W8 ≡ W8 1 本・自己 check W1 ≡ W8・変異 20 / 21 は割れる）"
+echo "nextgen: ok（B2 = 今の rt — 自己 build W1 ≡ W2 ≡ W8 ≡ W8 1 本・自己 check W1 ≡ W8・変異 20 / 21 は割れる）"

@@ -1357,7 +1357,7 @@ func yBuiltin(st mut S, name StrRef, args ListRef) int {
         sk := SysKey(mut st, st.ypk, name)
         if sk != 0 {
             r := SysResult(sk)
-            return if r == 'b' { yMk(mut st, YSlice, yByte(), 0, 0) } else if r == 'm' { yMk(mut st, YSlice, yBase(YInt), 1, 0) } else if r == 'f' { yFloat() } else { yBase(YInt) }
+            return if r == 'b' { yMk(mut st, YSlice, yByte(), 0, 0) } else if r == 'm' { yMk(mut st, YSlice, yBase(YInt), 1, 0) } else if r == 'x' { yMk(mut st, YSlice, yByte(), 1, 0) } else if r == 'f' { yFloat() } else { yBase(YInt) }
         }
         if strIs(mut st, name, "bytesToString") {
             return yBase(YString)

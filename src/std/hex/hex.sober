@@ -8,6 +8,7 @@ import "std/iter"
 // 逆向きは Parse（language.md 34 節の Format ⇄ Parse の族）。表引きなので秘密の値（鍵）には使わない（定数時間でない — std/crypto の規律の外）
 //
 //     hex.Format(hash.Sha256(bytes("abc")))   // "ba7816bf…"
+@effects()
 func Format(b []byte) string {
     digits := bytes("0123456789abcdef")
     mut out := mut []byte{}
@@ -24,6 +25,7 @@ type Bad error
 
 // 16 進の綴り s のバイト列（大文字・小文字とも受ける — 暗号のテストベクタの読み）
 @errors(Bad)
+@effects()
 func Parse(s string) ([]byte, error?) {
     b := bytes(s)
     if len(b) % 2 != 0 {

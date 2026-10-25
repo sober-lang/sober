@@ -1,0 +1,11 @@
+package main
+
+// Security: leaked files — the statement right after an Open must be its defer io.Close (docs/guide/security.md)
+
+import "std/io"
+
+func main() {
+    f := io.Open("testdata/io/hello.txt") catch return
+    b := io.ReadAll(f) catch return
+    println(len(b))
+}

@@ -12,9 +12,12 @@ import "std/internal/deflate"
 // 同じ入力・同じ level なら常に同じバイト列（決定的 — 大きさの黄金で照合できる）。作業域は呼ぶたびに
 // 入力の長さに合わせて取る — 何度も符号化する task は EncodeWith でワーカー局所の作業域を借りる（下の Work）。
 //
-// 形（zlib の deflate.c と同じ設計 — ハッシュは Go と同じ 4 バイト・lv6 の lazy の閾値だけ 12）: 4 バイトのハッシュ鎖（窓 32 KiB）で一致を探し、level ごとの設定表（鎖の長さ・lazy の閾値・十分な長さ）で
+// 形（zlib の deflate.c と同じ設計 — ハッシュは Go と同じ 4 バイト・lv6 の lazy の閾値だけ 12・4〜6 は下の挿入の省略）: 4 バイトのハッシュ鎖（窓 32 KiB）で一致を探し、level ごとの設定表（鎖の長さ・lazy の閾値・十分な長さ）で
 // 探す深さを決める — 1〜3 は貪欲（一致を見つけたら取る）・4〜9 は lazy（次の位置にもっと長い一致があれば 1 文字送る）。記号を 16383 個まで
 // 溜めてブロックに切り、ブロックごとに動的 Huffman・固定 Huffman・stored の最小で書く（動的 Huffman の木は miniz と同じ作り方 — lengths）。対は Decode
+//
+// 4〜6 は長い一致（長さ > 8・距離 ≥ 長さ）の中の位置を鎖に足さない（末尾の 2 位置だけ）— zlib の同じ level より速く、率はわずかに悪い
+// （json の本文で +1% 前後・短い一致が主の入力で +10% 前後）。率を優先するなら 7 以上（zlib と同じ探し方）
 @effects(!io, !block, !nondet)
 func Encode(data []byte, level int) []byte {
     mut w := Work{}

@@ -72,7 +72,7 @@ func usageText() string {
     "  watch <entry>                         re-check on every change\n" +
     "  fmt <file>                            print the formatted source\n" +
     "  iface <entry> [--pkg <path>]          print package interfaces (.sobi)\n" +
-    "  fix [--effects] [--errors] <entry>    write derived @effects / @errors declarations\n" +
+    "  fix [--effects] [--errors] [--std <dir>] <entry>   write derived @effects / @errors declarations\n" +
     "  lex <file> | parse (--ast-json <file> | --loader-json <entry>)   front-end dumps\n" +
     "  help | version"
 }
@@ -471,6 +471,7 @@ func cmdBuild(args []string) int {
     mut dumpIr := false
     mut noVec := false
     mut noSpec := false
+    mut noRflow := false
     mut noOpt := false
     mut passes := false
     mut typer := 0
@@ -519,6 +520,10 @@ func cmdBuild(args []string) int {
             // ベクトル化（第三便のスパイク）を外す — 網の vectorized ≟ scalar
             noVec = true
             i += 1
+        } else if a == "--no-rflow" {
+            // 戻り値へ流れる関数の region の省略（C1）を外す — 網の 省略 ≟ なし
+            noRflow = true
+            i += 1
         } else if a == "--no-spec" {
             // 定数引数の特化（展開便 段 1）を外す — 網の 特化 ≟ なし
             noSpec = true
@@ -557,7 +562,7 @@ func cmdBuild(args []string) int {
             // テストのビルド（`sober test` — entry は package のディレクトリ。loader.LoadTestFs が合成の main を足す）
             test = true
             i += 1
-        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" || a == "--rt-mutant=12" || a == "--rt-mutant=15" || a == "--rt-mutant=16" || a == "--rt-mutant=17" || a == "--rt-mutant=19" || a == "--rt-mutant=20" || a == "--rt-mutant=21" {
+        } else if a == "--rt-mutant=1" || a == "--rt-mutant=2" || a == "--rt-mutant=3" || a == "--rt-mutant=4" || a == "--rt-mutant=5" || a == "--rt-mutant=6" || a == "--rt-mutant=7" || a == "--rt-mutant=8" || a == "--rt-mutant=9" || a == "--rt-mutant=10" || a == "--rt-mutant=11" || a == "--rt-mutant=12" || a == "--rt-mutant=13" || a == "--rt-mutant=14" || a == "--rt-mutant=15" || a == "--rt-mutant=16" || a == "--rt-mutant=17" || a == "--rt-mutant=20" || a == "--rt-mutant=21" || a == "--rt-mutant=22" || a == "--rt-mutant=23" || a == "--rt-mutant=24" {
             // 開発用: M:N の rt の変異（段 6 P4-4 — schedfuzz の自己検査: 1 = 未回収の失敗を到着順で選ぶ・2 = 待ちの登録と起こしを素の store / load に。
             // 3 = キャンセルの検査点を置かない — 段 6 P4-6 の税率の計測）
             // 4 = 計測の数え口（rt.mn_stat）・5 = スロットを返すときの MADV_DONTNEED を省く・6 = 盗み手が被害者の鍵を取らない
@@ -566,9 +571,8 @@ func cmdBuild(args []string) int {
             // 11 = map の string 鍵を旧表現（セル [鍵][tag][値] — compiler/lower/maprepr.sober の MR_BASE）で — 表現の差分オラクル（scripts/maprepr.sh）
             // 15 = lease の使用中の印を見ない（窓の中で譲った task の置き場を別の窓が共有する — lower/lease.sober・schedfuzz の自己検査）
             // 16 = sleep の時計の表の容量を 2 に（溢れの道 = IORING_OP_TIMEOUT を通す）・17 = 表の篩い下げで最小の子を選ばない（網の自己検査 — report-ct4）
-            // 19 = 検査つきの rt（rt.slot_new が d ≠ own + 1 なら exit 81 — 深度を飛ばした enter は間の欄の他人のスロットを自前にする。scripts/nextgen.sh の検出器）・
-            // 20 = park が task の基底より深い region を全部手放して毒で塗る・21 = read_file / read_dir を今の深度を宛先へ切り替えて呼ぶ旧形（report-1086 — nextgen の網の自己検査・20 / 21 も 19 の検査つき）
-            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else if a == "--rt-mutant=15" { 15 } else if a == "--rt-mutant=16" { 16 } else if a == "--rt-mutant=17" { 17 } else if a == "--rt-mutant=19" { 19 } else if a == "--rt-mutant=20" { 20 } else if a == "--rt-mutant=21" { 21 } else { 12 }
+            // 20 = park が task の基底より深い region を全部手放して毒で塗る・21 = read_file / read_dir を今の深度を宛先へ切り替えて呼ぶ旧形（report-1086 — nextgen の網の自己検査。19〔slot_new の検査〕は常設の rt に移した — report-1088）
+            mutant = if a == "--rt-mutant=1" { 1 } else if a == "--rt-mutant=2" { 2 } else if a == "--rt-mutant=3" { 3 } else if a == "--rt-mutant=4" { 4 } else if a == "--rt-mutant=5" { 5 } else if a == "--rt-mutant=6" { 6 } else if a == "--rt-mutant=7" { 7 } else if a == "--rt-mutant=8" { 8 } else if a == "--rt-mutant=9" { 9 } else if a == "--rt-mutant=10" { 10 } else if a == "--rt-mutant=11" { 11 } else if a == "--rt-mutant=13" { 13 } else if a == "--rt-mutant=14" { 14 } else if a == "--rt-mutant=15" { 15 } else if a == "--rt-mutant=16" { 16 } else if a == "--rt-mutant=17" { 17 } else if a == "--rt-mutant=20" { 20 } else if a == "--rt-mutant=21" { 21 } else if a == "--rt-mutant=22" { 22 } else if a == "--rt-mutant=23" { 23 } else if a == "--rt-mutant=24" { 24 } else { 12 }
             i += 1
         } else if a == "--map-stat" {
             // 開発用: map の成長の計数（rt の変異 13 に相乗り — 終わりに `mapstat <番号> <バイト>` を stderr へ — 番号は lower/panic.sober の MS_*・SOBER_WORKERS=1 で使う — report-625 / 631）
@@ -632,7 +636,7 @@ func cmdBuild(args []string) int {
         return usage()
     }
     // 開発の口（計器・変異・差分オラクル）は --emit の無い形も従来どおり（.ll / 標準出力）— 既定の切り替えは素の build（entry・-o・--no-opt・--passes・--test）だけ
-    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noVfy
+    devFlag := typer > 0 || trace || traceEff || probe || cutStat || callStat || ubfStat || frStat || mutant > 0 || lay != 0 || stopAt > 0 || dumpIr || copyBe || noVec || noSpec || noRflow || noVfy
     if !emitSet && !devFlag {
         // 既定 = bin/sober の既定と同じ形（--emit=elf + --no-opt でなければ --passes）。-o が無ければ a.out へ（ELF を標準出力へ流さない）
         if oi < 0 {
@@ -707,11 +711,11 @@ func cmdBuild(args []string) int {
     vm := if noVfy { lower.VfyNone } else if vEach { lower.VfyEach } else { lower.VfyLast }
     // 照合の経路（roundtrip・1 本の経路）は検証の掛け方を受け取る — gates は SOBER_VERIFY=each を立てるので、下の ElfStats へ先に分岐すると
     // 照合の経路が黙って既定の経路になっていた
-    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && buildRoundtrip() {
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !noRflow && buildRoundtrip() {
         out, berr := lower.ElfPassesRoundtrip(p, vm)
         return emitExe(p, std, args, oi, out, berr)
     }
-    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !buildPar() {
+    if elfOut && passes && !copyBe && !noOpt && stopAt == 0 && !dumpIr && !noVec && !noSpec && !noRflow && !buildPar() {
         out, berr := lower.ElfPassesSeq(p, vm)
         return emitExe(p, std, args, oi, out, berr)
     }
@@ -729,6 +733,10 @@ func cmdBuild(args []string) int {
     }
     if elfOut && noOpt {
         out, berr := lower.ElfRaw(p)
+        return emitExe(p, std, args, oi, out, berr)
+    }
+    if elfOut && passes && noRflow {
+        out, berr := lower.ElfPassesNoRflow(p)
         return emitExe(p, std, args, oi, out, berr)
     }
     if elfOut && passes && noSpec {
@@ -2136,16 +2144,23 @@ func trimNl(b []byte) string {
     return string(b[0:n]) catch ""
 }
 
-// cmdFix は `sober fix [--effects] [--errors] <entry>`（effect の波 段 5a-3 — 宣言の書き換え器 analyzer.FixPlan）: 導出から `@effects` / `@errors` の宣言の行を
-// std の外のファイルの公開関数に書く（どちらのフラグも無ければ両方）。書いたファイルごとに `fix: <path>: <件数>` を出す。漏れ（導出 ⊄ 宣言）は書き換えない —
+// cmdFix は `sober fix [--effects] [--errors] [--std <dir>] <entry>`（effect の波 段 5a-3 — 宣言の書き換え器 analyzer.FixPlan）: 導出から `@effects` / `@errors` の宣言の行を
+// std の外のファイルの公開関数に書く（どちらのフラグも無ければ両方）。--std は std の強制の掛かる公開関数にも正規形を書き、焼き込みの std のファイルを
+// <dir>/std/… へ書く（段 5b — std の宣言を手で書かない道具）。書いたファイルごとに `fix: <path>: <件数>` を出す。漏れ（導出 ⊄ 宣言）は書き換えない —
 // 続けて `sober check` が名指す
 func cmdFix(args []string) int {
     mut effects := false
     mut errors := false
     mut entry := ""
-    for i <- iter.Range(2, len(args)) {
+    mut stdDir := ""
+    mut i := 2
+    while i < len(args) {
         a := args[i]
-        if a == "--effects" {
+        i += 1
+        if a == "--std" && i < len(args) {
+            stdDir = args[i]
+            i += 1
+        } else if a == "--effects" {
             effects = true
         } else if a == "--errors" {
             errors = true
@@ -2167,9 +2182,10 @@ func cmdFix(args []string) int {
     if lerr != nil {
         return fail(loadDiag(p, std, lerr))
     }
-    fs := analyzer.FixPlan(p, effects, errors)
+    fs := analyzer.FixPlan(p, effects, errors, stdDir != "")
     for f <- iter.Range(0, len(p.file_path)) {
-        if f < len(p.file_std) && p.file_std[f] {
+        isStd := f < len(p.file_std) && p.file_std[f]
+        if isStd && stdDir == "" {
             continue
         }
         mut n := 0
@@ -2179,9 +2195,15 @@ func cmdFix(args []string) int {
             }
         }
         if n > 0 {
-            path := p.file_path[f]
-            src := io.ReadFile(path) catch return fail("cannot read ${path}")
+            path := if isStd { stdDir + "/" + p.file_path[f] } else { p.file_path[f] }
+            src, ok := loader.SourceFs(p, f, std)
+            if !ok {
+                return fail("cannot read ${p.file_path[f]}")
+            }
             out := fixApply(src, fs, f)
+            if isStd {
+                mkdirs(parentOf(path))
+            }
             werr := io.WriteFile(path, out)
             if werr != nil {
                 return fail("cannot write ${path}")

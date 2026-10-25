@@ -364,7 +364,7 @@ func callTy(st mut S, e NodeRef, eb int, ef int) TyRef {
         sk := SysKey(mut st, st.curPkg, name)
         if sk != 0 {
             r := SysResult(sk)
-            return if r == 'f' { tFloat(mut st) } else if r == 'i' { st.tInt } else if r == 'm' { tSlice(mut st, true, st.rdepth - 1, st.tInt, false) } else { tSlice(mut st, false, st.rdepth - 1, tByte(mut st), false) }
+            return if r == 'f' { tFloat(mut st) } else if r == 'i' { st.tInt } else if r == 'm' { tSlice(mut st, true, st.rdepth - 1, st.tInt, false) } else if r == 'x' { tSlice(mut st, true, st.rdepth - 1, tByte(mut st), false) } else { tSlice(mut st, false, st.rdepth - 1, tByte(mut st), false) }
         }
         if strIs(mut st, name, "bytesToString") && IsStdPkg(mut st, st.curPkg) {
             if na != 1 {

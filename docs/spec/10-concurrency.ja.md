@@ -166,7 +166,7 @@ C-17. `budget:`（Spawn・Map・Run の末尾の名前つき引数 — `budget: 
 拒否: [`examples/task_neg_budget.sober`](../../examples/task_neg_budget.sober)
 決定: [language.md 11 節](../language.md)
 
-C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
+C-18. `task.NewPool(budget:, parent:)` は名前つきの天井の節。`task.SpawnIn(s, pool, g)` だけは逐次にせず、入れなければ `(nil, task.Shed{})` を返す（受けられない、という値）。`task.Ledger()` は天井・計上・逐次化・shed・失敗・死の数と、スケジューラの `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）・`aged`（待ちの上限が効いた回数）の読み口で、`task.MarkFailed(pool)` は境界の失敗を数える。
 例: [`examples/task_shed.sober`](../../examples/task_shed.sober)・[`examples/task_pool_seq.sober`](../../examples/task_pool_seq.sober)
 決定: [language.md 11 節](../language.md)
 

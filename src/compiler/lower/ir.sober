@@ -1040,7 +1040,7 @@ func printOp(st mut St, out mut []byte, i InsRef) {
         return
     case OpSyscall:
         if b == CY_B {
-            obuf.Lit(mut out, "cycles()")
+            obuf.Lit(mut out, if c == 1 { "tsc()" } else { "cycles()" })
             return
         }
         if b == MM_B {

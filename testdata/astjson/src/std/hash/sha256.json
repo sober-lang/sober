@@ -48,32 +48,32 @@
                   "base": {
                     "k": "ident",
                     "name": "sha256",
-                    "tok": 19
+                    "tok": 24
                   },
                   "field": "Sum256",
-                  "tok": 21
+                  "tok": 26
                 },
                 "args": [
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 23
+                    "tok": 28
                   }
                 ],
-                "tok": 22
+                "tok": 27
               }
             ],
-            "tok": 18
+            "tok": 23
           }
         ]
       },
-      "tok": 7,
+      "tok": 12,
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 28
+        "end": 33
       },
-      "sig_end": 17
+      "sig_end": 22
     }
   ],
   "consts": []

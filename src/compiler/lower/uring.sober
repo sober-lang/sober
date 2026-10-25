@@ -44,6 +44,11 @@ const UR_DLQ = 49     // 期限つきの待ち手の鎖の頭（TC_AWNEXT — ne
 const UR_TS = 50      // enter の timeout（__kernel_timespec 2 語）
 const UR_GEA = 52     // io_uring_getevents_arg（3 語 — sigmask 0・大きさ 0・ts の番地）
 const UR_NSQ = 256
+// 頭の取り込み（D2 の例外 — report-1104 / 1105）: net の ring は走れる task が尽きたときだけ enter するが、未提出が UR_POKE 本に届いたら
+// mn_next の頭で眠らずに提出と取り込み（GETEVENTS・min_complete 0）+ 時計の表の満了。1 回の enter で取り込む束が作業集合の深さで、束が深いと
+// 4096 接続で cycles / 要求が 256 接続の 2.5 倍（report-675〜678 の崖）— 小刻みにすると L2 に収まる。取り込んだ task は走れる積みの前（LIFO — 熱いうちに）。
+// 棄てた案: 取り込んだ束を古い束の後ろへ（FIFO — 利得が消える）・受けの起こしだけ後ろへ（1024 の尾は戻るが async の HWM +50 MB）・閾値を未完了の数に比例（同値）
+const UR_POKE = 8
 const UR_NCQ = 4096
 const UR_NETF = 12296 // IORING_SETUP_CQSIZE | SINGLE_ISSUER | DEFER_TASKRUN
 const UD_CANCEL = 3   // ASYNC_CANCEL の user_data（完了は捨てる）
@@ -378,7 +383,7 @@ func urNetGate(st mut St, rec int, wait int) int {
     rp := itop(mut st, rec)
     zero := iconst(mut st, 0)
     unet := cmp(mut st, CNe, load(mut st, rp, UR_NET), zero)
-    bRet := branchIf(mut st, bin(mut st, BAnd, unet, cmp(mut st, CEq, wait, zero)))
+    bRet := branchIf(mut st, bin(mut st, BAnd, bin(mut st, BAnd, unet, cmp(mut st, CEq, wait, zero)), cmp(mut st, CLt, load(mut st, globaladdr(mut st, st.wkG), WK_IOSUB), iconst(mut st, UR_POKE))))
     ret(mut st, -1)
     setCur(mut st, bRet)
     bD := newBlock(mut st)
@@ -508,9 +513,9 @@ func buildUpoll(st mut St) {
     condbr(mut st, bin(mut st, BOr, cmp(mut st, CNe, n, zero), cmp(mut st, CNe, wait, zero)), bE, -1, bReap, -1)
     setCur(mut st, bE)
     // io_uring_enter(fd, n, wait, wait〔IORING_ENTER_GETEVENTS = 1〕| ext〔IORING_ENTER_EXT_ARG = 8 — 期限の timeout〕, arg, 24)
-    fl := if net { bin(mut st, BOr, wait, bin(mut st, BShl, ext, iconst(mut st, 3))) } else { wait }
-    ga := if net { bin(mut st, BMul, ext, urAdd(mut st, rec, UR_GEA * 8)) } else { zero }
-    gs := if net { bin(mut st, BMul, ext, iconst(mut st, 24)) } else { zero }
+    fl := if net { bin(mut st, BOr, bin(mut st, BOr, wait, cmp(mut st, CGe, n, iconst(mut st, UR_POKE))), bin(mut st, BShl, bin(mut st, BMul, ext, wait), iconst(mut st, 3))) } else { wait }
+    ga := if net { bin(mut st, BMul, bin(mut st, BMul, ext, wait), urAdd(mut st, rec, UR_GEA * 8)) } else { zero }
+    gs := if net { bin(mut st, BMul, bin(mut st, BMul, ext, wait), iconst(mut st, 24)) } else { zero }
     // 期限の走査が待ち手を起こしたら眠らない（覗くだけ — 起こした task を走らせる）
     mc := if net { bin(mut st, BMul, wait, cmp(mut st, CEq, load(mut st, tk, TK_READY), zero)) } else { wait }
     if st.rtMut == 4 {
@@ -524,6 +529,12 @@ func buildUpoll(st mut St) {
         setCur(mut st, bH1)
     }
     r := urSys(mut st, 426, []int{load(mut st, rp, 0), n, mc, fl, ga, gs})
+    // 今を読み直す（眠った enter〔mc ≠ 0〕だけ — 読み直さないと、この後で取り込む task の時刻が眠る前の値になり、飽和下の待ちの上限の maxWait が
+    // 眠りの長さを拾った・report-1142。眠らない頭の取り込みは周の頭の値のまま）
+    bNw := branchIf(mut st, cmp(mut st, CNe, mc, zero))
+    store(mut st, wk, WK_NOW, tscOp(mut st))
+    br(mut st, bNw, -1)
+    setCur(mut st, bNw)
     kInc(mut st, 11)
     condbr(mut st, cmp(mut st, CGe, r, zero), bSub, -1, bReap, -1)
     setCur(mut st, bSub)
@@ -615,8 +626,7 @@ func buildUpoll(st mut St) {
     }
     tp := itop(mut st, ud)
     store(mut st, tp, TC_IORES, res)
-    store(mut st, tp, TC_NEXT, load(mut st, tk, TK_READY))
-    store(mut st, tk, TK_READY, ud)
+    readyPush(mut st, tk, ud)
     store(mut st, wk, WK_IOFLY, urAdd(mut st, load(mut st, wk, WK_IOFLY), -1))
     br(mut st, hn, -1)
     setCur(mut st, hn)
@@ -624,8 +634,9 @@ func buildUpoll(st mut St) {
     setCur(mut st, hd)
     urSt32(mut st, headA, h)
     if net && st.rtTmrFire != -1 {
-        // enter の後にもう一度 時計の表の満了を起こす（timeout で起きた enter の後に、眠らない enter をもう 1 回挟まない — report-ct1 3.3）
-        bTf := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, load(mut st, rp, UR_NET), zero), cmp(mut st, CNe, wait, zero)))
+        // enter の後にもう一度 時計の表の満了を起こす（timeout で起きた enter の後に、眠らない enter をもう 1 回挟まない — report-ct1 3.3）。
+        // 頭の取り込みでも（眠りの enter でだけ起こすと、忙しいワーカーで眠りの明けた要求が後回しになり系の中の要求が溜まる — async 24000 で HWM +150 MB・report-1105）
+        bTf := branchIf(mut st, cmp(mut st, CNe, load(mut st, rp, UR_NET), zero))
         _ = call(mut st, st.rtTmrFire, list0(mut st))
         br(mut st, bTf, -1)
         setCur(mut st, bTf)
@@ -635,7 +646,8 @@ func buildUpoll(st mut St) {
         setCur(mut st, bEp)
         // 走れる task が無く、眠るか net の待ち手がいれば epoll。ただし眠りの段でない頭の取り込み（wait = 0）は、自分の deque・受け箱・共有の積みが
         // 空のときだけ（report-685 / 686 — 毎周の頭で readiness を取り込むと TK_READY が絶えず、mn_next が deque に進まない: 4096 接続で受け入れた
-        // 接続の子 task の 5〜7 割が始まらないまま、接続の開始から一度も応答しなかった。ring の道は眠りの段でしか完了が載らない〔D2〕ので起きない）。
+        // 接続の子 task の 5〜7 割が始まらないまま、接続の開始から一度も応答しなかった。ring の道も頭の取り込み〔UR_POKE — 2026-10-24〕で同じ形が出た〔report-1132〕—
+        // そちらは飽和下の待ちの上限〔積みの底からの細流しと受け箱の先取り — rt.mn_next・language.md 28 節〕で塞ぐ）。
         // 棄てた案: 頭では一切取り込まない（c1 — ring と同形。公平になるが、走れる task が尽きるたびに盗みの走査 → 眠りの段を通り、256 接続で
         // cycles / 要求 7.9K → 9.5K・req/s −15%）
         mnq := globaladdr(mut st, st.mnG)

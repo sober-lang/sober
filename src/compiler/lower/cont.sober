@@ -748,7 +748,7 @@ func builtin(st mut St, name desugar.StrRef, args desugar.ListRef, at desugar.No
 // 組み込みでなければ -2
 func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     // 鍵の番号 → 実装の種類 k（下の switch — rt の呼び出し）。引数の数は鍵の署名から
-    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else { 0 }
+    k := if sk == loader.IReadFile { 1 } else if sk == loader.IWriteFile { 2 } else if sk == loader.IErrno { 3 } else if sk == loader.IArgs { 4 } else if sk == loader.IReadDir { 5 } else if sk == loader.IWriteFd { 6 } else if sk == loader.IRun { 7 } else if sk == loader.IWriteMode { 8 } else if sk == loader.IMkdir { 9 } else if sk == loader.IRename { 10 } else if sk == loader.IEnviron { 11 } else if sk == loader.IStat { 12 } else if sk == loader.ISleep { 13 } else if sk == loader.IReadFd { 14 } else if sk == loader.IParPool { 15 } else if sk == loader.IParLedger { 16 } else if sk == loader.IOpen { 17 } else if sk == loader.IClose { 18 } else if sk == loader.IChunkOpen { 19 } else if sk == loader.IChunkNext { 20 } else if sk == loader.IChunkClose { 21 } else if sk == loader.IDeadline { 22 } else if sk == loader.ISyscall { 23 } else if sk == loader.IAddr { 24 } else if sk == loader.IWaitFd { 25 } else if sk == loader.IFdOwn { 26 } else if sk == loader.IParFail { 27 } else if sk == loader.INetOp { 28 } else if sk == loader.ILeaseOp { 29 } else if sk == loader.ILeaseView { 30 } else if sk == loader.ILoad64 { 31 } else if sk == loader.ICpuClmul { 32 } else if sk == loader.ICrcFold { 33 } else if sk == loader.IAesCpu { 34 } else if sk == loader.IAesKey { 35 } else if sk == loader.IAesCtr { 36 } else if sk == loader.IAesGhash { 37 } else if sk == loader.IMulHi { 38 } else if sk == loader.IAddrN { 39 } else if sk == loader.IMmCpu { 40 } else if sk == loader.IMmMul { 41 } else if sk == loader.ICycles { 42 } else if sk == loader.IAesTag { 43 } else if sk == loader.ILeaseBytes { 44 } else if sk == loader.IMatchLen { 45 } else { 0 }
     arity := if k == 0 { 0 } else { desugar.SysArity(sk) }
     if k == 0 {
         return -2, nil
@@ -759,10 +759,10 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
     if k >= 19 && k <= 21 {
         return chunkBuiltin(mut st, k, args, at)
     }
-    if k == 29 || k == 30 {
+    if k == 29 || k == 30 || k == 44 {
         return leaseBuiltin(mut st, k, args, at)
     }
-    if k == 15 || k == 23 || k == 25 || k == 26 || k == 27 || k == 28 || k == 35 || k == 36 || k == 37 || k == 41 {
+    if k == 15 || k == 23 || k == 25 || k == 26 || k == 27 || k == 28 || k == 35 || k == 36 || k == 37 || k == 41 || k == 43 {
         // 引数が全部 int の口（+ AES-GCM の塊 — aes.sober・report-796）: std/task の名前つきプールの節（段 6 P5-4 — admit.sober）・std 専用の生の syscall（net 段 4a — 28 節の囲い:
         // rt を通らずその場で syscall）・fd の readiness の待ち（net 段 4a-2 — netpoll.sober）・fd の登録（4a-3）
         vs := listN(mut st, arity)
@@ -801,7 +801,7 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             return one1(mut st, tInt(mut st), mmOp(mut st, MK_MUL, vs)), nil
         }
         if k >= 35 {
-            return one1(mut st, tInt(mut st), aesOp(mut st, k - 34, vs)), nil
+            return one1(mut st, tInt(mut st), aesOp(mut st, if k == 43 { AK_TAG } else { k - 34 }, vs)), nil
         }
         return one1(mut st, tInt(mut st), if k == 23 { syscall(mut st, vs) } else { call(mut st, if k == 15 { st.rtPoolNew } else if k == 28 { needNetOp(mut st) } else { needNet(mut st) }, vs) }), nil
     }
@@ -859,6 +859,31 @@ func ioBuiltin(st mut St, sk int, args desugar.ListRef, at desugar.NodeRef) (int
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
         return one1(mut st, tInt(mut st), crcFold(mut st, itop(mut st, load(mut st, b.v, 0)), x.v, c.v)), nil
+    case 45:
+        // b[i:i+n] と b[j:j+n] の一致の長さ（境界は呼び手の std/binary.MatchLen が見た — rt.matchlen の呼び出し 1 本。x86 の最適化のバックエンドは手書きの本体）
+        b := expr(mut st, latN(mut st, args, 0))?
+        if isTag(mut st, b.t, TNever) {
+            return -1, nil
+        }
+        if !isTag(mut st, b.t, TSlice) || isString(mut st, b.t) || !isTag(mut st, desugar.HeapGet(mut st.d, b.t + 1), TByte) {
+            return 0, diag.Mismatch{at: posOf(mut st, at)}
+        }
+        vs := listN(mut st, 3)
+        mut q := 1
+        while q < 4 {
+            x := expr(mut st, latN(mut st, args, q))?
+            if isTag(mut st, x.t, TNever) {
+                return -1, nil
+            }
+            if !isTag(mut st, x.t, TInt) {
+                return 0, diag.Mismatch{at: posOf(mut st, at)}
+            }
+            desugar.HeapSet(mut st.d, vs + q, x.v)
+            q += 1
+        }
+        needMatchLen(mut st)
+        p := itop(mut st, load(mut st, b.v, 0))
+        return one1(mut st, tInt(mut st), call(mut st, st.rtMatchLen, list3(mut st, gepByte(mut st, p, desugar.HeapGet(mut st.d, vs + 1)), gepByte(mut st, p, desugar.HeapGet(mut st.d, vs + 2)), desugar.HeapGet(mut st.d, vs + 3)))), nil
     case 31:
         // b[i:i+8] の 8 バイトの読み（境界は呼び手の std/binary.Load64 が見た — ここは gep.byte + 語の load 1 本。x86 の mov は番地の揃いを問わない）
         b := expr(mut st, latN(mut st, args, 0))?

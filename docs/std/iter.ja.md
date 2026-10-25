@@ -52,6 +52,7 @@ func main() int {
 ## Slice
 
 ```sober
+@effects()
 func Slice[T](xs []T, k func(T))
 ```
 
@@ -60,6 +61,7 @@ slice の走査。for 式の生成元 `x <- xs`（slice の特例）の実体
 ## Range
 
 ```sober
+@effects()
 func Range(lo int, hi int, k func(int))
 ```
 
@@ -68,6 +70,7 @@ func Range(lo int, hi int, k func(int))
 ## Each
 
 ```sober
+@effects(Iter)
 func Each[T](it Iter[T], f func(T))
 ```
 
@@ -76,6 +79,7 @@ func Each[T](it Iter[T], f func(T))
 ## Count
 
 ```sober
+@effects(Iter)
 func Count[T](it Iter[T]) int
 ```
 
@@ -84,6 +88,7 @@ func Count[T](it Iter[T]) int
 ## Sum
 
 ```sober
+@effects(Iter)
 func Sum(it Iter[int]) int
 ```
 

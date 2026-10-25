@@ -12,6 +12,7 @@ import "std/iter"
 type AssertFailed panic
 
 // assert の失敗: `assert failed: <式>` と部分式の値を 1 行ずつ標準エラーへ書いて panic(AssertFailed{}) する（exit 101 — language.md 27 節の panic の契約）
+@effects(io, panic, nondet)
 func Fail(expr string, values []string) {
     if io.WriteStderr(bytes("assert failed: ${expr}\n")) == nil {
         for i <- iter.Range(0, len(values)) {

@@ -102,6 +102,7 @@ type NotLowered panic
 
 ```sober
 @errors(ChildDied)
+@effects(block)
 func Run[T](f func(Scope) T, budget int?, wait bool?, deadline int?) (T, error?)
 ```
 
@@ -112,6 +113,7 @@ region を 1 段開き、本体 f をハンドルで走らせる。子が全部�
 ## Spawn
 
 ```sober
+@effects()
 func Spawn[T](s Scope, g func() T, budget int?) Handle[T]
 ```
 
@@ -120,6 +122,7 @@ func Spawn[T](s Scope, g func() T, budget int?) Handle[T]
 ## Join
 
 ```sober
+@effects(block)
 func Join[T](h Handle[T]) T
 ```
 
@@ -128,6 +131,7 @@ func Join[T](h Handle[T]) T
 ## Try
 
 ```sober
+@effects(block)
 func Try[T](h Handle[T]) Outcome[T]
 ```
 
@@ -156,6 +160,7 @@ type Receiver[T] struct {
 ## NewChannel
 
 ```sober
+@effects()
 func NewChannel[T](cap int) (Sender[T], Receiver[T])
 ```
 
@@ -164,6 +169,7 @@ func NewChannel[T](cap int) (Sender[T], Receiver[T])
 ## Send
 
 ```sober
+@effects(block)
 func Send[T](tx Sender[T], v T)
 ```
 
@@ -172,6 +178,7 @@ v を送る（満杯なら待つ）
 ## Recv
 
 ```sober
+@effects(block)
 func Recv[T](rx Receiver[T]) T?
 ```
 
@@ -180,6 +187,7 @@ func Recv[T](rx Receiver[T]) T?
 ## RecvAll
 
 ```sober
+@effects(block)
 func RecvAll[T](rx Receiver[T], k func(T))
 ```
 
@@ -190,6 +198,7 @@ func RecvAll[T](rx Receiver[T], k func(T))
 ## Close
 
 ```sober
+@effects()
 func Close[T](tx Sender[T])
 ```
 
@@ -198,6 +207,7 @@ func Close[T](tx Sender[T])
 ## SpawnGive
 
 ```sober
+@effects()
 func SpawnGive[T, E](s Scope, give E, g func(E) T, budget int?) Handle[T]
 ```
 
@@ -206,6 +216,7 @@ func SpawnGive[T, E](s Scope, give E, g func(E) T, budget int?) Handle[T]
 ## Gather
 
 ```sober
+@effects(block)
 func Gather[T](hs []Handle[T]) []T
 ```
 
@@ -215,6 +226,7 @@ handle の列を生んだ順（正準順）で待って結果を集める fan-in
 
 ```sober
 @errors(ChildDied)
+@effects(block)
 func Map[T, U](xs []T, f func(T) U, budget int?) ([]U, error?)
 ```
 
@@ -251,6 +263,7 @@ type PoolLimit panic
 ## MarkFailed
 
 ```sober
+@effects()
 func MarkFailed(p Pool)
 ```
 
@@ -259,6 +272,7 @@ func MarkFailed(p Pool)
 ## NewPool
 
 ```sober
+@effects(panic)
 func NewPool(budget int, parent Pool?) Pool
 ```
 
@@ -300,6 +314,8 @@ type LedgerView struct {
     declOver int
     shed int
     waits int
+    maxWait int
+    aged int
     pools []PoolView
 }
 ```
@@ -309,10 +325,13 @@ type LedgerView struct {
 欄:
 
 - `waits` — wait の scope で入場を待った回数（[language.md 11 節](../language.md)「wait」）
+- `maxWait` — 走れるようになってから走るまでの待ちの最大（ns・全ワーカー — 読むと 0 に戻る。[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）
+- `aged` — 待ちの上限が効いて積みの底から取った回数の累計（飽和の印）
 
 ## Ledger
 
 ```sober
+@effects(nondet)
 func Ledger() LedgerView
 ```
 
@@ -322,6 +341,7 @@ func Ledger() LedgerView
 
 ```sober
 @errors(Shed)
+@effects()
 func SpawnIn[T](s Scope, pool Pool, g func() T, budget int?) (Handle[T]?, error?)
 ```
 
@@ -350,6 +370,7 @@ NewLocal と違う T の窓で Lease した（ストレージの T の指紋が�
 ## NewLocal
 
 ```sober
+@effects(panic)
 func NewLocal(prep func()) Local
 ```
 
@@ -358,6 +379,7 @@ T のストレージをワーカーの数だけ作る: `gzw := task.NewLocal((w 
 ## Lease
 
 ```sober
+@effects(panic)
 func Lease[U](lp Local, body func() U) U
 ```
 
@@ -366,6 +388,7 @@ lp の今のワーカーのストレージを窓 body に貸す: `z := task.Leas
 ## LocalNew
 
 ```sober
+@effects()
 func LocalNew(fp int, caps []int) Local
 ```
 
@@ -374,6 +397,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 ## LeaseTake
 
 ```sober
+@effects(panic)
 func LeaseTake(lp Local, fp int) int
 ```
 
@@ -382,6 +406,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 ## LeaseGive
 
 ```sober
+@effects()
 func LeaseGive(lp Local, at int)
 ```
 
@@ -390,6 +415,7 @@ task.NewLocal / task.Lease の写し先（loader が組む — 利用者の直�
 ## LeaseBlock
 
 ```sober
+@effects()
 func LeaseBlock(lp Local) []int
 ```
 

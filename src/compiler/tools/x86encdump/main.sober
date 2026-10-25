@@ -491,7 +491,52 @@ func main() {
                 at = x86.Here(mut c)
                 x86.MovupdMemX(mut c, b, d, a)
                 line(mut c, at, "movupd xmmword ptr ${mem(b, d)}, xmm${a}")
+                // rt.copy8 の短い写し（d-3）: movq / movd の [base + disp] と [base + index + disp]
+                at = x86.Here(mut c)
+                x86.MovqXMem(mut c, a, b, d)
+                line(mut c, at, "movq xmm${a}, qword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.MovqMemX(mut c, b, d, a)
+                line(mut c, at, "movq qword ptr ${mem(b, d)}, xmm${a}")
+                at = x86.Here(mut c)
+                x86.MovdXMem(mut c, a, b, d)
+                line(mut c, at, "movd xmm${a}, dword ptr ${mem(b, d)}")
+                at = x86.Here(mut c)
+                x86.MovdMemX(mut c, b, d, a)
+                line(mut c, at, "movd dword ptr ${mem(b, d)}, xmm${a}")
+                ix := (b + 1 + k) % 16
+                if ix != x86.Rsp {
+                    at = x86.Here(mut c)
+                    x86.MovdquXSib(mut c, a, b, ix, d)
+                    line(mut c, at, "movdqu xmm${a}, xmmword ptr ${sibMem(b, ix, 1, d)}")
+                    at = x86.Here(mut c)
+                    x86.MovdquSibX(mut c, b, ix, d, a)
+                    line(mut c, at, "movdqu xmmword ptr ${sibMem(b, ix, 1, d)}, xmm${a}")
+                    at = x86.Here(mut c)
+                    x86.MovqXSib(mut c, a, b, ix, d)
+                    line(mut c, at, "movq xmm${a}, qword ptr ${sibMem(b, ix, 1, d)}")
+                    at = x86.Here(mut c)
+                    x86.MovqSibX(mut c, b, ix, d, a)
+                    line(mut c, at, "movq qword ptr ${sibMem(b, ix, 1, d)}, xmm${a}")
+                    at = x86.Here(mut c)
+                    x86.MovdXSib(mut c, a, b, ix, d)
+                    line(mut c, at, "movd xmm${a}, dword ptr ${sibMem(b, ix, 1, d)}")
+                    at = x86.Here(mut c)
+                    x86.MovdSibX(mut c, b, ix, d, a)
+                    line(mut c, at, "movd dword ptr ${sibMem(b, ix, 1, d)}, xmm${a}")
+                }
             }
+        }
+    }
+    for b <- iter.Range(0, 8) {
+        for k <- iter.Range(0, len(disps)) {
+            d := disps[k]
+            mut at := x86.Here(mut c)
+            x86.MovChMem8(mut c, b, d)
+            line(mut c, at, "mov ch, byte ptr ${mem(b, d)}")
+            at = x86.Here(mut c)
+            x86.MovMem8Ch(mut c, b, d)
+            line(mut c, at, "mov byte ptr ${mem(b, d)}, ch")
         }
     }
     // float の load / store を xmm へ直に（1.0× アタック便）: movsd の [base + disp] と SIB

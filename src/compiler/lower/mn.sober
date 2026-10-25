@@ -61,7 +61,18 @@ const MN_AWAIT = MN_LED + 9         // 入場の待ちの鎖の頭（TC_AWNEXT �
 const MN_ALOCK = MN_LED + 10
 const MN_AGEN = MN_LED + 11         // 台帳の返しの通し番号（待ち手の取りこぼし防止 — 返し手は足してから鎖を見る・待ち手は積んでから番号を見る）
 const MN_SLOTVA = MN_LED + 12      // 写したスロットの VA（バイト — 名前つきプールを使うプログラムだけ数える。SpawnIn の入場は VA_SHED を越えたら shed — report-1077 A4）
-const MN_WORDS = MN_LED + 16
+// 飽和下の待ちの上限（language.md 28 節 ring の道 — report-1141 / 1142）: TSC の周波数の校正（MN_TSCQ = TSC の数 / ns × 65536・0 = まだ〔TSCQ_DEF と仮定〕）。
+// 最初に積みの底を見たワーカーが MN_TSC0 / MN_NS0 に 1 点目を置き、TSC が 2^25（≈ 10 ms）進んだら CLOCK_MONOTONIC と 2 点目で割る（MN_TSC0 = -1 で済み）。
+// 台帳の語（MN_LED〜 — spawn のたびに書く）と同じ行に置かない（積むたびに MN_TSCQ を読む）
+const MN_TSCQ = MN_LED + 16
+const MN_TSC0 = MN_LED + 17
+const MN_NS0 = MN_LED + 18
+const MN_WORDS = MN_LED + 24
+const MN_WAIT_DEF = 100000000 // 既定の D（ns — net.Serve の maxWait: の既定と同じ）
+const TSCQ_DEF = 262144        // 校正の前の仮定（4 GHz — D は長めに出る側）
+// 受け箱の先読み（積みが空でなくても受け箱を先に取り込む — report-1132 (b)）は MN_INBOX_EVERY 周に 1 回。毎周だと積みが空まで掃ける周期を壊して
+// 底を沈める（64vcpu の本家形で p99 が D に貼り付いた読み — report-1149 / 1150）。受け箱の未着手の延びは高々この周の数。2 の冪
+const MN_INBOX_EVERY = 256
 // @rt.sres（共有の予備のスロット — [数, 基底…]）。上限は rt.sdp（深度ごとの共有の列 — 32 列 × SRES_CAP 語の bss・触った分だけ常駐）と合わせての本数。
 // 65536 = 同時に寝る task の数 × park で返す深度の数（L1-R — 32000 接続 × 数本）を溢れない大きさ（4096 では async の 16000 接続で溢れて
 // munmap と写し足しが往復した — report-1066 / 1067）
@@ -88,6 +99,10 @@ const WK_PLOWN = 17
 const WK_PLRR = 18
 const WK_DLOCK = 24
 const WK_DH = 25
+const WK_NOW = 26   // 今（TSC — mn_next が周の頭で 1 回読む。積む口〔task.sober readyPush〕はこの値を時刻に使う — 誤差は 1 回の走り）
+const WK_AGED = 27  // 待ちの上限が効いて積みの底から取った回数（Ledger の aged — 持ち主だけが足す）
+const WK_MAXW = 28  // 走れる積みから取った task の待ちの最大（TSC の数 — Ledger の maxWait が xchg で 0 に戻して集める）
+const WK_PICK = 29  // rt.mn_next の周の数（持ち主だけが書く — 受け箱の先読み〔MN_INBOX_EVERY〕の間引きの位相）
 const WK_DQ = 32
 const DQ_CAP = 256
 const DQ_NEED = 4   // spawn が起こしに行く「溜まっていた」の閾値（自分の列の長さ — 盗みは 1 つずつ遅れて追うので 1 以上は常態）
@@ -677,6 +692,32 @@ func buildMnAnyDq(st mut St) {
     ret(mut st, iconst(mut st, 0))
 }
 
+// tscCalibrate は TSC の周波数の校正の 1 歩（MN_TSC0 = 0 なら 1 点目を置く・2^25 進んでいたら 2 点目で MN_TSCQ を決めて MN_TSC0 = -1 — 複数のワーカーが
+// 同時に踏んでも近い値を書くだけ）。clock_gettime はプロセスで 2 回
+func tscCalibrate(st mut St, mn int, now int) {
+    zero := iconst(mut st, 0)
+    t0 := load(mut st, mn, MN_TSC0)
+    b1 := newBlock(mut st)
+    b2 := newBlock(mut st)
+    bQ := newBlock(mut st)
+    bE := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, t0, zero), b1, -1, b2, -1)
+    setCur(mut st, b1)
+    store(mut st, mn, MN_NS0, clockNs(mut st))
+    store(mut st, mn, MN_TSC0, now)
+    br(mut st, bE, -1)
+    setCur(mut st, b2)
+    dc := bin(mut st, BSub, now, t0)
+    condbr(mut st, cmp(mut st, CGt, dc, iconst(mut st, 1 << 25)), bQ, -1, bE, -1)
+    setCur(mut st, bQ)
+    dn := bin(mut st, BSub, clockNs(mut st), load(mut st, mn, MN_NS0))
+    // dn > 0 は TSC が 2^25 進んだ後なので成り立つ（単調時計）。商が 0 なら仮定のまま
+    store(mut st, mn, MN_TSCQ, bin(mut st, BDiv, bin(mut st, BShl, dc, iconst(mut st, 16)), bin(mut st, BAdd, dn, cmp(mut st, CEq, dn, zero))))
+    store(mut st, mn, MN_TSC0, iconst(mut st, -1))
+    br(mut st, bE, -1)
+    setCur(mut st, bE)
+}
+
 // buildMnNext は rt.mn_next() ptr: 次に走らせる task（自分の走れる積み → 受け箱 → 自分の列の底 → 共有の積み → 盗み → 回る → 眠る）。全ワーカーが眠りの手前で仕事が無ければデッドロック
 func buildMnNext(st mut St) {
     begin(mut st, st.rtMnNext)
@@ -687,6 +728,9 @@ func buildMnNext(st mut St) {
     loop := newBlock(mut st)
     br(mut st, loop, -1)
     setCur(mut st, loop)
+    // 今（TSC — 周ごとに 1 回: この周で積む task の時刻と、取り出しの期限の比較に使う。眠りの明けもこの頭へ戻るので古い値で積まない）
+    now := tscOp(mut st)
+    store(mut st, wk, WK_NOW, now)
     // ring に task の io があれば提出と完了の取り込み（IO 便 段 1 — 無ければ分岐 1 本）
     bIo := newBlock(mut st)
     bGo := newBlock(mut st)
@@ -696,12 +740,78 @@ func buildMnNext(st mut St) {
     br(mut st, bGo, -1)
     setCur(mut st, bGo)
     r := load(mut st, tk, TK_READY)
+    pick := load(mut st, wk, WK_PICK)
+    store(mut st, wk, WK_PICK, bin(mut st, BAdd, pick, iconst(mut st, 1)))
     bR := newBlock(mut st)
     bI := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, r, zero), bR, -1, bI, -1)
+    bRc := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, r, zero), bRc, -1, bI, -1)
+    setCur(mut st, bRc)
+    // 受け箱が空でなければ積みが空でなくても先に取り込む（巡回で配った新しい接続・他のワーカーからの起こしを積みの底に沈めない — report-1132 (b)）。
+    // 見るのは MN_INBOX_EVERY 周に 1 回（受け箱の語は他のワーカーが書く — 毎周の読みと xchg の値段を払わない・未着手の延びは高々その周の数 — report-1150）。
+    // 変異 24（開発用 --rt-mutant — gate starve の検出率の確認: HEAD〔da59f340〕の形）は先取りなし
+    if st.rtMut == 24 {
+        br(mut st, bR, -1)
+    } else {
+        bIb := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, pick, iconst(mut st, MN_INBOX_EVERY - 1)), zero), bIb, -1, bR, -1)
+        setCur(mut st, bIb)
+        condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero), bR, -1, bI, -1)
+    }
     setCur(mut st, bR)
-    rp := itop(mut st, r)
-    store(mut st, tk, TK_READY, load(mut st, rp, TC_NEXT))
+    // 飽和下の待ちの上限（language.md 28 節 ring の道）: 積みの底の期限が過ぎていたら底から 1 本・でなければ頭（LIFO — 直前に動いた task を熱いうちに）
+    tl := load(mut st, tk, TK_TAIL)
+    deep := cmp(mut st, CNe, tl, r)
+    // TSC の校正（積みの底が頭と違う = 2 本以上積まれた最初の頃だけ — MN_TSC0 = -1 で済み）
+    bCal := newBlock(mut st)
+    bCk := newBlock(mut st)
+    condbr(mut st, bin(mut st, BAnd, deep, cmp(mut st, CGe, load(mut st, mn, MN_TSC0), zero)), bCal, -1, bCk, -1)
+    setCur(mut st, bCal)
+    tscCalibrate(mut st, mn, now)
+    br(mut st, bCk, -1)
+    setCur(mut st, bCk)
+    // 期限 = 底の TC_WAKE + D（D = TC_MAXW の ns〔0 = 既定〕を TSC の数へ: × MN_TSCQ ÷ 65536 — 校正の前は 0 = 4 GHz と仮定）。積みが浅い（底 = 頭）なら計算しない
+    bDp := newBlock(mut st)
+    bAg := newBlock(mut st)
+    ag := param(mut st, bAg, TyI64)
+    condbr(mut st, deep, bDp, -1, bAg, list1(mut st, zero))
+    setCur(mut st, bDp)
+    tlp := itop(mut st, tl)
+    mw := load(mut st, tlp, TC_MAXW)
+    dns := bin(mut st, BAdd, mw, bin(mut st, BMul, cmp(mut st, CEq, mw, zero), iconst(mut st, MN_WAIT_DEF)))
+    tq := load(mut st, mn, MN_TSCQ)
+    qe := bin(mut st, BAdd, tq, bin(mut st, BMul, cmp(mut st, CEq, tq, zero), iconst(mut st, TSCQ_DEF)))
+    br(mut st, bAg, list1(mut st, cmp(mut st, CGt, bin(mut st, BSub, now, load(mut st, tlp, TC_WAKE)), bin(mut st, BSar, bin(mut st, BMul, dns, qe), iconst(mut st, 16)))))
+    setCur(mut st, bAg)
+    // 変異 23 / 24（開発用 --rt-mutant — gate starve の検出率の確認）: 上限を切る（底から取らない）
+    aged := if st.rtMut == 23 || st.rtMut == 24 { iconst(mut st, 0) } else { ag }
+    bOld := newBlock(mut st)
+    bNew := newBlock(mut st)
+    bTk := newBlock(mut st)
+    rq := param(mut st, bTk, TyI64)
+    condbr(mut st, aged, bOld, -1, bNew, -1)
+    setCur(mut st, bOld)
+    pt := load(mut st, itop(mut st, tl), TC_PREV)
+    store(mut st, tk, TK_TAIL, pt)
+    store(mut st, itop(mut st, pt), TC_NEXT, zero)
+    store(mut st, wk, WK_AGED, bin(mut st, BAdd, load(mut st, wk, WK_AGED), iconst(mut st, 1)))
+    br(mut st, bTk, list1(mut st, tl))
+    setCur(mut st, bNew)
+    readyPopHead(mut st, tk, itop(mut st, r))
+    br(mut st, bTk, list1(mut st, r))
+    setCur(mut st, bTk)
+    rp := itop(mut st, rq)
+    // 待ちの最大（Ledger の maxWait）: 底を取った回だけ比べる — 積みは頭に積むので底がいちばん古く、深いときに頭から取った task の待ちは
+    // そのときの底の待ち以下（底は期限か、浅くなって頭として必ず取られる — report-1150）
+    bMw := newBlock(mut st)
+    bRet := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, rq, tl), bMw, -1, bRet, -1)
+    setCur(mut st, bMw)
+    wt := bin(mut st, BSub, now, load(mut st, rp, TC_WAKE))
+    mx := load(mut st, wk, WK_MAXW)
+    store(mut st, wk, WK_MAXW, bin(mut st, BAdd, mx, bin(mut st, BMul, cmp(mut st, CGt, wt, mx), bin(mut st, BSub, wt, mx))))
+    br(mut st, bRet, -1)
+    setCur(mut st, bRet)
     call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 2), load(mut st, rp, TC_ID)))
     kInc(mut st, 0)
     kSnap(mut st)
@@ -722,8 +832,7 @@ func buildMnNext(st mut St) {
     setCur(mut st, mb)
     qp := itop(mut st, q)
     nq := load(mut st, qp, TC_INEXT)
-    store(mut st, qp, TC_NEXT, load(mut st, tk, TK_READY))
-    store(mut st, tk, TK_READY, q)
+    readyPush(mut st, tk, q)
     br(mut st, ml, list1(mut st, nq))
     // 自分の列の底（段 6 Skynet 回収 (a) — THE 規約の持ち主の取る）: T − H ≤ 0 なら空（盗み手が最後の 1 つを取り中でも空で正しい）。
     // でなければ T = b（= T − 1）を xchg（柵）してから H を読む: H ≤ b なら q[b] は持ち主のもの（盗み手は H を進めてから T を読み、H > T で退く）。
@@ -997,8 +1106,7 @@ func buildMnWake(st mut St) {
     bOther := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, w, load(mut st, wk, WK_ID)), bSelf, -1, bOther, -1)
     setCur(mut st, bSelf)
-    store(mut st, 0, TC_NEXT, load(mut st, tk, TK_READY))
-    store(mut st, tk, TK_READY, ptoi(mut st, 0))
+    readyPush(mut st, tk, ptoi(mut st, 0))
     ret(mut st, -1)
     setCur(mut st, bOther)
     if st.rtMut == 4 {

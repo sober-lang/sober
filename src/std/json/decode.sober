@@ -26,6 +26,7 @@ type IntRange error {
 
 // ノード n がオブジェクトなら n（でなければ WrongType）
 @errors(WrongType)
+@effects()
 func NeedObject(d Doc, n int) (int, error?) {
     if d.kind[n] != kObj {
         return 0, WrongType{pos: d.pos[n], want: "object"}
@@ -35,12 +36,14 @@ func NeedObject(d Doc, n int) (int, error?) {
 
 // オブジェクト n の欄 key の値のノード（無ければ Missing）
 @errors(Missing)
+@effects()
 func Need(d Doc, n int, key string) (int, error?) {
     return NeedAt(d, n, key, -1)
 }
 
 // Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写しの関数は欄の宣言の位置を渡す）
 @errors(Missing)
+@effects()
 func NeedAt(d Doc, n int, key string, hint int) (int, error?) {
     v := GetAt(d, n, key, hint)
     if v != nil {
@@ -50,12 +53,14 @@ func NeedAt(d Doc, n int, key string, hint int) (int, error?) {
 }
 
 // ノード n が null か
+@effects()
 func IsNull(d Doc, n int) bool {
     return d.kind[n] == kNull
 }
 
 // 配列 n の要素のノード（配列でなければ WrongType）
 @errors(WrongType)
+@effects()
 func Items(d Doc, n int) ([]int, error?) {
     if d.kind[n] != kArr {
         return []int{}, WrongType{pos: d.pos[n], want: "array"}
@@ -65,6 +70,7 @@ func Items(d Doc, n int) ([]int, error?) {
 
 // 文字列 n の中身
 @errors(WrongType)
+@effects()
 func ParseString(d Doc, n int) (string, error?) {
     k := d.kind[n]
     if k != kStr && k != kStrEsc {
@@ -75,6 +81,7 @@ func ParseString(d Doc, n int) (string, error?) {
 
 // true / false
 @errors(WrongType)
+@effects()
 func ParseBool(d Doc, n int) (bool, error?) {
     k := d.kind[n]
     if k != kTrue && k != kFalse {
@@ -85,6 +92,7 @@ func ParseBool(d Doc, n int) (bool, error?) {
 
 // 整数の字句（小数点・指数なし）の数を int に（範囲外は IntRange）
 @errors(WrongType, IntRange)
+@effects()
 func ParseInt(d Doc, n int) (int, error?) {
     if d.kind[n] != kNum {
         return 0, WrongType{pos: d.pos[n], want: "int"}
@@ -117,6 +125,7 @@ func ParseInt(d Doc, n int) (int, error?) {
 
 // 数を binary64 に（最近接・偶数への丸め — convert.ParseFloat。あふれは IntRange でなく WrongType{want: "float"}）
 @errors(WrongType)
+@effects()
 func ParseFloat(d Doc, n int) (float, error?) {
     if d.kind[n] != kNum {
         return 0.0, WrongType{pos: d.pos[n], want: "number"}

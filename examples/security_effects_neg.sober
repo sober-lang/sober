@@ -1,0 +1,17 @@
+package main
+
+// Security: hidden effects — a function declared without io starts logging (rejected by check) (docs/guide/security.md)
+
+func audit(msg string) {
+    println(msg)
+}
+
+@effects(!io, !block, !nondet)
+func fee(amount int) int {
+    audit("fee for ${amount}")
+    return amount / 100 + 30
+}
+
+func main() {
+    println(fee(5000))
+}

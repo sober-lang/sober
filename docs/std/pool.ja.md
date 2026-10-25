@@ -45,6 +45,7 @@ type Pool[T] struct {
 ## Acquire
 
 ```sober
+@effects()
 func Acquire[T](p mut Pool[T], v T) Handle
 ```
 
@@ -53,6 +54,7 @@ v を空きスロット（無ければ末尾に足す）に置き、そのスロ
 ## Release
 
 ```sober
+@effects()
 func Release[T](p mut Pool[T], h Handle)
 ```
 
@@ -61,6 +63,7 @@ h のスロットを空きに戻す。h が古ければ（返却済み・再利�
 ## Get
 
 ```sober
+@effects()
 func Get[T](p mut Pool[T], h Handle) T?
 ```
 
@@ -69,6 +72,7 @@ h のスロットの中身。h が古ければ nil（本当に消えたかもし
 ## Set
 
 ```sober
+@effects()
 func Set[T](p mut Pool[T], h Handle, v T) bool
 ```
 
@@ -77,6 +81,7 @@ h のスロットを v で置き換える。h が古ければ何もせず false
 ## Len
 
 ```sober
+@effects()
 func Len[T](p mut Pool[T]) int
 ```
 
@@ -108,6 +113,7 @@ pool.Load(mut s, 3)   // 0
 ## NewScratch
 
 ```sober
+@effects(panic)
 func NewScratch(s mut Scratch, n int)
 ```
 
@@ -116,6 +122,7 @@ func NewScratch(s mut Scratch, n int)
 ## Cap
 
 ```sober
+@effects()
 func Cap(s mut Scratch) int
 ```
 
@@ -124,6 +131,7 @@ s の項目の数（NewScratch の n）
 ## Load
 
 ```sober
+@effects()
 func Load(s mut Scratch, i int) int
 ```
 
@@ -132,6 +140,7 @@ s の i 番目の値（今の世代で Store していなければ 0）
 ## Store
 
 ```sober
+@effects(panic)
 func Store(s mut Scratch, i int, v int)
 ```
 
@@ -140,6 +149,7 @@ s の i 番目を v にする。v が 0〜2^32−1 の外なら panic(BadScratch
 ## Renew
 
 ```sober
+@effects()
 func Renew(s mut Scratch)
 ```
 
@@ -148,6 +158,7 @@ s の全部の項目を 0 に戻す（世代を 1 つ進める — 2^32 回目�
 ## LoadRaw
 
 ```sober
+@effects()
 func LoadRaw(s mut Scratch, i int) int
 ```
 
@@ -156,6 +167,7 @@ s の i 番目の語をそのまま読む（生のアクセサ — 世代に触�
 ## StoreRaw
 
 ```sober
+@effects()
 func StoreRaw(s mut Scratch, i int, v int)
 ```
 
@@ -164,6 +176,7 @@ s の i 番目を v にする（生のアクセサ — 世代に触れず、値�
 ## RenewDense
 
 ```sober
+@effects()
 func RenewDense(s mut Scratch, n int)
 ```
 
@@ -190,6 +203,7 @@ NewScratch を容量のある Scratch に呼んだ（容量は 1 回だけ — �
 ## LeaseAttach
 
 ```sober
+@effects(panic)
 func LeaseAttach(s mut Scratch, blk []int, at int, i int)
 ```
 

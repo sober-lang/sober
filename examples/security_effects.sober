@@ -1,0 +1,27 @@
+package main
+
+// Security: hidden effects — @effects states what a function may do, and check compares it with what the body does (docs/guide/security.md)
+
+// a pricing rule: the type promises its values do no I/O, never wait, and do not read the clock
+type Rule func(amount int) int @effects(!io, !block, !nondet)
+
+@effects(!io, !block, !nondet)
+func fee(amount int) int {
+    return amount / 100 + 30
+}
+
+// the positive list is an upper bound: this function may do io (printing) and nothing else
+@effects(io)
+func audit(msg string) {
+    println(msg)
+}
+
+@effects(io, Rule)
+func charge(rule Rule, amount int) {
+    audit("charge ${amount + rule(amount)}")
+}
+
+func main() {
+    charge(fee, 5000)
+    charge((a) => a / 50, 5000)
+}

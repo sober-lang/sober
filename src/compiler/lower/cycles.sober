@@ -6,6 +6,14 @@ package lower
 
 const CY_B = 5
 
+// tscOp は柵なしの時刻の計数器（rdtsc — rt のスケジューラの粗い時計: 飽和下の待ちの上限〔mn.sober〕。順序は要らない）。x86 の正規バックエンドの ELF の道でだけ命令・他の出力では 0
+func tscOp(st mut St) int {
+    if !st.hwFold {
+        return iconst(mut st, 0)
+    }
+    return push(mut st, true, OpSyscall, list0(mut st), CY_B, 1)
+}
+
 // cyclesOp は cycles() の値
 func cyclesOp(st mut St) int {
     if !st.hwFold {

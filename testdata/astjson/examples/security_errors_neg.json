@@ -1,0 +1,342 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Expired",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": []
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 7
+      }
+    },
+    {
+      "name": "Revoked",
+      "type_params": [],
+      "body": {
+        "k": "error",
+        "fields": [
+          {
+            "name": "by",
+            "type": {
+              "k": "name",
+              "name": "string"
+            },
+            "tok": 11
+          }
+        ]
+      },
+      "tok": 8,
+      "span": {
+        "start": 7,
+        "end": 16
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "session",
+      "type_params": [],
+      "params": [
+        {
+          "name": "token",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        },
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "error"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "token",
+                  "tok": 30
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "",
+                  "tok": 32
+                },
+                "tok": 31
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 35
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "Expired",
+                        "elems": [],
+                        "tok": 37,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 34
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 29
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "==",
+                "lhs": {
+                  "k": "ident",
+                  "name": "token",
+                  "tok": 44
+                },
+                "rhs": {
+                  "k": "strlit",
+                  "value": "old",
+                  "tok": 46
+                },
+                "tok": 45
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "ret",
+                    "values": [
+                      {
+                        "k": "strlit",
+                        "value": "",
+                        "tok": 49
+                      },
+                      {
+                        "k": "composite",
+                        "type_name": "Revoked",
+                        "elems": [
+                          {
+                            "key": "by",
+                            "value": {
+                              "k": "strlit",
+                              "value": "admin",
+                              "tok": 55
+                            }
+                          }
+                        ],
+                        "tok": 51,
+                        "type_args": []
+                      }
+                    ],
+                    "tok": 48
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 43
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "strlit",
+                "value": "user-1",
+                "tok": 61
+              },
+              {
+                "k": "nil",
+                "tok": 63
+              }
+            ],
+            "tok": 60
+          }
+        ]
+      },
+      "tok": 17,
+      "bodiless": false,
+      "span": {
+        "start": 16,
+        "end": 67
+      },
+      "sig_end": 28
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "bind",
+            "names": [
+              "who",
+              "err"
+            ],
+            "mutable": false,
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "ident",
+                  "name": "session",
+                  "tok": 76
+                },
+                "args": [
+                  {
+                    "k": "strlit",
+                    "value": "old",
+                    "tok": 78
+                  }
+                ],
+                "tok": 77
+              }
+            ],
+            "tok": 72
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "if",
+              "cond": {
+                "k": "binary",
+                "op": "!=",
+                "lhs": {
+                  "k": "ident",
+                  "name": "err",
+                  "tok": 82
+                },
+                "rhs": {
+                  "k": "nil",
+                  "tok": 84
+                },
+                "tok": 83
+              },
+              "then": {
+                "stmts": [
+                  {
+                    "k": "expr",
+                    "expr": {
+                      "k": "switch",
+                      "subjects": [
+                        {
+                          "k": "ident",
+                          "name": "err",
+                          "tok": 87
+                        }
+                      ],
+                      "cases": [
+                        {
+                          "patterns": [
+                            {
+                              "k": "type",
+                              "bind": null,
+                              "variant": "Expired",
+                              "fields": [],
+                              "tok": 90
+                            }
+                          ],
+                          "body": {
+                            "stmts": [
+                              {
+                                "k": "expr",
+                                "expr": {
+                                  "k": "call",
+                                  "callee": {
+                                    "k": "ident",
+                                    "name": "println",
+                                    "tok": 94
+                                  },
+                                  "args": [
+                                    {
+                                      "k": "strlit",
+                                      "value": "please sign in again",
+                                      "tok": 96
+                                    }
+                                  ],
+                                  "tok": 95
+                                }
+                              }
+                            ]
+                          },
+                          "tok": 89
+                        }
+                      ],
+                      "default": null,
+                      "tok": 86
+                    }
+                  },
+                  {
+                    "k": "ret",
+                    "values": [],
+                    "tok": 101
+                  }
+                ]
+              },
+              "else": null,
+              "tok": 81
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 105
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "who",
+                  "tok": 107
+                }
+              ],
+              "tok": 106
+            }
+          }
+        ]
+      },
+      "tok": 68,
+      "bodiless": false,
+      "span": {
+        "start": 67,
+        "end": 112
+      },
+      "sig_end": 71
+    }
+  ],
+  "consts": []
+}

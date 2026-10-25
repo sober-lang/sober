@@ -554,7 +554,7 @@ func llMa(ma mut map[int]int, g FnRef) bool {
 // rt.chunk_open / chunk_next（chunk.sober）も真: 記録を今の深度に取り、切片の View の印は今の深度（反復の region — View の寿命は次の chunk_next まで）。
 // 反復の region を消すと印が外の変数の床と合流し、外への代入が写さずにスロットを指したままになる（上の前提「印 X の値は深度 X の region 以上に生きる」）
 func llRtAlloc(st mut St, g FnRef) bool {
-    if g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry || g == st.rtCpuProbe {
+    if g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || g == st.rtMatchLen || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry || g == st.rtCpuProbe {
         return false
     }
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtRalloc || g == st.rtGrow || g == st.rtGrow8 || g == st.rtMapGrow || g == st.rtReloc || g == st.rtReloc8 || g == st.rtExtend8 || g == st.rtArgs || g == st.rtDir || g == st.rtEnv || g == st.rtRead || g == st.rtRfd || g == st.rtRun || g == st.rtStat || g == st.rtMkdir || g == st.rtMode || g == st.rtRename || g == st.rtSleep || (chF(mut st, CHF_OPEN) != -1 && (g == chF(mut st, CHF_OPEN) || g == chF(mut st, CHF_NEXT)))
@@ -719,7 +719,7 @@ func llCallerDepth(st mut St, f FnRef, v0 int) bool {
 
 // llRtKnown は rt の関数か（要約の固定点の外 — llRtAlloc が答える）
 func llRtKnown(st mut St, g FnRef) bool {
-    return llRtAlloc(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry
+    return llRtAlloc(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtStreq || g == st.rtMatchLen || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPchar || g == st.rtPint || g == st.rtPstr || g == st.rtPqstr || g == st.rtFlush || g == st.rtPanic || g == st.rtPanicMem || g == st.rtWrite || g == st.rtWfd || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtGrowTry
 }
 
 // llCallees は cs の後ろに [f, 呼ぶ利用者の関数の数, 関数…] を積む
@@ -1346,7 +1346,7 @@ func regionElideModule(st mut St) {
 
 // reRtOk は今の深度に確保しない rt の関数か
 func reRtOk(st mut St, g FnRef) bool {
-    return g == st.rtPanic || g == st.rtPanicMem || g == st.rtReloc || g == st.rtReloc8 || g == st.rtStreq || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow
+    return g == st.rtPanic || g == st.rtPanicMem || g == st.rtReloc || g == st.rtReloc8 || g == st.rtStreq || g == st.rtMatchLen || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry || g == st.rtMapGrow
 }
 
 // reDepthArith は f が入口の enter より前に読んだ深度（呼び手の深度）から算術で深度を作るか（F-bd — 2026-10-17）。

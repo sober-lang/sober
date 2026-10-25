@@ -47,6 +47,7 @@ const multipartMaxHead = 8192
 //         return http.Text("ok")
 //     }
 @errors(BadMultipart)
+@effects()
 func Multipart(r Request) ([]Part, error?) {
     ct := Header(r, "content-type")
     if ct == nil {

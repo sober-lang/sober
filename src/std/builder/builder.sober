@@ -36,6 +36,7 @@ const maxChunk = 1024
 const minBase = 1016
 
 // x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。初期化と新しい chunk は pushSlow）
+@effects()
 func Push[T](b mut Builder[T], x T) {
     if b.fill < b.cap {
         mut c := b.chunks[b.cur]
@@ -75,6 +76,7 @@ func pushSlow[T](b mut Builder[T], x T) {
 
 // xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが
 // 要素ごとでなく chunk ごと。シリアライザ・パーサの積みの絶対値の的）
+@effects()
 func PushAll[T](b mut Builder[T], xs []T) {
     n := len(xs)
     // 速い道 = 今の chunk に全部収まる（JSON の欄名・短い文字列 — 呼び出し点に展開される大きさに。収まらない分は pushAllSlow）
@@ -118,16 +120,52 @@ func pushAllSlow[T](b mut Builder[T], xs []T) {
 }
 
 // s のバイト列を末尾に積む（PushAll(b, bytes(s))）
+@effects()
 func PushString(b mut Builder[byte], s string) {
     PushAll(mut b, bytes(s))
 }
 
+// w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。k ≤ 0 なら何もしない。
+// k > 8 なら 9 バイト目からは算術右シフトの埋め（w が負なら 255・でなければ 0）。今の chunk に k バイトの空きがあれば、chunk の出し入れと
+// 空きの検査は 1 回だけ（10 進の桁や短い字面を 1 語に詰めてから積む形 — json の数の書き出し）
+@effects()
+func PushWord(b mut Builder[byte], w int, k int) {
+    if k > 0 && k <= b.cap - b.fill {
+        mut c := b.chunks[b.cur]
+        f := b.fill
+        mut x := w
+        mut j := 0
+        while j < k {
+            c[f + j] = byte(x & 255)
+            x = x >> 8
+            j += 1
+        }
+        b.fill = f + k
+        b.n = b.n + k
+    } else {
+        pushWordSlow(mut b, w, k)
+    }
+}
+
+// pushWordSlow は PushWord の遅い道（今の chunk に k バイトの空きが無い — 1 バイトずつ Push。速い道を呼び出し点に展開される大きさに保つ）
+func pushWordSlow(b mut Builder[byte], w int, k int) {
+    mut x := w
+    mut j := 0
+    while j < k {
+        Push(mut b, byte(x & 255))
+        x = x >> 8
+        j += 1
+    }
+}
+
 // 積んだ要素の個数
+@effects()
 func Len[T](b mut Builder[T]) int {
     return b.n
 }
 
 // i 番目（0 起点）に積んだ要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
+@effects()
 func Get[T](b mut Builder[T], i int) T {
     ok := i >= 0 && i < b.n
     // 範囲外は探索を 0 番で回し（巨大な i で容量の倍々が溢れないように）、chunk の列の外を指させて境界検査に落とす
@@ -153,6 +191,7 @@ func Get[T](b mut Builder[T], i int) T {
 
 // 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
 // Builder 自体は変えない（続けて Push できる）
+@effects()
 func Build[T](b mut Builder[T]) []T {
     mut out := mut []T{}
     mut k := 0

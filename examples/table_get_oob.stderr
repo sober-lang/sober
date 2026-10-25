@@ -1,1 +1,1 @@
-panic: index out of range at std/table/table.sober:120:20
+panic: index out of range at std/table/table.sober:124:20

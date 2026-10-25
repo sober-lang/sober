@@ -9,6 +9,7 @@ CRC-32（IEEE 802.3 の多項式）の検査和
 ## Sum
 
 ```sober
+@effects(panic)
 func Sum(data []byte) int
 ```
 

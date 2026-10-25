@@ -1,0 +1,2 @@
+sober: load error at examples/security_panic_neg.sober:6:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
+exit=1

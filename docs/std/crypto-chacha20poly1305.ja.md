@@ -109,6 +109,16 @@ Seal の逆（tag を照合してから復号する）
 
 失敗のラベル: [`BadSize`](#badsize)・[`Auth`](#auth)
 
+## SealInto
+
+```sober
+@bless
+@effects(!io, !block, !nondet)
+func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int
+```
+
+SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と同じ口 — 書いたバイト数・入らなければ / nonce の長さが違えば −1）。SealTo の結果を写す（ChaCha は鍵ストリームの列を作るので直書きの得が無い — 作業の列は呼び手の region に積もる）
+
 ## SealTo
 
 ```sober

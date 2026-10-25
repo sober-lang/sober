@@ -157,6 +157,13 @@ Sober の唯一の中間表現。`sober build` は AST → IR → 正規バッ�
 - 入口の引数: `_start` は初期 rsp（argc の位置 — `[argc, argv…, 0, envp…, 0]`）を sober_entry の引数 0 として渡す（ir_x86: `mov rax, rsp; and rsp, -16; sub rsp, 8; push rax; call`、LLVM: `movq %rsp, %rdi` の後に整列して call）。環境変数を読むのと、argv の置き場としてメタ領域の W_ARGV（末尾に足した 1 語 — 既存の語の番地は動かさない）に保存するのに使う（rt.read_args が読む）。引数を宣言しない sober_entry（テストの IR テキスト）は読まないだけで動く
 - 終了コード（2026-09-28）: `func main() int` なら入口が戻り値を受け、0〜255 の外は exit 101、内なら `syscall(231, code)`（exit_group）。後ろは到達しない定数の exit 0 — IR の exit 終端子は定数 code のままで、op は増やしていない（language.md 27 節）
 - errno の語はワーカーごと（2026-10-14 — net 4b・fc93eee5）: rt の中で task が待つ関数（ring の読み・net の受け等）は、待ちの後で errno の語を置き直す — 待つ間に同じワーカーの他の task が書く
+- 手書きの本体への置き換え（最適化のバックエンドだけ — rt.copy8〔d-3〕と rt.matchlen〔SIMD の核 段 1 — 2026-10-25〕）: IR の本体が意味の正で、x86 の最適化のバックエンド
+  （x86.sober の xCopy8Body / xMatchLenBody）は同じ意味の手書きの本体を吐き、呼び出しを「作業用のレジスタだけを壊す call」として扱う（xIsCallOp の外 — 割り当ての組を
+  壊さない）。約束は 3 つ: ① 意味は IR の本体と同じ（optdiff・elfeq が照合）② **壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ**（rsi / rdi が要る道は積んで戻す・
+  r11 は割り当てに使う関数がある〔xUsesR11〕ので触らない・xmm2 以上は float の割り当ての組〔scanb を含まない関数の広い組〕なので触らない）③ rt を呼ばない・syscall なし
+  （task の切替・罠を跨がない）。rt.matchlen(p, q, n) は p[0:n] と q[0:n] の一致の長さ — **区間の外を読まない**（16 バイトの塊は区間の中だけ・端数は区間の終わりに
+  揃えた重ねた読み〔n ≥ 16 のときだけ — 重なった分は比べ済みで等しい〕・n < 16 は 8 バイト / 1 バイト）。開発用 --rt-mutant=13 / 14 が手書きの本体の 2 つの誤り
+  （食い違いの位置 +1・端数の重ねた読みの省略）を入れる — testdata/matchlen と optdiff の網が鳴ることの確認用
 - ランタイムは Zig 版と Sober 版（src/compiler/lower/rt.sober — ir_rt / ir_rt_io の写し。同じ命令列を同じ順で組む）の二重化。IR テキスト / .ll 黄金とのバイト一致が見張る（selfhost_lower / selfhost_ll）
 - 棄てた案: .ll の手書きプレリュード（LLVM 専用になる）、Zig 製オブジェクトのリンク（実装言語が増える）
 

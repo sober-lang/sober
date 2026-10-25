@@ -70,6 +70,7 @@ type Frame struct {
 }
 
 // HKDF-Expand-Label(secret, label, context, n)（RFC 9846 7.1 — info = 長さ 2 バイト ‖ "tls13 " ‖ label ‖ context の長さ付き）
+@effects()
 func ExpandLabel(secret []byte, label string, context []byte, n int) []byte {
     lb := bytes(label)
     mut info := mut []byte{}
@@ -92,6 +93,7 @@ func ExpandLabel(secret []byte, label string, context []byte, n int) []byte {
 
 // suite と traffic secret の Dir（key = ExpandLabel(secret, "key", "", 16 / 32)・iv = ExpandLabel(secret, "iv", "", 12)・seq 0）
 @errors(Alert)
+@effects()
 func NewDir(suite int, secret []byte) (Dir, error?) {
     if suite != AesGcm && suite != ChaCha {
         return emptyDir(), Alert{desc: AlertInternal}
@@ -117,6 +119,7 @@ func emptyDir() Dir {
 
 // KeyUpdate（secret' = ExpandLabel(secret, "traffic upd", "", 32) — RFC 9846 7.2・key / iv を作り直して seq を 0 に）
 @errors(Alert)
+@effects()
 func Update(d mut Dir) error? {
     nd := NewDir(d.suite, ExpandLabel(d.secret, "traffic upd", []byte{}, 32))?
     d = nd
@@ -124,12 +127,14 @@ func Update(d mut Dir) error? {
 }
 
 // 送りの鍵を進めるべきか（AES-GCM の使用上限の手前 — ChaCha20-Poly1305 は seq の上限〔2^64〕まで来ない）
+@effects()
 func NeedUpdate(d Dir) bool {
     return d.suite == AesGcm && d.seq >= aesLimit
 }
 
 // 内容の型 ctype の平文 pt を record の列にしたもの（2^14 バイトずつ・各 record の内側の末尾に 0 埋め pad バイト〔0 = 埋めない〕）。
 // 空の pt は中身 0 バイトの record 1 つ（application_data には送らない約束は呼び手 — RFC 9846 5.1）
+@effects()
 func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
     n := len(pt)
     if n <= MaxPlain {
@@ -148,6 +153,23 @@ func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte {
         at += m
     }
     return freeze(out)
+}
+
+// Seal の宛先を呼び手の列 dst[at:] にした形（record 1 つ — pt が MaxPlain を越える・dst に入らなければ −1。書いたバイト数を返す）。
+// d は読むだけ（seq は呼び手が +1 して書き戻す — mut の仮引数を dst の 1 つに保つ）。作業の列（頭・nonce・tail・AEAD の作業）は呼び手の region に積もる
+@effects()
+func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int {
+    m := len(pt)
+    if m > MaxPlain {
+        return 0 - 1
+    }
+    tail := []byte{byte(ctype)}
+    hd := head(m + 1 + 16)
+    nonce := nonceOf(d.iv, d.seq)
+    if d.suite == AesGcm {
+        return aesgcm.SealInto(d.aes, nonce, hd, pt, hd, tail, mut dst, at)
+    }
+    return chacha20poly1305.SealInto(d.cc, nonce, hd, pt, hd, tail, mut dst, at)
 }
 
 // sealOne は pt[at, at + m) を 1 record に（内側 = 中身 ‖ ctype ‖ 0 × pad・頭 = 23 / 0x0303 / 内側 + tag の長さ）。中身は写さず切り出しで渡し、
@@ -192,6 +214,7 @@ func nonceOf(iv []byte, seq int) []byte {
 }
 
 // 暗号化していない record（handshake の最初の flight・互換の CCS）の内容の型と中身（枠 r の頭の後ろ — 写さない部分列）
+@effects()
 func Plain(r Frame) (int, []byte) {
     return int(r.b[r.off]), r.b[r.off + HeadSize:r.off + r.n]
 }
@@ -200,6 +223,7 @@ func Plain(r Frame) (int, []byte) {
 // tag の不一致は bad_record_mac・本体が tag より短い / 長すぎるは record_overflow / decode_error・内側が全部 0（内容の型が無い）は unexpected_message
 @errors(Alert)
 @bless
+@effects()
 func Open(d mut Dir, r Frame) (int, []byte, error?) {
     if int(r.b[r.off]) != CtApp {
         return 0, []byte{}, Alert{desc: AlertUnexpected}
@@ -274,6 +298,7 @@ func stripTail(p []byte, lo int, m int) (int, int) {
 // record は持ち越しの列（最初にまたいだときに頭 + MaxCipher バイトを 1 回確保）に溜めて、揃ったら繋いだ写しを渡す。recv が閉じたときに
 // 半端な record が残っていれば decode_error。recv の失敗は Transport に包み替える
 @errors(Alert, Transport)
+@effects()
 func Frames(recv func(k func([]byte)) error?, k func(Frame)) error? {
     capa := HeadSize + MaxCipher
     mut pend := mut []byte{}
@@ -363,12 +388,14 @@ func joined(pend mut []byte, n int) []byte {
 // ── std/tls の口（Conn の置き場 — 接続の状態は値の外の int の列に住む: S2・report-811 0 節 B / 831）──
 
 // b[off, off + n) を枠に（std/tls の handshake の組み立て — 呼び手が頭の長さを検査した後）
+@effects()
 func At(b []byte, off int, n int) Frame {
     return Frame{b: b, off: off, n: n}
 }
 
 // d の語の列（[suite, seq, 秘密の長さ, 秘密 …, iv の長さ, iv …, 鍵の素材の長さ, 鍵の素材 …] — バイト列は 8 バイト / 語。
 // 鍵の素材 = AES-GCM の展開済みの ctx か ChaCha20-Poly1305 の鍵 — 開くたびに展開し直さない）
+@effects(panic)
 func Pack(d Dir) []int {
     mut w := mut []int{}
     w = append(w, d.suite)
@@ -380,6 +407,7 @@ func Pack(d Dir) []int {
 }
 
 // Pack の逆（w[at:] から）
+@effects()
 func Unpack(w []int, at int) Dir {
     suite := w[at]
     seq := w[at + 1]
@@ -392,7 +420,14 @@ func Unpack(w []int, at int) Dir {
     return Dir{suite: suite, secret: secret, aes: aesgcm.Key{ctx: []byte{}}, cc: chacha20poly1305.Key{key: km}, iv: iv, seq: seq}
 }
 
+// d の seq を seq に差し替えた Dir（鍵の素材は d と共有 — std/tls が展開済みの送りの方向に置き場の seq の語を当てる）
+@effects()
+func WithSeq(d Dir, seq int) Dir {
+    return Dir{suite: d.suite, secret: d.secret, aes: d.aes, cc: d.cc, iv: d.iv, seq: seq}
+}
+
 // d の seq（std/tls がストレージの seq の語だけを書き戻す）
+@effects()
 func Seq(d Dir) int {
     return d.seq
 }

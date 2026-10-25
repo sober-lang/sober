@@ -1,0 +1,14 @@
+run_id=40160907459
+run_attempt=1
+commit=a8bfbd8a
+runner=linux-x64-16vcpu
+runner_name=linux-x64-16vcpu-1000000086
+cpu=AMD EPYC 9V45 96-Core Processor
+kernel=6.17.0-1022-azure
+go=go1.26.1
+rust=1.89.0
+zig=0.15.2
+perf=6.17.13
+nproc=16
+pin_cpu=15
+started=2026-10-25T04:11:46Z

@@ -21,6 +21,7 @@ type View struct {
 
 ```sober
 @errors(strings.InvalidUtf8)
+@effects(block)
 func Check(b []byte) (View, error?)
 ```
 
@@ -31,6 +32,7 @@ b 全体を検査して View にする（不正なら最初の不正なシーケ
 ## Bytes
 
 ```sober
+@effects()
 func Bytes(v View) []byte
 ```
 
@@ -40,6 +42,7 @@ View のバイト列（読むだけ）
 
 ```sober
 @errors(strings.InvalidUtf8)
+@effects()
 func Str(v View, s int, i int) (string, error?)
 ```
 

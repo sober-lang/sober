@@ -11,6 +11,9 @@
 //      深く探して一致が伸び、greedy の内部挿入の門〔ml ≤ maxIns〕が閉じて表が疎になる、zlib の level 表との共進化のずれ。
 //      dataset:8/9 は +1〜2 バイト〔長さ 3 の一致はハッシュが見ない — lv8/9 のみ・採点経路の lv6 は無関係〕）、
 //      全形の合算 Sober / zlib ≤ 1.0（zlib より縮むこと）
+//      → 2026-10-24 ユーザー裁定（report-1116 — Go / zlib を錨にした線を廃し、lv4〜6 で一致の中の挿入の省略〔B3〕を採る）: lv4〜6 の線は
+//      実測の最大 × 1.005（lv4 実戦 1.039〔json40 1.0332〕/ 人工 1.115〔noisy 1.1087〕・lv5 1.012〔dataset 1.0069〕/ 1.115〔noisy 1.1086〕・
+//      lv6 1.018〔json50 1.0128〕/ 1.118〔noisy 1.1120〕）。lv1〜3・7〜9 は上の値のまま。全形の合算は ≤ 1.006（実測 1.0007 × 1.005 — zlib より縮む約束は廃止）
 //   ⑥ 復号の双子（report-1021）: 「twin <i> 長さ CRC-32」の行ごとに、index（twin.ts — node:zlib と Go の符号化）の i 番目の列を node:zlib で解いた結果と
 //      <dir>/twin<i>.out（Sober の flate.Decode / gzip.Decode）がバイト一致・index の全部の列に twin の行がある（Sober の自分の符号化の往復と maxSize の境目は main.sober が FAIL の行で出す）
 //   node --experimental-strip-types check.ts <list> <dir> <golden> <index> [--regen]
@@ -66,7 +69,8 @@ for (const l of lines) {
     zl[lv] += zlen;
     // ⑤ 率の線（level 0 の stored は ① の bound が見る）
     if (lv > 0) {
-        const lim = /^(json(25|40|50)|dataset)$/.test(name) ? 1.004 : 1.026;
+        const real = /^(json(25|40|50)|dataset)$/.test(name);
+        const lim = lv === 4 ? (real ? 1.039 : 1.115) : lv === 5 ? (real ? 1.012 : 1.115) : lv === 6 ? (real ? 1.018 : 1.118) : real ? 1.004 : 1.026;
         if (z.length > zlen * lim) bad(`${name} ${lv}: size ${z.length} > zlib ${zlen} × ${lim}（率の線 — check.ts ⑤）`);
     }
 }
@@ -86,7 +90,7 @@ if (flag === "--regen") {
     }
 }
 const stot = sober.slice(1).reduce((a, b) => a + b, 0), ztot = zl.slice(1).reduce((a, b) => a + b, 0);
-if (stot > ztot) bad(`total size ${stot} > zlib ${ztot}（全形の合算の線 — check.ts ⑤）`);
+if (stot > ztot * 1.006) bad(`total size ${stot} > zlib ${ztot} × 1.006（全形の合算の線 — check.ts ⑤）`);
 const ratio = sober.map((s, i) => `${i}:${(s / zl[i]).toFixed(4)}`).join(" ");
 const json = [1, 6, 9].map((l) => `gzip ${l} ${(jgz[l] / 3).toFixed(1)} vs zlib ${(jzl[l] / 3).toFixed(1)}`).join(" / ");
 console.log(`flatecheck: ${lines.length - twins} encodings (deflate + gzip) round-trip through zlib and Sober's Decode · ${twins} zlib / Go streams decoded ≡ zlib · size vs zlib (same level) ${ratio} · json-comp mean ${json} · fail=${fail}`);

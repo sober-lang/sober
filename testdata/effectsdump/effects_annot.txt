@@ -5,4 +5,4 @@ examples/effects_annot.sober:33:6: effects main.shout fi=3 bits=none declared
 examples/effects_annot.sober:37:6: effects main.main fi=4 bits=block, io, panic, nondet
 examples/effects_annot.sober:10:6: ftype Step union=panic
 std/iter/iter.sober:8:6: ftype Iter union=none
-summary fns=44 lambdas=5 edges=65 any=io, panic any-calls=0 fvalues=0 declared=4 violations=0
+summary fns=44 lambdas=5 edges=65 any=io, panic any-calls=0 fvalues=0 declared=31 violations=0

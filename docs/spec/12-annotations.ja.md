@@ -96,3 +96,7 @@ A-16. 導出した効果は宣言の許容に含まれなければならない�
 例: [`examples/effects_annot.sober`](../../examples/effects_annot.sober)
 拒否: [`examples/effects_neg_leak.sober`](../../examples/effects_neg_leak.sober)・[`examples/effects_neg_fnvalue.sober`](../../examples/effects_neg_fnvalue.sober)
 決定: [language.md 12 節「関数の効果の宣言」](../language.md)
+
+A-17. 標準ライブラリの本体のある公開関数（`internal` の package を除く）は `@effects` を持たなければならない。正の列挙は正規形 — 本体と名前の呼び出しから来る語と、値を呼ぶ名前付き関数型の名前 — と等しくなければならない。否定形はこの規則を満たす。利用者の package の宣言は任意で、正の列挙は上界の主張である。
+例: [`examples/effects_std.sober`](../../examples/effects_std.sober)・[`src/std/hex/hex.sober`](../../src/std/hex/hex.sober)・[`src/std/http/http.sober`](../../src/std/http/http.sober)
+決定: [language.md 12 節「関数の効果の宣言」](../language.md)

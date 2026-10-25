@@ -206,7 +206,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
             return 0, diag.Malformed{at: posOf(mut st, at)}
         }
         // std の `@intrinsic("鍵")` の宣言（息継ぎ ③ — intrinsic.sober の SysKey）: コアの近似は鍵の番号で（float の 3 つは fconv・
-        // []byte を返すものは新しい imm slice・mut []int は新しい mut slice・他は 0 — 実引数は左から評価して捨てる）
+        // []byte を返すものは新しい imm slice・mut []int / mut []byte は新しい mut slice・他は 0 — 実引数は左から評価して捨てる）
         sk := SysKey(mut st, st.curPkg, name)
         if sk != 0 {
             if na != SysArity(sk) {
@@ -216,7 +216,7 @@ func call(st mut S, callee0 NodeRef, args ListRef, at NodeRef, eb int, ef int, d
                 v := expr(mut st, latN(mut st, args, 0), eb, ef, depth)?
                 return cFConv(mut st, if sk == loader.IFSqrt { FCSqrt } else if sk == loader.IFBits { FCBits } else { FCFromBits }, v), nil
             }
-            mut body := if SysResult(sk) == 'b' { c1(mut st, CFreeze, cMkslice(mut st, 1, tByte(mut st))) } else if SysResult(sk) == 'm' { cMkslice(mut st, 1, st.tInt) } else { cLit(mut st, 0) }
+            mut body := if SysResult(sk) == 'b' { c1(mut st, CFreeze, cMkslice(mut st, 1, tByte(mut st))) } else if SysResult(sk) == 'm' { cMkslice(mut st, 1, st.tInt) } else if SysResult(sk) == 'x' { cMkslice(mut st, 1, tByte(mut st)) } else { cLit(mut st, 0) }
             mut i := na - 1
             while i >= 0 {
                 v := expr(mut st, latN(mut st, args, i), eb, ef, depth + i)?

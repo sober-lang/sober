@@ -44,6 +44,7 @@ func runeCount(b []byte) int {
 }
 
 // s が prefix で始まるかを返す
+@effects()
 func HasPrefix(s string, prefix string) bool {
     b := bytes(s)
     p := bytes(prefix)
@@ -51,6 +52,7 @@ func HasPrefix(s string, prefix string) bool {
 }
 
 // s が suffix で終わるかを返す
+@effects()
 func HasSuffix(s string, suffix string) bool {
     b := bytes(s)
     p := bytes(suffix)
@@ -59,17 +61,20 @@ func HasSuffix(s string, suffix string) bool {
 
 // substr が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。
 // 無ければ -1。substr が空なら 0
+@effects()
 func Index(s string, substr string) int {
     return indexAt(bytes(s), 0, bytes(substr))
 }
 
 // substr が s に含まれるかを返す（空の substr は常に含まれる）
+@effects()
 func Contains(s string, substr string) bool {
     return Index(s, substr) >= 0
 }
 
 // s に含まれる substr の重ならない出現数を返す。
 // substr が空なら s のコードポイント数 + 1（Go と同じ。コードポイント数は継続バイト〔0b10xxxxxx〕でないバイトの数 — 妥当な UTF-8 を前提）
+@effects()
 func Count(s string, substr string) int {
     b := bytes(s)
     p := bytes(substr)
@@ -103,6 +108,7 @@ func lastIndexAt(b []byte, p []byte) int {
 // s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s・""・false）。
 // 割った 2 つは検査し直さない: 妥当な s の中で妥当な sep にバイト列として一致した位置は文字の頭（sep の頭は継続バイトでない）、一致の末尾も
 // 文字の頭（完結した列の直後に継続バイトは来ない）— 自己同期。`bytes(s)` に落として切って `string(…) catch` で戻す回り道が要らない
+@effects()
 func Cut(s string, sep string) (string, string, bool) {
     b := bytes(s)
     p := bytes(sep)
@@ -114,6 +120,7 @@ func Cut(s string, sep string) (string, string, bool) {
 }
 
 // s を最後の sep の前と後に割る（無ければ s・""・false — Cut の最後の出現版。検査し直さない理由は Cut と同じ）
+@effects()
 func CutLast(s string, sep string) (string, string, bool) {
     b := bytes(s)
     p := bytes(sep)
@@ -125,6 +132,7 @@ func CutLast(s string, sep string) (string, string, bool) {
 }
 
 // s が prefix で始まればそれを外した残り、でなければ s（Go の strings.TrimPrefix — 残りは prefix の末尾から始まるので文字の頭）
+@effects()
 func TrimPrefix(s string, prefix string) string {
     b := bytes(s)
     p := bytes(prefix)
@@ -132,6 +140,7 @@ func TrimPrefix(s string, prefix string) string {
 }
 
 // s が suffix で終わればそれを外した残り、でなければ s（Go の strings.TrimSuffix — 残りは suffix の頭で終わるので文字の境目）
+@effects()
 func TrimSuffix(s string, suffix string) string {
     b := bytes(s)
     p := bytes(suffix)
@@ -139,6 +148,7 @@ func TrimSuffix(s string, suffix string) string {
 }
 
 // substr が s に最後に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1。substr が空なら len(bytes(s))（Go の strings.LastIndex と同じ）
+@effects()
 func LastIndex(s string, substr string) int {
     return lastIndexAt(bytes(s), bytes(substr))
 }
@@ -164,6 +174,7 @@ func runeEnd(b []byte, i int) int {
 
 // s を sep の出現ごとに割った片の列（Go の strings.Split と同じ）。sep が無ければ [s]・s が空で sep が空でなければ [""]。
 // sep が空なら 1 文字（コードポイント — UTF-8 の列）ずつに割る（s が空なら空の列）。片は検査し直さない（Cut と同じ自己同期の理由）
+@effects()
 func Split(s string, sep string) []string {
     b := bytes(s)
     p := bytes(sep)
@@ -189,6 +200,7 @@ func Split(s string, sep string) []string {
 }
 
 // s を ASCII の空白の連なりで割った空でない片の列（Go の strings.Fields — 空白だけ / 空なら空の列）。空白は ASCII の 6 つだけ（Unicode の空白は片の中身）
+@effects()
 func Fields(s string) []string {
     b := bytes(s)
     mut out := mut []string{}
@@ -209,6 +221,7 @@ func Fields(s string) []string {
 }
 
 // s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace — Unicode の空白は外さない）
+@effects()
 func TrimSpace(s string) string {
     b := bytes(s)
     mut i := 0
@@ -224,6 +237,7 @@ func TrimSpace(s string) string {
 
 // s の old の重ならない出現を前から n 個 new に置き換えた string（Go の strings.Replace — n < 0 なら全部・n == 0 なら s）。
 // old が空なら s の頭と各文字（コードポイント）の後ろに new を差す（Go と同じ — 差す位置は文字の境目なので結果は妥当な UTF-8）
+@effects()
 func Replace(s string, old string, new string, n int) string {
     b := bytes(s)
     o := bytes(old)
@@ -267,11 +281,13 @@ func Replace(s string, old string, new string, n int) string {
 }
 
 // s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の strings.ToLower の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+@effects()
 func ToLower(s string) string {
     return mapCase(s, 'A', 'Z', 32)
 }
 
 // s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の strings.ToUpper の ASCII の部分 — 非 ASCII の文字はそのまま。変わる所が無ければ s）
+@effects()
 func ToUpper(s string) string {
     return mapCase(s, 'a', 'z', -32)
 }
@@ -298,6 +314,7 @@ func mapCase(s string, lo byte, hi byte, d int) string {
 
 // s と t が ASCII の大文字小文字を同一視して等しいか（Go の strings.EqualFold の ASCII の部分 — 非 ASCII のバイトは完全一致で比べる。
 // Go は Unicode の simple folding〔'É' ≡ 'é'・K〔U+212A〕≡ k・ſ ≡ s〕でも等しいとするが、ここでは等しくない）
+@effects()
 func EqualFold(s string, t string) bool {
     a := bytes(s)
     b := bytes(t)
@@ -317,6 +334,7 @@ func foldByte(c byte) byte {
 }
 
 // c が s に最初に現れる位置を bytes(s) 上のバイトオフセットで返す。無ければ -1
+@effects()
 func IndexByte(s string, c byte) int {
     b := bytes(s)
     mut i := 0
@@ -344,6 +362,7 @@ type Arena struct {
 }
 
 // s のバイト列を a の region へコピーした string を返す（コピーのコストはソースに見える — 境界コピー = 明示イディオム）
+@effects()
 func Clone(a mut Arena, s string) string {
     b := bytes(s)
     mut c := a.seed
@@ -357,6 +376,7 @@ func Clone(a mut Arena, s string) string {
 
 // ps を sep で繋いだ string（Go の strings.Join と同じ）。片の長さの和を 1 回だけ写す — 素直な `s = s + sep + p` の繰り返しは
 // 写しが積もる（先端一致の concat の in-place 成長はまだ無い）。積みは 1 本の列の先端なので写しが起きない
+@effects()
 func Join(ps []string, sep string) string {
     sb := bytes(sep)
     mut out := mut []byte{}
@@ -416,6 +436,7 @@ func seqLen(b []byte, i int) int {
 }
 
 // 最初の不正なシーケンスの位置、妥当なら -1
+@effects()
 func IndexInvalid(b []byte) int {
     mut i := 0
     mut at := -1
@@ -459,6 +480,7 @@ func validPrefix(b []byte, i int) int {
 }
 
 // b 全体が有効な UTF-8 か（IndexInvalid(b) < 0 と同じ）
+@effects()
 func Valid(b []byte) bool {
     return IndexInvalid(b) < 0
 }

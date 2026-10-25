@@ -27,7 +27,7 @@ func SysKey(st mut S, pk int, name StrRef) int {
     return 0
 }
 
-// SysResult は鍵の番号の結果の型の種類（'i' = int・'f' = float・'b' = []byte・'m' = mut []int — loader.IntrinsicSig の末尾）
+// SysResult は鍵の番号の結果の型の種類（'i' = int・'f' = float・'b' = []byte・'m' = mut []int・'x' = mut []byte — loader.IntrinsicSig の末尾）
 func SysResult(code int) byte {
     s := bytes(loader.IntrinsicSig(code))
     return s[len(s) - 1]

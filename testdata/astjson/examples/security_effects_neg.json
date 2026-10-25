@@ -1,0 +1,199 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": "$convert",
+      "path": "std/convert",
+      "tok": 0
+    }
+  ],
+  "types": [],
+  "funcs": [
+    {
+      "name": "audit",
+      "type_params": [],
+      "params": [
+        {
+          "name": "msg",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 10
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "msg",
+                  "tok": 12
+                }
+              ],
+              "tok": 11
+            }
+          }
+        ]
+      },
+      "tok": 4,
+      "bodiless": false,
+      "span": {
+        "start": 3,
+        "end": 17
+      },
+      "sig_end": 9
+    },
+    {
+      "name": "fee",
+      "type_params": [],
+      "params": [
+        {
+          "name": "amount",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "int"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "audit",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "interp",
+                  "tmpl": {
+                    "lits": [
+                      "fee for ",
+                      ""
+                    ],
+                    "holes": [
+                      {
+                        "k": "ident",
+                        "name": "amount",
+                        "tok": 40
+                      }
+                    ]
+                  },
+                  "tok": 40
+                }
+              ],
+              "tok": 39
+            }
+          },
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "binary",
+                "op": "+",
+                "lhs": {
+                  "k": "binary",
+                  "op": "/",
+                  "lhs": {
+                    "k": "ident",
+                    "name": "amount",
+                    "tok": 44
+                  },
+                  "rhs": {
+                    "k": "int",
+                    "value": 100,
+                    "tok": 46
+                  },
+                  "tok": 45
+                },
+                "rhs": {
+                  "k": "int",
+                  "value": 30,
+                  "tok": 48
+                },
+                "tok": 47
+              }
+            ],
+            "tok": 43
+          }
+        ]
+      },
+      "tok": 31,
+      "bodiless": false,
+      "span": {
+        "start": 17,
+        "end": 52
+      },
+      "sig_end": 37
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 57
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "fee",
+                    "tok": 59
+                  },
+                  "args": [
+                    {
+                      "k": "int",
+                      "value": 5000,
+                      "tok": 61
+                    }
+                  ],
+                  "tok": 60
+                }
+              ],
+              "tok": 58
+            }
+          }
+        ]
+      },
+      "tok": 53,
+      "bodiless": false,
+      "span": {
+        "start": 52,
+        "end": 67
+      },
+      "sig_end": 56
+    }
+  ],
+  "consts": []
+}

@@ -9,6 +9,7 @@
 ## Format
 
 ```sober
+@effects()
 func Format(b []byte) string
 ```
 
@@ -30,6 +31,7 @@ Parse の入力が 16 進の綴りでない（奇数の長さ・0-9 a-f A-F 以�
 
 ```sober
 @errors(Bad)
+@effects()
 func Parse(s string) ([]byte, error?)
 ```
 

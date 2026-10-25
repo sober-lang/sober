@@ -1,11 +1,11 @@
 examples/origin_neg_mount.sober:6:6: eff main.main
-std/http/http.sober:298:6: credential std/http.Authorization
-std/http/http.sober:306:6: credential std/http.Cookie
+std/http/http.sober:304:6: credential std/http.Authorization
+std/http/http.sober:313:6: credential std/http.Cookie
 std/http/http.sober:27:6: credential field Request.head
 std/http/http.sober:60:6: shared-field Response.cache response
-std/http/http.sober:443:6: shared-field Route.cache route
-std/http/http.sober:611:6: shared Cache the shared cache policy 'Fresh'
-std/http/http.sober:611:6: shared Cache the shared cache policy 'Shared'
-std/http/http.sober:455:6: meet-point std/http.Mount
+std/http/http.sober:453:6: shared-field Route.cache route
+std/http/http.sober:625:6: shared Cache the shared cache policy 'Fresh'
+std/http/http.sober:625:6: shared Cache the shared cache policy 'Shared'
+std/http/http.sober:466:6: meet-point std/http.Mount
 examples/origin_neg_mount.sober:8:21: violation Mount puts routes with the shared cache policy 'Fresh' under middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head) — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」)
-summary atoms=6 credentials=3 eff-fns=1 shared=2 shared-fields=2 violations=1 walks=534
+summary atoms=6 credentials=3 eff-fns=1 shared=2 shared-fields=2 violations=1 walks=545

@@ -1,0 +1,41 @@
+package main
+
+// http.ServeFlushed（report-1130）: ServeWith の送りを 2 段にした形 — 受けた切片 1 つ分の応答を put で積み（送らない）、積んだ分は recv が
+// 次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する）。send はその場で送る口で、stream の応答（前の応答と頭・
+// emit ごと）だけが使う。ここでは偽の転送路で、積み・送り・flush の順を印字する
+// （TLS の接続なら `(k) => tls.Recv(c, k)`・`(b) => tls.Send(c, b)`・`(b) => tls.Put(c, b)`）
+
+import "std/http"
+
+func route(r http.Request) http.Response {
+    if r.path == "/stream" {
+        return http.Response{status: 200, contentType: "text/plain", length: 12, stream: (emit) => twice(emit)}
+    }
+    return http.Text("hello\n")
+}
+
+func twice(emit func(b []byte) error?) error? {
+    emit(bytes("chunk\n"))?
+    return emit(bytes("chunk\n"))
+}
+
+// feed は切片 1 つを k に渡し、戻ったら積んだ分を送る（tls.Recv の約束の形）
+func feed(s string, k func([]byte)) error? {
+    k(bytes(s))
+    println("flush")
+    return nil
+}
+
+func say(what string, b []byte) error? {
+    println("${what} [${len(b)} bytes]")
+    return nil
+}
+
+func main() {
+    reqs := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.1\r\nHost: x\r\n\r\n"
+    reqs2 := "GET / HTTP/1.1\r\nHost: x\r\n\r\nGET /stream HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    e := http.ServeFlushed((k) => feed(reqs, k), (b) => say("send", b), (b) => say("put", b), route)
+    println(e == nil)
+    e2 := http.ServeFlushed((k) => feed(reqs2, k), (b) => say("send", b), (b) => say("put", b), route)
+    println(e2 == nil)
+}

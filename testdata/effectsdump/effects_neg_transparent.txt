@@ -3,4 +3,4 @@ examples/effects_neg_transparent.sober:12:6: effects main.show fi=1 bits=io decl
 examples/effects_neg_transparent.sober:16:6: effects main.main fi=2 bits=io
 std/iter/iter.sober:8:6: ftype Iter union=none
 examples/effects_neg_transparent.sober:11:1: violation 'main.show' may have the effect io via a function literal it passes on (a parameter of an anonymous function type is transparent), which its @effects does not allow (allowed: block, panic, nondet)
-summary fns=8 lambdas=3 edges=14 any=io any-calls=0 fvalues=0 declared=1 violations=1
+summary fns=8 lambdas=3 edges=14 any=io any-calls=0 fvalues=0 declared=6 violations=1

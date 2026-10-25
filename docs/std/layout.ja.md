@@ -235,6 +235,7 @@ type LengthMismatch panic {
 ## FailWidth
 
 ```sober
+@effects(panic)
 func FailWidth(field string, width string, v int)
 ```
 
@@ -243,6 +244,7 @@ func FailWidth(field string, width string, v int)
 ## FailLength
 
 ```sober
+@effects(panic)
 func FailLength(field string, want int, got int)
 ```
 

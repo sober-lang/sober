@@ -40,6 +40,7 @@ type Config struct {
 type Conn struct {
     c net.Conn
     blk []int
+    wr record.Dir
     seal tlsSeal
 }
 
@@ -50,23 +51,33 @@ type Handler func(c Conn) error?
 type tlsSeal struct {
 }
 
-// ストレージの列の形: [旗, 残りのバイト数 L, 送りの方向 × dirW, 受けの方向 × dirW, 残りのバイト（8 バイト / 語）…]
+// ストレージの列の形: [旗, 残りのバイト数 L, 送りの方向 × dirW, 受けの方向 × dirW, 束に積んだバイト数, 送りの束 × sendW, 残りのバイト（8 バイト / 語）…]
 const fFlags = 0
 const fLeft = 1
 const fWr = 2
 const dirW = 64
 const fRd = 2 + 64
-const fBytes = 2 + 64 + 64
+const fPend = 2 + 64 + 64
+const fSend = 2 + 64 + 64 + 1
+const fBytes = 2 + 64 + 64 + 1 + sendW
+
+// 送りの束（application の record 1 つ丸ごと = 頭 5 + 平文 2^14 + 内容の型 1 + tag 16 バイト）: Put は record を接続の寿命の置き場へ Seal して積み、
+// Flush が送る — 呼び手は平文の region を閉じてから Flush で待てる（送りの完了待ち〔park〕の間、要求の作業の region を空にしておく。rt が空のスロットを
+// 手放す — report-1126〜1130）
+const sendCap = 5 + 16384 + 1 + 16
+const sendW = (sendCap + 7) / 8
 
 // 旗のビット
 const bUpdate = 1   // 相手が KeyUpdate で update_requested を送った（次の Send が先に自分の KeyUpdate を送る）
 const bRead = 2     // Recv を 1 度回した（2 度目は Closed — 読みは接続の終わりまでの 1 本の流れ）
 const bDead = 4     // 閉じた（alert を送った・受けた — Send は Closed）
+const bRekey = 8    // 送りの鍵を KeyUpdate で進めた（Conn の wr は handshake の鍵のまま — 以後の Send は置き場の列から展開し直す）
 
 // ── 設定 ──
 
 // PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
 @errors(pem.Bad, rsa.BadKey)
+@effects()
 func Parse(certPem string, keyPem string) (Config, error?) {
     cb := pem.Parse(certPem)?
     kb := pem.Parse(keyPem)?
@@ -84,12 +95,14 @@ func Parse(certPem string, keyPem string) (Config, error?) {
 }
 
 // 受ける ALPN をサーバの好みの順 alpn に替えた Config（空 = ALPN を使わない。相手の申し出と重ならなければ no_application_protocol — RFC 7301）
+@effects()
 func Alpn(cfg Config, alpn []string) Config {
     return Config{chain: cfg.chain, key: cfg.key, alpn: alpn}
 }
 
 // Parse のファイル版（certPath / keyPath を読む）
 @errors(pem.Bad, rsa.BadKey, strings.InvalidUtf8, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+@effects(io, nondet)
 func Load(certPath string, keyPath string) (Config, error?) {
     c := string(io.ReadFile(certPath)?)?
     k := string(io.ReadFile(keyPath)?)?
@@ -105,11 +118,12 @@ func emptyConfig() Config {
 
 // addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
 // handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close_notify を送って閉じる。k が死んだときは close_notify を送らずに閉じる
-// region = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）
+// region = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）・maxWait = 飽和下の待ちの上限（net.Serve の maxWait: へそのまま — 既定 100 ms）
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(addr string, cfg Config, k Handler, region int?) error? {
+@effects(block, io, panic, nondet, Handler)
+func Serve(addr string, cfg Config, k Handler, region int?, maxWait int?) error? {
     for l <- net.Listen(addr)? {
-        net.Serve(l, (c) => accept(c, cfg, k), region: if region != nil { region } else { 128 * 1048576 })?
+        net.Serve(l, (c) => accept(c, cfg, k), region: if region != nil { region } else { 128 * 1048576 }, maxWait: if maxWait != nil { maxWait } else { 100 * 1000000 })?
     }
     return nil
 }
@@ -120,8 +134,11 @@ func accept(nc net.Conn, cfg Config, k Handler) error? {
     blk := handshake(nc, cfg)?
     // handshake の深い作業（署名・鍵の導出 — 1 回きり）の頁を返す: スロットの頁は task の寿命いっぱい残るので、要求の道より深い高水位が接続の常駐になる
     _ = leaseOp(6, []int{}, 0, 0)
-    c := Conn{c: nc, blk: blk, seal: tlsSeal{}}
+    // 送りの方向は handshake の鍵のまま展開して持つ（Send のたびに置き場の列から鍵の素材を写し直さない — 変わるのは seq の語だけ。report-1118）
+    c := Conn{c: nc, blk: blk, wr: record.Unpack(freeze(leaseView(blk, fWr, dirW)), 0), seal: tlsSeal{}}
     ke := k(c)
+    // 積み残し（Put の後に Flush しないで k が返った）を送ってから close_notify
+    _ = Flush(c)
     _ = net.Send(nc, closeRecord(c))
     return ke
 }
@@ -193,6 +210,11 @@ func newBlk(h hs.Hs, left []byte) []int {
     b = append(b, len(left))
     putDir(mut b, record.Pack(wr))
     putDir(mut b, record.Pack(rd))
+    mut z := 0
+    while z < 1 + sendW {
+        b = append(b, 0)
+        z += 1
+    }
     mut i := 0
     while i < len(left) {
         mut v := 0
@@ -230,8 +252,10 @@ type Overflow panic
 // c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close_notify で nil。
 // 受けの表は hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。
 // 受けた KeyUpdate は受けの鍵を進め、update_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。
+// k が Put で積んだ分は、受けた切片 1 つ分の record を k へ配り終えるたびに送る（Flush — 次の受けを待つ前に。pump）。
 // 1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
 @errors(BadRecord, Closed)
+@effects(block, io, nondet)
 func Recv(c Conn, k func([]byte)) error? {
     fl := flags(c)
     if (fl & (bRead | bDead)) != 0 {
@@ -240,7 +264,7 @@ func Recv(c Conn, k func([]byte)) error? {
     setFlags(c, fl | bRead)
     mut h := hs.Resume(record.Unpack(view(c, fRd, dirW), 0))
     left := leftBytes(c)
-    for f <- (record.Frames((k2) => pump(c.c, left, k2))? Closed{}) {
+    for f <- (record.Frames((k2) => pump(c, left, k2))? Closed{}) {
         h2, o, e := hs.Step(h, f)
         h = h2
         if e != nil {
@@ -263,24 +287,41 @@ func Recv(c Conn, k func([]byte)) error? {
 
 // pump は handshake の残りのバイトを先に渡してから net.Recv の続き（record.Frames の受けの口）。
 // 残りは net.Recv と同じ入れ子（反復の region + 式ブロックの region）の中で k へ渡す — 直に k(left) と呼ぶと最初の要求の道だけが
-// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残した（report-1013 3 節）
-func pump(nc net.Conn, left []byte, k func([]byte)) error? {
+// 2 段浅い深度を通り、その深度のスロットに本文の大きさの頁を一度だけ付けて接続の寿命いっぱい残した（report-1013 3 節）。
+// 切片 1 つを k へ渡し終えるたびに、Recv の k が Put で積んだ応答を送る（Flush — k の反復の region が閉じた後なので、送りの完了待ちの間に
+// 応答の作業の頁を抱えない。report-1130）
+func pump(c Conn, left []byte, k func([]byte)) error? {
     mut once := len(left) > 0
     while once {
         n := {
             k(left)
             len(left)
         }
+        Flush(c)?
         once = n < 0
     }
-    return net.Recv(nc, k)
+    for b <- net.Recv(c.c)? {
+        k(b)
+        Flush(c)?
+    }
+    return nil
 }
 
 // ── 送り ──
 
-// b を application の record にして c へ送る（空の b は送らない）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
+// b を application の record にして c へ送る（空の b は送らない — Put + Flush）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
 @errors(Closed)
+@effects(block, io, panic, nondet)
 func Send(c Conn, b []byte) error? {
+    Put(c, b)?
+    return Flush(c)
+}
+
+// b を application の record にして c の送りの束に積む（送らない — Flush か、tls.Recv の k が戻ったときか、束に入らない次の Put か、Serve の出口が送る。
+// 空の b は積まない）。束に入らない（積んだ分と合わせて record 1 つ分を越える）・鍵を進める前後は、積んだ分を送ってから b の record をその場で送る（順序は保つ）
+@errors(Closed)
+@effects(block, io, panic, nondet)
+func Put(c Conn, b []byte) error? {
     fl := flags(c)
     if (fl & bDead) != 0 {
         return Closed{}
@@ -288,18 +329,58 @@ func Send(c Conn, b []byte) error? {
     if len(b) == 0 {
         return nil
     }
-    mut wr := record.Unpack(view(c, fWr, dirW), 0)
+    if (fl & (bUpdate | bRekey)) == 0 {
+        seq := leaseOp(4, c.blk, fWr + 1, 0)
+        at := leaseOp(4, c.blk, fPend, 0)
+        n := sealPut(c, b, seq, at)
+        if n > 0 {
+            setSeq(c, seq + 1)
+            _ = leaseOp(5, c.blk, fPend, at + n)
+            return nil
+        }
+    }
+    Flush(c)?
+    return sendNow(c, b, fl)
+}
+
+// c の送りの束に積んだ record を送る（無ければ何もしない）
+@errors(Closed)
+@effects(block, io, nondet)
+func Flush(c Conn) error? {
+    n := leaseOp(4, c.blk, fPend, 0)
+    if n == 0 {
+        return nil
+    }
+    _ = leaseOp(5, c.blk, fPend, 0)
+    net.Send(c.c, freeze(leaseBytes(c.blk, fSend, n)))? Closed{}
+    return nil
+}
+
+// sendNow は b の record をこの関数の region に作ってその場で送る（束に入らない b・鍵を進める前後 — 束の前の形）
+func sendNow(c Conn, b []byte, fl int) error? {
+    mut wr := if (fl & bRekey) != 0 { record.Unpack(view(c, fWr, dirW), 0) } else { record.WithSeq(c.wr, leaseOp(4, c.blk, fWr + 1, 0)) }
     mut pre := []byte{}
     if (fl & bUpdate) != 0 || record.NeedUpdate(wr) {
         pre = record.Seal(mut wr, record.CtHandshake, []byte{24, 0, 0, 1, 0}, 0)
         record.Update(mut wr)? Closed{}
-        setFlags(c, fl & ^bUpdate)
+        setFlags(c, (fl & ^bUpdate) | bRekey)
         putWr(c, record.Pack(wr))
     }
     r := record.Seal(mut wr, record.CtApp, b, 0)
     setSeq(c, record.Seq(wr))
     net.Send(c.c, if len(pre) == 0 { r } else { cat(pre, r) })? Closed{}
     return nil
+}
+
+// sealPut は b を送りの束の at から Seal した record 1 つのバイト数（束に入らない・鍵の使用上限の手前なら −1）。作業の列（頭・nonce・AEAD の ctx の写し）は
+// この関数の region に積もって戻れば捨てられる（ループでない式ブロックで包む形は、最適化の道で region が消えて呼び手に合流する — report-1129 1.1）
+func sealPut(c Conn, b []byte, seq int, at int) int {
+    wr := record.WithSeq(c.wr, seq)
+    if record.NeedUpdate(wr) {
+        return 0 - 1
+    }
+    mut w := leaseBytes(c.blk, fSend, sendCap)
+    return record.SealInto(wr, record.CtApp, b, mut w, at)
 }
 
 // closeRecord は close_notify の record（送りの鍵で — Serve が k の後に送る）
@@ -314,6 +395,7 @@ func closeRecord(c Conn) []byte {
 // die は fatal の alert desc を送って閉じる（送りの失敗は見ない — 閉じる途中）
 func die(c Conn, desc int) {
     if (flags(c) & bDead) == 0 {
+        _ = Flush(c)
         mut wr := record.Unpack(view(c, fWr, dirW), 0)
         r := record.Seal(mut wr, record.CtAlert, []byte{2, byte(desc)}, 0)
         setSeq(c, record.Seq(wr))
@@ -394,3 +476,6 @@ func leaseOp(op int, blk []int, off int, v int) int
 
 @intrinsic("lease_view")
 func leaseView(blk []int, off int, n int) mut []int
+
+@intrinsic("lease_bytes")
+func leaseBytes(blk []int, off int, n int) mut []byte

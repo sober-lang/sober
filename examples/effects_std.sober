@@ -1,0 +1,29 @@
+package main
+
+// 標準ライブラリの効果の宣言（language.md 12 節の関数の効果 — effect の波 段 5b）: std の本体のある公開関数は `@effects` を必ず持ち、正の列挙は正規形
+// （本体と名前の呼び出しから来る語 + 値を呼ぶ名前付き関数型の名前）と等しい。例えば std/hex の Format は `@effects()`・std/strings の ToUpper も `@effects()`、
+// std/http の Dispatch は `@effects(Handler, Before, After)`（ハンドラの値の効果は型の名前の項が受け持つ — 宣言は利用者のハンドラに依らない）。
+// 利用者の package の宣言は任意で、正の列挙は上界の主張（ここでは std の正規形と同じ形で書いてみる）
+
+import "std/hex"
+import "std/strings"
+
+// Render の値の効果は型の名前の項で言う（契約は書かない — 合併）
+type Render func(s string) string
+
+// 自前の語は io（println）・値の効果は Render
+@effects(io, Render)
+func show(r Render, b []byte) {
+    println(r(hex.Format(b)))
+}
+
+// std の宣言が効果なしの関数だけを呼ぶ — 効果なしの正の列挙
+@effects()
+func loud(s string) string {
+    return strings.ToUpper(s)
+}
+
+func main() {
+    show(loud, []byte{0xbe, 0xef})
+    show((s) => "0x" + s, []byte{1, 2})
+}

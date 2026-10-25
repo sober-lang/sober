@@ -239,7 +239,7 @@ func TestStreamSizes() {
         cs = append(cs, at)
     }
     c64 := freeze(cs)
-    want := []int{1, 96125, 96131, 96226, 98715, 6, 75254, 75261, 75361, 77847, 9, 74503, 74509, 74611, 77094}
+    want := []int{1, 96125, 96131, 96226, 98715, 6, 82334, 82340, 82424, 84792, 9, 74503, 74509, 74611, 77094}
     mut k := 0
     while k < len(want) {
         lv := want[k]
@@ -294,4 +294,265 @@ func TestStreamBench() {
         }
     }
     println("bench cut ${cut} reps ${reps} level ${lv} out ${total / (if reps > 0 { reps } else { 1 })}")
+}
+
+// setup の lcode / dcode（表のまま書いた値）を RFC 1951 3.2.5 の範囲からの組み立て（report-1139 E1 の前の setup の式）と照合する
+func TestCodeTables() {
+    mut e := enc{}
+    setup(mut e)
+    mut lcode := mut []byte{}
+    mut c := 0
+    while c < 28 {
+        for j <- iter.Range(0, 1 << e.lext[c]) {
+            lcode = append(lcode, byte(c))
+        }
+        c += 1
+    }
+    lcode[255] = byte(28)
+    mut dcode := mut []byte{}
+    c = 0
+    while c < 16 {
+        for j <- iter.Range(0, 1 << e.dext[c]) {
+            dcode = append(dcode, byte(c))
+        }
+        c += 1
+    }
+    dcode = append(dcode, byte(0))
+    dcode = append(dcode, byte(0))
+    while c < 30 {
+        for j <- iter.Range(0, 1 << (e.dext[c] - 7)) {
+            dcode = append(dcode, byte(c))
+        }
+        c += 1
+    }
+    assert(same(e.lcode, freeze(lcode)))
+    assert(same(e.dcode, freeze(dcode)))
+    // 範囲の端: 長さ 3 → 符号 0・長さ 258 → 符号 28・距離 1 → 0・距離 32768 → 29
+    assert(e.lcode[0] == 0 && e.lcode[255] == 28)
+    assert(e.dcode[0] == 0 && e.dcode[256 + (32767 >> 7)] == 29)
+}
+
+// lengthsRef は report-1139 E2 の前の lengths（頻度の鍵の挿入ソート）の写し — 数え上げのソートに換えた lengths と出力の一致を照合する
+func lengthsRef(f []int, maxBits int) []int {
+    n := len(f)
+    mut fq := mut []int{}
+    for i <- iter.Range(0, n) {
+        fq = append(fq, f[i])
+    }
+    mut cnt := 0
+    for i <- iter.Range(0, n) {
+        if fq[i] > 0 {
+            cnt += 1
+        }
+    }
+    mut z := 0
+    while cnt < 2 && z < n {
+        if fq[z] == 0 {
+            fq[z] = 1
+            cnt += 1
+        }
+        z += 1
+    }
+    // 使う記号を頻度の昇順（同じなら番号順 — 決定的）に: 鍵 ks = 頻度 × 512 + 番号（一意）の挿入ソート（記号は 286 個まで。
+    // sort.Order は閉包を取る形の check が通らないので使わない — FLEDGER の sort.Order の候補〔report-651〕と同じ症状）
+    mut ks := mut []int{}
+    for i <- iter.Range(0, n) {
+        if fq[i] > 0 {
+            k := fq[i] * 512 + i
+            ks = append(ks, k)
+            mut j := len(ks) - 1
+            while j > 0 && ks[j - 1] > k {
+                ks[j] = ks[j - 1]
+                j -= 1
+            }
+            ks[j] = k
+        }
+    }
+    m := len(ks)
+    // a[i] = 昇順 i 番目の頻度 → 深さ・sy[i] = その記号
+    mut a := mut []int{}
+    mut syb := mut []int{}
+    for i <- iter.Range(0, m) {
+        a = append(a, ks[i] >> 9)
+    }
+    for i <- iter.Range(0, m) {
+        syb = append(syb, ks[i] & 511)
+    }
+    sy := freeze(syb)
+    a[0] = a[0] + a[1]
+    mut root := 0
+    mut leaf := 2
+    for next <- iter.Range(1, m - 1) {
+        if leaf >= m || a[root] < a[leaf] {
+            a[next] = a[root]
+            a[root] = next
+            root += 1
+        } else {
+            a[next] = a[leaf]
+            leaf += 1
+        }
+        if leaf >= m || (root < next && a[root] < a[leaf]) {
+            a[next] = a[next] + a[root]
+            a[root] = next
+            root += 1
+        } else {
+            a[next] = a[next] + a[leaf]
+            leaf += 1
+        }
+    }
+    a[m - 2] = 0
+    mut q := m - 3
+    while q >= 0 {
+        a[q] = a[a[q]] + 1
+        q -= 1
+    }
+    mut avbl := 1
+    mut usedN := 0
+    mut dpth := 0
+    root = m - 2
+    mut nx := m - 1
+    while avbl > 0 {
+        while root >= 0 && a[root] == dpth {
+            usedN += 1
+            root -= 1
+        }
+        while avbl > usedN {
+            a[nx] = dpth
+            nx -= 1
+            avbl -= 1
+        }
+        avbl = 2 * usedN
+        dpth += 1
+        usedN = 0
+    }
+    // 深さごとの数（maxBits を越えた深さは maxBits へ寄せてから Kraft の和を 2^maxBits に戻す — miniz の enforce_max_code_size）
+    mut nc := mut []int{}
+    fill(mut nc, maxBits + 1, 0)
+    for i <- iter.Range(0, m) {
+        d := if a[i] > maxBits { maxBits } else { a[i] }
+        nc[d] = nc[d] + 1
+    }
+    mut total := 0
+    for i <- iter.Range(1, maxBits + 1) {
+        total = total + (nc[i] << (maxBits - i))
+    }
+    while total != (1 << maxBits) {
+        nc[maxBits] = nc[maxBits] - 1
+        mut i := maxBits - 1
+        while i > 0 {
+            if nc[i] > 0 {
+                nc[i] = nc[i] - 1
+                nc[i + 1] = nc[i + 1] + 2
+                i = 0
+            } else {
+                i -= 1
+            }
+        }
+        total -= 1
+    }
+    // 頻度の高い方（昇順の後ろ）から短い長さを配る
+    mut out := mut []int{}
+    fill(mut out, n, 0)
+    mut j := m
+    for l <- iter.Range(1, maxBits + 1) {
+        for r <- iter.Range(0, nc[l]) {
+            j -= 1
+            out[sy[j]] = l
+        }
+    }
+    // 正準の符号（長さごとの最初の符号 next[l] から番号順に配る）を長さの上に詰める
+    mut next := mut []int{}
+    mut code := 0
+    next = append(next, 0)
+    for b <- iter.Range(1, maxBits + 1) {
+        code = (code + (if b == 1 { 0 } else { nc[b - 1] })) << 1
+        next = append(next, code)
+    }
+    for i <- iter.Range(0, n) {
+        l := out[i]
+        if l > 0 {
+            out[i] = (l << 32) | rev(next[l], l)
+            next[l] = next[l] + 1
+        }
+    }
+    return freeze(out)
+}
+
+// lengths（数え上げのソート）≡ lengthsRef（挿入ソート）: 記号の数 286 / 30 / 19 × maxBits 15 / 7 × 頻度の形（0 の多い列・全部同じ・使う記号 0 / 1 個・
+// maxBits を越える深さ〔Fibonacci の頻度〕・末尾の桶に多く落ちる大きい頻度・小さい頻度の無作為）
+func TestLengthsRef() {
+    ns := []int{286, 30, 19}
+    mut seed := 12345
+    mut cases := 0
+    for ni <- iter.Range(0, 3) {
+        n := ns[ni]
+        for sh <- iter.Range(0, 7) {
+            for r <- iter.Range(0, 40) {
+                mut f := mut []int{}
+                mut fa := 1
+                mut fb := 1
+                for i <- iter.Range(0, n) {
+                    seed = (seed * 1103515245 + 12345) & 2147483647
+                    x := seed >> 8
+                    v := shapeFreq(sh, x, i, r, n, fa)
+                    f = append(f, v)
+                    if sh == 4 {
+                        t := fa + fb
+                        fa = fb
+                        fb = if t > 1000000000 { 1 } else { t }
+                    }
+                }
+                fz := freeze(f)
+                for mb <- iter.Range(0, 2) {
+                    maxBits := if mb == 0 { 15 } else { 7 }
+                    a := lengths(fz, maxBits)
+                    b := lengthsRef(fz, maxBits)
+                    assert(len(a) == len(b))
+                    for i <- iter.Range(0, n) {
+                        assert(a[i] == b[i])
+                    }
+                    cases += 1
+                }
+            }
+        }
+    }
+    assert(cases == 3 * 7 * 40 * 2)
+}
+
+// shapeFreq は TestLengthsRef の頻度の形 sh の i 番目の頻度（x は乱数・fa は Fibonacci の項）
+func shapeFreq(sh int, x int, i int, r int, n int, fa int) int {
+    if sh == 0 {
+        return if x % 4 == 0 { x % 50 } else { 0 }
+    }
+    if sh == 1 {
+        return 7
+    }
+    if sh == 2 {
+        return 0
+    }
+    if sh == 3 {
+        return if i == (r * 7) % n { 1 + x % 1000 } else { 0 }
+    }
+    if sh == 4 {
+        return fa
+    }
+    if sh == 5 {
+        return x % 100000
+    }
+    return x % 12
+}
+
+// rev ≡ 1 ビットずつの反転: l = 1〜15 の全ての v（< 2^l）
+func TestRev() {
+    for l <- iter.Range(1, 16) {
+        for v <- iter.Range(0, 1 << l) {
+            mut r := 0
+            mut x := v
+            for i <- iter.Range(0, l) {
+                r = (r << 1) | (x & 1)
+                x = x >> 1
+            }
+            assert(rev(v, l) == r)
+        }
+    }
 }

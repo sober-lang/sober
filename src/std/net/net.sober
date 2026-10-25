@@ -153,8 +153,9 @@ func sockaddr(addr string) []byte {
 // backlog を 65535 にする理由: 1024 は一斉の到着で溢れた客を SYN の再送で 1 秒止め（4096 接続で 72%）、その間の小さい作業集合と位相の揃いで速く・尻が綺麗に見えていた
 // （隠れた stall — 止まった客の待ちは客の遅延にも入らない）。65535 の値札（実働の接続が増える正直な作業集合の費用）は Serve の配置が回収する
 
-// addr で listen した Listener を 1 回だけ k に渡し（SO_REUSEADDR・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
+// addr で listen した Listener を 1 回だけ k に渡し（SO_REUSEADDR・TCP_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
 @errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Listen(addr string, k func(Listener)) error? {
     if sysDeadline() != 0 {
         return io.Expired{}
@@ -169,7 +170,9 @@ func Listen(addr string, k func(Listener)) error? {
     }
     mut one := mut []byte{1, 0, 0, 0}
     r1 := sysCall(54, fd, 1, 2, sysAddr(one), 4, 0)
-    r2 := if r1 < 0 { r1 } else { sysCall(49, fd, sysAddr(sa), 16, 0, 0, 0) }
+    // TCP_NODELAY は listener に 1 回（受けた接続へ継承 — 応答は 1 回の送りで出し切るので Nagle の溜めは遅延だけ）
+    r1b := if r1 < 0 { r1 } else { sysCall(54, fd, 6, 1, sysAddr(one), 4, 0) }
+    r2 := if r1b < 0 { r1b } else { sysCall(49, fd, sysAddr(sa), 16, 0, 0, 0) }
     r3 := if r2 < 0 { r2 } else { sysCall(50, fd, 65535, 0, 0, 0, 0) }
     if r3 < 0 {
         _ = sysCall(3, fd, 0, 0, 0, 0, 0)
@@ -192,6 +195,7 @@ func giveConn(fd int, k func(Conn)) {
 }
 
 // l が bind している port（"…:0" で listen したときの割り当ての読み — getsockname）
+@effects(io)
 func Port(l Listener) int {
     // カーネルが書く作業域は mut の slice（字面の定数の imm は読み出し専用の置き場に載りうる）
     mut sa := mut []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -206,6 +210,7 @@ func Port(l Listener) int {
 // l の接続を受けるたびに k に渡し、k が返ったら閉じる（列は終わらない — 本体の break か失敗で止まる。
 // 接続ごとの task・admission は Serve〔4a-3〕）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Accept(l Listener, k func(Conn)) error? {
     while true {
         if sysDeadline() != 0 {
@@ -228,6 +233,7 @@ func Accept(l Listener, k func(Conn)) error? {
 
 // addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる
 @errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Dial(addr string, k func(Conn)) error? {
     if sysDeadline() != 0 {
         return io.Expired{}
@@ -264,6 +270,7 @@ func Dial(addr string, k func(Conn)) error? {
 // c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。相手が閉じたら（FIN）列が終わる。
 // 切片はこの反復の region の []byte（1 回の read の分・最大 64 KiB）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Recv(c Conn, k func([]byte)) error? {
     while true {
         if sysDeadline() != 0 {
@@ -298,6 +305,7 @@ func Recv(c Conn, k func([]byte)) error? {
 
 // b を全部 c へ送る（同期 — 短い書きは続きから・MSG_NOSIGNAL で相手が閉じた後の書きは io.Closed）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Send(c Conn, b []byte) error? {
     if sysDeadline() != 0 {
         return io.Expired{}
@@ -331,13 +339,18 @@ func Send(c Conn, b []byte) error? {
 // Serve が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。
 // region = 接続の task の region 1 つの上限（既定 128 * task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えると
 // その接続の task の死（RegionExceeded{cause: slot_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本
-// （接続数 × 深度ぶんの VA を減らす — language.md 11 節「接続の task の小さいスロット」）
+// （接続数 × 深度ぶんの VA を減らす — language.md 11 節「接続の task の小さいスロット」）。
+// maxWait = 飽和下の待ちの上限 D（ns・既定 100 * task.MS・1 ms 未満は 1 ms）: 接続の task とその子は、走れるようになってから D 以内に走る（同じワーカーに違う D の
+// task が混ざると上限は混ざった中の最大）。飽和しない負荷では効かない。観測は task.Ledger() の maxWait / aged（language.md 28 節 ring の道「飽和下の待ちの上限」）
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?) error? {
+@effects(block, io, panic, nondet)
+func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?, maxWait int?) error? {
     b := if budget != nil { budget } else { 64 * task.KB }
     n := if conns != nil { conns } else { 10000 }
     rj := if reject != nil { bytes(reject) } else { []byte{} }
     rg := slotBytes(if region != nil { region } else { 128 * task.MB })
+    mw0 := if maxWait != nil { maxWait } else { 100 * task.MS }
+    mw := if mw0 < task.MS { task.MS } else { mw0 }
     pool := task.NewPool(b * n, nil)
     // 終わりの理由（負の errno）は外の mut で運ぶ — 死んだ接続があると scope の値は ChildDied で落ちる（err は見ない: 死の吸収）
     mut code := 0
@@ -362,6 +375,8 @@ func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject stri
                         _ = sysNetOp(5, 0, 0, 0)
                         // スロットの大きさの印（net_op 6 — 次の spawn 1 回）: 接続の task の region 1 つの上限
                         _ = sysNetOp(6, rg, 0, 0)
+                        // 待ちの上限の印（net_op 7 — 次の spawn 1 回）: 接続の task の D
+                        _ = sysNetOp(7, mw, 0, 0)
                         _, e := task.SpawnIn(s, pool, () => {
                             _ = sysFdOwn(fd)
                             if h(Conn{fd: fd, seal: netSeal{}}) != nil {

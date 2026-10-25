@@ -464,8 +464,7 @@ func chReap(st mut St, ud int, res int, tk int) {
     condbr(mut st, cmp(mut st, CNe, w, iconst(mut st, 0)), bWake, -1, bEnd, -1)
     setCur(mut st, bWake)
     store(mut st, rp, CH_WAIT, iconst(mut st, 0))
-    store(mut st, itop(mut st, w), TC_NEXT, load(mut st, tk, TK_READY))
-    store(mut st, tk, TK_READY, w)
+    readyPush(mut st, tk, w)
     br(mut st, bEnd, -1)
     setCur(mut st, bEnd)
 }

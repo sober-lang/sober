@@ -106,6 +106,7 @@ Open で開いたファイル（[language.md 28 節](../language.md)「資源と
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func Open(path string) (File, error?)
 ```
 
@@ -116,6 +117,7 @@ path のファイルを読むために開く（O\_RDONLY）。開いたら同じ
 ## Close
 
 ```sober
+@effects(io)
 func Close(f File)
 ```
 
@@ -136,6 +138,7 @@ type Root struct {
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func OpenRoot(path string) (Root, error?)
 ```
 
@@ -146,6 +149,7 @@ path のディレクトリを OpenUnder の根として開く（openat の O\_PA
 ## CloseRoot
 
 ```sober
+@effects(io)
 func CloseRoot(r Root)
 ```
 
@@ -155,6 +159,7 @@ r を閉じる（OpenRoot の直後の defer でだけ書ける — desugar/file
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func OpenUnder(r Root, rel string) (File, error?)
 ```
 
@@ -184,6 +189,7 @@ Stat が返す開いた File の属性（fstat 1 回 — 開いたその実体�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func Stat(f File) (FileInfo, error?)
 ```
 
@@ -195,6 +201,7 @@ f の属性（fstat(2) の大きさ・更新時刻・種類 — 通常のファ�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
 func ReadAll(f File) ([]byte, error?)
 ```
 
@@ -218,6 +225,7 @@ type Bytes struct {
 ## Raw
 
 ```sober
+@effects()
 func Raw(v Bytes) []byte
 ```
 
@@ -227,6 +235,7 @@ v のバイト列（読むだけ — 同じ反復の中の View）
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
 func Chunks(f File, k func(Bytes)) error?
 ```
 
@@ -238,6 +247,7 @@ f を今の位置から EOF まで切片ずつ k へ渡す（失敗しうる生�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
 func ChunksAt(f File, off int, k func(Bytes)) error?
 ```
 
@@ -249,6 +259,7 @@ f の off バイト目から EOF まで切片ずつ k へ渡す（Chunks と同�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
 func Lines(f File, k func(Bytes)) error?
 ```
 
@@ -260,6 +271,7 @@ f の行を順に k へ渡す（区切り = '\n'・行末の '\r' は落とす�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func ReadFile(path string) ([]byte, error?)
 ```
 
@@ -271,6 +283,7 @@ path のファイルを全部読む
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func WriteFile(path string, b []byte) error?
 ```
 
@@ -282,6 +295,7 @@ path に b を書く（作成 / 切り詰め、0644）。/dev/stdout への追�
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func WriteStdout(b []byte) error?
 ```
 
@@ -293,6 +307,7 @@ func WriteStdout(b []byte) error?
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(block, io, nondet)
 func ReadStdin() ([]byte, error?)
 ```
 
@@ -304,6 +319,7 @@ func ReadStdin() ([]byte, error?)
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func WriteStderr(b []byte) error?
 ```
 
@@ -339,6 +355,7 @@ ReadDir が返すディレクトリの項目 1 つ（名前と種類）
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired, strings.InvalidUtf8)
+@effects(io, nondet)
 func ReadDir(path string) ([]DirEntry, error?)
 ```
 
@@ -371,6 +388,7 @@ err := io.Flush(mut w)          // 残りを書き出す — 最後に Flush し
 ## SetFile
 
 ```sober
+@effects()
 func SetFile(w mut Writer, f Stream)
 ```
 
@@ -379,6 +397,7 @@ func SetFile(w mut Writer, f Stream)
 ## WriteByte
 
 ```sober
+@effects(io, nondet)
 func WriteByte(w mut Writer, c byte)
 ```
 
@@ -387,6 +406,7 @@ func WriteByte(w mut Writer, c byte)
 ## WriteBytes
 
 ```sober
+@effects(io, nondet)
 func WriteBytes(w mut Writer, b []byte)
 ```
 
@@ -395,6 +415,7 @@ func WriteBytes(w mut Writer, b []byte)
 ## WriteString
 
 ```sober
+@effects(io, nondet)
 func WriteString(w mut Writer, s string)
 ```
 
@@ -404,6 +425,7 @@ func WriteString(w mut Writer, s string)
 
 ```sober
 @errors(NotFound, Denied, Other, Timeout, Expired)
+@effects(io, nondet)
 func Flush(w mut Writer) error?
 ```
 

@@ -1,0 +1,32 @@
+package main
+
+// Security: resource exhaustion — admission, a per-connection budget and a per-connection region cap (docs/guide/security.md)
+// a server: check and build only (it does not stop by itself)
+
+import "std/http"
+import "std/net"
+import "std/task"
+
+func route(r http.Request) http.Response {
+    return http.Text("ok")
+}
+
+// app serves one connection; oversized heads and bodies get 431 / 413 before route runs
+func app(c net.Conn) error? {
+    return http.ServeConn(c, route, maxHead: 8 * task.KB, maxBody: 64 * task.KB)
+}
+
+func run() error? {
+    for l <- net.Listen("0.0.0.0:8080")? {
+        // at most 2,000 connections at once (the 2,001st gets the reject bytes and is closed without running app);
+        // each connection may use up to 256 KiB, and a connection whose region passes 32 MiB dies alone
+        net.Serve(l, app, budget: 256 * task.KB, conns: 2000, reject: "HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\n\r\n", region: 32 * task.MB)?
+    }
+    return nil
+}
+
+func main() {
+    if run() != nil {
+        println("listen failed")
+    }
+}

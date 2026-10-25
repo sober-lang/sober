@@ -8,6 +8,7 @@ A path for people using Sober for the first time. Read from top to bottom and yo
 2. [Your first program](first-program.md) — read input and count, split into packages, write tests
 3. [Language tour](tour.md) — expressions, functions, collections, types, errors, mut and parallelism, in short working examples
 4. [Standard library guide](std.md) — a map by package
+5. [Security guide](security.md) — threat by threat: what Sober removes, how, and what it leaves to you
 
 Every code example in the guide is a real file in `examples/`; the compiler's verification net (`scripts/gates.sh`) builds and runs each one every time and checks the output.
 

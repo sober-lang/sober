@@ -1,0 +1,308 @@
+{
+  "package": "main",
+  "imports": [
+    {
+      "alias": null,
+      "path": "std/hex",
+      "tok": 4
+    },
+    {
+      "alias": null,
+      "path": "std/strings",
+      "tok": 7
+    }
+  ],
+  "types": [
+    {
+      "name": "Render",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "string"
+          }
+        ],
+        "results": [
+          {
+            "k": "name",
+            "name": "string"
+          }
+        ],
+        "param_names": [
+          "s"
+        ]
+      },
+      "tok": 10,
+      "span": {
+        "start": 9,
+        "end": 18
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "show",
+      "type_params": [],
+      "params": [
+        {
+          "name": "r",
+          "type": {
+            "k": "name",
+            "name": "Render"
+          },
+          "mutable": false
+        },
+        {
+          "name": "b",
+          "type": {
+            "k": "slice_of",
+            "elem": {
+              "k": "name",
+              "name": "byte"
+            },
+            "mut": false
+          },
+          "mutable": false
+        }
+      ],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 38
+              },
+              "args": [
+                {
+                  "k": "call",
+                  "callee": {
+                    "k": "ident",
+                    "name": "r",
+                    "tok": 40
+                  },
+                  "args": [
+                    {
+                      "k": "call",
+                      "callee": {
+                        "k": "selector",
+                        "base": {
+                          "k": "ident",
+                          "name": "hex",
+                          "tok": 42
+                        },
+                        "field": "Format",
+                        "tok": 44
+                      },
+                      "args": [
+                        {
+                          "k": "ident",
+                          "name": "b",
+                          "tok": 46
+                        }
+                      ],
+                      "tok": 45
+                    }
+                  ],
+                  "tok": 41
+                }
+              ],
+              "tok": 39
+            }
+          }
+        ]
+      },
+      "tok": 27,
+      "bodiless": false,
+      "span": {
+        "start": 18,
+        "end": 53
+      },
+      "sig_end": 37
+    },
+    {
+      "name": "loud",
+      "type_params": [],
+      "params": [
+        {
+          "name": "s",
+          "type": {
+            "k": "name",
+            "name": "string"
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "string"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "call",
+                "callee": {
+                  "k": "selector",
+                  "base": {
+                    "k": "ident",
+                    "name": "strings",
+                    "tok": 67
+                  },
+                  "field": "ToUpper",
+                  "tok": 69
+                },
+                "args": [
+                  {
+                    "k": "ident",
+                    "name": "s",
+                    "tok": 71
+                  }
+                ],
+                "tok": 70
+              }
+            ],
+            "tok": 66
+          }
+        ]
+      },
+      "tok": 59,
+      "bodiless": false,
+      "span": {
+        "start": 53,
+        "end": 76
+      },
+      "sig_end": 65
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 81
+              },
+              "args": [
+                {
+                  "k": "ident",
+                  "name": "loud",
+                  "tok": 83
+                },
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "byte"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 190,
+                      "radix": 16,
+                      "tok": 89
+                    },
+                    {
+                      "k": "int",
+                      "value": 239,
+                      "radix": 16,
+                      "tok": 91
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 85
+                }
+              ],
+              "tok": 82
+            }
+          },
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "show",
+                "tok": 95
+              },
+              "args": [
+                {
+                  "k": "lambda",
+                  "params": [
+                    {
+                      "name": "s",
+                      "type": null
+                    }
+                  ],
+                  "body": {
+                    "k": "binary",
+                    "op": "+",
+                    "lhs": {
+                      "k": "strlit",
+                      "value": "0x",
+                      "tok": 101
+                    },
+                    "rhs": {
+                      "k": "ident",
+                      "name": "s",
+                      "tok": 103
+                    },
+                    "tok": 102
+                  },
+                  "tok": 100
+                },
+                {
+                  "k": "slicelit",
+                  "elem": {
+                    "k": "name",
+                    "name": "byte"
+                  },
+                  "elems": [
+                    {
+                      "k": "int",
+                      "value": 1,
+                      "tok": 109
+                    },
+                    {
+                      "k": "int",
+                      "value": 2,
+                      "tok": 111
+                    }
+                  ],
+                  "mut": false,
+                  "tok": 105
+                }
+              ],
+              "tok": 96
+            }
+          }
+        ]
+      },
+      "tok": 77,
+      "bodiless": false,
+      "span": {
+        "start": 76,
+        "end": 117
+      },
+      "sig_end": 80
+    }
+  ],
+  "consts": []
+}

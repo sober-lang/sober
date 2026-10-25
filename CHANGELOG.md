@@ -2,6 +2,66 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.3 — 2026-10-25
+
+A performance release. Servers with many connections now take io_uring completions in small steps, which removes the many-connection cliff, and a task that becomes runnable under saturated load now waits at most a bounded time. Memory per request and per connection is lower, and TLS sends and compression encoding are faster. Public std functions now carry `@effects` declarations, and the runtime's depth invariant is always checked.
+
+### Performance
+
+- HTTP — measured on bench/httparena, our own harness rather than an official HttpArena result. It uses the HttpArena load generators and request files on a 64-vCPU GitHub Actions runner, with 32 server cores, and compares against Go's net/http. Sober / Go ratios, against the v0.6.1 run:
+
+  | Test | v0.6.1 | v0.6.3 |
+  |---|---|---|
+  | baseline | 3.0× | 3.2× |
+  | pipelined | 16× | 15.9× |
+  | limited-conn | 7.2× | 9.2× |
+  | json | 3.1× | 3.4× |
+  | json-tls | 2.3× | 2.8× |
+  | json-comp | 1.3× | 1.8× |
+  | async | 1.9× | 2.4× |
+
+  - latency-500k-8cpu and latency-1m hold their target rates (p99 0.37 ms / 0.21 ms).
+  - No non-2xx responses in any test.
+- Taking completions (the net ring): the runtime used to enter io_uring only when it ran out of runnable tasks, and then took all completions at once. With many connections each batch grew deep and the working set spilled out of the cache. Now, once 8 SQEs are waiting to be submitted, a worker submits, takes completions and fires expired timers without sleeping, and runs the woken tasks first while they are hot. On its own that would let old wake-ups sink under saturated load, leaving some connections unserved for seconds, so **a task that becomes runnable now runs within a wait bound D even under saturation** (default 100 ms — `maxWait:` below), picked one at a time from the bottom. Locally with 12 workers, with every connection served within D:
+  - keep-alive at 4096 connections: 2.3× fewer cycles per request (the 2.5× cliff against 256 connections is gone), and 17% more requests per second than the fair variant without hot-first completions
+  - async at 24k connections: 7–9% less CPU per request
+  - Under saturation, p99 ≈ D (100 ms by default) is by design: every connection runs within D (recently active connections run while hot, and connections whose wait reaches D are picked up). Without saturation, the bookkeeping for the bound costs about 3% CPU per request.
+- Memory:
+  - A function whose region allocations all flow into its return value no longer enters a region of its own; it allocates straight into the caller's. This removes region depths per request, including std/http's Dispatch. async at 24k connections: VmHWM −21 MB (−5%).
+  - The per-worker cap on spare small slots and the slot count of the receive buffer ring (PBUF_RING) are now divided by the number of workers, so spares no longer grow with the worker count. async at 24k connections: VmHWM about −20 MB with 12 workers, about −44 MB with 24. The smaller ring also stays hot: 64 KiB POST echo uses 11% fewer cycles.
+  - A task that parks now releases its unused deeper region slots and takes them back when it wakes, so a connection waiting on a send no longer holds empty slots. async at 24k connections: 11% fewer cycles per request and 19% less RSS; json-tls at 4096 connections: 4% fewer cycles per request.
+- TLS:
+  - Sending now has two steps: `tls.Put` encrypts into a record batch and `tls.Flush` sends it (`tls.Send` is still Put + Flush). The receive side of `tls.Recv` flushes after handing out each received chunk. A connection waiting on a send no longer holds its response's working memory: json-tls at 4096 connections uses 23% less memory per active connection, 9% fewer cycles per request, and serves 7% more requests per second.
+  - The sending key schedule is expanded once per connection instead of being copied per record, and AES-GCM keeps one working area per record (the tag is computed inside the AES block). About 4% fewer cycles per request on json-tls.
+- Compression (flate / gzip):
+  - At levels 4–6 (including level 6, the default of `http.Gzip{}`), positions inside long matches are no longer added to the hash chains. Level 6 encodes JSON bodies 24–29% faster, and a json-comp-style server answers 23% more requests locally. In exchange the output is slightly larger (about +1% on JSON bodies, about +10% on inputs made mostly of short matches). Pick level 7 or higher to keep the previous search and ratio.
+  - Match lengths are compared 16 bytes at a time (SSE2). Encoding JSON bodies is 6–9% faster (levels 3–9), and the json-comp server uses 5.9% fewer cycles per request.
+  - Fixed costs per encode and per block are lower: the code tables are no longer rebuilt each time, and the sort that assigns code lengths counts frequencies instead of inserting. 8–13% fewer instructions per encode and 7.5–8.4% fewer cycles per request on the json-comp server. The output bytes are unchanged.
+- x86 optimizing backend: `/` and `%` by a non-power-of-two constant become a multiplication, and short memory copies (32 bytes or less) use two overlapping loads and stores. Writing JSON numbers and building responses get faster: 4–5% fewer cycles per request on json / json-tls at 256 connections.
+- `net.Listen` sets TCP_NODELAY on the listener, and accepted connections inherit it, so small responses are not held back by Nagle's algorithm.
+
+### Standard library
+
+- Every public std function with a body now has an `@effects` declaration (also shown in `docs/std`). The declarations are checked against the derivation when stage2 is built.
+- `net.Serve(…, maxWait:)` / `tls.Serve(…, maxWait:)` declare the wait bound D under saturation (default 100 ms). A connection's task and its children run within D of becoming runnable. When tasks with different D share a worker, the bound is the largest among them. It has no effect without saturation.
+- `task.Ledger()` gains `maxWait` (the longest wait from becoming runnable to running, in ns; reading resets it to 0) and `aged` (how many times the bound kicked in — a sign of saturation). In operation: a growing `aged` means saturation; a `maxWait` far above D means something is wrong.
+- `http.ServeFlushed`: ServeWith with two-step sending — the responses for one received chunk are queued with put and sent together (meant for TLS connections). See `tls.Put` / `tls.Flush` above.
+- `binary.MatchLen(b, i, j, n)`: the length of the common prefix of b[i:i+n] and b[j:j+n]. The analyzer rejects secret values as arguments (the comparison takes variable time).
+- `builder.PushWord(b, w, k)`: appends the low k bytes of w, lowest first (the same result as `Push` and `w >>= 8` repeated k times).
+
+### Tools
+
+- `sober fix --effects --std <dir>` reads the embedded std and writes the derived `@effects` onto the public functions that need one (for std maintenance).
+
+### Runtime
+
+- The runtime's depth invariant (a task never skips a depth when it enters a region) is now always checked. A hole of the kind fixed in v0.6.2 becomes a defined death — `panic: RegionDepthSkipped{} (runtime invariant broken in rt.slot_new — please report)` with exit code 81 — instead of silently wrong values. The cost is within measurement noise.
+
+### Documentation
+
+- Security guide (`docs/guide/security.md`, Japanese original `security.ja.md`): what the language and std prevent, what they don't, and what is left to you, in 12 sections. It opens with a quick table of three outcomes (cannot happen / becomes a defined death / remains) and a real-world vulnerability (an out-of-bounds write in Node.js's Brotli decompression) worked through in Sober. Code examples are the real files under `examples/security_*`.
+- The benchmark numbers and charts in the public README were re-measured on a 16-vCPU GitHub Actions runner (AMD EPYC 9V45). The measure changed from local cycles to CPU time (task-clock — the median of per-round paired ratios). Across two runs of the same tree, 21 of the 26 ratios stayed within ±3% and every win / tie / loss call matched. 1BRC, binary-trees and logagg move by up to ±10% from day to day, and external sort and k-nucleotide against Rust by ±3–4%; `bench/README.md` notes this.
+
 ## v0.6.2 — 2026-10-23
 
 A hotfix for v0.6.1, together with the first part of function effects in the analyzer.

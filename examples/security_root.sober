@@ -1,0 +1,42 @@
+package main
+
+// Security: path traversal — open a path only under a root directory (docs/guide/security.md)
+// run from the repository root
+
+import "std/io"
+
+// serve reads the file named by an untrusted path, but only under r
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func serve(r io.Root, rel string) (int, error?) {
+    f := io.OpenUnder(r, rel)?
+    defer io.Close(f)
+    b := io.ReadAll(f)?
+    return len(b), nil
+}
+
+func show(r io.Root, rel string) {
+    n, e := serve(r, rel)
+    println(switch e {
+    case nil: "${rel}: ${n} bytes"
+    case io.NotFound{}: "${rel}: not found"
+    case io.Denied{}: "${rel}: denied"
+    default: "${rel}: other error"
+    })
+}
+
+@errors(io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+func run() error? {
+    r := io.OpenRoot("testdata/io")?
+    defer io.CloseRoot(r)
+    paths := []string{"hello.txt", "../../README.md", "/etc/passwd", "missing.txt"}
+    for rel <- paths {
+        show(r, rel)
+    }
+    return nil
+}
+
+func main() {
+    if run() != nil {
+        println("cannot open the root")
+    }
+}

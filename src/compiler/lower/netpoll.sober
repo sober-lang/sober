@@ -65,8 +65,7 @@ func epWake(st mut St, t int, res int) {
     wk := globaladdr(mut st, st.wkG)
     tp := itop(mut st, t)
     store(mut st, tp, TC_IORES, res)
-    store(mut st, tp, TC_NEXT, load(mut st, tk, TK_READY))
-    store(mut st, tk, TK_READY, t)
+    readyPush(mut st, tk, t)
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), -1))
 }
 
@@ -222,6 +221,8 @@ func buildEpPoll(st mut St) {
     tk := globaladdr(mut st, st.taskG)
     tmo := bin(mut st, BMul, tm, cmp(mut st, CEq, load(mut st, tk, TK_READY), zero))
     n := urSys(mut st, 232, []int{load(mut st, rp, EP_FD), evs, iconst(mut st, EP_MAXEV), tmo})
+    // 今を読み直す（uring.sober の enter の後と同じ — 眠りの明けに起こす task の時刻）
+    store(mut st, globaladdr(mut st, st.wkG), WK_NOW, tscOp(mut st))
     el := newBlock(mut st)
     i := param(mut st, el, TyI64)
     eb := newBlock(mut st)
@@ -534,6 +535,8 @@ func buildTmr(st mut St) {
     // 起こす: 結果 = -62（sleepRing の読みは OP_TIMEOUT の -ETIME と共通）・列の尾に繋ぐ・WK_NETW − 1
     tp := itop(mut st, t)
     store(mut st, tp, TC_IORES, iconst(mut st, -62))
+    store(mut st, tp, TC_PREV, l)
+    readyStamp(mut st, tp)
     store(mut st, wf, WK_NETW, urAdd(mut st, load(mut st, wf, WK_NETW), -1))
     bJ := newBlock(mut st)
     jf := param(mut st, bJ, TyI64)
@@ -550,7 +553,9 @@ func buildTmr(st mut St) {
     // 起こした列を TK_READY の頭へ（早い目標から走る）
     setCur(mut st, bDone)
     bS := branchIf(mut st, cmp(mut st, CNe, f, z))
-    store(mut st, itop(mut st, l), TC_NEXT, load(mut st, tk, TK_READY))
+    oldR := load(mut st, tk, TK_READY)
+    store(mut st, itop(mut st, l), TC_NEXT, oldR)
+    readySetPrev(mut st, tk, oldR, l)
     store(mut st, tk, TK_READY, f)
     br(mut st, bS, -1)
     setCur(mut st, bS)

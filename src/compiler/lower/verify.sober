@@ -8,6 +8,7 @@ package lower
 
 import "desugar"
 import "std/iter"
+import "std/table"
 
 // InvalidIR は IR の検証器の違反（after = どの段の後か・fn = 関数の名前・msg = 違反の文面）
 type InvalidIR panic {
@@ -40,7 +41,8 @@ func vfyRun(st mut St, after string) {
             m0 := vfyFunc(mut st, f, nf)
             // 全展開した直線の長さ（キャンセルの検査点の距離 K の約束を最終 IR で照合 — 段ごとの検証〔SOBER_VERIFY=each — gates〕の最後の段だけ。
             // 既定の build では掛けない — 近似の外れで利用者の build を内部エラーにしない。vfyRun に引数を足すと自己 check の RSS が +40 MB）
-            msg := if m0 == "" { urRunMsg(mut st, f) } else { m0 }
+            m1 := if m0 == "" && table.Len(mut st.rflowFns) > 0 && rfMarked(mut st, f) { rfVerify(mut st, f) } else { m0 }
+            msg := if m1 == "" { urRunMsg(mut st, f) } else { m1 }
             if msg != "" {
                 mut out := mut []byte{}
                 printName(mut st, mut out, irFnName(mut st, f))
@@ -411,7 +413,7 @@ func vfyInst(st mut St, v mut vfyS, w mut m2rW, f FnRef, ins InsRef, nf int) str
             return if n != nm { "montmul op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "montmul") }
         }
         if b == AES_B {
-            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else { -1 }
+            na := if c == AK_CPU { 0 } else if c == AK_KEY { 2 } else if c == AK_CTR { 4 } else if c == AK_GHASH { 3 } else if c == AK_TAG { 2 } else { -1 }
             return if n != na { "aes op ${c} with ${n} operands" } else { vfyList(mut st, mut v, mut w, a, TyI64, "aes") }
         }
         if n < 1 || n > 7 {

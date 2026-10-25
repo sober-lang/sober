@@ -35,6 +35,7 @@ nodes := builder.Build(mut nb)
 ## Push
 
 ```sober
+@effects()
 func Push[T](b mut Builder[T], x T)
 ```
 
@@ -43,6 +44,7 @@ x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出
 ## PushAll
 
 ```sober
+@effects()
 func PushAll[T](b mut Builder[T], xs []T)
 ```
 
@@ -51,14 +53,25 @@ xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ
 ## PushString
 
 ```sober
+@effects()
 func PushString(b mut Builder[byte], s string)
 ```
 
 s のバイト列を末尾に積む（PushAll(b, bytes(s))）
 
+## PushWord
+
+```sober
+@effects()
+func PushWord(b mut Builder[byte], w int, k int)
+```
+
+w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。k ≤ 0 なら何もしない。k > 8 なら 9 バイト目からは算術右シフトの埋め（w が負なら 255・でなければ 0）。今の chunk に k バイトの空きがあれば、chunk の出し入れと空きの検査は 1 回だけ（10 進の桁や短い字面を 1 語に詰めてから積む形 — json の数の書き出し）
+
 ## Len
 
 ```sober
+@effects()
 func Len[T](b mut Builder[T]) int
 ```
 
@@ -67,6 +80,7 @@ func Len[T](b mut Builder[T]) int
 ## Get
 
 ```sober
+@effects()
 func Get[T](b mut Builder[T], i int) T
 ```
 
@@ -75,6 +89,7 @@ i 番目（0 起点）に積んだ要素。i が範囲外（i \< 0 か Len 以�
 ## Build
 
 ```sober
+@effects()
 func Build[T](b mut Builder[T]) []T
 ```
 

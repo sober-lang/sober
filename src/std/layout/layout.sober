@@ -24,11 +24,13 @@ type LengthMismatch panic {
 }
 
 // 書き込みの幅あふれ: 欄 field の値 v が幅 width に収まらない
+@effects(panic)
 func FailWidth(field string, width string, v int) {
     panic(WidthOverflow{field: field, value: v, width: width})
 }
 
 // 固定長配列の長さ違い: 欄 field の長さが want でなく got
+@effects(panic)
 func FailLength(field string, want int, got int) {
     panic(LengthMismatch{field: field, want: want, got: got})
 }

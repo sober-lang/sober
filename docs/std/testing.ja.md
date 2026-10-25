@@ -17,6 +17,7 @@ assert の失敗（panic ラベル — 欄なし: 式と部分式の値は Fail 
 ## Fail
 
 ```sober
+@effects(io, panic, nondet)
 func Fail(expr string, values []string)
 ```
 

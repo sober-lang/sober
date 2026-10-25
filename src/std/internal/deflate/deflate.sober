@@ -141,41 +141,45 @@ type enc struct {
     fdp []int
 }
 
-// setup は符号の表をゼロ値から整える（mut の欄を持つ struct は関数から返せない — language.md 26 節 G3。io.Writer と同じ形）
+// setup は符号の表をゼロ値から整える（mut の欄を持つ struct は関数から返せない — language.md 26 節 G3。io.Writer と同じ形）。
+// lcode / dcode は表を表のまま書く（RFC 1951 3.2.5 の範囲を展開した値 — 符号化ごとに 1 バイトずつ append で組んでいた 770 回が
+// 符号器の ≈ 6%〔setup + rt.tip8〕だった・report-1139 E1）。組み立ての式は単体の網（deflate_test.sober の TestCodeTables）が照合する
 func setup(e mut enc) {
     lbase := []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258}
     lext := []int{0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0}
     dbase := []int{1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577}
     dext := []int{0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13}
-    mut lcode := mut []byte{}
-    mut c := 0
-    while c < 28 {
-        for j <- iter.Range(0, 1 << lext[c]) {
-            lcode = append(lcode, byte(c))
-        }
-        c += 1
+    // 長さ − 3 → 長さの符号（符号 c が 2^lext[c] 個ずつ。長さ 258 = 末尾は符号 27 の範囲でなく自分の符号 28）
+    e.lcode = []byte{
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15,
+        16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 18, 18, 19, 19, 19, 19, 19, 19, 19, 19,
+        20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
+        22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23,
+        24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+        25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
+        26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26,
+        27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 28,
     }
-    // 長さ 258 は符号 27 の範囲の末尾でなく自分の符号 28（RFC 1951 3.2.5）
-    lcode[255] = byte(28)
-    mut dcode := mut []byte{}
-    c = 0
-    while c < 16 {
-        for j <- iter.Range(0, 1 << dext[c]) {
-            dcode = append(dcode, byte(c))
-        }
-        c += 1
+    // 距離 − 1 → 距離の符号: 前半 256 項は x < 256 を 1 刻みで・後半 256 項は dcode[256 + (x >> 7)] を 128 刻みで（x >> 7 は 2 から始まるので
+    // 256・257 は使わない埋め）
+    e.dcode = []byte{
+        0, 1, 2, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9,
+        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
+        12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+        13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        0, 0, 16, 17, 18, 18, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23,
+        24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25,
+        26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26, 26,
+        27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+        28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+        28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+        29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29,
+        29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29,
     }
-    // 距離 − 1 が 256 以上は 128 刻みで引く（dcode[256 + (x >> 7)] — x >> 7 は 2 から始まるので 256・257 は使わない埋め）
-    dcode = append(dcode, byte(0))
-    dcode = append(dcode, byte(0))
-    while c < 30 {
-        for j <- iter.Range(0, 1 << (dext[c] - 7)) {
-            dcode = append(dcode, byte(c))
-        }
-        c += 1
-    }
-    e.lcode = freeze(lcode)
-    e.dcode = freeze(dcode)
     e.lbase = lbase
     e.lext = lext
     e.dbase = dbase
@@ -225,17 +229,14 @@ func fill(xs mut []int, n int, v int) {
     }
 }
 
-// rev は v の下位 l ビットの反転（Huffman の符号は MSB から詰める — RFC 1951 3.1.1）
+// rev は v の下位 l ビット（1 ≤ l ≤ 16・v < 2^l）の反転（Huffman の符号は MSB から詰める — RFC 1951 3.1.1）。16 ビットを隣どうし・2 ビット・
+// 4 ビット・バイトの入れ替えで反転してから下へずらす（分岐なし — 1 ビットずつのループは lengths の正準の符号の ≈ 20% だった・report-1145）
 func rev(v int, l int) int {
-    mut r := 0
-    mut x := v
-    mut i := 0
-    while i < l {
-        r = (r << 1) | (x & 1)
-        x = x >> 1
-        i += 1
-    }
-    return r
+    mut x := ((v & 0x5555) << 1) | ((v >> 1) & 0x5555)
+    x = ((x & 0x3333) << 2) | ((x >> 2) & 0x3333)
+    x = ((x & 0x0f0f) << 4) | ((x >> 4) & 0x0f0f)
+    x = ((x & 0x00ff) << 8) | ((x >> 8) & 0x00ff)
+    return x >> (16 - l)
 }
 
 // put は v の下位 nb ビット（nb ≤ 56・v の nb より上の桁は 0）を書く。溜め bb は 64 ビット — 満ちたら 8 バイトを書き切る
@@ -539,50 +540,62 @@ func flushZero(out mut []int, n int) {
 // Moffat–Katajainen の in-place の算法で深さを出し、maxBits を越えた分を Kraft の和が 1 になるまで浅い符号へ押し戻し、頻度の高い順に短い長さを配る
 func lengths(f []int, maxBits int) []int {
     n := len(f)
-    mut fq := mut []int{}
-    for i <- iter.Range(0, n) {
-        fq = append(fq, f[i])
-    }
+    // 使う記号を頻度の昇順（同じなら番号順 — 決定的）に: 鍵 ks = 頻度 × 512 + 番号（一意）の数え上げのソート（libdeflate の sort_symbols の形）。
+    // 頻度 v の桶 min(v, nb − 1) で数え、番号の昇順に置く — 末尾の桶（頻度 nb − 1 以上 — 少数）だけ鍵の挿入ソートで後付け。
+    // 挿入ソート 1 本（m² / 4 回の移動 — json の文字・長さの側で m ≈ 70〜120）の置き換え（report-1139 E2）。sort.Order は閉包を取る形の check が
+    // 通らないので使わない — FLEDGER の sort.Order の候補〔report-651〕と同じ症状
+    nb := (n >> 2) + 4
+    mut pos := mut []int{}
+    fill(mut pos, nb, 0)
     mut cnt := 0
     for i <- iter.Range(0, n) {
-        if fq[i] > 0 {
+        v := f[i]
+        if v > 0 {
+            b := if v < nb { v } else { nb - 1 }
+            pos[b] = pos[b] + 1
             cnt += 1
         }
     }
-    mut z := 0
-    while cnt < 2 && z < n {
-        if fq[z] == 0 {
-            fq[z] = 1
-            cnt += 1
-        }
-        z += 1
+    // 頻度の写しは足す記号があるときだけ（記号の数 n は 19 以上なので足した後は 2 つ — 足した記号は頻度 1 の桶）
+    fq := if cnt < 2 { pad2(f, cnt) } else { f }
+    if cnt < 2 {
+        pos[1] = pos[1] + 2 - cnt
     }
-    // 使う記号を頻度の昇順（同じなら番号順 — 決定的）に: 鍵 ks = 頻度 × 512 + 番号（一意）の挿入ソート（記号は 286 個まで。
-    // sort.Order は閉包を取る形の check が通らないので使わない — FLEDGER の sort.Order の候補〔report-651〕と同じ症状）
+    m := if cnt < 2 { 2 } else { cnt }
+    mut s := 0
+    for b <- iter.Range(0, nb) {
+        c := pos[b]
+        pos[b] = s
+        s += c
+    }
+    tail := pos[nb - 1]
     mut ks := mut []int{}
+    fill(mut ks, m, 0)
     for i <- iter.Range(0, n) {
-        if fq[i] > 0 {
-            k := fq[i] * 512 + i
-            ks = append(ks, k)
-            mut j := len(ks) - 1
-            while j > 0 && ks[j - 1] > k {
-                ks[j] = ks[j - 1]
-                j -= 1
-            }
-            ks[j] = k
+        v := fq[i]
+        if v > 0 {
+            b := if v < nb { v } else { nb - 1 }
+            ks[pos[b]] = v * 512 + i
+            pos[b] = pos[b] + 1
         }
     }
-    m := len(ks)
-    // a[i] = 昇順 i 番目の頻度 → 深さ・sy[i] = その記号
+    mut t := tail + 1
+    while t < m {
+        k := ks[t]
+        mut j := t
+        while j > tail && ks[j - 1] > k {
+            ks[j] = ks[j - 1]
+            j -= 1
+        }
+        ks[j] = k
+        t += 1
+    }
+    // a[i] = 昇順 i 番目の頻度 → 深さ・sy[i] & 511 = その記号
     mut a := mut []int{}
-    mut syb := mut []int{}
     for i <- iter.Range(0, m) {
         a = append(a, ks[i] >> 9)
     }
-    for i <- iter.Range(0, m) {
-        syb = append(syb, ks[i] & 511)
-    }
-    sy := freeze(syb)
+    sy := freeze(ks)
     a[0] = a[0] + a[1]
     mut root := 0
     mut leaf := 2
@@ -661,7 +674,7 @@ func lengths(f []int, maxBits int) []int {
     for l <- iter.Range(1, maxBits + 1) {
         for r <- iter.Range(0, nc[l]) {
             j -= 1
-            out[sy[j]] = l
+            out[sy[j] & 511] = l
         }
     }
     // 正準の符号（長さごとの最初の符号 next[l] から番号順に配る）を長さの上に詰める
@@ -680,6 +693,24 @@ func lengths(f []int, maxBits int) []int {
         }
     }
     return freeze(out)
+}
+
+// pad2 は使う記号が cnt（< 2）個の頻度 f に、番号の小さい未使用の記号を頻度 1 で足して 2 つにした写し
+func pad2(f []int, cnt int) []int {
+    mut fq := mut []int{}
+    for i <- iter.Range(0, len(f)) {
+        fq = append(fq, f[i])
+    }
+    mut c := cnt
+    mut z := 0
+    while c < 2 && z < len(f) {
+        if fq[z] == 0 {
+            fq[z] = 1
+            c += 1
+        }
+        z += 1
+    }
+    return freeze(fq)
 }
 
 // insert は位置 p（p + 3 ≤ len）を鎖に足し、同じハッシュの 1 つ前の最新の位置を返す（無ければ負）。ハッシュは 4 バイト u の乗算の上位の桁
@@ -724,26 +755,10 @@ func longest(w mut Work, data []byte, p int, cur int, prevLen int, good int, nic
     mut c := cur
     while best < maxl && c >= 0 && c > lim && ch > 0 {
         // 振るいは zlib と同じ 4 バイト（best の位置・その 1 つ前・頭の 2 バイト — 外れの候補の大半はここで落ちる）。通った候補の伸ばしは
-        // 8 バイトずつ（語の xor が 0 でなければ最下位の立ったバイトが食い違いの位置 — c < p なので c + l + 8 ≤ p + maxl ≤ n — report-723）
+        // 一致の長さの核 1 本（binary.MatchLen — x86 の最適化のバックエンドは 16 バイトずつの手書きの本体。c < p なので c + maxl ≤ p + maxl ≤ n・
+        // 3 ≤ maxl — SIMD の核 段 1・report-1137。旧形 = 8 バイトの xor + 1 バイトずつの末尾 — report-723）
         if data[c + best] == data[p + best] && data[c + best - 1] == data[p + best - 1] && data[c] == data[p] && data[c + 1] == data[p + 1] {
-            mut l := 2
-            mut tail := true
-            while l + 8 <= maxl {
-                x := binary.Load64(data, c + l) ^ binary.Load64(data, p + l)
-                if x != 0 {
-                    mut y := x
-                    while y & 255 == 0 {
-                        y = y >> 8
-                        l += 1
-                    }
-                    tail = false
-                    break
-                }
-                l += 8
-            }
-            while tail && l < maxl && data[c + l] == data[p + l] {
-                l += 1
-            }
+            l := 2 + binary.MatchLen(data, c + 2, p + 2, maxl - 2)
             if l > best {
                 best = l
                 start = c
@@ -819,6 +834,7 @@ func lazy(w mut Work, data []byte, level int, p0 int) (int, int) {
     maxLazy := if level == 4 { 4 } else if level == 5 { 16 } else if level == 6 { 12 } else if level == 7 { 32 } else if level == 8 { 128 } else { 258 }
     nice := if level == 4 { 16 } else if level == 5 { 32 } else if level <= 7 { 128 } else { 258 }
     chain := if level == 4 { 16 } else if level == 5 { 32 } else if level == 6 { 128 } else if level == 7 { 256 } else if level == 8 { 1024 } else { 4096 }
+    skipIns := level <= 6
     n := len(data)
     mut p := p0
     mut prevLen := minMatch - 1
@@ -847,6 +863,13 @@ func lazy(w mut Work, data []byte, level int, p0 int) (int, int) {
             maxIns := n - minMatch
             mut q := p
             mut k := prevLen - 2
+            // lv4〜6: 長い一致（> 8）で重ならない（距離 ≥ 長さ）ものは中の位置を鎖に足さず、末尾の 2 位置だけ足す（report-1058 の B3・
+            // report-1116 — 挿入は json の本文で全体の 8 割。率は zlib の同じ level より悪くなりうる〔線 = check.ts ⑤〕代わりに lv6 の符号化 −4 割級）。
+            // 重なる一致（距離 < 長さ — 0 の列・短い周期）は省かない（省くと距離が跳ねて率が崩れる）
+            if skipIns && prevLen > 8 && p - 1 - prevMatch >= prevLen {
+                q = p + prevLen - 4
+                k = 2
+            }
             while k > 0 {
                 q += 1
                 if q <= maxIns {

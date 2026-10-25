@@ -51,6 +51,7 @@ type State struct {
 ## New
 
 ```sober
+@effects()
 func New() State
 ```
 
@@ -59,6 +60,7 @@ func New() State
 ## Write
 
 ```sober
+@effects()
 func Write(s mut State, data []byte)
 ```
 
@@ -69,6 +71,7 @@ data を続けて書く（64 バイトのブロックが揃った分だけ畳み
 ## Sum
 
 ```sober
+@effects()
 func Sum(s State) []byte
 ```
 
@@ -77,6 +80,7 @@ s に書いた全体の値（32 バイト）。s は変えない（末尾の詰�
 ## Sum256
 
 ```sober
+@effects()
 func Sum256(data []byte) []byte
 ```
 

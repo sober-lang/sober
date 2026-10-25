@@ -74,6 +74,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`aesgcm.Overhead`](crypto-aesgcm.ja.md#overhead) — 長さの定数（バイト）
 - [`aesgcm.Prepare`](crypto-aesgcm.ja.md#prepare) — key を展開した Key（専用命令の有無と鍵の長さはここで見る）
 - [`aesgcm.Seal`](crypto-aesgcm.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
+- [`aesgcm.SealInto`](crypto-aesgcm.ja.md#sealinto) — SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。
 - [`aesgcm.SealTo`](crypto-aesgcm.ja.md#sealto) — head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。
 - [`base64.Bad`](base64.ja.md#bad) — Decode / DecodeUrl の入力が綴りの規則に合わない（字母の外の文字・長さ・詰めの位置と数・最後の文字の使わない bit が 0 でない — RFC 4648 3.3・3.5）
 - [`base64.Decode`](base64.ja.md#decode) — 標準の字母の base64 の s のバイト列（長さは 4 の倍数・'=' の詰めは端の 1〜2 文字だけ — Encode の綴りだけを受ける）
@@ -81,7 +82,8 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`base64.Encode`](base64.ja.md#encode) — b の標準の字母の base64（4 文字ずつ・端は '=' で詰める — Go の base64.StdEncoding.EncodeToString と同じ綴り）
 - [`base64.EncodeUrl`](base64.ja.md#encodeurl) — b の URL・ファイル名に安全な字母の base64（'+' '/' の代わりに '-' '\_'・詰めの '=' を書かない — Go の base64.RawURLEncoding と同じ綴り）
 - [`binary.Load64`](binary.ja.md#load64) — b[i]〜b[i + 7] の 8 バイトを little-endian で読んだ int（b[i] が最下位のバイト）。
-- [`binary.OutOfRange`](binary.ja.md#outofrange) — Load64 の読みが b の外にはみ出した（呼び手の契約違反 — panic ラベル。
+- [`binary.MatchLen`](binary.ja.md#matchlen) — b[i:i+n] と b[j:j+n] の先頭からの一致の長さ（0〜n — 最初に食い違うバイトの位置・全部一致なら n）。
+- [`binary.OutOfRange`](binary.ja.md#outofrange) — Load64 / MatchLen の読みが b の外にはみ出した（呼び手の契約違反 — panic ラベル。
 - [`builder.Build`](builder.ja.md#build) — 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。
 - [`builder.Builder`](builder.ja.md#builder) — コピーせずに成長する可変長の列（[language.md 21 節](../language.md)の緩和策 2）。
 - [`builder.Get`](builder.ja.md#get) — i 番目（0 起点）に積んだ要素。
@@ -89,6 +91,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`builder.Push`](builder.ja.md#push) — x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。
 - [`builder.PushAll`](builder.ja.md#pushall) — xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが要素ごとでなく chunk ごと。
 - [`builder.PushString`](builder.ja.md#pushstring) — s のバイト列を末尾に積む（PushAll(b, bytes(s))）
+- [`builder.PushWord`](builder.ja.md#pushword) — w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。
 - [`chacha20.Block`](crypto-chacha20.ja.md#block) — 鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）。
 - [`chacha20.XorKeyStream`](crypto-chacha20.ja.md#xorkeystream) — src を鍵ストリーム（ブロック番号 counter から）と xor したもの（暗号化 = 復号）。
 - [`chacha20.XorKeyStreamAt`](crypto-chacha20.ja.md#xorkeystreamat) — src[at, at + n) を鍵ストリームと xor したもの（写さずに読む — record 層向けの API）。
@@ -102,6 +105,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`chacha20poly1305.Overhead`](crypto-chacha20poly1305.ja.md#overhead) — 長さの定数（バイト）
 - [`chacha20poly1305.Prepare`](crypto-chacha20poly1305.ja.md#prepare) — key の Key（鍵の長さはここで見る）
 - [`chacha20poly1305.Seal`](crypto-chacha20poly1305.ja.md#seal) — pt を暗号化して tag を付けたもの（暗号文 ‖ tag）。
+- [`chacha20poly1305.SealInto`](crypto-chacha20poly1305.ja.md#sealinto) — SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と同じ口 — 書いたバイト数・入らなければ / nonce の長さが違えば −1）。
 - [`chacha20poly1305.SealTo`](crypto-chacha20poly1305.ja.md#sealto) — head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。
 - [`convert.FloatOutOfRange`](convert.ja.md#floatoutofrange) — ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
 - [`convert.FormatBool`](convert.ja.md#formatbool) — b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
@@ -190,6 +194,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`http.Response`](http.ja.md#response) — 応答（status・Content-Type〔"" なら書かない〕・本文）。
 - [`http.Route`](http.ja.md#route) — ルートの表の 1 行（method + path のパターン → ハンドラ・ルート単位の middleware）。
 - [`http.ServeConn`](http.ja.md#serveconn) — c の要求を順に route に渡して応答を書く（keep-alive）。
+- [`http.ServeFlushed`](http.ja.md#serveflushed) — ServeWith の送りを 2 段にした形: 受けた切片 1 つ分の応答を put で積む（送らない）。
 - [`http.ServeWith`](http.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。
 - [`http.ServiceUnavailable`](http.ja.md#serviceunavailable) — 503 Service Unavailable
 - [`http.Static`](http.ja.md#static) — prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。
@@ -277,7 +282,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`json.Put`](json.ja.md#put) — s のバイト列をそのまま積む（Put… / Done で JSON を手で組み立てる例: examples/json\_put.sober）
 - [`json.PutBool`](json.ja.md#putbool) — b を true / false の綴りで積む
 - [`json.PutFloat`](json.ja.md#putfloat) — f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
-- [`json.PutInt`](json.ja.md#putint) — n の 10 進を builder へ直に積む（FormatInt の string を経ない — 上の桁から: 桁の数の 10 の冪 p を求めて n / p の桁を順に）
+- [`json.PutInt`](json.ja.md#putint) — n の 10 進を builder へ直に積む（FormatInt の string を経ない）。
 - [`json.PutKey`](json.ja.md#putkey) — 欄の頭（2 つ目以降は ','・キーの文字列・':'）
 - [`json.PutString`](json.ja.md#putstring) — s を JSON の文字列（引用符つき — `"` `\` と制御文字だけをエスケープ）として積む
 - [`json.Root`](json.ja.md#root) — 根のノード
@@ -301,7 +306,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`net.Bad`](net.ja.md#bad) — addr の形の誤り（"a.b.c.d:port" — IPv4 の 4 つ組と 0〜65535 の port）
 - [`net.Conn`](net.ja.md#conn) — 接続（同一性の型 — Listener と同じ規則。
 - [`net.Dial`](net.ja.md#dial) — addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる
-- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
+- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・TCP\_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
 - [`net.Listener`](net.ja.md#listener) — listen している socket（同一性の型 — 写せない・外へ出せない・give: で渡せない。
 - [`net.Port`](net.ja.md#port) — l が bind している port（"…:0" で listen したときの割り当ての読み — getsockname）
 - [`net.Recv`](net.ja.md#recv) — c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。
@@ -374,10 +379,12 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`record.Pack`](tls-record.ja.md#pack) — d の語の列（[suite, seq, 秘密の長さ, 秘密 …, iv の長さ, iv …, 鍵の素材の長さ, 鍵の素材 …] — バイト列は 8 バイト / 語。
 - [`record.Plain`](tls-record.ja.md#plain) — 暗号化していない record（handshake の最初の flight・互換の CCS）の内容の型と中身（枠 r の頭の後ろ — 写さない部分列）
 - [`record.Seal`](tls-record.ja.md#seal) — 内容の型 ctype の平文 pt を record の列にしたもの（2^14 バイトずつ・各 record の内側の末尾に 0 埋め pad バイト〔0 = 埋めない〕）。
+- [`record.SealInto`](tls-record.ja.md#sealinto) — Seal の宛先を呼び手の列 dst[at:] にした形（record 1 つ — pt が MaxPlain を越える・dst に入らなければ −1。
 - [`record.Seq`](tls-record.ja.md#seq) — d の seq（std/tls がストレージの seq の語だけを書き戻す）
 - [`record.Transport`](tls-record.ja.md#transport) — 転送路の受信コールバックが失敗した（相手の切断・期限など — 元の誤りは関数値越しでラベルを導出できないので包み替える。
 - [`record.Unpack`](tls-record.ja.md#unpack) — Pack の逆（w[at:] から）
 - [`record.Update`](tls-record.ja.md#update) — KeyUpdate（secret' = ExpandLabel(secret, "traffic upd", "", 32) — RFC 9846 7.2・key / iv を作り直して seq を 0 に）
+- [`record.WithSeq`](tls-record.ja.md#withseq) — d の seq を seq に差し替えた Dir（鍵の素材は d と共有 — std/tls が展開済みの送りの方向に置き場の seq の語を当てる）
 - [`rsa.BadKey`](crypto-rsa.ja.md#badkey) — 鍵の DER の形が違う（PKCS#8 の RSA でない・長さが合わない）
 - [`rsa.BadSize`](crypto-rsa.ja.md#badsize) — salt の長さや鍵の大きさが PSS に足りない
 - [`rsa.Fault`](crypto-rsa.ja.md#fault) — 署名の自己検証が合わなかった（計算の故障 — 署名を捨てた）
@@ -484,13 +491,15 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`tls.Closed`](tls.ja.md#closed) — 接続が閉じている（相手の切断・相手の alert・転送路の失敗・途中で抜けた後の Recv）
 - [`tls.Config`](tls.ja.md#config) — サーバの設定（Load / Parse が作る — 証明書の鎖・葉の鍵・受ける ALPN）
 - [`tls.Conn`](tls.ja.md#conn) — handshake の済んだ接続（同一性の型 — net.Conn と同じ規則。
+- [`tls.Flush`](tls.ja.md#flush) — c の送りの束に積んだ record を送る（無ければ何もしない）
 - [`tls.Handler`](tls.ja.md#handler) — handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値として接続の task へ渡る。
 - [`tls.HandshakeFailed`](tls.ja.md#handshakefailed) — handshake が失敗した（alert = 送った alert の番号 — RFC 9846 6）
 - [`tls.Load`](tls.ja.md#load) — Parse のファイル版（certPath / keyPath を読む）
 - [`tls.Overflow`](tls.ja.md#overflow) — 方向の語の列が席に入らない（std の内部の約束違反 — panic ラベル）
 - [`tls.Parse`](tls.ja.md#parse) — PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS#8 の RSA の鍵の Config（ALPN の既定 = http/1.1 — 変えるなら Alpn）
+- [`tls.Put`](tls.ja.md#put) — b を application の record にして c の送りの束に積む（送らない — Flush か、tls.Recv の k が戻ったときか、束に入らない次の Put か、Serve の出口が送る。
 - [`tls.Recv`](tls.ja.md#recv) — c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。
-- [`tls.Send`](tls.ja.md#send) — b を application の record にして c へ送る（空の b は送らない）。
+- [`tls.Send`](tls.ja.md#send) — b を application の record にして c へ送る（空の b は送らない — Put + Flush）。
 - [`tls.Serve`](tls.ja.md#serve) — addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。
 - [`url.Bad`](url.ja.md#bad) — Unescape / ParseQuery の入力が読めない（'%' の後が 16 進の 2 桁でない・復号したバイト列が UTF-8 でない）
 - [`url.Escape`](url.ja.md#escape) — s の percent-encoding（RFC 3986 2.3 の unreserved = 英数字と '-' '.' '\_' '~' はそのまま・他のバイトは "%XX" — 16 進は大文字 2.1。

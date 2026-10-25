@@ -1,0 +1,4 @@
+hello.txt: 17 bytes
+../../README.md: denied
+/etc/passwd: denied
+missing.txt: not found

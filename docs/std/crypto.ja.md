@@ -62,6 +62,7 @@ getrandom が乱数を返せない（カーネル 3.17 未満 = ENOSYS など �
 ## Rand
 
 ```sober
+@effects(io, panic)
 func Rand(n int) []byte
 ```
 

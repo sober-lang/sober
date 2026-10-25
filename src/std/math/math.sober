@@ -14,21 +14,25 @@ func sysFBits(x float) int
 func sysFFromBits(b int) float
 
 // x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 は -0）
+@effects()
 func Sqrt(x float) float {
     return sysFSqrt(x)
 }
 
 // x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 は +0）
+@effects()
 func Abs(x float) float {
     return FromBits(Bits(x) & 9223372036854775807)
 }
 
 // x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じビットの読み替え）
+@effects()
 func Bits(x float) int {
     return sysFBits(x)
 }
 
 // ビット列 b の float（±Inf・NaN もこれで作る）
+@effects()
 func FromBits(b int) float {
     return sysFFromBits(b)
 }

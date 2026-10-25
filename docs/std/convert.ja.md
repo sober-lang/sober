@@ -9,6 +9,7 @@
 ## FormatFloat
 
 ```sober
+@effects()
 func FormatFloat(f float) string
 ```
 
@@ -17,6 +18,7 @@ f の最短の往復表現（読み戻すと同じビットになる最短の 10
 ## FormatFixed
 
 ```sober
+@effects()
 func FormatFixed(f float, prec int) string
 ```
 
@@ -44,6 +46,7 @@ ParseFloat の溢れ（値は ±Inf — Go の ErrRange と同じ）
 
 ```sober
 @errors(InvalidFloat, FloatOutOfRange)
+@effects()
 func ParseFloat(s string) (float, error?)
 ```
 
@@ -71,6 +74,7 @@ ParseInt の溢れ（int〔64 ビット〕の範囲の外 — Go の ErrRange �
 
 ```sober
 @errors(InvalidInt, IntOutOfRange)
+@effects()
 func ParseInt(s string) (int, error?)
 ```
 
@@ -81,6 +85,7 @@ s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`�
 ## FormatInt
 
 ```sober
+@effects()
 func FormatInt(n int) string
 ```
 
@@ -98,6 +103,7 @@ ParseBool の構文の違い（受ける綴りの外 — Go の strconv.ErrSynta
 
 ```sober
 @errors(InvalidBool)
+@effects()
 func ParseBool(s string) (bool, error?)
 ```
 
@@ -108,6 +114,7 @@ s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" 
 ## FormatBool
 
 ```sober
+@effects()
 func FormatBool(b bool) string
 ```
 

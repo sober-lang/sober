@@ -122,6 +122,8 @@ jobs:
           {
             echo "## bench-official — $(sed -n 's/^cpu=//p' out/bench/bench-env.txt)（$(sed -n 's/^kernel=//p' out/bench/bench-env.txt)）"
             echo
+            echo "- env: runner=$(sed -n 's/^runner=//p' out/bench/bench-env.txt) · runner_name=$(sed -n 's/^runner_name=//p' out/bench/bench-env.txt) · nproc=$(sed -n 's/^nproc=//p' out/bench/bench-env.txt) · commit=$(sed -n 's/^commit=//p' out/bench/bench-env.txt)"
+            echo
             grep -E 'benchsync:(bench-go|bench-rust|bench-rust-tally|bench-rss-go)' out/bench/render/bench/README.md | sed 's/ <!--.*//'
             echo
             echo "取り込み: \`scripts/benchfetch.sh ${{ github.run_id }}\`（型番が基線と違えば拒否される）"

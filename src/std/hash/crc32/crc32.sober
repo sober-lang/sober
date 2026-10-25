@@ -10,6 +10,7 @@ import "std/internal/crc32"
 //     c := crc32.Sum(bytes("123456789"))   // 0xcbf43926（RFC 1952 の照合値）
 //
 // 核は std/internal/crc32 の Update（PCLMULQDQ の畳み・倒れ先の slicing-by-8 — gzip の逐次の符号器と共有）
+@effects(panic)
 func Sum(data []byte) int {
     return crc32.Update(0, data)
 }

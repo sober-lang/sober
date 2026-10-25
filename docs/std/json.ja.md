@@ -144,6 +144,7 @@ int の欄の数が int に収まらない（小数・指数を含む数は Wron
 
 ```sober
 @errors(WrongType)
+@effects()
 func NeedObject(d Doc, n int) (int, error?)
 ```
 
@@ -155,6 +156,7 @@ func NeedObject(d Doc, n int) (int, error?)
 
 ```sober
 @errors(Missing)
+@effects()
 func Need(d Doc, n int, key string) (int, error?)
 ```
 
@@ -166,6 +168,7 @@ func Need(d Doc, n int, key string) (int, error?)
 
 ```sober
 @errors(Missing)
+@effects()
 func NeedAt(d Doc, n int, key string, hint int) (int, error?)
 ```
 
@@ -176,6 +179,7 @@ Need に手掛かりの位置 hint を足したもの（GetAt と同じ — 写�
 ## IsNull
 
 ```sober
+@effects()
 func IsNull(d Doc, n int) bool
 ```
 
@@ -185,6 +189,7 @@ func IsNull(d Doc, n int) bool
 
 ```sober
 @errors(WrongType)
+@effects()
 func Items(d Doc, n int) ([]int, error?)
 ```
 
@@ -196,6 +201,7 @@ func Items(d Doc, n int) ([]int, error?)
 
 ```sober
 @errors(WrongType)
+@effects()
 func ParseString(d Doc, n int) (string, error?)
 ```
 
@@ -207,6 +213,7 @@ func ParseString(d Doc, n int) (string, error?)
 
 ```sober
 @errors(WrongType)
+@effects()
 func ParseBool(d Doc, n int) (bool, error?)
 ```
 
@@ -218,6 +225,7 @@ true / false
 
 ```sober
 @errors(WrongType, IntRange)
+@effects()
 func ParseInt(d Doc, n int) (int, error?)
 ```
 
@@ -229,6 +237,7 @@ func ParseInt(d Doc, n int) (int, error?)
 
 ```sober
 @errors(WrongType)
+@effects()
 func ParseFloat(d Doc, n int) (float, error?)
 ```
 
@@ -313,6 +322,7 @@ JSON に書けない float（NaN・±Inf）を Encode に渡した
 ## KeyOf
 
 ```sober
+@effects()
 func KeyOf(rename map[string]string, field string) string
 ```
 
@@ -321,6 +331,7 @@ func KeyOf(rename map[string]string, field string) string
 ## Put
 
 ```sober
+@effects()
 func Put(o mut builder.Builder[byte], s string)
 ```
 
@@ -329,6 +340,7 @@ s のバイト列をそのまま積む（Put… / Done で JSON を手で組み�
 ## PutKey
 
 ```sober
+@effects()
 func PutKey(o mut builder.Builder[byte], key string, first bool)
 ```
 
@@ -337,6 +349,7 @@ func PutKey(o mut builder.Builder[byte], key string, first bool)
 ## PutString
 
 ```sober
+@effects()
 func PutString(o mut builder.Builder[byte], s string)
 ```
 
@@ -345,14 +358,16 @@ s を JSON の文字列（引用符つき — `"` `\` と制御文字だけを�
 ## PutInt
 
 ```sober
+@effects()
 func PutInt(o mut builder.Builder[byte], n int)
 ```
 
-n の 10 進を builder へ直に積む（FormatInt の string を経ない — 上の桁から: 桁の数の 10 の冪 p を求めて n / p の桁を順に）
+n の 10 進を builder へ直に積む（FormatInt の string を経ない）。割るのは定数だけ（10・10^8・10^16 — 乗算に下りる）: 8 桁ずつの塊を下の桁から 1 語に詰めて（1 バイト / 桁）上の桁から積む（棄てた形: 桁の数の 10 の冪 p で n / p — 割る数が変数で桁ごとに idiv）
 
 ## PutBool
 
 ```sober
+@effects()
 func PutBool(o mut builder.Builder[byte], b bool)
 ```
 
@@ -361,6 +376,7 @@ b を true / false の綴りで積む
 ## PutFloat
 
 ```sober
+@effects(panic)
 func PutFloat(o mut builder.Builder[byte], f float, field string)
 ```
 
@@ -369,6 +385,7 @@ f の最短の往復表現（NaN・±Inf は panic — field = 欄名）
 ## Done
 
 ```sober
+@effects()
 func Done(o mut builder.Builder[byte]) string
 ```
 
@@ -460,6 +477,7 @@ type Value union {
 ## Root
 
 ```sober
+@effects()
 func Root(d Doc) int
 ```
 
@@ -468,6 +486,7 @@ func Root(d Doc) int
 ## Pos
 
 ```sober
+@effects()
 func Pos(d Doc, n int) int
 ```
 
@@ -476,6 +495,7 @@ func Pos(d Doc, n int) int
 ## At
 
 ```sober
+@effects()
 func At(d Doc, n int) Value
 ```
 
@@ -484,6 +504,7 @@ func At(d Doc, n int) Value
 ## Get
 
 ```sober
+@effects()
 func Get(d Doc, n int, key string) int?
 ```
 
@@ -492,6 +513,7 @@ func Get(d Doc, n int, key string) int?
 ## GetAt
 
 ```sober
+@effects()
 func GetAt(d Doc, n int, key string, hint int) int?
 ```
 
@@ -501,6 +523,7 @@ Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキー
 
 ```sober
 @errors(InvalidJson)
+@effects()
 func Parse(b []byte) (Doc, error?)
 ```
 
@@ -511,6 +534,7 @@ b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろ
 ## Format
 
 ```sober
+@effects()
 func Format(d Doc, n int) string
 ```
 

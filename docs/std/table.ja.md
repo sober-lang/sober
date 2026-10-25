@@ -56,6 +56,7 @@ const DIR0 = 16
 ## Push
 
 ```sober
+@effects()
 func Push[T](t mut Table[T], x T)
 ```
 
@@ -64,6 +65,7 @@ x を末尾に積む
 ## PushAll
 
 ```sober
+@effects()
 func PushAll[T](t mut Table[T], xs []T)
 ```
 
@@ -72,6 +74,7 @@ xs を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 �
 ## Len
 
 ```sober
+@effects()
 func Len[T](t mut Table[T]) int
 ```
 
@@ -80,6 +83,7 @@ func Len[T](t mut Table[T]) int
 ## Get
 
 ```sober
+@effects()
 func Get[T](t mut Table[T], i int) T
 ```
 
@@ -88,6 +92,7 @@ i 番目（0 起点）の要素。i が範囲外（i \< 0 か Len 以上）な�
 ## Set
 
 ```sober
+@effects()
 func Set[T](t mut Table[T], i int, x T)
 ```
 
@@ -107,6 +112,7 @@ Freeze が返す凍った表（imm — 書く関数が無い。par の子へそ�
 ## Freeze
 
 ```sober
+@effects()
 func Freeze[T](t mut Table[T]) Frozen[T]
 ```
 
@@ -115,6 +121,7 @@ t の中身を写さずに凍らせて返し、t を空の表に戻す（取り�
 ## FrozenLen
 
 ```sober
+@effects()
 func FrozenLen[T](f Frozen[T]) int
 ```
 
@@ -123,6 +130,7 @@ func FrozenLen[T](f Frozen[T]) int
 ## At
 
 ```sober
+@effects()
 func At[T](f Frozen[T], i int) T
 ```
 

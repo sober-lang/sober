@@ -36,6 +36,7 @@ const CondG = 15
 const CondB = 2  // 符号なし <
 const CondAe = 3 // 符号なし >=
 const CondA = 7  // 符号なし >
+const CondBe = 6 // 符号なし <=
 const CondP = 10  // パリティ（ucomisd の unordered — float の段）
 const CondNp = 11
 
@@ -207,6 +208,12 @@ func Rdtscp(c mut table.Table[byte]) {
     put(mut c, 0xf9)
 }
 
+// Rdtsc は rdtsc — 0F 31（edx:eax = 時刻の計数器 — 前後の命令と並べ替わりうる。順序の要らない粗い時計の口 — rt のスケジューラ）
+func Rdtsc(c mut table.Table[byte]) {
+    put(mut c, 0x0f)
+    put(mut c, 0x31)
+}
+
 // Pause は pause — F3 90（スピンの待ちの 1 回）
 func Pause(c mut table.Table[byte]) {
     put(mut c, 0xf3)
@@ -287,6 +294,16 @@ func MovMem8RegSib(c mut table.Table[byte], base int, index int, scale int, disp
 // MovMem8Reg は mov byte ptr [base + disp], src8 — 88 /r。spl / bpl / sil / dil と r8b〜 は REX 付き（as と同じ）
 func MovMem8Reg(c mut table.Table[byte], base int, disp int, src int) {
     opMem(mut c, false, 0x88, -1, src, base, disp, src >= 4 && src < 8)
+}
+
+// MovChMem8 / MovMem8Ch は mov ch, byte ptr [base + disp] / その逆 — 8A /5・88 /5（REX なし — base は rax〜rdi だけ。rt.copy8 の短い写しが
+// rcx の下の長さを残したまま 1 バイトを運ぶ — d-3）
+func MovChMem8(c mut table.Table[byte], base int, disp int) {
+    opMem(mut c, false, 0x8a, -1, 5, base, disp, false)
+}
+
+func MovMem8Ch(c mut table.Table[byte], base int, disp int) {
+    opMem(mut c, false, 0x88, -1, 5, base, disp, false)
 }
 
 // MovzxRegMem8 は movzx dst, byte ptr [base + disp] — REX.W 0F B6 /r
@@ -952,6 +969,49 @@ func MovdquMemX(c mut table.Table[byte], base int, disp int, x int) {
     sseMem(mut c, 0xf3, 0x7f, x, base, disp)
 }
 
+// MovdquXSib / MovdquSibX は movdqu の [base + index * 1 + disp] の読み / 書き — F3 0F 6F / 7F（rt.copy8 の短い写し — d-3）
+func MovdquXSib(c mut table.Table[byte], x int, base int, index int, disp int) {
+    sseSib(mut c, 0xf3, 0x6f, x, base, index, Scale1, disp)
+}
+
+func MovdquSibX(c mut table.Table[byte], base int, index int, disp int, x int) {
+    sseSib(mut c, 0xf3, 0x7f, x, base, index, Scale1, disp)
+}
+
+// MovqXMem / MovqMemX は movq x, qword ptr [base + disp] / その逆 — F3 0F 7E /r・66 0F D6 /r（Sib は [base + index * 1 + disp]）
+func MovqXMem(c mut table.Table[byte], x int, base int, disp int) {
+    sseMem(mut c, 0xf3, 0x7e, x, base, disp)
+}
+
+func MovqMemX(c mut table.Table[byte], base int, disp int, x int) {
+    sseMem(mut c, 0x66, 0xd6, x, base, disp)
+}
+
+func MovqXSib(c mut table.Table[byte], x int, base int, index int, disp int) {
+    sseSib(mut c, 0xf3, 0x7e, x, base, index, Scale1, disp)
+}
+
+func MovqSibX(c mut table.Table[byte], base int, index int, disp int, x int) {
+    sseSib(mut c, 0x66, 0xd6, x, base, index, Scale1, disp)
+}
+
+// MovdXMem / MovdMemX は movd x, dword ptr [base + disp] / その逆 — 66 0F 6E /r・66 0F 7E /r（Sib は [base + index * 1 + disp]）
+func MovdXMem(c mut table.Table[byte], x int, base int, disp int) {
+    sseMem(mut c, 0x66, 0x6e, x, base, disp)
+}
+
+func MovdMemX(c mut table.Table[byte], base int, disp int, x int) {
+    sseMem(mut c, 0x66, 0x7e, x, base, disp)
+}
+
+func MovdXSib(c mut table.Table[byte], x int, base int, index int, disp int) {
+    sseSib(mut c, 0x66, 0x6e, x, base, index, Scale1, disp)
+}
+
+func MovdSibX(c mut table.Table[byte], base int, index int, disp int, x int) {
+    sseSib(mut c, 0x66, 0x7e, x, base, index, Scale1, disp)
+}
+
 // ── SSE2 packed double（段 4②a — packed f64 の語彙。SSE3 以上は使わない）──
 
 // MovupdXMem は movupd x, xmmword ptr [base + disp]（非整列）— 66 0F 10 /r
@@ -1015,6 +1075,11 @@ func MulReg(c mut table.Table[byte], reg int) {
     opExt(mut c, 0xf7, 4, reg)
 }
 
+// ImulReg1 は imul reg（1 オペランド）— rax × reg（符号つき）→ rdx:rax — REX.W F7 /5
+func ImulReg1(c mut table.Table[byte], reg int) {
+    opExt(mut c, 0xf7, 5, reg)
+}
+
 // IdivReg は idiv reg — rdx:rax / reg → 商 rax、余り rdx — REX.W F7 /7
 func IdivReg(c mut table.Table[byte], reg int) {
     opExt(mut c, 0xf7, 7, reg)
@@ -1050,6 +1115,13 @@ func JccRel32(c mut table.Table[byte], cond int) int {
     put(mut c, 128 | cond)
     imm32(mut c, 0)
     return Here(mut c) - 4
+}
+
+// JccRel8 は jcc rel8 — 7x cb。rel8 の位置を返す（PatchRel8 で埋める — 前方 127 バイトまで）
+func JccRel8(c mut table.Table[byte], cond int) int {
+    put(mut c, 0x70 | cond)
+    put(mut c, 0)
+    return Here(mut c) - 1
 }
 
 // CallRel32 は call rel32 — E8 cd。rel32 の位置を返す

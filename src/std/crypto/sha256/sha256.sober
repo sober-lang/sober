@@ -27,11 +27,13 @@ type State struct {
 }
 
 // 空の入力の状態
+@effects()
 func New() State {
     return State{h: []int{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}, tail: []byte{}, n: 0}
 }
 
 // data を続けて書く（64 バイトのブロックが揃った分だけ畳み、端は tail に残す）（対の Read は実需まで足さない — 34 節 2 の注記・2026-10-20 ④）
+@effects()
 func Write(s mut State, data []byte) {
     n := len(data)
     t := len(s.tail)
@@ -66,6 +68,7 @@ func Write(s mut State, data []byte) {
 }
 
 // s に書いた全体の値（32 バイト）。s は変えない（末尾の詰め = 端 + 0x80 + 0 埋め + ビット長〔64 bit big endian〕を写しの上で畳む）
+@effects()
 func Sum(s State) []byte {
     rest := len(s.tail)
     tlen := if rest < 56 { 64 } else { 128 }
@@ -96,6 +99,7 @@ func Sum(s State) []byte {
 }
 
 // data の SHA-256 の値（ワンショット API）
+@effects()
 func Sum256(data []byte) []byte {
     mut s := New()
     Write(mut s, data)

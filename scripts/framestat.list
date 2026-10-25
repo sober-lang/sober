@@ -12,10 +12,14 @@
 # 2026-10-23 slotcolor の頭の並び（要零を先・逃げるだけを後 — report-1063 / 1064）: @zero 4136 → 3752（serveTlsConn の零初期化 1952 → 1592）・締め直し = 実測 × 1.01
 # 2026-10-23 間接呼び出しの sret の受け皿を全語の書きと読む（ir.sober CALLI_SRET — zeroinit / slotcolor・report-1069）: serveTlsConn 6448 → 5872・@sum 95904 → 94256・@zero 3752 → 1560（受け皿が要零の専用スロットから彩色の候補へ）・締め直し = 実測 × 1.01
 # 2026-10-23 0.7.0 便 8 の段 8-5（compress + stream — serveBuf の展開先に stream の枝・report-1057〜1071・ユーザー裁定 = 値札受理）: serveTlsConn 5872 → 6224・@sum 94256 → 99392・@zero 1560 → 1816・締め直し = 実測 × 1.01（事後追認の標準運用）
-bench/httparena/main.sober main.serveTlsConn 6287
-bench/httparena/main.sober @sum 100386
-bench/httparena/main.sober @zero 1835
+# 2026-10-24 json-tls の粒 a / b'（tls.Conn に送りの Dir を持つ — Conn の値が 10 語伸びる・json.putDigits の新しい関数・report-1118）: serveTlsConn 6224 → 6320・@sum 99392 → 102176・@zero 1816 → 1976・締め直し = 実測 × 1.01（事後追認の標準運用）
+bench/httparena/main.sober main.serveTlsConn 6383
+bench/httparena/main.sober @sum 104668
+# 2026-10-25 P3（飽和下の待ちの上限 D — rt.mn_next / rt.task_new の語が増えた・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @zero 2008（線 1996 を越えた）→ 2029
+bench/httparena/main.sober @zero 2029
 @self loader.finish 1988
 # 2026-10-23 effect の波 段 5a-1（analyzer/effects.sober の歩きと解き — report-1084・実測 × 1.01 の標準運用）: @self @sum 861456
 # 2026-10-23 effect の波 段 5a-2 / 5a-3（trace の計装・sober fix — report-1084・実測 × 1.01 の標準運用）: @self @sum 876496
-@self @sum 885261
+# 2026-10-25 S レーン（tls の送りの束 — Put / Flush・pump の受けの反復ごとの Flush・http.ServeFlushed の展開・report-1128〜1131・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: bench/httparena @sum 103632（線 103198 を越えた）→ 104668
+# 2026-10-25 P3（同上 — コンパイラ自身の rt の関数の枠・report-1142 / 1143・実測 × 1.01・標準運用の引き直し — ユーザーへは事後追認）: @self @sum 885376（線 885261 を越えた）→ 894230
+@self @sum 894230

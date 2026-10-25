@@ -168,15 +168,15 @@ cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0;
 rss_row() {
     local ahp
     ahp=$(awk '/^AnonHugePages:/ { print $2 }' "/proc/$SP/smaps_rollup" 2> /dev/null)
-    awk -v n="$1" -v p="$2" -v k="$3" -v a="${ahp:-0}" '/^VmHWM:/ { h = $2 } /^VmRSS:/ { r = $2 } END { if (h != "") printf "%s\t%s\t%d\t%d\t%d\t%d\n", n, p, k, h, r, a }' \
+    awk -v n="$1" -v p="$2" -v k="$3" -v a="${ahp:-0}" -v e="$HENV" '/^VmHWM:/ { h = $2 } /^VmRSS:/ { r = $2 } END { if (h != "") printf "%s\t%s\t%d\t%d\t%d\t%d\t%s\n", n, p, k, h, r, a, e }' \
         "/proc/$SP/status" 2> /dev/null >> "$out.rss"
 }
 
-# emit <名前> <種目> <周> <req/s> <応答> <2xx> <tickの差> <p99> <p99.9>: TSV の行（名前 種目 周 req/s 応答 2xx以外 CPUμs/要求 p99 p99.9）
+# emit <名前> <種目> <周> <req/s> <応答> <2xx> <tickの差> <p99> <p99.9>: TSV の行（名前 種目 周 req/s 応答 2xx以外 CPUμs/要求 p99 p99.9 env）
 # p99.9 は分布の尻（report-706 — 本家で p99 と p99.9 が 2 桁割れる実装がある。尻の綺麗さは p99 だけでは見えない）
 emit() {
-    awk -v n="$1" -v p="$2" -v k="$3" -v r="${4:-0}" -v resp="${5:-0}" -v ok="${6:-0}" -v d="$7" -v t="$(getconf CLK_TCK)" -v l="${8:--}" -v l9="${9:--}" \
-        'BEGIN { printf "%s\t%s\t%d\t%d\t%d\t%d\t%.2f\t%s\t%s\n", n, p, k, r, resp, resp - ok, (resp > 0 ? d / t * 1e6 / resp : 0), l, l9 }'
+    awk -v n="$1" -v p="$2" -v k="$3" -v r="${4:-0}" -v resp="${5:-0}" -v ok="${6:-0}" -v d="$7" -v t="$(getconf CLK_TCK)" -v l="${8:--}" -v l9="${9:--}" -v e="$HENV" \
+        'BEGIN { printf "%s\t%s\t%d\t%d\t%d\t%d\t%.2f\t%s\t%s\t%s\n", n, p, k, r, resp, resp - ok, (resp > 0 ? d / t * 1e6 / resp : 0), l, l9, e }'
 }
 
 # run_one <name> <profile> <周>: 1 回測って TSV の行を出す
@@ -258,8 +258,11 @@ run_one() {
     emit "$name" "$prof" "$k" "$rps" "$resp" "$ok" $((c1 - c0)) "$p99" "$p999"
 }
 
-printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\n' > "$out"
-printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\n' > "$out.rss"
+# env の列（dudect.tsv の前例 — 「<箱>/<CPU の型番の短縮>」・末尾の列なので位置で読む集計は変わらない）: HTTPARENA_ENV が無ければ local/<型番の短縮>。
+# 箱の CPU の世代と大きさは run ごとに変わりうる（16vcpu と 64vcpu の取り違え — report-1147）ので行ごとに残す
+HENV=${HTTPARENA_ENV:-local/$(lscpu 2> /dev/null | sed -n 's/^Model name: *//p' | sed "s/^AMD //; s/ [0-9]*-Core Processor\$//; s/ w\/ .*//; s/ /-/g")}
+printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\tenv\n' > "$out"
+printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\tenv\n' > "$out.rss"
 for prof in $profiles; do
     cur_prof=$prof
     for k in $(seq "$n"); do

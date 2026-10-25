@@ -1,0 +1,2 @@
+examples/security_errors_neg.sober:24:9: error: switch does not cover Revoked (error labels the subject may carry): add cases or a default (Analyzer)
+exit=1

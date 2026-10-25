@@ -171,6 +171,14 @@ func ElfPassesNoVec(p loader.Program) ([]byte, error?) {
     return lowerWith(p, k)
 }
 
+// ElfPassesNoRflow は ElfPasses から戻り値へ流れる関数の region の省略（C1 — rflow.sober）だけを外した形（`--no-rflow` — 網の 省略 ≟ なし）
+@errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
+func ElfPassesNoRflow(p loader.Program) ([]byte, error?) {
+    mut k := knob(KElf, true, true, false, false, 0, VfyLast)
+    k.noRflow = true
+    return lowerWith(p, k)
+}
+
 // ElfPassesNoSpec は ElfPasses から定数引数の特化（展開便 段 1 — spec.sober）だけを外した形（`--no-spec` — 網の 特化 ≟ なし）
 @errors(diag.Unsupported, diag.UndefinedName, diag.UndefinedFunction, diag.UndefinedType, diag.UndefinedField, diag.Mismatch, diag.Missing, diag.NonExhaustive, diag.ImmWrite, diag.Par, diag.FileUse, diag.CatchLhs, diag.MultiBind, diag.Frozen)
 func ElfPassesNoSpec(p loader.Program) ([]byte, error?) {
@@ -321,6 +329,7 @@ type Knob struct {
     mvRound bool
     noVec bool
     noSpec bool
+    noRflow bool
     ubStat bool
     frStat bool
     dumpIr bool
@@ -334,7 +343,7 @@ type Knob struct {
 
 func knob(out int, passes bool, m2r bool, syms bool, copy bool, stop int, vmode int) Knob {
     return Knob{out: out, passes: passes, m2r: m2r, syms: syms, copy: copy, stop: stop, vmode: vmode, ymode: 0, traceErrs: false, traceEffs: false, xseq: false,
-        mvRound: false, noVec: false, noSpec: false, ubStat: false, frStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
+        mvRound: false, noVec: false, noSpec: false, noRflow: false, ubStat: false, frStat: false, dumpIr: false, trapProbe: false, rtMut: 0, xLay: 0, callStat: false, csSite: false, cutStat: false}
 }
 
 // lowerWith は p を k の形で下ろす
@@ -359,6 +368,7 @@ func lowerCore(p loader.Program, k Knob) (LowOut, error?) {
     st.mvRound = k.mvRound
     st.noVec = k.noVec
     st.noSpec = k.noSpec
+    st.noRflow = k.noRflow || rflowOffEnv()
     st.ubStat = k.ubStat
     st.frStat = k.frStat
     st.dumpIr = k.dumpIr
@@ -452,7 +462,10 @@ func elfOutSt(st mut St, passes bool, m2r bool, syms bool, copy bool) ([]byte, e
     }
     if passes && !copy {
         // 軽い region.enter（第二便 M9 — rlight.sober。rtlower の手前・最適化のバックエンドだけ）
-        // 葉の region の省略（第三便 M15）を先に — 省いた関数は軽い enter の対象から外れる
+        // 葉の region の省略（第三便 M15）を先に — 省いた関数は軽い enter の対象から外れる。その前に戻り値へ流れる関数の region の省略（C1 — rflow.sober）
+        if !st.noRflow {
+            regionFlowModule(mut st)
+        }
         regionElideModule(mut st)
         if stopHere(mut st, 11) {
             return []byte{}, nil
@@ -769,6 +782,7 @@ func programTypes(st mut St) error? {
 // programRt は本体を全部下ろした後の rt の本体（使った分だけ）
 func programRt(st mut St) {
     buildByteRt(mut st)
+    buildMatchLen(mut st)
     buildGrowRt(mut st)
     if st.taskUse {
         buildTaskRt(mut st)

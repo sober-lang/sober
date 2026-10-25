@@ -140,11 +140,21 @@ Seal の逆（tag を crypto.Equal で照合してから復号する）
 func SealTo(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte) ([]byte, error?)
 ```
 
-head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。無ければ []byte{}）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt と tail を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・GHASH は宛先の暗号文を読む・tag は計数器 J0 の ctx の CTR で宛先へ書く〔Y ⊕ E(J0) — 宛先は凍っているので Sober の添字では書かない〕）
+head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は TLS 1.3 の内側の型と詰め物のような後ろの数バイトを、呼び手が pt に繋いで写さずに渡す口。無ければ []byte{}）。nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize（1 回の確保 — head と pt と tail を宛先へ一括で写し、CTR は宛先のその場で〔16 の倍数に切り上げ — はみ出しは tag の席〕・GHASH は宛先の暗号文を読む・tag は塊が宛先へ書く〔aestag — Y ⊕ E(J0)・宛先は凍っているので Sober の添字では書かない〕。作業域は record 1 つに 1 本）
 
 失敗のラベル: [`BadSize`](#badsize)
 
 対の `OpenTo` は実需まで足さない（[language.md 34 節](../language.md) の規則 2）。
+
+## SealInto
+
+```sober
+@bless
+@effects(!io, !block, !nondet)
+func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int
+```
+
+SealTo の宛先を呼び手の列 dst[at:] にした形（head ‖ 暗号文 ‖ tag を dst へ書いて、書いたバイト数を返す — 入らなければ −1・nonce の長さが違えば −1）。pt の 16 の倍数の部分は CTR が pt から dst へ直に書く（Sober の写しなし）・端（pt の残り ‖ tail）は 16 の倍数に埋めた作業の列で CTR して写す。作業の列（ctx の写し・端）は呼び手の region に積もるので、送りの park の深度を空けたい呼び手（std/tls の送りの束）は式ブロックで包む
 
 ## OpenAt
 

@@ -151,7 +151,9 @@ self/build inst 65.15
 # 2026-10-23 引き上げ（小さいスロットの列をスロットの外へ — lower/task.sober の rt.sm_give / sm_take・× 1.005 の標準運用 — report-1079）: 実測 64.954 G → 線 65.28。
 # 2026-10-23 引き上げ（effect の波 段 5a-1 — @effects の文法・葉の表・導出と照合〔analyzer/effects.sober ≈950 行〕・dump・標準運用〔越えたら実測 × 1.005〕— report-1084）: 実測 66.238 G → 線 66.57（2×2 = 木の仕事 +0.987 G〔旧 stage2 × 旧木 68.888 → 旧 stage2 × 新木 69.875 G・bench の物差し外の手元計測〕・build は analyzer を走らせないのでコンパイラの退行 0.000 G〔新 stage2 × 新木 69.875 G〕）
 # 2026-10-23 引き上げ（effect の波 段 5a-3 — sober fix〔analyzer/fix.sober + app の cmdFix ≈190 行〕+ 5a-2 の trace の計装・標準運用〔越えたら実測 × 1.005〕— report-1084）: 実測 66.670 G → 線 67.01
-self/build3 inst 67.01
+# 2026-10-24 引き上げ（頭の取り込み — rt の uring_poll の分岐と束の満了の呼び出し・標準運用〔越えたら実測 × 1.005〕— report-1105）: 実測 67.014 G → 線 67.35
+# 2026-10-25 引き上げ（SIMD の核 段 1 — rt.matchlen〔rt8.sober の IR の本体・x86.sober の xMatchLenBody ≈110 行〕+ secret の sink〔analyzer〕+ binary.MatchLen・deflate の伸ばしの置き換え・標準運用〔越えたら実測 × 1.005〕— report-1137・事後追認）: 実測 68.565 G（HEAD 020c2ac2 は 68.423 G — +0.21%）→ 線 68.91
+self/build3 inst 68.91
 # RSS は揺れが小さい（stages ゲートも同じ上限を見る — 段 5 の仕上げ便: 基準 837d0c6 の 506 MB の +30%）
 # 2026-10-05 締め直し（RSS 回収便 — huge page を止め返却の閾値 1 MiB で自己 build 540 → 216 MB・その +35%）
 # 2026-10-12 緩め（展開便 段 1 — 同じ裁定・report-565 / 566）: 290 → 296（stage3 の自己 build 294.9 MB の +1 MB）。値札 = spec の木の伸び +1.6 MB・特化の走り +3.3 MB
@@ -186,7 +188,9 @@ self/build rss 345
 # 2026-10-22 引き上げ（L1-4 — 借りの閉包の mut 捕捉の lower の値形〔TCell の槽・closure.sober〕・標準運用〔越えたら実測 × 1.005〕— report-1038・事後追認）: 実測 360 MB → 線 362
 # 2026-10-23 引き上げ（L1-R — park で死んだ深度を予備へ返す・列の深さ DP_CAP 4 → 16〔ワーカーの手元に置けるスロットが増える〕・標準運用〔越えたら実測 × 1.005〕— report-1062・事後追認）: 実測 363 MB → 線 365
 # 2026-10-23 引き上げ（effect の波 段 5a-1 — @effects の文法・葉の表・導出と照合〔analyzer/effects.sober ≈950 行〕・dump・標準運用〔越えたら実測 × 1.005〕— report-1084）: 実測 370 MB → 線 372
-self/build3 rss 372
+# 2026-10-24 引き上げ（effect の波 段 5b — std の公開関数 215 本に @effects〔fix --std の正規形〕+ 強制と正規形〔analyzer/effects.sober +≈150 行〕・標準運用〔越えたら実測 × 1.005〕— report-1089・事後追認）: 実測 373 MB → 線 375
+# 2026-10-24 引き上げ（粒 c の R — park で空のスロットを手放す〔task.sober parkTrim / parkReacquire +≈70 行〕・388 の際〔--full の 1 回目は通過・範囲の再走で 389〕・標準運用〔越えたら実測 × 1.005〕— report-1126 / 1127・事後追認）: 実測 389 MB → 線 391
+self/build3 rss 391
 # 2026-10-10 新設（展開の予算の配り直し便 — ナビ裁定 report-465 (6)）: stage3 の ELF の大きさ（MB = 10^6 バイト・scripts/stages.sh が照合）。
 # 今 7.87 MB（27b4aa60）— 上限 9.0 は +9% 級の膨張（呼び出しグラフの後順を全関数に掛けた棄却形の印）の網
 # 2026-10-18 引き上げ（TLS 便 796 の x86 の塊 + 席 A の A-1 で 9.01 MB — 膨張の網としての幅は保つ・ユーザー追認済み 2026-10-18）
@@ -200,7 +204,8 @@ self/build3 rss 372
 # 2026-10-22 引き上げ（型の別名 — 同上・× 1.005 の標準運用 — report-1045）: 実測 9,212,912 バイト → 線 9.26
 # 2026-10-23 引き上げ（同上・× 1.005 の標準運用 — report-1079）: 実測 9,269,992 バイト → 線 9.32
 # 2026-10-23 引き上げ（effect の波 段 5a-1 — @effects の文法・葉の表・導出と照合〔analyzer/effects.sober ≈950 行〕・dump・標準運用〔越えたら実測 × 1.005〕— report-1084）: 実測 9,416,824 バイト → 線 9.47
-self/elf size 9.47
+# 2026-10-25 引き上げ（P3 — 飽和下の待ちの上限 D〔rt の双方向の積み・期限・TSC の校正・Ledger の集め〕+ 変異 23 / 24・標準運用〔越えたら実測 × 1.005〕— report-1142 / 1143）: 実測 9,576,600 バイト → 線 9.63
+self/elf size 9.63
 # wall は参考値（基準 837d0c6 の 5.53 s の +20% — 照合しない）
 self/build wall 6.6 ref
 # 2026-10-07 新設（段 6 P6-6 — 決定の範囲・朝に追認を）: self/check rss = 自己 check（一括・W1）の peak RSS — scripts/selfpar.sh が stage2 で照合（bench.sh も W1 で測る）。
@@ -230,7 +235,9 @@ self/build wall 6.6 ref
 # gates --full の selfpar で W1 370 MB（線 369 を 1 MB 越え）→ 実測 370 × 1.005 → 線 372（report-1048 — 追認を）
 # 2026-10-23 引き上げ（A1 — Serve の region: の小さいスロット〔rt の区画・VA の数え口 — lower/task.sober +≈150 行〕で実測 372.6 MB〔W1・selfpar・3 回同値〕→ ×1.005 の標準運用・report-1077）: 線 372 → 375
 # 2026-10-23 引き上げ（effect の波 段 5a-1 — @effects の文法・葉の表・導出と照合〔analyzer/effects.sober ≈950 行〕・dump・標準運用〔越えたら実測 × 1.005〕— report-1084）: 実測 W1 379 MB → 線 381（自己 check の効果の導出は源 0 本の飛ばしが効かない初のクラス — 解きの分 +1.08 G 命令〔旧 stage2 × 新木 194.52 → 新 stage2 × 新木 195.60 G・W1〕・木の伸びの分 +2.87 G）
-self/check rss 381
+# 2026-10-24 引き上げ（effect の波 段 5b — std の宣言 215 行が @embed の焼き込みで自己 check に乗る + 自前の語と型の名前の項の解き〔efSolveOwn〕・標準運用〔越えたら実測 × 1.005〕— report-1089・事後追認）: 実測 W1 382 MB → 線 384
+# 2026-10-25 引き上げ（SIMD の核 段 1 — std の +≈20 行〔binary.MatchLen〕が @embed の焼き込みで自己 check に乗る + analyzer の sink・標準運用〔越えたら実測 × 1.005〕— report-1137・事後追認）: 実測 W1 390 MB（gates と単独の 2 回同値）→ 線 392
+self/check rss 392
 # 2026-10-11 新設（自己 check の崖の切り分け — report-510 / 511）: self/check nodes = 自己 check の脱糖が作る核の節の数（check --expansion-report の 1 行目・W1 — 決定的）。
 # RSS の崖（2026-10-09 の +39 MB・段 A の +11 MB）の正体 = mut 仮引数 2 つ以上の関数の呼び出し点展開の入れ子の掛け算（xFunc 4 × xInst 2 → xGetInto 304 回）で、
 # RSS は節にほぼ比例（約 80〜100 B / 節）だが粒度の段で崖に見える。節の数で持てば退行が等式で鳴る。値札 = 実測 2,845,519（xFunc の呼び出し点 4 → 2 の後）の +1.9%

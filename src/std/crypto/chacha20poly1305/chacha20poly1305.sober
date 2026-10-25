@@ -59,6 +59,27 @@ func Open(key []byte, nonce []byte, ad []byte, sealed []byte) ([]byte, error?) {
     return OpenAt(k, nonce, ad, sealed, 0, len(sealed))
 }
 
+// SealTo の宛先を呼び手の列 dst[at:] にした形（aesgcm.SealInto と同じ口 — 書いたバイト数・入らなければ / nonce の長さが違えば −1）。
+// SealTo の結果を写す（ChaCha は鍵ストリームの列を作るので直書きの得が無い — 作業の列は呼び手の region に積もる）
+@bless
+@effects(!io, !block, !nondet)
+func SealInto(k Key, nonce []byte, ad []byte, pt []byte, head []byte, tail []byte, dst mut []byte, at int) int {
+    m := len(head) + len(pt) + len(tail) + Overhead
+    if at < 0 || at + m > len(dst) {
+        return 0 - 1
+    }
+    r, e := SealTo(k, nonce, ad, pt, head, tail)
+    if e != nil {
+        return 0 - 1
+    }
+    mut i := 0
+    while i < m {
+        dst[at + i] = r[i]
+        i += 1
+    }
+    return m
+}
+
 // head ‖ 暗号文 ‖ tag（平文 = pt ‖ tail — tail は呼び手が pt に繋いで写さずに渡す後ろの数バイト。無ければ []byte{}・aesgcm.SealTo と同じ口）。
 // nonce は同じ鍵で 1 回だけ使う（Seal と同じ）・nonce の長さが違えば BadSize
 @errors(BadSize)

@@ -66,8 +66,8 @@ slice（`[]T`）と map（`map[K]V`）は言語の組み込みです（`append`�
 | package | 用途 | 主なもの |
 |---|---|---|
 | [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`・`for c <- net.Accept(l)?`・`for c <- net.Dial(addr)?`（本体を抜けたら閉じる）・`for chunk <- net.Recv(c)?`・`Send`・接続 1 本 = task 1 本で走らせる `Serve` |
-| [`std/http`](../std/http.ja.md) | HTTP/1.1 のサーバ | `ServeConn`（net の接続に）/ `ServeWith`（受けと送りの口に — TLS の接続など）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `Multipart`（ファイルのアップロード）/ `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・応答の gzip と stream |
-| [`std/tls`](../std/tls.ja.md) | TLS 1.3 のサーバ | `Serve`（handshake が済んだ接続だけを渡す）・`Config` を `Load` / `Parse` で・`Recv` / `Send`（net と同じ形）。誤りは `HandshakeFailed`・`BadRecord`・`Closed`（[`std/tls/record`](../std/tls-record.ja.md) は内側の record 層 — 利用者は import しない） |
+| [`std/http`](../std/http.ja.md) | HTTP/1.1 のサーバ | `ServeConn`（net の接続に）/ `ServeWith`（受けと送りの口に — TLS の接続など）/ `ServeFlushed`（応答を送らずに積む口に — 受けの側が送る。tls.Put の形）・`Request` / `Response`・`Text` / `Json` / `Status`・`Header` / `Query` / `Form` / `Multipart`（ファイルのアップロード）/ `JsonDoc`・ルーター `Route` + `Mount` / `Merge` / `Dispatch` / `Param`・`Middleware`（`Before` / `After`）・応答の gzip と stream |
+| [`std/tls`](../std/tls.ja.md) | TLS 1.3 のサーバ | `Serve`（handshake が済んだ接続だけを渡す）・`Config` を `Load` / `Parse` で・`Recv` / `Send`（net と同じ形）/ `Put` + `Flush`（送らずに積む — 積んだ分は `Recv` が次の受けの前に送る）。誤りは `HandshakeFailed`・`BadRecord`・`Closed`（[`std/tls/record`](../std/tls-record.ja.md) は内側の record 層 — 利用者は import しない） |
 
 ## 暗号
 

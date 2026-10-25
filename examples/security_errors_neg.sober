@@ -1,0 +1,30 @@
+package main
+
+// Security: unhandled errors — a switch over an error must cover every label it may carry (rejected by check) (docs/guide/security.md)
+
+type Expired error
+
+type Revoked error {
+    by string
+}
+
+func session(token string) (string, error?) {
+    if token == "" {
+        return "", Expired{}
+    }
+    if token == "old" {
+        return "", Revoked{by: "admin"}
+    }
+    return "user-1", nil
+}
+
+func main() {
+    who, err := session("old")
+    if err != nil {
+        switch err {
+        case Expired{}: println("please sign in again")
+        }
+        return
+    }
+    println(who)
+}

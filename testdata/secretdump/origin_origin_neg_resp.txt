@@ -1,10 +1,10 @@
-std/http/http.sober:298:6: credential std/http.Authorization
-std/http/http.sober:306:6: credential std/http.Cookie
+std/http/http.sober:304:6: credential std/http.Authorization
+std/http/http.sober:313:6: credential std/http.Cookie
 std/http/http.sober:27:6: credential field Request.head
 std/http/http.sober:60:6: shared-field Response.cache response
-std/http/http.sober:443:6: shared-field Route.cache route
-std/http/http.sober:611:6: shared Cache the shared cache policy 'Fresh'
-std/http/http.sober:611:6: shared Cache the shared cache policy 'Shared'
-std/http/http.sober:455:6: meet-point std/http.Mount
+std/http/http.sober:453:6: shared-field Route.cache route
+std/http/http.sober:625:6: shared Cache the shared cache policy 'Fresh'
+std/http/http.sober:625:6: shared Cache the shared cache policy 'Shared'
+std/http/http.sober:466:6: meet-point std/http.Mount
 examples/origin_neg_resp.sober:7:157: violation the shared cache policy 'Fresh' is written into a single response — declare a shared cache policy on the route (Route.cache / Static's cache:), where the analyzer checks that the route does not read credentials; a single response can say http.Private or http.NoStore (language.md 12 節「出所の依存」)
-summary atoms=6 credentials=3 eff-fns=0 shared=2 shared-fields=2 violations=1 walks=532
+summary atoms=6 credentials=3 eff-fns=0 shared=2 shared-fields=2 violations=1 walks=543

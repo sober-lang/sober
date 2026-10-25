@@ -1,0 +1,7 @@
+package main
+
+// Security: panic needs a reason — a bare panic() is rejected (docs/guide/security.md)
+
+func main() {
+    panic()
+}

@@ -133,6 +133,7 @@ type Stream func(emit func(b []byte) error?) error? @errors(emit, io.NotFound, i
 ## Text
 
 ```sober
+@effects()
 func Text(s string) Response
 ```
 
@@ -141,6 +142,7 @@ func Text(s string) Response
 ## Json
 
 ```sober
+@effects()
 func Json(s string) Response
 ```
 
@@ -172,6 +174,7 @@ Event の event / id に CR・LF・NUL がある（呼び手の契約違反 — 
 ## FormatEvent
 
 ```sober
+@effects(panic)
 func FormatEvent(e Event) string
 ```
 
@@ -339,6 +342,7 @@ const HTTPVersionNotSupported = 505
 ## Status
 
 ```sober
+@effects()
 func Status(code StatusCode) Response
 ```
 
@@ -381,6 +385,7 @@ ServeConn の work: を compress: なしで渡した（作業域は圧縮の符�
 ## Header
 
 ```sober
+@effects()
 func Header(r Request, name string) string?
 ```
 
@@ -390,6 +395,7 @@ r のヘッダ name の値（名前は大文字小文字を区別しない — �
 
 ```sober
 @credential
+@effects()
 func Authorization(r Request) string?
 ```
 
@@ -399,6 +405,7 @@ r の Authorization ヘッダの値（認証の源 — 最初の行。無けれ�
 
 ```sober
 @credential
+@effects()
 func Cookie(r Request, name string) string?
 ```
 
@@ -407,6 +414,7 @@ r の Cookie ヘッダの name の値（認証の源 — RFC 6265 5.4 の `name=
 ## Query
 
 ```sober
+@effects()
 func Query(r Request, key string) string?
 ```
 
@@ -415,6 +423,7 @@ r の query の key の値（`k=v&…` の最初の一致・= の無い項目は
 ## Form
 
 ```sober
+@effects()
 func Form(r Request, key string) string?
 ```
 
@@ -424,6 +433,7 @@ func Form(r Request, key string) string?
 
 ```sober
 @errors(json.InvalidJson)
+@effects()
 func JsonDoc(r Request) (json.Doc, error?)
 ```
 
@@ -497,6 +507,7 @@ http.ServeConn(c, (r) => http.Dispatch(rs, r))
 ## Mount
 
 ```sober
+@effects()
 func Mount(prefix string, routes []Route, mw []Middleware) []Route
 ```
 
@@ -505,6 +516,7 @@ routes の各行の path の前に prefix を付け、mw を各行の middleware
 ## Merge
 
 ```sober
+@effects()
 func Merge(a []Route, b []Route) []Route
 ```
 
@@ -513,6 +525,7 @@ a と b を繋いだ表
 ## Dispatch
 
 ```sober
+@effects(Handler, Before, After)
 func Dispatch(routes []Route, r Request) Response
 ```
 
@@ -521,6 +534,7 @@ routes から r に一致する行を選んで middleware とハンドラを走�
 ## Static
 
 ```sober
+@effects()
 func Static(prefix string, root string, precompressed bool?, cache Cache?) []Route
 ```
 
@@ -558,6 +572,7 @@ variant:
 ## Param
 
 ```sober
+@effects()
 func Param(r Request, key string) string?
 ```
 
@@ -567,6 +582,7 @@ r のパターンの :key / \*key の値（Dispatch が一致させたパター�
 
 ```sober
 @errors(io.NotFound, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, panic, nondet, Stream)
 func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error?
 ```
 
@@ -585,12 +601,25 @@ work: は compress: と組みで（compress: なしの work: は panic(WorkNoCom
 
 ```sober
 @errors(recv, send, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+@effects(block, panic, Stream)
 func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error?
 ```
 
 ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。失敗は recv / send が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。誤りの応答の後の読み捨て（linger）も recv の続きを読む — tls.Recv は 2 度目を Closed で返すので読み捨てずに閉じる（TLS の close\_notify は呼び手の Serve が送る）
 
 失敗のラベル: `recv`・`send`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`
+
+## ServeFlushed
+
+```sober
+@errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+@effects(block, panic, Stream)
+func ServeFlushed(recv func(k func([]byte)) error?, send func(b []byte) error?, put func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error?
+```
+
+ServeWith の送りを 2 段にした形: 受けた切片 1 つ分の応答を put で積む（送らない）。積んだ分は recv が次の受けを待つ前に送る約束（tls.Recv は k が戻るたびに tls.Flush する）— 送りの完了待ちは応答の作業の region〔受けの反復〕が閉じた後になり、待ちの間に応答の平文の頁を抱えない）。send はその場で送る口で、stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）だけが使う。TLS の接続は `http.ServeFlushed((k) => tls.Recv(c, k), (b) => tls.Send(c, b), (b) => tls.Put(c, b), route)`。他は ServeWith と同じ
+
+失敗のラベル: `recv`・`send`・`put`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`
 
 ## BadMultipart
 
@@ -624,6 +653,7 @@ multipart/form-data の部分 1 つ（Multipart の結果 — 本文の順）
 
 ```sober
 @errors(BadMultipart)
+@effects()
 func Multipart(r Request) ([]Part, error?)
 ```
 

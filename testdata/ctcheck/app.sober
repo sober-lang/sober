@@ -42,6 +42,12 @@ func negEqEarly(a []byte, b []byte) bool {
     return true
 }
 
+// 負例（analyzer も拒否する — testdata/analyzer_neg/secret_neg_matchlen）: 可変時間の rt.matchlen を呼ぶ（ctcheck.sh の可変時間の rt の照合が捕まえる見本）
+@secret(a)
+func negPrefix(a []byte) int {
+    return binary.MatchLen(a, 0, 8, 8)
+}
+
 // serveOne は接続 1 本で 1 回受けて送る（ctcheck の題材 — ELF に tls の受けと送りを載せる）
 func serveOne(c tls.Conn, a []byte) error? {
     for p <- tls.Recv(c)? {
@@ -95,5 +101,5 @@ func main() {
         }
     }
     println(len(xs) + len(t) + len(c) + len(opened) + len(chacha20.Block(k, n, 0)) == 0)
-    println(crypto.Equal(a, b) || negEqEarly(a, b) || crypto.Select(m, 1, 2) + negSelectIf(m, 1, 2) == 0 || int(w[0]) == 9)
+    println(crypto.Equal(a, b) || negEqEarly(a, b) || crypto.Select(m, 1, 2) + negSelectIf(m, 1, 2) + negPrefix(k) == 0 || int(w[0]) == 9)
 }

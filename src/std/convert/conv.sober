@@ -14,11 +14,13 @@ func sysFBits(x float) int
 func sysFFromBits(b int) float
 
 // f の最短の往復表現（読み戻すと同じビットになる最短の 10 進 — Go の strconv.FormatFloat(f, 'g', -1, 64) と同じ綴り・println と同じ）
+@effects()
 func FormatFloat(f float) string {
     return floatfmt.Format(sysFBits(f))
 }
 
 // f を小数点以下 prec 桁で（Go の strconv.FormatFloat(f, 'f', prec, 64)・fmt の %.<prec>f と同じ綴り — 正確な値を最近接・偶数へ丸める）（対の ParseFixed は実需まで足さない — language.md 34 節 2 の注記・2026-10-20 ④）
+@effects()
 func FormatFixed(f float, prec int) string {
     return floatfmt.FormatFixed(sysFBits(f), prec)
 }
@@ -34,6 +36,7 @@ type FloatOutOfRange error {
 // s の値（10 進の正確な値を 1 回だけ最近接・偶数へ丸める — 浮動小数のリテラルと同じ算法。0 に丸まる小さい値は誤りでない）。
 // 受ける形は [+-]? 数字の列（小数点 1 つ・指数 e / E [+-] 数字）か inf / infinity（符号可）/ nan（大文字小文字を問わない）。16 進・_ は受けない
 @errors(InvalidFloat, FloatOutOfRange)
+@effects()
 func ParseFloat(s string) (float, error?) {
     // Clinger の速い道: 仮数 ≤ 2^53・|10 の指数| ≤ 22 なら仮数も 10 の累乗も binary64 で正確 → 乗除 1 回の丸め 1 回で正しく丸まる（外れは多倍長へ）
     ok, f := fastFloat(bytes(s))
@@ -137,6 +140,7 @@ type IntOutOfRange error {
 
 // s の 10 進の値（Go の strconv.Atoi と同じ受け方 — `[+-]? 数字+`）
 @errors(InvalidInt, IntOutOfRange)
+@effects()
 func ParseInt(s string) (int, error?) {
     b := bytes(s)
     neg := len(b) > 0 && b[0] == '-'
@@ -169,6 +173,7 @@ func ParseInt(s string) (int, error?) {
 
 // n の 10 進表記（Go の strconv.Itoa と同じ — ParseInt の対）。文字列補間 `${n}` の int の変換もこれ（parser の合成の暗黙 import $convert —
 // コアに変換 op を足さない）。最小値は符号反転が溢れるので綴りをそのまま返す
+@effects()
 func FormatInt(n int) string {
     return if n == -9223372036854775807 - 1 {
         "-9223372036854775808"
@@ -205,6 +210,7 @@ type InvalidBool error {
 // s の真偽（Go の strconv.ParseBool と同じ受け方 — 真 = "1" "t" "T" "TRUE" "true" "True"・偽 = "0" "f" "F" "FALSE" "false" "False"。
 // 他の綴り〔"yes"・"on"・"tRUE"・前後の空白〕は InvalidBool。値は false）
 @errors(InvalidBool)
+@effects()
 func ParseBool(s string) (bool, error?) {
     if s == "1" || s == "t" || s == "T" || s == "TRUE" || s == "true" || s == "True" {
         return true, nil
@@ -216,6 +222,7 @@ func ParseBool(s string) (bool, error?) {
 }
 
 // b の綴り "true" / "false"（Go の strconv.FormatBool と同じ — ParseBool の対・補間 `${b}` と同じ綴り）
+@effects()
 func FormatBool(b bool) string {
     return if b { "true" } else { "false" }
 }

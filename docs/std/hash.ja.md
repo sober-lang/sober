@@ -9,6 +9,7 @@
 ## Sha256
 
 ```sober
+@effects()
 func Sha256(data []byte) []byte
 ```
 

@@ -17,6 +17,7 @@ Decode / DecodeUrl の入力が綴りの規則に合わない（字母の外の�
 ## Encode
 
 ```sober
+@effects()
 func Encode(b []byte) string
 ```
 
@@ -29,6 +30,7 @@ base64.Encode(bytes("hello"))   // "aGVsbG8="
 ## EncodeUrl
 
 ```sober
+@effects()
 func EncodeUrl(b []byte) string
 ```
 
@@ -42,6 +44,7 @@ base64.EncodeUrl([]byte{0xfb, 0xff})   // "-_8"
 
 ```sober
 @errors(Bad)
+@effects()
 func Decode(s string) ([]byte, error?)
 ```
 
@@ -53,6 +56,7 @@ func Decode(s string) ([]byte, error?)
 
 ```sober
 @errors(Bad)
+@effects()
 func DecodeUrl(s string) ([]byte, error?)
 ```
 

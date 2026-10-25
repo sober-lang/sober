@@ -10,6 +10,7 @@
 
 ```sober
 @errors(strings.InvalidUtf8)
+@effects(io)
 func Args() ([]string, error?)
 ```
 
@@ -21,6 +22,7 @@ func Args() ([]string, error?)
 
 ```sober
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(block, io)
 func Run(path string, args []string) (int, error?)
 ```
 
@@ -32,6 +34,7 @@ path のプログラムを args（argv[1:] — argv[0] は path）で子プロ�
 
 ```sober
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func WriteMode(path string, mode int) error?
 ```
 
@@ -45,6 +48,7 @@ path のファイルの許可の bit（mode — chmod(2) の 12 bit: 0o755 = 493
 
 ```sober
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func Mkdir(path string) error?
 ```
 
@@ -56,6 +60,7 @@ path のディレクトリを作る（mkdir(2) — 許可の bit は 0o755。親
 
 ```sober
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func Rename(from string, to string) error?
 ```
 
@@ -67,6 +72,7 @@ from を to へ付け替える（rename(2) — 同じファイルシステムの
 
 ```sober
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func ModTime(path string) (int, error?)
 ```
 
@@ -77,6 +83,7 @@ path の更新時刻（stat(2) の st\_mtim — Unix エポック〔1970 年 1 �
 ## Sleep
 
 ```sober
+@effects(block)
 func Sleep(ms int)
 ```
 
@@ -85,6 +92,7 @@ ms ミリ秒眠る（負の値は 0 と同じ）。std/task のプログラム�
 ## SleepExpired
 
 ```sober
+@effects(block)
 func SleepExpired(ms int) bool
 ```
 
@@ -94,6 +102,7 @@ Sleep と同じで、期限で早く起きたら true（どの待ちが期限で
 
 ```sober
 @errors(strings.InvalidUtf8)
+@effects(io)
 func Getenv(name string) (string?, error?)
 ```
 

@@ -10,13 +10,13 @@
 @std/crypto/aesgcm.Prepare
 @std/crypto/aesgcm.Seal
 @std/crypto/aesgcm.Open
+@std/crypto/aesgcm.SealInto
 @std/crypto/aesgcm.SealTo
 @std/crypto/aesgcm.OpenAt
 @std/crypto/aesgcm.recCtx
 @std/crypto/aesgcm.padded
 @std/crypto/aesgcm.ghashAt
 @std/crypto/aesgcm.ghashLens
-@std/crypto/aesgcm.yOf
 @std/crypto/chacha20.Block
 @std/crypto/chacha20.XorKeyStream
 @std/crypto/chacha20.XorKeyStreamAt
@@ -29,6 +29,7 @@
 @std/crypto/chacha20poly1305.Prepare
 @std/crypto/chacha20poly1305.Seal
 @std/crypto/chacha20poly1305.Open
+@std/crypto/chacha20poly1305.SealInto
 @std/crypto/chacha20poly1305.SealTo
 @std/crypto/chacha20poly1305.ctTail
 @std/crypto/chacha20poly1305.OpenAt
@@ -77,9 +78,13 @@
 @std/crypto/x25519.invert
 @std/crypto/x25519.unpack
 @std/crypto/x25519.pack
+@std/tls.accept
 @std/tls.newBlk
 @std/tls.putDir
-@std/tls.Send
+@std/tls.Put
+@std/tls.Flush
+@std/tls.sendNow
+@std/tls.sealPut
 @std/tls.flags
 @std/tls.setFlags
 @std/tls.setSeq
@@ -90,6 +95,7 @@
 @std/tls/record.NewDir
 @std/tls/record.Update
 @std/tls/record.Seal
+@std/tls/record.SealInto
 @std/tls/record.sealOne
 @std/tls/record.nonceOf
 @std/tls/record.Open
@@ -114,4 +120,5 @@
 -@std/internal/hs.Secrets  テストだけの口（key log — std の外の題材から届かず ELF に載らない。開示は祝福の口 bless.Bytes を通す）
 +@std/crypto/rsa.newMont  秘密の素数の Montgomery の文脈。T に入らない — struct リテラルの欄の仮引数由来の部分が文脈に鈍く、秘密の口で閉じると公開の法の mont まで秘密になる（report-983 3 節）
 @main.negEqEarly
+@main.negPrefix
 @main.negSelectIf

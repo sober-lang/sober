@@ -17,6 +17,7 @@ const AK_CPU = 0    // a = [] → 0（hw の道でない出力の cpuaes の印�
 const AK_KEY = 1    // a = [key, ctx]
 const AK_CTR = 2    // a = [ctx, src, dst, n]
 const AK_GHASH = 3  // a = [ctx, p, n]
+const AK_TAG = 4    // a = [ctx, dst]（dst[0:16] = Y ⊕ E(J0) — ctx は読むだけ）
 
 // cpuAes は cpuaes の値（hw の道: rt.cpu の印の bit 1）
 func cpuAes(st mut St) int {
@@ -33,5 +34,5 @@ func aesOp(st mut St, kind int, vs int) int {
 
 // aesName は IR テキストの綴り
 func aesName(kind int) string {
-    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else { "aes.ghash " }
+    return if kind == AK_CPU { "aes.cpu " } else if kind == AK_KEY { "aes.key " } else if kind == AK_CTR { "aes.ctr " } else if kind == AK_GHASH { "aes.ghash " } else { "aes.tag " }
 }

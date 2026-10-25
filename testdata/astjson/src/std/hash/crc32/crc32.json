@@ -44,37 +44,37 @@
                   "base": {
                     "k": "ident",
                     "name": "crc32",
-                    "tok": 17
+                    "tok": 23
                   },
                   "field": "Update",
-                  "tok": 19
+                  "tok": 25
                 },
                 "args": [
                   {
                     "k": "int",
                     "value": 0,
-                    "tok": 21
+                    "tok": 27
                   },
                   {
                     "k": "ident",
                     "name": "data",
-                    "tok": 23
+                    "tok": 29
                   }
                 ],
-                "tok": 20
+                "tok": 26
               }
             ],
-            "tok": 16
+            "tok": 22
           }
         ]
       },
-      "tok": 7,
+      "tok": 13,
       "bodiless": false,
       "span": {
         "start": 6,
-        "end": 28
+        "end": 34
       },
-      "sig_end": 15
+      "sig_end": 21
     }
   ],
   "consts": []

@@ -6,60 +6,64 @@
 <text x="236.0" y="44.0" fill="#9198a1" font-size="12" text-anchor="start" >Go</text>
 <line x1="150.0" y1="54" x2="150.0" y2="446" stroke="#3d444d" stroke-width="1"/>
 <text x="150.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >0.0</text>
-<line x1="285.0" y1="54" x2="285.0" y2="446" stroke="#3d444d" stroke-width="1"/>
-<text x="285.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >0.5</text>
+<line x1="240.0" y1="54" x2="240.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="240.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >0.5</text>
+<line x1="330.0" y1="54" x2="330.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="330.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.0</text>
 <line x1="420.0" y1="54" x2="420.0" y2="446" stroke="#3d444d" stroke-width="1"/>
-<text x="420.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.0</text>
-<line x1="555.0" y1="54" x2="555.0" y2="446" stroke="#3d444d" stroke-width="1"/>
-<text x="555.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.5</text>
+<text x="420.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >1.5</text>
+<line x1="510.0" y1="54" x2="510.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="510.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >2.0</text>
+<line x1="600.0" y1="54" x2="600.0" y2="446" stroke="#3d444d" stroke-width="1"/>
+<text x="600.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >2.5</text>
 <line x1="690.0" y1="54" x2="690.0" y2="446" stroke="#3d444d" stroke-width="1"/>
-<text x="690.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >2.0</text>
+<text x="690.0" y="460.0" fill="#9198a1" font-size="11" text-anchor="middle" >3.0</text>
 <text x="420.0" y="476.0" fill="#9198a1" font-size="11" text-anchor="middle" >max RSS relative to the straightforward Rust twin (labels: absolute MB)</text>
-<line x1="420.0" y1="52" x2="420.0" y2="446" stroke="#f0f6fc" stroke-width="1.5" stroke-dasharray="4 3"/>
-<text x="424.0" y="50.0" fill="#f0f6fc" font-size="11" text-anchor="start" >Rust = 1.0</text>
+<line x1="330.0" y1="52" x2="330.0" y2="446" stroke="#f0f6fc" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="334.0" y="50.0" fill="#f0f6fc" font-size="11" text-anchor="start" >Rust = 1.0</text>
 <text x="140.0" y="81.0" fill="#f0f6fc" font-size="12" text-anchor="end" >1BRC</text>
-<rect x="150" y="64" width="0.7" height="11" rx="2" fill="#4493f8"/>
-<text x="155.7" y="73.5" fill="#9198a1" font-size="11" text-anchor="start" >0.38 MB (0.003×)</text>
-<rect x="150" y="78" width="471.3" height="11" rx="2" fill="#768390"/>
-<text x="626.3" y="87.5" fill="#9198a1" font-size="11" text-anchor="start" >237 MB (1.75×)</text>
+<rect x="150" y="64" width="0.5" height="11" rx="2" fill="#4493f8"/>
+<text x="155.5" y="73.5" fill="#9198a1" font-size="11" text-anchor="start" >0.38 MB (0.003×)</text>
+<rect x="150" y="78" width="319.3" height="11" rx="2" fill="#768390"/>
+<text x="474.3" y="87.5" fill="#9198a1" font-size="11" text-anchor="start" >240 MB (1.77×)</text>
 <text x="140.0" y="123.0" fill="#f0f6fc" font-size="12" text-anchor="end" >binary-trees</text>
-<rect x="150" y="106" width="133.8" height="11" rx="2" fill="#4493f8"/>
-<text x="288.8" y="115.5" fill="#9198a1" font-size="11" text-anchor="start" >17 MB (0.50×)</text>
-<rect x="150" y="120" width="393.3" height="11" rx="2" fill="#768390"/>
-<text x="548.3" y="129.5" fill="#9198a1" font-size="11" text-anchor="start" >50 MB (1.46×)</text>
+<rect x="150" y="106" width="89.6" height="11" rx="2" fill="#4493f8"/>
+<text x="244.6" y="115.5" fill="#9198a1" font-size="11" text-anchor="start" >17 MB (0.50×)</text>
+<rect x="150" y="120" width="265.7" height="11" rx="2" fill="#768390"/>
+<text x="420.7" y="129.5" fill="#9198a1" font-size="11" text-anchor="start" >51 MB (1.48×)</text>
 <text x="140.0" y="165.0" fill="#f0f6fc" font-size="12" text-anchor="end" >fannkuch-redux</text>
-<rect x="150" y="148" width="24.2" height="11" rx="2" fill="#4493f8"/>
-<text x="179.2" y="157.5" fill="#9198a1" font-size="11" text-anchor="start" >0.19 MB (0.09×)</text>
-<rect x="150" y="162" width="229.7" height="11" rx="2" fill="#768390"/>
-<text x="384.7" y="171.5" fill="#9198a1" font-size="11" text-anchor="start" >1.8 MB (0.85×)</text>
+<rect x="150" y="148" width="21.1" height="11" rx="2" fill="#4493f8"/>
+<text x="176.1" y="157.5" fill="#9198a1" font-size="11" text-anchor="start" >0.26 MB (0.12×)</text>
+<rect x="150" y="162" width="467.4" height="11" rx="2" fill="#768390"/>
+<text x="622.4" y="171.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.60×)</text>
 <text x="140.0" y="207.0" fill="#f0f6fc" font-size="12" text-anchor="end" >fasta</text>
-<rect x="150" y="190" width="21.5" height="11" rx="2" fill="#4493f8"/>
-<text x="176.5" y="199.5" fill="#9198a1" font-size="11" text-anchor="start" >0.19 MB (0.08×)</text>
-<rect x="150" y="204" width="200.9" height="11" rx="2" fill="#768390"/>
-<text x="355.9" y="213.5" fill="#9198a1" font-size="11" text-anchor="start" >1.8 MB (0.74×)</text>
+<rect x="150" y="190" width="21.1" height="11" rx="2" fill="#4493f8"/>
+<text x="176.1" y="199.5" fill="#9198a1" font-size="11" text-anchor="start" >0.26 MB (0.12×)</text>
+<rect x="150" y="204" width="284.1" height="11" rx="2" fill="#768390"/>
+<text x="439.1" y="213.5" fill="#9198a1" font-size="11" text-anchor="start" >3.5 MB (1.58×)</text>
 <text x="140.0" y="249.0" fill="#f0f6fc" font-size="12" text-anchor="end" >k-nucleotide</text>
-<rect x="150" y="232" width="279.5" height="11" rx="2" fill="#4493f8"/>
-<text x="434.5" y="241.5" fill="#9198a1" font-size="11" text-anchor="start" >53 MB (1.04×)</text>
-<rect x="150" y="246" width="398.6" height="11" rx="2" fill="#768390"/>
-<text x="553.6" y="255.5" fill="#9198a1" font-size="11" text-anchor="start" >75 MB (1.48×)</text>
+<rect x="150" y="232" width="180.1" height="11" rx="2" fill="#4493f8"/>
+<text x="335.1" y="241.5" fill="#9198a1" font-size="11" text-anchor="start" >53 MB (1.00×)</text>
+<rect x="150" y="246" width="268.0" height="11" rx="2" fill="#768390"/>
+<text x="423.0" y="255.5" fill="#9198a1" font-size="11" text-anchor="start" >78 MB (1.49×)</text>
 <text x="140.0" y="291.0" fill="#f0f6fc" font-size="12" text-anchor="end" >mandelbrot</text>
-<rect x="150" y="274" width="241.3" height="11" rx="2" fill="#4493f8"/>
-<text x="396.3" y="283.5" fill="#9198a1" font-size="11" text-anchor="start" >1.9 MB (0.89×)</text>
-<rect x="150" y="288" width="229.8" height="11" rx="2" fill="#768390"/>
-<text x="384.8" y="297.5" fill="#9198a1" font-size="11" text-anchor="start" >1.8 MB (0.85×)</text>
+<rect x="150" y="274" width="150.5" height="11" rx="2" fill="#4493f8"/>
+<text x="305.5" y="283.5" fill="#9198a1" font-size="11" text-anchor="start" >1.9 MB (0.84×)</text>
+<rect x="150" y="288" width="458.5" height="11" rx="2" fill="#768390"/>
+<text x="613.5" y="297.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.55×)</text>
 <text x="140.0" y="333.0" fill="#f0f6fc" font-size="12" text-anchor="end" >n-body</text>
-<rect x="150" y="316" width="24.1" height="11" rx="2" fill="#4493f8"/>
-<text x="179.1" y="325.5" fill="#9198a1" font-size="11" text-anchor="start" >0.19 MB (0.09×)</text>
-<rect x="150" y="330" width="228.8" height="11" rx="2" fill="#768390"/>
-<text x="383.8" y="339.5" fill="#9198a1" font-size="11" text-anchor="start" >1.8 MB (0.85×)</text>
+<rect x="150" y="316" width="22.2" height="11" rx="2" fill="#4493f8"/>
+<text x="177.2" y="325.5" fill="#9198a1" font-size="11" text-anchor="start" >0.26 MB (0.12×)</text>
+<rect x="150" y="330" width="491.9" height="11" rx="2" fill="#768390"/>
+<text x="646.9" y="339.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.73×)</text>
 <text x="140.0" y="375.0" fill="#f0f6fc" font-size="12" text-anchor="end" >reverse-complement</text>
-<rect x="150" y="358" width="248.6" height="11" rx="2" fill="#4493f8"/>
-<text x="403.6" y="367.5" fill="#9198a1" font-size="11" text-anchor="start" >24 MB (0.92×)</text>
-<rect x="150" y="372" width="268.9" height="11" rx="2" fill="#768390"/>
-<text x="423.9" y="381.5" fill="#9198a1" font-size="11" text-anchor="start" >26 MB (1.00×)</text>
+<rect x="150" y="358" width="166.7" height="11" rx="2" fill="#4493f8"/>
+<text x="321.7" y="367.5" fill="#9198a1" font-size="11" text-anchor="start" >24 MB (0.93×)</text>
+<rect x="150" y="372" width="204.2" height="11" rx="2" fill="#768390"/>
+<text x="359.2" y="381.5" fill="#9198a1" font-size="11" text-anchor="start" >30 MB (1.13×)</text>
 <text x="140.0" y="417.0" fill="#f0f6fc" font-size="12" text-anchor="end" >spectral-norm</text>
-<rect x="150" y="400" width="23.7" height="11" rx="2" fill="#4493f8"/>
-<text x="178.7" y="409.5" fill="#9198a1" font-size="11" text-anchor="start" >0.19 MB (0.09×)</text>
-<rect x="150" y="414" width="248.8" height="11" rx="2" fill="#768390"/>
-<text x="403.8" y="423.5" fill="#9198a1" font-size="11" text-anchor="start" >2.0 MB (0.92×)</text>
+<rect x="150" y="400" width="20.3" height="11" rx="2" fill="#4493f8"/>
+<text x="175.3" y="409.5" fill="#9198a1" font-size="11" text-anchor="start" >0.26 MB (0.11×)</text>
+<rect x="150" y="414" width="451.7" height="11" rx="2" fill="#768390"/>
+<text x="606.7" y="423.5" fill="#9198a1" font-size="11" text-anchor="start" >5.7 MB (2.51×)</text>
 </svg>

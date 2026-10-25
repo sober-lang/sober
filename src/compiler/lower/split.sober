@@ -73,6 +73,7 @@ const NEED_OPEN = 28
 const NEED_DEADLINE = 29
 const NEED_MAPFIND = 30
 const NEED_ADMITW = 31
+const NEED_MATCHLEN = 32
 
 // lsEv は事象を 1 つ記録する（子が関数を下ろしている間だけ）
 func lsEv(st mut St, code int, a int, b int, c int, d int) {
@@ -702,5 +703,6 @@ func lsReplayNeed(st mut St, id int, arg int) {
     case NEED_DEADLINE: needDeadline(mut st)
     case NEED_MAPFIND: _ = needMapFind(mut st, MapRepr{kt: 0, vt: 0, rk: arg / 10000000 % 10, kw: 0, tagOff: 0, valOff: 0, cellw: arg % 1000000, sk: arg / 1000000 % 10, hk: arg / 100000000})
     case NEED_ADMITW: needAdmitWake(mut st)
+    case NEED_MATCHLEN: needMatchLen(mut st)
     }
 }

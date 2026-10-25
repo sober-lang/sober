@@ -25,6 +25,7 @@ type sealed struct {
 
 // b 全体を検査して View にする（不正なら最初の不正なシーケンスの位置の InvalidUtf8 — string(b) と同じ位置）
 @errors(strings.InvalidUtf8)
+@effects(block)
 func Check(b []byte) (View, error?) {
     at := if len(b) < CHECK_PAR_MIN { strings.IndexInvalid(b) } else { indexInvalidPar(b) }
     if at >= 0 {
@@ -34,6 +35,7 @@ func Check(b []byte) (View, error?) {
 }
 
 // View のバイト列（読むだけ）
+@effects()
 func Bytes(v View) []byte {
     return v.b
 }
@@ -45,6 +47,7 @@ func boundary(v View, p int) bool {
 
 // v の [s, i) を検査し直さずに string にする。s と i が文字境界でなければ strings.InvalidUtf8{pos: 境界でない側}（範囲外の添字は slice と同じく panic）
 @errors(strings.InvalidUtf8)
+@effects()
 func Str(v View, s int, i int) (string, error?) {
     sub := v.b[s:i]
     if !boundary(v, s) {

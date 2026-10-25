@@ -20,6 +20,7 @@ const mask32 = 0xffffffff
 
 // シード seed（任意の int — 負でもよい）の Rand。状態の 4 語を SplitMix32 で埋める（下位 32 bit を数え上げ、上位 32 bit を 2 語目と 4 語目に混ぜる —
 // 違うシードは違う状態になる。全部 0 にはしない）
+@effects()
 func New(seed int) Rand {
     lo := seed & mask32
     hi := (seed >> 32) & mask32
@@ -31,6 +32,7 @@ func New(seed int) Rand {
 }
 
 // 次の 32 bit の値（[0, 2^32)）
+@effects()
 func Next(r mut Rand) int {
     out := mul32(rotl32(mul32(r.s1, 5), 7), 9)
     t := (r.s1 << 9) & mask32
@@ -44,6 +46,7 @@ func Next(r mut Rand) int {
 }
 
 // [0, 2^62) の値（Next 2 回 — 上位 30 bit + 下位 32 bit）
+@effects()
 func Int62(r mut Rand) int {
     hi := Next(mut r) >> 2
     lo := Next(mut r)
@@ -56,6 +59,7 @@ type NonPositiveBound panic {
 }
 
 // [0, n) の値（n は 1 以上 — 0 以下は panic(NonPositiveBound{n})）。偏りなし（棄却法: n の倍数に収まる範囲の値だけ使う）
+@effects(panic)
 func Intn(r mut Rand, n int) int {
     if n <= 0 {
         return panic(NonPositiveBound{n: n})
@@ -69,11 +73,13 @@ func Intn(r mut Rand, n int) int {
 }
 
 // 真偽を 1 つ
+@effects()
 func Bool(r mut Rand) bool {
     return Next(mut r) & 1 == 1
 }
 
 // r から独立した列の Rand を作る（r も 1 歩進む — 生成器の部分木に別のシードを配る用途）
+@effects()
 func Split(r mut Rand) Rand {
     return New((Next(mut r) << 30) ^ Next(mut r))
 }

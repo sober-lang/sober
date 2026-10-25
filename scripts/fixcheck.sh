@@ -3,6 +3,8 @@
 # 古い正の列挙・古い @errors・否定形と内部関数〔触らない〕）を写して `sober fix` を掛け、
 #   ① 書き換えた木 ≡ 黄金（testdata/fixgold/fix/）② もう 1 回の fix は何も書かない（不動点）③ 書き換えた木を check が受理する
 #   ④ fix が書いた正の列挙 ≡ `check --effects-dump` の導出のビット
+#   ⑤ std（段 5b の強制）: std の全 package を import する合成の main に `fix --effects --std` を掛けて何も書かない（木の std の宣言 = 正規形の不動点。
+#      欠け・古さの負例は stage2 の L0 bake〔std の check〕が MEffMissing / MEffStale で落ちる形が受け持つ — CLI は焼き込みの std しか読まない）
 #
 #   scripts/fixcheck.sh [--regen]
 set -uo pipefail
@@ -36,5 +38,8 @@ for f in "$W"/testdata/fix/*/*.sober; do
         [ "$got" = "$words" ] || { echo "FAIL ④ ${pkg}.${name}: wrote ($words) — derived ($got)"; fail=1; }
     done < <(awk '/^@effects\(/ { d = $0; next } /^func / && d != "" { split($2, a, "("); print d, a[1]; d = ""; next } /^@/ { next } { d = "" }' "$f")
 done
-echo "fixcheck: $(wc -l < "$W/fix1.txt") files written, ${n} positive @effects matched the derivation, fail=$fail"
+mkdir -p "$W/std/app" && { echo "package main"; echo; for d in $(cd src && find std -name '*.sober' ! -name '*_test.sober' ! -path 'std/internal/*' -printf '%h\n' | sort -u); do echo "import \"$d\""; done; echo; echo "func main() {"; echo "}"; } > "$W/std/app/main.sober"
+(cd "$W/std" && "$S2" fix --effects --std "$W/std/out" app/main.sober) > "$W/fixstd.txt" 2>&1 || { echo "FAIL ⑤ fix --std: $(head -c 300 "$W/fixstd.txt")"; fail=1; }
+[ -s "$W/fixstd.txt" ] && { echo "FAIL ⑤ fix --std wrote (the std declarations are not in derived form): $(head -c 300 "$W/fixstd.txt")"; fail=1; }
+echo "fixcheck: $(wc -l < "$W/fix1.txt") files written, ${n} positive @effects matched the derivation, std fix --std wrote $(wc -l < "$W/fixstd.txt"), fail=$fail"
 exit $fail

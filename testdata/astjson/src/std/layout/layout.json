@@ -125,7 +125,7 @@
               "callee": {
                 "k": "ident",
                 "name": "panic",
-                "tok": 49
+                "tok": 55
               },
               "args": [
                 {
@@ -137,7 +137,7 @@
                       "value": {
                         "k": "ident",
                         "name": "field",
-                        "tok": 55
+                        "tok": 61
                       }
                     },
                     {
@@ -145,7 +145,7 @@
                       "value": {
                         "k": "ident",
                         "name": "v",
-                        "tok": 59
+                        "tok": 65
                       }
                     },
                     {
@@ -153,26 +153,26 @@
                       "value": {
                         "k": "ident",
                         "name": "width",
-                        "tok": 63
+                        "tok": 69
                       }
                     }
                   ],
-                  "tok": 51,
+                  "tok": 57,
                   "type_args": []
                 }
               ],
-              "tok": 50
+              "tok": 56
             }
           }
         ]
       },
-      "tok": 37,
+      "tok": 43,
       "bodiless": false,
       "span": {
         "start": 36,
-        "end": 69
+        "end": 75
       },
-      "sig_end": 48
+      "sig_end": 54
     },
     {
       "name": "FailLength",
@@ -213,7 +213,7 @@
               "callee": {
                 "k": "ident",
                 "name": "panic",
-                "tok": 82
+                "tok": 94
               },
               "args": [
                 {
@@ -225,7 +225,7 @@
                       "value": {
                         "k": "ident",
                         "name": "field",
-                        "tok": 88
+                        "tok": 100
                       }
                     },
                     {
@@ -233,7 +233,7 @@
                       "value": {
                         "k": "ident",
                         "name": "want",
-                        "tok": 92
+                        "tok": 104
                       }
                     },
                     {
@@ -241,26 +241,26 @@
                       "value": {
                         "k": "ident",
                         "name": "got",
-                        "tok": 96
+                        "tok": 108
                       }
                     }
                   ],
-                  "tok": 84,
+                  "tok": 96,
                   "type_args": []
                 }
               ],
-              "tok": 83
+              "tok": 95
             }
           }
         ]
       },
-      "tok": 70,
+      "tok": 82,
       "bodiless": false,
       "span": {
-        "start": 69,
-        "end": 102
+        "start": 75,
+        "end": 114
       },
-      "sig_end": 81
+      "sig_end": 93
     }
   ],
   "consts": []

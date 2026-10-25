@@ -207,6 +207,9 @@ examples/secret_neg_empty.sober: sober: load error: source does not match the gr
 examples/secret_neg_func_bare.sober: sober: load error: source does not match the grammar
 examples/secret_neg_type.sober: sober: load error: source does not match the grammar
 examples/secret_neg_variant.sober: sober: load error at examples/secret_neg_variant.sober:6:15: source does not match the grammar
+examples/security_file_neg.sober: sober: load error at examples/security_file_neg.sober:8:17: the file opened here must be closed by the next statement: insert `defer io.Close(f)` (with the name bound here — `defer io.CloseRoot(r)` for io.OpenRoot) right after this line
+examples/security_panic_neg.sober: sober: load error at examples/security_panic_neg.sober:6:10: panic needs a reason: panic(L{…}) with a panic label (Unreachable, InvariantBroken, or one declared as type L panic{…})
+examples/security_race_neg.sober: sober: load error at examples/security_race_neg.sober:9:70: a spawned task cannot capture a mut binding (the child sees only imm values — pass a copy: v := x before the Spawn)
 examples/shadow_block.sober: sober: load error at examples/shadow_block.sober:8:9: a local binding cannot shadow or redeclare another local binding
 examples/shadow_lambda.sober: sober: load error at examples/shadow_lambda.sober:7:14: a local binding cannot shadow or redeclare another local binding
 examples/shadow_pattern.sober: sober: load error at examples/shadow_pattern.sober:13:12: a local binding cannot shadow or redeclare another local binding

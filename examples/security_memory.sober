@@ -1,0 +1,30 @@
+package main
+
+// Security: memory — values outlive their scope by being copied out, never by dangling (docs/guide/security.md)
+
+// the string is made in this function's region; return copies it out to the caller's region
+func greeting(name string) string {
+    msg := "hello, ${name}"
+    return msg
+}
+
+// an index can fail, so the lookup says so in its type: int? must be checked before use
+func at(xs []int, i int) int? {
+    return if i >= 0 && i < len(xs) { xs[i] } else { nil }
+}
+
+func main() int {
+    people := []string{"ada", "bob"}
+    mut names := mut []string{}
+    for n <- people {
+        names = append(names, greeting(n))   // the loop body's region is freed each iteration; the kept value is copied out
+    }
+    println(names[0], "/", names[1])
+    xs := []int{10, 20, 30}
+    probes := []int{1, 5}
+    for i <- probes {
+        v := at(xs, i)
+        println(if v != nil { "xs[${i}] = ${v}" } else { "xs[${i}]: out of range" })
+    }
+    return 0
+}

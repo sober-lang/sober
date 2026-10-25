@@ -64,7 +64,7 @@ func main() int {
 
 ### 高速
 
-- Rust に匹敵する実行速度。同じアルゴリズムの素直な Rust と比べて、逐次 9 題材で勝ち 3・互角 4・負け 2（負けは reverse-complement 1.48×・n-body 1.17×）。Go には 6 勝 3 互角（負けなし）です。 <!-- benchsync:readme-speed-ja -->
+- Rust に匹敵する実行速度。同じアルゴリズムの素直な Rust と比べて、逐次 9 題材で勝ち 4・互角 3・負け 2（負けは reverse-complement 1.47×・n-body 1.17×）。Go には 6 勝 3 互角（負けなし）です。 <!-- benchsync:readme-speed-ja -->
 - Rust 並みのメモリフットプリント。GC はありません。最大 RSS は 9 題材中 8 題材で Rust 以下です（上回るのは k-nucleotide）。 <!-- benchsync:readme-rss-ja -->
 - 高い並列処理性能 — しかも決定的。structured concurrency の task は軽く（Skynet の 111 万 task が Go の 5 倍速い — 2026-10-10 計測）、ワーカー数を変えても出力は同じバイトです。
 
@@ -97,7 +97,7 @@ func main() int {
   <img alt="9 題材の最大 RSS の相対値（Rust = 1.0・ラベルは MB）" src="docs/assets/bench-rss-light.svg">
 </picture>
 
-速度とメモリのグラフは、このページのベンチの数字の正である [bench/data/official.tsv](bench/data/official.tsv) から `scripts/benchsync.sh` で生成しています（グラフと数字がそれと一致することを gate が見ます）。再現: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`。各題材の Go と Rust の双子は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md)。 <!-- benchsync:readme-repro-ja -->
+速度とメモリのグラフは、このページのベンチの数字の正である [bench/data/official.tsv](bench/data/official.tsv) から `scripts/benchsync.sh` で生成しています（グラフと数字がそれと一致することを gate が見ます）。数字は GitHub Actions（AMD EPYC 9V45 96-Core Processor）で `.github/workflows/bench-official.yml` が測った CPU 時間（task-clock）です。手元での再現: `scripts/bench.sh -n 3` → `bench/seqperf.sh -n 5 --rust`。各題材の Go と Rust の双子は `bench/<題材>/go`・`bench/<題材>/rust` にあります。計測の条件と規律は [docs/bench.md](docs/bench.md)。 <!-- benchsync:readme-repro-ja -->
 
 ## 試す
 

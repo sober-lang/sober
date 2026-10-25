@@ -1,0 +1,188 @@
+package main
+
+// binary.MatchLen の網羅の検査（scripts/matchlencheck.sh — SIMD の核 段 1・report-1137）: 長さ n = 0〜80 × 食い違いの位置 m = 0〜n（m = n は全部一致）×
+// 置き方 4 種（離れた 2 区間・2 番目の区間が列の末尾で終わる・引数を入れ替えて 1 番目の区間が列の末尾で終わる・重なる 2 区間〔距離 1〜7 の周期の列〕）。
+// 区間の直後のバイトは 2 区間で等しくしてある（列の外まで含めて）— 手書きの本体が区間の外を読んで比べると、一致の長さが n を越えて答えが変わる。
+// 答えは 1 バイトずつのループ（ref）と照合する。xmm の破壊の網: float の値を多く生かしたまま MatchLen を呼ぶループ（fmix）と、同じ計算を
+// 呼ばずに行うループ（fref）の結果が一致すること（手書きの本体が壊してよい xmm は 0 / 1 だけ — docs/ir.md 7 節）。
+// 出力: 1 行目 = 検査した数・2 行目 = 失敗の数・3 行目 = 答えの検査和（--passes と --no-opt で一致 — 参照の意味 ≡ 手書きの本体）
+
+import "std/binary"
+import "std/convert"
+import "std/iter"
+
+// 乱数（決定的）
+func next(x int) int {
+    mut y := x
+    y = y ^ (y << 13)
+    y = y ^ (y >> 7)
+    y = y ^ (y << 17)
+    return y
+}
+
+// ref は b[i:i+n] と b[j:j+n] の一致の長さ（1 バイトずつ — 参照）
+func ref(b []byte, i int, j int, n int) int {
+    mut k := 0
+    while k < n && b[i + k] == b[j + k] {
+        k += 1
+    }
+    return k
+}
+
+// fill は b に長さ size の乱数のバイトを積む
+func fill(b mut []byte, size int, seed int) {
+    mut x := seed * 2654435761 + 7
+    for _ <- iter.Range(0, size) {
+        x = next(x)
+        b = append(b, byte((x >> 11) & 255))
+    }
+}
+
+// disjoint は離れた 2 区間（i = 3・j = i + n + 40）の列: b[j:j+m] = b[i:i+m]・b[j+m] ≠ b[i+m]（m < n）・区間の直後 32 バイトは等しい。
+// cut なら返りの列の長さ = j + n（2 番目の区間が列の末尾で終わる — 外側の 40 バイトは同じ割り当ての続き〔区間の直後と等しい〕）・でなければ全部
+func disjoint(n int, m int, seed int, cut bool) ([]byte, int, int) {
+    i := 3
+    j := i + n + 40
+    mut b := mut []byte{}
+    fill(mut b, j + n + 40, seed)
+    for k <- iter.Range(0, 32) {
+        b[j + n + k] = b[i + n + k]
+    }
+    for k <- iter.Range(0, m) {
+        b[j + k] = b[i + k]
+    }
+    if m < n {
+        b[j + m] = byte(int(b[i + m]) ^ 90)
+    }
+    f := freeze(b)
+    return if cut { f[0:j + n] } else { f }, i, j
+}
+
+// periodic は重なる 2 区間（j = i + d）: 周期 d の列で、b[j + m] だけ変える（m < n）。返りの列は j + n で終わる（続きも周期のまま — 外を読むと伸びる）
+func periodic(n int, m int, d int, seed int) ([]byte, int, int) {
+    i := 5
+    j := i + d
+    mut base := mut []byte{}
+    fill(mut base, d, seed)
+    mut b := mut []byte{}
+    for k <- iter.Range(0, j + n + 40) {
+        b = append(b, base[k % d])
+    }
+    if m < n {
+        b[j + m] = byte(int(b[j + m]) ^ 90)
+    }
+    f := freeze(b)
+    return f[0:j + n], i, j
+}
+
+// fmix は float の値を 12 本生かしたまま MatchLen を呼ぶ（xmm の破壊の網）
+func fmix(b []byte, rounds int) float {
+    mut a0 := 1.5
+    mut a1 := 2.25
+    mut a2 := 3.125
+    mut a3 := 4.0625
+    mut a4 := 5.5
+    mut a5 := 6.75
+    mut a6 := 7.875
+    mut a7 := 8.5
+    mut a8 := 9.25
+    mut a9 := 10.125
+    mut a10 := 11.0625
+    mut a11 := 12.5
+    for r <- iter.Range(0, rounds) {
+        x := float(binary.MatchLen(b, 0, 40, 33 + r % 7))
+        a0 = a0 * 1.0001 + x
+        a1 = a1 * 0.9999 + a0
+        a2 = a2 + a1 * 0.5
+        a3 = a3 + a2 * 0.25
+        a4 = a4 + a3 * 0.125
+        a5 = a5 + a4 * 0.0625
+        a6 = a6 + a5 * 0.03125
+        a7 = a7 + a6 * 0.015625
+        a8 = a8 + a7 * 0.0078125
+        a9 = a9 + a8 * 0.00390625
+        a10 = a10 + a9 * 0.001953125
+        a11 = a11 + a10 * 0.0009765625
+    }
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11
+}
+
+// fref は fmix と同じ計算を MatchLen を呼ばずに（ref で）
+func fref(b []byte, rounds int) float {
+    mut a0 := 1.5
+    mut a1 := 2.25
+    mut a2 := 3.125
+    mut a3 := 4.0625
+    mut a4 := 5.5
+    mut a5 := 6.75
+    mut a6 := 7.875
+    mut a7 := 8.5
+    mut a8 := 9.25
+    mut a9 := 10.125
+    mut a10 := 11.0625
+    mut a11 := 12.5
+    for r <- iter.Range(0, rounds) {
+        x := float(ref(b, 0, 40, 33 + r % 7))
+        a0 = a0 * 1.0001 + x
+        a1 = a1 * 0.9999 + a0
+        a2 = a2 + a1 * 0.5
+        a3 = a3 + a2 * 0.25
+        a4 = a4 + a3 * 0.125
+        a5 = a5 + a4 * 0.0625
+        a6 = a6 + a5 * 0.03125
+        a7 = a7 + a6 * 0.015625
+        a8 = a8 + a7 * 0.0078125
+        a9 = a9 + a8 * 0.00390625
+        a10 = a10 + a9 * 0.001953125
+        a11 = a11 + a10 * 0.0009765625
+    }
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11
+}
+
+func main() int {
+    mut cases := 0
+    mut fails := 0
+    mut sum := 0
+    for n <- iter.Range(0, 81) {
+        for m <- iter.Range(0, n + 1) {
+            for lay <- iter.Range(0, 4) {
+                seed := n * 1000 + m * 10 + lay
+                mut b := []byte{}
+                mut i := 0
+                mut j := 0
+                if lay < 3 {
+                    s, i0, j0 := disjoint(n, m, seed, lay > 0)
+                    b = s
+                    i = if lay == 2 { j0 } else { i0 }
+                    j = if lay == 2 { i0 } else { j0 }
+                } else {
+                    s, i0, j0 := periodic(n, m, 1 + n % 7, seed)
+                    b = s
+                    i = i0
+                    j = j0
+                }
+                got := binary.MatchLen(b, i, j, n)
+                want := ref(b, i, j, n)
+                cases += 1
+                sum = sum * 31 + got
+                if got != want || want != m {
+                    fails += 1
+                    if fails <= 5 {
+                        println("FAIL n=" + convert.FormatInt(n) + " m=" + convert.FormatInt(m) + " lay=" + convert.FormatInt(lay) + " got=" + convert.FormatInt(got) + " want=" + convert.FormatInt(want))
+                    }
+                }
+            }
+        }
+    }
+    // xmm の破壊の網
+    fb, _, _ := disjoint(60, 45, 77, false)
+    cases += 1
+    if fmix(fb, 1000) != fref(fb, 1000) {
+        fails += 1
+        println("FAIL xmm: float values live across MatchLen changed")
+    }
+    println(cases)
+    println(fails)
+    println(sum)
+    return if fails == 0 { 0 } else { 1 }
+}

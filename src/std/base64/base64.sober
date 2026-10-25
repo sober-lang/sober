@@ -12,6 +12,7 @@ type Bad error
 // b の標準の字母の base64（4 文字ずつ・端は '=' で詰める — Go の base64.StdEncoding.EncodeToString と同じ綴り）
 //
 //     base64.Encode(bytes("hello"))   // "aGVsbG8="
+@effects()
 func Encode(b []byte) string {
     return bytesToString(encode(b, bytes("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"), true))
 }
@@ -19,12 +20,14 @@ func Encode(b []byte) string {
 // b の URL・ファイル名に安全な字母の base64（'+' '/' の代わりに '-' '_'・詰めの '=' を書かない — Go の base64.RawURLEncoding と同じ綴り）
 //
 //     base64.EncodeUrl([]byte{0xfb, 0xff})   // "-_8"
+@effects()
 func EncodeUrl(b []byte) string {
     return bytesToString(encode(b, bytes("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"), false))
 }
 
 // 標準の字母の base64 の s のバイト列（長さは 4 の倍数・'=' の詰めは端の 1〜2 文字だけ — Encode の綴りだけを受ける）
 @errors(Bad)
+@effects()
 func Decode(s string) ([]byte, error?) {
     b := bytes(s)
     if len(b) % 4 != 0 {
@@ -48,6 +51,7 @@ func Decode(s string) ([]byte, error?) {
 
 // URL・ファイル名に安全な字母の base64 の s のバイト列（詰めの '=' は受けない — EncodeUrl の綴りだけを受ける）
 @errors(Bad)
+@effects()
 func DecodeUrl(s string) ([]byte, error?) {
     b := bytes(s)
     if len(b) % 4 == 1 {

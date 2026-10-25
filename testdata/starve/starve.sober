@@ -1,0 +1,54 @@
+package main
+
+// starve（gate — 飽和下の待ちの上限の網・language.md 28 節 ring の道・report-1142）: 同じプロセスに echo の net.Serve と閉ループの客 512 本を立て、
+// 少ないワーカー（網は SOBER_WORKERS=2）で積みを深くして飽和させる。Serve の期限（3 秒）の後に task.Ledger() の maxWait（ms）と aged を出す。
+// 網の判定は scripts/starve.sh（aged > 0 = 飽和した・maxWait ≤ 1 s）。接続の task の D は 10 ms（期限の拾いの道を
+// 短い Serve の間に確実に通す — report-1150 / 1154）
+
+import "std/net"
+import "std/task"
+
+func echo(c net.Conn) error? {
+    for chunk <- net.Recv(c)? {
+        net.Send(c, chunk)?
+    }
+    return nil
+}
+
+// talk は接続 1 本で 32 バイトを送って受け返すのを、相手が閉じるか期限が切れるまで繰り返す
+func talk(port int, msg []byte) error? {
+    for c <- net.Dial("127.0.0.1:${port}")? {
+        while true {
+            net.Send(c, msg)?
+            mut got := 0
+            for chunk <- net.Recv(c)? {
+                got += len(chunk)
+                if got >= len(msg) {
+                    break
+                }
+            }
+            if got < len(msg) {
+                return nil
+            }
+        }
+    }
+    return nil
+}
+
+func main() {
+    msg := bytes("0123456789abcdef0123456789abcdef")
+    _ = net.Listen("127.0.0.1:0", (l) => {
+        port := net.Port(l)
+        _, _ = task.Run((s task.Scope) => {
+            mut i := 0
+            while i < 512 {
+                _ = task.Spawn(s, () => talk(port, msg) != nil)
+                i += 1
+            }
+            _, _ = task.Run((s2 task.Scope) => net.Serve(l, echo, conns: 1024, maxWait: 10 * task.MS), deadline: 3000 * task.MS)
+            0
+        }, deadline: 6000 * task.MS)
+    })
+    lg := task.Ledger()
+    println("maxWait_ms=${lg.maxWait / task.MS} aged=${lg.aged}")
+}

@@ -32,6 +32,7 @@ const CHUNK = 8192
 const DIR0 = 16
 
 // x を末尾に積む
+@effects()
 func Push[T](t mut Table[T], x T) {
     k := t.n / CHUNK
     if k >= len(t.chunks) {
@@ -60,6 +61,7 @@ func Push[T](t mut Table[T], x T) {
 }
 
 // xs を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk ごとにまとめて書く）
+@effects()
 func PushAll[T](t mut Table[T], xs []T) {
     mut at := 0
     while at < len(xs) {
@@ -105,11 +107,13 @@ func PushAll[T](t mut Table[T], xs []T) {
 }
 
 // 積んだ要素の個数
+@effects()
 func Len[T](t mut Table[T]) int {
     return t.n
 }
 
 // i 番目（0 起点）の要素。i が範囲外（i < 0 か Len 以上）なら添字の境界検査で panic する
+@effects()
 func Get[T](t mut Table[T], i int) T {
     // 範囲外は chunk の番号を -1 にして chunk の列の境界検査に落とす（chunk の中身は確保時の写しで埋まっているので、Len 以降も読めてしまう）。
     // 形は展開の量で選んだ（Get / Set は呼び出し点ごとに展開される）: 範囲外の判定は i | (n - 1 - i) の符号 1 つ（i < 0 か i ≥ n のとき、
@@ -121,6 +125,7 @@ func Get[T](t mut Table[T], i int) T {
 }
 
 // i 番目（0 起点）の要素を x にする。i が範囲外なら Get と同じく panic する（形は Get と同じ）
+@effects()
 func Set[T](t mut Table[T], i int, x T) {
     k := if (i | (t.n - 1 - i)) < 0 { -1 } else { i / CHUNK }
     t.chunks[k][i & (CHUNK - 1)] = x
@@ -135,6 +140,7 @@ type Frozen[T] struct {
 // t の中身を写さずに凍らせて返し、t を空の表に戻す（取り出し形 — language.md 17 節の bottom-up 凍結の Table 版:
 // 中身のある chunk を 1 本ずつ取り出して表の欄を空の seed に差し替えてから freeze する。凍らせた chunk に届くのは返す Frozen だけ。
 // t は以後も普通の空の表として使える — 新しく積む分は新しい chunk に入り、凍らせた中身には届かない）
+@effects()
 func Freeze[T](t mut Table[T]) Frozen[T] {
     nc := (t.n + CHUNK - 1) / CHUNK
     mut out := mut [][]T{}
@@ -152,11 +158,13 @@ func Freeze[T](t mut Table[T]) Frozen[T] {
 }
 
 // 凍った表の要素の個数
+@effects()
 func FrozenLen[T](f Frozen[T]) int {
     return f.n
 }
 
 // 凍った表の i 番目（0 起点）の要素。範囲外なら Get と同じく panic する（形も Get と同じ）
+@effects()
 func At[T](f Frozen[T], i int) T {
     k := if (i | (f.n - 1 - i)) < 0 { -1 } else { i / CHUNK }
     return f.chunks[k][i & (CHUNK - 1)]

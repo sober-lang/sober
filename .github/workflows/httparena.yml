@@ -116,8 +116,30 @@ jobs:
           # prlimit はこのステップのシェルに掛け、子（local.sh → gcannon / サーバ）が継承する
           sudo prlimit --pid $$ --memlock=unlimited --nofile=1048576:1048576 || true
           ulimit -n 1048576 || ulimit -n 65536
+          # 計測環境（dudect / bench-official の前例 — 箱の CPU の型番・大きさ・runner は run ごとに変わりうる。16vcpu と 64vcpu の
+          # 取り違え〔report-1147〕を gh run view で引き直さずに見えるよう、要約の見出し・httparena-env.txt・TSV の env の列に積む）
+          cpu=$(lscpu | sed -n 's/^Model name: *//p')
           {
-            echo "## HttpArena HTTP/1.1 — Sober / Go (kernel $(uname -r), SOBER_NET=${SOBER_NET})"
+            echo "run_id=${{ github.run_id }}"
+            echo "run_attempt=${{ github.run_attempt }}"
+            echo "commit=$(git rev-parse --short=8 HEAD)"
+            echo "runner=${{ inputs.runner }}"
+            echo "runner_name=$RUNNER_NAME"
+            echo "cpu=$cpu"
+            echo "nproc=$(nproc)"
+            echo "kernel=$(uname -r)"
+            echo "sober_net=$SOBER_NET"
+            echo "rounds=${{ inputs.rounds }}"
+            echo "duration=${{ inputs.duration }}"
+            echo "conns=${{ inputs.conns }}"
+            echo "zrk_rate_1m=$ZRK_RATE_1M"
+            echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee "$RUNNER_TEMP/httparena-env.txt"
+          export HTTPARENA_ENV="gha-${{ inputs.runner }}/$(echo "$cpu" | sed 's/^AMD //; s/ [0-9]*-Core Processor$//; s/ w\/ .*//; s/ /-/g')"
+          {
+            echo "## HttpArena HTTP/1.1 — Sober / Go"
+            echo
+            echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · latency-1m rate: $ZRK_RATE_1M"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
           ulimit -n
@@ -162,6 +184,7 @@ jobs:
           path: |
             ${{ runner.temp }}/httparena.tsv
             ${{ runner.temp }}/httparena.tsv.rss
+            ${{ runner.temp }}/httparena-env.txt
             ${{ runner.temp }}/perf-report-net*.txt
             ${{ runner.temp }}/work/gc-*.txt
             ${{ runner.temp }}/work/*.err

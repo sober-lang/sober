@@ -28,6 +28,7 @@ type Pair struct {
 ## Escape
 
 ```sober
+@effects()
 func Escape(s string) string
 ```
 
@@ -41,6 +42,7 @@ url.Escape("a b&c=d/é")   // "a%20b%26c%3Dd%2F%C3%A9"
 
 ```sober
 @errors(Bad)
+@effects()
 func Unescape(s string) (string, error?)
 ```
 
@@ -52,6 +54,7 @@ s の "%XX"（16 進は大小どちらも）を 1 バイトに戻した文字列
 
 ```sober
 @errors(Bad)
+@effects()
 func ParseQuery(s string) ([]Pair, error?)
 ```
 

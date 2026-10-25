@@ -40,16 +40,18 @@ addr の形の誤り（"a.b.c.d:port" — IPv4 の 4 つ組と 0〜65535 の por
 
 ```sober
 @errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Listen(addr string, k func(Listener)) error?
 ```
 
-addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
+addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・TCP\_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
 
 失敗のラベル: [`Bad`](#bad)・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
 ## Port
 
 ```sober
+@effects(io)
 func Port(l Listener) int
 ```
 
@@ -59,6 +61,7 @@ l が bind している port（"…:0" で listen したときの割り当ての
 
 ```sober
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Accept(l Listener, k func(Conn)) error?
 ```
 
@@ -70,6 +73,7 @@ l の接続を受けるたびに k に渡し、k が返ったら閉じる（列�
 
 ```sober
 @errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Dial(addr string, k func(Conn)) error?
 ```
 
@@ -81,6 +85,7 @@ addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じ�
 
 ```sober
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Recv(c Conn, k func([]byte)) error?
 ```
 
@@ -92,6 +97,7 @@ c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk
 
 ```sober
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
+@effects(block, io, nondet)
 func Send(c Conn, b []byte) error?
 ```
 
@@ -103,9 +109,10 @@ b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL
 
 ```sober
 @errors(io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?) error?
+@effects(block, io, panic, nondet)
+func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject string?, region int?, maxWait int?) error?
 ```
 
-l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept のループは std が持つ）。h は `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = conns × budget バイト — 省略時は budget = 64 \* task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる（既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn はServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）
+l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept のループは std が持つ）。h は `func(c net.Conn) error?`（名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — [language.md 25 節](../language.md)）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ（天井 = conns × budget バイト — 省略時は budget = 64 \* task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる（既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn はServe が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。region = 接続の task の region 1 つの上限（既定 128 \* task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えるとその接続の task の死（RegionExceeded{cause: slot\_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本（接続数 × 深度ぶんの VA を減らす — [language.md 11 節](../language.md)「接続の task の小さいスロット」）。maxWait = 飽和下の待ちの上限 D（ns・既定 100 \* task.MS・1 ms 未満は 1 ms）: 接続の task とその子は、走れるようになってから D 以内に走る（同じワーカーに違う D のtask が混ざると上限は混ざった中の最大）。飽和しない負荷では効かない。観測は task.Ledger() の maxWait / aged（[language.md 28 節](../language.md) ring の道「飽和下の待ちの上限」）
 
 失敗のラベル: `io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`

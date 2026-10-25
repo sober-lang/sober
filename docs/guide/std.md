@@ -66,8 +66,8 @@ Only immutable values and channels can be passed to a child task. The output is 
 | Package | Purpose | Main items |
 |---|---|---|
 | [`std/net`](../std/net.ja.md) | TCP | `for l <- net.Listen(addr)?`, `for c <- net.Accept(l)?`, `for c <- net.Dial(addr)?` (closed when the body exits), `for chunk <- net.Recv(c)?`, `Send`, and `Serve` (one task per connection) |
-| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
-| [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net). Errors are `HandshakeFailed`, `BadRecord`, `Closed` ([`std/tls/record`](../std/tls-record.ja.md) is the record layer inside — not for direct import) |
+| [`std/http`](../std/http.ja.md) | HTTP/1.1 server | `ServeConn` (on a net connection) / `ServeWith` (on receive and send functions — e.g. a TLS connection) / `ServeFlushed` (responses put without sending — flushed by the receive side, as `tls.Put`), `Request` / `Response`, `Text` / `Json` / `Status`, `Header` / `Query` / `Form` / `Multipart` (file uploads) / `JsonDoc`, a router `Route` + `Mount` / `Merge` / `Dispatch` / `Param`, `Middleware` (`Before` / `After`), gzip and streamed responses |
+| [`std/tls`](../std/tls.ja.md) | TLS 1.3 server | `Serve` (hands over only connections whose handshake is done), a `Config` from `Load` / `Parse`, `Recv` / `Send` (same shape as net) / `Put` + `Flush` (put without sending — `Recv` sends what was put before the next receive). Errors are `HandshakeFailed`, `BadRecord`, `Closed` ([`std/tls/record`](../std/tls-record.ja.md) is the record layer inside — not for direct import) |
 
 ## Cryptography
 

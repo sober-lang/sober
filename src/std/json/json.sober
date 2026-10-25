@@ -73,16 +73,19 @@ type Value union {
 }
 
 // 根のノード
+@effects()
 func Root(d Doc) int {
     return len(d.kind) - 1
 }
 
 // ノード n の src 上の位置（値の先頭のバイト）
+@effects()
 func Pos(d Doc, n int) int {
     return d.pos[n]
 }
 
 // ノード n を 1 段開く
+@effects()
 func At(d Doc, n int) Value {
     a := d.a[n]
     b := d.b[n]
@@ -117,6 +120,7 @@ func text(d Doc, k int) string {
 }
 
 // オブジェクトのノード n の欄 key の値のノード（n がオブジェクトでない・欄が無ければ nil）
+@effects()
 func Get(d Doc, n int, key string) int? {
     return GetAt(d, n, key, -1)
 }
@@ -124,6 +128,7 @@ func Get(d Doc, n int, key string) int? {
 // Get に手掛かりの位置 hint を足したもの: hint 番目の欄のキーを先に見て、外れたら線形に探す（shape[T] の写しの関数は欄の宣言の位置を
 // 渡す — 宣言と同じ順の JSON なら 1 回の比較で当たる）
 // キーの比較は手で展開してある（Doc の欄を局所に取ってから回す — 旧 keyIs は Doc を値で渡す呼び出しを欄ごとに払っていた）。見る順 = 手掛かり（t = -1）→ 0 から線形
+@effects()
 func GetAt(d Doc, n int, key string, hint int) int? {
     kind := d.kind
     if kind[n] != kObj {
@@ -412,6 +417,7 @@ func zeroFill(xs mut []int, n int) {
 
 // b 全体を 1 つの JSON の値として読む（前後の空白は可・後ろに何か残れば Syntax）
 @errors(InvalidJson)
+@effects()
 func Parse(b []byte) (Doc, error?) {
     bad := strings.IndexInvalid(b)
     if bad >= 0 {
@@ -662,6 +668,7 @@ func dupLarge(d Doc, a int, m int) int {
 }
 
 // ノード n の決定的な JSON（空白なし・欄はソースの順・数は字句のまま・文字列は '"' '\\' と制御文字だけをエスケープ）
+@effects()
 func Format(d Doc, n int) string {
     mut out := builder.Builder[byte]{}
     // 明示のスタック: [節, 次の子の添字] の組

@@ -1,0 +1,43 @@
+package main
+
+import "std/builder"
+import "std/iter"
+import "std/json"
+
+// builder.PushWord（語の下の k バイトを積む）: 速い道（今の chunk に空き）と遅い道（chunk の境目・初回）を交互に通し、
+// 1 バイトずつの Push と同じ列になることを見る。k = 0・負・9 以上（算術右シフトの埋め）と json の数の書き出しも
+func pushRef(b mut builder.Builder[byte], w int, k int) {
+    mut x := w
+    mut j := 0
+    while j < k {
+        builder.Push(mut b, byte(x & 255))
+        x = x >> 8
+        j += 1
+    }
+}
+
+func main() {
+    mut a := builder.Builder[byte]{}
+    mut r := builder.Builder[byte]{}
+    for i <- iter.Range(0, 3000) {
+        w := i * 1103515245 + 12345
+        builder.PushWord(mut a, w, i % 11)
+        pushRef(mut r, w, i % 11)
+        json.PutInt(mut a, i * 7919 - 50000)
+        json.PutInt(mut r, i * 7919 - 50000)
+    }
+    builder.PushWord(mut a, -2, 10)
+    pushRef(mut r, -2, 10)
+    builder.PushWord(mut a, 5, 0 - 3)
+    s := builder.Build(mut a)
+    t := builder.Build(mut r)
+    mut same := len(s) == len(t)
+    mut h := 0
+    for k <- iter.Range(0, len(s)) {
+        if same && s[k] != t[k] {
+            same = false
+        }
+        h = (h * 31 + int(s[k])) & 1152921504606846975
+    }
+    println(len(s), same, h)
+}

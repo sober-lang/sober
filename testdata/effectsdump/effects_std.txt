@@ -1,0 +1,6 @@
+examples/effects_std.sober:16:6: effects main.show fi=0 bits=io declared
+examples/effects_std.sober:22:6: effects main.loud fi=1 bits=none declared
+examples/effects_std.sober:26:6: effects main.main fi=2 bits=io
+examples/effects_std.sober:12:6: ftype Render union=none
+std/iter/iter.sober:8:6: ftype Iter union=none
+summary fns=45 lambdas=4 edges=63 any=none any-calls=0 fvalues=0 declared=31 violations=0

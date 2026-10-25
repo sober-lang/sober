@@ -235,6 +235,7 @@ type St struct {
     rtReloc8 FnRef
     rtExtend8 FnRef
     rtStreq FnRef
+    rtMatchLen FnRef  // rt.matchlen（一致の長さ — rt8.sober の needMatchLen・-1 = 無し）
     rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
     mapFinds int      // map の引きの族の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
     hseed int         // map のハッシュの種の大域 rt.hash_seed（2 語 — mum の引きがあるときだけ・入口が埋める）・-1 = 無し
@@ -304,6 +305,7 @@ type St struct {
     stopAt int       // 計測の口（`--stop-after=<段>` — scripts/passstats.sh）: 0 = 最後まで・k = 段 k の後で止めて空の出力（StageCode の表）
     halted bool      // stopAt の段に着いた
     dumpIr bool      // 計測の口（`--dump-ir`）: 止めた段の IR テキストを出力にする
+    noRflow bool     // `--no-rflow`（C1 — rflow.sober）: 戻り値へ流れる関数の region の省略を掛けない（網 = 掛けた ≟ 掛けない）
     noSpec bool      // `--no-spec`（展開便 段 1）: 定数引数の特化を掛けない（網 = 掛けた ≟ 掛けない）
     noVec bool       // `--no-vec`（第三便のスパイク）: ベクトル化を掛けない（網 = 掛けた ≟ 掛けない）
     noVfy bool       // 計測の口（`--no-verify`）: IR の検証器を掛けない（検証器の費用の帰属用）
@@ -357,6 +359,7 @@ type St struct {
     rtPqstr FnRef     // rt.print_qstr（string を二重引用符 + エスケープで — panic ラベルの欄の印字。第二便）
     lastConstV int    // 最後に iconst で作った値の番号と定数（ir.sober — 定数で 0 でない除数のゼロ除算の検査を省く）
     lastConstN int
+    rflowFns table.Table[int] // 戻り値へ流れる関数の region の省略（C1 — rflow.sober）で入口の enter を消した関数（検証器が照合する — rfVerify）
     psites table.Table[int]   // panic の点 [種類, ファイル, 字句]…（番号 = 添字 / 3）
     iobuf2 int     // rt.iobuf2（rt.rename の 2 つ目の path の C 文字列）
     rtCstr FnRef // rt.cstr（io の器 — rt.write_mode の本体が使う）
@@ -403,6 +406,7 @@ func initScalars(st mut St) {
     st.rtReloc = -1
     st.rtCopy = -1
     st.rtStreq = -1
+    st.rtMatchLen = -1
     st.rtMapfind = -1
     st.mapFinds = -1
     st.hseed = -1

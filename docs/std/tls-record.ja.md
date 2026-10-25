@@ -199,6 +199,7 @@ type Frame struct {
 ## ExpandLabel
 
 ```sober
+@effects()
 func ExpandLabel(secret []byte, label string, context []byte, n int) []byte
 ```
 
@@ -208,6 +209,7 @@ HKDF-Expand-Label(secret, label, context, n)（RFC 9846 7.1 — info = 長さ 2 
 
 ```sober
 @errors(Alert)
+@effects()
 func NewDir(suite int, secret []byte) (Dir, error?)
 ```
 
@@ -219,6 +221,7 @@ suite と traffic secret の Dir（key = ExpandLabel(secret, "key", "", 16 / 32)
 
 ```sober
 @errors(Alert)
+@effects()
 func Update(d mut Dir) error?
 ```
 
@@ -229,6 +232,7 @@ KeyUpdate（secret' = ExpandLabel(secret, "traffic upd", "", 32) — RFC 9846 7.
 ## NeedUpdate
 
 ```sober
+@effects()
 func NeedUpdate(d Dir) bool
 ```
 
@@ -237,14 +241,25 @@ func NeedUpdate(d Dir) bool
 ## Seal
 
 ```sober
+@effects()
 func Seal(d mut Dir, ctype int, pt []byte, pad int) []byte
 ```
 
 内容の型 ctype の平文 pt を record の列にしたもの（2^14 バイトずつ・各 record の内側の末尾に 0 埋め pad バイト〔0 = 埋めない〕）。空の pt は中身 0 バイトの record 1 つ（application\_data には送らない約束は呼び手 — RFC 9846 5.1）
 
+## SealInto
+
+```sober
+@effects()
+func SealInto(d Dir, ctype int, pt []byte, dst mut []byte, at int) int
+```
+
+Seal の宛先を呼び手の列 dst[at:] にした形（record 1 つ — pt が MaxPlain を越える・dst に入らなければ −1。書いたバイト数を返す）。d は読むだけ（seq は呼び手が +1 して書き戻す — mut の仮引数を dst の 1 つに保つ）。作業の列（頭・nonce・tail・AEAD の作業）は呼び手の region に積もる
+
 ## Plain
 
 ```sober
+@effects()
 func Plain(r Frame) (int, []byte)
 ```
 
@@ -255,6 +270,7 @@ func Plain(r Frame) (int, []byte)
 ```sober
 @errors(Alert)
 @bless
+@effects()
 func Open(d mut Dir, r Frame) (int, []byte, error?)
 ```
 
@@ -266,6 +282,7 @@ func Open(d mut Dir, r Frame) (int, []byte, error?)
 
 ```sober
 @errors(Alert, Transport)
+@effects()
 func Frames(recv func(k func([]byte)) error?, k func(Frame)) error?
 ```
 
@@ -276,6 +293,7 @@ func Frames(recv func(k func([]byte)) error?, k func(Frame)) error?
 ## At
 
 ```sober
+@effects()
 func At(b []byte, off int, n int) Frame
 ```
 
@@ -284,6 +302,7 @@ b[off, off + n) を枠に（std/tls の handshake の組み立て — 呼び手�
 ## Pack
 
 ```sober
+@effects(panic)
 func Pack(d Dir) []int
 ```
 
@@ -292,14 +311,25 @@ d の語の列（[suite, seq, 秘密の長さ, 秘密 …, iv の長さ, iv …,
 ## Unpack
 
 ```sober
+@effects()
 func Unpack(w []int, at int) Dir
 ```
 
 Pack の逆（w[at:] から）
 
+## WithSeq
+
+```sober
+@effects()
+func WithSeq(d Dir, seq int) Dir
+```
+
+d の seq を seq に差し替えた Dir（鍵の素材は d と共有 — std/tls が展開済みの送りの方向に置き場の seq の語を当てる）
+
 ## Seq
 
 ```sober
+@effects()
 func Seq(d Dir) int
 ```
 

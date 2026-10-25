@@ -1,0 +1,12 @@
+package main
+
+// Security: data races — a spawned task cannot capture a mut binding (rejected by check and build) (docs/guide/security.md)
+
+import "std/task"
+
+func main() {
+    mut hits := 0
+    r, _ := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => hits + 1)))
+    hits += 1
+    println(r)
+}

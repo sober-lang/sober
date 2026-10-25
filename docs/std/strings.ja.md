@@ -9,6 +9,7 @@ Go の strings パッケージが仕様のオラクル。string は不透明な�
 ## HasPrefix
 
 ```sober
+@effects()
 func HasPrefix(s string, prefix string) bool
 ```
 
@@ -17,6 +18,7 @@ s が prefix で始まるかを返す
 ## HasSuffix
 
 ```sober
+@effects()
 func HasSuffix(s string, suffix string) bool
 ```
 
@@ -25,6 +27,7 @@ s が suffix で終わるかを返す
 ## Index
 
 ```sober
+@effects()
 func Index(s string, substr string) int
 ```
 
@@ -33,6 +36,7 @@ substr が s に最初に現れる位置を bytes(s) 上のバイトオフセッ
 ## Contains
 
 ```sober
+@effects()
 func Contains(s string, substr string) bool
 ```
 
@@ -41,6 +45,7 @@ substr が s に含まれるかを返す（空の substr は常に含まれる�
 ## Count
 
 ```sober
+@effects()
 func Count(s string, substr string) int
 ```
 
@@ -49,6 +54,7 @@ s に含まれる substr の重ならない出現数を返す。substr が空な
 ## Cut
 
 ```sober
+@effects()
 func Cut(s string, sep string) (string, string, bool)
 ```
 
@@ -57,6 +63,7 @@ s を最初の sep の前と後に割る（Go の strings.Cut — 無ければ s
 ## CutLast
 
 ```sober
+@effects()
 func CutLast(s string, sep string) (string, string, bool)
 ```
 
@@ -65,6 +72,7 @@ s を最後の sep の前と後に割る（無ければ s・""・false — Cut �
 ## TrimPrefix
 
 ```sober
+@effects()
 func TrimPrefix(s string, prefix string) string
 ```
 
@@ -73,6 +81,7 @@ s が prefix で始まればそれを外した残り、でなければ s（Go �
 ## TrimSuffix
 
 ```sober
+@effects()
 func TrimSuffix(s string, suffix string) string
 ```
 
@@ -81,6 +90,7 @@ s が suffix で終わればそれを外した残り、でなければ s（Go �
 ## LastIndex
 
 ```sober
+@effects()
 func LastIndex(s string, substr string) int
 ```
 
@@ -89,6 +99,7 @@ substr が s に最後に現れる位置を bytes(s) 上のバイトオフセッ
 ## Split
 
 ```sober
+@effects()
 func Split(s string, sep string) []string
 ```
 
@@ -97,6 +108,7 @@ s を sep の出現ごとに割った片の列（Go の strings.Split と同じ�
 ## Fields
 
 ```sober
+@effects()
 func Fields(s string) []string
 ```
 
@@ -105,6 +117,7 @@ s を ASCII の空白の連なりで割った空でない片の列（Go の stri
 ## TrimSpace
 
 ```sober
+@effects()
 func TrimSpace(s string) string
 ```
 
@@ -113,6 +126,7 @@ s の頭と尻の ASCII の空白を外した残り（Go の strings.TrimSpace �
 ## Replace
 
 ```sober
+@effects()
 func Replace(s string, old string, new string, n int) string
 ```
 
@@ -121,6 +135,7 @@ s の old の重ならない出現を前から n 個 new に置き換えた stri
 ## ToLower
 
 ```sober
+@effects()
 func ToLower(s string) string
 ```
 
@@ -129,6 +144,7 @@ s の ASCII の大文字（'A'..'Z'）を小文字にした string（Go の stri
 ## ToUpper
 
 ```sober
+@effects()
 func ToUpper(s string) string
 ```
 
@@ -137,6 +153,7 @@ s の ASCII の小文字（'a'..'z'）を大文字にした string（Go の stri
 ## EqualFold
 
 ```sober
+@effects()
 func EqualFold(s string, t string) bool
 ```
 
@@ -145,6 +162,7 @@ s と t が ASCII の大文字小文字を同一視して等しいか（Go の s
 ## IndexByte
 
 ```sober
+@effects()
 func IndexByte(s string, c byte) int
 ```
 
@@ -171,6 +189,7 @@ t := strings.Clone(mut a, s)   // t は a の region にある s のコピー
 ## Clone
 
 ```sober
+@effects()
 func Clone(a mut Arena, s string) string
 ```
 
@@ -179,6 +198,7 @@ s のバイト列を a の region へコピーした string を返す（コピ�
 ## Join
 
 ```sober
+@effects()
 func Join(ps []string, sep string) string
 ```
 
@@ -197,6 +217,7 @@ type InvalidUtf8 error {
 ## IndexInvalid
 
 ```sober
+@effects()
 func IndexInvalid(b []byte) int
 ```
 
@@ -205,6 +226,7 @@ func IndexInvalid(b []byte) int
 ## Valid
 
 ```sober
+@effects()
 func Valid(b []byte) bool
 ```
 

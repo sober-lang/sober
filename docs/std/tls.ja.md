@@ -50,6 +50,7 @@ type Config struct {
 type Conn struct {
     c net.Conn
     blk []int
+    wr record.Dir
     seal tlsSeal
 }
 ```
@@ -68,6 +69,7 @@ handshake の済んだ接続 1 本の処理（名前つきの関数型 — 値�
 
 ```sober
 @errors(pem.Bad, rsa.BadKey)
+@effects()
 func Parse(certPem string, keyPem string) (Config, error?)
 ```
 
@@ -78,6 +80,7 @@ PEM の証明書の鎖（CERTIFICATE が 1 つ以上 — 葉が先頭）と PKCS
 ## Alpn
 
 ```sober
+@effects()
 func Alpn(cfg Config, alpn []string) Config
 ```
 
@@ -87,6 +90,7 @@ func Alpn(cfg Config, alpn []string) Config
 
 ```sober
 @errors(pem.Bad, rsa.BadKey, strings.InvalidUtf8, io.NotFound, io.Denied, io.Other, io.Timeout, io.Expired)
+@effects(io, nondet)
 func Load(certPath string, keyPath string) (Config, error?)
 ```
 
@@ -98,10 +102,11 @@ Parse のファイル版（certPath / keyPath を読む）
 
 ```sober
 @errors(net.Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
-func Serve(addr string, cfg Config, k Handler, region int?) error?
+@effects(block, io, panic, nondet, Handler)
+func Serve(addr string, cfg Config, k Handler, region int?, maxWait int?) error?
 ```
 
-addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）
+addr で待ち受け、接続ごとに handshake を済ませてから k を走らせる（接続 1 本 = task 1 本 — net.Serve と同じ admission・k の失敗と死は吸収）。handshake の失敗は alert を送って閉じ、k は呼ばない。k が返ったら（error を返しても）close\_notify を送って閉じる。k が死んだときは close\_notify を送らずに閉じるregion = 接続の task の region 1 つの上限（net.Serve の region: へそのまま — 既定 128 MiB）・maxWait = 飽和下の待ちの上限（net.Serve の maxWait: へそのまま — 既定 100 ms）
 
 失敗のラベル: `net.Bad`・`io.Closed`・`io.Timeout`・`io.Expired`・`io.Denied`・`io.Other`
 
@@ -117,10 +122,11 @@ type Overflow panic
 
 ```sober
 @errors(BadRecord, Closed)
+@effects(block, io, nondet)
 func Recv(c Conn, k func([]byte)) error?
 ```
 
-c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close\_notify で nil。受けの表は hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。受けた KeyUpdate は受けの鍵を進め、update\_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
+c の受けた application の平文を k に順に渡す（呼び出し形の生成元 — `for b <- tls.Recv(c)? { … }`）。相手の close\_notify で nil。受けの表は hs.Feed の Connected の枝が持つ（受けの方向 rd から作った Hs に枠を 1 つずつ hs.Step〔mut なしの入口 — 表は Feed と共有〕で通す — 表を 1 か所に）。受けた KeyUpdate は受けの鍵を進め、update\_requested なら次の Send が先に自分の KeyUpdate を送る。改竄・形の誤り・想定外は alert を送って BadRecord。k が Put で積んだ分は、受けた切片 1 つ分の record を k へ配り終えるたびに送る（Flush — 次の受けを待つ前に。pump）。1 つの接続で 1 度だけ回せる（break で途中で抜けた後・2 度目は Closed）
 
 失敗のラベル: [`BadRecord`](#badrecord)・[`Closed`](#closed)
 
@@ -128,9 +134,34 @@ c の受けた application の平文を k に順に渡す（呼び出し形の�
 
 ```sober
 @errors(Closed)
+@effects(block, io, panic, nondet)
 func Send(c Conn, b []byte) error?
 ```
 
-b を application の record にして c へ送る（空の b は送らない）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
+b を application の record にして c へ送る（空の b は送らない — Put + Flush）。相手の KeyUpdate の要求・AES-GCM の使用上限の手前なら、先に自分の KeyUpdate を送って鍵を進める
+
+失敗のラベル: [`Closed`](#closed)
+
+## Put
+
+```sober
+@errors(Closed)
+@effects(block, io, panic, nondet)
+func Put(c Conn, b []byte) error?
+```
+
+b を application の record にして c の送りの束に積む（送らない — Flush か、tls.Recv の k が戻ったときか、束に入らない次の Put か、Serve の出口が送る。空の b は積まない）。束に入らない（積んだ分と合わせて record 1 つ分を越える）・鍵を進める前後は、積んだ分を送ってから b の record をその場で送る（順序は保つ）
+
+失敗のラベル: [`Closed`](#closed)
+
+## Flush
+
+```sober
+@errors(Closed)
+@effects(block, io, nondet)
+func Flush(c Conn) error?
+```
+
+c の送りの束に積んだ record を送る（無ければ何もしない）
 
 失敗のラベル: [`Closed`](#closed)

@@ -36,6 +36,7 @@ func sysEnviron() []byte
 // プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。呼ぶたびに呼び手の region へ写す。
 // string は UTF-8 検査済みなので、不正な UTF-8 の引数が 1 つでもあれば全体が strings.InvalidUtf8（入力次第で起きる = error — language.md 27 節）
 @errors(strings.InvalidUtf8)
+@effects(io)
 func Args() ([]string, error?) {
     // 「各引数のバイト + 0」の連結（C 文字列は 0 を含まないので区切りは曖昧にならない）
     b := sysArgs()
@@ -58,6 +59,7 @@ func Args() ([]string, error?) {
 // （error でなく終了コード — 子の中の失敗は親から区別しない）。fork / wait の失敗は io の errno のラベル。引数に NUL を含めば io.Other{errno: 22}
 // （テスト基盤のランナーの最小面。fork + execve + wait4 の同期の直呼び）
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(block, io)
 func Run(path string, args []string) (int, error?) {
     mut b := mut []byte{}
     if !argz(mut b, path) {
@@ -78,6 +80,7 @@ func Run(path string, args []string) (int, error?) {
 // path のファイルの許可の bit（mode — chmod(2) の 12 bit: 0o755 = 493 等）を書く（対の ReadMode は実需まで足さない — language.md 34 節の規則 2）。
 // 失敗は io の errno のラベル（無い・権限・その他）。path は std/io と同じく C 文字列に写す（NUL を含む・長すぎる path は io.Other）
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func WriteMode(path string, mode int) error? { // 対の ReadMode は実需まで足さない（language.md 34 節 2 の注記・2026-10-20 ④）
     e := sysWriteMode(path, mode)
     if e != 0 {
@@ -89,6 +92,7 @@ func WriteMode(path string, mode int) error? { // 対の ReadMode は実需ま�
 // path のディレクトリを作る（mkdir(2) — 許可の bit は 0o755。親は作らない — mkdir -p は呼び手が親から順に）。既にあれば io.Other{errno: 17}
 // （EEXIST — ラベルは足さない: 呼び手が「あってもよい」を errno で見る）。他の失敗は io の errno のラベル（3'' 第 2 段 C0 — キャッシュのディレクトリ）
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func Mkdir(path string) error? {
     e := sysMkdir(path)
     if e != 0 {
@@ -100,6 +104,7 @@ func Mkdir(path string) error? {
 // from を to へ付け替える（rename(2) — 同じファイルシステムの中では原子的で、to が既にあれば置き換える）。一時ファイルに書いてから
 // Rename で公開すると、読み手は書きかけを見ない（キャッシュのディレクトリの書き込みの形）。失敗は io の errno のラベル
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func Rename(from string, to string) error? {
     e := sysRename(from, to)
     if e != 0 {
@@ -111,6 +116,7 @@ func Rename(from string, to string) error? {
 // path の更新時刻（stat(2) の st_mtim — Unix エポック〔1970 年 1 月 1 日 UTC〕からの ns。シンボリックリンクは辿る。開いた File の同じ値は io.Stat の modTime）。
 // 失敗は io の errno のラベル（sober watch の mtime ポーリング・http.Static の Last-Modified）
 @errors(io.NotFound, io.Denied, io.Other)
+@effects(io)
 func ModTime(path string) (int, error?) {
     t := sysStat(path)
     if t < 0 {
@@ -121,11 +127,13 @@ func ModTime(path string) (int, error?) {
 
 // ms ミリ秒眠る（負の値は 0 と同じ）。std/task のプログラムでは眠る間ワーカーを譲り、期限つきの scope（task.Run の deadline:）の中なら
 // 期限が来た時点でエラーなしで早く返る（デッドライン = 待ちの上限 — language.md 28 節。起きた時刻は io の入力）。逐次のプログラムは nanosleep(2)
+@effects(block)
 func Sleep(ms int) {
     _ = SleepExpired(ms)
 }
 
 // Sleep と同じで、期限で早く起きたら true（どの待ちが期限で切れたかを観測する関数）
+@effects(block)
 func SleepExpired(ms int) bool {
     return sysSleep(if ms < 0 { 0 } else { ms }) == 110
 }
@@ -133,6 +141,7 @@ func SleepExpired(ms int) bool {
 // 環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。値が不正な UTF-8 なら strings.InvalidUtf8
 // （Args と同じ — 入力次第で起きる = error）。同名が複数あれば最初の 1 つ（getenv(3) と同じ）
 @errors(strings.InvalidUtf8)
+@effects(io)
 func Getenv(name string) (string?, error?) {
     b := sysEnviron()
     nb := bytes(name)

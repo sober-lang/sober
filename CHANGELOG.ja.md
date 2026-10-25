@@ -2,6 +2,50 @@
 
 このファイルは公開リリースごとの利用者向けの変更点を記録する。形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に倣う。バージョンは [Semantic Versioning](https://semver.org/lang/ja/) に従う（0.x の間は後方互換を約束しない）。
 
+## v0.6.3 — 2026-10-25
+
+性能の版。接続の多いサーバで、io_uring の完了の取り込みを小刻みにして多接続の崖を消し、飽和した負荷でも走れるようになった task が待つ時間に上限を置いた。要求ごと・接続ごとのメモリを減らし、TLS の送りと圧縮の符号化を速くした。あわせて std の公開関数が `@effects` の宣言を持つようになり、rt の深度の不変条件の検査が常設になった。
+
+### 性能
+
+- HTTP（bench/httparena — HttpArena の負荷発生器と要求のファイル・GitHub Actions の 64 vCPU でサーバ 32 コア・Go の net/http と比べた自前のハーネスで、HttpArena の公式の結果ではない）: Sober / Go の比は v0.6.1 の run と比べて limited-conn 7.2 → 9.2×・async 1.9 → 2.4×・json-tls 2.3 → 2.8×・json 3.1 → 3.4×・baseline 3.0 → 3.2×・pipelined 16 → 15.9×・json-comp 1.3 → 1.8×。latency-500k-8cpu と latency-1m は目標の速さを保つ（p99 0.37 ms / 0.21 ms）。non-2xx は全種目で 0
+- 完了の取り込み（net の ring）: 今までは走れる task が尽きたときだけ io_uring に入って完了をまとめて取り込んでいたので、接続が多いと 1 回に取り込む束が深くなり、作業集合がキャッシュから溢れていた。未提出の SQE が 8 本溜まったら、眠らずに提出・取り込み・タイマーの満了を済ませ、取り込んだ task は熱いうちに先に走る。そのままでは飽和した負荷で古い起こしが積みの底に沈んで秒単位で走らない接続が出るので、**走れるようになった task は飽和下でも待ちの上限 D（既定 100 ms — 下の `maxWait:`）以内に走る**ようにした（底から 1 本ずつ拾う）。手元の 12 ワーカーで keep-alive 4096 接続の要求あたりの cycles は 2.3 分の 1（256 接続の 2.5 倍あった崖が消えた）で、全接続を D 以内に回したまま、頭の取り込みを外した公平な形より rps +17%・async 24000 接続の CPU/要求 −7〜9%。飽和下の p99 ≈ D（既定 100 ms）は設計 — 全接続が D 以内に回る（直前に動いた接続を熱いうちに回し、待ちが D に達した接続を拾う）。飽和しない負荷では上限の簿記の分だけ CPU/要求が +3% 前後
+- メモリ:
+  - 戻り値へ流れるだけの関数（自分の region に積むものが全部戻り値から辿れる関数）は region に入らず、呼び手の region へ直に積む。std/http の Dispatch を含め、要求ごとの region の深度が減る。async 24000 接続の VmHWM −21 MB（−5%）
+  - 小さいスロットのワーカーごとの手元の列の上限と、受けのバッファの環（PBUF_RING）のスロットの数を、ワーカー数で割る。ワーカーが多いほど寝かせておく予備が増えていた分を減らす。async 24000 接続の VmHWM は 12 ワーカーで約 −20 MB・24 ワーカーで約 −44 MB。受けの環が小さく熱くなり、64 KiB の POST の echo は cycles −11%
+  - task が待ちに入るとき、使っていない深い region のスロットを手放し、起きたときに取り直す。送りの待ちの間に空のスロットを抱えなくなり、async 24000 接続の cycles/要求 −11%・RSS −19%・json-tls 4096 接続の cycles/要求 −4%
+- TLS:
+  - 送りを 2 段にした（`tls.Put` = record に暗号化して束に積む・`tls.Flush` = 送る。`tls.Send` は今までどおり Put + Flush）。`tls.Recv` の受けの口は受けた切片 1 つ分を配り終えるたびに Flush する。送りの待ちで応答の作業域を抱えなくなり、json-tls 4096 接続で働く接続 1 本あたりのメモリ −23%・cycles/要求 −9%・rps +7%
+  - 送りの鍵の展開を接続に 1 回に（record ごとの鍵の素材の写しが消える）・AES-GCM の record 1 つの作業域を 1 本に（tag の計算を AES の塊の中へ）。json-tls の cycles/要求 −4% 前後
+- 圧縮（flate / gzip）:
+  - level 4〜6（`http.Gzip{}` の既定 6 を含む）で、長い一致の中の位置をハッシュ鎖に足さない。lv6 の符号化は json の本文で 24〜29% 速く、json-comp の形のサーバの応答は手元で +23%。代わりに圧縮率はわずかに下がる（json の本文で +1% 前後・短い一致が主の入力で +10% 前後）。率を優先するなら level 7 以上（今までと同じ探し方）を選ぶ
+  - 一致の長さの比較を 16 バイトずつ（SSE2）に。符号化は json の本文で 6〜9% 速く（level 3〜9）、json-comp のサーバの cycles/要求 −5.9%
+  - 符号化ごと・ブロックごとの固定費を減らした（符号の表をその都度組み立てない・符号長を決めるソートを頻度の数え上げに）。符号化の命令 −8〜13%・json-comp のサーバの cycles/要求 −7.5〜8.4%。出力のバイト列は変わらない
+- x86 の最適化のバックエンド: 定数（非冪）での `/` と `%` を乗算に置き換える・短いメモリの写し（32 バイト以下）を重ねた読み書き 2 本で済ませる。json の数の書き出しと応答の組み立てが速くなり、json / json-tls の 256 接続で cycles/要求 −4〜5%
+- `net.Listen` が listener に TCP_NODELAY を付ける（受けた接続へ継承する）。小さい応答が Nagle のアルゴリズムで待たされない
+
+### std
+
+- 本体のある std の公開関数は全部 `@effects` の宣言を持つ（`docs/std` にも出る）。宣言は導出と一致することを stage2 が建つときに照合する
+- `net.Serve(…, maxWait:)` / `tls.Serve(…, maxWait:)`: 飽和下の待ちの上限 D の宣言（既定 100 ms）。接続の task とその子は、走れるようになってから D 以内に走る（同じワーカーに違う D の task が混ざると、上限は混ざった中の最大）。飽和しない負荷では効かない
+- `task.Ledger()` に `maxWait`（走れるようになってから走るまでの待ちの最大 — ns・読むと 0 に戻る）と `aged`（上限が効いた回数 = 飽和の印）。運用での読み: aged が増えていれば飽和・maxWait が D を大きく越えていれば異常
+- `http.ServeFlushed`: ServeWith の送りを 2 段にした形（受けた切片 1 つ分の応答を put で積み、まとめて送る — TLS の接続向け）。`tls.Put` / `tls.Flush`（上の TLS の項）
+- `binary.MatchLen(b, i, j, n)`: b[i:i+n] と b[j:j+n] の先頭からの一致の長さ。秘密の値を渡すと analyzer が拒否する（比較は可変時間）
+- `builder.PushWord(b, w, k)`: 語 w の下の k バイトを下のバイトから積む（`Push` と `w >>= 8` を k 回と同じ結果）
+
+### ツール
+
+- `sober fix --effects --std <dir>`: 焼き込みの std を読んで、宣言の要る公開関数に導出した `@effects` を書く（std の保守向け）
+
+### ランタイム
+
+- rt の深度の不変条件（task が深度を飛ばして region に入らない）の検査を常設にした。v0.6.2 で直した類の穴は、黙った値の誤りでなく `panic: RegionDepthSkipped{} (runtime invariant broken in rt.slot_new — please report)` と終了コード 81 の定義された死になる。値札は計測の揺れの内
+
+### 文書
+
+- 安全性のガイド（`docs/guide/security.ja.md` / `security.md`）: 言語と std が防ぐもの・防がないもの・利用者の手番を 12 節で。冒頭に「成立しない / 定義された死に変わる / 残る」の 3 分類の早見表と、実世界の脆弱性（Node.js の Brotli 展開の境界外書き込み）を Sober で書いたときの帰結。コード例は `examples/security_*` の実物
+- 公開 README のベンチの数字とグラフを GitHub Actions の 16 vCPU（AMD EPYC 9V45）で取り直した。物差しは手元の cycles から CPU 時間（task-clock — 同じ周の対の比の中央）に変わった。同じ木の 2 run で 26 本の比のうち 21 本は ±3% 以内・勝敗の分類は全部一致。1BRC・binary-trees・logagg の 3 題材は日ごとに ±10%、外部ソートと k-nucleotide の対 Rust は ±3〜4% 動くので、`bench/README.md` にその注を付けた
+
 ## v0.6.2 — 2026-10-23
 
 v0.6.1 の hotfix。あわせて analyzer に関数の効果の最初の部分が入った。

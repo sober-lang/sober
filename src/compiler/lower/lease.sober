@@ -24,7 +24,7 @@ func needLease(st mut St) {
     }
 }
 
-// leaseBuiltin は鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）の呼び出し（cont.sober の ioBuiltin から）
+// leaseBuiltin は鍵 lease_op（k = 29 — (op, blk, off, v) → int）・lease_view（30 — (blk, off, n) → mut []int）・lease_bytes（44 — (blk, off, n) → mut []byte）の呼び出し（cont.sober の ioBuiltin から）
 func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (int, error?) {
     n := lenL(mut st, args)
     vs := listN(mut st, n)
@@ -35,7 +35,7 @@ func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (i
             return -1, nil
         }
         // blk は仮引数の 2 番目（op）/ 1 番目（view）— []int のヘッダ。他は int
-        isBlk := (k == 29 && i == 1) || (k == 30 && i == 0)
+        isBlk := (k == 29 && i == 1) || (k != 29 && i == 0)
         if isBlk != isTag(mut st, v.t, TSlice) || (!isBlk && !isTag(mut st, v.t, TInt)) {
             return 0, diag.Mismatch{at: posOf(mut st, at)}
         }
@@ -48,8 +48,8 @@ func leaseBuiltin(st mut St, k int, args desugar.ListRef, at desugar.NodeRef) (i
         blk := desugar.HeapGet(mut st.d, vs + 2)
         return one1(mut st, tInt(mut st), call(mut st, st.rtLeaseOp, list4(mut st, a, load(mut st, blk, 0), desugar.HeapGet(mut st.d, vs + 3), desugar.HeapGet(mut st.d, vs + 4)))), nil
     }
-    // View: ptr = blk の先頭 + off 語・長さ n・深度 = blk の深度（語は blk の住む region にある — 外への写しの判断は blk と同じ）
-    t := mkSlice(mut st, tInt(mut st), true)
+    // View: ptr = blk の先頭 + off 語・長さ n（lease_bytes はバイト）・深度 = blk の深度（語は blk の住む region にある — 外への写しの判断は blk と同じ）
+    t := mkSlice(mut st, if k == 44 { tByte(mut st) } else { tInt(mut st) }, true)
     out := newAgg(mut st, t)
     off := desugar.HeapGet(mut st.d, vs + 2)
     store(mut st, out, 0, bin(mut st, BAdd, load(mut st, a, 0), bin(mut st, BShl, off, iconst(mut st, 3))))

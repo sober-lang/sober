@@ -10,6 +10,7 @@ import "std/crypto/sha256"
 //     println(hex.Format(sum))   // ba7816bf…（16 進の綴りは std/hex）
 //
 // 本体は std/crypto/sha256（インクリメンタル API New / Write / Sum もそこ）
+@effects()
 func Sha256(data []byte) []byte {
     return sha256.Sum256(data)
 }

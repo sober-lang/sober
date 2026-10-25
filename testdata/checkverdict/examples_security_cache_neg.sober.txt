@@ -1,0 +1,2 @@
+examples/security_cache_neg.sober:13:28: error: the shared cache policy 'Shared' meets a handler or middleware that reaches a credential source (http.Authorization / http.Cookie / Request.head) in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use http.Private / http.NoStore for this route, or move the credential read out of it (Analyzer)
+exit=1

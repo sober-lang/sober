@@ -9,6 +9,7 @@ float の数学（[language.md 37 節](../language.md)）: 基本演算で書け
 ## Sqrt
 
 ```sober
+@effects()
 func Sqrt(x float) float
 ```
 
@@ -17,6 +18,7 @@ x の平方根（IEEE 754 の sqrt — 正しく丸めた値・負は NaN・-0 �
 ## Abs
 
 ```sober
+@effects()
 func Abs(x float) float
 ```
 
@@ -25,6 +27,7 @@ x の絶対値（符号ビットを落とす — NaN の符号も落ちる・-0 
 ## Bits
 
 ```sober
+@effects()
 func Bits(x float) int
 ```
 
@@ -33,6 +36,7 @@ x の IEEE 754 のビット列（i64 で読んだ値 — 変換でなく同じ�
 ## FromBits
 
 ```sober
+@effects()
 func FromBits(b int) float
 ```
 

@@ -29,6 +29,7 @@ x := rand.Intn(mut r, 10)   // 0..9
 ## New
 
 ```sober
+@effects()
 func New(seed int) Rand
 ```
 
@@ -37,6 +38,7 @@ func New(seed int) Rand
 ## Next
 
 ```sober
+@effects()
 func Next(r mut Rand) int
 ```
 
@@ -45,6 +47,7 @@ func Next(r mut Rand) int
 ## Int62
 
 ```sober
+@effects()
 func Int62(r mut Rand) int
 ```
 
@@ -63,6 +66,7 @@ Intn の上限 n が 1 未満（呼び手の契約違反 — panic ラベル。[
 ## Intn
 
 ```sober
+@effects(panic)
 func Intn(r mut Rand, n int) int
 ```
 
@@ -71,6 +75,7 @@ func Intn(r mut Rand, n int) int
 ## Bool
 
 ```sober
+@effects()
 func Bool(r mut Rand) bool
 ```
 
@@ -79,6 +84,7 @@ func Bool(r mut Rand) bool
 ## Split
 
 ```sober
+@effects()
 func Split(r mut Rand) Rand
 ```
 

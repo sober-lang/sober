@@ -37,7 +37,12 @@ const UR_PBT = 58    // 環の tail（数え続ける — 下位 16 ビットを
 const UR_PBF = 59    // 環にある（カーネルが使える）スロットの数
 const UR_PBM = 60    // スロットごとの [次, 長さ]（2 語 × PB_N — 列の鎖と届いた長さ）
 const UR_PBR = 61    // io_uring_buf_reg（5 語）
+const UR_PBN = 66    // 環のスロットの数（2 の冪 — pbInit が決める・PB_N の注）
+// 環のスロットの数の上限。ワーカーごとの数 = clamp(PB_TOT ÷ W, PB_MIN, PB_N) を 2 の冪へ切り下げ（全ワーカーの和を W に依らず ≈ PB_TOT 本に —
+// report-1092 / 1099: カーネルは環の順に全スロットを巡るので、小さい要求でも各スロットの先頭の頁が常駐する ≈1.1 MiB/ワーカー）。写像は PB_N 本分のまま（触らない VA）
 const PB_N = 256
+const PB_TOT = 2048
+const PB_MIN = 32
 const PB_SZ = 16384
 const TAG_SEND = 72057594037927936    // 1 << 56（送りの user_data = TCB | これ）
 const TAG_RECV = 144115188075855872   // 2 << 56（受けの user_data = fd | これ）
@@ -85,26 +90,30 @@ func pbInit(st mut St, rec int) {
     pb := sysMmap(mut st, iconst(mut st, PB_N * PB_SZ))
     store(mut st, rp, UR_PBM, sysMmap(mut st, iconst(mut st, PB_N * 16)))
     store(mut st, rp, UR_PBB, pb)
+    c := bin(mut st, BDiv, iconst(mut st, PB_TOT), imax(mut st, load(mut st, globaladdr(mut st, st.mnG), MN_N), iconst(mut st, 1)))
+    pn := bin(mut st, BAdd, iconst(mut st, PB_MIN), bin(mut st, BAdd, bin(mut st, BMul, cmp(mut st, CGe, c, iconst(mut st, 64)), iconst(mut st, 32)),
+        bin(mut st, BAdd, bin(mut st, BMul, cmp(mut st, CGe, c, iconst(mut st, 128)), iconst(mut st, 64)), bin(mut st, BMul, cmp(mut st, CGe, c, iconst(mut st, 256)), iconst(mut st, 128)))))
+    store(mut st, rp, UR_PBN, pn)
     l := newBlock(mut st)
     i := param(mut st, l, TyI64)
     b := newBlock(mut st)
     d := newBlock(mut st)
     br(mut st, l, list1(mut st, zero))
     setCur(mut st, l)
-    condbr(mut st, cmp(mut st, CLt, i, iconst(mut st, PB_N)), b, -1, d, -1)
+    condbr(mut st, cmp(mut st, CLt, i, pn), b, -1, d, -1)
     setCur(mut st, b)
     e := itop(mut st, bin(mut st, BAdd, pr, bin(mut st, BShl, i, iconst(mut st, 4))))
     store(mut st, e, 0, bin(mut st, BAdd, pb, bin(mut st, BMul, i, iconst(mut st, PB_SZ))))
     store(mut st, e, 1, bin(mut st, BOr, iconst(mut st, PB_SZ), bin(mut st, BShl, i, iconst(mut st, 32))))
     br(mut st, l, list1(mut st, urAdd(mut st, i, 1)))
     setCur(mut st, d)
-    // tail = PB_N（最初の項の resv の 16 ビット）
+    // tail = pn（最初の項の resv の 16 ビット）
     e0 := itop(mut st, pr)
-    store(mut st, e0, 1, bin(mut st, BOr, load(mut st, e0, 1), iconst(mut st, PB_N * 281474976710656)))
-    store(mut st, rp, UR_PBT, iconst(mut st, PB_N))
-    store(mut st, rp, UR_PBF, iconst(mut st, PB_N))
+    store(mut st, e0, 1, bin(mut st, BOr, load(mut st, e0, 1), bin(mut st, BShl, pn, iconst(mut st, 48))))
+    store(mut st, rp, UR_PBT, pn)
+    store(mut st, rp, UR_PBF, pn)
     store(mut st, rp, UR_PBR, pr)
-    store(mut st, rp, UR_PBR + 1, iconst(mut st, PB_N))
+    store(mut st, rp, UR_PBR + 1, pn)
     store(mut st, rp, UR_PBR + 2, zero)
     store(mut st, rp, UR_PBR + 3, zero)
     store(mut st, rp, UR_PBR + 4, zero)
@@ -120,7 +129,7 @@ func pbPut(st mut St, rec int, bid int) {
     t := load(mut st, rp, UR_PBT)
     hi := iconst(mut st, -281474976710656)
     lo := iconst(mut st, 281474976710655)
-    e := itop(mut st, bin(mut st, BAdd, pr, bin(mut st, BShl, bin(mut st, BAnd, t, iconst(mut st, PB_N - 1)), iconst(mut st, 4))))
+    e := itop(mut st, bin(mut st, BAdd, pr, bin(mut st, BShl, bin(mut st, BAnd, t, bin(mut st, BSub, load(mut st, rp, UR_PBN), iconst(mut st, 1))), iconst(mut st, 4))))
     store(mut st, e, 0, bin(mut st, BAdd, load(mut st, rp, UR_PBB), bin(mut st, BMul, bid, iconst(mut st, PB_SZ))))
     store(mut st, e, 1, bin(mut st, BOr, bin(mut st, BOr, iconst(mut st, PB_SZ), bin(mut st, BShl, bid, iconst(mut st, 32))), bin(mut st, BAnd, load(mut st, e, 1), hi)))
     t1 := urAdd(mut st, t, 1)
@@ -384,6 +393,16 @@ func buildNetOp(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, bNb)
+    // op 7: 次の spawn 1 回の待ちの上限 D の印（fd の位置 = ns — 今の task の TC_NMAXW。rt.task_new_in が消費 — net.Serve の maxWait:・report-1142）
+    bNc := newBlock(mut st)
+    bMw := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 7)), bMw, -1, bNc, -1)
+    setCur(mut st, bMw)
+    if st.taskUse {
+        store(mut st, itop(mut st, load(mut st, globaladdr(mut st, st.taskG), TK_CUR)), TC_NMAXW, fd)
+    }
+    ret(mut st, zero)
+    setCur(mut st, bNc)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 5)), bPlace, -1, bClose, -1)
     // op 5: 印の持ち主 = 今の task（持ち主で縛る — 入場の待ちで譲った間に同じワーカーの別の task が spawn しても消費しない）。ワーカーが 1 本なら置かない
     setCur(mut st, bPlace)

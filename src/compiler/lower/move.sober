@@ -341,7 +341,7 @@ type LGroup struct {
 
 // lParCfg は子の St に写す欄（scripts/lparcfg.ts の許しの表の cfg）
 func lParCfg(st mut St, b2 bool) []int {
-    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq)})
+    return mfCfg(mut st, []int{int(st.rtPanic), int(st.rtPanicMem), int(st.rtMapfind), int(st.rtRenterL), int(st.rtRenterLL), (if st.noVec { 1 } else { 0 }) | (if st.taskUse { 2 } else { 0 }), if b2 { 1 } else if st.optInB1 { 2 } else { 0 }, int(st.ubCheck), int(st.ubBound), int(st.rtGrow), int(st.rtGrow8), int(st.rtRalloc), int(st.rtAlloc8), st.meta, int(st.rtStreq), int(st.rtMatchLen)})
 }
 
 // lRets は呼び先の戻りの型の表 [関数の記録, F_RET]…（記録の番地の昇順 — lFnRet が二分探索で引く）
@@ -527,7 +527,9 @@ func lParGroup(g LGroup, cfg []int, lret []int) [][]int {
     st.meta = cfg[13]
     // 写しの転送（cpfwd.sober）が読むだけとみなす rt.str_eq
     st.rtStreq = FnRef(cfg[14])
-    mfCfgSet(mut st, cfg, 15)
+    // 手書きの本体に置き換える rt.matchlen（確保しない・読むだけの rt — rlight / cancel の表）
+    st.rtMatchLen = FnRef(cfg[15])
+    mfCfgSet(mut st, cfg, 16)
     mut out := mut [][]int{}
     for j <- iter.Range(0, len(g.fns)) {
         cf := FnRef(recN(mut st, FSZ))

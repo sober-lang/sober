@@ -8,6 +8,7 @@ package iter
 type Iter[T] func(func(T))
 
 // slice の走査。for 式の生成元 `x <- xs`（slice の特例）の実体
+@effects()
 func Slice[T](xs []T, k func(T)) {
     mut i := 0
     while i < len(xs) {
@@ -18,6 +19,7 @@ func Slice[T](xs []T, k func(T)) {
 
 // 整数の半開区間 [lo, hi) を昇順に回す。呼び出し形の生成元 `for i <- iter.Range(0, n)` の実体
 // （継続 k は for が末尾の実引数に足す — language.md 7 節）
+@effects()
 func Range(lo int, hi int, k func(int)) {
     mut i := lo
     while i < hi {
@@ -27,11 +29,13 @@ func Range(lo int, hi int, k func(int)) {
 }
 
 // 要素ごとに f を呼ぶ
+@effects(Iter)
 func Each[T](it Iter[T], f func(T)) {
     it(f)
 }
 
 // 要素の個数
+@effects(Iter)
 func Count[T](it Iter[T]) int {
     mut n := 0
     it((x) => {
@@ -41,6 +45,7 @@ func Count[T](it Iter[T]) int {
 }
 
 // int の要素の和
+@effects(Iter)
 func Sum(it Iter[int]) int {
     mut s := 0
     it((x) => {
