@@ -1,0 +1,2 @@
+sober: load error at examples/optfn_neg_unguarded.sober:6:5: an optional function parameter can only be used inside `if p != nil { … }` (or the else of `if p == nil`) — outside it the parameter may be absent
+exit=1

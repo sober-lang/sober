@@ -23,6 +23,9 @@ on:
       sober_net:
         description: "SOBER_NET for the Sober server: 0 = io_uring net ring when the kernel accepts it, 1 = epoll path"
         default: "0"
+      sober_env:
+        description: "extra env for the Sober server only, space-separated (e.g. \"SOBER_WORKERS=31 SOBER_PIN=1\" — overrides local.sh's SOBER_WORKERS; empty = none)"
+        default: ""
       runner:
         description: "runs-on label (linux-x64-16vcpu = the org's larger runner, 8 server / 8 load cores; ubuntu-24.04 = free 2-vCPU)"
         default: "linux-x64-16vcpu"
@@ -108,6 +111,7 @@ jobs:
       - name: Run (alternating Sober / Go)
         env:
           SOBER_NET: ${{ inputs.sober_net }}
+          SOBER_SRV_ENV: ${{ inputs.sober_env }}
           # latency-1m の 1M req/s は本家の 32 コア箱の値 — 8 サーバコアでは Go が飽和（~460K・rate_ratio 0.46）するので
           # コア比で 250K に（1M × 8/32）。64vcpu（32 サーバコア = 本家と同格）では本家と同じ 1M で「保てるか」を見る
           ZRK_RATE_1M: ${{ inputs.runner == 'linux-x64-64vcpu' && '1000000' || '250000' }}
@@ -129,6 +133,7 @@ jobs:
             echo "nproc=$(nproc)"
             echo "kernel=$(uname -r)"
             echo "sober_net=$SOBER_NET"
+            echo "sober_env=$SOBER_SRV_ENV"
             echo "rounds=${{ inputs.rounds }}"
             echo "duration=${{ inputs.duration }}"
             echo "conns=${{ inputs.conns }}"
@@ -139,7 +144,7 @@ jobs:
           {
             echo "## HttpArena HTTP/1.1 — Sober / Go"
             echo
-            echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · latency-1m rate: $ZRK_RATE_1M"
+            echo "- env: $HTTPARENA_ENV · cpu: $cpu · nproc: $(nproc) · runner: $RUNNER_NAME · kernel: $(uname -r) · SOBER_NET=${SOBER_NET} · sober_env: ${SOBER_SRV_ENV:-none} · latency-1m rate: $ZRK_RATE_1M"
             echo
           } >> "$GITHUB_STEP_SUMMARY"
           ulimit -n
@@ -184,6 +189,8 @@ jobs:
           path: |
             ${{ runner.temp }}/httparena.tsv
             ${{ runner.temp }}/httparena.tsv.rss
+            ${{ runner.temp }}/httparena.tsv.lat
+            ${{ runner.temp }}/httparena.tsv.thr
             ${{ runner.temp }}/httparena-env.txt
             ${{ runner.temp }}/perf-report-net*.txt
             ${{ runner.temp }}/work/gc-*.txt

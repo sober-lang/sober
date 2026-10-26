@@ -189,8 +189,8 @@ E-16. error を返す公開関数（名前が大文字で始まる関数）は `
 拒否: [`examples/errors_neg_undeclared.sober`](../../examples/errors_neg_undeclared.sober)・[`examples/errors_neg_leak.sober`](../../examples/errors_neg_leak.sober)・[`examples/errors_neg_stale.sober`](../../examples/errors_neg_stale.sober)
 決定: [language.md 13 節](../language.md)
 
-E-17. 匿名の関数型の仮引数 r（結果に `error?` を持つ）を呼ぶ関数は、`@errors` に仮引数の名前を書ける: `@errors(Bad, recv, send)` は「Bad と、recv / send に渡したものが返すもの」。呼び手から見た集合は、呼び出し点ごとに、その点で r に渡した実引数のラベルを代入したもの。包み替え（E-8）で返した r の失敗は漏れに数えない。
-例: [`examples/errors_param.sober`](../../examples/errors_param.sober)
+E-17. 匿名の関数型の仮引数 r（結果に `error?` を持つ）を呼ぶ関数は、`@errors` に仮引数の名前を書ける: `@errors(Bad, recv, send)` は「Bad と、recv / send に渡したものが返すもの」。呼び手から見た集合は、呼び出し点ごとに、その点で r に渡した実引数のラベルを代入したもの。包み替え（E-8）で返した r の失敗は漏れに数えない。省略可の匿名関数型 `(func(…) error?)?` の仮引数（5 章 F-22）も項になれ、r を渡さない呼び出し点では r の項は空。省略可の匿名関数型の仮引数を持つ関数の宣言は、漏れだけを照合する（E-16 の「宣言が導出より広ければ拒否」は掛けない）。
+例: [`examples/errors_param.sober`](../../examples/errors_param.sober)・[`examples/optfn_errors.sober`](../../examples/optfn_errors.sober)
 決定: [language.md 13 節](../language.md)
 
 E-23. 名前付き関数型は結果の後に `@errors(…)` を書ける（`type F func(x int) error? @errors(Bad, emit)` — 型宣言の前に置く `@errors` は文法の外）。項は宣言の package のラベルと、F の仮引数のうち匿名の関数型で結果に `error?` を持つものの名前。宣言は F の値の失敗の上界: F の値を通した呼び出しの集合は、宣言のラベルと、仮引数の名前の項の位置に渡した実引数のラベル。F の値になるラムダの本体が宣言の外のラベル・宣言に書いていない仮引数の失敗を返しうるなら、そのラムダの位置で拒否する。宣言が導出より広くても拒否しない。`@errors` の無い F の値を通した呼び出しのラベルは導出できない（公開関数の `@errors` の照合と switch の網羅は default を求める）。

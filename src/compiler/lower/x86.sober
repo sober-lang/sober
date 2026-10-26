@@ -484,7 +484,7 @@ type XGroup struct {
 // xParCfg は子の St に写す欄（xFunc が読む St の欄の全部 — 上の注意）
 func xParCfg(st mut St) []int {
     return []int{int(st.rtCopy), int(st.rtCopy8), int(st.rtGrow), int(st.rtGrow8), int(st.rtGrowTry), int(st.rtMapGrow), int(st.rtReloc), int(st.rtReloc8),
-        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut}
+        st.trapG, if st.trapUse { 1 } else { 0 }, if st.taskUse { 1 } else { 0 }, if st.xcopy { 1 } else { 0 }, st.xLay, int(st.rtPanic), int(st.rtPanicMem), if st.slotPoison { 1 } else { 0 }, if st.frStat { 1 } else { 0 }, int(st.rtMatchLen), st.rtMut, int(st.rtJClean)}
 }
 
 // 整列（配置の土台）: 関数の先頭とループの頭を XA_* バイトの境界へ nop で詰める（最適化のバックエンドだけ — 写しのバックエンドは
@@ -637,6 +637,8 @@ func xParGroup(g XGroup, hf table.Frozen[int], cfg []int, addr []int, fr []int, 
     // rt.matchlen の手書きの本体（xMatchLenBody — 変異 13 / 14 は開発用 --rt-mutant）
     st.rtMatchLen = FnRef(cfg[17])
     st.rtMut = cfg[18]
+    // rt.jclean の手書きの本体（xJCleanBody — 変異 25〜27 は開発用 --rt-mutant）
+    st.rtJClean = FnRef(cfg[19])
     // 段 3 の例外の印（xRegCc）
     st.xAddr = addr
     st.xXmm = 0
@@ -1043,6 +1045,156 @@ func xMatchLenBody(c mut table.Table[byte], mut0 int) int {
     return entry
 }
 
+// xJCleanClass は xmm0 の 16 バイトの「JSON のエスケープが要るか」の印を rcx の下位 16 ビットへ（'"' か '\\' か 0x20 未満 — 符号なし。
+// 0x20 未満は pminub(x, 0x1f) == x）。壊すのは rcx / rdx / xmm1 だけ（xmm0 はそのまま）。定数は rdx から作り直す（xmm2 以上は呼び手の組 — 触らない）。
+// mut0 = 25 は '\\' の判定を省く（開発用 --rt-mutant — testdata/jclean の網が鳴ることの確認用）
+func xJCleanClass(c mut table.Table[byte], mut0 int) {
+    x86.MovRegImm64(mut c, x86.Rdx, 0x2222222222222222)
+    x86.MovqXR(mut c, 1, x86.Rdx)
+    x86.PunpcklqdqXX(mut c, 1, 1)
+    x86.PcmpeqbXX(mut c, 1, 0)
+    x86.PmovmskbRX(mut c, x86.Rcx, 1)
+    if mut0 != 25 {
+        x86.MovRegImm64(mut c, x86.Rdx, 0x5c5c5c5c5c5c5c5c)
+        x86.MovqXR(mut c, 1, x86.Rdx)
+        x86.PunpcklqdqXX(mut c, 1, 1)
+        x86.PcmpeqbXX(mut c, 1, 0)
+        x86.PmovmskbRX(mut c, x86.Rdx, 1)
+        x86.OrRegReg(mut c, x86.Rcx, x86.Rdx)
+    }
+    x86.MovRegImm64(mut c, x86.Rdx, 0x1f1f1f1f1f1f1f1f)
+    x86.MovqXR(mut c, 1, x86.Rdx)
+    x86.PunpcklqdqXX(mut c, 1, 1)
+    x86.PminubXX(mut c, 1, 0)
+    x86.PcmpeqbXX(mut c, 1, 0)
+    x86.PmovmskbRX(mut c, x86.Rdx, 1)
+    x86.OrRegReg(mut c, x86.Rcx, x86.Rdx)
+}
+
+// xJCleanBody は最適化のバックエンドの rt.jclean の本体（SIMD の核 段 2 — report-1165）: rax = p・rcx = n（呼び手 — xInst）→ rax = p[0:n] の中で最初に
+// JSON のエスケープが要るバイトの位置（無ければ n）。意味は IR の本体（rt8.sober の buildJClean — 1 バイトずつ前から）と同じ。区間の外を読まない:
+// n ≥ 16 は 16 バイトずつ（端数は区間の終わりに揃えた 16 バイトの重ねた読み — 重なった分は判定済みで印が立たない）・8 ≤ n < 16 は始めと終わりの 8 バイト
+// （movq × 2 を 16 レーンに並べる — 印の位置 k < 8 は p + k・k ≥ 8 は終わり − 16 + k）・4 ≤ n < 8 は始めと終わりの 4 バイト（movd × 2 — 上の 8 レーンは 0 で
+// 印が立つので下位 8 ビットだけを見る・k ≥ 4 は終わり − 8 + k）・n < 4 は 1 バイトずつ（p の手前・終わりの後ろに余白が無くても読まない）。
+// 壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ（docs/ir.md 7 節の約束 — rsi〔p〕・rdi〔区間の終わり〕は積んで戻す）。
+// mut0 = 開発用 --rt-mutant（25 = '\\' の判定を省く・26 = n ≥ 16 の端数の重ねた読みを省く・27 = 8〜15 バイトの道の後ろの語の位置を p + k に）
+func xJCleanBody(c mut table.Table[byte], mut0 int) int {
+    entry := x86.Here(mut c)
+    x86.PushReg(mut c, x86.Rsi)
+    x86.PushReg(mut c, x86.Rdi)
+    x86.MovRegReg(mut c, x86.Rsi, x86.Rax)
+    x86.LeaRegSib(mut c, x86.Rdi, x86.Rax, x86.Rcx, 0)
+    x86.CmpRegImm(mut c, x86.Rcx, 16)
+    jSmall := x86.JccRel32(mut c, x86.CondB)
+    // 16 バイトずつ（rax = 今の位置）
+    lp := x86.Here(mut c)
+    x86.MovdquXMem(mut c, 0, x86.Rax, 0)
+    xJCleanClass(mut c, mut0)
+    x86.CmpRegImm(mut c, x86.Rcx, 0)
+    jF1 := x86.JccRel32(mut c, x86.CondNe)
+    x86.AddRegImm(mut c, x86.Rax, 16)
+    x86.LeaRegMem(mut c, x86.Rcx, x86.Rax, 16)
+    x86.CmpRegReg(mut c, x86.Rcx, x86.Rdi)
+    x86.PatchRel32(mut c, x86.JccRel32(mut c, x86.CondBe), lp)
+    // 端数（< 16）: 区間の終わりに揃えた重ねた読み
+    x86.CmpRegReg(mut c, x86.Rax, x86.Rdi)
+    jD1 := x86.JccRel32(mut c, x86.CondE)
+    mut jF2 := -1
+    if mut0 != 26 {
+        x86.LeaRegMem(mut c, x86.Rax, x86.Rdi, -16)
+        x86.MovdquXMem(mut c, 0, x86.Rax, 0)
+        xJCleanClass(mut c, mut0)
+        x86.CmpRegImm(mut c, x86.Rcx, 0)
+        jF2 = x86.JccRel32(mut c, x86.CondNe)
+    }
+    x86.MovRegReg(mut c, x86.Rax, x86.Rdi)
+    jD2 := x86.JmpRel32(mut c)
+    found := x86.Here(mut c)
+    x86.PatchRel32(mut c, jF1, found)
+    if jF2 >= 0 {
+        x86.PatchRel32(mut c, jF2, found)
+    }
+    x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
+    x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
+    jD3 := x86.JmpRel32(mut c)
+    // n < 16
+    x86.PatchRel32(mut c, jSmall, x86.Here(mut c))
+    x86.CmpRegImm(mut c, x86.Rcx, 4)
+    jBytes := x86.JccRel32(mut c, x86.CondB)
+    x86.CmpRegImm(mut c, x86.Rcx, 8)
+    jFour := x86.JccRel32(mut c, x86.CondB)
+    // 8 ≤ n < 16: 始めの 8 バイト（レーン 0〜7）と終わりの 8 バイト（レーン 8〜15）
+    x86.MovqXMem(mut c, 0, x86.Rax, 0)
+    x86.MovqXMem(mut c, 1, x86.Rdi, -8)
+    x86.PunpcklqdqXX(mut c, 0, 1)
+    xJCleanClass(mut c, mut0)
+    x86.CmpRegImm(mut c, x86.Rcx, 0)
+    jC1 := x86.JccRel32(mut c, x86.CondE)
+    x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
+    mut jL1 := -1
+    if mut0 != 27 {
+        x86.CmpRegImm(mut c, x86.Rcx, 8)
+        jL1 = x86.JccRel32(mut c, x86.CondB)
+        x86.LeaRegMem(mut c, x86.Rax, x86.Rdi, -16)
+    }
+    x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
+    jD4 := x86.JmpRel32(mut c)
+    // 4 ≤ n < 8: 始めの 4 バイト（レーン 0〜3）と終わりの 4 バイト（レーン 4〜7）
+    x86.PatchRel32(mut c, jFour, x86.Here(mut c))
+    x86.MovdXMem(mut c, 0, x86.Rax, 0)
+    x86.MovdXMem(mut c, 1, x86.Rdi, -4)
+    x86.PunpckldqXX(mut c, 0, 1)
+    xJCleanClass(mut c, mut0)
+    x86.AndRegImm(mut c, x86.Rcx, 255)
+    jC2 := x86.JccRel32(mut c, x86.CondE)
+    x86.BsfRR(mut c, x86.Rcx, x86.Rcx)
+    x86.CmpRegImm(mut c, x86.Rcx, 4)
+    jL2 := x86.JccRel32(mut c, x86.CondB)
+    x86.LeaRegMem(mut c, x86.Rax, x86.Rdi, -8)
+    lo := x86.Here(mut c)
+    if jL1 >= 0 {
+        x86.PatchRel32(mut c, jL1, lo)
+    }
+    x86.PatchRel32(mut c, jL2, lo)
+    x86.AddRegReg(mut c, x86.Rax, x86.Rcx)
+    jD5 := x86.JmpRel32(mut c)
+    clean := x86.Here(mut c)
+    x86.PatchRel32(mut c, jC1, clean)
+    x86.PatchRel32(mut c, jC2, clean)
+    x86.MovRegReg(mut c, x86.Rax, x86.Rdi)
+    jD6 := x86.JmpRel32(mut c)
+    // n < 4: 1 バイトずつ
+    x86.PatchRel32(mut c, jBytes, x86.Here(mut c))
+    bl := x86.Here(mut c)
+    x86.CmpRegReg(mut c, x86.Rax, x86.Rdi)
+    jB1 := x86.JccRel32(mut c, x86.CondAe)
+    x86.MovzxRegMem8(mut c, x86.Rdx, x86.Rax, 0)
+    x86.CmpRegImm(mut c, x86.Rdx, 34)
+    jB2 := x86.JccRel32(mut c, x86.CondE)
+    x86.CmpRegImm(mut c, x86.Rdx, 92)
+    jB3 := x86.JccRel32(mut c, x86.CondE)
+    x86.CmpRegImm(mut c, x86.Rdx, 32)
+    jB4 := x86.JccRel32(mut c, x86.CondB)
+    x86.AddRegImm(mut c, x86.Rax, 1)
+    x86.PatchRel32(mut c, x86.JmpRel32(mut c), bl)
+    done := x86.Here(mut c)
+    x86.PatchRel32(mut c, jB1, done)
+    x86.PatchRel32(mut c, jB2, done)
+    x86.PatchRel32(mut c, jB3, done)
+    x86.PatchRel32(mut c, jB4, done)
+    x86.PatchRel32(mut c, jD1, done)
+    x86.PatchRel32(mut c, jD2, done)
+    x86.PatchRel32(mut c, jD3, done)
+    x86.PatchRel32(mut c, jD4, done)
+    x86.PatchRel32(mut c, jD5, done)
+    x86.PatchRel32(mut c, jD6, done)
+    x86.SubRegReg(mut c, x86.Rax, x86.Rsi)
+    x86.PopReg(mut c, x86.Rdi)
+    x86.PopReg(mut c, x86.Rsi)
+    x86.Ret(mut c)
+    return entry
+}
+
 // xFunc は関数 f を c / fx へ吐く（ab = c の位置 0 の絶対の番地 — 親は elf.CodeOffset・群の子は 0〔子の表は親の 64 B に整列した位置へ
 // 連結されるので、子の中の位置の mod 64 が絶対と同じ — xParMerge〕。線の跨ぎの詰め物と整列が読む）。返り値 = 関数の入口の位置（入口の手前に
 // 線の跨ぎの詰め物を置くことがあるので、呼び手は吐く前の位置でなくこれを関数の先頭にする）
@@ -1052,6 +1204,9 @@ func xFunc(st mut St, c mut table.Table[byte], fx mut table.Table[int], wb mut t
     }
     if !st.xcopy && f == st.rtMatchLen {
         return if draft { 0 } else { xMatchLenBody(mut c, st.rtMut) }
+    }
+    if !st.xcopy && f == st.rtJClean {
+        return if draft { 0 } else { xJCleanBody(mut c, st.rtMut) }
     }
     mut e := xF{f: f, nv: xfNVal(mut st, f), np: xFnNParam(mut st, f), nb: xfNBlk(mut st, f), blk: mut []int{}, order: mut []int{}, norder: 0, bpos: mut []int{},
         ivS: mut []int{}, ivE: mut []int{}, loc: mut []int{}, pnx: mut []int{}, pv: mut []int{}, npc: 0, spd: mut []int{}, lpR: mut []int{}, cuts: mut []int{}, sv: mut []int{}, pwt: mut []int{}, ldep: mut []int{}, pfix: mut []int{}, aL: mut []int{}, aB: mut []int{}, aC: mut []int{}, aN: mut []int{}, ev: mut []int{}, slotDisp: mut []int{}, isConst: mut []int{}, constV: mut []int{}, saveReg: mut []int{}, saveDisp: mut []int{},
@@ -2302,7 +2457,7 @@ func xIsCallOp(st mut St, i InsRef) bool {
     op := xiOp(mut st, i)
     if op == OpCall {
         g := FnRef(xiA(mut st, i))
-        return g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtPanic && g != st.rtPanicMem
+        return g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem
     }
     return op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone
 }
@@ -2389,7 +2544,7 @@ func xNoCall(st mut St, e mut xF) bool {
             op := xiOp(mut st, i)
             if op == OpCall {
                 g := FnRef(xiA(mut st, i))
-                if g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtPanic && g != st.rtPanicMem {
+                if g != st.rtCopy && g != st.rtCopy8 && g != st.rtMatchLen && g != st.rtJClean && g != st.rtPanic && g != st.rtPanicMem {
                     return false
                 }
             } else if op == OpCallI || op == OpTrapI || op == OpTSwitch || op == OpTStart || op == OpClone {
@@ -5318,6 +5473,12 @@ func xInst(st mut St, e mut xF, c mut table.Table[byte], fx mut table.Table[int]
         xGetInto(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
         xGetInto(mut e, mut c, xAt(mut st, b, 1), x86.Rdx)
         xGetInto(mut e, mut c, xAt(mut st, b, 2), x86.Rcx)
+        xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
+        xPut(mut e, mut c, res, x86.Rax)
+    } else if op == OpCall && e.opt && FnRef(a) == st.rtJClean {
+        // rt.jclean も手で書いた本体（xJCleanBody — SSE2）への call。壊すのは rax / rcx / rdx / xmm0 / xmm1 / フラグだけ（rt.matchlen と同じ）
+        xGetInto(mut e, mut c, xAt(mut st, b, 0), x86.Rax)
+        xGetInto(mut e, mut c, xAt(mut st, b, 1), x86.Rcx)
         xFixAdd(mut fx, x86.CallRel32(mut c), 0, xIndex(frecs, a))
         xPut(mut e, mut c, res, x86.Rax)
     } else if op == OpCall && e.opt && FnRef(a) == st.rtCopy {

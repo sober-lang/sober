@@ -76,6 +76,8 @@ type St struct {
     rtSlotNew FnRef
     rtTaskWait FnRef
     rtTaskPop FnRef
+    rtRdySpill FnRef   // rt.ready_spill / rt.ready_unspill（走れる積みの溢れの冷たい道 — task.sober・report-1168）
+    rtRdyUnspill FnRef
     rtSchedPick FnRef
     schedG int
     rtDeadlock FnRef
@@ -155,6 +157,7 @@ type St struct {
     rtUio FnRef         // rt.uio（IO 便 段 1 — ring に出して待つ io の口）
     rtUpoll FnRef       // rt.uring_poll（同 — 提出と完了の取り込み）
     rtTcbFree FnRef
+    rtMnPin FnRef
     rtSlotTake FnRef
     rtUnmap FnRef
     rtChanFree FnRef
@@ -175,7 +178,7 @@ type St struct {
     cutSites int
     chanFns int
     cutKids int
-    // acceptor の担い手（report-997）: mnInit のワーカー数に足す 1 の即値の命令（cutPatch が置き場の印〔rt.netop 5 — Serve〕の呼び出しを見つけたら 1 に）
+    // Serve のプログラムの印: mnInit の即値の命令（cutPatch が置き場の印〔rt.netop 5 — Serve〕の呼び出しを見つけたら 1 に — CPU の固定の既定が読む）
     mnExtra int
     // 検査点の間引き（cancel.sober cutThin）: cutStat = 間引きの表を出力にする（開発用 `sober build --cut-stat`）・cutRecs = 表の鎖
     // （[次, 関数, 頭のブロックの番号, 本体の重み B, N, 形]）
@@ -236,6 +239,7 @@ type St struct {
     rtExtend8 FnRef
     rtStreq FnRef
     rtMatchLen FnRef  // rt.matchlen（一致の長さ — rt8.sober の needMatchLen・-1 = 無し）
+    rtJClean FnRef    // rt.jclean（JSON のエスケープの要らない区間の長さ — rt8.sober の needJClean・-1 = 無し）
     rtMapfind FnRef   // 最初に建てた map の引き（有無の印 — 族は mapFinds）
     mapFinds int      // map の引きの族の表（maprepr.sober — [数, 鍵, 関数…]・-1 = 無し）
     hseed int         // map のハッシュの種の大域 rt.hash_seed（2 語 — mum の引きがあるときだけ・入口が埋める）・-1 = 無し
@@ -407,6 +411,7 @@ func initScalars(st mut St) {
     st.rtCopy = -1
     st.rtStreq = -1
     st.rtMatchLen = -1
+    st.rtJClean = -1
     st.rtMapfind = -1
     st.mapFinds = -1
     st.hseed = -1

@@ -27,10 +27,10 @@ mapfile -t FUNCS < <(grep -E '^\+?@' $D/funcs.txt | awk '{ print $1 }' | sed 's/
 "$S2" build $D/app.sober --emit=syms -o "$W/syms" > /dev/null || { echo "ctcheck: FAIL syms"; exit 1; }
 # 最後の記号の終わり = 実行の LOAD の終わり（後ろに読み出し専用のデータが続きうるので、最後の関数だけ逆アセンブルを「ret / syscall の直後の nop の詰め・0 のバイト〔add [rax],al〕」で切る。
 # 他の関数は次の記号まで — 全関数に切りを掛けると、関数の途中の ret の直後にループの頭の整列の nop が来た関数が途中で切れていた: report-858）
-# 可変時間の rt（最初の食い違いで止まる — rt.matchlen〔binary.MatchLen・SIMD の核 段 1〕）の番地: 照合する関数の機械語がこれを呼んだら赤
+# 可変時間の rt（最初の食い違いで止まる — rt.matchlen〔binary.MatchLen・SIMD の核 段 1〕・rt.jclean〔json の文字列の書き出し — 段 2〕）の番地: 照合する関数の機械語がこれを呼んだら赤
 # （analyzer は秘密の値が binary.MatchLen に届く呼び出しを拒否する — その静的な保証の機械語の側の照合）
 # （直の呼び出しと、展開されなかった std/binary.MatchLen への呼び出しの両方 — 番地の並び）
-VT=$(awk '$2 == "@rt.matchlen" || $2 == "@std/binary.MatchLen" { printf " 0x%x", strtonum("0x" $1) }' "$W/syms")
+VT=$(awk '$2 == "@rt.matchlen" || $2 == "@std/binary.MatchLen" || $2 == "@rt.jclean" { printf " 0x%x", strtonum("0x" $1) }' "$W/syms")
 : > "$W/vt"
 end=$(readelf -lW "$W/app" | awk '$1 == "LOAD" && $NF == "0x1000" && $(NF-1) == "E" { printf "%016x", strtonum($3) + strtonum($5); exit }')
 { sort -k1,1 "$W/syms"; echo "$end ~end"; } | awk 'NR > 1 { print pa, $1, pn } { pa = $1; pn = $2 }' | while read -r a b n; do
@@ -46,7 +46,7 @@ done | sort > "$W/got"
 for f in "${FUNCS[@]}"; do grep -q "^$f:" "$W/got" || { echo "ctcheck: FAIL — $f not in the ELF"; exit 1; }; done
 # 負例 @main.negPrefix（可変時間の rt.matchlen を呼ぶ見本）は捕まること・それ以外の関数は呼ばないこと
 grep -qxF "@main.negPrefix" "$W/vt" || { echo "ctcheck: FAIL — the variable-time call check did not catch @main.negPrefix"; exit 1; }
-if grep -vxF "@main.negPrefix" "$W/vt" | grep -q .; then echo "ctcheck: FAIL — constant-time functions call the variable-time rt.matchlen:"; grep -vxF "@main.negPrefix" "$W/vt"; exit 1; fi
+if grep -vxF "@main.negPrefix" "$W/vt" | grep -q .; then echo "ctcheck: FAIL — constant-time functions call the variable-time rt.matchlen / rt.jclean:"; grep -vxF "@main.negPrefix" "$W/vt"; exit 1; fi
 n=$(wc -l < "$W/got")
 if [ "${1:-}" = --regen ]; then cp "$W/got" $D/expect.txt; echo "ctcheck: regen $n functions"; exit 0; fi
 if ! diff -u $D/expect.txt "$W/got"; then echo "ctcheck: FAIL — conditional branches / DIV of constant-time functions changed ($n functions)"; exit 1; fi

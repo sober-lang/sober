@@ -18,11 +18,21 @@ import "std/iter"
 // @rt.task の配置（語）: [今の task の TCB, 空きの塊の鎖]
 const TK_CUR = 0
 const TK_FREE = 1
-const TK_READY = 2   // 走れる task の積み（TC_NEXT で繋ぐ — LIFO: spawn で親を積んで子を先に・子が終わるか待つと最後に積んだ task が走る）
+const TK_READY = 2   // 走れる task の数（環 + 溢れの列 — 空 ⇔ 0。積みは LIFO: spawn で親を積んで子を先に・子が終わるか待つと最後に積んだ task が走る）
 const TK_INLE = 3    // 縮退の記帳（admit.sober — rt.task_new が入場できず縮退に回した子の計上量と天井の節の最内。直後の rt.task_inline が入口で読む・同じワーカーの間に切替は無い）
 const TK_INLN = 4
-const TK_TAIL = 5    // 走れる積みの底（TC_PREV で頭へ戻る双方向の鎖・空なら 0 — 飽和下の待ちの上限。「空 ⇔ TK_READY = 0」は不変）
-const TK_WORDS = 6
+// 走れる積みは配列の環（report-1167 / 1168 — 積み・取り出しが TCB の鎖を触らない）: TK_RQH = 頭（次に積む添字 — 単調）・TK_RQT = 底。
+// 枠 = [task の番地, 積んだ時刻の TSC]（期限 = 積んだ時刻 + D は rt.mn_next が深いときに底の 1 本でだけ計算する — D は底の TC_MAXW。積む口は掛け算を払わない）。
+// 環が満杯（頭 − 底 = 容量）の押し込みは底の 1 本を溢れの列（旧の TCB の鎖 — TC_NEXT = 1 つ新しい側・TC_PREV = 1 つ古い側）の最新へ移してから積む。
+// 溢れの列はどれも環のどれより古い — 頭の取り出しは環が空のときだけ溢れの最新から・底の取り出しは溢れが空でなければ溢れの最古から
+// （WK_DQ の「固定の環 + あふれの逃げ道」と同じ型。容量 RQ_CAP は観測の最大〔async 24000 で ≈2,000 / ワーカー〕の 2 倍 — 溢れは通常は踏まない）
+const TK_RQH = 5
+const TK_RQT = 6
+const TK_SPO = 7     // 溢れの列の最古（0 = 空）
+const TK_SPN = 8     // 溢れの列の最新
+const TK_RQ = 16     // 環の枠（2 語 × RQ_CAP — 頭と底の語と行を分ける）
+const RQ_CAP = 4096
+const TK_WORDS = TK_RQ + 2 * RQ_CAP
 
 // TCB の配置（語）
 const TC_CTX = 0     // 退避した rsp（OpTSwitch / OpTStart が書く — 先頭語）
@@ -65,8 +75,8 @@ const TC_WORDS = TC_FLEN + 5
 // 3.6 が rt.uring_poll の TC_IORES）。TC_SAVE は TC_DL・TC_LEASE（語 35）・孤児の登録簿の TC_ORG（語 36 — orphan.sober）・TC_NSLOT（語 37）より後ろ・TC_END × 8 = 16,704 B < TASK_HEAD
 // 次の spawn 1 回のスロットの大きさの印（バイト — 0 = 印なし。rt.netop 6 が今の task に書き、rt.task_new が親のこの語を読んで消す — std/net の Serve の region:・report-1077）
 const TC_NSLOT = 37
-// 飽和下の待ちの上限（language.md 28 節 ring の道 — report-1141 / 1142）: 走れる積みは双方向の鎖（TC_PREV = 頭の側の隣・頭なら 0）。TC_WAKE = 積んだ時刻
-// （TSC — 期限 = TC_WAKE + D は rt.mn_next が積みの底の 1 本でだけ計算する）・TC_MAXW = この task の D（ns・0 = 既定 MN_WAIT_DEF — 子は親から継ぐ）・TC_NMAXW = 次の spawn 1 回の D の印
+// 飽和下の待ちの上限（language.md 28 節 ring の道 — report-1141 / 1142）: TC_PREV = 溢れの列の 1 つ古い側（走れる積みの環から溢れた task だけ — report-1168。
+// netpoll の時計の起こしも一時の鎖に使う）。TC_WAKE = 積んだ時刻（TSC — Ledger の maxWait と溢れの列の期限が読む）・TC_MAXW = この task の D（ns・0 = 既定 MN_WAIT_DEF — 子は親から継ぐ）・TC_NMAXW = 次の spawn 1 回の D の印
 // （rt.netop 7 — net.Serve の maxWait:。rt.task_new_in が消費）。毎回の取り出し・押し込みが触るので TC_NEXT と同じ先頭の頁に（TC_END の後ろに置くと
 // task ごとに 1 頁増える — async 24000 で RSS +100 MB の実測）
 const TC_PREV = 38
@@ -158,6 +168,8 @@ func needTaskRt(st mut St) {
     st.rtSlotNew = addFunc(mut st, int(strLit(mut st, "rt.slot_new")), desugar.ListRef(list1(mut st, TyI64)), -1)
     st.rtTaskWait = addFunc(mut st, int(strLit(mut st, "rt.task_wait")), desugar.ListRef(list0(mut st)), -1)
     st.rtTaskPop = addFunc(mut st, int(strLit(mut st, "rt.task_pop")), desugar.ListRef(list0(mut st)), TyPtr)
+    st.rtRdySpill = addFunc(mut st, int(strLit(mut st, "rt.ready_spill")), desugar.ListRef(list0(mut st)), -1)
+    st.rtRdyUnspill = addFunc(mut st, int(strLit(mut st, "rt.ready_unspill")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtSchedPick = addFunc(mut st, int(strLit(mut st, "rt.sched_pick")), desugar.ListRef(list1(mut st, TyI64)), TyI64)
     st.schedG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.sched")), 5 + SCHED_CAP)
     st.rtDeadlock = addFunc(mut st, int(strLit(mut st, "rt.deadlock")), desugar.ListRef(list0(mut st)), -1)
@@ -283,48 +295,178 @@ func buildTaskRt(st mut St) {
     buildDeadlock(mut st)
     buildSchedPick(mut st)
     buildTaskPop(mut st)
+    buildReadySpill(mut st)
     buildOutRt(mut st)
     buildPstatRt(mut st)
     buildAdmitRt(mut st)
 }
 
-// readySetPrev は「nx の TC_PREV（nx = 0 なら TK_TAIL）」に v を書く（分岐 — 飽和下も飽和しない形も向きはほぼ一定で当たる。
-// 番地を算術で選ぶ形〔積 1 つ・加減 3 つ〕より命令が少ない — report-1150）
-func readySetPrev(st mut St, tk int, nx int, v int) {
-    bN := newBlock(mut st)
-    bT := newBlock(mut st)
+// rqCap は走れる積みの環の容量（開発用 --rt-mutant=28 / 29 は 8 — 溢れの道を毎回通す網の build・29 は溢れの順も崩す）
+func rqCap(st mut St) int {
+    return if st.rtMut == 28 || st.rtMut == 29 { 8 } else { RQ_CAP }
+}
+
+// rqSlot は環の添字 i の枠の番地
+func rqSlot(st mut St, tk int, i int) int {
+    return gepWord(mut st, tk, bin(mut st, BAdd, bin(mut st, BShl, bin(mut st, BAnd, i, iconst(mut st, rqCap(mut st) - 1)), iconst(mut st, 1)), iconst(mut st, TK_RQ)))
+}
+
+// readyDl は task tp の期限（TSC）= 積んだ時刻 + D（D = TC_MAXW の ns〔0 = 既定〕を TSC の数へ: × MN_TSCQ ÷ 65536 — 校正の前は TSCQ_DEF = 4 GHz と仮定）
+func readyDl(st mut St, tp int, wake int) int {
+    mw := load(mut st, tp, TC_MAXW)
+    dns := bin(mut st, BAdd, mw, bin(mut st, BMul, cmp(mut st, CEq, mw, iconst(mut st, 0)), iconst(mut st, MN_WAIT_DEF)))
+    tq := load(mut st, globaladdr(mut st, st.mnG), MN_TSCQ)
+    qe := bin(mut st, BAdd, tq, bin(mut st, BMul, cmp(mut st, CEq, tq, iconst(mut st, 0)), iconst(mut st, TSCQ_DEF)))
+    return bin(mut st, BAdd, wake, bin(mut st, BSar, bin(mut st, BMul, dns, qe), iconst(mut st, 16)))
+}
+
+// readyPush は task t（番地の int）を走れる積みの頭へ。TC_WAKE = 今（ワーカーの WK_NOW — mn_next が周ごとに 1 回読む TSC — touch.ts の齢と溢れの列の期限が読む）・枠にも同じ時刻
+func readyPush(st mut St, tk int, t int) {
+    tp := itop(mut st, t)
+    now := load(mut st, globaladdr(mut st, st.wkG), WK_NOW)
+    store(mut st, tp, TC_WAKE, now)
+    store(mut st, tk, TK_READY, bin(mut st, BAdd, load(mut st, tk, TK_READY), iconst(mut st, 1)))
+    h := load(mut st, tk, TK_RQH)
+    bF := newBlock(mut st)
     bJ := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CNe, nx, iconst(mut st, 0)), bN, -1, bT, -1)
-    setCur(mut st, bN)
-    store(mut st, itop(mut st, nx), TC_PREV, v)
+    condbr(mut st, cmp(mut st, CGe, bin(mut st, BSub, h, load(mut st, tk, TK_RQT)), iconst(mut st, rqCap(mut st))), bF, -1, bJ, -1)
+    setCur(mut st, bF)
+    call(mut st, st.rtRdySpill, list0(mut st))
     br(mut st, bJ, -1)
-    setCur(mut st, bT)
-    store(mut st, tk, TK_TAIL, v)
+    setCur(mut st, bJ)
+    sl := rqSlot(mut st, tk, h)
+    store(mut st, sl, 0, t)
+    store(mut st, sl, 1, now)
+    store(mut st, tk, TK_RQH, bin(mut st, BAdd, h, iconst(mut st, 1)))
+}
+
+// readySpill は環の底の 1 本を溢れの列の最新へ移す（環が満杯の押し込み — 冷たい道）。変異 29（開発用 --rt-mutant — 網の自己検査）は最古の側へ繋ぐ
+// （溢れの列の古い順が崩れる — 底の取り出しが新しい task を先に取り、期限の拾いと LIFO の意味が壊れる）
+func readySpill(st mut St, tk int) {
+    tl := load(mut st, tk, TK_RQT)
+    q := load(mut st, rqSlot(mut st, tk, tl), 0)
+    store(mut st, tk, TK_RQT, bin(mut st, BAdd, tl, iconst(mut st, 1)))
+    qp := itop(mut st, q)
+    zero := iconst(mut st, 0)
+    bE := newBlock(mut st)
+    bL := newBlock(mut st)
+    bJ := newBlock(mut st)
+    if st.rtMut == 29 {
+        o := load(mut st, tk, TK_SPO)
+        store(mut st, qp, TC_PREV, zero)
+        store(mut st, qp, TC_NEXT, o)
+        condbr(mut st, cmp(mut st, CEq, o, zero), bE, -1, bL, -1)
+        setCur(mut st, bE)
+        store(mut st, tk, TK_SPN, q)
+        br(mut st, bJ, -1)
+        setCur(mut st, bL)
+        store(mut st, itop(mut st, o), TC_PREV, q)
+        br(mut st, bJ, -1)
+        setCur(mut st, bJ)
+        store(mut st, tk, TK_SPO, q)
+        return
+    }
+    n := load(mut st, tk, TK_SPN)
+    store(mut st, qp, TC_NEXT, zero)
+    store(mut st, qp, TC_PREV, n)
+    condbr(mut st, cmp(mut st, CEq, n, zero), bE, -1, bL, -1)
+    setCur(mut st, bE)
+    store(mut st, tk, TK_SPO, q)
+    br(mut st, bJ, -1)
+    setCur(mut st, bL)
+    store(mut st, itop(mut st, n), TC_NEXT, q)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
+    store(mut st, tk, TK_SPN, q)
+}
+
+// readyPopHead は頭の 1 本を外して返す（番地の int — 呼び手は TK_READY ≠ 0 を確かめてから）。環が空なら溢れの列の最新
+func readyPopHead(st mut St, tk int) int {
+    store(mut st, tk, TK_READY, bin(mut st, BSub, load(mut st, tk, TK_READY), iconst(mut st, 1)))
+    h := load(mut st, tk, TK_RQH)
+    bR := newBlock(mut st)
+    bS := newBlock(mut st)
+    bJ := newBlock(mut st)
+    v := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CNe, h, load(mut st, tk, TK_RQT)), bR, -1, bS, -1)
+    setCur(mut st, bR)
+    h1 := bin(mut st, BSub, h, iconst(mut st, 1))
+    store(mut st, tk, TK_RQH, h1)
+    br(mut st, bJ, list1(mut st, load(mut st, rqSlot(mut st, tk, h1), 0)))
+    setCur(mut st, bS)
+    br(mut st, bJ, list1(mut st, call(mut st, st.rtRdyUnspill, list0(mut st))))
+    setCur(mut st, bJ)
+    return v
+}
+
+// buildReadySpill は溢れの冷たい道の rt の本体（押し込みの口・頭の取り出しの口ごとに展開しない — 自己 build の ELF の線）:
+// rt.ready_spill() = 環の底の 1 本を溢れの列の最新へ・rt.ready_unspill() = 溢れの列の最新を外して返す（環が空のときの頭の取り出し）
+func buildReadySpill(st mut St) {
+    begin(mut st, st.rtRdySpill)
+    readySpill(mut st, globaladdr(mut st, st.taskG))
+    ret(mut st, -1)
+    begin(mut st, st.rtRdyUnspill)
+    tk := globaladdr(mut st, st.taskG)
+    p := load(mut st, tk, TK_SPN)
+    np := load(mut st, itop(mut st, p), TC_PREV)
+    store(mut st, tk, TK_SPN, np)
+    spillFix(mut st, tk, np, TK_SPO, TC_NEXT)
+    ret(mut st, p)
+}
+
+// readyPopTail は底の 1 本を外して返す（呼び手は TK_READY ≠ 0 を確かめてから）。溢れの列が空でなければその最古
+func readyPopTail(st mut St, tk int) int {
+    store(mut st, tk, TK_READY, bin(mut st, BSub, load(mut st, tk, TK_READY), iconst(mut st, 1)))
+    o := load(mut st, tk, TK_SPO)
+    bR := newBlock(mut st)
+    bS := newBlock(mut st)
+    bJ := newBlock(mut st)
+    v := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CNe, o, iconst(mut st, 0)), bS, -1, bR, -1)
+    setCur(mut st, bS)
+    nn := load(mut st, itop(mut st, o), TC_NEXT)
+    store(mut st, tk, TK_SPO, nn)
+    spillFix(mut st, tk, nn, TK_SPN, TC_PREV)
+    br(mut st, bJ, list1(mut st, o))
+    setCur(mut st, bR)
+    tl := load(mut st, tk, TK_RQT)
+    store(mut st, tk, TK_RQT, bin(mut st, BAdd, tl, iconst(mut st, 1)))
+    br(mut st, bJ, list1(mut st, load(mut st, rqSlot(mut st, tk, tl), 0)))
+    setCur(mut st, bJ)
+    return v
+}
+
+// spillFix は溢れの列の端を外した後の始末: 新しい端 x が 0 なら反対の端の語 other も 0 に・でなければ x の外した側の鎖（語 w）を 0 に
+func spillFix(st mut St, tk int, x int, other int, w int) {
+    bZ := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, x, iconst(mut st, 0)), bZ, -1, bN, -1)
+    setCur(mut st, bZ)
+    store(mut st, tk, other, iconst(mut st, 0))
+    br(mut st, bJ, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, x), w, iconst(mut st, 0))
     br(mut st, bJ, -1)
     setCur(mut st, bJ)
 }
 
-// readyPush は task t（番地の int）を走れる積みの頭へ。TC_WAKE = 今（ワーカーの WK_NOW — mn_next が周ごとに 1 回読む TSC）
-func readyPush(st mut St, tk int, t int) {
-    tp := itop(mut st, t)
-    old := load(mut st, tk, TK_READY)
-    store(mut st, tp, TC_NEXT, old)
-    store(mut st, tp, TC_PREV, iconst(mut st, 0))
-    readyStamp(mut st, tp)
-    readySetPrev(mut st, tk, old, t)
-    store(mut st, tk, TK_READY, t)
-}
-
-// readyStamp は積む task tp の時刻（readyPush の注）
-func readyStamp(st mut St, tp int) {
-    store(mut st, tp, TC_WAKE, load(mut st, globaladdr(mut st, st.wkG), WK_NOW))
-}
-
-// readyPopHead は頭の hp を外す
-func readyPopHead(st mut St, tk int, hp int) {
-    nx := load(mut st, hp, TC_NEXT)
-    store(mut st, tk, TK_READY, nx)
-    readySetPrev(mut st, tk, nx, iconst(mut st, 0))
+// readyTailDl は底の期限（溢れの列が空でなければその最古・でなければ環の底の枠の時刻 + D〔底の TC_MAXW〕）
+func readyTailDl(st mut St, tk int) int {
+    o := load(mut st, tk, TK_SPO)
+    bR := newBlock(mut st)
+    bS := newBlock(mut st)
+    bJ := newBlock(mut st)
+    v := param(mut st, bJ, TyI64)
+    condbr(mut st, cmp(mut st, CNe, o, iconst(mut st, 0)), bS, -1, bR, -1)
+    setCur(mut st, bS)
+    op := itop(mut st, o)
+    br(mut st, bJ, list1(mut st, readyDl(mut st, op, load(mut st, op, TC_WAKE))))
+    setCur(mut st, bR)
+    sl := rqSlot(mut st, tk, load(mut st, tk, TK_RQT))
+    br(mut st, bJ, list1(mut st, readyDl(mut st, itop(mut st, load(mut st, sl, 0)), load(mut st, sl, 1))))
+    setCur(mut st, bJ)
+    return v
 }
 
 // taskWake は task t を走れる積みに載せる（切り替えない — 今の task が待つか終わったときに走る）
@@ -366,9 +508,7 @@ func taskNext(st mut St) int {
     fast := bin(mut st, BAnd, cmp(mut st, CEq, load(mut st, globaladdr(mut st, st.schedG), SCHED_ACT), iconst(mut st, 0)), cmp(mut st, CNe, head, iconst(mut st, 0)))
     condbr(mut st, fast, bFast, -1, bSlow, -1)
     setCur(mut st, bFast)
-    hp := itop(mut st, head)
-    readyPopHead(mut st, tk, hp)
-    br(mut st, bGot, list1(mut st, hp))
+    br(mut st, bGot, list1(mut st, itop(mut st, readyPopHead(mut st, tk))))
     setCur(mut st, bSlow)
     br(mut st, bGot, list1(mut st, call(mut st, st.rtTaskPop, list0(mut st))))
     setCur(mut st, bGot)
@@ -386,6 +526,7 @@ func taskNext(st mut St) int {
     call(mut st, st.rtDeadlock, list0(mut st))
     exit(mut st, PANIC)
     setCur(mut st, ok)
+    frRec(mut st, FK_RUN, ptoi(mut st, rp), iconst(mut st, 0))
     return rp
 }
 
@@ -1826,6 +1967,7 @@ func slotSizeFor(st mut St, decl int) int {
 func buildTaskGo(st mut St) {
     begin(mut st, st.rtTaskGo)
     pstatCall(mut st, st.rtPstatSpawn, list0(mut st))
+    frRec(mut st, FK_SPAWN, ptoi(mut st, 1), ptoi(mut st, 0))
     // M:N（ワーカー 2 以上 — 段 6 P4-4）: help-first の別の道
     bMn := newBlock(mut st)
     bCo := newBlock(mut st)
@@ -2021,34 +2163,20 @@ func buildSchedPick(st mut St) {
 func buildTaskPop(st mut St) {
     begin(mut st, st.rtTaskPop)
     tk := globaladdr(mut st, st.taskG)
-    head := load(mut st, tk, TK_READY)
-    // 選択の器を使わない（既定のスケジュール）: 一番上を外すだけ（長さを数えない — 段 6 P4-4）
+    nn := load(mut st, tk, TK_READY)
+    // 選択の器を使わない（既定のスケジュール）: 一番上を外すだけ（段 6 P4-4）
     bAct := newBlock(mut st)
     bTop := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.schedG), SCHED_ACT), iconst(mut st, 0)), bAct, -1, bTop, -1)
     setCur(mut st, bTop)
     bNone := newBlock(mut st)
     bHead := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, head, iconst(mut st, 0)), bNone, -1, bHead, -1)
+    condbr(mut st, cmp(mut st, CEq, nn, iconst(mut st, 0)), bNone, -1, bHead, -1)
     setCur(mut st, bNone)
     ret(mut st, itop(mut st, iconst(mut st, 0)))
     setCur(mut st, bHead)
-    hp := itop(mut st, head)
-    readyPopHead(mut st, tk, hp)
-    ret(mut st, hp)
+    ret(mut st, itop(mut st, readyPopHead(mut st, tk)))
     setCur(mut st, bAct)
-    // 長さを数える
-    cl := newBlock(mut st)
-    p := param(mut st, cl, TyI64)
-    nn := param(mut st, cl, TyI64)
-    cb := newBlock(mut st)
-    cd := newBlock(mut st)
-    br(mut st, cl, list2(mut st, head, iconst(mut st, 0)))
-    setCur(mut st, cl)
-    condbr(mut st, cmp(mut st, CEq, p, iconst(mut st, 0)), cd, -1, cb, -1)
-    setCur(mut st, cb)
-    br(mut st, cl, list2(mut st, load(mut st, itop(mut st, p), TC_NEXT), bin(mut st, BAdd, nn, iconst(mut st, 1))))
-    setCur(mut st, cd)
     empty := newBlock(mut st)
     some := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, nn, iconst(mut st, 0)), empty, -1, some, -1)
@@ -2056,33 +2184,66 @@ func buildTaskPop(st mut St) {
     ret(mut st, itop(mut st, iconst(mut st, 0)))
     setCur(mut st, some)
     k := call(mut st, st.rtSchedPick, list1(mut st, nn))
-    // k 番目を外す（prev = 一つ前・0 なら頭）
+    // k 番目（上から — 0 = 頭）を外す（選択の器の道 = schedfuzz の試験だけ・O(n)）。環の中なら上の枠を 1 つずつ下へずらす・溢れの列の中なら鎖から外す
+    h := load(mut st, tk, TK_RQH)
+    nr := bin(mut st, BSub, h, load(mut st, tk, TK_RQT))
+    store(mut st, tk, TK_READY, bin(mut st, BSub, nn, iconst(mut st, 1)))
+    bRing := newBlock(mut st)
+    bSp := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CLt, k, nr), bRing, -1, bSp, -1)
+    setCur(mut st, bRing)
+    at := bin(mut st, BSub, bin(mut st, BSub, h, iconst(mut st, 1)), k)
+    got := load(mut st, rqSlot(mut st, tk, at), 0)
+    sl := newBlock(mut st)
+    j := param(mut st, sl, TyI64)
+    sb := newBlock(mut st)
+    sd := newBlock(mut st)
+    br(mut st, sl, list1(mut st, at))
+    setCur(mut st, sl)
+    condbr(mut st, cmp(mut st, CLt, j, bin(mut st, BSub, h, iconst(mut st, 1))), sb, -1, sd, -1)
+    setCur(mut st, sb)
+    dst := rqSlot(mut st, tk, j)
+    src := rqSlot(mut st, tk, bin(mut st, BAdd, j, iconst(mut st, 1)))
+    store(mut st, dst, 0, load(mut st, src, 0))
+    store(mut st, dst, 1, load(mut st, src, 1))
+    br(mut st, sl, list1(mut st, bin(mut st, BAdd, j, iconst(mut st, 1))))
+    setCur(mut st, sd)
+    store(mut st, tk, TK_RQH, bin(mut st, BSub, h, iconst(mut st, 1)))
+    ret(mut st, itop(mut st, got))
+    // 溢れの列: 最新から TC_PREV で k − nr 歩
+    setCur(mut st, bSp)
     wl := newBlock(mut st)
     q := param(mut st, wl, TyI64)
-    prev := param(mut st, wl, TyI64)
     i := param(mut st, wl, TyI64)
     wb := newBlock(mut st)
     found := newBlock(mut st)
-    br(mut st, wl, list3(mut st, head, iconst(mut st, 0), iconst(mut st, 0)))
+    br(mut st, wl, list2(mut st, load(mut st, tk, TK_SPN), nr))
     setCur(mut st, wl)
     condbr(mut st, cmp(mut st, CEq, i, k), found, -1, wb, -1)
     setCur(mut st, wb)
-    br(mut st, wl, list3(mut st, load(mut st, itop(mut st, q), TC_NEXT), q, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    br(mut st, wl, list2(mut st, load(mut st, itop(mut st, q), TC_PREV), bin(mut st, BAdd, i, iconst(mut st, 1))))
     setCur(mut st, found)
-    nxt := load(mut st, itop(mut st, q), TC_NEXT)
-    atHead := newBlock(mut st)
-    inMid := newBlock(mut st)
-    fin := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, prev, iconst(mut st, 0)), atHead, -1, inMid, -1)
-    setCur(mut st, atHead)
-    store(mut st, tk, TK_READY, nxt)
-    br(mut st, fin, -1)
-    setCur(mut st, inMid)
-    store(mut st, itop(mut st, prev), TC_NEXT, nxt)
-    br(mut st, fin, -1)
-    setCur(mut st, fin)
-    readySetPrev(mut st, tk, nxt, prev)
-    ret(mut st, itop(mut st, q))
+    qp := itop(mut st, q)
+    older := load(mut st, qp, TC_PREV)
+    newer := load(mut st, qp, TC_NEXT)
+    spillLink(mut st, tk, newer, TC_PREV, older, TK_SPN)
+    spillLink(mut st, tk, older, TC_NEXT, newer, TK_SPO)
+    ret(mut st, qp)
+}
+
+// spillLink は x（0 なら溢れの列の端の語 end）の鎖の語 w に v を書く（溢れの列の中ほどから 1 本を外す — 選択の器の道）
+func spillLink(st mut St, tk int, x int, w int, v int, end int) {
+    bZ := newBlock(mut st)
+    bN := newBlock(mut st)
+    bJ := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, x, iconst(mut st, 0)), bZ, -1, bN, -1)
+    setCur(mut st, bZ)
+    store(mut st, tk, end, v)
+    br(mut st, bJ, -1)
+    setCur(mut st, bN)
+    store(mut st, itop(mut st, x), w, v)
+    br(mut st, bJ, -1)
+    setCur(mut st, bJ)
 }
 
 // buildTaskStart は rt.task_start(tcb): 罠を張って子を呼び、枠に状態（1 = 完了・2 = 死）と死因を書き、scope の記録の死の数を数え、
@@ -2091,6 +2252,7 @@ func buildTaskStart(st mut St) {
     begin(mut st, st.rtTaskStart)
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)
     // 枠の公開（P4-2 — release / acquire の型: 結果〔子が sret で書き済み〕→ 死因 → 状態の順に書き、読み手は状態から読む。起こしは公開の後）

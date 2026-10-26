@@ -1,0 +1,2 @@
+sober: load error at examples/optfn_neg_field.sober:6:11: an optional anonymous function type `(func(…) R)?` is only allowed for a parameter of a func declaration (inside a named function type, a struct field, a result or a lambda parameter, declare a named function type and use `F?`)
+exit=1

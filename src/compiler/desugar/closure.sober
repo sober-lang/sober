@@ -393,7 +393,7 @@ func capLive(st mut S, row int) bool {
         return true
     }
     f := st.capFile[row]
-    fi := e2sEnclosing(mut st, f, st.trees[f].nodes[st.capNode[row]].tok)
+    fi := e2sEnclosing(mut st, f, st.capNode[row])
     return fi < 0 || latI(mut st, ListRef(st.capReach), fi) == 1
 }
 

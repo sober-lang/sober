@@ -85,6 +85,11 @@ F-16. 値の呼び出しの借りの実引数のラムダ（とその本体の�
 拒否: [`examples/borrow_mut_neg_value.sober`](../../examples/borrow_mut_neg_value.sober)・[`examples/borrow_mut_neg_two.sober`](../../examples/borrow_mut_neg_two.sober)・[`examples/borrow_mut_neg_two_args.sober`](../../examples/borrow_mut_neg_two_args.sober)・[`examples/borrow_mut_neg_frozen.sober`](../../examples/borrow_mut_neg_frozen.sober)・[`examples/borrow_mut_neg_freeze_body.sober`](../../examples/borrow_mut_neg_freeze_body.sober)・[`examples/borrow_mut_neg_forward.sober`](../../examples/borrow_mut_neg_forward.sober)
 決定: [language.md 17 節・25 節](../language.md)
 
+F-22. func 宣言の仮引数は省略可の匿名関数型 `(func(…) R)?` を持てる。実引数は `nil`（省略を含む — F-18）・ラムダ・名前つきの関数・囲む関数の同じ種類の仮引数に限り、有る / 無いは呼び出し点ごとに字面で決まる。本体の中では、呼ぶことと省略可でない関数型の仮引数への転送を `if p != nil { … }` の腕（`if p == nil` の else）の中でだけ書け、その腕の中の p は匿名の関数型の仮引数（借り — F-13〜F-15）として扱う。nil と比べる・省略可の仮引数へ転送する以外の使用（束縛・格納・return）は書けない。p を渡さない呼び出し点のコードは、p の仮引数が無い関数と同じになる（`p != nil` の分岐は呼び出し点ごとに畳まれる）。省略可の匿名関数型は func 宣言の仮引数の外（名前つき関数型の中・struct の欄・結果・ラムダの仮引数）には書けず、括弧の無い `func(…) R?` は「結果が `R?` の関数」と紛れるので省略可の形としては拒否する。
+例: [`examples/optfn.sober`](../../examples/optfn.sober)・[`examples/optfn_errors.sober`](../../examples/optfn_errors.sober)
+拒否: [`examples/optfn_neg_bare.sober`](../../examples/optfn_neg_bare.sober)・[`examples/optfn_neg_field.sober`](../../examples/optfn_neg_field.sober)・[`examples/optfn_neg_fntype.sober`](../../examples/optfn_neg_fntype.sober)・[`examples/optfn_neg_arg.sober`](../../examples/optfn_neg_arg.sober)・[`examples/optfn_neg_unguarded.sober`](../../examples/optfn_neg_unguarded.sober)・[`examples/optfn_neg_forward.sober`](../../examples/optfn_neg_forward.sober)・[`examples/optfn_neg_bind.sober`](../../examples/optfn_neg_bind.sober)・[`examples/optfn_neg_store.sober`](../../examples/optfn_neg_store.sober)・[`examples/optfn_neg_return.sober`](../../examples/optfn_neg_return.sober)・[`examples/optfn_neg_valcap.sober`](../../examples/optfn_neg_valcap.sober)・[`examples/optfn_neg_spawn.sober`](../../examples/optfn_neg_spawn.sober)
+決定: [language.md 25 節](../language.md)・[syntax.md 決定 7](../syntax.md)
+
 ## 5.4 ジェネリクス
 
 F-17. 関数と型は型パラメータを持てる — `func f[T](…)`・`type Ord[T] struct {…}`・`type Opt[T] union {…}`。型パラメータに制約は書かない（振る舞いは辞書で渡す — F-1）。関数の型引数は値の実引数の型と、ラムダの実引数の結果の型から推論し、決まらなければ拒否する。明示するときは `f[int](x)`（1 個まで）。ジェネリック union の variant のリテラルは型引数を明示し（`Some[int]{v: 3}`）、個数は宣言どおり。
@@ -94,7 +99,7 @@ F-17. 関数と型は型パラメータを持てる — `func f[T](…)`・`type
 
 ## 5.5 名前つき引数
 
-F-18. 呼び出しに名前つき引数を書ける（`f(x, sep: ",")`）— 位置の実引数が先・名前つきが後で、名前つきどうしは仮引数の宣言の順。省略できるのは型が `T?` の仮引数だけで、省略は `nil`。パイプの左辺の位置は穴 `_` で書く。名前つき引数を書けるのは func 宣言の直接の呼び出しと、仮引数名を持つ名前つき関数型の値の呼び出しだけ（辞書の欄の関数値・ラムダの値は位置だけ）。
+F-18. 呼び出しに名前つき引数を書ける（`f(x, sep: ",")`）— 位置の実引数が先・名前つきが後で、名前つきどうしは仮引数の宣言の順。省略できるのは型が `T?` の仮引数（省略可の匿名関数型 `(func(…) R)?` を含む — F-22）だけで、省略は `nil`。パイプの左辺の位置は穴 `_` で書く。名前つき引数を書けるのは func 宣言の直接の呼び出しと、仮引数名を持つ名前つき関数型の値の呼び出しだけ（辞書の欄の関数値・ラムダの値は位置だけ）。
 例: [`examples/named_args.sober`](../../examples/named_args.sober)・[`examples/named_fn_args.sober`](../../examples/named_fn_args.sober)
 拒否: [`examples/named_args_missing.sober`](../../examples/named_args_missing.sober)・[`examples/named_args_order.sober`](../../examples/named_args_order.sober)・[`examples/named_args_positional.sober`](../../examples/named_args_positional.sober)・[`examples/named_args_unknown.sober`](../../examples/named_args_unknown.sober)・[`examples/named_args_pipe.sober`](../../examples/named_args_pipe.sober)・[`examples/named_args_nonfunc.sober`](../../examples/named_args_nonfunc.sober)・[`examples/named_fn_args_field.sober`](../../examples/named_fn_args_field.sober)・[`examples/named_fn_args_nonames.sober`](../../examples/named_fn_args_nonames.sober)
 決定: [syntax.md 決定 7](../syntax.md)

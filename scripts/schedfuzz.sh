@@ -30,7 +30,8 @@ deathobs() {
 while read -r e mark; do
     case "$e" in ''|'#'*) continue ;; esac
     n=$((n + 1))
-    "$S2" build "$e" --emit=elf -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
+    # SCHEDFUZZ_FLAGS = 網の build の追加の引数（--rt-mutant=28 = 走れる積みの環の容量 8 — 溢れの道ごと回す・report-1168）
+    "$S2" build "$e" --emit=elf ${SCHEDFUZZ_FLAGS:-} -o "$W/bin.$n" > /dev/null 2>&1 || { echo "FAIL: build $e"; fail=$((fail + 1)); continue; }
     chmod +x "$W/bin.$n"
     obs "$W/bin.$n" "$W/base" SOBER_WORKERS=1
     deathobs "$W/base" > "$W/base.d"
@@ -80,5 +81,14 @@ for m in "1 examples/task_fail_order.sober" "2 examples/task_join_race.sober" "6
         fail=$((fail + 1))
     fi
 done
-echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants, fail=$fail"
+# 走れる積みの溢れの道（report-1168）: 環の容量 8 の build（--rt-mutant=28）はワーカー 1 の実行の順が通常の build と同じ（溢れの列は LIFO の順を保つ）・
+# 溢れの列の順を崩した build（29）は順が変わること（testdata/readyspill — 20 本を一度に走れるようにして走った順に直書き）
+for v in 0 28 29; do
+    "$S2" build testdata/readyspill/main.sober --emit=elf $([ $v = 0 ] || echo --rt-mutant=$v) -o "$W/rs.$v" > /dev/null 2>&1 || { echo "FAIL: build readyspill ($v)"; fail=$((fail + 1)); continue; }
+    chmod +x "$W/rs.$v"
+    obs "$W/rs.$v" "$W/rs.$v.out" SOBER_WORKERS=1
+done
+cmp -s "$W/rs.0.out" "$W/rs.28.out" || { echo "FAIL: readyspill — the spill path (ring capacity 8) changes the run order"; diff "$W/rs.0.out" "$W/rs.28.out" | head -6; fail=$((fail + 1)); }
+cmp -s "$W/rs.0.out" "$W/rs.29.out" && { echo "FAIL: readyspill — mutant 29 (spill order broken) was not caught"; fail=$((fail + 1)); }
+echo "schedfuzz: $n programs × $K seeds × workers {$WS} + 4 mutants + readyspill, fail=$fail"
 [ $fail = 0 ]

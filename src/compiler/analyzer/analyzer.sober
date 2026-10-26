@@ -180,7 +180,41 @@ func runAz(p loader.Program, only bool) []Finding {
         x := desugar.NodeRef(table.Get(mut z.out, i * 3 + 2))
         fs = append(fs, Finding{warn: false, at: desugar.PosOf(mut az.d, at), what: fzMessage(mut z, mut az.d, k, at, x)})
     }
-    return freeze(fs)
+    return zPlain(freeze(fs))
+}
+
+// zPlain は指摘の本文から省略可の関数型の写しの名前の印（`F$z<有無>` の `$z<有無>` — loader/optfn.sober。利用者は `$` を綴れない）を外し、
+// 外した後で同じになった指摘（同じ本体の写しの組ごとの同じ違反）を 1 つにまとめる
+func zPlain(fs []Finding) []Finding {
+    mut out := mut []Finding{}
+    for x <- fs {
+        b := bytes(x.what)
+        mut w := mut []byte{}
+        mut i := 0
+        while i < len(b) {
+            if b[i] == '$' && i + 2 < len(b) && b[i + 1] == 'z' && b[i + 2] >= '0' && b[i + 2] <= '9' {
+                i += 2
+                while i < len(b) && b[i] >= '0' && b[i] <= '9' {
+                    i += 1
+                }
+            } else {
+                w = append(w, b[i])
+                i += 1
+            }
+        }
+        y := Finding{at: x.at, what: string(freeze(w)) catch x.what, warn: x.warn}
+        // まとめるのは印を外した指摘だけ（写しの組の同じ違反 — 印の無い指摘の重なりは元の数のまま）
+        mut dup := false
+        if len(w) != len(b) {
+            for o <- out {
+                dup = dup || (o.at.file == y.at.file && o.at.tok == y.at.tok && o.warn == y.warn && o.what == y.what)
+            }
+        }
+        if !dup {
+            out = append(out, y)
+        }
+    }
+    return freeze(out)
 }
 
 // fieldMessage は欄の書き / 読みの指摘の文面（k = 0 書き・1 mut の中身を持つ欄の読み）

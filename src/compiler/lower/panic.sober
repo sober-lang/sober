@@ -341,6 +341,9 @@ func buildPanic(st mut St, p loader.Program) {
     g := addGlobalInit(mut st, int(strLit(mut st, "rt.psites")), n, ws)
     begin(mut st, st.rtPanic)
     id := 0
+    if st.taskUse {
+        frRec(mut st, FK_PANIC, id, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+    }
     trapDie(mut st, PANIC, id)
     meta := globaladdr(mut st, st.meta)
     w := load(mut st, gepWord(mut st, globaladdr(mut st, g), id), 0)

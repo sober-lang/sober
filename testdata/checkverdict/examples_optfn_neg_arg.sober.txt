@@ -1,0 +1,2 @@
+sober: load error at examples/optfn_neg_arg.sober:13:17: the argument for an optional function parameter is nil, a lambda, a function name, or an optional function parameter of the enclosing function
+exit=1

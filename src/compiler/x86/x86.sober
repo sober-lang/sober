@@ -710,6 +710,16 @@ func PunpcklqdqXX(c mut table.Table[byte], x int, y int) {
     sseRR(mut c, 0x66, false, 0x6c, x, y)
 }
 
+// PunpckldqXX は punpckldq x, y（下位 2 つの 32 ビットのレーンを交互に — rt.jclean の 4〜7 バイトの道）— 66 0F 62 /r
+func PunpckldqXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0x62, x, y)
+}
+
+// PminubXX は pminub x, y（符号なしバイトごとの小さい方 — rt.jclean の 0x20 未満の判定）— 66 0F DA /r
+func PminubXX(c mut table.Table[byte], x int, y int) {
+    sseRR(mut c, 0x66, false, 0xda, x, y)
+}
+
 // PmovmskbRX は pmovmskb r32, x（各バイトの最上位 bit → 下位 16 bit）— 66 0F D7 /r（reg = 汎用・rm = xmm）
 func PmovmskbRX(c mut table.Table[byte], r int, x int) {
     sseRR(mut c, 0x66, false, 0xd7, r, x)

@@ -783,6 +783,7 @@ func programTypes(st mut St) error? {
 func programRt(st mut St) {
     buildByteRt(mut st)
     buildMatchLen(mut st)
+    buildJClean(mut st)
     buildGrowRt(mut st)
     if st.taskUse {
         buildTaskRt(mut st)

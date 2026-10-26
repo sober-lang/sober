@@ -228,6 +228,46 @@ func buildMatchLen(st mut St) {
     ret(mut st, k)
 }
 
+// needJClean は rt.jclean(p, n) を（初出なら）宣言する（SIMD の核 段 2 — std/json の @intrinsic("jclean") が呼ぶ）
+func needJClean(st mut St) {
+    lsNeed(mut st, NEED_JCLEAN, 0)
+    if st.rtJClean == -1 {
+        st.rtJClean = addFunc(mut st, int(strLit(mut st, "rt.jclean")), desugar.ListRef(list2(mut st, TyPtr, TyI64)), TyI64)
+    }
+}
+
+// buildJClean は jclean(p, n): p[0:n] の中で最初に JSON の文字列のエスケープが要るバイト（'"'・'\\'・0x20 未満）の位置（0〜n — 無ければ n）。
+// この本体が意味の正（--no-opt・--via=stage1・.ll が走らせる）で、x86 の最適化のバックエンドは手書きの本体（xJCleanBody — SSE2）に置き換える
+// （docs/ir.md 7 節の手書きの本体の約束 — rt.matchlen と同じ型）
+func buildJClean(st mut St) {
+    if st.rtJClean == -1 {
+        return
+    }
+    begin(mut st, st.rtJClean)
+    loop := newBlock(mut st)
+    i := param(mut st, loop, TyI64)
+    test := newBlock(mut st)
+    t2 := newBlock(mut st)
+    t3 := newBlock(mut st)
+    next := newBlock(mut st)
+    done := newBlock(mut st)
+    k := param(mut st, done, TyI64)
+    br(mut st, loop, list1(mut st, iconst(mut st, 0)))
+    setCur(mut st, loop)
+    condbr(mut st, cmp(mut st, CLt, i, 1), test, -1, done, list1(mut st, i))
+    setCur(mut st, test)
+    c := load8(mut st, gepByte(mut st, 0, i), 0)
+    condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 34)), done, list1(mut st, i), t2, -1)
+    setCur(mut st, t2)
+    condbr(mut st, cmp(mut st, CEq, c, iconst(mut st, 92)), done, list1(mut st, i), t3, -1)
+    setCur(mut st, t3)
+    condbr(mut st, cmp(mut st, CLt, c, iconst(mut st, 32)), done, list1(mut st, i), next, -1)
+    setCur(mut st, next)
+    br(mut st, loop, list1(mut st, bin(mut st, BAdd, i, iconst(mut st, 1))))
+    setCur(mut st, done)
+    ret(mut st, k)
+}
+
 // buildReloc8 は region_relocate8(hdr, floor): byte の列のヘッダの depth が floor より深ければ、len バイトを深度 floor へ写して付け替える
 func buildReloc8(st mut St) {
     begin(mut st, st.rtReloc8)

@@ -528,7 +528,16 @@ func buildUpoll(st mut St) {
         br(mut st, bH1, -1)
         setCur(mut st, bH1)
     }
+    if net {
+        bCk := branchIf(mut st, cmp(mut st, CNe, mc, zero))
+        frClock(mut st)
+        br(mut st, bCk, -1)
+        setCur(mut st, bCk)
+    }
     r := urSys(mut st, 426, []int{load(mut st, rp, 0), n, mc, fl, ga, gs})
+    if net {
+        frRecP(mut st, FK_ENTER, n, mc, r)
+    }
     // 今を読み直す（眠った enter〔mc ≠ 0〕だけ — 読み直さないと、この後で取り込む task の時刻が眠る前の値になり、飽和下の待ちの上限の maxWait が
     // 眠りの長さを拾った・report-1142。眠らない頭の取り込みは周の頭の値のまま）
     bNw := branchIf(mut st, cmp(mut st, CNe, mc, zero))
@@ -536,6 +545,9 @@ func buildUpoll(st mut St) {
     br(mut st, bNw, -1)
     setCur(mut st, bNw)
     kInc(mut st, 11)
+    if st.rtMut == 4 {
+        kxAdd(mut st, 2, bin(mut st, BAnd, cmp(mut st, CEq, r, iconst(mut st, -62)), cmp(mut st, CNe, mc, zero)))
+    }
     condbr(mut st, cmp(mut st, CGe, r, zero), bSub, -1, bReap, -1)
     setCur(mut st, bSub)
     store(mut st, wk, WK_IOSUB, bin(mut st, BSub, n, r))
@@ -632,6 +644,18 @@ func buildUpoll(st mut St) {
     setCur(mut st, hn)
     br(mut st, hl, list1(mut st, bin(mut st, BAnd, urAdd(mut st, h, 1), iconst(mut st, 4294967295))))
     setCur(mut st, hd)
+    if st.rtMut == 4 {
+        // 数え口: CQE を 1 つ以上取り込んだ回の、前の取り込みからの間隔（取り込んだ完了の待ちの上界）
+        kn := clockNs(mut st)
+        h0 := urLd32(mut st, headA, 0)
+        bG := branchIf(mut st, bin(mut st, BAnd, cmp(mut st, CNe, h, h0), cmp(mut st, CNe, load(mut st, wk, WK_KXT), zero)))
+        gap := bin(mut st, BSub, kn, load(mut st, wk, WK_KXT))
+        kxAdd(mut st, 3, gap)
+        kxMax(mut st, 4, gap)
+        br(mut st, bG, -1)
+        setCur(mut st, bG)
+        store(mut st, wk, WK_KXT, kn)
+    }
     urSt32(mut st, headA, h)
     if net && st.rtTmrFire != -1 {
         // enter の後にもう一度 時計の表の満了を起こす（timeout で起きた enter の後に、眠らない enter をもう 1 回挟まない — report-ct1 3.3）。

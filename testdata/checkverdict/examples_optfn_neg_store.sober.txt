@@ -1,0 +1,2 @@
+sober: load error at examples/optfn_neg_store.sober:12:19: an optional function parameter can only be called, passed on to another call, or compared with nil — not bound, stored or returned
+exit=1

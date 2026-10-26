@@ -566,7 +566,7 @@ func mutDestAhead(st mut S, s NodeRef, x StrRef, eb int) int {
     f := fileOf(mut st, s)
     t := st.trees[f]
     tok := nodeOf(mut st, s).tok
-    g := e2sEnclosing(mut st, f, tok)
+    g := e2sEnclosing(mut st, f, refIdx(int(s)))
     if g < 0 {
         return -1
     }

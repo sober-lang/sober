@@ -600,24 +600,12 @@ work: は compress: と組みで（compress: なしの work: は panic(WorkNoCom
 ## ServeWith
 
 ```sober
-@errors(recv, send, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
-@effects(block, panic, Stream)
-func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error?
-```
-
-ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。失敗は recv / send が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。誤りの応答の後の読み捨て（linger）も recv の続きを読む — tls.Recv は 2 度目を Closed で返すので読み捨てずに閉じる（TLS の close\_notify は呼び手の Serve が送る）
-
-失敗のラベル: `recv`・`send`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`
-
-## ServeFlushed
-
-```sober
 @errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
 @effects(block, panic, Stream)
-func ServeFlushed(recv func(k func([]byte)) error?, send func(b []byte) error?, put func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error?
+func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?, put (func(b []byte) error?)?) error?
 ```
 
-ServeWith の送りを 2 段にした形: 受けた切片 1 つ分の応答を put で積む（送らない）。積んだ分は recv が次の受けを待つ前に送る約束（tls.Recv は k が戻るたびに tls.Flush する）— 送りの完了待ちは応答の作業の region〔受けの反復〕が閉じた後になり、待ちの間に応答の平文の頁を抱えない）。send はその場で送る口で、stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）だけが使う。TLS の接続は `http.ServeFlushed((k) => tls.Recv(c, k), (b) => tls.Send(c, b), (b) => tls.Put(c, b), route)`。他は ServeWith と同じ
+ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。失敗は recv / send / put が返すもの（仮引数の名前の @errors — [language.md 13 節](../language.md): 呼び手は渡したコールバックのラベルで switch を網羅する）。put（省略可 — [language.md 25 節](../language.md) Z）を渡すと送りを 2 段にする: 受けた切片 1 つ分の応答の列を put で積み（送らない）、積んだ分は recv が次の受けを待つ前に送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する — 送りの完了待ちが応答の作業の region〔受けの反復〕の閉じた後になり、待ちの間に応答の平文の頁を抱えない）。stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）は put があっても send で送る。put を渡さない呼び出し点のコードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）誤りの応答の後の読み捨て（linger）も recv の続きを読む — tls.Recv は 2 度目を Closed で返すので読み捨てずに閉じる（TLS の close\_notify は呼び手の Serve が送る）
 
 失敗のラベル: `recv`・`send`・`put`・`io.NotFound`・`io.Denied`・`io.Timeout`・`io.Expired`・`io.Other`
 

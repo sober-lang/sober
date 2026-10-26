@@ -1,1 +1,1 @@
-summary fns=4459 lambdas=20 edges=55787 any=block, io, panic, nondet any-calls=0 fvalues=0 declared=115 violations=0
+summary fns=4538 lambdas=20 edges=57096 any=block, io, panic, nondet any-calls=0 fvalues=0 declared=116 violations=0

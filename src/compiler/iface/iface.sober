@@ -193,10 +193,23 @@ func constIndex(p loader.Program, it Item) int {
     return -1
 }
 
-// wholeFn は関数を宣言ごと載せるか（展開される・総称）
+// wholeFn は関数を宣言ごと載せるか（展開される・総称・省略可の匿名関数型の仮引数を持つ — 依存する側の loader が呼び出し点の有無で写し分ける。
+// loader の写しの後の関数表に元の宣言は載らないので、生の木の仮引数で見る — loader/optfn.sober）
 func wholeFn(p loader.Program, it Item, fi int) bool {
     t := p.trees[it.file]
-    return (fi >= 0 && p.fn_expands[fi]) || ast.ListLen(t, t.nodes[it.node].b) > 0
+    return (fi >= 0 && p.fn_expands[fi]) || ast.ListLen(t, t.nodes[it.node].b) > 0 || optFnDecl(t, it.node)
+}
+
+// optFnDecl は宣言 d が省略可の匿名関数型 `(func(…) R)?` の仮引数を持つか
+func optFnDecl(t ast.Tree, d int) bool {
+    ps := t.nodes[d].c
+    for q <- iter.Range(0, ast.ListLen(t, ps)) {
+        ty := t.nodes[t.nodes[ast.ListAt(t, ps, q)].b]
+        if ty.kind == ast.TOpt && t.nodes[ty.a].kind == ast.TFunc {
+            return true
+        }
+    }
+    return false
 }
 
 // isPublic は名前が公開か（大文字で始まる）

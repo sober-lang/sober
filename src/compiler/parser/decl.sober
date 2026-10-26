@@ -258,6 +258,10 @@ func resultOpt(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx
             }
         }
         if ok && tg(cx, q) == lexer.RParen {
+            // `func() (func() R)?` — 括弧の 1 つの型に `?` が続けば省略可の型（loader が位置で拒否する）
+            if len(out) == 1 && tg(cx, q + 1) == lexer.Question {
+                return ast.PutList(mut db, []int{node(mut nb, ast.TOpt, tk(cx, p), out[0], 1, 0, 0, 0, 0)}), q + 2
+            }
             return ast.PutList(mut db, freeze(out)), q + 1
         }
     }
@@ -403,6 +407,20 @@ func typeOf(nb mut builder.Builder[ast.Node], db mut builder.Builder[int], cx Cx
         x = k
         y = v
         p = r
+    } else if t == lexer.LParen && tg(cx, p + 1) != lexer.RParen {
+        // 括弧の型 `(T)` / `(T)?`（syntax.md の Type — 省略可の匿名関数型 `(func(…) R)?` の綴り。language.md 25 節 Z）。
+        // `?` の付いた形は TOpt の b = 1（括弧の印 — 裸の `func(…)?` は loader が括弧の形へ誘導して拒否する）
+        inner, q := typeOf(mut nb, mut db, cx, p + 1, false)
+        if inner < 0 || tg(cx, q) != lexer.RParen {
+            return -1, p
+        }
+        if m {
+            return -1, p
+        }
+        if tg(cx, q + 1) == lexer.Question {
+            return node(mut nb, ast.TOpt, tk(cx, p0), inner, 1, 0, 0, 0, 0), q + 2
+        }
+        return inner, q + 1
     } else if t == lexer.KwFunc {
         ps, pn, q := parametersN(mut nb, mut db, cx, p + 1, 1)
         if ps < 0 {

@@ -1,0 +1,75 @@
+package main
+
+// 省略可の匿名関数型の仮引数（language.md 25 節 Z）: `put (func(v int) error?)?` は呼び出し点ごとに有る / 無いが字面で決まり、本体の
+// `if put != nil { … } else { … }` は展開のときに畳まれる（渡さない呼び出し点のコードは put の無い関数と同じ）。
+// 有る（ラムダ・名前付き関数）/ 無い（省略・nil）/ 囲む関数の省略可の仮引数の転送 / `p == nil` の形 / else if の鎖
+
+func run(n int, send func(v int) error?, put (func(v int) error?)?) error? {
+    if put != nil {
+        put(n)?
+    } else {
+        send(n)?
+    }
+    println(n + 100)
+    return nil
+}
+
+// 転送: 囲む関数の省略可の仮引数をそのまま渡す（有無は呼び手の組を継ぐ）
+func relay(n int, put (func(v int) error?)?) error? {
+    return run(n, (v) => {
+        println(v)
+        nil
+    }, put: put)
+}
+
+// `p == nil` の形と else if の鎖・if の外の比較（true / false に畳む）
+func pick(n int, lo (func(v int) int)?, hi (func(v int) int)?) int {
+    has := lo != nil
+    println(has)
+    if lo == nil {
+        return n
+    } else if hi != nil {
+        return hi(lo(n))
+    } else {
+        return lo(n)
+    }
+}
+
+func twice(v int) error? {
+    println(v * 2)
+    return nil
+}
+
+func dbl(v int) int {
+    return v * 2
+}
+
+func main() {
+    _ = run(1, (v) => {
+        println(v)
+        nil
+    })
+    _ = run(2, (v) => {
+        println(v)
+        nil
+    }, put: (v) => {
+        println(v * 10)
+        nil
+    })
+    _ = run(3, (v) => {
+        println(v)
+        nil
+    }, put: nil)
+    _ = run(4, (v) => {
+        println(v)
+        nil
+    }, put: twice)
+    _ = relay(5)
+    _ = relay(6, put: (v) => {
+        println(v * 1000)
+        nil
+    })
+    println(pick(7))
+    println(pick(8, lo: dbl))
+    println(pick(9, lo: dbl, hi: (v) => v + 1))
+}

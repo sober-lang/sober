@@ -22,7 +22,8 @@ sum=
 # 上限は bench/httparena の entry と同じ値。W8 / W1 — report-848 / 849）
 for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOBER_WORKERS=1 SRV_WORK=1" "SOBER_WORKERS=8 SRV_MAXBODY=131072" "SOBER_WORKERS=1 SRV_MAXBODY=131072"; do
     rm -rf "$W/static" && mkdir -p "$W/static/www"
-    env $cfg DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static/www" "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
+    rm -f "$W/flight"
+    env $cfg SOBER_FLIGHT="$W/flight" DATASET_PATH=testdata/httpcheck/dataset.json STATIC_ROOT="$W/static/www" "$W/srv" 0 > "$W/srv.out" 2> "$W/srv.err" &
     SP=$!
     port=
     for i in $(seq 100); do
@@ -35,12 +36,23 @@ for cfg in "SOBER_WORKERS=8" "SOBER_WORKERS=1" "SOBER_WORKERS=8 SRV_WORK=1" "SOB
     else
         big=
         case "$cfg" in *SRV_MAXBODY*) big=--echo-big ;; esac
-        out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big --static "$W/static" 2>&1) || { echo "httpcheck: FAIL $cfg"; echo "$out" | tail -20; fail=1; }
+        out=$(timeout 120 node --experimental-strip-types --experimental-eventsource --no-warnings testdata/httpcheck/check.ts "$port" --frag-random 100 $big --static "$W/static" 2>&1) || { echo "httpcheck: FAIL $cfg (port $port)"; echo "$out" | tail -20; echo "--- srv stderr（末尾）"; tail -c 2000 "$W/srv.err"; ss -Hltnp "sport = :$port" 2>/dev/null | head -5; FL_KEEP=1; fail=1; }
         sum="$sum [$cfg: $(echo "$out" | sed -n 's/^check: \([0-9]* passed, [0-9]* failed\).*/\1/p')]"
     fi
     kill $SP 2>/dev/null
     wait $SP 2>/dev/null
     SP=
+    # 落ちた構成の飛行記録（SOBER_FLIGHT — report-1176）: 読み（--anomaly と落ちの lport= ごとの --conn の頭）を出し、HTTPCHECK_KEEP があればファイルをそこへ
+    if [ -n "${FL_KEEP:-}" ] && [ -f "$W/flight" ]; then
+        echo "--- flight（scripts/flight.ts — $cfg）"
+        node --experimental-strip-types --no-warnings scripts/flight.ts "$W/flight" --summary
+        node --experimental-strip-types --no-warnings scripts/flight.ts "$W/flight" --anomaly | head -20
+        for lp in $(echo "$out" | sed -n 's/.* lport=\([1-9][0-9]*\).*/\1/p' | head -3); do
+            node --experimental-strip-types --no-warnings scripts/flight.ts "$W/flight" --conn "$lp" | tail -40
+        done
+        [ -n "${HTTPCHECK_KEEP:-}" ] && mkdir -p "$HTTPCHECK_KEEP" && cp "$W/flight" "$HTTPCHECK_KEEP/flight-$(echo "$cfg" | tr ' =' '_-').bin"
+    fi
+    FL_KEEP=
 done
 if [ $fail = 0 ]; then
     echo "httpcheck:$sum fail=0"

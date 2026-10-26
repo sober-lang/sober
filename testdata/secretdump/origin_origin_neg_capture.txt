@@ -8,4 +8,4 @@ std/http/http.sober:625:6: shared Cache the shared cache policy 'Fresh'
 std/http/http.sober:625:6: shared Cache the shared cache policy 'Shared'
 std/http/http.sober:466:6: meet-point std/http.Mount
 examples/origin_neg_capture.sober:8:25: violation the shared cache policy 'Fresh' meets the credential source 'std/http.Authorization' in one route — a response that depends on Authorization / Cookie must not be stored by a shared cache — it would be served to other users (language.md 12 節「出所の依存」); use http.Private / http.NoStore for this route, or move the credential read out of it
-summary atoms=6 credentials=3 eff-fns=1 shared=2 shared-fields=2 violations=1 walks=546
+summary atoms=6 credentials=3 eff-fns=1 shared=2 shared-fields=2 violations=1 walks=549

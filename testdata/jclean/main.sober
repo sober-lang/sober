@@ -1,0 +1,214 @@
+package main
+
+// json の文字列の書き出し（json.PutString → quote → rt.jclean）の網羅の検査（scripts/jcleancheck.sh — SIMD の核 段 2・report-1165）:
+// 長さ n = 0〜80 × 当たりの位置 m = 0〜n（m = n は当たりなし）× 置くバイト 12 種（エスケープの要る '"'・'\\'・'\n'・0x00・0x01・0x1f と、
+// 要らない境目の 0x20・'#'・'['・']'・0x7f）× 地のバイト 2 種（印字できる字・UTF-8 の 'é'〔0xc3 0xa9 — 0x80 以上の符号なしの判定〕を混ぜた列）。2 つ目の当たりを
+// 区間の後ろの方に置く形も混ぜる（quote が当たりの後の残りの区間を探し直す — 揃いの違う部分列）。文字列は大きな列の部分列で、直前と直後のバイトは
+// '"'（手書きの本体が区間の外を読んで判定すると、当たりの位置が変わって出力が変わる）。答えは 1 バイトずつの参照の書き出し（ref）と照合する。
+// xmm の破壊の網: float の値を多く生かしたまま PutString を呼ぶループ（fmix）と、同じ計算を参照で行うループ（fref）の結果が一致すること。
+// 出力: 1 行目 = 検査した数・2 行目 = 失敗の数・3 行目 = 出力の検査和（--passes と --no-opt で一致 — 参照の意味 ≡ 手書きの本体）
+
+import "std/builder"
+import "std/convert"
+import "std/iter"
+import "std/json"
+
+// 乱数（決定的）
+func next(x int) int {
+    mut y := x
+    y = y ^ (y << 13)
+    y = y ^ (y >> 7)
+    y = y ^ (y << 17)
+    return y
+}
+
+func hexd(n int) byte {
+    return byte(if n < 10 { n + 48 } else { n + 87 })
+}
+
+// ref は s を JSON の文字列として 1 バイトずつ書く（参照）
+func ref(s []byte) string {
+    mut o := builder.Builder[byte]{}
+    builder.Push(mut o, '"')
+    for i <- iter.Range(0, len(s)) {
+        c := s[i]
+        if c == '"' {
+            builder.PushString(mut o, "\\\"")
+        } else if c == '\\' {
+            builder.PushString(mut o, "\\\\")
+        } else if c == '\n' {
+            builder.PushString(mut o, "\\n")
+        } else if c == '\r' {
+            builder.PushString(mut o, "\\r")
+        } else if c == '\t' {
+            builder.PushString(mut o, "\\t")
+        } else if int(c) < 32 {
+            builder.PushString(mut o, "\\u00")
+            builder.Push(mut o, hexd(int(c) >> 4))
+            builder.Push(mut o, hexd(int(c) & 15))
+        } else {
+            builder.Push(mut o, c)
+        }
+    }
+    builder.Push(mut o, '"')
+    return string(builder.Build(mut o)) catch ""
+}
+
+// got は json.PutString の書き出し（手書きの本体を通る側）
+func got(s []byte) string {
+    mut o := builder.Builder[byte]{}
+    json.PutString(mut o, string(s) catch "")
+    return string(builder.Build(mut o)) catch ""
+}
+
+// make は '"' + 長さ n の地 + '"' の列を作り、b[m] に x（m < n）・b[m2] に y（m2 > m かつ m2 < n なら）を置いた部分列 [1, 1 + n) を返す
+func make(n int, m int, x int, m2 int, y int, hi bool, seed int) []byte {
+    mut b := mut []byte{}
+    b = append(b, '"')
+    mut r := seed * 2654435761 + 7
+    for _ <- iter.Range(0, n) {
+        r = next(r)
+        v := (r >> 11) & 255
+        // 地: 印字できる字（0x20 と '"' / '\\' を除く）か、'é' の 2 バイトを混ぜた列
+        mut c := 33 + v % 94
+        if c == 34 || c == 92 {
+            c = 65
+        }
+        if hi && v >= 128 {
+            c = if len(b) % 2 == 1 { 0xc3 } else { 0xa9 }
+        }
+        b = append(b, byte(c))
+    }
+    b = append(b, '"')
+    if m < n {
+        b[1 + m] = byte(x)
+    }
+    if m2 > m && m2 < n {
+        b[1 + m2] = byte(y)
+    }
+    // 対の崩れた 0x80 以上のバイトは 'A' に（文字列は UTF-8 — 当たりのバイトは 0x80 未満なので残る）
+    mut i := 1
+    while i < 1 + n {
+        if b[i] == byte(0xc3) && i + 1 < 1 + n && b[i + 1] == byte(0xa9) {
+            i += 2
+        } else {
+            if int(b[i]) >= 128 {
+                b[i] = 'A'
+            }
+            i += 1
+        }
+    }
+    f := freeze(b)
+    return f[1:1 + n]
+}
+
+// fmix は float の値を 12 本生かしたまま PutString を呼ぶ（xmm の破壊の網）
+func fmix(s string, rounds int) float {
+    mut a0 := 1.5
+    mut a1 := 2.25
+    mut a2 := 3.125
+    mut a3 := 4.0625
+    mut a4 := 5.5
+    mut a5 := 6.75
+    mut a6 := 7.875
+    mut a7 := 8.5
+    mut a8 := 9.25
+    mut a9 := 10.125
+    mut a10 := 11.0625
+    mut a11 := 12.5
+    for r <- iter.Range(0, rounds) {
+        mut o := builder.Builder[byte]{}
+        json.PutString(mut o, s)
+        x := float(builder.Len(mut o) + r % 7)
+        a0 = a0 * 1.0001 + x
+        a1 = a1 * 0.9999 + a0
+        a2 = a2 + a1 * 0.5
+        a3 = a3 + a2 * 0.25
+        a4 = a4 + a3 * 0.125
+        a5 = a5 + a4 * 0.0625
+        a6 = a6 + a5 * 0.03125
+        a7 = a7 + a6 * 0.015625
+        a8 = a8 + a7 * 0.0078125
+        a9 = a9 + a8 * 0.00390625
+        a10 = a10 + a9 * 0.001953125
+        a11 = a11 + a10 * 0.0009765625
+    }
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11
+}
+
+// fref は fmix と同じ計算を参照の書き出しで
+func fref(s string, rounds int) float {
+    mut a0 := 1.5
+    mut a1 := 2.25
+    mut a2 := 3.125
+    mut a3 := 4.0625
+    mut a4 := 5.5
+    mut a5 := 6.75
+    mut a6 := 7.875
+    mut a7 := 8.5
+    mut a8 := 9.25
+    mut a9 := 10.125
+    mut a10 := 11.0625
+    mut a11 := 12.5
+    for r <- iter.Range(0, rounds) {
+        x := float(len(bytes(ref(bytes(s)))) + r % 7)
+        a0 = a0 * 1.0001 + x
+        a1 = a1 * 0.9999 + a0
+        a2 = a2 + a1 * 0.5
+        a3 = a3 + a2 * 0.25
+        a4 = a4 + a3 * 0.125
+        a5 = a5 + a4 * 0.0625
+        a6 = a6 + a5 * 0.03125
+        a7 = a7 + a6 * 0.015625
+        a8 = a8 + a7 * 0.0078125
+        a9 = a9 + a8 * 0.00390625
+        a10 = a10 + a9 * 0.001953125
+        a11 = a11 + a10 * 0.0009765625
+    }
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11
+}
+
+func main() int {
+    xs := []int{34, 92, 10, 0, 1, 31, 32, 35, 91, 93, 127}
+    mut cases := 0
+    mut fails := 0
+    mut sum := 0
+    for n <- iter.Range(0, 81) {
+        for m <- iter.Range(0, n + 1) {
+            for k <- iter.Range(0, len(xs)) {
+                for h <- iter.Range(0, 2) {
+                    seed := n * 100000 + m * 100 + k * 2 + h
+                    // 2 つ目の当たり: 偶数の seed だけ・位置は m の後ろの擬似乱数
+                    m2 := if seed % 2 == 0 && n > m + 1 { m + 1 + (seed / 7) % (n - m - 1) } else { -1 }
+                    y := xs[(k + 1 + seed % 5) % 6]
+                    s := make(n, m, xs[k], m2, y, h == 1, seed)
+                    g := got(s)
+                    w := ref(s)
+                    cases += 1
+                    gb := bytes(g)
+                    for q <- iter.Range(0, len(gb)) {
+                        sum = sum * 31 + int(gb[q])
+                    }
+                    if g != w {
+                        fails += 1
+                        if fails <= 5 {
+                            println("FAIL n=" + convert.FormatInt(n) + " m=" + convert.FormatInt(m) + " x=" + convert.FormatInt(xs[k]) + " m2=" + convert.FormatInt(m2) + " got=" + g + " want=" + w)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // xmm の破壊の網（当たりなし 40 バイト・当たりあり 9 バイトの 2 種）
+    s1 := string(make(40, 40, 0, -1, 0, false, 5)) catch ""
+    s2 := string(make(9, 3, 34, -1, 0, false, 6)) catch ""
+    cases += 1
+    if fmix(s1, 500) + fmix(s2, 500) != fref(s1, 500) + fref(s2, 500) {
+        fails += 1
+        println("FAIL xmm: float values live across PutString changed")
+    }
+    println(cases)
+    println(fails)
+    println(sum)
+    return if fails == 0 { 0 } else { 1 }
+}

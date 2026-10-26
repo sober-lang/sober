@@ -21,7 +21,7 @@ type FnTab struct {
     pkg []int
     file []int
     node []int
-    flags []int // FN_OPT = 末尾の仮引数が `T?`（名前付きの無い呼び出しで省略が起こりうる）・FN_FPARAM = 関数型リテラルの仮引数を持つ（η 展開 — eta.sober）・
+    flags []int // FN_OPTF（下の定数）・FN_OPT = 末尾の仮引数が `T?`（名前付きの無い呼び出しで省略が起こりうる）・FN_FPARAM = 関数型リテラルの仮引数を持つ（η 展開 — eta.sober）・
     // FN_VALP = 値の位置の型〔値化可能な named fn type かその option〕の mut でない仮引数を持つ（fnval の callHits — 持たない呼び先は実引数を見ない）
     head []int
     next []int
@@ -31,10 +31,13 @@ type FnTab struct {
 const FN_OPT = 1
 const FN_FPARAM = 2
 const FN_VALP = 4
+// FN_OPTF = 省略可の匿名関数型 `(func(…) R)?` の仮引数を持つ（optfn.sober — 呼び出し点ごとの有無で写し分ける関数）
+const FN_OPTF = 8
 
-// namedArgsAll は全ファイルの木の名前付き実引数と省略を写し、続けて η 展開（eta.sober）を掛ける（写せない形は拒否）。
+// namedArgsAll は全ファイルの木の名前付き実引数と省略を写す（写せない形は拒否）。η 展開（eta.sober）は finish が省略可の関数型の写し
+// （optfn.sober — 省略を nil にした後の木を読む）の後に掛ける。
 // 関数表は写す前の木で 1 回（finish が組んで渡す — 写しは節を足すだけなので η 展開・後の段〔fnval・noderules〕も同じ表を引く）
-@errors(diag.NamedArg, diag.FnArg)
+@errors(diag.NamedArg)
 func namedArgsAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
     mut out := mut []ast.Tree{}
     for f <- iter.Range(0, len(cx.trees)) {
@@ -44,7 +47,7 @@ func namedArgsAll(cx Cx, ft FnTab) ([]ast.Tree, error?) {
         }
         out = append(out, r.tree)
     }
-    return etaAll(Cx{freeze(out), cx.file_pkg, cx.pkg_path, cx.pkg_lo, cx.pkg_hi, cx.imp_pkg, cx.imp_ref, cx.imp_path, cx.tys}, ft)
+    return freeze(out), nil
 }
 
 func fnTab(cx Cx) FnTab {
@@ -68,6 +71,15 @@ func fnTab(cx Cx) FnTab {
             while q < np {
                 if t.nodes[t.nodes[ast.ListAt(t, ps, q)].b].kind == ast.TFunc {
                     fl = fl | FN_FPARAM
+                    q = np
+                }
+                q += 1
+            }
+            q = 0
+            while q < np {
+                pty := t.nodes[t.nodes[ast.ListAt(t, ps, q)].b]
+                if pty.kind == ast.TOpt && t.nodes[pty.a].kind == ast.TFunc {
+                    fl = fl | FN_OPTF
                     q = np
                 }
                 q += 1

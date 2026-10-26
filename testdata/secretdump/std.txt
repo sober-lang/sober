@@ -133,4 +133,4 @@ std/internal/hs/hs.sober:86:6: field Hs.sHs from the @secret parameter 'key' of 
 std/internal/hs/hs.sober:86:6: field Hs.cAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.sAp from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
 std/internal/hs/hs.sober:86:6: field Hs.expFin from the @secret parameter 'key' of 'std/crypto/hmac.Sum256'
-summary atoms=31 secret-fns=116 secret-fields=19 violations=0 walks=1231
+summary atoms=31 secret-fns=116 secret-fields=19 violations=0 walks=1242

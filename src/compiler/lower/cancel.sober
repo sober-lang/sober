@@ -201,7 +201,7 @@ func cutIsRt(st mut St, f FnRef) bool {
 func cutRtPure(st mut St, g FnRef) bool {
     return g == st.rtAlloc8 || g == st.rtCat8 || g == st.rtCopy || g == st.rtCopy8 || g == st.rtExtend8 || g == st.rtGrow || g == st.rtGrow8 || g == st.rtGrowTry ||
         g == st.rtKidKeep || g == st.rtMapGrow || isMapRt(mut st, g) || g == st.rtMaphash || g == st.rtPanic || g == st.rtPanicMem || g == st.rtRalloc || g == st.rtReloc ||
-        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq || g == st.rtMatchLen ||
+        g == st.rtReloc8 || g == st.rtRenter || g == st.rtRenterL || g == st.rtRenterLL || g == st.rtSlotNew || g == st.rtDpGive || g == st.rtDpTake || g == st.rtSlotTake || g == st.rtSlotGive || g == st.rtSlotTrim || g == st.rtStreq || g == st.rtMatchLen || g == st.rtJClean ||
         g == st.rtTaskGo || g == st.rtTaskNew || g == st.rtTaskInline || g == st.rtTaskWait || g == st.rtTip8 || g == st.rtTipN8 || g == st.rtUnmap || g == st.rtTaskRerun || g == st.rtCancel || g == st.rtCutWalk || g == st.rtCutEnd || g == st.rtMnDelay
 }
 
@@ -223,7 +223,7 @@ func cutPatch(st mut St) {
     mut leaf := mut []int{}
     mut ind := mut []int{}
     mut taken := mut []int{}
-    // 置き場の印（rt.netop 5 — Serve）を使うか: acceptor の担い手を足す（mnInit の即値 — report-997）
+    // 置き場の印（rt.netop 5 — Serve）を使うか: Serve のプログラムの印（mnInit の即値 — CPU の固定の既定・report-1161 / 1172）
     mut place := false
     mut f := st.fhead
     while f != -1 {

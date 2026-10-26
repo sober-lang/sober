@@ -1,0 +1,80 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Hooks",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "flush",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "func",
+                "params": [],
+                "results": [
+                  {
+                    "k": "opt",
+                    "type": {
+                      "k": "name",
+                      "name": "error"
+                    }
+                  }
+                ]
+              },
+              "paren": true
+            },
+            "tok": 7
+          }
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 19
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 24
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 26
+                }
+              ],
+              "tok": 25
+            }
+          }
+        ]
+      },
+      "tok": 20,
+      "bodiless": false,
+      "span": {
+        "start": 19,
+        "end": 31
+      },
+      "sig_end": 23
+    }
+  ],
+  "consts": []
+}

@@ -94,3 +94,12 @@ func Build[T](b mut Builder[T]) []T
 ```
 
 積んだ要素を連続した imm slice にして返す（現在の最内 region へ 1 回コピー）。Builder 自体は変えない（続けて Push できる）
+
+## PushBetween
+
+```sober
+@effects()
+func PushBetween[T](b mut Builder[T], open T, xs []T, close T)
+```
+
+xs を open と close で挟んで末尾に積む（Push(b, open)・PushAll(b, xs)・Push(b, close) と同じ結果 — 今の chunk に len(xs) + 2 の空きがあれば空きの検査と chunk の出し入れは 1 回だけ。JSON の文字列の引用符の対の形）

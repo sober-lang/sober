@@ -3,7 +3,7 @@
 # KA=1 で keep-alive の形（-r を外す — baseline 4096 の形: 接続の起動の配置が生涯固定される側 — report-706 / 709）。PER=1 でワーカーごとの行も出す。
 # サーバは dlsrv.sober（Serve を期限 8 秒の scope で包んだ形 — 数え口は正常終了の出力の頭にしか出ないので期限で終わらせる）を
 # `--rt-mutant=4` で建てたもの（通常の build の IR は不変 — 変異 4 のときだけ数え口が出る）。負荷は secs 秒（既定 6 — 期限 8 秒より前に終わる）。
-# 数え口（ワーカーごと `#w <k> <16 語>` — 語の意味は src/compiler/lower/mn.sober の WK_K0 の注）を要求 / 接続あたりに割って 1 行に。
+# 数え口（ワーカーごと `#w <k> <16 語> <追加の 5 語 — WK_KX>` — 語の意味は src/compiler/lower/mn.sober の WK_K0 の注）を要求 / 接続あたりに割って 1 行に。
 # 版どうしの比較は STAGE2=<sober2> で建てる側を差し替えて交互に（計器の分だけ遅い — req/s は比で読む）。SRV=<実行ファイル> で建てずにそれを使う。
 # 列: resp・rps・conns（spawn）| run/req・steal/conn・hold（溜め → 提出 µs）・sqe/flush | startlat（spawn → 走り出し µs）|
 #     rsleep/req・ring / futex の眠り（秒 / ワーカー）| cqe/enter・enter/req・sqe/req・recv/req | acc/conn（ring の ACCEPT の完了 / 接続 — accept4 直の acceptor では 0）|

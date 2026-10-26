@@ -19,655 +19,660 @@ std/builder/builder.sober:151:6: effects std/builder.pushWordSlow fi=17 bits=non
 std/builder/builder.sober:163:6: effects std/builder.Len fi=18 bits=none declared
 std/builder/builder.sober:169:6: effects std/builder.Get fi=19 bits=none declared
 std/builder/builder.sober:195:6: effects std/builder.Build fi=20 bits=none declared
-std/compress/flate/flate.sober:22:6: effects std/compress/flate.Encode fi=21 bits=panic declared
-std/compress/flate/flate.sober:38:6: effects std/compress/flate.Prepare fi=22 bits=panic declared
-std/compress/flate/flate.sober:44:6: effects std/compress/flate.EncodeWith fi=23 bits=panic declared
-std/compress/flate/inflate.sober:23:6: effects std/compress/flate.Decode fi=24 bits=none declared
-std/compress/gzip/gzip.sober:18:6: effects std/compress/gzip.Encode fi=25 bits=panic declared
-std/compress/gzip/gzip.sober:25:6: effects std/compress/gzip.EncodeWith fi=26 bits=panic declared
-std/compress/gzip/gzip.sober:63:6: effects std/compress/gzip.Decode fi=27 bits=panic declared
-std/compress/gzip/gzip.sober:96:6: effects std/compress/gzip.header fi=28 bits=panic
-std/compress/gzip/gzip.sober:136:6: effects std/compress/gzip.zeroEnd fi=29 bits=none
-std/compress/gzip/gzip.sober:148:6: effects std/compress/gzip.le32 fi=30 bits=none
-std/convert/conv.sober:18:6: effects std/convert.FormatFloat fi=31 bits=none declared
-std/convert/conv.sober:24:6: effects std/convert.FormatFixed fi=32 bits=none declared
-std/convert/conv.sober:40:6: effects std/convert.ParseFloat fi=33 bits=none declared
-std/convert/conv.sober:62:6: effects std/convert.fastFloat fi=34 bits=none
-std/convert/conv.sober:144:6: effects std/convert.ParseInt fi=35 bits=none declared
-std/convert/conv.sober:177:6: effects std/convert.FormatInt fi=36 bits=none declared
-std/convert/conv.sober:188:6: effects std/convert.formatUint fi=37 bits=none
-std/convert/conv.sober:214:6: effects std/convert.ParseBool fi=38 bits=none declared
-std/convert/conv.sober:226:6: effects std/convert.FormatBool fi=39 bits=none declared
-std/crypto/ct.sober:25:6: effects std/crypto.Equal fi=40 bits=none declared
-std/crypto/ct.sober:39:6: effects std/crypto.NonZero fi=41 bits=none declared
-std/crypto/ct.sober:46:6: effects std/crypto.Select fi=42 bits=none declared
-std/crypto/ct.sober:53:6: effects std/crypto.Wipe fi=43 bits=none declared
-std/crypto/ct.sober:67:6: effects std/crypto.Rand fi=44 bits=io, panic declared
-std/crypto/aesgcm/aesgcm.sober:60:6: effects std/crypto/aesgcm.Available fi=45 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:73:6: effects std/crypto/aesgcm.Prepare fi=46 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:90:6: effects std/crypto/aesgcm.Seal fi=47 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:99:6: effects std/crypto/aesgcm.Open fi=48 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:110:6: effects std/crypto/aesgcm.SealTo fi=49 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:157:6: effects std/crypto/aesgcm.SealInto fi=50 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:209:6: effects std/crypto/aesgcm.OpenAt fi=51 bits=none declared
-std/crypto/aesgcm/aesgcm.sober:239:6: effects std/crypto/aesgcm.recCtx fi=52 bits=none
-std/crypto/aesgcm/aesgcm.sober:268:6: effects std/crypto/aesgcm.zeros fi=53 bits=none
-std/crypto/aesgcm/aesgcm.sober:279:6: effects std/crypto/aesgcm.padded fi=54 bits=none
-std/crypto/aesgcm/aesgcm.sober:291:6: effects std/crypto/aesgcm.ghashAt fi=55 bits=none
-std/crypto/aesgcm/aesgcm.sober:302:6: effects std/crypto/aesgcm.ghashLens fi=56 bits=none
-std/crypto/aesgcm/aesgcm.sober:309:6: effects std/crypto/aesgcm.be64 fi=57 bits=none
-std/crypto/chacha20/chacha20.sober:13:6: effects std/crypto/chacha20.Block fi=58 bits=none declared
-std/crypto/chacha20/chacha20.sober:31:6: effects std/crypto/chacha20.XorKeyStream fi=59 bits=none declared
-std/crypto/chacha20/chacha20.sober:38:6: effects std/crypto/chacha20.XorKeyStreamAt fi=60 bits=none declared
-std/crypto/chacha20/chacha20.sober:64:6: effects std/crypto/chacha20.initState fi=61 bits=none
-std/crypto/chacha20/chacha20.sober:79:6: effects std/crypto/chacha20.rounds fi=62 bits=none
-std/crypto/chacha20/chacha20.sober:99:6: effects std/crypto/chacha20.qr fi=63 bits=none
-std/crypto/chacha20/chacha20.sober:111:6: effects std/crypto/chacha20.rotl fi=64 bits=none
-std/crypto/chacha20/chacha20.sober:116:6: effects std/crypto/chacha20.le32 fi=65 bits=none
-std/crypto/chacha20/chacha20.sober:121:6: effects std/crypto/chacha20.put32 fi=66 bits=none
-std/crypto/chacha20poly1305/chacha20poly1305.sober:36:6: effects std/crypto/chacha20poly1305.Prepare fi=67 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:48:6: effects std/crypto/chacha20poly1305.Seal fi=68 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:57:6: effects std/crypto/chacha20poly1305.Open fi=69 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:66:6: effects std/crypto/chacha20poly1305.SealInto fi=70 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:88:6: effects std/crypto/chacha20poly1305.SealTo fi=71 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:121:6: effects std/crypto/chacha20poly1305.ctTail fi=72 bits=none
-std/crypto/chacha20poly1305/chacha20poly1305.sober:145:6: effects std/crypto/chacha20poly1305.OpenAt fi=73 bits=none declared
-std/crypto/chacha20poly1305/chacha20poly1305.sober:157:6: effects std/crypto/chacha20poly1305.polyKey fi=74 bits=none
-std/crypto/hkdf/hkdf.sober:16:6: effects std/crypto/hkdf.Extract fi=75 bits=none declared
-std/crypto/hkdf/hkdf.sober:34:6: effects std/crypto/hkdf.Expand fi=76 bits=none declared
-std/crypto/hmac/hmac.sober:14:6: effects std/crypto/hmac.Sum256 fi=77 bits=none declared
-std/crypto/pem/pem.sober:20:6: effects std/crypto/pem.Parse fi=78 bits=none declared
-std/crypto/pem/pem.sober:59:6: effects std/crypto/pem.splitLines fi=79 bits=none
-std/crypto/pem/pem.sober:73:6: effects std/crypto/pem.trim fi=80 bits=none
-std/crypto/pem/pem.sober:90:6: effects std/crypto/pem.between fi=81 bits=none
-std/crypto/pem/pem.sober:114:6: effects std/crypto/pem.base64 fi=82 bits=none
-std/crypto/pem/pem.sober:150:6: effects std/crypto/pem.sixBits fi=83 bits=none
-std/crypto/poly1305/poly1305.sober:16:6: effects std/crypto/poly1305.Sum fi=84 bits=none declared
-std/crypto/poly1305/poly1305.sober:26:6: effects std/crypto/poly1305.SumAead fi=85 bits=none declared
-std/crypto/poly1305/poly1305.sober:53:6: effects std/crypto/poly1305.start fi=86 bits=none
-std/crypto/poly1305/poly1305.sober:66:6: effects std/crypto/poly1305.absorb fi=87 bits=none
-std/crypto/poly1305/poly1305.sober:119:6: effects std/crypto/poly1305.tail fi=88 bits=none
-std/crypto/poly1305/poly1305.sober:128:6: effects std/crypto/poly1305.finish fi=89 bits=none
-std/crypto/poly1305/poly1305.sober:188:6: effects std/crypto/poly1305.le32 fi=90 bits=none
-std/crypto/poly1305/poly1305.sober:193:6: effects std/crypto/poly1305.put32 fi=91 bits=none
-std/crypto/rsa/bn.sober:39:6: effects std/crypto/rsa.cy fi=92 bits=none
-std/crypto/rsa/bn.sober:44:6: effects std/crypto/rsa.bw fi=93 bits=none
-std/crypto/rsa/bn.sober:49:6: effects std/crypto/rsa.zeros fi=94 bits=none
-std/crypto/rsa/bn.sober:58:6: effects std/crypto/rsa.bnFromBytes fi=95 bits=none
-std/crypto/rsa/bn.sober:74:6: effects std/crypto/rsa.bnToBytes fi=96 bits=none
-std/crypto/rsa/bn.sober:86:6: effects std/crypto/rsa.bnBits fi=97 bits=none
-std/crypto/rsa/bn.sober:101:6: effects std/crypto/rsa.bnTrim fi=98 bits=none
-std/crypto/rsa/bn.sober:110:6: effects std/crypto/rsa.newMont fi=99 bits=none
-std/crypto/rsa/bn.sober:138:6: effects std/crypto/rsa.condSub fi=100 bits=none
-std/crypto/rsa/bn.sober:161:6: effects std/crypto/rsa.montMul fi=101 bits=none
-std/crypto/rsa/bn.sober:170:6: effects std/crypto/rsa.montMulS fi=102 bits=none
-std/crypto/rsa/bn.sober:213:6: effects std/crypto/rsa.addMod fi=103 bits=none
-std/crypto/rsa/bn.sober:228:6: effects std/crypto/rsa.subMod fi=104 bits=none
-std/crypto/rsa/bn.sober:252:6: effects std/crypto/rsa.put fi=105 bits=none
-std/crypto/rsa/bn.sober:260:6: effects std/crypto/rsa.toMont fi=106 bits=none
-std/crypto/rsa/bn.sober:287:6: effects std/crypto/rsa.expMont fi=107 bits=none
-std/crypto/rsa/bn.sober:346:6: effects std/crypto/rsa.expPub fi=108 bits=none
-std/crypto/rsa/bn.sober:384:6: effects std/crypto/rsa.MontSelfCheck fi=109 bits=none declared
-std/crypto/rsa/bn.sober:438:6: effects std/crypto/rsa.bnAddMul fi=110 bits=none
-std/crypto/rsa/bn.sober:460:6: effects std/crypto/rsa.bnLess fi=111 bits=none
-std/crypto/rsa/der.sober:11:6: effects std/crypto/rsa.ParsePKCS8 fi=112 bits=none declared
-std/crypto/rsa/der.sober:85:6: effects std/crypto/rsa.NewPublic fi=113 bits=none declared
-std/crypto/rsa/der.sober:98:6: effects std/crypto/rsa.newPublic fi=114 bits=none
-std/crypto/rsa/der.sober:102:6: effects std/crypto/rsa.noMont fi=115 bits=none
-std/crypto/rsa/der.sober:106:6: effects std/crypto/rsa.noPublic fi=116 bits=none
-std/crypto/rsa/der.sober:111:6: effects std/crypto/rsa.tlv fi=117 bits=none
-std/crypto/rsa/der.sober:137:6: effects std/crypto/rsa.sameBytes fi=118 bits=none
-std/crypto/rsa/rsa.sober:50:6: effects std/crypto/rsa.Public fi=119 bits=none declared
-std/crypto/rsa/rsa.sober:56:6: effects std/crypto/rsa.Size fi=120 bits=none declared
-std/crypto/rsa/rsa.sober:64:6: effects std/crypto/rsa.SignPSS fi=121 bits=none declared
-std/crypto/rsa/rsa.sober:103:6: effects std/crypto/rsa.VerifyPSS fi=122 bits=none declared
-std/crypto/rsa/rsa.sober:128:6: effects std/crypto/rsa.sameTail fi=123 bits=none
-std/crypto/rsa/rsa.sober:141:6: effects std/crypto/rsa.mgf1 fi=124 bits=none
-std/crypto/rsa/rsa.sober:161:6: effects std/crypto/rsa.pssEncode fi=125 bits=none
-std/crypto/rsa/rsa.sober:190:6: effects std/crypto/rsa.pssVerify fi=126 bits=none
-std/crypto/sha256/sha256.sober:31:6: effects std/crypto/sha256.New fi=127 bits=none declared
-std/crypto/sha256/sha256.sober:37:6: effects std/crypto/sha256.Write fi=128 bits=none declared
-std/crypto/sha256/sha256.sober:72:6: effects std/crypto/sha256.Sum fi=129 bits=none declared
-std/crypto/sha256/sha256.sober:103:6: effects std/crypto/sha256.Sum256 fi=130 bits=none declared
-std/crypto/sha256/sha256.sober:110:6: effects std/crypto/sha256.cat fi=131 bits=none
-std/crypto/sha256/sha256.sober:124:6: effects std/crypto/sha256.load fi=132 bits=none
-std/crypto/sha256/sha256.sober:132:6: effects std/crypto/sha256.compress fi=133 bits=none
-std/crypto/sha256/sha256.sober:175:6: effects std/crypto/sha256.rotr fi=134 bits=none
-std/crypto/sha256/sha256.sober:180:6: effects std/crypto/sha256.sha256K fi=135 bits=none
-std/crypto/x25519/x25519.sober:49:6: effects std/crypto/x25519.Base fi=136 bits=none declared
-std/crypto/x25519/x25519.sober:60:6: effects std/crypto/x25519.Shared fi=137 bits=none declared
-std/crypto/x25519/x25519.sober:115:6: effects std/crypto/x25519.cswap fi=138 bits=none
-std/crypto/x25519/x25519.sober:125:6: effects std/crypto/x25519.carry fi=139 bits=none
-std/crypto/x25519/x25519.sober:144:6: effects std/crypto/x25519.fadd fi=140 bits=none
-std/crypto/x25519/x25519.sober:149:6: effects std/crypto/x25519.fsub fi=141 bits=none
-std/crypto/x25519/x25519.sober:156:6: effects std/crypto/x25519.fmul fi=142 bits=none
-std/crypto/x25519/x25519.sober:186:6: effects std/crypto/x25519.invert fi=143 bits=none
-std/crypto/x25519/x25519.sober:202:6: effects std/crypto/x25519.unpack fi=144 bits=none
-std/crypto/x25519/x25519.sober:214:6: effects std/crypto/x25519.pack fi=145 bits=none
-std/hash/sha256.sober:14:6: effects std/hash.Sha256 fi=146 bits=none declared
-std/hash/crc32/crc32.sober:14:6: effects std/hash/crc32.Sum fi=147 bits=panic declared
-std/hex/hex.sober:12:6: effects std/hex.Format fi=148 bits=none declared
-std/hex/hex.sober:29:6: effects std/hex.Parse fi=149 bits=none declared
-std/hex/hex.sober:47:6: effects std/hex.nib fi=150 bits=none
-std/http/http.sober:126:6: effects std/http.Text fi=151 bits=none declared
-std/http/http.sober:132:6: effects std/http.Json fi=152 bits=none declared
-std/http/http.sober:160:6: effects std/http.FormatEvent fi=153 bits=panic declared
-std/http/http.sober:212:6: effects std/http.eventBad fi=154 bits=none
-std/http/http.sober:264:6: effects std/http.Status fi=155 bits=none declared
-std/http/http.sober:293:6: effects std/http.Header fi=156 bits=none declared
-std/http/http.sober:304:6: effects std/http.Authorization fi=157 bits=none declared
-std/http/http.sober:313:6: effects std/http.Cookie fi=158 bits=none declared
-std/http/http.sober:330:6: effects std/http.cookieIn fi=159 bits=none
-std/http/http.sober:361:6: effects std/http.headerOf fi=160 bits=none
-std/http/http.sober:379:6: effects std/http.Query fi=161 bits=none declared
-std/http/http.sober:386:6: effects std/http.Form fi=162 bits=none declared
-std/http/http.sober:399:6: effects std/http.JsonDoc fi=163 bits=none declared
-std/http/http.sober:404:6: effects std/http.isMedia fi=164 bits=none
-std/http/http.sober:412:6: effects std/http.pairOf fi=165 bits=none
-std/http/http.sober:466:6: effects std/http.Mount fi=166 bits=none declared
-std/http/http.sober:483:6: effects std/http.Merge fi=167 bits=none declared
-std/http/http.sober:499:6: effects std/http.Dispatch fi=168 bits=io, nondet declared
-std/http/http.sober:546:6: effects std/http.allowOf fi=169 bits=none
-std/http/http.sober:567:6: effects std/http.chain fi=170 bits=io, nondet
-std/http/http.sober:615:6: effects std/http.Static fi=171 bits=none declared
-std/http/http.sober:640:6: effects std/http.cacheValue fi=172 bits=none
-std/http/http.sober:654:6: effects std/http.sharedValue fi=173 bits=none
-std/http/http.sober:660:6: effects std/http.freshValue fi=174 bits=none
-std/http/http.sober:669:6: effects std/http.staticGet fi=175 bits=io, nondet
-std/http/http.sober:698:6: effects std/http.staticOf fi=176 bits=none
-std/http/http.sober:722:6: effects std/http.statUnder fi=177 bits=io, nondet
-std/http/http.sober:744:6: effects std/http.sendUnder fi=178 bits=block, io, nondet
-std/http/http.sober:770:6: effects std/http.etagOf fi=179 bits=none
-std/http/http.sober:776:6: effects std/http.hexOf fi=180 bits=none
-std/http/http.sober:802:6: effects std/http.condOf fi=181 bits=none
-std/http/http.sober:859:6: effects std/http.tagIn fi=182 bits=none
-std/http/http.sober:901:6: effects std/http.httpDate fi=183 bits=none
-std/http/http.sober:911:6: effects std/http.pad fi=184 bits=none
-std/http/http.sober:921:6: effects std/http.monthNames fi=185 bits=none
-std/http/http.sober:926:6: effects std/http.civilOf fi=186 bits=none
-std/http/http.sober:939:6: effects std/http.daysOf fi=187 bits=none
-std/http/http.sober:950:6: effects std/http.parseDate fi=188 bits=none
-std/http/http.sober:978:6: effects std/http.dateOf fi=189 bits=none
-std/http/http.sober:997:6: effects std/http.monthOf fi=190 bits=none
-std/http/http.sober:1009:6: effects std/http.isDay fi=191 bits=none
-std/http/http.sober:1024:6: effects std/http.staticCode fi=192 bits=none
-std/http/http.sober:1034:6: effects std/http.mimeOf fi=193 bits=none
-std/http/http.sober:1070:6: effects std/http.Param fi=194 bits=none declared
-std/http/http.sober:1099:6: effects std/http.segEnd fi=195 bits=none
-std/http/http.sober:1108:6: effects std/http.isSeg fi=196 bits=none
-std/http/http.sober:1123:6: effects std/http.segKind fi=197 bits=none
-std/http/http.sober:1129:6: effects std/http.matchKind fi=198 bits=none
-std/http/http.sober:1170:6: effects std/http.moreSpecific fi=199 bits=none
-std/http/http.sober:1201:6: effects std/http.ServeConn fi=200 bits=block, io, panic, nondet declared
-std/http/http.sober:1211:6: effects std/http.ServeWith fi=201 bits=block, io, panic, nondet declared
-std/http/http.sober:1263:6: effects std/http.ServeFlushed fi=202 bits=block, io, panic, nondet declared
-std/http/http.sober:1307:6: effects std/http.gzLevel fi=203 bits=panic
-std/http/http.sober:1315:6: effects std/http.joined fi=204 bits=none
-std/http/http.sober:1330:6: effects std/http.linger fi=205 bits=block
-std/http/http.sober:1337:6: effects std/http.drain fi=206 bits=none
-std/http/http.sober:1355:6: effects std/http.serveBuf fi=207 bits=block, io, panic, nondet
-std/http/http.sober:1462:6: effects std/http.fr fi=208 bits=none
-std/http/http.sober:1467:6: effects std/http.lineEnd fi=209 bits=panic
-std/http/http.sober:1492:6: effects std/http.contentEnd fi=210 bits=none
-std/http/http.sober:1499:6: effects std/http.frameAt fi=211 bits=panic
-std/http/http.sober:1639:6: effects std/http.chunkedEnd fi=212 bits=panic
-std/http/http.sober:1707:6: effects std/http.request fi=213 bits=block, panic
-std/http/http.sober:1722:6: effects std/http.unchunk fi=214 bits=panic
-std/http/http.sober:1750:6: effects std/http.gzWants fi=215 bits=none
-std/http/http.sober:1755:6: effects std/http.gzSize fi=216 bits=none
-std/http/http.sober:1765:6: effects std/http.wire fi=217 bits=panic
-std/http/http.sober:1800:6: effects std/http.gzFeed fi=218 bits=panic
-std/http/http.sober:1823:6: effects std/http.sendCounted fi=219 bits=none
-std/http/http.sober:1836:6: effects std/http.chunkEnd fi=220 bits=none
-std/http/http.sober:1848:6: effects std/http.chunkOf fi=221 bits=none
-std/http/http.sober:1872:6: effects std/http.compressible fi=222 bits=none
-std/http/http.sober:1884:6: effects std/http.acceptsGzip fi=223 bits=none
-std/http/http.sober:1889:6: effects std/http.accepts fi=224 bits=none
-std/http/http.sober:1925:6: effects std/http.qOf fi=225 bits=none
-std/http/http.sober:1945:6: effects std/http.zeroQ fi=226 bits=none
-std/http/http.sober:1968:6: effects std/http.respHead fi=227 bits=panic
-std/http/http.sober:2111:6: effects std/http.checkField fi=228 bits=panic
-std/http/http.sober:2129:6: effects std/http.statusLine fi=229 bits=none
-std/http/http.sober:2154:6: effects std/http.indexIn fi=230 bits=none
-std/http/http.sober:2166:6: effects std/http.isLit fi=231 bits=none
-std/http/http.sober:2182:6: effects std/http.lower fi=232 bits=none
-std/http/http.sober:2187:6: effects std/http.eqFold fi=233 bits=none
-std/http/http.sober:2202:6: effects std/http.hasToken fi=234 bits=none
-std/http/http.sober:2219:6: effects std/http.tokenRun fi=235 bits=none
-std/http/http.sober:2232:6: effects std/http.tchar fi=236 bits=none
-std/http/http.sober:2241:6: effects std/http.skipOWS fi=237 bits=none
-std/http/http.sober:2250:6: effects std/http.trimOWS fi=238 bits=none
-std/http/http.sober:2259:6: effects std/http.digits fi=239 bits=none
-std/http/http.sober:2276:6: effects std/http.hexVal fi=240 bits=none
-std/http/multipart.sober:51:6: effects std/http.Multipart fi=241 bits=none declared
-std/http/multipart.sober:61:6: effects std/http.multipartOf fi=242 bits=none
-std/http/multipart.sober:178:6: effects std/http.startsDash fi=243 bits=none
-std/http/multipart.sober:193:6: effects std/http.delimAt fi=244 bits=none
-std/http/multipart.sober:205:6: effects std/http.crlfAt fi=245 bits=none
-std/http/multipart.sober:218:6: effects std/http.lineClean fi=246 bits=none
-std/http/multipart.sober:230:6: effects std/http.boundaryOk fi=247 bits=none
-std/http/multipart.sober:248:6: effects std/http.paramOf fi=248 bits=none
-std/http/multipart.sober:317:6: effects std/http.tspecial fi=249 bits=none
-std/io/io.sober:84:6: effects std/io.errOf fi=250 bits=none
-std/io/io.sober:130:6: effects std/io.Open fi=251 bits=io, nondet declared
-std/io/io.sober:143:6: effects std/io.Close fi=252 bits=io declared
-std/io/io.sober:163:6: effects std/io.OpenRoot fi=253 bits=io, nondet declared
-std/io/io.sober:181:6: effects std/io.CloseRoot fi=254 bits=io declared
-std/io/io.sober:191:6: effects std/io.OpenUnder fi=255 bits=io, nondet declared
-std/io/io.sober:225:6: effects std/io.Stat fi=256 bits=io, nondet declared
-std/io/io.sober:244:6: effects std/io.le64 fi=257 bits=none
-std/io/io.sober:255:6: effects std/io.cstr fi=258 bits=none
-std/io/io.sober:271:6: effects std/io.owned fi=259 bits=io
-std/io/io.sober:286:6: effects std/io.ReadAll fi=260 bits=block, io, nondet declared
-std/io/io.sober:312:6: effects std/io.Raw fi=261 bits=none declared
-std/io/io.sober:324:6: effects std/io.Chunks fi=262 bits=block, io, nondet declared
-std/io/io.sober:332:6: effects std/io.ChunksAt fi=263 bits=block, io, nondet declared
-std/io/io.sober:341:6: effects std/io.chunksFrom fi=264 bits=block, io, nondet
-std/io/io.sober:363:6: effects std/io.chunkEnd fi=265 bits=block, io
-std/io/io.sober:371:6: effects std/io.Lines fi=266 bits=block, io, nondet declared
-std/io/io.sober:408:6: effects std/io.dropCR fi=267 bits=none
-std/io/io.sober:416:6: effects std/io.joined fi=268 bits=none
-std/io/io.sober:430:6: effects std/io.ReadFile fi=269 bits=io, nondet declared
-std/io/io.sober:445:6: effects std/io.WriteFile fi=270 bits=io, nondet declared
-std/io/io.sober:461:6: effects std/io.WriteStdout fi=271 bits=io, nondet declared
-std/io/io.sober:476:6: effects std/io.ReadStdin fi=272 bits=block, io, nondet declared
-std/io/io.sober:491:6: effects std/io.WriteStderr fi=273 bits=io, nondet declared
-std/io/io.sober:516:6: effects std/io.kindOf fi=274 bits=none
-std/io/io.sober:530:6: effects std/io.dot fi=275 bits=none
-std/io/io.sober:535:6: effects std/io.less fi=276 bits=none
-std/io/io.sober:549:6: effects std/io.ReadDir fi=277 bits=io, nondet declared
-std/io/io.sober:608:6: effects std/io.SetFile fi=278 bits=none declared
-std/io/io.sober:614:6: effects std/io.WriteByte fi=279 bits=io, nondet declared
-std/io/io.sober:625:6: effects std/io.writerByteSlow fi=280 bits=io, nondet
-std/io/io.sober:633:6: effects std/io.WriteBytes fi=281 bits=io, nondet declared
-std/io/io.sober:653:6: effects std/io.WriteString fi=282 bits=io, nondet declared
-std/io/io.sober:660:6: effects std/io.Flush fi=283 bits=io, nondet declared
-std/io/io.sober:674:6: effects std/io.writerRoom fi=284 bits=io, nondet
-std/io/io.sober:686:6: effects std/io.writerSpill fi=285 bits=io, nondet
-std/iter/iter.sober:12:6: effects std/iter.Slice fi=286 bits=none declared
-std/iter/iter.sober:23:6: effects std/iter.Range fi=287 bits=none declared
-std/iter/iter.sober:33:6: effects std/iter.Each fi=288 bits=none declared
-std/iter/iter.sober:39:6: effects std/iter.Count fi=289 bits=none declared
-std/iter/iter.sober:49:6: effects std/iter.Sum fi=290 bits=none declared
-std/json/decode.sober:30:6: effects std/json.NeedObject fi=291 bits=none declared
-std/json/decode.sober:40:6: effects std/json.Need fi=292 bits=none declared
-std/json/decode.sober:47:6: effects std/json.NeedAt fi=293 bits=none declared
-std/json/decode.sober:57:6: effects std/json.IsNull fi=294 bits=none declared
-std/json/decode.sober:64:6: effects std/json.Items fi=295 bits=none declared
-std/json/decode.sober:74:6: effects std/json.ParseString fi=296 bits=none declared
-std/json/decode.sober:85:6: effects std/json.ParseBool fi=297 bits=none declared
-std/json/decode.sober:96:6: effects std/json.ParseInt fi=298 bits=none declared
-std/json/decode.sober:129:6: effects std/json.ParseFloat fi=299 bits=none declared
-std/json/encode.sober:19:6: effects std/json.KeyOf fi=300 bits=none declared
-std/json/encode.sober:33:6: effects std/json.Put fi=301 bits=none declared
-std/json/encode.sober:39:6: effects std/json.PutKey fi=302 bits=none declared
-std/json/encode.sober:49:6: effects std/json.PutString fi=303 bits=none declared
-std/json/encode.sober:56:6: effects std/json.PutInt fi=304 bits=none declared
-std/json/encode.sober:85:6: effects std/json.putDigits fi=305 bits=none
-std/json/encode.sober:100:6: effects std/json.PutBool fi=306 bits=none declared
-std/json/encode.sober:106:6: effects std/json.PutFloat fi=307 bits=panic declared
-std/json/encode.sober:115:6: effects std/json.Done fi=308 bits=none declared
-std/json/json.sober:77:6: effects std/json.Root fi=309 bits=none declared
-std/json/json.sober:83:6: effects std/json.Pos fi=310 bits=none declared
-std/json/json.sober:89:6: effects std/json.At fi=311 bits=none declared
-std/json/json.sober:109:6: effects std/json.keysOf fi=312 bits=none
-std/json/json.sober:118:6: effects std/json.text fi=313 bits=none
-std/json/json.sober:124:6: effects std/json.Get fi=314 bits=none declared
-std/json/json.sober:132:6: effects std/json.GetAt fi=315 bits=none declared
-std/json/json.sober:172:6: effects std/json.isWs fi=316 bits=none
-std/json/json.sober:176:6: effects std/json.skipWs fi=317 bits=none
-std/json/json.sober:184:6: effects std/json.isDigit fi=318 bits=none
-std/json/json.sober:189:6: effects std/json.numEnd fi=319 bits=none
-std/json/json.sober:229:6: effects std/json.hexVal fi=320 bits=none
-std/json/json.sober:242:6: effects std/json.hex4 fi=321 bits=none
-std/json/json.sober:258:6: effects std/json.strScan fi=322 bits=none
-std/json/json.sober:305:6: effects std/json.unescape fi=323 bits=none
-std/json/json.sober:331:6: effects std/json.putRune fi=324 bits=none
-std/json/json.sober:350:6: effects std/json.litAt fi=325 bits=none
-std/json/json.sober:364:6: effects std/json.put fi=326 bits=none
-std/json/json.sober:385:6: effects std/json.node fi=327 bits=none
-std/json/json.sober:396:6: effects std/json.bound fi=328 bits=none
-std/json/json.sober:410:6: effects std/json.zeroFill fi=329 bits=none
-std/json/json.sober:421:6: effects std/json.Parse fi=330 bits=none declared
-std/json/json.sober:560:6: effects std/json.readKey fi=331 bits=none
-std/json/json.sober:577:6: effects std/json.strNode fi=332 bits=none
-std/json/json.sober:587:6: effects std/json.closeFrame fi=333 bits=none
-std/json/json.sober:609:6: effects std/json.dupKey fi=334 bits=none
-std/json/json.sober:627:6: effects std/json.dupSmall fi=335 bits=none
-std/json/json.sober:657:6: effects std/json.dupLarge fi=336 bits=none
-std/json/json.sober:672:6: effects std/json.Format fi=337 bits=none declared
-std/json/json.sober:720:6: effects std/json.scalar fi=338 bits=none
-std/json/json.sober:735:6: effects std/json.putLit fi=339 bits=none
-std/json/json.sober:740:6: effects std/json.quote fi=340 bits=none
-std/json/json.sober:772:6: effects std/json.open fi=341 bits=none
-std/json/json.sober:779:6: effects std/json.shut fi=342 bits=none
-std/json/json.sober:787:6: effects std/json.unesc fi=343 bits=none
-std/json/json.sober:802:6: effects std/json.hexDigit fi=344 bits=none
-std/layout/layout.sober:28:6: effects std/layout.FailWidth fi=345 bits=panic declared
-std/layout/layout.sober:34:6: effects std/layout.FailLength fi=346 bits=panic declared
-std/math/math.sober:18:6: effects std/math.Sqrt fi=347 bits=none declared
-std/math/math.sober:24:6: effects std/math.Abs fi=348 bits=none declared
-std/math/math.sober:30:6: effects std/math.Bits fi=349 bits=none declared
-std/math/math.sober:36:6: effects std/math.FromBits fi=350 bits=none declared
-std/net/net.sober:53:6: effects std/net.again fi=351 bits=block, io
-std/net/net.sober:84:6: effects std/net.errOf fi=352 bits=nondet
-std/net/net.sober:104:6: effects std/net.waitErr fi=353 bits=nondet
-std/net/net.sober:112:6: effects std/net.sockaddr fi=354 bits=none
-std/net/net.sober:159:6: effects std/net.Listen fi=355 bits=block, io, nondet declared
-std/net/net.sober:187:6: effects std/net.closeFd fi=356 bits=block, io
-std/net/net.sober:192:6: effects std/net.giveConn fi=357 bits=block, io
-std/net/net.sober:199:6: effects std/net.Port fi=358 bits=io declared
-std/net/net.sober:214:6: effects std/net.Accept fi=359 bits=block, io, nondet declared
-std/net/net.sober:237:6: effects std/net.Dial fi=360 bits=block, io, nondet declared
-std/net/net.sober:274:6: effects std/net.Recv fi=361 bits=block, io, nondet declared
-std/net/net.sober:309:6: effects std/net.Send fi=362 bits=block, io, nondet declared
-std/net/net.sober:347:6: effects std/net.Serve fi=363 bits=block, io, panic, nondet declared
-std/net/net.sober:405:6: effects std/net.slotBytes fi=364 bits=none
-std/os/os.sober:40:6: effects std/os.Args fi=365 bits=io declared
-std/os/os.sober:63:6: effects std/os.Run fi=366 bits=block, io declared
-std/os/os.sober:84:6: effects std/os.WriteMode fi=367 bits=io declared
-std/os/os.sober:96:6: effects std/os.Mkdir fi=368 bits=io declared
-std/os/os.sober:108:6: effects std/os.Rename fi=369 bits=io declared
-std/os/os.sober:120:6: effects std/os.ModTime fi=370 bits=io declared
-std/os/os.sober:131:6: effects std/os.Sleep fi=371 bits=block declared
-std/os/os.sober:137:6: effects std/os.SleepExpired fi=372 bits=block declared
-std/os/os.sober:145:6: effects std/os.Getenv fi=373 bits=io declared
-std/os/os.sober:164:6: effects std/os.keyIs fi=374 bits=none
-std/os/os.sober:177:6: effects std/os.argz fi=375 bits=none
-std/os/os.sober:190:6: effects std/os.errOf fi=376 bits=none
-std/pool/pool.sober:35:6: effects std/pool.Acquire fi=377 bits=none declared
-std/pool/pool.sober:53:6: effects std/pool.Release fi=378 bits=none declared
-std/pool/pool.sober:68:6: effects std/pool.Get fi=379 bits=none declared
-std/pool/pool.sober:77:6: effects std/pool.Set fi=380 bits=none declared
-std/pool/pool.sober:87:6: effects std/pool.Len fi=381 bits=none declared
-std/pool/pool.sober:91:6: effects std/pool.live fi=382 bits=none
-std/pool/pool.sober:120:6: effects std/pool.NewScratch fi=383 bits=panic declared
-std/pool/pool.sober:130:6: effects std/pool.zeros fi=384 bits=none
-std/pool/pool.sober:151:6: effects std/pool.Cap fi=385 bits=none declared
-std/pool/pool.sober:157:6: effects std/pool.Load fi=386 bits=none declared
-std/pool/pool.sober:164:6: effects std/pool.Store fi=387 bits=panic declared
-std/pool/pool.sober:172:6: effects std/pool.badScratch fi=388 bits=panic
-std/pool/pool.sober:178:6: effects std/pool.Renew fi=389 bits=none declared
-std/pool/pool.sober:196:6: effects std/pool.LoadRaw fi=390 bits=none declared
-std/pool/pool.sober:202:6: effects std/pool.StoreRaw fi=391 bits=none declared
-std/pool/pool.sober:210:6: effects std/pool.RenewDense fi=392 bits=none declared
-std/pool/pool.sober:230:6: effects std/pool.LeaseAttach fi=393 bits=panic declared
-std/rand/rand.sober:24:6: effects std/rand.New fi=394 bits=none declared
-std/rand/rand.sober:36:6: effects std/rand.Next fi=395 bits=none declared
-std/rand/rand.sober:50:6: effects std/rand.Int62 fi=396 bits=none declared
-std/rand/rand.sober:63:6: effects std/rand.Intn fi=397 bits=panic declared
-std/rand/rand.sober:77:6: effects std/rand.Bool fi=398 bits=none declared
-std/rand/rand.sober:83:6: effects std/rand.Split fi=399 bits=none declared
-std/rand/rand.sober:88:6: effects std/rand.mul32 fi=400 bits=none
-std/rand/rand.sober:97:6: effects std/rand.rotl32 fi=401 bits=none
-std/rand/rand.sober:102:6: effects std/rand.fmix32 fi=402 bits=none
-std/sort/sort.sober:23:6: effects std/sort.Order fi=403 bits=none declared
-std/sort/sort.sober:189:6: effects std/sort.OrderUnstable fi=404 bits=none declared
-std/sort/sort.sober:342:6: effects std/sort.triple fi=405 bits=none
-std/sort/sort.sober:353:6: effects std/sort.insertion fi=406 bits=none
-std/sort/sort.sober:376:6: effects std/sort.heapsort fi=407 bits=none
-std/sort/sort.sober:415:6: effects std/sort.breakPattern fi=408 bits=none
-std/sort/sort.sober:429:6: effects std/sort.swapAt fi=409 bits=none
-std/strings/strings.sober:7:6: effects std/strings.hasPrefixAt fi=410 bits=none
-std/strings/strings.sober:19:6: effects std/strings.indexAt fi=411 bits=none
-std/strings/strings.sober:34:6: effects std/strings.runeCount fi=412 bits=none
-std/strings/strings.sober:48:6: effects std/strings.HasPrefix fi=413 bits=none declared
-std/strings/strings.sober:56:6: effects std/strings.HasSuffix fi=414 bits=none declared
-std/strings/strings.sober:65:6: effects std/strings.Index fi=415 bits=none declared
-std/strings/strings.sober:71:6: effects std/strings.Contains fi=416 bits=none declared
-std/strings/strings.sober:78:6: effects std/strings.Count fi=417 bits=none declared
-std/strings/strings.sober:85:6: effects std/strings.countFrom fi=418 bits=none
-std/strings/strings.sober:100:6: effects std/strings.lastIndexAt fi=419 bits=none
-std/strings/strings.sober:112:6: effects std/strings.Cut fi=420 bits=none declared
-std/strings/strings.sober:124:6: effects std/strings.CutLast fi=421 bits=none declared
-std/strings/strings.sober:136:6: effects std/strings.TrimPrefix fi=422 bits=none declared
-std/strings/strings.sober:144:6: effects std/strings.TrimSuffix fi=423 bits=none declared
-std/strings/strings.sober:152:6: effects std/strings.LastIndex fi=424 bits=none declared
-std/strings/strings.sober:162:6: effects std/strings.isSpace fi=425 bits=none
-std/strings/strings.sober:167:6: effects std/strings.runeEnd fi=426 bits=none
-std/strings/strings.sober:178:6: effects std/strings.Split fi=427 bits=none declared
-std/strings/strings.sober:204:6: effects std/strings.Fields fi=428 bits=none declared
-std/strings/strings.sober:225:6: effects std/strings.TrimSpace fi=429 bits=none declared
-std/strings/strings.sober:241:6: effects std/strings.Replace fi=430 bits=none declared
-std/strings/strings.sober:285:6: effects std/strings.ToLower fi=431 bits=none declared
-std/strings/strings.sober:291:6: effects std/strings.ToUpper fi=432 bits=none declared
-std/strings/strings.sober:296:6: effects std/strings.mapCase fi=433 bits=none
-std/strings/strings.sober:318:6: effects std/strings.EqualFold fi=434 bits=none declared
-std/strings/strings.sober:332:6: effects std/strings.foldByte fi=435 bits=none
-std/strings/strings.sober:338:6: effects std/strings.IndexByte fi=436 bits=none declared
-std/strings/strings.sober:366:6: effects std/strings.Clone fi=437 bits=none declared
-std/strings/strings.sober:380:6: effects std/strings.Join fi=438 bits=none declared
-std/strings/strings.sober:412:6: effects std/strings.cont fi=439 bits=none
-std/strings/strings.sober:417:6: effects std/strings.seqLen fi=440 bits=none
-std/strings/strings.sober:440:6: effects std/strings.IndexInvalid fi=441 bits=none declared
-std/strings/strings.sober:478:6: effects std/strings.validPrefix fi=442 bits=none
-std/strings/strings.sober:484:6: effects std/strings.Valid fi=443 bits=none declared
-std/table/table.sober:36:6: effects std/table.Push fi=444 bits=none declared
-std/table/table.sober:65:6: effects std/table.PushAll fi=445 bits=none declared
-std/table/table.sober:111:6: effects std/table.Len fi=446 bits=none declared
-std/table/table.sober:117:6: effects std/table.Get fi=447 bits=none declared
-std/table/table.sober:129:6: effects std/table.Set fi=448 bits=none declared
-std/table/table.sober:144:6: effects std/table.Freeze fi=449 bits=none declared
-std/table/table.sober:162:6: effects std/table.FrozenLen fi=450 bits=none declared
-std/table/table.sober:168:6: effects std/table.At fi=451 bits=none declared
-std/task/task.sober:62:6: effects std/task.Run fi=452 bits=block declared
-std/task/task.sober:70:6: effects std/task.fence fi=453 bits=none
-std/task/task.sober:77:6: effects std/task.Spawn fi=454 bits=none declared
-std/task/task.sober:83:6: effects std/task.Join fi=455 bits=block declared
-std/task/task.sober:89:6: effects std/task.Try fi=456 bits=block declared
-std/task/task.sober:105:6: effects std/task.NewChannel fi=457 bits=none declared
-std/task/task.sober:111:6: effects std/task.Send fi=458 bits=block declared
-std/task/task.sober:119:6: effects std/task.Recv fi=459 bits=block declared
-std/task/task.sober:125:6: effects std/task.RecvAll fi=460 bits=block declared
-std/task/task.sober:139:6: effects std/task.Close fi=461 bits=none declared
-std/task/task.sober:147:6: effects std/task.SpawnGive fi=462 bits=none declared
-std/task/task.sober:154:6: effects std/task.Gather fi=463 bits=block declared
-std/task/task.sober:167:6: effects std/task.gatherE fi=464 bits=block
-std/task/task.sober:198:6: effects std/task.Map fi=465 bits=block declared
-std/task/task.sober:225:6: effects std/task.mapE fi=466 bits=block
-std/task/task.sober:286:6: effects std/task.MarkFailed fi=467 bits=none declared
-std/task/task.sober:292:6: effects std/task.NewPool fi=468 bits=panic declared
-std/task/task.sober:333:6: effects std/task.Ledger fi=469 bits=nondet declared
-std/task/task.sober:350:6: effects std/task.SpawnIn fi=470 bits=none declared
-std/task/task.sober:373:6: effects std/task.NewLocal fi=471 bits=panic declared
-std/task/task.sober:381:6: effects std/task.Lease fi=472 bits=panic declared
-std/task/task.sober:395:6: effects std/task.LocalNew fi=473 bits=none declared
-std/task/task.sober:425:6: effects std/task.LeaseTake fi=474 bits=panic declared
-std/task/task.sober:447:6: effects std/task.LeaseGive fi=475 bits=none declared
-std/task/task.sober:455:6: effects std/task.LeaseBlock fi=476 bits=none declared
-std/testing/testing.sober:16:6: effects std/testing.Fail fi=477 bits=io, panic, nondet declared
-std/tls/tls.sober:81:6: effects std/tls.Parse fi=478 bits=none declared
-std/tls/tls.sober:99:6: effects std/tls.Alpn fi=479 bits=none declared
-std/tls/tls.sober:106:6: effects std/tls.Load fi=480 bits=io, nondet declared
-std/tls/tls.sober:112:6: effects std/tls.emptyConfig fi=481 bits=none
-std/tls/tls.sober:124:6: effects std/tls.Serve fi=482 bits=block, io, panic, nondet declared
-std/tls/tls.sober:133:6: effects std/tls.accept fi=483 bits=block, io, panic, nondet
-std/tls/tls.sober:149:6: effects std/tls.handshake fi=484 bits=block, io, panic, nondet
-std/tls/tls.sober:186:6: effects std/tls.frameLen fi=485 bits=none
-std/tls/tls.sober:198:6: effects std/tls.alertOf fi=486 bits=none
-std/tls/tls.sober:206:6: effects std/tls.newBlk fi=487 bits=panic
-std/tls/tls.sober:233:6: effects std/tls.putDir fi=488 bits=panic
-std/tls/tls.sober:259:6: effects std/tls.Recv fi=489 bits=block, io, nondet declared
-std/tls/tls.sober:293:6: effects std/tls.pump fi=490 bits=block, io, nondet
-std/tls/tls.sober:315:6: effects std/tls.Send fi=491 bits=block, io, panic, nondet declared
-std/tls/tls.sober:324:6: effects std/tls.Put fi=492 bits=block, io, panic, nondet declared
-std/tls/tls.sober:349:6: effects std/tls.Flush fi=493 bits=block, io, nondet declared
-std/tls/tls.sober:360:6: effects std/tls.sendNow fi=494 bits=block, io, panic, nondet
-std/tls/tls.sober:377:6: effects std/tls.sealPut fi=495 bits=none
-std/tls/tls.sober:387:6: effects std/tls.closeRecord fi=496 bits=none
-std/tls/tls.sober:396:6: effects std/tls.die fi=497 bits=block, io, nondet
-std/tls/tls.sober:409:6: effects std/tls.flags fi=498 bits=none
-std/tls/tls.sober:413:6: effects std/tls.setFlags fi=499 bits=none
-std/tls/tls.sober:418:6: effects std/tls.setSeq fi=500 bits=none
-std/tls/tls.sober:423:6: effects std/tls.putWr fi=501 bits=none
-std/tls/tls.sober:433:6: effects std/tls.view fi=502 bits=none
-std/tls/tls.sober:439:6: effects std/tls.leftBytes fi=503 bits=none
-std/tls/tls.sober:451:6: effects std/tls.cat fi=504 bits=none
-std/tls/tls.sober:463:6: effects std/tls.rest fi=505 bits=none
-std/tls/record/record.sober:74:6: effects std/tls/record.ExpandLabel fi=506 bits=none declared
-std/tls/record/record.sober:97:6: effects std/tls/record.NewDir fi=507 bits=none declared
-std/tls/record/record.sober:116:6: effects std/tls/record.emptyDir fi=508 bits=none
-std/tls/record/record.sober:123:6: effects std/tls/record.Update fi=509 bits=none declared
-std/tls/record/record.sober:131:6: effects std/tls/record.NeedUpdate fi=510 bits=none declared
-std/tls/record/record.sober:138:6: effects std/tls/record.Seal fi=511 bits=none declared
-std/tls/record/record.sober:161:6: effects std/tls/record.SealInto fi=512 bits=none declared
-std/tls/record/record.sober:177:6: effects std/tls/record.sealOne fi=513 bits=none
-std/tls/record/record.sober:199:6: effects std/tls/record.head fi=514 bits=none
-std/tls/record/record.sober:210:6: effects std/tls/record.nonceOf fi=515 bits=none
-std/tls/record/record.sober:218:6: effects std/tls/record.Plain fi=516 bits=none declared
-std/tls/record/record.sober:227:6: effects std/tls/record.Open fi=517 bits=none declared
-std/tls/record/record.sober:256:6: effects std/tls/record.openBody fi=518 bits=none
-std/tls/record/record.sober:269:6: effects std/tls/record.strip fi=519 bits=none
-std/tls/record/record.sober:285:6: effects std/tls/record.stripTail fi=520 bits=none
-std/tls/record/record.sober:302:6: effects std/tls/record.Frames fi=521 bits=none declared
-std/tls/record/record.sober:369:6: effects std/tls/record.carry fi=522 bits=none
-std/tls/record/record.sober:378:6: effects std/tls/record.joined fi=523 bits=none
-std/tls/record/record.sober:392:6: effects std/tls/record.At fi=524 bits=none declared
-std/tls/record/record.sober:399:6: effects std/tls/record.Pack fi=525 bits=panic declared
-std/tls/record/record.sober:411:6: effects std/tls/record.Unpack fi=526 bits=none declared
-std/tls/record/record.sober:425:6: effects std/tls/record.WithSeq fi=527 bits=none declared
-std/tls/record/record.sober:431:6: effects std/tls/record.Seq fi=528 bits=none declared
-std/tls/record/record.sober:435:6: effects std/tls/record.packBytes fi=529 bits=panic
-std/tls/record/record.sober:456:6: effects std/tls/record.unpackBytes fi=530 bits=none
-std/url/url.sober:22:6: effects std/url.Escape fi=531 bits=none declared
-std/url/url.sober:42:6: effects std/url.Unescape fi=532 bits=none declared
-std/url/url.sober:57:6: effects std/url.ParseQuery fi=533 bits=none declared
-std/url/url.sober:86:6: effects std/url.unescape fi=534 bits=none
-std/url/url.sober:111:6: effects std/url.unreserved fi=535 bits=none
-std/url/url.sober:116:6: effects std/url.nib fi=536 bits=none
-std/utf8/utf8.sober:29:6: effects std/utf8.Check fi=537 bits=block declared
-std/utf8/utf8.sober:39:6: effects std/utf8.Bytes fi=538 bits=none declared
-std/utf8/utf8.sober:44:6: effects std/utf8.boundary fi=539 bits=none
-std/utf8/utf8.sober:51:6: effects std/utf8.Str fi=540 bits=none declared
-std/utf8/utf8.sober:73:6: effects std/utf8.indexInvalidPar fi=541 bits=block
-std/utf8/utf8.sober:105:6: effects std/utf8.chunkInvalid fi=542 bits=none
-std/internal/deflate/deflate.sober:43:6: effects std/internal/deflate.Prepare fi=543 bits=panic
-std/internal/deflate/deflate.sober:51:6: effects std/internal/deflate.EncodeWith fi=544 bits=panic
-std/internal/deflate/deflate.sober:147:6: effects std/internal/deflate.setup fi=545 bits=none
-std/internal/deflate/deflate.sober:190:6: effects std/internal/deflate.setupFixed fi=546 bits=none
-std/internal/deflate/deflate.sober:213:6: effects std/internal/deflate.fill fi=547 bits=none
-std/internal/deflate/deflate.sober:234:6: effects std/internal/deflate.rev fi=548 bits=none
-std/internal/deflate/deflate.sober:245:6: effects std/internal/deflate.put fi=549 bits=none
-std/internal/deflate/deflate.sober:264:6: effects std/internal/deflate.drain fi=550 bits=none
-std/internal/deflate/deflate.sober:277:6: effects std/internal/deflate.align fi=551 bits=none
-std/internal/deflate/deflate.sober:286:6: effects std/internal/deflate.dsym fi=552 bits=none
-std/internal/deflate/deflate.sober:292:6: effects std/internal/deflate.stored fi=553 bits=none
-std/internal/deflate/deflate.sober:314:6: effects std/internal/deflate.flush fi=554 bits=none
-std/internal/deflate/deflate.sober:411:6: effects std/internal/deflate.symbols fi=555 bits=none
-std/internal/deflate/deflate.sober:453:6: effects std/internal/deflate.used fi=556 bits=none
-std/internal/deflate/deflate.sober:463:6: effects std/internal/deflate.rle fi=557 bits=none
-std/internal/deflate/deflate.sober:511:6: effects std/internal/deflate.flushRep fi=558 bits=none
-std/internal/deflate/deflate.sober:523:6: effects std/internal/deflate.flushZero fi=559 bits=none
-std/internal/deflate/deflate.sober:541:6: effects std/internal/deflate.lengths fi=560 bits=none
-std/internal/deflate/deflate.sober:699:6: effects std/internal/deflate.pad2 fi=561 bits=none
-std/internal/deflate/deflate.sober:723:6: effects std/internal/deflate.insert fi=562 bits=panic
-std/internal/deflate/deflate.sober:746:6: effects std/internal/deflate.longest fi=563 bits=panic
-std/internal/deflate/deflate.sober:777:6: effects std/internal/deflate.tally fi=564 bits=none
-std/internal/deflate/deflate.sober:787:6: effects std/internal/deflate.greedy fi=565 bits=panic
-std/internal/deflate/deflate.sober:830:6: effects std/internal/deflate.lazy fi=566 bits=panic
-std/internal/deflate/deflate.sober:943:6: effects std/internal/deflate.Begin fi=567 bits=panic
-std/internal/deflate/deflate.sober:970:6: effects std/internal/deflate.Feed fi=568 bits=panic
-std/internal/deflate/deflate.sober:1055:6: effects std/internal/deflate.keep fi=569 bits=panic
-std/internal/deflate/deflate.sober:1080:6: effects std/internal/deflate.End fi=570 bits=none
-std/internal/deflate/deflate.sober:1101:6: effects std/internal/deflate.gzHead fi=571 bits=none
-std/internal/inflate/inflate.sober:14:6: effects std/internal/inflate.At fi=572 bits=none
-std/internal/inflate/inflate.sober:74:6: effects std/internal/inflate.tables fi=573 bits=none
-std/internal/inflate/inflate.sober:82:6: effects std/internal/inflate.refill fi=574 bits=none
-std/internal/inflate/inflate.sober:91:6: effects std/internal/inflate.bits fi=575 bits=none
-std/internal/inflate/inflate.sober:106:6: effects std/internal/inflate.build fi=576 bits=none
-std/internal/inflate/inflate.sober:162:6: effects std/internal/inflate.sym fi=577 bits=none
-std/internal/inflate/inflate.sober:199:6: effects std/internal/inflate.room fi=578 bits=none
-std/internal/inflate/inflate.sober:208:6: effects std/internal/inflate.storedBlock fi=579 bits=none
-std/internal/inflate/inflate.sober:242:6: effects std/internal/inflate.fixedBlock fi=580 bits=none
-std/internal/inflate/inflate.sober:262:6: effects std/internal/inflate.dynamicBlock fi=581 bits=none
-std/internal/inflate/inflate.sober:345:6: effects std/internal/inflate.codes fi=582 bits=none
-std/internal/inflate/inflate.sober:395:6: effects std/internal/inflate.fill fi=583 bits=none
-std/internal/inflate/inflate.sober:402:6: effects std/internal/inflate.rev fi=584 bits=none
-std/internal/floatfmt/floatfmt.sober:17:6: effects std/internal/floatfmt.Format fi=585 bits=none
-std/internal/floatfmt/floatfmt.sober:89:6: effects std/internal/floatfmt.FormatFixed fi=586 bits=none
-std/internal/floatfmt/floatfmt.sober:162:6: effects std/internal/floatfmt.exactShort fi=587 bits=none
-std/internal/floatfmt/floatfmt.sober:218:6: effects std/internal/floatfmt.shortest fi=588 bits=none
-std/internal/floatfmt/floatfmt.sober:344:6: effects std/internal/floatfmt.ParseBits fi=589 bits=none
-std/internal/floatfmt/floatfmt.sober:356:6: effects std/internal/floatfmt.parseBits fi=590 bits=none
-std/internal/floatfmt/floatfmt.sober:432:6: effects std/internal/floatfmt.wordAt fi=591 bits=none
-std/internal/floatfmt/floatfmt.sober:448:6: effects std/internal/floatfmt.decimalBits fi=592 bits=none
-std/internal/floatfmt/floatfmt.sober:513:6: effects std/internal/floatfmt.bnDivScaled fi=593 bits=none
-std/internal/floatfmt/floatfmt.sober:536:6: effects std/internal/floatfmt.bitLen fi=594 bits=none
-std/internal/floatfmt/floatfmt.sober:546:6: effects std/internal/floatfmt.bnSetInt fi=595 bits=none
-std/internal/floatfmt/floatfmt.sober:557:6: effects std/internal/floatfmt.bnSet fi=596 bits=none
-std/internal/floatfmt/floatfmt.sober:565:6: effects std/internal/floatfmt.bnMulAdd fi=597 bits=none
-std/internal/floatfmt/floatfmt.sober:579:6: effects std/internal/floatfmt.bnAdd fi=598 bits=none
-std/internal/floatfmt/floatfmt.sober:595:6: effects std/internal/floatfmt.bnShl fi=599 bits=none
-std/internal/floatfmt/floatfmt.sober:623:6: effects std/internal/floatfmt.bnShr fi=600 bits=none
-std/internal/floatfmt/floatfmt.sober:640:6: effects std/internal/floatfmt.bnDivSmall fi=601 bits=none
-std/internal/floatfmt/floatfmt.sober:652:6: effects std/internal/floatfmt.bnOdd fi=602 bits=none
-std/internal/floatfmt/floatfmt.sober:656:6: effects std/internal/floatfmt.bnTop fi=603 bits=none
-std/internal/floatfmt/floatfmt.sober:664:6: effects std/internal/floatfmt.bnBitLen fi=604 bits=none
-std/internal/floatfmt/floatfmt.sober:672:6: effects std/internal/floatfmt.bnCmp fi=605 bits=none
-std/internal/floatfmt/floatfmt.sober:689:6: effects std/internal/floatfmt.bnSub fi=606 bits=none
-std/internal/bless/bless.sober:9:6: effects std/internal/bless.Bytes fi=607 bits=none
-std/internal/crc32/crc32.sober:14:6: effects std/internal/crc32.Update fi=608 bits=panic
-std/internal/crc32/crc32.sober:47:6: effects std/internal/crc32.tables8 fi=609 bits=none
-std/internal/crc32/crc32.sober:60:6: effects std/internal/crc32.table fi=610 bits=none
-std/internal/utf8/utf8.sober:10:6: effects std/internal/utf8.Parse fi=611 bits=none
-std/internal/hs/codec.sober:16:6: effects std/internal/hs.cur fi=612 bits=none
-std/internal/hs/codec.sober:20:6: effects std/internal/hs.u8 fi=613 bits=none
-std/internal/hs/codec.sober:30:6: effects std/internal/hs.u16 fi=614 bits=none
-std/internal/hs/codec.sober:40:6: effects std/internal/hs.u24 fi=615 bits=none
-std/internal/hs/codec.sober:51:6: effects std/internal/hs.sub fi=616 bits=none
-std/internal/hs/codec.sober:62:6: effects std/internal/hs.take fi=617 bits=none
-std/internal/hs/codec.sober:78:6: effects std/internal/hs.rest fi=618 bits=none
-std/internal/hs/codec.sober:82:6: effects std/internal/hs.put8 fi=619 bits=none
-std/internal/hs/codec.sober:86:6: effects std/internal/hs.put16 fi=620 bits=none
-std/internal/hs/codec.sober:91:6: effects std/internal/hs.put24 fi=621 bits=none
-std/internal/hs/codec.sober:97:6: effects std/internal/hs.putBytes fi=622 bits=none
-std/internal/hs/codec.sober:106:6: effects std/internal/hs.msg fi=623 bits=none
-std/internal/hs/codec.sober:115:6: effects std/internal/hs.cat fi=624 bits=none
-std/internal/hs/codec.sober:123:6: effects std/internal/hs.sliceOf fi=625 bits=none
-std/internal/hs/hs.sober:58:6: effects std/internal/hs.hrrRandom fi=626 bits=none
-std/internal/hs/hs.sober:72:6: effects std/internal/hs.NewParams fi=627 bits=none
-std/internal/hs/hs.sober:118:6: effects std/internal/hs.none fi=628 bits=none
-std/internal/hs/hs.sober:123:6: effects std/internal/hs.New fi=629 bits=none
-std/internal/hs/hs.sober:130:6: effects std/internal/hs.Resume fi=630 bits=none
-std/internal/hs/hs.sober:138:6: effects std/internal/hs.Bare fi=631 bits=none
-std/internal/hs/hs.sober:143:6: effects std/internal/hs.emptyDir fi=632 bits=none
-std/internal/hs/hs.sober:149:6: effects std/internal/hs.IsConnected fi=633 bits=none
-std/internal/hs/hs.sober:158:6: effects std/internal/hs.Probe fi=634 bits=none
-std/internal/hs/hs.sober:173:6: effects std/internal/hs.Alpn fi=635 bits=none
-std/internal/hs/hs.sober:178:6: effects std/internal/hs.Suite fi=636 bits=none
-std/internal/hs/hs.sober:183:6: effects std/internal/hs.Dirs fi=637 bits=none
-std/internal/hs/hs.sober:189:6: effects std/internal/hs.Secrets fi=638 bits=none
-std/internal/hs/hs.sober:197:6: effects std/internal/hs.Feed fi=639 bits=io, panic
-std/internal/hs/hs.sober:208:6: effects std/internal/hs.Step fi=640 bits=none
-std/internal/hs/hs.sober:222:6: effects std/internal/hs.feedIn fi=641 bits=io, panic
-std/internal/hs/hs.sober:240:6: effects std/internal/hs.alert fi=642 bits=none
-std/internal/hs/hs.sober:246:6: effects std/internal/hs.feedPlain fi=643 bits=io, panic
-std/internal/hs/hs.sober:276:6: effects std/internal/hs.ccsOnce fi=644 bits=none
-std/internal/hs/hs.sober:286:6: effects std/internal/hs.feedSealed fi=645 bits=none
-std/internal/hs/hs.sober:324:6: effects std/internal/hs.onSealedMsg fi=646 bits=none
-std/internal/hs/hs.sober:357:6: effects std/internal/hs.peerAlert fi=647 bits=none
-std/internal/hs/hs.sober:383:6: effects std/internal/hs.parseHello fi=648 bits=none
-std/internal/hs/hs.sober:467:6: effects std/internal/hs.emptyHello fi=649 bits=none
-std/internal/hs/hs.sober:473:6: effects std/internal/hs.onClientHello fi=650 bits=io, panic
-std/internal/hs/hs.sober:550:6: effects std/internal/hs.helloRetry fi=651 bits=none
-std/internal/hs/hs.sober:576:6: effects std/internal/hs.pickSuite fi=652 bits=none
-std/internal/hs/hs.sober:588:6: effects std/internal/hs.pickAlpn fi=653 bits=none
-std/internal/hs/hs.sober:601:6: effects std/internal/hs.serverHello fi=654 bits=none
-std/internal/hs/hs.sober:615:6: effects std/internal/hs.helloBody fi=655 bits=none
-std/internal/hs/hs.sober:628:6: effects std/internal/hs.encryptedExtensions fi=656 bits=none
-std/internal/hs/hs.sober:644:6: effects std/internal/hs.certificate fi=657 bits=none
-std/internal/hs/hs.sober:660:6: effects std/internal/hs.certificateVerify fi=658 bits=io, panic
-std/internal/hs/hs.sober:680:6: effects std/internal/hs.deriveSecret fi=659 bits=none
-std/internal/hs/hs.sober:685:6: effects std/internal/hs.plain fi=660 bits=none
-std/internal/hs/hs.sober:704:6: effects std/internal/hs.zeros fi=661 bits=none
-std/internal/hs/hs.sober:713:6: effects std/internal/hs.rnd fi=662 bits=io, panic
-std/internal/hs/hs.sober:724:6: effects std/internal/hs.SealApp fi=663 bits=none
-std/internal/hs/hs.sober:739:6: effects std/internal/hs.AlertRecord fi=664 bits=none
-std/internal/hs/hs.sober:749:6: effects std/internal/hs.CloseNotify fi=665 bits=none
+std/builder/builder.sober:218:6: effects std/builder.PushBetween fi=21 bits=none declared
+std/builder/builder.sober:240:6: effects std/builder.pushBetweenSlow fi=22 bits=none
+std/compress/flate/flate.sober:22:6: effects std/compress/flate.Encode fi=23 bits=panic declared
+std/compress/flate/flate.sober:38:6: effects std/compress/flate.Prepare fi=24 bits=panic declared
+std/compress/flate/flate.sober:44:6: effects std/compress/flate.EncodeWith fi=25 bits=panic declared
+std/compress/flate/inflate.sober:23:6: effects std/compress/flate.Decode fi=26 bits=none declared
+std/compress/gzip/gzip.sober:18:6: effects std/compress/gzip.Encode fi=27 bits=panic declared
+std/compress/gzip/gzip.sober:25:6: effects std/compress/gzip.EncodeWith fi=28 bits=panic declared
+std/compress/gzip/gzip.sober:63:6: effects std/compress/gzip.Decode fi=29 bits=panic declared
+std/compress/gzip/gzip.sober:96:6: effects std/compress/gzip.header fi=30 bits=panic
+std/compress/gzip/gzip.sober:136:6: effects std/compress/gzip.zeroEnd fi=31 bits=none
+std/compress/gzip/gzip.sober:148:6: effects std/compress/gzip.le32 fi=32 bits=none
+std/convert/conv.sober:18:6: effects std/convert.FormatFloat fi=33 bits=none declared
+std/convert/conv.sober:24:6: effects std/convert.FormatFixed fi=34 bits=none declared
+std/convert/conv.sober:40:6: effects std/convert.ParseFloat fi=35 bits=none declared
+std/convert/conv.sober:62:6: effects std/convert.fastFloat fi=36 bits=none
+std/convert/conv.sober:144:6: effects std/convert.ParseInt fi=37 bits=none declared
+std/convert/conv.sober:177:6: effects std/convert.FormatInt fi=38 bits=none declared
+std/convert/conv.sober:188:6: effects std/convert.formatUint fi=39 bits=none
+std/convert/conv.sober:214:6: effects std/convert.ParseBool fi=40 bits=none declared
+std/convert/conv.sober:226:6: effects std/convert.FormatBool fi=41 bits=none declared
+std/crypto/ct.sober:25:6: effects std/crypto.Equal fi=42 bits=none declared
+std/crypto/ct.sober:39:6: effects std/crypto.NonZero fi=43 bits=none declared
+std/crypto/ct.sober:46:6: effects std/crypto.Select fi=44 bits=none declared
+std/crypto/ct.sober:53:6: effects std/crypto.Wipe fi=45 bits=none declared
+std/crypto/ct.sober:67:6: effects std/crypto.Rand fi=46 bits=io, panic declared
+std/crypto/aesgcm/aesgcm.sober:60:6: effects std/crypto/aesgcm.Available fi=47 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:73:6: effects std/crypto/aesgcm.Prepare fi=48 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:90:6: effects std/crypto/aesgcm.Seal fi=49 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:99:6: effects std/crypto/aesgcm.Open fi=50 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:110:6: effects std/crypto/aesgcm.SealTo fi=51 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:157:6: effects std/crypto/aesgcm.SealInto fi=52 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:209:6: effects std/crypto/aesgcm.OpenAt fi=53 bits=none declared
+std/crypto/aesgcm/aesgcm.sober:239:6: effects std/crypto/aesgcm.recCtx fi=54 bits=none
+std/crypto/aesgcm/aesgcm.sober:268:6: effects std/crypto/aesgcm.zeros fi=55 bits=none
+std/crypto/aesgcm/aesgcm.sober:279:6: effects std/crypto/aesgcm.padded fi=56 bits=none
+std/crypto/aesgcm/aesgcm.sober:291:6: effects std/crypto/aesgcm.ghashAt fi=57 bits=none
+std/crypto/aesgcm/aesgcm.sober:302:6: effects std/crypto/aesgcm.ghashLens fi=58 bits=none
+std/crypto/aesgcm/aesgcm.sober:309:6: effects std/crypto/aesgcm.be64 fi=59 bits=none
+std/crypto/chacha20/chacha20.sober:13:6: effects std/crypto/chacha20.Block fi=60 bits=none declared
+std/crypto/chacha20/chacha20.sober:31:6: effects std/crypto/chacha20.XorKeyStream fi=61 bits=none declared
+std/crypto/chacha20/chacha20.sober:38:6: effects std/crypto/chacha20.XorKeyStreamAt fi=62 bits=none declared
+std/crypto/chacha20/chacha20.sober:64:6: effects std/crypto/chacha20.initState fi=63 bits=none
+std/crypto/chacha20/chacha20.sober:79:6: effects std/crypto/chacha20.rounds fi=64 bits=none
+std/crypto/chacha20/chacha20.sober:99:6: effects std/crypto/chacha20.qr fi=65 bits=none
+std/crypto/chacha20/chacha20.sober:111:6: effects std/crypto/chacha20.rotl fi=66 bits=none
+std/crypto/chacha20/chacha20.sober:116:6: effects std/crypto/chacha20.le32 fi=67 bits=none
+std/crypto/chacha20/chacha20.sober:121:6: effects std/crypto/chacha20.put32 fi=68 bits=none
+std/crypto/chacha20poly1305/chacha20poly1305.sober:36:6: effects std/crypto/chacha20poly1305.Prepare fi=69 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:48:6: effects std/crypto/chacha20poly1305.Seal fi=70 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:57:6: effects std/crypto/chacha20poly1305.Open fi=71 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:66:6: effects std/crypto/chacha20poly1305.SealInto fi=72 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:88:6: effects std/crypto/chacha20poly1305.SealTo fi=73 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:121:6: effects std/crypto/chacha20poly1305.ctTail fi=74 bits=none
+std/crypto/chacha20poly1305/chacha20poly1305.sober:145:6: effects std/crypto/chacha20poly1305.OpenAt fi=75 bits=none declared
+std/crypto/chacha20poly1305/chacha20poly1305.sober:157:6: effects std/crypto/chacha20poly1305.polyKey fi=76 bits=none
+std/crypto/hkdf/hkdf.sober:16:6: effects std/crypto/hkdf.Extract fi=77 bits=none declared
+std/crypto/hkdf/hkdf.sober:34:6: effects std/crypto/hkdf.Expand fi=78 bits=none declared
+std/crypto/hmac/hmac.sober:14:6: effects std/crypto/hmac.Sum256 fi=79 bits=none declared
+std/crypto/pem/pem.sober:20:6: effects std/crypto/pem.Parse fi=80 bits=none declared
+std/crypto/pem/pem.sober:59:6: effects std/crypto/pem.splitLines fi=81 bits=none
+std/crypto/pem/pem.sober:73:6: effects std/crypto/pem.trim fi=82 bits=none
+std/crypto/pem/pem.sober:90:6: effects std/crypto/pem.between fi=83 bits=none
+std/crypto/pem/pem.sober:114:6: effects std/crypto/pem.base64 fi=84 bits=none
+std/crypto/pem/pem.sober:150:6: effects std/crypto/pem.sixBits fi=85 bits=none
+std/crypto/poly1305/poly1305.sober:16:6: effects std/crypto/poly1305.Sum fi=86 bits=none declared
+std/crypto/poly1305/poly1305.sober:26:6: effects std/crypto/poly1305.SumAead fi=87 bits=none declared
+std/crypto/poly1305/poly1305.sober:53:6: effects std/crypto/poly1305.start fi=88 bits=none
+std/crypto/poly1305/poly1305.sober:66:6: effects std/crypto/poly1305.absorb fi=89 bits=none
+std/crypto/poly1305/poly1305.sober:119:6: effects std/crypto/poly1305.tail fi=90 bits=none
+std/crypto/poly1305/poly1305.sober:128:6: effects std/crypto/poly1305.finish fi=91 bits=none
+std/crypto/poly1305/poly1305.sober:188:6: effects std/crypto/poly1305.le32 fi=92 bits=none
+std/crypto/poly1305/poly1305.sober:193:6: effects std/crypto/poly1305.put32 fi=93 bits=none
+std/crypto/rsa/bn.sober:39:6: effects std/crypto/rsa.cy fi=94 bits=none
+std/crypto/rsa/bn.sober:44:6: effects std/crypto/rsa.bw fi=95 bits=none
+std/crypto/rsa/bn.sober:49:6: effects std/crypto/rsa.zeros fi=96 bits=none
+std/crypto/rsa/bn.sober:58:6: effects std/crypto/rsa.bnFromBytes fi=97 bits=none
+std/crypto/rsa/bn.sober:74:6: effects std/crypto/rsa.bnToBytes fi=98 bits=none
+std/crypto/rsa/bn.sober:86:6: effects std/crypto/rsa.bnBits fi=99 bits=none
+std/crypto/rsa/bn.sober:101:6: effects std/crypto/rsa.bnTrim fi=100 bits=none
+std/crypto/rsa/bn.sober:110:6: effects std/crypto/rsa.newMont fi=101 bits=none
+std/crypto/rsa/bn.sober:138:6: effects std/crypto/rsa.condSub fi=102 bits=none
+std/crypto/rsa/bn.sober:161:6: effects std/crypto/rsa.montMul fi=103 bits=none
+std/crypto/rsa/bn.sober:170:6: effects std/crypto/rsa.montMulS fi=104 bits=none
+std/crypto/rsa/bn.sober:213:6: effects std/crypto/rsa.addMod fi=105 bits=none
+std/crypto/rsa/bn.sober:228:6: effects std/crypto/rsa.subMod fi=106 bits=none
+std/crypto/rsa/bn.sober:252:6: effects std/crypto/rsa.put fi=107 bits=none
+std/crypto/rsa/bn.sober:260:6: effects std/crypto/rsa.toMont fi=108 bits=none
+std/crypto/rsa/bn.sober:287:6: effects std/crypto/rsa.expMont fi=109 bits=none
+std/crypto/rsa/bn.sober:346:6: effects std/crypto/rsa.expPub fi=110 bits=none
+std/crypto/rsa/bn.sober:384:6: effects std/crypto/rsa.MontSelfCheck fi=111 bits=none declared
+std/crypto/rsa/bn.sober:438:6: effects std/crypto/rsa.bnAddMul fi=112 bits=none
+std/crypto/rsa/bn.sober:460:6: effects std/crypto/rsa.bnLess fi=113 bits=none
+std/crypto/rsa/der.sober:11:6: effects std/crypto/rsa.ParsePKCS8 fi=114 bits=none declared
+std/crypto/rsa/der.sober:85:6: effects std/crypto/rsa.NewPublic fi=115 bits=none declared
+std/crypto/rsa/der.sober:98:6: effects std/crypto/rsa.newPublic fi=116 bits=none
+std/crypto/rsa/der.sober:102:6: effects std/crypto/rsa.noMont fi=117 bits=none
+std/crypto/rsa/der.sober:106:6: effects std/crypto/rsa.noPublic fi=118 bits=none
+std/crypto/rsa/der.sober:111:6: effects std/crypto/rsa.tlv fi=119 bits=none
+std/crypto/rsa/der.sober:137:6: effects std/crypto/rsa.sameBytes fi=120 bits=none
+std/crypto/rsa/rsa.sober:50:6: effects std/crypto/rsa.Public fi=121 bits=none declared
+std/crypto/rsa/rsa.sober:56:6: effects std/crypto/rsa.Size fi=122 bits=none declared
+std/crypto/rsa/rsa.sober:64:6: effects std/crypto/rsa.SignPSS fi=123 bits=none declared
+std/crypto/rsa/rsa.sober:103:6: effects std/crypto/rsa.VerifyPSS fi=124 bits=none declared
+std/crypto/rsa/rsa.sober:128:6: effects std/crypto/rsa.sameTail fi=125 bits=none
+std/crypto/rsa/rsa.sober:141:6: effects std/crypto/rsa.mgf1 fi=126 bits=none
+std/crypto/rsa/rsa.sober:161:6: effects std/crypto/rsa.pssEncode fi=127 bits=none
+std/crypto/rsa/rsa.sober:190:6: effects std/crypto/rsa.pssVerify fi=128 bits=none
+std/crypto/sha256/sha256.sober:31:6: effects std/crypto/sha256.New fi=129 bits=none declared
+std/crypto/sha256/sha256.sober:37:6: effects std/crypto/sha256.Write fi=130 bits=none declared
+std/crypto/sha256/sha256.sober:72:6: effects std/crypto/sha256.Sum fi=131 bits=none declared
+std/crypto/sha256/sha256.sober:103:6: effects std/crypto/sha256.Sum256 fi=132 bits=none declared
+std/crypto/sha256/sha256.sober:110:6: effects std/crypto/sha256.cat fi=133 bits=none
+std/crypto/sha256/sha256.sober:124:6: effects std/crypto/sha256.load fi=134 bits=none
+std/crypto/sha256/sha256.sober:132:6: effects std/crypto/sha256.compress fi=135 bits=none
+std/crypto/sha256/sha256.sober:175:6: effects std/crypto/sha256.rotr fi=136 bits=none
+std/crypto/sha256/sha256.sober:180:6: effects std/crypto/sha256.sha256K fi=137 bits=none
+std/crypto/x25519/x25519.sober:49:6: effects std/crypto/x25519.Base fi=138 bits=none declared
+std/crypto/x25519/x25519.sober:60:6: effects std/crypto/x25519.Shared fi=139 bits=none declared
+std/crypto/x25519/x25519.sober:115:6: effects std/crypto/x25519.cswap fi=140 bits=none
+std/crypto/x25519/x25519.sober:125:6: effects std/crypto/x25519.carry fi=141 bits=none
+std/crypto/x25519/x25519.sober:144:6: effects std/crypto/x25519.fadd fi=142 bits=none
+std/crypto/x25519/x25519.sober:149:6: effects std/crypto/x25519.fsub fi=143 bits=none
+std/crypto/x25519/x25519.sober:156:6: effects std/crypto/x25519.fmul fi=144 bits=none
+std/crypto/x25519/x25519.sober:186:6: effects std/crypto/x25519.invert fi=145 bits=none
+std/crypto/x25519/x25519.sober:202:6: effects std/crypto/x25519.unpack fi=146 bits=none
+std/crypto/x25519/x25519.sober:214:6: effects std/crypto/x25519.pack fi=147 bits=none
+std/hash/sha256.sober:14:6: effects std/hash.Sha256 fi=148 bits=none declared
+std/hash/crc32/crc32.sober:14:6: effects std/hash/crc32.Sum fi=149 bits=panic declared
+std/hex/hex.sober:12:6: effects std/hex.Format fi=150 bits=none declared
+std/hex/hex.sober:29:6: effects std/hex.Parse fi=151 bits=none declared
+std/hex/hex.sober:47:6: effects std/hex.nib fi=152 bits=none
+std/http/http.sober:126:6: effects std/http.Text fi=153 bits=none declared
+std/http/http.sober:132:6: effects std/http.Json fi=154 bits=none declared
+std/http/http.sober:160:6: effects std/http.FormatEvent fi=155 bits=panic declared
+std/http/http.sober:212:6: effects std/http.eventBad fi=156 bits=none
+std/http/http.sober:264:6: effects std/http.Status fi=157 bits=none declared
+std/http/http.sober:293:6: effects std/http.Header fi=158 bits=none declared
+std/http/http.sober:304:6: effects std/http.Authorization fi=159 bits=none declared
+std/http/http.sober:313:6: effects std/http.Cookie fi=160 bits=none declared
+std/http/http.sober:330:6: effects std/http.cookieIn fi=161 bits=none
+std/http/http.sober:361:6: effects std/http.headerOf fi=162 bits=none
+std/http/http.sober:379:6: effects std/http.Query fi=163 bits=none declared
+std/http/http.sober:386:6: effects std/http.Form fi=164 bits=none declared
+std/http/http.sober:399:6: effects std/http.JsonDoc fi=165 bits=none declared
+std/http/http.sober:404:6: effects std/http.isMedia fi=166 bits=none
+std/http/http.sober:412:6: effects std/http.pairOf fi=167 bits=none
+std/http/http.sober:466:6: effects std/http.Mount fi=168 bits=none declared
+std/http/http.sober:483:6: effects std/http.Merge fi=169 bits=none declared
+std/http/http.sober:499:6: effects std/http.Dispatch fi=170 bits=io, nondet declared
+std/http/http.sober:546:6: effects std/http.allowOf fi=171 bits=none
+std/http/http.sober:567:6: effects std/http.chain fi=172 bits=io, nondet
+std/http/http.sober:615:6: effects std/http.Static fi=173 bits=none declared
+std/http/http.sober:640:6: effects std/http.cacheValue fi=174 bits=none
+std/http/http.sober:654:6: effects std/http.sharedValue fi=175 bits=none
+std/http/http.sober:660:6: effects std/http.freshValue fi=176 bits=none
+std/http/http.sober:669:6: effects std/http.staticGet fi=177 bits=io, nondet
+std/http/http.sober:698:6: effects std/http.staticOf fi=178 bits=none
+std/http/http.sober:722:6: effects std/http.statUnder fi=179 bits=io, nondet
+std/http/http.sober:744:6: effects std/http.sendUnder fi=180 bits=block, io, nondet
+std/http/http.sober:770:6: effects std/http.etagOf fi=181 bits=none
+std/http/http.sober:776:6: effects std/http.hexOf fi=182 bits=none
+std/http/http.sober:802:6: effects std/http.condOf fi=183 bits=none
+std/http/http.sober:859:6: effects std/http.tagIn fi=184 bits=none
+std/http/http.sober:901:6: effects std/http.httpDate fi=185 bits=none
+std/http/http.sober:911:6: effects std/http.pad fi=186 bits=none
+std/http/http.sober:921:6: effects std/http.monthNames fi=187 bits=none
+std/http/http.sober:926:6: effects std/http.civilOf fi=188 bits=none
+std/http/http.sober:939:6: effects std/http.daysOf fi=189 bits=none
+std/http/http.sober:950:6: effects std/http.parseDate fi=190 bits=none
+std/http/http.sober:978:6: effects std/http.dateOf fi=191 bits=none
+std/http/http.sober:997:6: effects std/http.monthOf fi=192 bits=none
+std/http/http.sober:1009:6: effects std/http.isDay fi=193 bits=none
+std/http/http.sober:1024:6: effects std/http.staticCode fi=194 bits=none
+std/http/http.sober:1034:6: effects std/http.mimeOf fi=195 bits=none
+std/http/http.sober:1070:6: effects std/http.Param fi=196 bits=none declared
+std/http/http.sober:1099:6: effects std/http.segEnd fi=197 bits=none
+std/http/http.sober:1108:6: effects std/http.isSeg fi=198 bits=none
+std/http/http.sober:1123:6: effects std/http.segKind fi=199 bits=none
+std/http/http.sober:1129:6: effects std/http.matchKind fi=200 bits=none
+std/http/http.sober:1170:6: effects std/http.moreSpecific fi=201 bits=none
+std/http/http.sober:1201:6: effects std/http.ServeConn fi=202 bits=block, io, panic, nondet declared
+std/http/http.sober:1215:6: effects std/http.ServeWith fi=203 bits=block, io, panic, nondet declared
+std/http/http.sober:1266:6: effects std/http.gzLevel fi=204 bits=panic
+std/http/http.sober:1274:6: effects std/http.joined fi=205 bits=none
+std/http/http.sober:1289:6: effects std/http.linger fi=206 bits=block
+std/http/http.sober:1296:6: effects std/http.drain fi=207 bits=none
+std/http/http.sober:1314:6: effects std/http.serveBuf fi=208 bits=block, io, panic, nondet
+std/http/http.sober:1421:6: effects std/http.fr fi=209 bits=none
+std/http/http.sober:1426:6: effects std/http.lineEnd fi=210 bits=panic
+std/http/http.sober:1451:6: effects std/http.contentEnd fi=211 bits=none
+std/http/http.sober:1458:6: effects std/http.frameAt fi=212 bits=panic
+std/http/http.sober:1598:6: effects std/http.chunkedEnd fi=213 bits=panic
+std/http/http.sober:1666:6: effects std/http.request fi=214 bits=block, panic
+std/http/http.sober:1681:6: effects std/http.unchunk fi=215 bits=panic
+std/http/http.sober:1709:6: effects std/http.gzWants fi=216 bits=none
+std/http/http.sober:1714:6: effects std/http.gzSize fi=217 bits=none
+std/http/http.sober:1724:6: effects std/http.wire fi=218 bits=panic
+std/http/http.sober:1759:6: effects std/http.gzFeed fi=219 bits=panic
+std/http/http.sober:1782:6: effects std/http.sendCounted fi=220 bits=none
+std/http/http.sober:1795:6: effects std/http.chunkEnd fi=221 bits=none
+std/http/http.sober:1807:6: effects std/http.chunkOf fi=222 bits=none
+std/http/http.sober:1831:6: effects std/http.compressible fi=223 bits=none
+std/http/http.sober:1843:6: effects std/http.acceptsGzip fi=224 bits=none
+std/http/http.sober:1848:6: effects std/http.accepts fi=225 bits=none
+std/http/http.sober:1884:6: effects std/http.qOf fi=226 bits=none
+std/http/http.sober:1904:6: effects std/http.zeroQ fi=227 bits=none
+std/http/http.sober:1927:6: effects std/http.respHead fi=228 bits=panic
+std/http/http.sober:2070:6: effects std/http.checkField fi=229 bits=panic
+std/http/http.sober:2088:6: effects std/http.statusLine fi=230 bits=none
+std/http/http.sober:2113:6: effects std/http.indexIn fi=231 bits=none
+std/http/http.sober:2125:6: effects std/http.isLit fi=232 bits=none
+std/http/http.sober:2141:6: effects std/http.lower fi=233 bits=none
+std/http/http.sober:2146:6: effects std/http.eqFold fi=234 bits=none
+std/http/http.sober:2161:6: effects std/http.hasToken fi=235 bits=none
+std/http/http.sober:2178:6: effects std/http.tokenRun fi=236 bits=none
+std/http/http.sober:2191:6: effects std/http.tchar fi=237 bits=none
+std/http/http.sober:2200:6: effects std/http.skipOWS fi=238 bits=none
+std/http/http.sober:2209:6: effects std/http.trimOWS fi=239 bits=none
+std/http/http.sober:2218:6: effects std/http.digits fi=240 bits=none
+std/http/http.sober:2235:6: effects std/http.hexVal fi=241 bits=none
+std/http/multipart.sober:51:6: effects std/http.Multipart fi=242 bits=none declared
+std/http/multipart.sober:61:6: effects std/http.multipartOf fi=243 bits=none
+std/http/multipart.sober:178:6: effects std/http.startsDash fi=244 bits=none
+std/http/multipart.sober:193:6: effects std/http.delimAt fi=245 bits=none
+std/http/multipart.sober:205:6: effects std/http.crlfAt fi=246 bits=none
+std/http/multipart.sober:218:6: effects std/http.lineClean fi=247 bits=none
+std/http/multipart.sober:230:6: effects std/http.boundaryOk fi=248 bits=none
+std/http/multipart.sober:248:6: effects std/http.paramOf fi=249 bits=none
+std/http/multipart.sober:317:6: effects std/http.tspecial fi=250 bits=none
+std/io/io.sober:84:6: effects std/io.errOf fi=251 bits=none
+std/io/io.sober:130:6: effects std/io.Open fi=252 bits=io, nondet declared
+std/io/io.sober:143:6: effects std/io.Close fi=253 bits=io declared
+std/io/io.sober:163:6: effects std/io.OpenRoot fi=254 bits=io, nondet declared
+std/io/io.sober:181:6: effects std/io.CloseRoot fi=255 bits=io declared
+std/io/io.sober:191:6: effects std/io.OpenUnder fi=256 bits=io, nondet declared
+std/io/io.sober:225:6: effects std/io.Stat fi=257 bits=io, nondet declared
+std/io/io.sober:244:6: effects std/io.le64 fi=258 bits=none
+std/io/io.sober:255:6: effects std/io.cstr fi=259 bits=none
+std/io/io.sober:271:6: effects std/io.owned fi=260 bits=io
+std/io/io.sober:286:6: effects std/io.ReadAll fi=261 bits=block, io, nondet declared
+std/io/io.sober:312:6: effects std/io.Raw fi=262 bits=none declared
+std/io/io.sober:324:6: effects std/io.Chunks fi=263 bits=block, io, nondet declared
+std/io/io.sober:332:6: effects std/io.ChunksAt fi=264 bits=block, io, nondet declared
+std/io/io.sober:341:6: effects std/io.chunksFrom fi=265 bits=block, io, nondet
+std/io/io.sober:363:6: effects std/io.chunkEnd fi=266 bits=block, io
+std/io/io.sober:371:6: effects std/io.Lines fi=267 bits=block, io, nondet declared
+std/io/io.sober:408:6: effects std/io.dropCR fi=268 bits=none
+std/io/io.sober:416:6: effects std/io.joined fi=269 bits=none
+std/io/io.sober:430:6: effects std/io.ReadFile fi=270 bits=io, nondet declared
+std/io/io.sober:445:6: effects std/io.WriteFile fi=271 bits=io, nondet declared
+std/io/io.sober:461:6: effects std/io.WriteStdout fi=272 bits=io, nondet declared
+std/io/io.sober:476:6: effects std/io.ReadStdin fi=273 bits=block, io, nondet declared
+std/io/io.sober:491:6: effects std/io.WriteStderr fi=274 bits=io, nondet declared
+std/io/io.sober:516:6: effects std/io.kindOf fi=275 bits=none
+std/io/io.sober:530:6: effects std/io.dot fi=276 bits=none
+std/io/io.sober:535:6: effects std/io.less fi=277 bits=none
+std/io/io.sober:549:6: effects std/io.ReadDir fi=278 bits=io, nondet declared
+std/io/io.sober:608:6: effects std/io.SetFile fi=279 bits=none declared
+std/io/io.sober:614:6: effects std/io.WriteByte fi=280 bits=io, nondet declared
+std/io/io.sober:625:6: effects std/io.writerByteSlow fi=281 bits=io, nondet
+std/io/io.sober:633:6: effects std/io.WriteBytes fi=282 bits=io, nondet declared
+std/io/io.sober:653:6: effects std/io.WriteString fi=283 bits=io, nondet declared
+std/io/io.sober:660:6: effects std/io.Flush fi=284 bits=io, nondet declared
+std/io/io.sober:674:6: effects std/io.writerRoom fi=285 bits=io, nondet
+std/io/io.sober:686:6: effects std/io.writerSpill fi=286 bits=io, nondet
+std/iter/iter.sober:12:6: effects std/iter.Slice fi=287 bits=none declared
+std/iter/iter.sober:23:6: effects std/iter.Range fi=288 bits=none declared
+std/iter/iter.sober:33:6: effects std/iter.Each fi=289 bits=none declared
+std/iter/iter.sober:39:6: effects std/iter.Count fi=290 bits=none declared
+std/iter/iter.sober:49:6: effects std/iter.Sum fi=291 bits=none declared
+std/json/decode.sober:30:6: effects std/json.NeedObject fi=292 bits=none declared
+std/json/decode.sober:40:6: effects std/json.Need fi=293 bits=none declared
+std/json/decode.sober:47:6: effects std/json.NeedAt fi=294 bits=none declared
+std/json/decode.sober:57:6: effects std/json.IsNull fi=295 bits=none declared
+std/json/decode.sober:64:6: effects std/json.Items fi=296 bits=none declared
+std/json/decode.sober:74:6: effects std/json.ParseString fi=297 bits=none declared
+std/json/decode.sober:85:6: effects std/json.ParseBool fi=298 bits=none declared
+std/json/decode.sober:96:6: effects std/json.ParseInt fi=299 bits=none declared
+std/json/decode.sober:129:6: effects std/json.ParseFloat fi=300 bits=none declared
+std/json/encode.sober:19:6: effects std/json.KeyOf fi=301 bits=none declared
+std/json/encode.sober:33:6: effects std/json.Put fi=302 bits=none declared
+std/json/encode.sober:39:6: effects std/json.PutKey fi=303 bits=none declared
+std/json/encode.sober:49:6: effects std/json.PutString fi=304 bits=none declared
+std/json/encode.sober:56:6: effects std/json.PutInt fi=305 bits=none declared
+std/json/encode.sober:85:6: effects std/json.putDigits fi=306 bits=none
+std/json/encode.sober:100:6: effects std/json.PutBool fi=307 bits=none declared
+std/json/encode.sober:106:6: effects std/json.PutFloat fi=308 bits=panic declared
+std/json/encode.sober:115:6: effects std/json.Done fi=309 bits=none declared
+std/json/json.sober:77:6: effects std/json.Root fi=310 bits=none declared
+std/json/json.sober:83:6: effects std/json.Pos fi=311 bits=none declared
+std/json/json.sober:89:6: effects std/json.At fi=312 bits=none declared
+std/json/json.sober:109:6: effects std/json.keysOf fi=313 bits=none
+std/json/json.sober:118:6: effects std/json.text fi=314 bits=none
+std/json/json.sober:124:6: effects std/json.Get fi=315 bits=none declared
+std/json/json.sober:132:6: effects std/json.GetAt fi=316 bits=none declared
+std/json/json.sober:172:6: effects std/json.isWs fi=317 bits=none
+std/json/json.sober:176:6: effects std/json.skipWs fi=318 bits=none
+std/json/json.sober:184:6: effects std/json.isDigit fi=319 bits=none
+std/json/json.sober:189:6: effects std/json.numEnd fi=320 bits=none
+std/json/json.sober:229:6: effects std/json.hexVal fi=321 bits=none
+std/json/json.sober:242:6: effects std/json.hex4 fi=322 bits=none
+std/json/json.sober:258:6: effects std/json.strScan fi=323 bits=none
+std/json/json.sober:305:6: effects std/json.unescape fi=324 bits=none
+std/json/json.sober:331:6: effects std/json.putRune fi=325 bits=none
+std/json/json.sober:350:6: effects std/json.litAt fi=326 bits=none
+std/json/json.sober:364:6: effects std/json.put fi=327 bits=none
+std/json/json.sober:385:6: effects std/json.node fi=328 bits=none
+std/json/json.sober:396:6: effects std/json.bound fi=329 bits=none
+std/json/json.sober:410:6: effects std/json.zeroFill fi=330 bits=none
+std/json/json.sober:421:6: effects std/json.Parse fi=331 bits=none declared
+std/json/json.sober:560:6: effects std/json.readKey fi=332 bits=none
+std/json/json.sober:577:6: effects std/json.strNode fi=333 bits=none
+std/json/json.sober:587:6: effects std/json.closeFrame fi=334 bits=none
+std/json/json.sober:609:6: effects std/json.dupKey fi=335 bits=none
+std/json/json.sober:627:6: effects std/json.dupSmall fi=336 bits=none
+std/json/json.sober:657:6: effects std/json.dupLarge fi=337 bits=none
+std/json/json.sober:672:6: effects std/json.Format fi=338 bits=none declared
+std/json/json.sober:720:6: effects std/json.scalar fi=339 bits=none
+std/json/json.sober:735:6: effects std/json.putLit fi=340 bits=none
+std/json/json.sober:746:6: effects std/json.quote fi=341 bits=none
+std/json/json.sober:756:6: effects std/json.quoteEsc fi=342 bits=none
+std/json/json.sober:786:6: effects std/json.open fi=343 bits=none
+std/json/json.sober:793:6: effects std/json.shut fi=344 bits=none
+std/json/json.sober:801:6: effects std/json.unesc fi=345 bits=none
+std/json/json.sober:816:6: effects std/json.hexDigit fi=346 bits=none
+std/layout/layout.sober:28:6: effects std/layout.FailWidth fi=347 bits=panic declared
+std/layout/layout.sober:34:6: effects std/layout.FailLength fi=348 bits=panic declared
+std/math/math.sober:18:6: effects std/math.Sqrt fi=349 bits=none declared
+std/math/math.sober:24:6: effects std/math.Abs fi=350 bits=none declared
+std/math/math.sober:30:6: effects std/math.Bits fi=351 bits=none declared
+std/math/math.sober:36:6: effects std/math.FromBits fi=352 bits=none declared
+std/net/net.sober:55:6: effects std/net.again fi=353 bits=block, io
+std/net/net.sober:86:6: effects std/net.errOf fi=354 bits=nondet
+std/net/net.sober:106:6: effects std/net.waitErr fi=355 bits=nondet
+std/net/net.sober:114:6: effects std/net.sockaddr fi=356 bits=none
+std/net/net.sober:163:6: effects std/net.Listen fi=357 bits=block, io, nondet declared
+std/net/net.sober:181:6: effects std/net.listenFd fi=358 bits=io
+std/net/net.sober:201:6: effects std/net.closeFd fi=359 bits=block, io
+std/net/net.sober:206:6: effects std/net.giveConn fi=360 bits=block, io
+std/net/net.sober:213:6: effects std/net.Port fi=361 bits=io declared
+std/net/net.sober:219:6: effects std/net.boundAddr fi=362 bits=io
+std/net/net.sober:231:6: effects std/net.Accept fi=363 bits=block, io, nondet declared
+std/net/net.sober:254:6: effects std/net.Dial fi=364 bits=block, io, nondet declared
+std/net/net.sober:291:6: effects std/net.Recv fi=365 bits=block, io, nondet declared
+std/net/net.sober:326:6: effects std/net.Send fi=366 bits=block, io, nondet declared
+std/net/net.sober:369:6: effects std/net.Serve fi=367 bits=block, io, panic, nondet declared
+std/net/net.sober:427:6: effects std/net.serveOn fi=368 bits=block, io, nondet
+std/net/net.sober:486:6: effects std/net.slotBytes fi=369 bits=none
+std/os/os.sober:40:6: effects std/os.Args fi=370 bits=io declared
+std/os/os.sober:63:6: effects std/os.Run fi=371 bits=block, io declared
+std/os/os.sober:84:6: effects std/os.WriteMode fi=372 bits=io declared
+std/os/os.sober:96:6: effects std/os.Mkdir fi=373 bits=io declared
+std/os/os.sober:108:6: effects std/os.Rename fi=374 bits=io declared
+std/os/os.sober:120:6: effects std/os.ModTime fi=375 bits=io declared
+std/os/os.sober:131:6: effects std/os.Sleep fi=376 bits=block declared
+std/os/os.sober:137:6: effects std/os.SleepExpired fi=377 bits=block declared
+std/os/os.sober:145:6: effects std/os.Getenv fi=378 bits=io declared
+std/os/os.sober:164:6: effects std/os.keyIs fi=379 bits=none
+std/os/os.sober:177:6: effects std/os.argz fi=380 bits=none
+std/os/os.sober:190:6: effects std/os.errOf fi=381 bits=none
+std/pool/pool.sober:35:6: effects std/pool.Acquire fi=382 bits=none declared
+std/pool/pool.sober:53:6: effects std/pool.Release fi=383 bits=none declared
+std/pool/pool.sober:68:6: effects std/pool.Get fi=384 bits=none declared
+std/pool/pool.sober:77:6: effects std/pool.Set fi=385 bits=none declared
+std/pool/pool.sober:87:6: effects std/pool.Len fi=386 bits=none declared
+std/pool/pool.sober:91:6: effects std/pool.live fi=387 bits=none
+std/pool/pool.sober:120:6: effects std/pool.NewScratch fi=388 bits=panic declared
+std/pool/pool.sober:130:6: effects std/pool.zeros fi=389 bits=none
+std/pool/pool.sober:151:6: effects std/pool.Cap fi=390 bits=none declared
+std/pool/pool.sober:157:6: effects std/pool.Load fi=391 bits=none declared
+std/pool/pool.sober:164:6: effects std/pool.Store fi=392 bits=panic declared
+std/pool/pool.sober:172:6: effects std/pool.badScratch fi=393 bits=panic
+std/pool/pool.sober:178:6: effects std/pool.Renew fi=394 bits=none declared
+std/pool/pool.sober:196:6: effects std/pool.LoadRaw fi=395 bits=none declared
+std/pool/pool.sober:202:6: effects std/pool.StoreRaw fi=396 bits=none declared
+std/pool/pool.sober:210:6: effects std/pool.RenewDense fi=397 bits=none declared
+std/pool/pool.sober:230:6: effects std/pool.LeaseAttach fi=398 bits=panic declared
+std/rand/rand.sober:24:6: effects std/rand.New fi=399 bits=none declared
+std/rand/rand.sober:36:6: effects std/rand.Next fi=400 bits=none declared
+std/rand/rand.sober:50:6: effects std/rand.Int62 fi=401 bits=none declared
+std/rand/rand.sober:63:6: effects std/rand.Intn fi=402 bits=panic declared
+std/rand/rand.sober:77:6: effects std/rand.Bool fi=403 bits=none declared
+std/rand/rand.sober:83:6: effects std/rand.Split fi=404 bits=none declared
+std/rand/rand.sober:88:6: effects std/rand.mul32 fi=405 bits=none
+std/rand/rand.sober:97:6: effects std/rand.rotl32 fi=406 bits=none
+std/rand/rand.sober:102:6: effects std/rand.fmix32 fi=407 bits=none
+std/sort/sort.sober:23:6: effects std/sort.Order fi=408 bits=none declared
+std/sort/sort.sober:189:6: effects std/sort.OrderUnstable fi=409 bits=none declared
+std/sort/sort.sober:342:6: effects std/sort.triple fi=410 bits=none
+std/sort/sort.sober:353:6: effects std/sort.insertion fi=411 bits=none
+std/sort/sort.sober:376:6: effects std/sort.heapsort fi=412 bits=none
+std/sort/sort.sober:415:6: effects std/sort.breakPattern fi=413 bits=none
+std/sort/sort.sober:429:6: effects std/sort.swapAt fi=414 bits=none
+std/strings/strings.sober:7:6: effects std/strings.hasPrefixAt fi=415 bits=none
+std/strings/strings.sober:19:6: effects std/strings.indexAt fi=416 bits=none
+std/strings/strings.sober:34:6: effects std/strings.runeCount fi=417 bits=none
+std/strings/strings.sober:48:6: effects std/strings.HasPrefix fi=418 bits=none declared
+std/strings/strings.sober:56:6: effects std/strings.HasSuffix fi=419 bits=none declared
+std/strings/strings.sober:65:6: effects std/strings.Index fi=420 bits=none declared
+std/strings/strings.sober:71:6: effects std/strings.Contains fi=421 bits=none declared
+std/strings/strings.sober:78:6: effects std/strings.Count fi=422 bits=none declared
+std/strings/strings.sober:85:6: effects std/strings.countFrom fi=423 bits=none
+std/strings/strings.sober:100:6: effects std/strings.lastIndexAt fi=424 bits=none
+std/strings/strings.sober:112:6: effects std/strings.Cut fi=425 bits=none declared
+std/strings/strings.sober:124:6: effects std/strings.CutLast fi=426 bits=none declared
+std/strings/strings.sober:136:6: effects std/strings.TrimPrefix fi=427 bits=none declared
+std/strings/strings.sober:144:6: effects std/strings.TrimSuffix fi=428 bits=none declared
+std/strings/strings.sober:152:6: effects std/strings.LastIndex fi=429 bits=none declared
+std/strings/strings.sober:162:6: effects std/strings.isSpace fi=430 bits=none
+std/strings/strings.sober:167:6: effects std/strings.runeEnd fi=431 bits=none
+std/strings/strings.sober:178:6: effects std/strings.Split fi=432 bits=none declared
+std/strings/strings.sober:204:6: effects std/strings.Fields fi=433 bits=none declared
+std/strings/strings.sober:225:6: effects std/strings.TrimSpace fi=434 bits=none declared
+std/strings/strings.sober:241:6: effects std/strings.Replace fi=435 bits=none declared
+std/strings/strings.sober:285:6: effects std/strings.ToLower fi=436 bits=none declared
+std/strings/strings.sober:291:6: effects std/strings.ToUpper fi=437 bits=none declared
+std/strings/strings.sober:296:6: effects std/strings.mapCase fi=438 bits=none
+std/strings/strings.sober:318:6: effects std/strings.EqualFold fi=439 bits=none declared
+std/strings/strings.sober:332:6: effects std/strings.foldByte fi=440 bits=none
+std/strings/strings.sober:338:6: effects std/strings.IndexByte fi=441 bits=none declared
+std/strings/strings.sober:366:6: effects std/strings.Clone fi=442 bits=none declared
+std/strings/strings.sober:380:6: effects std/strings.Join fi=443 bits=none declared
+std/strings/strings.sober:412:6: effects std/strings.cont fi=444 bits=none
+std/strings/strings.sober:417:6: effects std/strings.seqLen fi=445 bits=none
+std/strings/strings.sober:440:6: effects std/strings.IndexInvalid fi=446 bits=none declared
+std/strings/strings.sober:478:6: effects std/strings.validPrefix fi=447 bits=none
+std/strings/strings.sober:484:6: effects std/strings.Valid fi=448 bits=none declared
+std/table/table.sober:36:6: effects std/table.Push fi=449 bits=none declared
+std/table/table.sober:65:6: effects std/table.PushAll fi=450 bits=none declared
+std/table/table.sober:111:6: effects std/table.Len fi=451 bits=none declared
+std/table/table.sober:117:6: effects std/table.Get fi=452 bits=none declared
+std/table/table.sober:129:6: effects std/table.Set fi=453 bits=none declared
+std/table/table.sober:144:6: effects std/table.Freeze fi=454 bits=none declared
+std/table/table.sober:162:6: effects std/table.FrozenLen fi=455 bits=none declared
+std/table/table.sober:168:6: effects std/table.At fi=456 bits=none declared
+std/task/task.sober:62:6: effects std/task.Run fi=457 bits=block declared
+std/task/task.sober:70:6: effects std/task.fence fi=458 bits=none
+std/task/task.sober:77:6: effects std/task.Spawn fi=459 bits=none declared
+std/task/task.sober:83:6: effects std/task.Join fi=460 bits=block declared
+std/task/task.sober:89:6: effects std/task.Try fi=461 bits=block declared
+std/task/task.sober:105:6: effects std/task.NewChannel fi=462 bits=none declared
+std/task/task.sober:111:6: effects std/task.Send fi=463 bits=block declared
+std/task/task.sober:119:6: effects std/task.Recv fi=464 bits=block declared
+std/task/task.sober:125:6: effects std/task.RecvAll fi=465 bits=block declared
+std/task/task.sober:139:6: effects std/task.Close fi=466 bits=none declared
+std/task/task.sober:147:6: effects std/task.SpawnGive fi=467 bits=none declared
+std/task/task.sober:154:6: effects std/task.Gather fi=468 bits=block declared
+std/task/task.sober:167:6: effects std/task.gatherE fi=469 bits=block
+std/task/task.sober:198:6: effects std/task.Map fi=470 bits=block declared
+std/task/task.sober:225:6: effects std/task.mapE fi=471 bits=block
+std/task/task.sober:286:6: effects std/task.MarkFailed fi=472 bits=none declared
+std/task/task.sober:292:6: effects std/task.NewPool fi=473 bits=panic declared
+std/task/task.sober:333:6: effects std/task.Ledger fi=474 bits=nondet declared
+std/task/task.sober:350:6: effects std/task.SpawnIn fi=475 bits=none declared
+std/task/task.sober:373:6: effects std/task.NewLocal fi=476 bits=panic declared
+std/task/task.sober:381:6: effects std/task.Lease fi=477 bits=panic declared
+std/task/task.sober:395:6: effects std/task.LocalNew fi=478 bits=none declared
+std/task/task.sober:425:6: effects std/task.LeaseTake fi=479 bits=panic declared
+std/task/task.sober:447:6: effects std/task.LeaseGive fi=480 bits=none declared
+std/task/task.sober:455:6: effects std/task.LeaseBlock fi=481 bits=none declared
+std/testing/testing.sober:16:6: effects std/testing.Fail fi=482 bits=io, panic, nondet declared
+std/tls/tls.sober:81:6: effects std/tls.Parse fi=483 bits=none declared
+std/tls/tls.sober:99:6: effects std/tls.Alpn fi=484 bits=none declared
+std/tls/tls.sober:106:6: effects std/tls.Load fi=485 bits=io, nondet declared
+std/tls/tls.sober:112:6: effects std/tls.emptyConfig fi=486 bits=none
+std/tls/tls.sober:124:6: effects std/tls.Serve fi=487 bits=block, io, panic, nondet declared
+std/tls/tls.sober:133:6: effects std/tls.accept fi=488 bits=block, io, panic, nondet
+std/tls/tls.sober:149:6: effects std/tls.handshake fi=489 bits=block, io, panic, nondet
+std/tls/tls.sober:186:6: effects std/tls.frameLen fi=490 bits=none
+std/tls/tls.sober:198:6: effects std/tls.alertOf fi=491 bits=none
+std/tls/tls.sober:206:6: effects std/tls.newBlk fi=492 bits=panic
+std/tls/tls.sober:233:6: effects std/tls.putDir fi=493 bits=panic
+std/tls/tls.sober:259:6: effects std/tls.Recv fi=494 bits=block, io, nondet declared
+std/tls/tls.sober:293:6: effects std/tls.pump fi=495 bits=block, io, nondet
+std/tls/tls.sober:315:6: effects std/tls.Send fi=496 bits=block, io, panic, nondet declared
+std/tls/tls.sober:324:6: effects std/tls.Put fi=497 bits=block, io, panic, nondet declared
+std/tls/tls.sober:349:6: effects std/tls.Flush fi=498 bits=block, io, nondet declared
+std/tls/tls.sober:360:6: effects std/tls.sendNow fi=499 bits=block, io, panic, nondet
+std/tls/tls.sober:377:6: effects std/tls.sealPut fi=500 bits=none
+std/tls/tls.sober:387:6: effects std/tls.closeRecord fi=501 bits=none
+std/tls/tls.sober:396:6: effects std/tls.die fi=502 bits=block, io, nondet
+std/tls/tls.sober:409:6: effects std/tls.flags fi=503 bits=none
+std/tls/tls.sober:413:6: effects std/tls.setFlags fi=504 bits=none
+std/tls/tls.sober:418:6: effects std/tls.setSeq fi=505 bits=none
+std/tls/tls.sober:423:6: effects std/tls.putWr fi=506 bits=none
+std/tls/tls.sober:433:6: effects std/tls.view fi=507 bits=none
+std/tls/tls.sober:439:6: effects std/tls.leftBytes fi=508 bits=none
+std/tls/tls.sober:451:6: effects std/tls.cat fi=509 bits=none
+std/tls/tls.sober:463:6: effects std/tls.rest fi=510 bits=none
+std/tls/record/record.sober:74:6: effects std/tls/record.ExpandLabel fi=511 bits=none declared
+std/tls/record/record.sober:97:6: effects std/tls/record.NewDir fi=512 bits=none declared
+std/tls/record/record.sober:116:6: effects std/tls/record.emptyDir fi=513 bits=none
+std/tls/record/record.sober:123:6: effects std/tls/record.Update fi=514 bits=none declared
+std/tls/record/record.sober:131:6: effects std/tls/record.NeedUpdate fi=515 bits=none declared
+std/tls/record/record.sober:138:6: effects std/tls/record.Seal fi=516 bits=none declared
+std/tls/record/record.sober:161:6: effects std/tls/record.SealInto fi=517 bits=none declared
+std/tls/record/record.sober:177:6: effects std/tls/record.sealOne fi=518 bits=none
+std/tls/record/record.sober:199:6: effects std/tls/record.head fi=519 bits=none
+std/tls/record/record.sober:210:6: effects std/tls/record.nonceOf fi=520 bits=none
+std/tls/record/record.sober:218:6: effects std/tls/record.Plain fi=521 bits=none declared
+std/tls/record/record.sober:227:6: effects std/tls/record.Open fi=522 bits=none declared
+std/tls/record/record.sober:256:6: effects std/tls/record.openBody fi=523 bits=none
+std/tls/record/record.sober:269:6: effects std/tls/record.strip fi=524 bits=none
+std/tls/record/record.sober:285:6: effects std/tls/record.stripTail fi=525 bits=none
+std/tls/record/record.sober:302:6: effects std/tls/record.Frames fi=526 bits=none declared
+std/tls/record/record.sober:369:6: effects std/tls/record.carry fi=527 bits=none
+std/tls/record/record.sober:378:6: effects std/tls/record.joined fi=528 bits=none
+std/tls/record/record.sober:392:6: effects std/tls/record.At fi=529 bits=none declared
+std/tls/record/record.sober:399:6: effects std/tls/record.Pack fi=530 bits=panic declared
+std/tls/record/record.sober:411:6: effects std/tls/record.Unpack fi=531 bits=none declared
+std/tls/record/record.sober:425:6: effects std/tls/record.WithSeq fi=532 bits=none declared
+std/tls/record/record.sober:431:6: effects std/tls/record.Seq fi=533 bits=none declared
+std/tls/record/record.sober:435:6: effects std/tls/record.packBytes fi=534 bits=panic
+std/tls/record/record.sober:456:6: effects std/tls/record.unpackBytes fi=535 bits=none
+std/url/url.sober:22:6: effects std/url.Escape fi=536 bits=none declared
+std/url/url.sober:42:6: effects std/url.Unescape fi=537 bits=none declared
+std/url/url.sober:57:6: effects std/url.ParseQuery fi=538 bits=none declared
+std/url/url.sober:86:6: effects std/url.unescape fi=539 bits=none
+std/url/url.sober:111:6: effects std/url.unreserved fi=540 bits=none
+std/url/url.sober:116:6: effects std/url.nib fi=541 bits=none
+std/utf8/utf8.sober:29:6: effects std/utf8.Check fi=542 bits=block declared
+std/utf8/utf8.sober:39:6: effects std/utf8.Bytes fi=543 bits=none declared
+std/utf8/utf8.sober:44:6: effects std/utf8.boundary fi=544 bits=none
+std/utf8/utf8.sober:51:6: effects std/utf8.Str fi=545 bits=none declared
+std/utf8/utf8.sober:73:6: effects std/utf8.indexInvalidPar fi=546 bits=block
+std/utf8/utf8.sober:105:6: effects std/utf8.chunkInvalid fi=547 bits=none
+std/internal/deflate/deflate.sober:43:6: effects std/internal/deflate.Prepare fi=548 bits=panic
+std/internal/deflate/deflate.sober:51:6: effects std/internal/deflate.EncodeWith fi=549 bits=panic
+std/internal/deflate/deflate.sober:147:6: effects std/internal/deflate.setup fi=550 bits=none
+std/internal/deflate/deflate.sober:190:6: effects std/internal/deflate.setupFixed fi=551 bits=none
+std/internal/deflate/deflate.sober:213:6: effects std/internal/deflate.fill fi=552 bits=none
+std/internal/deflate/deflate.sober:234:6: effects std/internal/deflate.rev fi=553 bits=none
+std/internal/deflate/deflate.sober:245:6: effects std/internal/deflate.put fi=554 bits=none
+std/internal/deflate/deflate.sober:264:6: effects std/internal/deflate.drain fi=555 bits=none
+std/internal/deflate/deflate.sober:277:6: effects std/internal/deflate.align fi=556 bits=none
+std/internal/deflate/deflate.sober:286:6: effects std/internal/deflate.dsym fi=557 bits=none
+std/internal/deflate/deflate.sober:292:6: effects std/internal/deflate.stored fi=558 bits=none
+std/internal/deflate/deflate.sober:314:6: effects std/internal/deflate.flush fi=559 bits=none
+std/internal/deflate/deflate.sober:411:6: effects std/internal/deflate.symbols fi=560 bits=none
+std/internal/deflate/deflate.sober:453:6: effects std/internal/deflate.used fi=561 bits=none
+std/internal/deflate/deflate.sober:463:6: effects std/internal/deflate.rle fi=562 bits=none
+std/internal/deflate/deflate.sober:511:6: effects std/internal/deflate.flushRep fi=563 bits=none
+std/internal/deflate/deflate.sober:523:6: effects std/internal/deflate.flushZero fi=564 bits=none
+std/internal/deflate/deflate.sober:541:6: effects std/internal/deflate.lengths fi=565 bits=none
+std/internal/deflate/deflate.sober:699:6: effects std/internal/deflate.pad2 fi=566 bits=none
+std/internal/deflate/deflate.sober:723:6: effects std/internal/deflate.insert fi=567 bits=panic
+std/internal/deflate/deflate.sober:746:6: effects std/internal/deflate.longest fi=568 bits=panic
+std/internal/deflate/deflate.sober:777:6: effects std/internal/deflate.tally fi=569 bits=none
+std/internal/deflate/deflate.sober:787:6: effects std/internal/deflate.greedy fi=570 bits=panic
+std/internal/deflate/deflate.sober:830:6: effects std/internal/deflate.lazy fi=571 bits=panic
+std/internal/deflate/deflate.sober:943:6: effects std/internal/deflate.Begin fi=572 bits=panic
+std/internal/deflate/deflate.sober:970:6: effects std/internal/deflate.Feed fi=573 bits=panic
+std/internal/deflate/deflate.sober:1055:6: effects std/internal/deflate.keep fi=574 bits=panic
+std/internal/deflate/deflate.sober:1080:6: effects std/internal/deflate.End fi=575 bits=none
+std/internal/deflate/deflate.sober:1101:6: effects std/internal/deflate.gzHead fi=576 bits=none
+std/internal/inflate/inflate.sober:14:6: effects std/internal/inflate.At fi=577 bits=none
+std/internal/inflate/inflate.sober:74:6: effects std/internal/inflate.tables fi=578 bits=none
+std/internal/inflate/inflate.sober:82:6: effects std/internal/inflate.refill fi=579 bits=none
+std/internal/inflate/inflate.sober:91:6: effects std/internal/inflate.bits fi=580 bits=none
+std/internal/inflate/inflate.sober:106:6: effects std/internal/inflate.build fi=581 bits=none
+std/internal/inflate/inflate.sober:162:6: effects std/internal/inflate.sym fi=582 bits=none
+std/internal/inflate/inflate.sober:199:6: effects std/internal/inflate.room fi=583 bits=none
+std/internal/inflate/inflate.sober:208:6: effects std/internal/inflate.storedBlock fi=584 bits=none
+std/internal/inflate/inflate.sober:242:6: effects std/internal/inflate.fixedBlock fi=585 bits=none
+std/internal/inflate/inflate.sober:262:6: effects std/internal/inflate.dynamicBlock fi=586 bits=none
+std/internal/inflate/inflate.sober:345:6: effects std/internal/inflate.codes fi=587 bits=none
+std/internal/inflate/inflate.sober:395:6: effects std/internal/inflate.fill fi=588 bits=none
+std/internal/inflate/inflate.sober:402:6: effects std/internal/inflate.rev fi=589 bits=none
+std/internal/floatfmt/floatfmt.sober:17:6: effects std/internal/floatfmt.Format fi=590 bits=none
+std/internal/floatfmt/floatfmt.sober:89:6: effects std/internal/floatfmt.FormatFixed fi=591 bits=none
+std/internal/floatfmt/floatfmt.sober:162:6: effects std/internal/floatfmt.exactShort fi=592 bits=none
+std/internal/floatfmt/floatfmt.sober:218:6: effects std/internal/floatfmt.shortest fi=593 bits=none
+std/internal/floatfmt/floatfmt.sober:344:6: effects std/internal/floatfmt.ParseBits fi=594 bits=none
+std/internal/floatfmt/floatfmt.sober:356:6: effects std/internal/floatfmt.parseBits fi=595 bits=none
+std/internal/floatfmt/floatfmt.sober:432:6: effects std/internal/floatfmt.wordAt fi=596 bits=none
+std/internal/floatfmt/floatfmt.sober:448:6: effects std/internal/floatfmt.decimalBits fi=597 bits=none
+std/internal/floatfmt/floatfmt.sober:513:6: effects std/internal/floatfmt.bnDivScaled fi=598 bits=none
+std/internal/floatfmt/floatfmt.sober:536:6: effects std/internal/floatfmt.bitLen fi=599 bits=none
+std/internal/floatfmt/floatfmt.sober:546:6: effects std/internal/floatfmt.bnSetInt fi=600 bits=none
+std/internal/floatfmt/floatfmt.sober:557:6: effects std/internal/floatfmt.bnSet fi=601 bits=none
+std/internal/floatfmt/floatfmt.sober:565:6: effects std/internal/floatfmt.bnMulAdd fi=602 bits=none
+std/internal/floatfmt/floatfmt.sober:579:6: effects std/internal/floatfmt.bnAdd fi=603 bits=none
+std/internal/floatfmt/floatfmt.sober:595:6: effects std/internal/floatfmt.bnShl fi=604 bits=none
+std/internal/floatfmt/floatfmt.sober:623:6: effects std/internal/floatfmt.bnShr fi=605 bits=none
+std/internal/floatfmt/floatfmt.sober:640:6: effects std/internal/floatfmt.bnDivSmall fi=606 bits=none
+std/internal/floatfmt/floatfmt.sober:652:6: effects std/internal/floatfmt.bnOdd fi=607 bits=none
+std/internal/floatfmt/floatfmt.sober:656:6: effects std/internal/floatfmt.bnTop fi=608 bits=none
+std/internal/floatfmt/floatfmt.sober:664:6: effects std/internal/floatfmt.bnBitLen fi=609 bits=none
+std/internal/floatfmt/floatfmt.sober:672:6: effects std/internal/floatfmt.bnCmp fi=610 bits=none
+std/internal/floatfmt/floatfmt.sober:689:6: effects std/internal/floatfmt.bnSub fi=611 bits=none
+std/internal/bless/bless.sober:9:6: effects std/internal/bless.Bytes fi=612 bits=none
+std/internal/crc32/crc32.sober:14:6: effects std/internal/crc32.Update fi=613 bits=panic
+std/internal/crc32/crc32.sober:47:6: effects std/internal/crc32.tables8 fi=614 bits=none
+std/internal/crc32/crc32.sober:60:6: effects std/internal/crc32.table fi=615 bits=none
+std/internal/utf8/utf8.sober:10:6: effects std/internal/utf8.Parse fi=616 bits=none
+std/internal/hs/codec.sober:16:6: effects std/internal/hs.cur fi=617 bits=none
+std/internal/hs/codec.sober:20:6: effects std/internal/hs.u8 fi=618 bits=none
+std/internal/hs/codec.sober:30:6: effects std/internal/hs.u16 fi=619 bits=none
+std/internal/hs/codec.sober:40:6: effects std/internal/hs.u24 fi=620 bits=none
+std/internal/hs/codec.sober:51:6: effects std/internal/hs.sub fi=621 bits=none
+std/internal/hs/codec.sober:62:6: effects std/internal/hs.take fi=622 bits=none
+std/internal/hs/codec.sober:78:6: effects std/internal/hs.rest fi=623 bits=none
+std/internal/hs/codec.sober:82:6: effects std/internal/hs.put8 fi=624 bits=none
+std/internal/hs/codec.sober:86:6: effects std/internal/hs.put16 fi=625 bits=none
+std/internal/hs/codec.sober:91:6: effects std/internal/hs.put24 fi=626 bits=none
+std/internal/hs/codec.sober:97:6: effects std/internal/hs.putBytes fi=627 bits=none
+std/internal/hs/codec.sober:106:6: effects std/internal/hs.msg fi=628 bits=none
+std/internal/hs/codec.sober:115:6: effects std/internal/hs.cat fi=629 bits=none
+std/internal/hs/codec.sober:123:6: effects std/internal/hs.sliceOf fi=630 bits=none
+std/internal/hs/hs.sober:58:6: effects std/internal/hs.hrrRandom fi=631 bits=none
+std/internal/hs/hs.sober:72:6: effects std/internal/hs.NewParams fi=632 bits=none
+std/internal/hs/hs.sober:118:6: effects std/internal/hs.none fi=633 bits=none
+std/internal/hs/hs.sober:123:6: effects std/internal/hs.New fi=634 bits=none
+std/internal/hs/hs.sober:130:6: effects std/internal/hs.Resume fi=635 bits=none
+std/internal/hs/hs.sober:138:6: effects std/internal/hs.Bare fi=636 bits=none
+std/internal/hs/hs.sober:143:6: effects std/internal/hs.emptyDir fi=637 bits=none
+std/internal/hs/hs.sober:149:6: effects std/internal/hs.IsConnected fi=638 bits=none
+std/internal/hs/hs.sober:158:6: effects std/internal/hs.Probe fi=639 bits=none
+std/internal/hs/hs.sober:173:6: effects std/internal/hs.Alpn fi=640 bits=none
+std/internal/hs/hs.sober:178:6: effects std/internal/hs.Suite fi=641 bits=none
+std/internal/hs/hs.sober:183:6: effects std/internal/hs.Dirs fi=642 bits=none
+std/internal/hs/hs.sober:189:6: effects std/internal/hs.Secrets fi=643 bits=none
+std/internal/hs/hs.sober:197:6: effects std/internal/hs.Feed fi=644 bits=io, panic
+std/internal/hs/hs.sober:208:6: effects std/internal/hs.Step fi=645 bits=none
+std/internal/hs/hs.sober:222:6: effects std/internal/hs.feedIn fi=646 bits=io, panic
+std/internal/hs/hs.sober:240:6: effects std/internal/hs.alert fi=647 bits=none
+std/internal/hs/hs.sober:246:6: effects std/internal/hs.feedPlain fi=648 bits=io, panic
+std/internal/hs/hs.sober:276:6: effects std/internal/hs.ccsOnce fi=649 bits=none
+std/internal/hs/hs.sober:286:6: effects std/internal/hs.feedSealed fi=650 bits=none
+std/internal/hs/hs.sober:324:6: effects std/internal/hs.onSealedMsg fi=651 bits=none
+std/internal/hs/hs.sober:357:6: effects std/internal/hs.peerAlert fi=652 bits=none
+std/internal/hs/hs.sober:383:6: effects std/internal/hs.parseHello fi=653 bits=none
+std/internal/hs/hs.sober:467:6: effects std/internal/hs.emptyHello fi=654 bits=none
+std/internal/hs/hs.sober:473:6: effects std/internal/hs.onClientHello fi=655 bits=io, panic
+std/internal/hs/hs.sober:550:6: effects std/internal/hs.helloRetry fi=656 bits=none
+std/internal/hs/hs.sober:576:6: effects std/internal/hs.pickSuite fi=657 bits=none
+std/internal/hs/hs.sober:588:6: effects std/internal/hs.pickAlpn fi=658 bits=none
+std/internal/hs/hs.sober:601:6: effects std/internal/hs.serverHello fi=659 bits=none
+std/internal/hs/hs.sober:615:6: effects std/internal/hs.helloBody fi=660 bits=none
+std/internal/hs/hs.sober:628:6: effects std/internal/hs.encryptedExtensions fi=661 bits=none
+std/internal/hs/hs.sober:644:6: effects std/internal/hs.certificate fi=662 bits=none
+std/internal/hs/hs.sober:660:6: effects std/internal/hs.certificateVerify fi=663 bits=io, panic
+std/internal/hs/hs.sober:680:6: effects std/internal/hs.deriveSecret fi=664 bits=none
+std/internal/hs/hs.sober:685:6: effects std/internal/hs.plain fi=665 bits=none
+std/internal/hs/hs.sober:704:6: effects std/internal/hs.zeros fi=666 bits=none
+std/internal/hs/hs.sober:713:6: effects std/internal/hs.rnd fi=667 bits=io, panic
+std/internal/hs/hs.sober:724:6: effects std/internal/hs.SealApp fi=668 bits=none
+std/internal/hs/hs.sober:739:6: effects std/internal/hs.AlertRecord fi=669 bits=none
+std/internal/hs/hs.sober:749:6: effects std/internal/hs.CloseNotify fi=670 bits=none
 std/http/http.sober:426:6: ftype Handler union=io, nondet
 std/http/http.sober:429:6: ftype Before union=none
 std/http/http.sober:432:6: ftype After union=none
 std/http/http.sober:122:6: ftype Stream union=block, io, nondet
 std/iter/iter.sober:8:6: ftype Iter union=none
 std/tls/tls.sober:48:6: ftype Handler union=none
-summary fns=666 lambdas=25 edges=2062 any=block, io, panic, nondet any-calls=0 fvalues=0 declared=266 violations=0
+summary fns=671 lambdas=27 edges=2079 any=block, io, panic, nondet any-calls=0 fvalues=0 declared=266 violations=0

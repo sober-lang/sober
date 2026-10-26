@@ -1,0 +1,19 @@
+package main
+
+// 有る組の中の省略可の仮引数は普通の匿名の関数型の仮引数（借り）— 値の位置のラムダ（名前付き関数型の値）には捕捉できない（今の規則 — FnCap kind 5）
+
+type Hook func(v int)
+
+func keep(h Hook) {
+    h(1)
+}
+
+func run(n int, put (func(v int))?) {
+    if put != nil {
+        keep((v) => put(v))
+    }
+}
+
+func main() {
+    run(1, put: (v) => println(v))
+}

@@ -9,4 +9,4 @@ std/http/http.sober:625:6: shared Cache the shared cache policy 'Shared'
 std/http/http.sober:466:6: meet-point std/http.Mount
 examples/origin_neg_std.sober:7:6: violation @credential (a function) is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)
 examples/origin_neg_std.sober:12:6: violation @bless(origin) is for std only (credential sources, shared cache policies and their blessings are declared by the standard library — language.md 12 節「出所の依存」)
-summary atoms=7 credentials=4 eff-fns=0 shared=2 shared-fields=2 violations=2 walks=546
+summary atoms=7 credentials=4 eff-fns=0 shared=2 shared-fields=2 violations=2 walks=549

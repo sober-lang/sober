@@ -20,7 +20,8 @@ function ok(name: string, cond: boolean, detail = "") {
     if (cond) pass++;
     else {
         fail++;
-        fails.push(`${name}${detail ? " — " + detail : ""}`);
+        // 落ちた時刻（CLOCK_MONOTONIC — サーバの飛行記録の窓を引く。詳細に既に t= があれば足さない）
+        fails.push(`${name}${detail ? " — " + detail : ""}${detail.includes("t=") ? "" : ` t=${process.hrtime.bigint()}`}`);
     }
 }
 
@@ -86,18 +87,20 @@ function parseAll(buf: Buffer, closed = false): { resps: Resp[]; rest: number } 
 }
 
 // exchange は parts を間隔 gap ms で書き、want 件の応答が揃うか相手が閉じるまで読む → 応答と閉じられたか
-function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 5000): Promise<{ resps: Resp[]; closed: boolean; raw: Buffer }> {
+// lport = 手元の port（サーバの飛行記録の ACCEPT の相手の port と 1:1 — 落ちの詳細に出す）
+function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 5000): Promise<{ resps: Resp[]; closed: boolean; raw: Buffer; lport: number }> {
     return new Promise((resolve) => {
         const s = net.createConnection({ port, host: "127.0.0.1" });
         s.setNoDelay(true);
         let buf = Buffer.alloc(0);
         let done = false;
+        let lport = 0;
         const finish = (closed: boolean) => {
             if (done) return;
             done = true;
             clearTimeout(t);
             s.destroy();
-            resolve({ resps: parseAll(buf, closed).resps, closed, raw: buf });
+            resolve({ resps: parseAll(buf, closed).resps, closed, raw: buf, lport });
         };
         const t = setTimeout(() => finish(false), timeout);
         s.on("data", (d) => {
@@ -113,6 +116,7 @@ function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 
         s.on("close", () => finish(true));
         s.on("error", () => finish(true));
         s.on("connect", async () => {
+            lport = s.localPort ?? 0;
             for (let i = 0; i < parts.length; i++) {
                 if (i > 0) await new Promise((r) => setTimeout(r, gap));
                 if (!s.destroyed) s.write(parts[i]);
@@ -123,17 +127,28 @@ function exchange(parts: (string | Buffer)[], want: number, gap = 20, timeout = 
 
 const rnd = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
 
+// mono は今の CLOCK_MONOTONIC（ns — Linux の process.hrtime。サーバの飛行記録〔SOBER_FLIGHT — report-1175〕の時刻と同じ時計で、落ちた瞬間の窓を引く）
+const mono = () => `t=${process.hrtime.bigint()}`;
+
+// errWhy は失敗した fetch の理由（undici は接続の誤りを err.cause に持つ — 名前・code・message）+ 時刻と、undici の SocketError なら手元の port
+// （cause.socket.localPort — サーバの飛行記録の ACCEPT の相手の port と 1:1）
+function errWhy(err: any): string {
+    const c = err?.cause;
+    const lp = c?.socket?.localPort;
+    return `${err?.name ?? "?"}: ${err?.message ?? ""}${c ? ` (cause ${c.code ?? c.name ?? "?"}: ${c.message ?? ""})` : ""} ${mono()}${lp !== undefined ? ` lport=${lp}` : ""}`;
+}
+
 async function one(name: string, req: string | Buffer, wantStatus: number, wantBody: string | null, opts: { closed?: boolean; ctype?: string } = {}) {
     const r = await exchange([req], 1);
     const x = r.resps[0];
     if (!x) {
-        ok(name, false, `no response (closed=${r.closed} raw=${JSON.stringify(r.raw.toString("latin1").slice(0, 80))})`);
+        ok(name, false, `no response (closed=${r.closed} raw=${JSON.stringify(r.raw.toString("latin1").slice(0, 80))}) lport=${r.lport}`);
         return;
     }
     let good = x.status === wantStatus && (wantBody === null || x.body === wantBody);
     if (opts.ctype !== undefined) good &&= (x.headers.get("content-type") ?? "").startsWith(opts.ctype);
     if (opts.closed !== undefined) good &&= r.closed === opts.closed;
-    ok(name, good, `got ${x.status} ${JSON.stringify(x.body)} ct=${x.headers.get("content-type")} closed=${r.closed}`);
+    ok(name, good, `got ${x.status} ${JSON.stringify(x.body)} ct=${x.headers.get("content-type")} closed=${r.closed} lport=${r.lport}`);
 }
 
 const H = "Host: localhost\r\n";
@@ -574,13 +589,17 @@ async function chunkedEp() {
     // 実物の受け手: undici（fetch）・node:http・curl（HTTP/1.1 = chunked・HTTP/1.0 = 閉じで区切る）
     const base = `http://127.0.0.1:${port}`;
     let fxOk = false;
+    let fxWhy = "";
     try {
         const fx = await fetch(`${base}/chunked/200000?k=4096`, { signal: AbortSignal.timeout(5000) });
-        fxOk = fx.status === 200 && fx.headers.get("transfer-encoding") === "chunked" && (await fx.text()) === genBody(200000);
+        const tx = await fx.text();
+        fxOk = fx.status === 200 && fx.headers.get("transfer-encoding") === "chunked" && tx === genBody(200000);
+        fxWhy = `status=${fx.status} te=${fx.headers.get("transfer-encoding")} len=${tx.length} ${mono()}`;
     } catch (err) {
         fxOk = false;
+        fxWhy = errWhy(err);
     }
-    ok("chunked undici", fxOk);
+    ok("chunked undici", fxOk, fxWhy);
     let fxFail = "";
     try {
         await (await fetch(`${base}/chunked/50000?fail=20000`, { signal: AbortSignal.timeout(5000) })).text();
@@ -739,9 +758,11 @@ async function gzipStream() {
     let fz = "";
     try {
         const fx = await fetch(`${base}/chunked/200000?k=4096`, { signal: AbortSignal.timeout(5000) });
-        fz = `${fx.headers.get("content-encoding")} ${(await fx.text()) === genBody(200000)}`;
+        const zt = (await fx.text()) === genBody(200000);
+        fz = `${fx.headers.get("content-encoding")} ${zt}`;
+        if (!zt) fz += ` ${mono()}`;
     } catch (err) {
-        fz = "error";
+        fz = `error ${errWhy(err)}`;
     }
     ok("gzip stream undici", fz === "gzip true", fz);
     const nh = await new Promise<string>((resolve) => {
@@ -810,17 +831,20 @@ async function sseEp() {
         ok("sse EventSource available", false, "run node with --experimental-eventsource");
         return;
     }
+    // 繋ぎ直しの error（流れの終わり — 正常）も数えるので、比較の列でなく詳細にだけ載せる
+    const esErr: string[] = [];
     const got = await new Promise<string[]>((resolve) => {
         const seen: string[] = [];
         const es = new ES(`http://127.0.0.1:${port}/sse`);
         const t = setTimeout(() => { es.close(); resolve(seen); }, 5000);
+        es.addEventListener("error", (e: any) => esErr.push(`${e?.message ?? "error"} ${mono()}`));
         es.addEventListener("tick", (e: any) => {
             seen.push(`${e.lastEventId}:${e.data}`);
             if (e.lastEventId === "3") { clearTimeout(t); es.close(); resolve(seen); }
         });
         es.addEventListener("end", (e: any) => seen.push(`end:${JSON.stringify(e.data)}`));
     });
-    ok("sse EventSource", JSON.stringify(got) === JSON.stringify(["1:n=1\nsq=1", "2:n=2\nsq=4", 'end:""', "3:n=3\nsq=9"]), JSON.stringify(got));
+    ok("sse EventSource", JSON.stringify(got) === JSON.stringify(["1:n=1\nsq=1", "2:n=2\nsq=4", 'end:""', "3:n=3\nsq=9"]), `${JSON.stringify(got)} errors=${JSON.stringify(esErr)} ${mono()}`);
 }
 
 // ── echo（POST /echo — HttpArena の 8gbit の端点〔validate.sh の 8gbit の節〕。乱数の本文を byte 一致で: Content-Length と chunked〔乱数の切り方・

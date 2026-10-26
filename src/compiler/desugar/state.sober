@@ -228,6 +228,8 @@ type S struct {
     capNames []string
     // 展開待ちの捕捉（loader.Program の cap_pend — 詰めた列。読みは closure.sober の capPkAt / capFlowAt / PendN / PendRow）
     capPend []int
+    // 省略可の匿名関数型の仮引数を持つ関数の写し（loader.Program の z_decl — [宣言の節の参照, ファイル, 節の区間 lo, hi) の 4 語ずつ。ZVariant / zBlock）
+    zdecl []int
     // env の形（クロージャの波 工程 4 B1 — closure.sober）: shRecDecl / shRecTy = この脱糖で持ち上げた閉包の形の記録（named fn type の宣言 →
     // env の型・重複なし — 前走りが shapesFor で読む）、shDecl / shTy = 前走りが集めた形（入口が loadShapes で積む — U_F はこれの閉じた union）
     shRecDecl table.Table[int]
@@ -898,6 +900,39 @@ type FnInfo struct {
 }
 
 // FnAt は関数表の i 行目（lower も読む — 非ジェネリックの包み）
+// ZVariant は関数 i が省略可の匿名関数型の仮引数を持つ関数の写し（loader/optfn.sober）か
+func ZVariant(st mut S, i int) bool {
+    if len(st.zdecl) == 0 {
+        return false
+    }
+    n := int(FnAt(mut st, i).node)
+    for k <- iter.Range(0, len(st.zdecl) / 4) {
+        if st.zdecl[k * 4] == n {
+            return true
+        }
+    }
+    return false
+}
+
+// zBlock はファイル f の節 n を写した組の関数（写しの節の区間に入っていなければ -1）。写しは元の宣言と同じ字句の区間を持つので、
+// 字句で関数を引く表（本体の区間 — reach / namedval / e2s）は写しを載せず、先にここで引く
+func zBlock(st mut S, f int, n int) int {
+    if len(st.zdecl) == 0 {
+        return -1
+    }
+    for k <- iter.Range(0, len(st.zdecl) / 4) {
+        if st.zdecl[k * 4 + 1] == f && n >= st.zdecl[k * 4 + 2] && n < st.zdecl[k * 4 + 3] {
+            d := st.zdecl[k * 4]
+            for i <- iter.Range(0, st.nfn) {
+                if int(fnNode(mut st, i)) == d {
+                    return i
+                }
+            }
+        }
+    }
+    return -1
+}
+
 func FnAt(st mut S, i int) FnInfo {
     return table.Get(mut st.fns, i)
 }

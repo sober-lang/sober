@@ -140,6 +140,26 @@
             "append",
             "freeze"
           ]
+        },
+        {
+          "name": "PushBetween",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "len",
+            "pushBetweenSlow"
+          ]
+        },
+        {
+          "name": "pushBetweenSlow",
+          "expands": true,
+          "mut_def": false,
+          "has_try": false,
+          "callees": [
+            "Push",
+            "PushAll"
+          ]
         }
       ],
       "consts": [

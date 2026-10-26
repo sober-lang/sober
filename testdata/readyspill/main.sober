@@ -1,0 +1,177 @@
+package main
+
+// 走れる積みの溢れの道の網（report-1168 — 環の容量を 8 にした開発用の build〔--rt-mutant=28〕で、溢れの列が LIFO の順を保つこと）:
+// 20 本の子がそれぞれ自分のチャネルの受けで待ち、親が 0〜19 の順に送って 20 本を一度に走れるようにしてから Join で待つ。子は走り出した順に
+// 直書き（io.WriteStdout — 実行の順がそのまま出る）で番号を書く。積みは LIFO なので 19 → 0 の順（ワーカー 1）。環の容量 8 では 12 本が溢れの列に
+// 入るので、溢れの列の順が崩れる（変異 29）と順が変わる。scripts/schedfuzz.sh の自己検査が「28 ≡ 通常・29 ≢ 通常」を見る
+// （送り手は slice に置けないので 20 本を書き下す — このファイルは手で直さず、本数を変えるなら同じ形で書き下す）
+
+import "std/io"
+import "std/task"
+
+func main() {
+    r, e := task.Run((s task.Scope) => {
+        t0, r0 := task.NewChannel[int](cap: 1)
+        h0 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r0)
+        t1, r1 := task.NewChannel[int](cap: 1)
+        h1 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r1)
+        t2, r2 := task.NewChannel[int](cap: 1)
+        h2 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r2)
+        t3, r3 := task.NewChannel[int](cap: 1)
+        h3 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r3)
+        t4, r4 := task.NewChannel[int](cap: 1)
+        h4 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r4)
+        t5, r5 := task.NewChannel[int](cap: 1)
+        h5 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r5)
+        t6, r6 := task.NewChannel[int](cap: 1)
+        h6 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r6)
+        t7, r7 := task.NewChannel[int](cap: 1)
+        h7 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r7)
+        t8, r8 := task.NewChannel[int](cap: 1)
+        h8 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r8)
+        t9, r9 := task.NewChannel[int](cap: 1)
+        h9 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r9)
+        t10, r10 := task.NewChannel[int](cap: 1)
+        h10 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r10)
+        t11, r11 := task.NewChannel[int](cap: 1)
+        h11 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r11)
+        t12, r12 := task.NewChannel[int](cap: 1)
+        h12 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r12)
+        t13, r13 := task.NewChannel[int](cap: 1)
+        h13 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r13)
+        t14, r14 := task.NewChannel[int](cap: 1)
+        h14 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r14)
+        t15, r15 := task.NewChannel[int](cap: 1)
+        h15 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r15)
+        t16, r16 := task.NewChannel[int](cap: 1)
+        h16 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r16)
+        t17, r17 := task.NewChannel[int](cap: 1)
+        h17 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r17)
+        t18, r18 := task.NewChannel[int](cap: 1)
+        h18 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r18)
+        t19, r19 := task.NewChannel[int](cap: 1)
+        h19 := task.Spawn(s, (inp) => {
+            v := task.Recv(inp)
+            k := if v != nil { v } else { -1 }
+            w := io.WriteStdout(bytes("run ${k}\n"))
+            k
+        }, give: r19)
+        task.Send(t0, 0)
+        task.Send(t1, 1)
+        task.Send(t2, 2)
+        task.Send(t3, 3)
+        task.Send(t4, 4)
+        task.Send(t5, 5)
+        task.Send(t6, 6)
+        task.Send(t7, 7)
+        task.Send(t8, 8)
+        task.Send(t9, 9)
+        task.Send(t10, 10)
+        task.Send(t11, 11)
+        task.Send(t12, 12)
+        task.Send(t13, 13)
+        task.Send(t14, 14)
+        task.Send(t15, 15)
+        task.Send(t16, 16)
+        task.Send(t17, 17)
+        task.Send(t18, 18)
+        task.Send(t19, 19)
+        task.Join(h0) + task.Join(h1) + task.Join(h2) + task.Join(h3) + task.Join(h4) + task.Join(h5) + task.Join(h6) + task.Join(h7) + task.Join(h8) + task.Join(h9) + task.Join(h10) + task.Join(h11) + task.Join(h12) + task.Join(h13) + task.Join(h14) + task.Join(h15) + task.Join(h16) + task.Join(h17) + task.Join(h18) + task.Join(h19)
+    })
+    println(r)
+}

@@ -1,0 +1,11 @@
+package main
+
+// 省略可の関数型の仮引数は `if p != nil { … }` の中でだけ呼べる — 外では無いことがある（diag.FnOpt kind 4）
+
+func run(n int, put (func(v int))?) {
+    put(n)
+}
+
+func main() {
+    run(1)
+}

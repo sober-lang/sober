@@ -5,7 +5,9 @@
 # 的は D = ∞ のクラス（特定の task が秒単位で走らない — 上限の無い rt は 1.7〜7.3 s）で、D の精密な守りではない。10 倍の余白は OS の奪い
 # （gates の並列）で D を越える数十 ms の揺れを偽赤にしないため。
 #   scripts/starve.sh            網（ROUNDS 回 — 既定 1）
-#   scripts/starve.sh --mutants  検出率の確認: 変異 23（上限を切る）・24（上限 + 受け箱の先取りを切る = da59f340 の形）が赤になること
+#   scripts/starve.sh --mutants  検出率の確認: 変異 23（上限を切る）・24（上限 + 受け箱の先取りを切る = da59f340 の形）が赤になること。
+#                                28（走れる積みの環の容量 8 — 溢れの道を毎回通す）は緑のまま（report-1168 — 溢れの順の変異 29 は schedfuzz の readyspill が捕まえる。
+#                                maxWait は底を取った回だけ測るので、溢れの順が崩れても環が空になるたびに頭から掃けるこの題材では赤にならない）
 set -uo pipefail
 cd "$(dirname "$0")/.."
 S2=${STAGE2:-out/stage2/sober2}
@@ -33,6 +35,10 @@ if [ "${1:-}" = "--mutants" ]; then
             run m$m-$r --rt-mutant=$m; ec=$?
             [ $ec = 1 ] || { echo "starve: mutant $m not detected (round $r)"; fail=1; }
         done
+    done
+    for r in $(seq ${ROUNDS:-3}); do
+        run spill-$r --rt-mutant=28; ec=$?
+        [ $ec = 1 ] && { echo "starve: the spill path (ring capacity 8) is red (round $r)"; fail=1; }
     done
     [ $fail = 0 ] && echo "starve: mutants detected" || exit 1
     exit 0

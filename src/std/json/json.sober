@@ -736,33 +736,47 @@ func putLit(out mut builder.Builder[byte], s string) {
     builder.PushString(mut out, s)
 }
 
-// quote は s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む）
+// エスケープの要らない区間の長さの組み込み: b の中で最初に '"'・'\\'・0x20 未満のバイトが来る位置（無ければ len(b) — 切片の中だけを読む・rt.jclean —
+// x86 の最適化のバックエンドは SSE2 の手書きの本体。最初の当たりで止まるので時間は中身に依る）
+@intrinsic("jclean")
+func sysClean(b []byte) int
+
+// quote は s を JSON の文字列として書く（エスケープの要らない区間はまとめて積む — 区間の終わりは sysClean で探す。全部が要らない文字列は
+// 引用符と一緒に 1 回で積む — 速い道を呼び出し点に展開される大きさに保ち、エスケープのある文字列は quoteEsc）
 func quote(out mut builder.Builder[byte], s []byte) {
+    i := sysClean(s)
+    if i == len(s) {
+        builder.PushBetween(mut out, '"', s, '"')
+    } else {
+        quoteEsc(mut out, s, i)
+    }
+}
+
+// quoteEsc は quote の遅い道（i = 最初のエスケープの要るバイトの位置）
+func quoteEsc(out mut builder.Builder[byte], s []byte, i0 int) {
+    mut i := i0
     builder.Push(mut out, '"')
     mut run := 0
-    mut i := 0
     while i < len(s) {
         c := s[i]
-        if c == '"' || c == '\\' || c < ' ' {
-            builder.PushAll(mut out, s[run:i])
-            if c == '"' {
-                putLit(mut out, "\\\"")
-            } else if c == '\\' {
-                putLit(mut out, "\\\\")
-            } else if c == '\n' {
-                putLit(mut out, "\\n")
-            } else if c == '\r' {
-                putLit(mut out, "\\r")
-            } else if c == '\t' {
-                putLit(mut out, "\\t")
-            } else {
-                putLit(mut out, "\\u00")
-                builder.Push(mut out, hexDigit(int(c) >> 4))
-                builder.Push(mut out, hexDigit(int(c) & 15))
-            }
-            run = i + 1
+        builder.PushAll(mut out, s[run:i])
+        if c == '"' {
+            putLit(mut out, "\\\"")
+        } else if c == '\\' {
+            putLit(mut out, "\\\\")
+        } else if c == '\n' {
+            putLit(mut out, "\\n")
+        } else if c == '\r' {
+            putLit(mut out, "\\r")
+        } else if c == '\t' {
+            putLit(mut out, "\\t")
+        } else {
+            putLit(mut out, "\\u00")
+            builder.Push(mut out, hexDigit(int(c) >> 4))
+            builder.Push(mut out, hexDigit(int(c) & 15))
         }
-        i += 1
+        run = i + 1
+        i = run + sysClean(s[run:len(s)])
     }
     builder.PushAll(mut out, s[run:len(s)])
     builder.Push(mut out, '"')

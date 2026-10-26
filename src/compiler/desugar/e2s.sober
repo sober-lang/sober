@@ -119,7 +119,7 @@ func e2sScanCalls(st mut S, cand ListRef) {
                         }
                     }
                     if nmut >= 2 && (fnMutDef(mut st, ci) || latI(mut st, cand, ci) != 0) {
-                        g := e2sEnclosing(mut st, f, t.nodes[n].tok)
+                        g := e2sEnclosing(mut st, f, n)
                         if g >= 0 {
                             lput(mut st, st.e2sBad, g, 1)
                         }
@@ -142,11 +142,16 @@ func e2sCallee(st mut S, pk int, c NodeRef) int {
     return -1
 }
 
-// e2sEnclosing はファイル f の字句 tok を本体に含む関数（無ければ -1）
-func e2sEnclosing(st mut S, f int, tok int) int {
+// e2sEnclosing はファイル f の木の節 n を本体に含む関数（無ければ -1）— 字句の区間で引く（省略可の関数型の写しは節の区間 — zBlock）
+func e2sEnclosing(st mut S, f int, n int) int {
+    z := zBlock(mut st, f, n)
+    if z >= 0 {
+        return z
+    }
+    tok := st.trees[f].nodes[n].tok
     for i <- iter.Range(0, st.nfn) {
         nd := fnNode(mut st, i)
-        if fileOf(mut st, nd) == f {
+        if fileOf(mut st, nd) == f && !ZVariant(mut st, i) {
             ext := nodeOf(mut st, nd).f
             if ext >= 0 && tok >= latI(mut st, ListRef(ext), 1) && tok < latI(mut st, ListRef(ext), 2) {
                 return i

@@ -168,6 +168,9 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     store(mut st, m, 0, zero)
     store(mut st, m, 1, res)
     store(mut st, rp, UR_PBF, urAdd(mut st, load(mut st, rp, UR_PBF), -1))
+    if st.rtMut == 4 {
+        kxMax(mut st, 0, bin(mut st, BSub, load(mut st, rp, UR_PBN), load(mut st, rp, UR_PBF)))
+    }
     qt := load(mut st, np, NR_QT)
     k := urAdd(mut st, bid, 1)
     bT := newBlock(mut st)
@@ -192,6 +195,9 @@ func urReapRecv(st mut St, rec int, ud int, res int, fl int, hn BlkRef) {
     store(mut st, np, NR_FIN, iconst(mut st, 1))
     br(mut st, bJ, -1)
     setCur(mut st, bX)
+    if st.rtMut == 4 {
+        kxAdd(mut st, 1, cmp(mut st, CEq, res, iconst(mut st, -105)))
+    }
     bEr := branchIf(mut st, cmp(mut st, CNe, res, iconst(mut st, -105)))
     store(mut st, np, NR_ERR, res)
     br(mut st, bEr, -1)
@@ -301,7 +307,7 @@ func buildNetRecv(st mut St) {
     bRing := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, nr, zero), bSync, -1, bRing, -1)
     setCur(mut st, bSync)
-    ret(mut st, syscall(mut st, list4(mut st, zero, fd, dst, c)))
+    ret(mut st, syscall(mut st, list4(mut st, zero, fd, dst, if st.rtMut == 30 { chIo(mut st, c) } else { c })))
     setCur(mut st, bRing)
     rp := itop(mut st, rg)
     np := itop(mut st, nr)
@@ -366,8 +372,10 @@ func buildNetRecv(st mut St) {
 // op 2 = 閉じ（a = 1 は task の出口 → 0 / 負の errno — ring の道は RECV / ACCEPT を止めてスロット〔listener なら列の fd〕を始末し記録を消してから close・
 // task の出口なら close も ring へ）・
 // op 3 = accept（fd = listener → 受けた fd / 負の errno — ring の道は multishot ACCEPT の列から・でなければ accept4〔EAGAIN は呼び手が待つ〕）・
-// op 5 = 置き場の印（→ 0 — 今の task の次の spawn 1 回を巡回でワーカーへ配る。rt.task_go_mn が消費・report-709〜711）・
-// op 6 = スロットの大きさの印（fd = バイト → 0 — 今の task の次の spawn 1 回のスロット。rt.task_new_in が消費・report-1077）
+// op 5 = 置き場の印（fd = 行き先 → 0 — 今の task の次の spawn 1 回を、k ≥ 0 なら自分を除いた k 番目のワーカーへ・-1 なら自分の走れる積みへ。
+// rt.task_go_mn が消費・report-709〜711・1172）・
+// op 6 = スロットの大きさの印（fd = バイト → 0 — 今の task の次の spawn 1 回のスロット。rt.task_new_in が消費・report-1077）・
+// op 8 = ワーカーの数（→ rt.mn の MN_N・task の無いプログラムは 1 — Serve の listener の数・report-1172）
 func buildNetOp(st mut St) {
     begin(mut st, chF(mut st, NETF_OP))
     op := 0
@@ -403,14 +411,24 @@ func buildNetOp(st mut St) {
     }
     ret(mut st, zero)
     setCur(mut st, bNc)
+    // op 8: ワーカーの数
+    bNd := newBlock(mut st)
+    bNw := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 8)), bNw, -1, bNd, -1)
+    setCur(mut st, bNw)
+    ret(mut st, if st.taskUse { load(mut st, globaladdr(mut st, st.mnG), MN_N) } else { iconst(mut st, 1) })
+    setCur(mut st, bNd)
     condbr(mut st, cmp(mut st, CEq, op, iconst(mut st, 5)), bPlace, -1, bClose, -1)
-    // op 5: 印の持ち主 = 今の task（持ち主で縛る — 入場の待ちで譲った間に同じワーカーの別の task が spawn しても消費しない）。ワーカーが 1 本なら置かない
+    // op 5: 印の持ち主 = 今の task（持ち主で縛る — 入場の待ちで譲った間に同じワーカーの別の task が spawn しても消費しない）・行き先 = fd の位置。
+    // ワーカーが 1 本なら置かない
     setCur(mut st, bPlace)
     if st.taskUse {
         bPw := branchIf(mut st, cmp(mut st, CLe, load(mut st, globaladdr(mut st, st.mnG), MN_N), iconst(mut st, 1)))
         ret(mut st, zero)
         setCur(mut st, bPw)
-        store(mut st, globaladdr(mut st, st.wkG), WK_PLOWN, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        pw := globaladdr(mut st, st.wkG)
+        store(mut st, pw, WK_PLOWN, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
+        store(mut st, pw, WK_PLTO, fd)
     }
     ret(mut st, zero)
     setCur(mut st, bAcc)
@@ -435,6 +453,7 @@ func buildNetOp(st mut St) {
         store(mut st, np, NR_QT, zero)
         br(mut st, bKt, -1)
         setCur(mut st, bKt)
+        frAccept(mut st, fd, a)
         ret(mut st, a)
         setCur(mut st, bNone)
         // 列が空: errno（1 回返して消す）→ 張ってなければ張る → 待つ
@@ -456,7 +475,12 @@ func buildNetOp(st mut St) {
         ret(mut st, r)
         setCur(mut st, bR)
     }
-    ret(mut st, urSys(mut st, 288, []int{fd, zero, zero, iconst(mut st, 526336)}))
+    if st.rtMut == 30 && st.taskUse {
+        _ = chIo(mut st, zero)
+    }
+    acc := urSys(mut st, 288, []int{fd, zero, zero, iconst(mut st, 526336)})
+    frAccept(mut st, fd, acc)
+    ret(mut st, acc)
     setCur(mut st, bSend)
     if st.taskUse {
         rg, nr := nrRing(mut st, fd)
@@ -475,6 +499,7 @@ func buildNetOp(st mut St) {
         store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), 1))
         dlv := dlWait(mut st, rg, UR_DLQ, me, PEND_SEND)
         r := load(mut st, itop(mut st, me), TC_IORES)
+        frRecP(mut st, FK_SEND, fd, 3, r)
         if dlFn(st.rtD3) != 0 {
             dlUnlink(mut st, urAdd(mut st, rg, UR_DLQ * 8), me, dlv)
         }
@@ -492,8 +517,24 @@ func buildNetOp(st mut St) {
         }
         setCur(mut st, bR)
     }
-    ret(mut st, urSys(mut st, 44, []int{fd, 2, 3, iconst(mut st, 16384), zero, zero}))
+    mut sn := if st.rtMut == 30 && st.taskUse { chIo(mut st, 3) } else { 3 }
+    mut lie := -1
+    if st.rtMut == 32 && st.taskUse {
+        // 変異 32（検収の網）: 1/256 で短く送って頼んだ長さを返す
+        r32 := chRoll(mut st)
+        lie = cmp(mut st, CEq, bin(mut st, BAnd, r32, iconst(mut st, 255)), iconst(mut st, 1))
+        sh := imin(mut st, 3, bin(mut st, BAdd, bin(mut st, BAnd, bin(mut st, BSar, r32, iconst(mut st, 8)), iconst(mut st, 1023)), iconst(mut st, 1)))
+        sn = bin(mut st, BAdd, 3, bin(mut st, BMul, lie, bin(mut st, BSub, sh, 3)))
+    }
+    sr := urSys(mut st, 44, []int{fd, 2, sn, iconst(mut st, 16384), zero, zero})
+    frRecP(mut st, FK_SEND, fd, 3, sr)
+    if lie != -1 {
+        ret(mut st, bin(mut st, BAdd, sr, bin(mut st, BMul, bin(mut st, BAnd, lie, cmp(mut st, CGt, sr, zero)), bin(mut st, BSub, 3, sr))))
+    } else {
+        ret(mut st, sr)
+    }
     setCur(mut st, bClose)
+    frRec(mut st, FK_CLOSE, fd, 2)
     if st.taskUse {
         rg, nr := nrRing(mut st, fd)
         bR := branchIf(mut st, cmp(mut st, CNe, nr, zero))

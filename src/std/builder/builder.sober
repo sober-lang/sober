@@ -211,3 +211,34 @@ func Build[T](b mut Builder[T]) []T {
     }
     return freeze(out)
 }
+
+// xs を open と close で挟んで末尾に積む（Push(b, open)・PushAll(b, xs)・Push(b, close) と同じ結果 — 今の chunk に len(xs) + 2 の空きがあれば
+// 空きの検査と chunk の出し入れは 1 回だけ。JSON の文字列の引用符の対の形）
+@effects()
+func PushBetween[T](b mut Builder[T], open T, xs []T, close T) {
+    n := len(xs)
+    if n + 2 <= b.cap - b.fill {
+        mut c := b.chunks[b.cur]
+        f := b.fill
+        c[f] = open
+        // 写しのループは PushAll と同じ形（`c[g + j] = xs[j]` — copyloop が rt.copy8 の 1 本に下ろす）
+        g := f + 1
+        mut j := 0
+        while j < n {
+            c[g + j] = xs[j]
+            j += 1
+        }
+        c[g + n] = close
+        b.fill = f + n + 2
+        b.n = b.n + n + 2
+    } else {
+        pushBetweenSlow(mut b, open, xs, close)
+    }
+}
+
+// pushBetweenSlow は PushBetween の遅い道（今の chunk に収まらない — 速い道を呼び出し点に展開される大きさに保つ）
+func pushBetweenSlow[T](b mut Builder[T], open T, xs []T, close T) {
+    Push(mut b, open)
+    PushAll(mut b, xs)
+    Push(mut b, close)
+}

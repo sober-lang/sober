@@ -1,0 +1,18 @@
+package main
+
+// 省略可の関数型の仮引数への実引数は nil・ラムダ・関数の名前・囲む関数の省略可の仮引数だけ — 有無が字面で決まらない式は拒否（diag.FnOpt kind 3）
+
+func run(k int, put (func(v int))?) {
+    if put != nil {
+        put(k)
+    }
+}
+
+func main() {
+    on := level() > 0
+    run(1, put: if on { (v) => println(v) } else { nil })
+}
+
+func level() int {
+    return 1
+}

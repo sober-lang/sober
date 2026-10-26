@@ -2,6 +2,68 @@
 
 This file records user-facing changes per public release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/) (no backward-compatibility promise while on 0.x).
 
+## v0.6.4 — 2026-10-26
+
+A release that moves accept onto every worker. `net.Serve` now holds one listener per worker on the same address, and each worker accepts on its own listener and runs the connection itself. For that, `net.Listen` now sets SO_REUSEPORT (a change in behavior — see Standard library and the security guide). The language gains optional anonymous function-typed parameters, and `http.ServeFlushed` is folded into `http.ServeWith(…, put:)` (**breaking change**). The runtime also gains a flight recorder (off by default) that keeps what it was doing when something fails.
+
+### Breaking changes
+
+- `http.ServeFlushed` is removed. Write `http.ServeWith(recv, send, route, …, put: (b) => tls.Put(c, b))` instead (see the optional parameters under Language). Calls to `ServeWith` / `ServeConn` that don't pass put compile to the same code as before.
+- `net.Listen` sets SO_REUSEPORT. Another process running as the same uid can bind the same address, and the kernel splits incoming connections between them. **A second start on the same address no longer fails with EADDRINUSE; it silently receives part of the connections.** Processes running as a different uid cannot bind. If you detected a double start by the bind failing, switch to another mechanism (a pid file, systemd's single-instance units, etc.).
+
+### Language
+
+- Optional anonymous function-typed parameters `p (func(…) R)?`, allowed only on the parameters of a func declaration. Callers may pass nil, omit it, or pass a lambda, a function name, or the same kind of parameter of the enclosing function. In the body, p may be called only inside an `if p != nil { … }` branch (storing, returning or binding it is rejected). Whether it is present is decided per call site from the source, and a call site that doesn't pass it compiles to the same code as a function without the parameter. A bare `func(…) R?` is rejected because it reads as a function with an optional result; the diagnostic points to the parenthesized form. To store an optional function, use an option of a named function type, `F?`.
+
+### Performance
+
+- HTTP — measured on bench/httparena, our own harness rather than an official HttpArena result. It uses the HttpArena load generators and request files on a 64-vCPU GitHub Actions runner, with 32 server cores, and compares against Go's net/http. Sober / Go ratios, against the v0.6.3 run:
+
+  | Test | v0.6.3 | v0.6.4 |
+  |---|---|---|
+  | baseline | 3.2× | 3.5× |
+  | pipelined | 15.9× | 15.7× |
+  | limited-conn | 9.2× | 11.1× |
+  | json | 3.4× | 3.6× |
+  | json-comp | 1.8× | 1.8× |
+  | json-comp-16k | 1.7× | 1.6× |
+  | json-tls | 2.8× | 2.8× |
+  | async | 2.4× | 2.3× |
+
+  The v0.6.3 run used an AMD EPYC 9V45 (Zen 5) and the v0.6.4 run an EPYC 9V74 (Zen 4); the CPU model alone moves the ratios by a few percent (limited-conn in particular comes out higher on the 9V74).
+
+  - latency-1m holds its target rate, and p99 went from 0.21 ms to 0.14 ms.
+  - No non-2xx responses in any test.
+- Accept on every worker: a single dedicated worker used to accept and hand connections to the workers, which capped loads that open and close connections at a high rate. Now `net.Serve` adds one listener per worker on the same address, and worker k puts each connection it accepts straight onto its own run queue (no hand-off wake-up). The kernel's 4-tuple hash spreads the connections. Locally with 12 workers and 4096 connections (15 s, alternating runs):
+  - reconnecting on every request: +0.6% requests per second, p99 104–109 → 52–76 ms, p99.9 207–239 → 143–156 ms
+  - keep-alive: +1.6–2.2% requests per second
+  - in a build with measurement instrumentation (a heavy runtime cost per connection — not a number for user builds), reconnecting on every request gets about 3× the requests per second (114–138K → 383–425K)
+
+  There is no dedicated accept worker any more, so a Serve program runs exactly as many threads as workers. Under saturation, the first request of connections that arrive all at once may wait close to the wait bound D (100 ms by default); the wait stays bounded by D.
+- The run queue is now a per-worker array ring (4096 slots; overflow goes to the previous linked list). Pushing and popping no longer write to other tasks' TCBs, and the wait bound D under saturation is kept more precisely. Locally with keep-alive at 4096 connections, the longest wait from becoming runnable to running went from 113.7 to 103.0 ms, and tasks that waited longer than 100 ms went from 1,969 to 14. CPU per request without saturation is unchanged.
+- Worker CPU pinning: in a Serve program, when the number of workers is at most the number of allowed CPUs (always true when the worker count is derived from the CPU affinity and cgroup, which is the default), each worker is pinned to one allowed CPU. Runnable workers no longer pile up on one CPU waiting for a time slice. Programs that don't use Serve (the compiler included) are not pinned. `SOBER_PIN=0` turns pinning off.
+- False sharing fix: before sleeping, a worker reads every worker's run-queue state, and that cache line also held words the owner writes every round. They now live on a line only the owner touches. Locally with 12 workers: 0.4–2.4% less CPU per request on a scaled-down latency-1m, and +2.4% requests per second on keep-alive at 4096 connections.
+- Writing JSON strings: `json.quote` scans for the stretch that needs no escaping 16 bytes at a time (SSE2; short strings use two overlapping loads), and a string that needs no escaping at all is appended together with its quotes in one step. Locally with 12 workers and 4096 connections: 6.9% fewer cycles per request on json and 2.8% on json-comp.
+
+### Standard library
+
+- `builder.PushBetween(b, open, xs, close)`: appends xs between open and close (the same result as `Push(b, open)`, `PushAll(b, xs)`, `Push(b, close)`, with one capacity check).
+- `http.ServeWith` gains an optional `put:`. When given, the responses for one received chunk are queued with put, and only streamed responses are sent with send (meant for TLS connections — replaces v0.6.3's `http.ServeFlushed`).
+- `net.Listen` / `net.Serve`: see Breaking changes and Performance above (SO_REUSEPORT, accept on every worker).
+
+### Runtime
+
+- Flight recorder (`SOBER_FLIGHT=<path>`, off by default): the runtime writes events — accept, spawn, run, fd waits and wake-ups, the requested and actual lengths of sends and receives, close, sleep, task end, panic — as fixed-size records into a ring per worker. The rings live in a shared mapping of <path>, so the file survives a panic, an external kill or a hang, and is removed on normal exit. Read it with `scripts/flight.ts` (`--conn <port>` for one connection's lifetime, `--around` for the events near a time, `--anomaly` to find anomalies). Off, it costs +0.17% instructions; on, +3.3% cycles.
+
+### Testing
+
+- Development mutant `--rt-mutant=30` (chaos): injects spurious EAGAIN and short writes / reads into sends, receives and accepts on the epoll path, and shrinks the event buffer and adds sched_yield around sleeping (seed `SOBER_CHAOS_SEED`). Normal builds compile to the same code.
+- `scripts/httpprobe.sh` and the httpprobe workflow: a net for httpcheck failures that show up only rarely. It alternates normal and chaos runs of the single-worker configuration for as long as time allows, and keeps the flight recording and the client's failure reason (cause, local port, time) of any failed run.
+
+### Documentation
+
+- The security guide (`docs/guide/security.md`, Japanese original `security.ja.md`) adds port sharing with processes of the same uid (a property of SO_REUSEPORT) to what it does not protect against.
+
 ## v0.6.3 — 2026-10-25
 
 A performance release. Servers with many connections now take io_uring completions in small steps, which removes the many-connection cliff, and a task that becomes runnable under saturated load now waits at most a bounded time. Memory per request and per connection is lower, and TLS sends and compression encoding are faster. Public std functions now carry `@effects` declarations, and the runtime's depth invariant is always checked.

@@ -1,0 +1,14 @@
+package main
+
+// 省略可の関数型の仮引数は束縛できない — 呼ぶ・渡す・nil と比べるだけ（借り — diag.FnOpt kind 5）
+
+func run(n int, put (func(v int))?) {
+    if put != nil {
+        f := put
+        f(n)
+    }
+}
+
+func main() {
+    run(1, put: (v) => println(v))
+}

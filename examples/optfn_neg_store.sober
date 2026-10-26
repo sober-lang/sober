@@ -1,0 +1,17 @@
+package main
+
+// 省略可の関数型の仮引数は欄に格納できない（借り — diag.FnOpt kind 5）
+
+type Hook func(v int)
+
+type Box struct {
+    h Hook?
+}
+
+func run(n int, put (func(v int))?) Box {
+    return Box{h: put}
+}
+
+func main() {
+    println(1)
+}

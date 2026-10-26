@@ -187,6 +187,7 @@ func buildEntry(st mut St, main_fn FnRef, main_int bool) {
     if st.taskUse {
         call(mut st, st.rtOutDrain, list0(mut st))
         call(mut st, st.rtPstatDump, list0(mut st))
+        frUnlink(mut st)
     }
     if main_int {
         bad := newBlock(mut st)
@@ -1033,6 +1034,7 @@ func rfdDirect(st mut St, depth int, end int, fd int, c int, direct int) int {
         setCur(mut st, bR)
         br(mut st, bJ, list1(mut st, ioRw(mut st, 0, fd, end, c)))
         setCur(mut st, bJ)
+        frRecP(mut st, FK_RECV, fd, c, r)
     }
     call(mut st, st.rtExtend8, list3(mut st, depth, end, imax(mut st, r, iconst(mut st, 0))))
     return r

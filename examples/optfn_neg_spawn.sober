@@ -1,0 +1,17 @@
+package main
+
+// 有る組の中の省略可の仮引数も子 task には捕捉できない（展開される関数の関数型の仮引数の今の規則）
+
+import "std/task"
+
+func run(n int, put (func(v int) int)?) int {
+    if put != nil {
+        v, _ := task.Run((s task.Scope) => task.Join(task.Spawn(s, () => put(n))))
+        return v
+    }
+    return 0
+}
+
+func main() {
+    println(run(1, put: (v) => v + 1))
+}

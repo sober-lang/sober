@@ -36,7 +36,9 @@ func sysWaitFd(fd int, ev int) int
 func sysFdOwn(fd int) int
 
 // sysNetOp は rt の net の口（段 4b-1 — op 1 = 送り〔fd, 番地, 長さ → 送れた数 / 負の errno〕・op 2 = 閉じ〔→ 0 / 負の errno〕・
-// 段 4b-2 — op 3 = accept〔listener → 受けた fd / 負の errno〕・op 5 = 次の spawn 1 回をワーカーへ巡回で配る印〔report-711〕・op 6 = 次の spawn 1 回のスロットの大きさの印〔fd の位置 = バイト — report-1077〕）。net の ring のワーカーでは送りは SEND の完了待ち・閉じは受けの multishot RECV /
+// 段 4b-2 — op 3 = accept〔listener → 受けた fd / 負の errno〕・op 5 = 次の spawn 1 回の置き場の印〔fd の位置 = 行き先: k ≥ 0 は自分を除いた k 番目のワーカー・
+// -1 は自分の走れる積み — report-711・1172〕・op 6 = 次の spawn 1 回のスロットの大きさの印〔fd の位置 = バイト — report-1077〕・op 7 = 次の spawn 1 回の待ちの上限 D・
+// op 8 = ワーカーの数〔report-1172〕）。net の ring のワーカーでは送りは SEND の完了待ち・閉じは受けの multishot RECV /
 // ACCEPT を止めてから close・accept は multishot ACCEPT の列から（待ちは rt の中 — EAGAIN を返さない）。他では sendto（MSG_NOSIGNAL）/ close / accept4
 @intrinsic("net_op")
 func sysNetOp(op int, fd int, a int, b int) int
@@ -153,7 +155,9 @@ func sockaddr(addr string) []byte {
 // backlog を 65535 にする理由: 1024 は一斉の到着で溢れた客を SYN の再送で 1 秒止め（4096 接続で 72%）、その間の小さい作業集合と位相の揃いで速く・尻が綺麗に見えていた
 // （隠れた stall — 止まった客の待ちは客の遅延にも入らない）。65535 の値札（実働の接続が増える正直な作業集合の費用）は Serve の配置が回収する
 
-// addr で listen した Listener を 1 回だけ k に渡し（SO_REUSEADDR・TCP_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
+// addr で listen した Listener を 1 回だけ k に渡し（SO_REUSEADDR・SO_REUSEPORT・TCP_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる。
+// SO_REUSEPORT は Serve のワーカーごとの listener（同じ番地に足す）のため: 同じ uid の別のプロセスも同じ port に bind でき、
+// 接続をカーネルの振り分けで分け合う（同じ番地の 2 つ目の起動は EADDRINUSE で落ちずに黙って一部を受ける・別の uid は bind できない — 安全性ガイド〔docs/guide/security.ja.md〕の「Sober が守らないもの」）
 @errors(Bad, io.Closed, io.Timeout, io.Expired, io.Denied, io.Other)
 @effects(block, io, nondet)
 func Listen(addr string, k func(Listener)) error? {
@@ -164,23 +168,33 @@ func Listen(addr string, k func(Listener)) error? {
     if len(sa) != 16 {
         return Bad{}
     }
-    fd := sysCall(41, 2, 526337, 0, 0, 0, 0)
+    fd := listenFd(sa)
     if fd < 0 {
         return errOf(0 - fd)
-    }
-    mut one := mut []byte{1, 0, 0, 0}
-    r1 := sysCall(54, fd, 1, 2, sysAddr(one), 4, 0)
-    // TCP_NODELAY は listener に 1 回（受けた接続へ継承 — 応答は 1 回の送りで出し切るので Nagle の溜めは遅延だけ）
-    r1b := if r1 < 0 { r1 } else { sysCall(54, fd, 6, 1, sysAddr(one), 4, 0) }
-    r2 := if r1b < 0 { r1b } else { sysCall(49, fd, sysAddr(sa), 16, 0, 0, 0) }
-    r3 := if r2 < 0 { r2 } else { sysCall(50, fd, 65535, 0, 0, 0, 0) }
-    if r3 < 0 {
-        _ = sysCall(3, fd, 0, 0, 0, 0, 0)
-        return errOf(0 - r3)
     }
     defer closeFd(fd)
     k(Listener{fd: fd, seal: netSeal{}})
     return nil
+}
+
+// listenFd は sockaddr_in sa で listen した非ブロックの socket（SO_REUSEADDR・SO_REUSEPORT・TCP_NODELAY・backlog 65535）か負の errno
+func listenFd(sa []byte) int {
+    fd := sysCall(41, 2, 526337, 0, 0, 0, 0)
+    if fd < 0 {
+        return fd
+    }
+    mut one := mut []byte{1, 0, 0, 0}
+    r1 := sysCall(54, fd, 1, 2, sysAddr(one), 4, 0)
+    r1p := if r1 < 0 { r1 } else { sysCall(54, fd, 1, 15, sysAddr(one), 4, 0) }
+    // TCP_NODELAY は listener に 1 回（受けた接続へ継承 — 応答は 1 回の送りで出し切るので Nagle の溜めは遅延だけ）
+    r1b := if r1p < 0 { r1p } else { sysCall(54, fd, 6, 1, sysAddr(one), 4, 0) }
+    r2 := if r1b < 0 { r1b } else { sysCall(49, fd, sysAddr(sa), 16, 0, 0, 0) }
+    r3 := if r2 < 0 { r2 } else { sysCall(50, fd, 65535, 0, 0, 0, 0) }
+    if r3 < 0 {
+        _ = sysCall(3, fd, 0, 0, 0, 0, 0)
+        return r3
+    }
+    return fd
 }
 
 // closeFd は fd を閉じる（生成元の後始末 — 本体の break / return / `?` は生成元の展開ごと抜けるので、k の後の文でなく defer で書く）
@@ -197,14 +211,17 @@ func giveConn(fd int, k func(Conn)) {
 // l が bind している port（"…:0" で listen したときの割り当ての読み — getsockname）
 @effects(io)
 func Port(l Listener) int {
+    sa := boundAddr(l.fd)
+    return if len(sa) != 16 { -1 } else { int(sa[2]) * 256 + int(sa[3]) }
+}
+
+// boundAddr は fd が bind している sockaddr_in（16 バイト — getsockname・失敗は空）
+func boundAddr(fd int) []byte {
     // カーネルが書く作業域は mut の slice（字面の定数の imm は読み出し専用の置き場に載りうる）
     mut sa := mut []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
     mut ln := mut []byte{16, 0, 0, 0}
-    r := sysCall(51, l.fd, sysAddr(sa), sysAddr(ln), 0, 0, 0)
-    if r < 0 {
-        return -1
-    }
-    return int(sa[2]) * 256 + int(sa[3])
+    r := sysCall(51, fd, sysAddr(sa), sysAddr(ln), 0, 0, 0)
+    return if r < 0 { []byte{} } else { freeze(sa) }
 }
 
 // l の接続を受けるたびに k に渡し、k が返ったら閉じる（列は終わらない — 本体の break か失敗で止まる。
@@ -327,16 +344,21 @@ func Send(c Conn, b []byte) error? {
     return nil
 }
 
-// accept のループは 1 本（Serve の task — ring の道は multishot ACCEPT・epoll の道は accept4 + fd の待ち）。接続の task はワーカーへ巡回で配る
-// （置き場の印 — net_op 5・rt.task_go_mn の注）: 盗み任せは走り始めを散らし、keep-alive では偏りが接続の寿命いっぱい固定される
-// （走り始めた task は盗めない）。ワーカーの数だけ acceptor を立てる形は keep-alive で退行して戻した（一斉の到着の間
-// acceptor のワーカーは accept で塞がり、acceptor の無い少数のワーカーが全部を盗んだ）
+// accept の輪はワーカーごとに 1 本（report-1172 — ユーザー裁定 2026-10-26 の案 S）: Serve はワーカーの数だけ同じ番地の listener を持ち（l + SO_REUSEPORT で足した分）、
+// 輪 k をワーカー k に置く（置き場の印 — net_op 5。l の輪は Serve を呼んだ task のワーカーでその場で回す）。輪は自分のワーカーの ring で accept し
+// （multishot ACCEPT・epoll の道は accept4 + そのワーカーの epoll）、受けた接続の task は自分のワーカーの走れる積みへ（受け箱・起こしを通らない）。
+// 配分はカーネルの振り分け（4-tuple のハッシュ）— 盗まない: 走り始めた task は盗めず、keep-alive では配置が接続の寿命いっぱい固定される。
+// 旧形（輪 1 本 + 他のワーカーへ巡回で配る — report-709〜711・997）は輪 1 本の直列が天井だった（≈ 6 µs/接続 — 本家 64vcpu で 16 万接続/秒 — report-1162）。
+// 輪をワーカーの数だけ同じ listener に立てる形は keep-alive で退行して戻した（一斉の到着の間 accept で塞がったワーカーの分を少数のワーカーが盗んだ）—
+// listener を分けた今の形はカーネルが一斉の到着も分けるので盗みの段を通らない
 
-// l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept のループは std が持つ）。h は `func(c net.Conn) error?`
+// l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept の輪は std が持つ — ワーカーごとに 1 本・l と同じ番地に SO_REUSEPORT で足した listener で受ける）。h は `func(c net.Conn) error?`
 // （名前つき関数をそのまま — `net.Serve(l, echo, …)`。η 展開 — language.md 25 節）。h の失敗は Serve が吸収する（接続を閉じて続ける — 数えるのは Serve のプールの Ledger の fail・死は died）。admission は名前つきプールのノード 1 つ
 // （天井 = conns × budget バイト — 省略時は budget = 64 * task.KB・conns = 10000）+ 接続ごとの SpawnIn（budget = 接続 1 本の上界）: 入れなければ reject の定数のバイト列を 1 回送って閉じる
 // （既定は送らずに閉じる・利用者のコードは走らせない）。h の死は Serve の scope が吸収して Serve は続く。受けた Conn は
 // Serve が閉じる（接続の task の登録簿 — 死んでも出口で閉じる）。Serve が返るのは listener の失敗か、Serve を包む scope の期限（accept の待ちが切れる）— 走っている接続の決着を待ってから。
+// listener の失敗は 1 つでも全部の輪を止める（残りの listener を shutdown — 受けていない listener に接続が振られて残らないように）: 以後 l は listen していない。
+// Serve が足した listener は Serve が閉じる・l は Listen が閉じる。
 // region = 接続の task の region 1 つの上限（既定 128 * task.MB・2 の冪に切り上げ・1 MiB 未満は 1 MiB・子の task の既定〔512 MiB〕より大きくはならない）: 超えると
 // その接続の task の死（RegionExceeded{cause: slot_capacity} — Serve が吸収し Ledger の died が数える）。小さいスロットは既定のスロットを割って深度ごとに 1 本
 // （接続数 × 深度ぶんの VA を減らす — language.md 11 節「接続の task の小さいスロット」）。
@@ -352,27 +374,77 @@ func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject stri
     mw0 := if maxWait != nil { maxWait } else { 100 * task.MS }
     mw := if mw0 < task.MS { task.MS } else { mw0 }
     pool := task.NewPool(b * n, nil)
-    // 終わりの理由（負の errno）は外の mut で運ぶ — 死んだ接続があると scope の値は ChildDied で落ちる（err は見ない: 死の吸収）
+    // ワーカーごとの listener: l + 同じ番地に SO_REUSEPORT で足した分（作れなかったらそこまで — 足りないワーカーは輪を持たず接続を受けない）
+    nw := sysNetOp(8, 0, 0, 0)
+    sa := boundAddr(l.fd)
+    mut fs := mut []int{l.fd}
+    mut more := len(sa) == 16
+    while more && len(fs) < nw {
+        fd := listenFd(sa)
+        if fd < 0 {
+            more = false
+        } else {
+            fs = append(fs, fd)
+        }
+    }
+    all := freeze(fs)
+    // 終わりの理由（負の errno）は外の mut で運ぶ — 輪の task の死は無い（接続の死は輪の scope が吸収する）
+    mut code := 0
+    _, _ = task.Run((s task.Scope) => {
+        // 輪は全部 spawn（wait: true — 縮退してその場で回ると後の輪が生まれず、足した listener に振られた接続が残る。serveOn の呼び出し点を 1 つに — 2 つにすると h ごと接続の task の本体が呼び出し点ごとに特殊化されて 2 本になる）
+        mut hs := mut []task.Handle[int]{}
+        mut i := 0
+        while i < len(all) {
+            fd := all[i]
+            own := i > 0
+            // 置き場の印（net_op 5 — 次の spawn 1 回）: 輪 0（l）は今のワーカー・輪 i は自分を除いた i − 1 番目のワーカー
+            _ = sysNetOp(5, i - 1, 0, 0)
+            hs = append(hs, task.Spawn(s, () => serveOn(fd, own, all, h, pool, b, rj, rg, mw)))
+            i += 1
+        }
+        // 理由は l の輪のもの。他の輪の失敗が止めた（shutdown の EINVAL）なら、その失敗の理由。Join でなく Try（輪は死なない —
+        // Join の死の文面の枝を rt.panic に足さない）
+        mut j := 0
+        while j < len(hs) {
+            c := switch task.Try(hs[j]) {
+            case task.Ok{v}: v
+            case task.Failed{}: 0
+            case task.Died{}: 0
+            }
+            if code == 0 || (code == 0 - 22 && c != 0 - 22 && c != 0) {
+                code = c
+            }
+            j += 1
+        }
+        0
+    }, wait: true)
+    return waitErr(code)
+}
+
+// serveOn は listener lfd の accept の輪（今のワーカーで回す）: 受けた接続 1 本 = task 1 本を今のワーカーの走れる積みへ。終わりの理由（負の errno — -110 = 期限）を返す。
+// 期限でなければ all の listener を全部 shutdown して他の輪を止める（受けていない listener がカーネルの振り分けの先に残らないように — 他の輪は EINVAL で抜ける）。
+// own = lfd は Serve が足した listener — 輪の終わりに閉じる（ACCEPT を張った ring のワーカーで閉じる: rt.netop 2。輪の task は死なないので defer にしない）
+func serveOn(lfd int, own bool, all []int, h func(Conn) error?, pool task.Pool, b int, rj []byte, rg int, mw int) int {
     mut code := 0
     _, _ = task.Run((s task.Scope) => {
         while code == 0 {
             if sysDeadline() != 0 {
                 code = 0 - 110
             } else {
-                fd := sysNetOp(3, l.fd, 0, 0)
-                a := again(fd, l.fd, evIn)
+                fd := sysNetOp(3, lfd, 0, 0)
+                a := again(fd, lfd, evIn)
                 if a < 0 {
                     code = a
                 } else if a == 1 && fd < 0 {
                     code = fd
                 } else if a == 1 {
                     // 接続 1 本の task（fd を task の登録簿に積んで h を直に走らせる — 閉じるのは task の出口の rt.fd_drain〔死でも — defer は死では走らない〕。
-                    // h の失敗はここで吸収して数え（task.MarkFailed — Ledger の fail）、h の死はこの task の死で、Serve の scope が吸収する（数えるのは rt — Ledger の died）: err は見ない。
+                    // h の失敗はここで吸収して数え（task.MarkFailed — Ledger の fail）、h の死はこの task の死で、輪の scope が吸収する（数えるのは rt — Ledger の died）: err は見ない。
                     // 接続ごとに内側の scope + 子にすると、孫の入場が観測前の見積もり〔1 MiB〕でプールの節にあふれて縮退の記帳が残り、後の接続が shed される — report-650）
                     mut shed := fd >= fdCap
                     if !shed {
-                        // 置き場の印（net_op 5 — 次の spawn 1 回）: 接続をワーカーへ巡回で配る（rt.task_go_mn の注 — report-709〜711）
-                        _ = sysNetOp(5, 0, 0, 0)
+                        // 置き場の印（net_op 5 — 次の spawn 1 回）: 接続の task を自分のワーカーの走れる積みへ（rt.task_go_mn の注 — report-1172）
+                        _ = sysNetOp(5, -1, 0, 0)
                         // スロットの大きさの印（net_op 6 — 次の spawn 1 回）: 接続の task の region 1 つの上限
                         _ = sysNetOp(6, rg, 0, 0)
                         // 待ちの上限の印（net_op 7 — 次の spawn 1 回）: 接続の task の D
@@ -398,7 +470,16 @@ func Serve(l Listener, h func(Conn) error?, budget int?, conns int?, reject stri
         }
         0
     })
-    return waitErr(code)
+    if code != 0 - 110 {
+        // shutdown(SHUT_RD) は listen を止める（fd は残る — 閉じるのは持ち主）。止まった listener の ACCEPT は EINVAL で終わる
+        for f <- all {
+            _ = sysCall(48, f, 0, 0, 0, 0, 0)
+        }
+    }
+    if own {
+        closeFd(lfd)
+    }
+    return code
 }
 
 // slotBytes は region: の値をスロットの大きさに揃える: 1 MiB 以上の 2 の冪に切り上げ（rt は子の task の既定より大きくはしない）

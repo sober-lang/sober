@@ -1,0 +1,13 @@
+package main
+
+// 省略可の関数型の仮引数は返せない（借り — diag.FnOpt kind 5）
+
+type Hook func(v int)
+
+func run(put (func(v int))?) Hook? {
+    return put
+}
+
+func main() {
+    println(1)
+}

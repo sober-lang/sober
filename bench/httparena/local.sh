@@ -25,6 +25,8 @@
 #                    測る前に同じサーバへ同じ形を $ZRK_WARM 秒（既定 5・0 で無し）流して捨てる（1 周目の p99 がランプの尻〔接続の張り始め・
 #                    ワーカーの起き上がり〕を拾って秒の桁に跳ねた — GHA run 38704859501 の r3 / r4。本家の測りの形〔レート・接続・秒〕は変えない）
 #                    zrk は $ZRK か PATH、無ければ本家の pin（v2.3.0 の静的 tarball・sha256 照合）を取って $W に置く
+#                    分布（zrk の latency_us の p50 / p75 / p90 / p99 / p99.9 / mean / max・max_schedule_lag_us・rate_ratio・CPU µs/req）は周ごとに
+#                    "<-o の TSV>.lat" と要約の表へ（本家の二峰の形を箱・版ごとに読む — report-1170）
 #   latency-500k-8cpu = latency-1m の形でレート 500K req/s（$ZRK_RATE_500K）・サーバは 8 論理 CPU（本家 profiles.sh の cpuset 0-3,64-67 = 4 物理コア +
 #                    SMT の兄弟 — ここではサーバ側の物理コアの先頭 4 つ + 兄弟〔$SERVER_CPUS_8 で上書き・SMT の無い箱では先頭 8 CPU〕・SOBER_WORKERS /
 #                    GOMAXPROCS も 8）。本家の箱の 4 コアと手元の 4 コアは同じ桁なので、レートは箱で割り直さない（採点 = rate_ratio・CPU / 要求・p99）
@@ -146,7 +148,10 @@ start() {
     for try in 1 2 3; do
         port=$((port + 1))
         tport=$((port + 400))
-        env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" taskset -c "$scpus" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
+        # SOBER_SRV_ENV（httparena.yml の sober_env）は Sober のサーバだけに足す env — 後に書くので SOBER_WORKERS を上書きできる（report-1161 の pin の A/B）
+        local xenv=
+        [ "$1" = sober ] && xenv=${SOBER_SRV_ENV:-}
+        env SOBER_WORKERS=$ns GOMAXPROCS=$ns DATASET_PATH="$DATA" TLS_CERT="$CERT" TLS_KEY="$KEY" $xenv taskset -c "$scpus" "$b" "$port" "$tport" > "$W/srv.out" 2> "$W/srv.err" &
         SP=$!
         for i in $(seq 100); do
             if grep -q '^ready' "$W/srv.out" 2> /dev/null; then
@@ -163,6 +168,16 @@ start() {
 stop() { kill "$SP" 2> /dev/null; wait "$SP" 2> /dev/null; SP=; }
 # cpu_ticks: サーバの utime + stime（clock tick）。走りの間に死んだサーバ（/proc が消える）は 0 — 行は残り、req/s = 0 で見える
 cpu_ticks() { awk '{ print $14 + $15 }' "/proc/$SP/stat" 2> /dev/null || echo 0; }
+# thr_snap: サーバのスレッドごとの [tid utime stime]（tick）を標準出力へ。thr_row <名前> <種目> <周> <前の写し> <壁の秒>: 前後差をスレッドごとの CPU %
+# （user / sys / 計）にして "$out.thr" へ — limited-conn と latency 系の Sober の回だけ（report-1162: accept の輪の 1 本が直列の天井かの裏取り）。
+# main = 1 はプロセスの最初のスレッド（ワーカー 0 — Serve の accept の輪が走る）
+thr_snap() { for t in /proc/"$SP"/task/*; do echo "${t##*/} $(awk '{ print $14, $15 }' "$t/stat" 2> /dev/null)"; done; }
+thr_row() {
+    local hz; hz=$(getconf CLK_TCK)
+    thr_snap | sort | join "$4" - | awk -v n="$1" -v p="$2" -v k="$3" -v w="$5" -v hz="$hz" -v e="$HENV" -v mp="$SP" \
+        'NF == 5 { u = ($4 - $2) / hz / w * 100; s = ($5 - $3) / hz / w * 100; printf "%s\t%s\t%d\t%s\t%d\t%.1f\t%.1f\t%.1f\t%s\n", n, p, k, $1, $1 == mp, u, s, u + s, e }' >> "$out.thr"
+}
+
 # rss_row <名前> <種目> <周>: 走りの直後（stop の前）のサーバの VmHWM（ピーク）と VmRSS（終端）を kB で "$out.rss" へ。
 # サーバは周ごとに建て直すので VmHWM = その周のピーク。死んだサーバは行を出さない（欠けで見える）
 rss_row() {
@@ -177,6 +192,22 @@ rss_row() {
 emit() {
     awk -v n="$1" -v p="$2" -v k="$3" -v r="${4:-0}" -v resp="${5:-0}" -v ok="${6:-0}" -v d="$7" -v t="$(getconf CLK_TCK)" -v l="${8:--}" -v l9="${9:--}" -v e="$HENV" \
         'BEGIN { printf "%s\t%s\t%d\t%d\t%d\t%d\t%.2f\t%s\t%s\t%s\n", n, p, k, r, resp, resp - ok, (resp > 0 ? d / t * 1e6 / resp : 0), l, l9, e }'
+}
+
+# lat_row <名前> <種目> <周> <tickの差> <zrk の出力>: latency 系の分布の行を "$out.lat" へ（zrk の JSON の latency_us の全部 + max_schedule_lag_us・
+# rate_ratio・CPU µs / 要求 — 本家の二峰〔p75 → p90 で跳ぶ〕の形を版・箱ごとに読むため。report-1160 / 1170）。値は µs・読めなければ行を出さない
+lat_row() {
+    node -e '
+        const raw = require("fs").readFileSync(process.argv[1], "utf8");
+        const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
+        if (s < 0 || e <= s) process.exit(0);
+        const d = JSON.parse(raw.slice(s, e + 1)), l = d.latency_us || {}, c = d.status_codes || {};
+        const resp = ["2xx","3xx","4xx","5xx"].reduce((a, k) => a + (c[k] || 0), 0);
+        const cpu = resp > 0 ? (+process.argv[2]) / (+process.argv[3]) * 1e6 / resp : 0;
+        const f = (v) => v === undefined ? "-" : Math.round(v);
+        console.log([process.argv[4], process.argv[5], process.argv[6], (d.rate_ratio || 0).toFixed(4), f(l.mean), f(l.p50), f(l.p75), f(l.p90), f(l.p99),
+            f(l.p99_9 ?? l.p999), f(l.max), f(d.max_schedule_lag_us), cpu.toFixed(2), process.argv[7]].join("\t"));
+    ' "$5" "$4" "$(getconf CLK_TCK)" "$1" "$2" "$3" "$HENV" >> "$out.lat"
 }
 
 # run_one <name> <profile> <周>: 1 回測って TSV の行を出す
@@ -217,6 +248,7 @@ run_one() {
         # レートを保てなかった走り（本家の妥当性の門 = rate_ratio）は数字が比べられない — 行はそのまま出して警告だけ
         awk -v r="$rr" 'BEGIN { exit !(r < 0.98) }' && echo "local.sh: WARN $name $prof round $k rate_ratio=$rr (< 0.98 — the offered load was not the profile's)" >&2
         emit "$name" "$prof" "$k" "$rps" "$resp" "$ok" $((c1 - c0)) "$p99" "$p999"
+        case "$prof" in latency-*) lat_row "$name" "$prof" "$k" $((c1 - c0)) "$W/gc-$name-$prof-$k.txt" ;; esac
         return 0
     fi
     # json-tls は wrk（--latency で分布を出す — 本家の採点は rps だけ・p99 は手元の読み）
@@ -263,6 +295,8 @@ run_one() {
 HENV=${HTTPARENA_ENV:-local/$(lscpu 2> /dev/null | sed -n 's/^Model name: *//p' | sed "s/^AMD //; s/ [0-9]*-Core Processor\$//; s/ w\/ .*//; s/ /-/g")}
 printf 'name\tprofile\tround\treq_s\tresponses\tnon2xx\tcpu_us_per_req\tp99\tp99_9\tenv\n' > "$out"
 printf 'name\tprofile\tround\tvmhwm_kb\tvmrss_kb\tanonhuge_kb\tenv\n' > "$out.rss"
+printf 'name\tprofile\tround\ttid\tmain\tuser_pct\tsys_pct\tcpu_pct\tenv\n' > "$out.thr"
+printf 'name\tprofile\tround\trate_ratio\tmean_us\tp50_us\tp75_us\tp90_us\tp99_us\tp99_9_us\tmax_us\tmax_schedule_lag_us\tcpu_us_per_req\tenv\n' > "$out.lat"
 for prof in $profiles; do
     cur_prof=$prof
     for k in $(seq "$n"); do
@@ -272,7 +306,10 @@ for prof in $profiles; do
         for name in $order; do
             start "$name" || exit 1
             sleep 0.3
+            thr=
+            case "$name/$prof" in sober/limited-conn|sober/latency-*) thr=1; thr_snap | sort > "$W/thr0"; t0=$(date +%s.%N) ;; esac
             run_one "$name" "$prof" "$k" | tee -a "$out"
+            [ -n "$thr" ] && thr_row "$name" "$prof" "$k" "$W/thr0" "$(awk -v a="$t0" -v b="$(date +%s.%N)" 'BEGIN { print b - a }')"
             rss_row "$name" "$prof" "$k"
             stop
             sleep 1
@@ -296,6 +333,31 @@ if [ -s "$out.rss" ]; then
                     printf "%s\t%.1f MB\n", key, m / 1024
                 }
             }' "$out.rss" | sort
+    } >> "$W/summary.md"
+fi
+# latency 系の分布（zrk — 周ごとに全部・µs。周の中央値に畳まない: 二峰や尾の跳ねは周ごとに読む — report-1170）
+if [ "$(wc -l < "$out.lat")" -gt 1 ]; then
+    {
+        echo
+        echo "## latency distribution (zrk, per round, µs)"
+        echo
+        echo "| name | profile | round | rate_ratio | mean | p50 | p75 | p90 | p99 | p99.9 | max | max_schedule_lag | CPU µs/req |"
+        echo "|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+        tail -n +2 "$out.lat" | sort -t$'\t' -k2,2 -k1,1 -k3,3n | awk -F'\t' '{ printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 }'
+        echo
+        echo "env: $HENV"
+    } >> "$W/summary.md"
+fi
+# スレッドごとの CPU の要約（周ごと — main のスレッド〔accept の輪〕・残りの最大と中央値: main が 100% に張り付けば直列の天井 — report-1162）
+if [ "$(wc -l < "$out.thr")" -gt 1 ]; then
+    {
+        echo
+        echo "## server threads (Sober — CPU % per thread over each run: main thread = worker 0 / accept loop · max and median of the rest)"
+        tail -n +2 "$out.thr" | sort -t$'\t' -k2,2 -k3,3n -k8,8nr | awk -F'\t' '{ key = $2 " r" $3; if (!(key in c)) ord[++m] = key; c[key]++
+                if ($5 == 1) mt[key] = $8 " (user " $6 " / sys " $7 ")"; else { if (!(key in mx)) mx[key] = $8; v[key] = v[key] " " $8 } }
+            END { for (i = 1; i <= m; i++) { key = ord[i]; n = split(v[key], a, " ")
+                for (x = 1; x < n; x++) for (y = x + 1; y <= n; y++) if (a[y] + 0 < a[x] + 0) { t = a[x]; a[x] = a[y]; a[y] = t }
+                printf "%s\tmain %s%%\trest max %s%% median %s%%\tthreads %d\n", key, (key in mt ? mt[key] : "-"), (key in mx ? mx[key] : "-"), (n ? a[int((n + 1) / 2)] : "-"), c[key] } }'
     } >> "$W/summary.md"
 fi
 # json-comp の応答 1 件のバイト（頭 + 本文・巡回の 3 つの平均 — 本家の採点の Bpr の物差し。gzip を解いた本文が Sober ≡ Go かも見る）

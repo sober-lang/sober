@@ -1,0 +1,166 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Hook",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [],
+        "param_names": [
+          "v"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 11
+      }
+    },
+    {
+      "name": "Box",
+      "type_params": [],
+      "body": {
+        "k": "struct",
+        "fields": [
+          {
+            "name": "h",
+            "type": {
+              "k": "opt",
+              "type": {
+                "k": "name",
+                "name": "Hook"
+              }
+            },
+            "tok": 15
+          }
+        ]
+      },
+      "tok": 12,
+      "span": {
+        "start": 11,
+        "end": 21
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "run",
+      "type_params": [],
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "k": "name",
+            "name": "int"
+          },
+          "mutable": false
+        },
+        {
+          "name": "put",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "results": [],
+              "param_names": [
+                "v"
+              ]
+            },
+            "paren": true
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "name",
+          "name": "Box"
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "composite",
+                "type_name": "Box",
+                "elems": [
+                  {
+                    "key": "h",
+                    "value": {
+                      "k": "ident",
+                      "name": "put",
+                      "tok": 44
+                    }
+                  }
+                ],
+                "tok": 40,
+                "type_args": []
+              }
+            ],
+            "tok": 39
+          }
+        ]
+      },
+      "tok": 22,
+      "bodiless": false,
+      "span": {
+        "start": 21,
+        "end": 49
+      },
+      "sig_end": 38
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 54
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 56
+                }
+              ],
+              "tok": 55
+            }
+          }
+        ]
+      },
+      "tok": 50,
+      "bodiless": false,
+      "span": {
+        "start": 49,
+        "end": 61
+      },
+      "sig_end": 53
+    }
+  ],
+  "consts": []
+}

@@ -29,6 +29,7 @@ const MN_CAPSRC = 5   // その出どころ（1 = cgroup の memory.max・2 = Me
 const MN_RSS0 = 6     // 入口の RSS（バイト）
 const MN_CPUQ = 7     // cgroup の cpu.max から出るワーカーの上限（0 = 制限なし）
 const MN_AFFC = 8     // sched_getaffinity のコア数（MN_N を決める前の値 — 計測の表示）
+const MN_PIN = 13     // 1 = ワーカーを許可の CPU へ 1:1 で固定する（report-1161 — rt.mn_pin・mnInit が決める）
 const MN_TCAP = 9     // 生きている task の数の天井（VA の上界 — 段 6 P5-2 admit.sober: VA_BUDGET ÷ スロットの大きさ ÷ 2）
 const MN_PLOCK = 16
 const MN_PHEAD = 17
@@ -63,7 +64,7 @@ const MN_AGEN = MN_LED + 11         // 台帳の返しの通し番号（待ち�
 const MN_SLOTVA = MN_LED + 12      // 写したスロットの VA（バイト — 名前つきプールを使うプログラムだけ数える。SpawnIn の入場は VA_SHED を越えたら shed — report-1077 A4）
 // 飽和下の待ちの上限（language.md 28 節 ring の道 — report-1141 / 1142）: TSC の周波数の校正（MN_TSCQ = TSC の数 / ns × 65536・0 = まだ〔TSCQ_DEF と仮定〕）。
 // 最初に積みの底を見たワーカーが MN_TSC0 / MN_NS0 に 1 点目を置き、TSC が 2^25（≈ 10 ms）進んだら CLOCK_MONOTONIC と 2 点目で割る（MN_TSC0 = -1 で済み）。
-// 台帳の語（MN_LED〜 — spawn のたびに書く）と同じ行に置かない（積むたびに MN_TSCQ を読む）
+// 台帳の語（MN_LED〜 — spawn のたびに書く）と同じ行に置かない（深いときの周ごとに MN_TSCQ を読む）
 const MN_TSCQ = MN_LED + 16
 const MN_TSC0 = MN_LED + 17
 const MN_NS0 = MN_LED + 18
@@ -94,15 +95,12 @@ const WK_CUT = 11     // 1 = 今の task は打ち切りの印を見直す（検
 // 環の位置 = 添字 & (DQ_CAP − 1)。持ち主は底（T）で積む / 取る（鍵なし）・暇なワーカーは頭（H）から盗む（盗み手どうしは WK_DLOCK で直列化）。
 // 語の置き場は行を分ける（T = 持ち主だけが書く・鍵と H = 盗み手が書く）。あふれ（T − H ≥ DQ_CAP − 1）は共有の積み（MN_PHEAD）へ
 const WK_DT = 16
-// 置き場の印（report-709〜711 — 持ち主だけが書く行に同居）: PLOWN = 印を置いた task（その task の次の spawn 1 回が消費）・PLRR = 巡回の数え
+// 置き場の印（report-709〜711・1172 — 持ち主だけが書く行に同居）: PLOWN = 印を置いた task（その task の次の spawn 1 回が消費）・PLTO = 行き先
+// （k ≥ 0 = 自分を除いた k 番目のワーカー・-1 = 自分の走れる積み）
 const WK_PLOWN = 17
-const WK_PLRR = 18
+const WK_PLTO = 18
 const WK_DLOCK = 24
 const WK_DH = 25
-const WK_NOW = 26   // 今（TSC — mn_next が周の頭で 1 回読む。積む口〔task.sober readyPush〕はこの値を時刻に使う — 誤差は 1 回の走り）
-const WK_AGED = 27  // 待ちの上限が効いて積みの底から取った回数（Ledger の aged — 持ち主だけが足す）
-const WK_MAXW = 28  // 走れる積みから取った task の待ちの最大（TSC の数 — Ledger の maxWait が xchg で 0 に戻して集める）
-const WK_PICK = 29  // rt.mn_next の周の数（持ち主だけが書く — 受け箱の先読み〔MN_INBOX_EVERY〕の間引きの位相）
 const WK_DQ = 32
 const DQ_CAP = 256
 const DQ_NEED = 4   // spawn が起こしに行く「溜まっていた」の閾値（自分の列の長さ — 盗みは 1 つずつ遅れて追うので 1 以上は常態）
@@ -117,7 +115,14 @@ const WK_RFREE = WK_DQ + DQ_CAP
 const DP_MASK = 31
 // 列の深さ 16（4 から — report-1062: park で死んだ深度の予備が続かないときの出し入れが共有の列 rt.dp_give / dp_take へ溢れていた）
 const DP_CAP = 16
-const WK_DPC = WK_RFREE + 8
+// 持ち主が rt.mn_next の周ごとに書く語（report-1161 — 盗み手の行〔WK_DLOCK / WK_DH〕から移した: 眠る前の見直し〔rt.mn_anydq〕が全ワーカーの
+// WK_DH を読むので、同じ行に周ごとの書きがあると W 本ぶんの変更済みの行を眠りのたびに跨 CCX で引いた）。WK_RFREE（他のワーカーが CAS で書く）から 8 語離す
+const WK_HOT = WK_RFREE + 8
+const WK_NOW = WK_HOT   // 今（TSC — mn_next が周の頭で 1 回読む。積む口〔task.sober readyPush〕はこの値を時刻に使う — 誤差は 1 回の走り）
+const WK_AGED = WK_HOT + 1  // 待ちの上限が効いて積みの底から取った回数（Ledger の aged — 持ち主だけが足す）
+const WK_MAXW = WK_HOT + 2  // 走れる積みから取った task の待ちの最大（TSC の数 — Ledger の maxWait が xchg で 0 に戻して集める）
+const WK_PICK = WK_HOT + 3  // rt.mn_next の周の数（持ち主だけが書く — 受け箱の先読み〔MN_INBOX_EVERY〕の間引きの位相）
+const WK_DPC = WK_HOT + 8
 const WK_DPS = WK_DPC + DP_MASK + 1
 const WK_WORDS = WK_DPS + (DP_MASK + 1) * DP_CAP
 // @rt.sdp = [数の和, 列 r の数 × 32, 列 r の基底 × SRES_CAP × 32]
@@ -130,7 +135,19 @@ const SDP_S = 2 + DP_MASK
 const WK_K0 = WK_WORDS
 const WK_KHOLD = WK_K0 + 16
 const WK_KMC = WK_K0 + 17 // mincore の作業域（32 語 = 1 MiB 分の頁の印 — スロットの数え口の 16〜17 — report-1016）
-const WK_KN = 17 + 32
+// 追加の 5 語（report-1161 — latency 系の取り込みの窓の計器。`#w` の行の 17〜21 列目）: 0 pbuse（受けの環の使用中のスロットの最大）・1 enobufs（受けの ENOBUFS）・
+// 2 tmo（眠りの enter が timeout で起きた回数）・3 gap_ns / 4 gapmax_ns（CQE を 1 つ以上取り込んだ回の、前の取り込みからの間隔の和と最大 — 取り込んだ完了の待ちの上界）。
+// WK_KXT = 前の取り込みの時刻
+const WK_KX = WK_K0 + 17 + 32
+const WK_KXN = 5
+const WK_KXT = WK_KX + WK_KXN
+const WK_KN = 17 + 32 + WK_KXN + 1
+// カオスの変異（開発用 --rt-mutant=30 だけ — report-1175。表を 1 語だけ延ばす・通常の build の IR は不変）: WK_CHS = ワーカーごとの xorshift の状態
+// （SOBER_CHAOS_SEED — 既定 1・0 = 注入しない。ワーカー 1 以上はワーカーの番号で散らす）。注入点 = 非 ring の道の送り・受け・accept（偽の EAGAIN と短い書き / 読み —
+// どれも非ブロックの socket で合法な返り）と rt.ep_poll（受け皿の縮めと sched_yield）。chRoll の値 r の下 3 ビット: 1 = EAGAIN・2 = 短い（1〜1024 バイト）
+// 変異 31 / 32（飛行記録の検収の網 — report-1176・scripts/flightcheck.sh）は同じ状態で壊す: 31 = epoll の道の起こし（epWake）を 1/2048 で落とす
+// （待ち手は起きない — 要求が時間切れ）・32 = 非 ring の道の送りを 1/256 で 1〜1024 B に縮めて頼んだ長さを返す（データの欠け）
+const WK_CHS = WK_WORDS
 const TC_KT0 = TC_END // spawn の時刻（変異 4 だけ — 子の塊の記録の退避の列の後ろ〔TASK_HEAD の頁の中〕。語 36 は孤児の登録簿 TC_ORG — orphan.sober）
 // スロットの数え口（変異 4 だけ — report-1016。@rt.mn を MK_N 語だけ延ばす・通常の build の IR は不変）: 全ワーカーの和（lock xadd）
 // 0 印（MK_MAGIC）・1 時刻・2 pop（プールから子の深度へ）・3 give（子の終わりの返し）・4 refill（SLOT_CHUNK 本の mmap の回数）・5 drop（munmap）・
@@ -203,6 +220,29 @@ func kSnap(st mut St) {
     setCur(mut st, bE)
 }
 
+// chRoll はカオスの乱択の 1 歩（変異 30 だけ — ワーカーの WK_CHS の xorshift。状態 0 は 0 のまま = どの注入点も当たらない）
+func chRoll(st mut St) int {
+    wk := globaladdr(mut st, st.wkG)
+    seed := load(mut st, wk, WK_CHS)
+    x1 := bin(mut st, BXor, seed, bin(mut st, BShl, seed, iconst(mut st, 13)))
+    x2 := bin(mut st, BXor, x1, bin(mut st, BAnd, bin(mut st, BSar, x1, iconst(mut st, 7)), iconst(mut st, 144115188075855871)))
+    x3 := bin(mut st, BXor, x2, bin(mut st, BShl, x2, iconst(mut st, 17)))
+    store(mut st, wk, WK_CHS, x3)
+    return x3
+}
+
+// chIo は非 ring の道の io の syscall の前の注入（変異 30 だけ — 呼び手は st.rtMut == 30 で呼ぶ）: 1/8 で -11（EAGAIN — 呼び手の again が readiness を待つ）を返し、
+// 1/8 で長さ n を 1〜1024 バイトに縮めた値を返す（それ以外は n）
+func chIo(st mut St, n int) int {
+    r := chRoll(mut st)
+    k := bin(mut st, BAnd, r, iconst(mut st, 7))
+    bNo := branchIf(mut st, cmp(mut st, CEq, k, iconst(mut st, 1)))
+    ret(mut st, iconst(mut st, -11))
+    setCur(mut st, bNo)
+    sh := imin(mut st, n, bin(mut st, BAdd, bin(mut st, BAnd, bin(mut st, BSar, r, iconst(mut st, 8)), iconst(mut st, 1023)), iconst(mut st, 1)))
+    return bin(mut st, BAdd, n, bin(mut st, BMul, cmp(mut st, CEq, k, iconst(mut st, 2)), bin(mut st, BSub, sh, n)))
+}
+
 // kAdd は計器の語 k に v を足す（変異 4 だけ — v を作る命令は呼び手が変異 4 の中で作る）
 func kAdd(st mut St, k int, v int) {
     if st.rtMut != 4 {
@@ -210,6 +250,23 @@ func kAdd(st mut St, k int, v int) {
     }
     wk := globaladdr(mut st, st.wkG)
     store(mut st, wk, WK_K0 + k, bin(mut st, BAdd, load(mut st, wk, WK_K0 + k), v))
+}
+
+// kxAdd / kxMax は追加の計器の語 k（WK_KX + k）に v を足す / v との最大にする（変異 4 だけ）
+func kxAdd(st mut St, k int, v int) {
+    if st.rtMut != 4 {
+        return
+    }
+    wk := globaladdr(mut st, st.wkG)
+    store(mut st, wk, WK_KX + k, bin(mut st, BAdd, load(mut st, wk, WK_KX + k), v))
+}
+
+func kxMax(st mut St, k int, v int) {
+    if st.rtMut != 4 {
+        return
+    }
+    wk := globaladdr(mut st, st.wkG)
+    store(mut st, wk, WK_KX + k, imax(mut st, load(mut st, wk, WK_KX + k), v))
 }
 
 // kInc は計器の語 k に 1 を足す（変異 4 だけ — それ以外は何も出さない）
@@ -231,7 +288,7 @@ func needMnRt(st mut St) {
     st.mnG = addGlobalInit(mut st, int(strLit(mut st, "rt.mn")), MN_WORDS + (if st.rtMut == 4 { MK_N } else { 0 }), -1)
     st.sresG = addGlobalInit(mut st, int(strLit(mut st, "rt.sres")), 3 + SRES_CAP, -1)
     st.sdpG = addGlobalInit(mut st, int(strLit(mut st, "rt.sdp")), SDP_S + (DP_MASK + 1) * SRES_CAP, -1)
-    st.wkG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.wk")), WK_WORDS + (if st.rtMut == 4 { WK_KN } else { 0 }))
+    st.wkG = addWorkerGlobal(mut st, int(strLit(mut st, "rt.wk")), WK_WORDS + (if st.rtMut == 4 { WK_KN } else if st.rtMut >= 30 && st.rtMut <= 32 { 1 } else { 0 }))
     st.rtMnStart = addFunc(mut st, int(strLit(mut st, "rt.mn_start")), desugar.ListRef(list0(mut st)), -1)
     st.rtWorkerMain = addFunc(mut st, int(strLit(mut st, "rt.worker_main")), desugar.ListRef(list1(mut st, TyPtr)), -1)
     st.rtTaskGoMn = addFunc(mut st, int(strLit(mut st, "rt.task_go_mn")), desugar.ListRef(list2(mut st, TyPtr, TyPtr)), -1)
@@ -248,6 +305,7 @@ func needMnRt(st mut St) {
     st.rtMnAnyDq = addFunc(mut st, int(strLit(mut st, "rt.mn_anydq")), desugar.ListRef(list0(mut st)), TyI64)
     st.rtMnTrace = addFunc(mut st, int(strLit(mut st, "rt.mn_trace")), desugar.ListRef(list2(mut st, TyI64, TyI64)), -1)
     st.rtTcbFree = addFunc(mut st, int(strLit(mut st, "rt.tcb_free")), desugar.ListRef(list1(mut st, TyPtr)), -1)
+    st.rtMnPin = addFunc(mut st, int(strLit(mut st, "rt.mn_pin")), desugar.ListRef(list1(mut st, TyI64)), -1)
     needUringRt(mut st)
 }
 
@@ -267,6 +325,7 @@ func buildMnRt(st mut St) {
     buildMnAnyDq(mut st)
     buildMnTrace(mut st)
     buildTcbFree(mut st)
+    buildMnPin(mut st)
     buildUringInit(mut st)
     buildUio(mut st)
     buildUpoll(mut st)
@@ -356,18 +415,40 @@ func mnInit(st mut St, sp int) {
     // 1 ≤ n ≤ MAXW
     lo := imax(mut st, nv, iconst(mut st, 1))
     n0w := bin(mut st, BAdd, lo, bin(mut st, BMul, cmp(mut st, CGt, lo, iconst(mut st, MAXW)), bin(mut st, BSub, iconst(mut st, MAXW), lo)))
-    // acceptor の担い手（report-997）: 置き場の印を使うプログラム（Serve）は 2 本以上のときワーカーを 1 本足す — 接続は acceptor のワーカー以外へ
-    // 巡回で配る（rt.task_go_mn）ので、接続の仕事は W 本・accept は足した 1 本の分。即値は cutPatch が決める（入口は本体より先に組む）
+    // Serve のプログラムの印（置き場の印〔rt.netop 5〕を使う — 即値は cutPatch が決める・入口は本体より先に組む）: CPU の固定の既定だけが読む。
+    // ワーカーは足さない（report-1172 — accept はワーカーごとの listener〔SO_REUSEPORT〕で各ワーカーが自分の ring で受ける。旧形〔report-997〕は
+    // acceptor 1 本のためにワーカーを 1 本足していた）
     ex := iconst(mut st, 0)
     st.mnExtra = int(irBlkITail(mut st, st.cur))
-    n := bin(mut st, BAdd, n0w, bin(mut st, BMul, ex, bin(mut st, BAnd, cmp(mut st, CGt, n0w, iconst(mut st, 1)), cmp(mut st, CLt, n0w, iconst(mut st, MAXW)))))
+    n := n0w
     store(mut st, mn, MN_N, n)
+    // ワーカーの CPU の固定（report-1161 — thread-per-core の定石: 走れるワーカーが同じ CPU に重なって時間片〔≈ 3 ms〕を待つ形を無くす）。
+    // 既定は Serve のプログラム（置き場の印 = ex）で、ワーカー数を affinity から決めたとき（SOBER_WORKERS なし）— 箱を占有するサーバの形。
+    // 一般のプログラム（コンパイラ自身・並走する網）を固定すると、同じ箱の別のプロセスが同じ CPU の並びに重なる。SOBER_PIN=1 で強制・0 で切る
+    pv := envMb(mut st, sp, "SOBER_PIN=", -1, true)
+    // 既定はスレッド数 ≤ 許可の数のときだけ（許可の数を越えると、浮いた 1 本が固定したワーカーのどれかと必ず重なり、
+    // 固定したワーカーは逃げられない — 手元 W12 + 1 で churn −47%・W11 + 1〔全部固定〕は churn / keep-alive とも退行なし — report-1161。
+    // ワーカーを足さなくなった後〔report-1172〕は affinity から決めた数なら常に収まる — cpu.max で減らした数も ≤ 許可の数）
+    pfit := cmp(mut st, CLe, n, load(mut st, mn, MN_AFFC))
+    pdef := bin(mut st, BAnd, bin(mut st, BAnd, bin(mut st, BAnd, cmp(mut st, CEq, pv, iconst(mut st, -1)), ex), cmp(mut st, CEq, n0, iconst(mut st, 0))), pfit)
+    pin := bin(mut st, BOr, cmp(mut st, CEq, pv, iconst(mut st, 1)), pdef)
+    store(mut st, mn, MN_PIN, pin)
+    // SOBER_WORKERS があると上で affinity を読んでいない — 固定するなら読む
+    bPa := branchIf(mut st, bin(mut st, BAnd, pin, cmp(mut st, CNe, n0, iconst(mut st, 0))))
+    syscall(mut st, list4(mut st, iconst(mut st, 204), iconst(mut st, 0), iconst(mut st, 128), ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_AFF)))))
+    br(mut st, bPa, -1)
+    setCur(mut st, bPa)
 
     store(mut st, mn, MN_WK, ptoi(mut st, wk))
     sg := globaladdr(mut st, st.schedG)
     store(mut st, mn, MN_TRACE, load(mut st, sg, 2))
     // 遅延注入はワーカー 2 以上で種があるときだけ（ワーカー 1 は sched_pick の乱択 — 今までどおり）
     store(mut st, wk, WK_RND, bin(mut st, BMul, load(mut st, sg, SCHED_SEED), cmp(mut st, CGt, n, iconst(mut st, 1))))
+    if st.rtMut >= 30 && st.rtMut <= 32 {
+        store(mut st, wk, WK_CHS, envMb(mut st, sp, "SOBER_CHAOS_SEED=", 1, true))
+    }
+    // 飛行記録（flight.sober — SOBER_FLIGHT）
+    frInit(mut st, sp, n)
 }
 
 // buildMnStart は rt.mn_start()（最初の M:N の spawn — ワーカー 0 から）: ワーカー 1〜N-1 の表を確保して記録を組み、塊のスタックで rt.worker_main を
@@ -377,6 +458,7 @@ func buildMnStart(st mut St) {
     begin(mut st, st.rtMnStart)
     mn := globaladdr(mut st, st.mnG)
     store(mut st, mn, MN_STARTED, iconst(mut st, 1))
+    mnPinPoint(mut st)
     call(mut st, st.rtUringInit, list0(mut st))
     mut total := 0
     mut g := st.ghead
@@ -425,6 +507,12 @@ func buildMnStart(st mut St) {
                 s0 := load(mut st, globaladdrRaw(mut st, g), WK_RND)
                 mix := bin(mut st, BXor, s0, bin(mut st, BMul, k, iconst(mut st, 40503)))
                 store(mut st, a, WK_RND, bin(mut st, BMul, mix, cmp(mut st, CNe, s0, iconst(mut st, 0))))
+                frWorker(mut st, a, k)
+                if st.rtMut >= 30 && st.rtMut <= 32 {
+                    c0 := load(mut st, globaladdrRaw(mut st, g), WK_CHS)
+                    cmix := bin(mut st, BXor, c0, bin(mut st, BMul, k, iconst(mut st, 40503)))
+                    store(mut st, a, WK_CHS, bin(mut st, BMul, cmix, cmp(mut st, CNe, c0, iconst(mut st, 0))))
+                }
                 store(mut st, gepWord(mut st, mn, bin(mut st, BAdd, k, iconst(mut st, MN_WK))), 0, ptoi(mut st, a))
             }
             off += words * 8
@@ -466,6 +554,7 @@ func buildWorkerMain(st mut St) {
     store(mut st, wk, WK_SS + 2, iconst(mut st, SIG_ALT))
     syscall(mut st, list3(mut st, iconst(mut st, 131), ptoi(mut st, gepWord(mut st, wk, iconst(mut st, WK_SS))), iconst(mut st, 0)))
     store(mut st, globaladdr(mut st, st.taskG), TK_CUR, ptoi(mut st, 0))
+    mnPinPoint(mut st)
     call(mut st, st.rtUringInit, list0(mut st))
     loop := newBlock(mut st)
     br(mut st, loop, -1)
@@ -473,6 +562,61 @@ func buildWorkerMain(st mut St) {
     nx := call(mut st, st.rtMnNext, list0(mut st))
     call(mut st, st.rtTaskSwitch, list2(mut st, 0, nx))
     br(mut st, loop, -1)
+}
+
+// mnPinPoint は MN_PIN なら自分（WK_ID）を固定する（ワーカーの入口 — 1〜N-1 は rt.worker_main の頭・0 は rt.mn_start の頭）
+func mnPinPoint(st mut St) {
+    bP := branchIf(mut st, cmp(mut st, CNe, load(mut st, globaladdr(mut st, st.mnG), MN_PIN), iconst(mut st, 0)))
+    call(mut st, st.rtMnPin, list1(mut st, load(mut st, globaladdr(mut st, st.wkG), WK_ID)))
+    br(mut st, bP, -1)
+    setCur(mut st, bP)
+}
+
+// buildMnPin は rt.mn_pin(i): 許可の CPU（MN_AFF のビット — 番号の昇順）の i 番目の 1 つへ sched_setaffinity。i ≥ 許可の数（SOBER_WORKERS で許可の数を越えたワーカー）は
+// 固定しない（許可の全体）。
+// 昇順の割り当ては、兄弟の番号が N と N + 物理コア数の箱（本家 3995WX・多くのサーバ）ではワーカー数 ≤ 物理コア数のとき別々のコアに乗る。兄弟が隣り合う
+// 番号の箱（WSL2 等）で SOBER_WORKERS < 許可の数のときは 0 と 1 が同じコアに乗る（既定のワーカー数 = 許可の数なら全 CPU を使うので差は無い）。
+// io-wq のワーカー（iou-wrk）はカーネルが cpuset から作るので、この固定に縛られない
+func buildMnPin(st mut St) {
+    begin(mut st, st.rtMnPin)
+    mn := globaladdr(mut st, st.mnG)
+    zero := iconst(mut st, 0)
+    one := iconst(mut st, 1)
+    lp := newBlock(mut st)
+    c := param(mut st, lp, TyI64)
+    rem := param(mut st, lp, TyI64)
+    bd := newBlock(mut st)
+    bHit := newBlock(mut st)
+    bNx := newBlock(mut st)
+    bAll := newBlock(mut st)
+    bEnd := newBlock(mut st)
+    br(mut st, lp, list2(mut st, zero, 0))
+    setCur(mut st, lp)
+    condbr(mut st, cmp(mut st, CLt, c, iconst(mut st, 1024)), bd, -1, bAll, -1)
+    setCur(mut st, bd)
+    w := load(mut st, gepWord(mut st, mn, bin(mut st, BAdd, bin(mut st, BSar, c, iconst(mut st, 6)), iconst(mut st, MN_AFF))), 0)
+    bit := bin(mut st, BAnd, bin(mut st, BSar, w, bin(mut st, BAnd, c, iconst(mut st, 63))), one)
+    bOn := newBlock(mut st)
+    condbr(mut st, cmp(mut st, CNe, bit, zero), bOn, -1, bNx, list1(mut st, rem))
+    setCur(mut st, bOn)
+    condbr(mut st, cmp(mut st, CEq, rem, zero), bHit, -1, bNx, list1(mut st, bin(mut st, BSub, rem, one)))
+    setCur(mut st, bNx)
+    r2 := param(mut st, bNx, TyI64)
+    br(mut st, lp, list2(mut st, bin(mut st, BAdd, c, one), r2))
+    setCur(mut st, bHit)
+    m := newSlotAddr(mut st, 16)
+    for k <- iter.Range(0, 16) {
+        store(mut st, m, k, zero)
+    }
+    store(mut st, gepWord(mut st, m, bin(mut st, BSar, c, iconst(mut st, 6))), 0, bin(mut st, BShl, one, bin(mut st, BAnd, c, iconst(mut st, 63))))
+    syscall(mut st, list4(mut st, iconst(mut st, 203), zero, iconst(mut st, 128), ptoi(mut st, m)))
+    br(mut st, bEnd, -1)
+    // 固定しないワーカー: clone はワーカー 0（固定済み）の affinity を継ぐので許可の全体へ戻す
+    setCur(mut st, bAll)
+    syscall(mut st, list4(mut st, iconst(mut st, 203), zero, iconst(mut st, 128), ptoi(mut st, gepWord(mut st, mn, iconst(mut st, MN_AFF)))))
+    br(mut st, bEnd, -1)
+    setCur(mut st, bEnd)
+    ret(mut st, -1)
 }
 
 // buildTaskGoMn は rt.task_go_mn(me, tcb)（M:N の spawn の点 — rt.task_go の頭から）: 子の区間を差し込み（鍵の中）、子を pull 列へ積み、
@@ -514,22 +658,30 @@ func buildTaskGoMn(st mut St) {
     setCur(mut st, bOf2)
     store(mut st, 1, TC_SEG, bin(mut st, BMul, load(mut st, 1, TC_SEG), cmp(mut st, CEq, outNoSeg(mut st, 0, 1), iconst(mut st, 0))))
     mnDelayPoint(mut st)
-    // 置き場の印（net_op 5 — Serve の接続の task。report-709〜711・997）: 印の持ち主が今の親なら子を巡回でワーカー k の受け箱へ（受け箱は盗まれない）。
-    // 盗み任せは接続の走り始めを時間的に散らし（盗みは 1 つずつ追う）、keep-alive では偏りが接続の寿命いっぱい固定される（走り始めた task は盗めない）。
-    // 巡回は自分（acceptor のワーカー）を飛ばす: 受け箱へ積むと acceptor のワーカーが接続の仕事で塞がり ring の眠りの周期で律速される accept の取り込みが
-    // 詰まり（churn で応答 1/3 — report-711）、自分の列の底へ積むと一斉の接続の間に全部盗まれて keep-alive が W − 1 本で固定される（report-994）。
-    // 足りない 1 本は mnInit がワーカーを足して埋める
+    // 置き場の印（net_op 5 — Serve。report-709〜711・1172）: 印の持ち主が今の親なら子を印の行き先へ（盗まれない置き場 — 盗みは列の未着手の子だけ）。
+    // 行き先 k ≥ 0 = 自分を除いた k 番目のワーカーの受け箱（Serve の accept の輪をワーカーごとに 1 本）・-1 = 自分の走れる積み（accept の輪が受けた
+    // 接続の task — 受け箱・起こしを通らない。rt.mn_wake の自分の道）。盗み任せは接続の走り始めを時間的に散らし（盗みは 1 つずつ追う）、
+    // keep-alive では偏りが接続の寿命いっぱい固定される（走り始めた task は盗めない）— 配分はカーネルの SO_REUSEPORT の振り分けが決める。
+    // 一斉の到着で 1 ワーカーに積まれた新しい接続は LIFO の積みの中ほどに沈み D の期限で拾われる（走り出しの遅れ ≈ D — 立ち上がりの尾）。
+    // 新しい task の FIFO を積みより先に見る形は試して棄てた（report-1173 — 底の D を先にする限り飽和では FIFO も D まで待ち、FIFO を先にすると D の約束が破れる）
     pw := globaladdr(mut st, st.wkG)
     bPl := newBlock(mut st)
     bNoPl := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, load(mut st, pw, WK_PLOWN), ptoi(mut st, 0)), bPl, -1, bNoPl, -1)
     setCur(mut st, bPl)
     store(mut st, pw, WK_PLOWN, iconst(mut st, 0))
-    prr := load(mut st, pw, WK_PLRR)
-    store(mut st, pw, WK_PLRR, bin(mut st, BAdd, prr, iconst(mut st, 1)))
-    pk0 := bin(mut st, BRem, prr, bin(mut st, BSub, load(mut st, mn, MN_N), iconst(mut st, 1)))
-    pk := bin(mut st, BAdd, pk0, cmp(mut st, CGe, pk0, load(mut st, pw, WK_ID)))
+    pto := load(mut st, pw, WK_PLTO)
+    me := load(mut st, pw, WK_ID)
+    pk0 := bin(mut st, BRem, pto, bin(mut st, BSub, load(mut st, mn, MN_N), iconst(mut st, 1)))
+    pk1 := bin(mut st, BAdd, pk0, cmp(mut st, CGe, pk0, me))
+    pk := bin(mut st, BAdd, pk1, bin(mut st, BMul, cmp(mut st, CLt, pto, iconst(mut st, 0)), bin(mut st, BSub, me, pk1)))
     store(mut st, 1, TC_WORKER, pk)
+    // 自分の走れる積みへ積むときは今（WK_NOW）を読み直す: 積む時刻は WK_NOW で、それは rt.mn_next の周の頭でしか進まない — Serve を呼んだ task が
+    // 起動から一度も譲っていないと 0 のまま（底から取られた待ちが TSC の絶対値になり Ledger の maxWait の換算〔× 65536〕が桁あふれした — report-1173）
+    bNw := branchIf(mut st, cmp(mut st, CLt, pto, iconst(mut st, 0)))
+    store(mut st, pw, WK_NOW, tscOp(mut st))
+    br(mut st, bNw, -1)
+    setCur(mut st, bNw)
     call(mut st, st.rtMnWake, list1(mut st, 1))
     ret(mut st, -1)
     setCur(mut st, bNoPl)
@@ -747,7 +899,7 @@ func buildMnNext(st mut St) {
     bRc := newBlock(mut st)
     condbr(mut st, cmp(mut st, CNe, r, zero), bRc, -1, bI, -1)
     setCur(mut st, bRc)
-    // 受け箱が空でなければ積みが空でなくても先に取り込む（巡回で配った新しい接続・他のワーカーからの起こしを積みの底に沈めない — report-1132 (b)）。
+    // 受け箱が空でなければ積みが空でなくても先に取り込む（Serve の accept の輪・他のワーカーからの起こしを積みの底に沈めない — report-1132 (b)）。
     // 見るのは MN_INBOX_EVERY 周に 1 回（受け箱の語は他のワーカーが書く — 毎周の読みと xchg の値段を払わない・未着手の延びは高々その周の数 — report-1150）。
     // 変異 24（開発用 --rt-mutant — gate starve の検出率の確認: HEAD〔da59f340〕の形）は先取りなし
     if st.rtMut == 24 {
@@ -759,10 +911,10 @@ func buildMnNext(st mut St) {
         condbr(mut st, cmp(mut st, CEq, load(mut st, wk, WK_INBOX), zero), bR, -1, bI, -1)
     }
     setCur(mut st, bR)
-    // 飽和下の待ちの上限（language.md 28 節 ring の道）: 積みの底の期限が過ぎていたら底から 1 本・でなければ頭（LIFO — 直前に動いた task を熱いうちに）
-    tl := load(mut st, tk, TK_TAIL)
-    deep := cmp(mut st, CNe, tl, r)
-    // TSC の校正（積みの底が頭と違う = 2 本以上積まれた最初の頃だけ — MN_TSC0 = -1 で済み）
+    // 飽和下の待ちの上限（language.md 28 節 ring の道）: 積みの底の期限が過ぎていたら底から 1 本・でなければ頭（LIFO — 直前に動いた task を熱いうちに）。
+    // 期限は枠に持つ（積むときに計算 — 底の TCB を読まない・report-1168）
+    deep := cmp(mut st, CGe, r, iconst(mut st, 2))
+    // TSC の校正（2 本以上積まれた最初の頃だけ — MN_TSC0 = -1 で済み）
     bCal := newBlock(mut st)
     bCk := newBlock(mut st)
     condbr(mut st, bin(mut st, BAnd, deep, cmp(mut st, CGe, load(mut st, mn, MN_TSC0), zero)), bCal, -1, bCk, -1)
@@ -770,18 +922,13 @@ func buildMnNext(st mut St) {
     tscCalibrate(mut st, mn, now)
     br(mut st, bCk, -1)
     setCur(mut st, bCk)
-    // 期限 = 底の TC_WAKE + D（D = TC_MAXW の ns〔0 = 既定〕を TSC の数へ: × MN_TSCQ ÷ 65536 — 校正の前は 0 = 4 GHz と仮定）。積みが浅い（底 = 頭）なら計算しない
+    // 積みが浅い（1 本）なら比べない
     bDp := newBlock(mut st)
     bAg := newBlock(mut st)
     ag := param(mut st, bAg, TyI64)
     condbr(mut st, deep, bDp, -1, bAg, list1(mut st, zero))
     setCur(mut st, bDp)
-    tlp := itop(mut st, tl)
-    mw := load(mut st, tlp, TC_MAXW)
-    dns := bin(mut st, BAdd, mw, bin(mut st, BMul, cmp(mut st, CEq, mw, zero), iconst(mut st, MN_WAIT_DEF)))
-    tq := load(mut st, mn, MN_TSCQ)
-    qe := bin(mut st, BAdd, tq, bin(mut st, BMul, cmp(mut st, CEq, tq, zero), iconst(mut st, TSCQ_DEF)))
-    br(mut st, bAg, list1(mut st, cmp(mut st, CGt, bin(mut st, BSub, now, load(mut st, tlp, TC_WAKE)), bin(mut st, BSar, bin(mut st, BMul, dns, qe), iconst(mut st, 16)))))
+    br(mut st, bAg, list1(mut st, cmp(mut st, CGt, bin(mut st, BSub, now, readyTailDl(mut st, tk)), zero)))
     setCur(mut st, bAg)
     // 変異 23 / 24（開発用 --rt-mutant — gate starve の検出率の確認）: 上限を切る（底から取らない）
     aged := if st.rtMut == 23 || st.rtMut == 24 { iconst(mut st, 0) } else { ag }
@@ -789,23 +936,21 @@ func buildMnNext(st mut St) {
     bNew := newBlock(mut st)
     bTk := newBlock(mut st)
     rq := param(mut st, bTk, TyI64)
+    bot := param(mut st, bTk, TyI64)
     condbr(mut st, aged, bOld, -1, bNew, -1)
     setCur(mut st, bOld)
-    pt := load(mut st, itop(mut st, tl), TC_PREV)
-    store(mut st, tk, TK_TAIL, pt)
-    store(mut st, itop(mut st, pt), TC_NEXT, zero)
     store(mut st, wk, WK_AGED, bin(mut st, BAdd, load(mut st, wk, WK_AGED), iconst(mut st, 1)))
-    br(mut st, bTk, list1(mut st, tl))
+    br(mut st, bTk, list2(mut st, readyPopTail(mut st, tk), iconst(mut st, 1)))
     setCur(mut st, bNew)
-    readyPopHead(mut st, tk, itop(mut st, r))
-    br(mut st, bTk, list1(mut st, r))
+    // 積みが 1 本なら頭 = 底（待ちの最大に数える）
+    br(mut st, bTk, list2(mut st, readyPopHead(mut st, tk), cmp(mut st, CEq, r, iconst(mut st, 1))))
     setCur(mut st, bTk)
     rp := itop(mut st, rq)
     // 待ちの最大（Ledger の maxWait）: 底を取った回だけ比べる — 積みは頭に積むので底がいちばん古く、深いときに頭から取った task の待ちは
     // そのときの底の待ち以下（底は期限か、浅くなって頭として必ず取られる — report-1150）
     bMw := newBlock(mut st)
     bRet := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, rq, tl), bMw, -1, bRet, -1)
+    condbr(mut st, cmp(mut st, CNe, bot, zero), bMw, -1, bRet, -1)
     setCur(mut st, bMw)
     wt := bin(mut st, BSub, now, load(mut st, rp, TC_WAKE))
     mx := load(mut st, wk, WK_MAXW)
@@ -815,6 +960,7 @@ func buildMnNext(st mut St) {
     call(mut st, st.rtMnTrace, list2(mut st, iconst(mut st, 2), load(mut st, rp, TC_ID)))
     kInc(mut st, 0)
     kSnap(mut st)
+    frRec(mut st, FK_RUN, ptoi(mut st, rp), iconst(mut st, 0))
     ret(mut st, rp)
     // 受け箱を全部取って走れる積みへ
     setCur(mut st, bI)
@@ -943,6 +1089,7 @@ func buildMnNext(st mut St) {
         kAdd(mut st, 1, cmp(mut st, CEq, gkind, iconst(mut st, 3)))
         kSnap(mut st)
     }
+    frRec(mut st, FK_RUN, ptoi(mut st, gp), iconst(mut st, 1))
     ret(mut st, gp)
     // 眠る: 眠りの語 = 1・暇の数 + 1 → 見直し
     setCur(mut st, bSleep)
@@ -1393,6 +1540,7 @@ func buildTaskStartMn(st mut St) {
     }
     frame := itop(mut st, load(mut st, 0, TC_FRAME))
     r := trapCall(mut st, load(mut st, 0, TC_KID), fieldPtr(mut st, frame, FR_RES))
+    frRec(mut st, FK_END, ptoi(mut st, 0), r)
     fdDrainCall(mut st)
     orphEnd(mut st, 0)
     tg := globaladdr(mut st, st.trapG)

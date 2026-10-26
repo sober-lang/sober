@@ -1203,12 +1203,16 @@ func ServeConn(c net.Conn, route func(Request) Response, maxHead int?, maxBody i
 }
 
 // ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの
-// （ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。
-// 失敗は recv / send が返すもの（仮引数の名前の @errors — language.md 13 節: 呼び手は渡したコールバックのラベルで switch を網羅する）。
+// （ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
+// 失敗は recv / send / put が返すもの（仮引数の名前の @errors — language.md 13 節: 呼び手は渡したコールバックのラベルで switch を網羅する）。
+// put（省略可 — language.md 25 節 Z）を渡すと送りを 2 段にする: 受けた切片 1 つ分の応答の列を put で積み（送らない）、積んだ分は recv が次の受けを待つ前に
+// 送る約束（tls.Recv は切片 1 つを配り終えるたびに tls.Flush する — 送りの完了待ちが応答の作業の region〔受けの反復〕の閉じた後になり、待ちの間に応答の
+// 平文の頁を抱えない）。stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）は put があっても send で送る。put を渡さない呼び出し点の
+// コードは put の無い形と同じ（`if put != nil` は呼び出し点ごとに畳まれる）
 // 誤りの応答の後の読み捨て（linger）も recv の続きを読む — tls.Recv は 2 度目を Closed で返すので読み捨てずに閉じる（TLS の close_notify は呼び手の Serve が送る）
-@errors(recv, send, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
+@errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
 @effects(block, panic, Stream)
-func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error? {
+func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?, put (func(b []byte) error?)?) error? {
     mh := if maxHead != nil { maxHead } else { 8192 }
     mb := if maxBody != nil { maxBody } else { 16384 }
     gz := if compress != nil { gzLevel(compress) } else { 0 }
@@ -1227,7 +1231,11 @@ func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
             return se
         }
         if len(out) > 0 {
-            send(out)?
+            if put != nil {
+                put(out)?
+            } else {
+                send(out)?
+            }
         }
         if shut == 2 {
             linger(recv)
@@ -1236,55 +1244,6 @@ func ServeWith(recv func(k func([]byte)) error?, send func(b []byte) error?, rou
             return nil
         }
         // 残り（未完の要求）を持ち越す — 大きさは serveBuf の上限の検査で capa 未満
-        rest := len(in) - used
-        if rest > 0 && len(pend) == 0 {
-            mut k := 0
-            while k < capa {
-                pend = append(pend, 0)
-                k += 1
-            }
-        }
-        mut j := 0
-        while j < rest {
-            pend[j] = in[used + j]
-            j += 1
-        }
-        pn = rest
-    }
-    return nil
-}
-
-// ServeWith の送りを 2 段にした形: 受けた切片 1 つ分の応答を put で積む（送らない）。積んだ分は recv が次の受けを待つ前に送る約束
-// （tls.Recv は k が戻るたびに tls.Flush する）— 送りの完了待ちは応答の作業の region〔受けの反復〕が閉じた後になり、待ちの間に応答の平文の頁を
-// 抱えない）。send はその場で送る口で、stream の応答（前の応答と頭・emit ごと — emit の間隔のまま相手へ届く）だけが使う。
-// TLS の接続は `http.ServeFlushed((k) => tls.Recv(c, k), (b) => tls.Send(c, b), (b) => tls.Put(c, b), route)`。他は ServeWith と同じ
-@errors(recv, send, put, io.NotFound, io.Denied, io.Timeout, io.Expired, io.Other)
-@effects(block, panic, Stream)
-func ServeFlushed(recv func(k func([]byte)) error?, send func(b []byte) error?, put func(b []byte) error?, route func(Request) Response, maxHead int?, maxBody int?, compress Gzip?, work task.Local?) error? {
-    mh := if maxHead != nil { maxHead } else { 8192 }
-    mb := if maxBody != nil { maxBody } else { 16384 }
-    gz := if compress != nil { gzLevel(compress) } else { 0 }
-    if work != nil && gz == 0 {
-        return panic(WorkNoCompress{})
-    }
-    capa := mh + 2 * mb + 128
-    mut pend := mut []byte{}
-    mut pn := 0
-    for chunk <- recv()? {
-        in := if pn == 0 { chunk } else { joined(mut pend, pn, chunk) }
-        used, shut, out, se := serveBuf(send, in, route, mh, mb, gz, work)
-        if se != nil {
-            return se
-        }
-        if len(out) > 0 {
-            put(out)?
-        }
-        if shut == 2 {
-            linger(recv)
-        }
-        if shut != 0 {
-            return nil
-        }
         rest := len(in) - used
         if rest > 0 && len(pend) == 0 {
             mut k := 0

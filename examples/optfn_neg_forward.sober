@@ -1,0 +1,15 @@
+package main
+
+// 省略可でない関数型の仮引数への転送も `if p != nil` の中だけ（省略可の仮引数への転送はそのままで可）（diag.FnOpt kind 4）
+
+func app(n int, f func(v int)) {
+    f(n)
+}
+
+func run(n int, put (func(v int))?) {
+    app(n, put)
+}
+
+func main() {
+    run(1)
+}

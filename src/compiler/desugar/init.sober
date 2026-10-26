@@ -67,6 +67,14 @@ func initState(st mut S, p loader.Program) {
     st.capNames = p.cap_names
     st.capBrw = p.cap_brw
     st.capPend = p.cap_pend
+    mut zd := mut []int{}
+    for i <- iter.Range(0, len(p.z_decl) / 4) {
+        zd = append(zd, ABASE + p.z_decl[i * 4] * FW + p.z_decl[i * 4 + 1])
+        zd = append(zd, p.z_decl[i * 4])
+        zd = append(zd, p.z_decl[i * 4 + 2])
+        zd = append(zd, p.z_decl[i * 4 + 3])
+    }
+    st.zdecl = freeze(zd)
     // ハッシュ表の頭の数（型の intern・表層型の表）は木の大きさから（3'' 第 2 段 (c) — 以前は脱糖のたびに 65536 × 2 語を 0 埋め。
     // 鎖の頭の数は引き当ての速さだけを変え、記録の順・出力は変えない）
     st.hbuckets = bucketsFor(p.trees)

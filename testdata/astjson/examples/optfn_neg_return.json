@@ -1,0 +1,125 @@
+{
+  "package": "main",
+  "imports": [],
+  "types": [
+    {
+      "name": "Hook",
+      "type_params": [],
+      "body": {
+        "k": "func",
+        "params": [
+          {
+            "k": "name",
+            "name": "int"
+          }
+        ],
+        "results": [],
+        "param_names": [
+          "v"
+        ]
+      },
+      "tok": 4,
+      "span": {
+        "start": 3,
+        "end": 11
+      }
+    }
+  ],
+  "funcs": [
+    {
+      "name": "run",
+      "type_params": [],
+      "params": [
+        {
+          "name": "put",
+          "type": {
+            "k": "opt",
+            "type": {
+              "k": "func",
+              "params": [
+                {
+                  "k": "name",
+                  "name": "int"
+                }
+              ],
+              "results": [],
+              "param_names": [
+                "v"
+              ]
+            },
+            "paren": true
+          },
+          "mutable": false
+        }
+      ],
+      "results": [
+        {
+          "k": "opt",
+          "type": {
+            "k": "name",
+            "name": "Hook"
+          }
+        }
+      ],
+      "body": {
+        "stmts": [
+          {
+            "k": "ret",
+            "values": [
+              {
+                "k": "ident",
+                "name": "put",
+                "tok": 28
+              }
+            ],
+            "tok": 27
+          }
+        ]
+      },
+      "tok": 12,
+      "bodiless": false,
+      "span": {
+        "start": 11,
+        "end": 32
+      },
+      "sig_end": 26
+    },
+    {
+      "name": "main",
+      "type_params": [],
+      "params": [],
+      "results": [],
+      "body": {
+        "stmts": [
+          {
+            "k": "expr",
+            "expr": {
+              "k": "call",
+              "callee": {
+                "k": "ident",
+                "name": "println",
+                "tok": 37
+              },
+              "args": [
+                {
+                  "k": "int",
+                  "value": 1,
+                  "tok": 39
+                }
+              ],
+              "tok": 38
+            }
+          }
+        ]
+      },
+      "tok": 33,
+      "bodiless": false,
+      "span": {
+        "start": 32,
+        "end": 44
+      },
+      "sig_end": 36
+    }
+  ],
+  "consts": []
+}

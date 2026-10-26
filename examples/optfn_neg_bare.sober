@@ -1,0 +1,11 @@
+package main
+
+// 省略可の匿名関数型は括弧で書く（`(func(v int))?`）— 裸の `func(v int)?` は「結果が ? の関数」と紛れるので拒否して括弧の形へ誘導する（diag.FnOpt kind 1）
+
+func run(n int, put func(v int)?) {
+    println(n)
+}
+
+func main() {
+    run(1)
+}

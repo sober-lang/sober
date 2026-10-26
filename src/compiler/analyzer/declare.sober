@@ -88,7 +88,9 @@ func checkErrors(az mut Az) {
             r := lsNoFlow(slotGet(mut az, fi))
             fl := slotGet(mut az, az.flowBase + fi).lo
             df := table.Get(mut az.dflow, fi)
+            // 省略可の匿名関数型の仮引数を持つ関数の写しには tightness を掛けない（どの組の写しも全部の腕を持たない — 漏れは組ごとに照合する。language.md 13 節）
             pub := isPublic(mut az, desugar.StrRef(fd.a))
+            tight := pub && !desugar.ZVariant(mut az.d, fi)
             if !declHas(mut az, fi) {
                 if pub {
                     reportFn(mut az, MErrMissing, fi)
@@ -97,9 +99,9 @@ func checkErrors(az mut Az) {
                 reportFn(mut az, MErrLeak, fi)
             } else if (fl | df) != df {
                 reportFn(mut az, MErrFlowLeak, fi)
-            } else if pub && !lsEq(r, d) {
+            } else if tight && !lsEq(r, d) {
                 reportFn(mut az, MErrStale, fi)
-            } else if pub && fl != df {
+            } else if tight && fl != df {
                 reportFn(mut az, MErrFlowStale, fi)
             }
         }

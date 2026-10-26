@@ -274,7 +274,7 @@ func nvReach(st mut S, p loader.Program) ListRef {
                 nd := fnNode(mut st, i)
                 if fileOf(mut st, nd) == f {
                     ext := nodeOf(mut st, nd).f
-                    if ext >= 0 {
+                    if ext >= 0 && !ZVariant(mut st, i) {
                         rs = append(rs, i)
                         rs = append(rs, latI(mut st, ListRef(ext), 1))
                         rs = append(rs, latI(mut st, ListRef(ext), 2))
@@ -284,7 +284,7 @@ func nvReach(st mut S, p loader.Program) ListRef {
             rr := freeze(rs)
             for n <- iter.Range(0, len(t.nodes)) {
                 if nvLive(t, n) {
-                    fi := rangeOfSorted(rr, t.nodes[n].tok)
+                    fi := zOr(mut st, f, n, rangeOfSorted(rr, t.nodes[n].tok))
                     if fi >= 0 {
                         lput(mut st, mark, fi, 1)
                     }

@@ -1,0 +1,2 @@
+sober: load error at examples/optfn_neg_bare.sober:5:21: an optional function type is written in parentheses: `(func(…) R)?` — a bare `func(…) R?` reads as a function returning `R?`
+exit=1

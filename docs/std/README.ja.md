@@ -90,6 +90,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`builder.Len`](builder.ja.md#len) — 積んだ要素の個数
 - [`builder.Push`](builder.ja.md#push) — x を末尾に積む（速い道 = 今の chunk に空きがある — 呼び出し点に展開される大きさに保つ。
 - [`builder.PushAll`](builder.ja.md#pushall) — xs の要素を順に末尾に積む（Push を要素ごとに呼ぶのと同じ結果 — chunk の空きへまとめて写す: 呼び出しと chunk の出し入れが要素ごとでなく chunk ごと。
+- [`builder.PushBetween`](builder.ja.md#pushbetween) — xs を open と close で挟んで末尾に積む（Push(b, open)・PushAll(b, xs)・Push(b, close) と同じ結果 — 今の chunk に len(xs) + 2 の空きがあれば空きの検査と chunk の出し入れは 1 回だけ。
 - [`builder.PushString`](builder.ja.md#pushstring) — s のバイト列を末尾に積む（PushAll(b, bytes(s))）
 - [`builder.PushWord`](builder.ja.md#pushword) — w の下の k バイトを下のバイトから順に末尾に積む（Push(b, byte(w & 255)) と w = w >> 8 を k 回くり返すのと同じ結果）。
 - [`chacha20.Block`](crypto-chacha20.ja.md#block) — 鍵 key・nonce・ブロック番号 counter の鍵ストリームの 1 ブロック（64 バイト）。
@@ -194,8 +195,7 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`http.Response`](http.ja.md#response) — 応答（status・Content-Type〔"" なら書かない〕・本文）。
 - [`http.Route`](http.ja.md#route) — ルートの表の 1 行（method + path のパターン → ハンドラ・ルート単位の middleware）。
 - [`http.ServeConn`](http.ja.md#serveconn) — c の要求を順に route に渡して応答を書く（keep-alive）。
-- [`http.ServeFlushed`](http.ja.md#serveflushed) — ServeWith の送りを 2 段にした形: 受けた切片 1 つ分の応答を put で積む（送らない）。
-- [`http.ServeWith`](http.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route)`）。
+- [`http.ServeWith`](http.ja.md#servewith) — ServeConn の核を転送路の受信コールバック recv（`for chunk <- recv()? { … }` の生成元 — net.Recv / tls.Recv の形）と送信コールバック send に一般化したもの（ServeConn は net の 1 行の包み・TLS の接続は `http.ServeWith((k) => tls.Recv(c, k), (b) => tls.Send(c, b), route, put: (b) => tls.Put(c, b))`）。
 - [`http.ServiceUnavailable`](http.ja.md#serviceunavailable) — 503 Service Unavailable
 - [`http.Static`](http.ja.md#static) — prefix の下の GET を root の下のファイルで返すルートの表（1 行 — `GET <prefix>/*path` — Mount / Merge で合成する。
 - [`http.Status`](http.ja.md#status) — 本文なしの応答（http.NotFound / http.MethodNotAllowed …）
@@ -306,12 +306,12 @@ Sober の標準ライブラリ（`src/std/`）の公開の宣言の一覧です�
 - [`net.Bad`](net.ja.md#bad) — addr の形の誤り（"a.b.c.d:port" — IPv4 の 4 つ組と 0〜65535 の port）
 - [`net.Conn`](net.ja.md#conn) — 接続（同一性の型 — Listener と同じ規則。
 - [`net.Dial`](net.ja.md#dial) — addr へ接続した Conn を 1 回だけ k に渡し、k が返ったら閉じる
-- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・TCP\_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる
+- [`net.Listen`](net.ja.md#listen) — addr で listen した Listener を 1 回だけ k に渡し（SO\_REUSEADDR・SO\_REUSEPORT・TCP\_NODELAY・backlog 65535 — somaxconn へ詰める・Go と同じ）、k が返ったら閉じる。
 - [`net.Listener`](net.ja.md#listener) — listen している socket（同一性の型 — 写せない・外へ出せない・give: で渡せない。
 - [`net.Port`](net.ja.md#port) — l が bind している port（"…:0" で listen したときの割り当ての読み — getsockname）
 - [`net.Recv`](net.ja.md#recv) — c の受信を切片ずつ k へ渡す（失敗しうる生成元 — `for chunk <- net.Recv(c)? { … }`）。
 - [`net.Send`](net.ja.md#send) — b を全部 c へ送る（同期 — 短い書きは続きから・MSG\_NOSIGNAL で相手が閉じた後の書きは io.Closed）
-- [`net.Serve`](net.ja.md#serve) — l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept のループは std が持つ）。
+- [`net.Serve`](net.ja.md#serve) — l の接続を受けるたびに接続 1 本 = task 1 本で h を走らせる（accept の輪は std が持つ — ワーカーごとに 1 本・l と同じ番地に SO\_REUSEPORT で足した listener で受ける）。
 - [`os.Args`](os.ja.md#args) — プログラムの引数（0 番 = プログラム名 — Go の os.Args と同じ並び）。
 - [`os.Getenv`](os.ja.md#getenv) — 環境変数 name の値（無ければ nil — 空の値 `NAME=` は "" で、無いのと区別する）。
 - [`os.Mkdir`](os.ja.md#mkdir) — path のディレクトリを作る（mkdir(2) — 許可の bit は 0o755。

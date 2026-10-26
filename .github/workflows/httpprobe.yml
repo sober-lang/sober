@@ -1,0 +1,99 @@
+# httpprobe (report-1175) — cheap repeat probe for rare httpcheck failures (the W1 undici reds of GHA 40251507500 / report-1174).
+# Manual trigger only. One build job (the bootstrap chain, then the httpcheck server twice: plain and the chaos mutant --rt-mutant=30),
+# then a matrix of probe jobs on the cheapest runner that only need node: each loops scripts/httpprobe.sh for `minutes`, alternating
+# plain / chaos builds. Failures keep the check output, the server's stderr, the listener's ss and the rt flight record
+# (SOBER_FLIGHT — scripts/flight.ts's anomaly / per-connection reads) in an artifact.
+name: httpprobe
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "probe jobs (JSON array of shard ids — each is a separate VM, so more shards = more VM variance)"
+        default: "[1,2,3,4]"
+      minutes:
+        description: "minutes of looping per shard (≈ 7 runs per minute on a 2-vCPU runner — 8 s each)"
+        default: "10"
+      cfg:
+        description: "server env for the probed httpcheck configuration, space-separated"
+        default: "SOBER_WORKERS=1"
+      chaos:
+        description: "1 = alternate plain / chaos (--rt-mutant=30) builds; 0 = plain only"
+        default: "1"
+      runner:
+        description: "runs-on label for the probe jobs (ubuntu-latest = 2-vCPU standard runner on a private repo)"
+        default: "ubuntu-latest"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build stage1 and stage2 (bootstrap chain)
+        run: |
+          (cd src/stage1 && zig build)
+          scripts/stage2.sh
+      - name: Build the httpcheck server (plain and chaos)
+        run: |
+          mkdir -p probe-bin
+          out/stage2/sober2 check testdata/httpcheck/srv.sober
+          out/stage2/sober2 build testdata/httpcheck/srv.sober --emit=elf --passes -o probe-bin/srv
+          out/stage2/sober2 build testdata/httpcheck/srv.sober --emit=elf --passes --rt-mutant=30 -o probe-bin/srv30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-bin
+          path: probe-bin/
+
+  probe:
+    needs: build
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/httpprobe.sh
+            scripts/flight.ts
+            testdata/httpcheck
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: probe-bin
+          path: probe-bin
+      - name: Kernel and CPU
+        run: |
+          uname -r; nproc; grep -m1 'model name' /proc/cpuinfo; node --version
+      - name: Probe
+        env:
+          PROBE_SEED_BASE: ${{ matrix.shard }}000
+        run: |
+          chmod +x probe-bin/srv probe-bin/srv30
+          chaos=probe-bin/srv30; [ "${{ inputs.chaos }}" = 1 ] || chaos=-
+          rc=0
+          scripts/httpprobe.sh probe-bin/srv "$chaos" "${{ inputs.minutes }}" "$RUNNER_TEMP/probe" ${{ inputs.cfg }} > "$RUNNER_TEMP/probe.log" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/probe.log"
+          echo "shard ${{ matrix.shard }}: $(tail -1 "$RUNNER_TEMP/probe.log")" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-${{ github.run_id }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/probe.log
+            ${{ runner.temp }}/probe/
+          if-no-files-found: ignore

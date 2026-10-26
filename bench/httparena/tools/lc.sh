@@ -3,7 +3,7 @@
 # （report-706〜709 — churn は周ごとに 0.66〜2.14M と揺れる: 5 周以上の中央値で読む）。KA=1 で keep-alive の形（-r を外して get だけ — baseline の形）。
 # 列: resp（応答 / SECS 秒）・p99 / p99.9（gcannon の Latency の行 — 列 = Avg p50 p90 p99 p99.9）・
 #     stall = 客側のソケットのうち SYN-SENT の割合（負荷の途中の 5 点の平均 — report-698: 何も運べずに SYN の再送を待っている接続の枠）・
-#     aq = listen ソケットの accept キューの深さ（同じ 5 点の平均・最大 — ss の Recv-Q）・ovf = ListenOverflows の増分（/proc/net/netstat）
+#     aq = listen ソケットの accept キューの深さ（同じ 5 点の平均・最大 — ss の Recv-Q。SO_REUSEPORT の listener が複数なら和 — report-1172）・ovf = ListenOverflows の増分（/proc/net/netstat）
 # 環境: C（接続数・既定 4096）・SECS（既定 5）・ROUNDS・KA・サーバの env は SRVENV（例 SRVENV="SOBER_NET=1"）。CPU 割りは他の計器と同じ（サーバ 0-11 / 負荷 12-23）
 . "$(dirname "$0")/env.sh"   # GC・R・W — env.sh の注
 [ $# -ge 1 ] || { echo "usage: lc.sh <srv…>" >&2; exit 2; }
@@ -19,7 +19,7 @@ for r in $(seq 1 ${ROUNDS:-5}); do for b in "$@"; do
   : > $W/lc.ss
   for k in 1 2 3 4 5; do
     sleep $(awk -v d=$d 'BEGIN { print d / 6 }')
-    echo "$(ss -Htn state syn-sent "dport = :$port" | wc -l) $(ss -Hltn "sport = :$port" | awk '{ print $2; exit }')" >> $W/lc.ss
+    echo "$(ss -Htn state syn-sent "dport = :$port" | wc -l) $(ss -Hltn "sport = :$port" | awk '{ s += $2 } END { print s + 0 }')" >> $W/lc.ss
   done
   wait $GP
   o1=$(ovf)

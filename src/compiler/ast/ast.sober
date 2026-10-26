@@ -91,7 +91,7 @@ const SYield = 38      // a = 式
 // ── 型 ──
 const TName = 40       // a = 名前
 const TFunc = 41       // a = params（型の列）, b = results（列）, c = 仮引数名の列（名前なしは -1 — 名前は型の同一性に入らない。syntax.md 決定 7 の名前付き引数だけが読む）
-const TOpt = 42        // a = 中身
+const TOpt = 42        // a = 中身, b = 1 なら括弧の形 `(T)?`（省略可の匿名関数型の綴り — loader/optfn.sober。裸の `func(…)?` は b = 0 で loader が拒否）
 const TSlice = 43      // a = elem, b = mut
 const TMap = 44        // a = key, b = value, c = mut
 const TGeneric = 45    // a = 名前, b = args（列）

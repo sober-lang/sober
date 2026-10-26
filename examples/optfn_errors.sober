@@ -1,0 +1,43 @@
+package main
+
+// 省略可の匿名関数型の仮引数の @errors（language.md 13 節 — 仮引数の名前の項）: `@errors(Busy, send, put)` は「Busy と、send / put に渡したものが返すもの」。
+// put を渡さない呼び出し点の集合に put の項は入らない（呼び手の switch に腕が要らない）。渡した点では渡したラムダのラベルが入る。
+// 公開関数（Deliver）の宣言の tightness は組ごとの写しに掛けない（put の有る組は send を呼ばない — 宣言は全部の腕についての上界）
+
+type Busy error
+type Full error {
+    n int
+}
+
+@errors(Busy, send, put)
+func Deliver(n int, send func(v int) error?, put (func(v int) error?)?) error? {
+    if n < 0 {
+        return Busy{}
+    }
+    if put != nil {
+        put(n)?
+    } else {
+        send(n)?
+    }
+    return nil
+}
+
+func main() {
+    // put なし: Busy と send のラベル（無し）だけ
+    switch Deliver(1, (v) => {
+        println(v)
+        nil
+    }) {
+    case nil: println("ok")
+    case Busy{}: println("busy")
+    }
+    // put あり: put のラムダの Full も腕が要る
+    switch Deliver(2, (v) => {
+        println(v)
+        nil
+    }, put: (v) => if v > 1 { Full{n: v} } else { nil }) {
+    case nil: println("ok")
+    case Busy{}: println("busy")
+    case Full{n}: println("full ${n}")
+    }
+}

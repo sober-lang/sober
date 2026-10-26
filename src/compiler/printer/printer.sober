@@ -497,7 +497,14 @@ func typeExpr(out mut []byte, t ast.Tree, n int) {
         typeList(mut out, t, x.a)
         out = append(out, ')')
     } else if k == ast.TOpt {
+        // 括弧の形 `(T)?`（省略可の匿名関数型 — ast の TOpt の b）
+        if x.b != 0 {
+            out = append(out, '(')
+        }
         typeExpr(mut out, t, x.a)
+        if x.b != 0 {
+            out = append(out, ')')
+        }
         out = append(out, '?')
     } else if k == ast.TSlice {
         if x.b != 0 {

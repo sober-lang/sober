@@ -64,9 +64,25 @@ func epWake(st mut St, t int, res int) {
     tk := globaladdr(mut st, st.taskG)
     wk := globaladdr(mut st, st.wkG)
     tp := itop(mut st, t)
+    mut bDrop := BlkRef(-1)
+    if st.rtMut == 31 {
+        // 変異 31（検収の網）: 1/2048 で起こしを落とす
+        bDrop = newBlock(mut st)
+        bKeep := newBlock(mut st)
+        condbr(mut st, cmp(mut st, CEq, bin(mut st, BAnd, chRoll(mut st), iconst(mut st, 2047)), iconst(mut st, 1)), bDrop, -1, bKeep, -1)
+        setCur(mut st, bKeep)
+    }
+    frRec(mut st, FK_WAKE, t, res)
     store(mut st, tp, TC_IORES, res)
     readyPush(mut st, tk, t)
     store(mut st, wk, WK_NETW, urAdd(mut st, load(mut st, wk, WK_NETW), -1))
+    if st.rtMut == 31 {
+        bJn := newBlock(mut st)
+        br(mut st, bJn, -1)
+        setCur(mut st, bDrop)
+        br(mut st, bJn, -1)
+        setCur(mut st, bJn)
+    }
 }
 
 func buildNetRt(st mut St) {
@@ -91,6 +107,7 @@ func buildFdWait(st mut St) {
         return
     }
     wk := globaladdr(mut st, st.wkG)
+    frRecP(mut st, FK_PARK, 0, 1, load(mut st, globaladdr(mut st, st.taskG), TK_CUR))
     // net の ring（uring.sober の UR_NET — 段 4b-0）: POLL_ADD を積んで待つ（提出と完了の取り込みは眠りの enter — epoll を作らない）
     rg := load(mut st, wk, WK_RING)
     bR0 := newBlock(mut st)
@@ -220,7 +237,25 @@ func buildEpPoll(st mut St) {
     // 期限で起こした待ち手がいれば眠らない（覗くだけ）
     tk := globaladdr(mut st, st.taskG)
     tmo := bin(mut st, BMul, tm, cmp(mut st, CEq, load(mut st, tk, TK_READY), zero))
-    n := urSys(mut st, 232, []int{load(mut st, rp, EP_FD), evs, iconst(mut st, EP_MAXEV), tmo})
+    // 通常の build は受け皿の大きさの定数を syscall の引数の位置で作る（IR の並びを変えない）
+    mut maxev := -1
+    if st.rtMut == 30 {
+        maxev = iconst(mut st, EP_MAXEV)
+        // カオス（変異 30）: 1/4 で受け皿を 1〜8 に縮める（残りの readiness は次の呼び出しへ）・1/8 で先に sched_yield
+        r := chRoll(mut st)
+        sm := cmp(mut st, CEq, bin(mut st, BAnd, r, iconst(mut st, 3)), iconst(mut st, 3))
+        maxev = bin(mut st, BSub, maxev, bin(mut st, BMul, sm, bin(mut st, BSub, maxev, bin(mut st, BAdd, bin(mut st, BAnd, bin(mut st, BSar, r, iconst(mut st, 8)), iconst(mut st, 7)), iconst(mut st, 1)))))
+        bY := branchIf(mut st, cmp(mut st, CEq, bin(mut st, BAnd, bin(mut st, BSar, r, iconst(mut st, 16)), iconst(mut st, 7)), iconst(mut st, 7)))
+        syscall(mut st, list1(mut st, iconst(mut st, 24)))
+        br(mut st, bY, -1)
+        setCur(mut st, bY)
+    }
+    bCk := branchIf(mut st, cmp(mut st, CNe, tmo, zero))
+    frClock(mut st)
+    br(mut st, bCk, -1)
+    setCur(mut st, bCk)
+    n := urSys(mut st, 232, []int{load(mut st, rp, EP_FD), evs, if maxev == -1 { iconst(mut st, EP_MAXEV) } else { maxev }, tmo})
+    frRec(mut st, FK_EPWAIT, n, tmo)
     // 今を読み直す（uring.sober の enter の後と同じ — 眠りの明けに起こす task の時刻）
     store(mut st, globaladdr(mut st, st.wkG), WK_NOW, tscOp(mut st))
     el := newBlock(mut st)
@@ -244,6 +279,7 @@ func buildEpPoll(st mut St) {
     bLv := newBlock(mut st)
     condbr(mut st, cmp(mut st, CEq, ud, iconst(mut st, UD_RING)), en, -1, bLv, -1)
     setCur(mut st, bLv)
+    frRec(mut st, FK_READY, ud, cmp(mut st, CEq, load(mut st, itop(mut st, ud), TC_IORES), pend))
     // 期限で起こした後に届いた readiness は捨てる（待ち手は登録を外しに行く途中）
     condbr(mut st, cmp(mut st, CEq, load(mut st, itop(mut st, ud), TC_IORES), pend), bTk, -1, en, -1)
     setCur(mut st, bTk)
@@ -406,7 +442,7 @@ func sleepClock(st mut St) int {
 // 要素 i は語 2 + 2i。持ち主のワーカーだけが読み書きする（sleep する task は走り始めた task — 盗まれない・TC_WORKER に固定）。取り消しは無い
 // （sleep の待ちを外から終わらせる道が無い — 期限は目標に畳む・孤児の登録に入らない）ので削除・decrease-key は持たない。
 // 満了は眠りの関門（uring.sober urNetGate — enter の前）と enter の後で rt.tmr_fire が起こす（-62 = -ETIME と同じ値 — sleepRing の読みは共通）。
-// 起こす順は目標の順（取り出した順に繋いで TK_READY の頭へ — 同じ回に満ちた分は早い目標から走る）
+// 起こす順は目標の順（取り出した順に TC_PREV で繋ぎ、尾から走れる積みへ押し込む — 同じ回に満ちた分は早い目標から走る）
 const WK_TMR = 23
 const TMR_CAP = 1048576 // 表の容量（ワーカーごと — 16 MiB の VA。溢れた sleep は IORING_OP_TIMEOUT の道）
 
@@ -532,32 +568,25 @@ func buildTmr(st mut St) {
     pl := tmrEnt(mut st, h, pi)
     store(mut st, pl, 0, lk)
     store(mut st, pl, 1, lv)
-    // 起こす: 結果 = -62（sleepRing の読みは OP_TIMEOUT の -ETIME と共通）・列の尾に繋ぐ・WK_NETW − 1
+    // 起こす: 結果 = -62（sleepRing の読みは OP_TIMEOUT の -ETIME と共通）・列の尾に繋ぐ（TC_PREV = 1 つ前に起こした待ち手）・WK_NETW − 1
     tp := itop(mut st, t)
     store(mut st, tp, TC_IORES, iconst(mut st, -62))
     store(mut st, tp, TC_PREV, l)
-    readyStamp(mut st, tp)
     store(mut st, wf, WK_NETW, urAdd(mut st, load(mut st, wf, WK_NETW), -1))
-    bJ := newBlock(mut st)
-    jf := param(mut st, bJ, TyI64)
-    bFs := newBlock(mut st)
-    bLk := newBlock(mut st)
-    condbr(mut st, cmp(mut st, CEq, l, z), bFs, -1, bLk, -1)
-    setCur(mut st, bFs)
-    br(mut st, bJ, list1(mut st, t))
-    setCur(mut st, bLk)
-    store(mut st, itop(mut st, l), TC_NEXT, t)
-    br(mut st, bJ, list1(mut st, f))
-    setCur(mut st, bJ)
-    br(mut st, bP, list2(mut st, jf, t))
-    // 起こした列を TK_READY の頭へ（早い目標から走る）
+    br(mut st, bP, list2(mut st, f, t))
+    // 起こした列を尾（遅い目標）から走れる積みへ押し込む — 最後に積む頭が早い目標
     setCur(mut st, bDone)
-    bS := branchIf(mut st, cmp(mut st, CNe, f, z))
-    oldR := load(mut st, tk, TK_READY)
-    store(mut st, itop(mut st, l), TC_NEXT, oldR)
-    readySetPrev(mut st, tk, oldR, l)
-    store(mut st, tk, TK_READY, f)
-    br(mut st, bS, -1)
+    bW := newBlock(mut st)
+    q := param(mut st, bW, TyI64)
+    bWb := newBlock(mut st)
+    bS := newBlock(mut st)
+    br(mut st, bW, list1(mut st, l))
+    setCur(mut st, bW)
+    condbr(mut st, cmp(mut st, CEq, q, z), bS, -1, bWb, -1)
+    setCur(mut st, bWb)
+    nq := load(mut st, itop(mut st, q), TC_PREV)
+    readyPush(mut st, tk, q)
+    br(mut st, bW, list1(mut st, nq))
     setCur(mut st, bS)
     ret(mut st, dres)
 }

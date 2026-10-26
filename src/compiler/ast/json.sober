@@ -374,6 +374,9 @@ func emitType(out mut []byte, t Tree, e int, x Node) {
     } else if k == TOpt {
         tag(mut out, e, "opt")
         kNode(mut out, t, e, false, "type", x.a)
+        if x.b != 0 {
+            kBool(mut out, e, "paren", x.b)
+        }
     } else if k == TSlice {
         tag(mut out, e, "slice_of")
         kNode(mut out, t, e, false, "elem", x.a)

@@ -289,6 +289,14 @@ type FnArg error {
     kind int
 }
 
+// FnOpt は省略可の匿名関数型 `(func(…) R)?`（language.md 25 節 Z — loader/optfn.sober）の拒否。kind = 1 裸の `func(…)?`（括弧の形へ誘導）・
+// 2 func 宣言の仮引数の外（名前付き関数型の中・struct の欄・結果・ラムダの仮引数など）・3 実引数の形（nil・ラムダ・関数の名前・囲む関数の省略可の仮引数だけ）・
+// 4 `if p != nil { … }` の外での使用・5 呼ぶ・渡す・nil と比べる以外の使用（束縛・格納・return など）
+type FnOpt error {
+    at Pos
+    kind int
+}
+
 // FnCap は値の位置（値化可能な named fn type の struct の欄 — language.md 25 節 クロージャの波 2026-10-17）のラムダの、値になれない形
 // （loader/fnval.sober）。kind = 1 mut（mut 束縛・mut 実引数）の捕捉・2 非局所 return・3 `?`（非局所脱出）・4 ラムダを越える break / continue・
 // 5 値として写せない捕捉（同一性の型・関数値・能力・mut の器 — desugar/closure.sober が束縛の型で判定）・
@@ -439,6 +447,7 @@ func At(err error?) Pos {
     case ForFallible{at}: at
     case FnArg{at}: at
     case FnCap{at}: at
+    case FnOpt{at}: at
     case Sealed{at}: at
     case Identity{at}: at
     case Layout{at}: at
@@ -521,6 +530,13 @@ func Format(err error?, where string) string {
         "a function with mut parameters cannot be passed where a function type is expected (function types have no mut parameters)"
     } else {
         "this function takes a different number of parameters than the function type expects"
+    })
+    case FnOpt{at, kind}: loadLine(err, where, switch kind {
+        case 1: "an optional function type is written in parentheses: `(func(…) R)?` — a bare `func(…) R?` reads as a function returning `R?`"
+        case 2: "an optional anonymous function type `(func(…) R)?` is only allowed for a parameter of a func declaration (inside a named function type, a struct field, a result or a lambda parameter, declare a named function type and use `F?`)"
+        case 3: "the argument for an optional function parameter is nil, a lambda, a function name, or an optional function parameter of the enclosing function"
+        case 4: "an optional function parameter can only be used inside `if p != nil { … }` (or the else of `if p == nil`) — outside it the parameter may be absent"
+        default: "an optional function parameter can only be called, passed on to another call, or compared with nil — not bound, stored or returned"
     })
     case FnCap{at, kind}: loadLine(err, where, switch kind {
         case 1: "a lambda kept as a value (a function-typed field, a value of named function type, or a lambda that flows on to another call) cannot capture a mut binding — captures are immutable copies taken at creation; only a lambda passed straight to a call of a function value (a borrowed closure) can capture one"

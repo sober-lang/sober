@@ -1,0 +1,9 @@
+package main
+
+// 名前付き関数型の中（値の呼び出しの借りの仮引数）の省略可の匿名関数型は範囲の外（実行時の option の借りが要る — Z-B・積み）（diag.FnOpt kind 2）
+
+type Stream func(emit func(b []byte) error?, flush (func() error?)?) error?
+
+func main() {
+    println(1)
+}

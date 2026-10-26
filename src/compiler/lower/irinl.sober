@@ -456,9 +456,9 @@ func ilLoopDepth(st mut St, f FnRef) []int {
 // ilShape は g を写してよいか: 0 = 写さない・1 = 小さい（全部を数えて IL_MAXINS / IL_MAXBLK 以下）・2 = 形は写せるが大きい（部分インラインの候補 — 熱い命令で判定）
 func ilShape(st mut St, g FnRef, n int) int {
     b := irFnBHead(mut st, g)
-    // rt.copy / rt.copy8 は x86 が rep movs に置き換えるので写さない（1.0× アタック便）。rt.matchlen も手書きの本体に置き換えるので写さない（SIMD の核 段 1）。rt.out_node / out_fork / out_adv（出力の区間の冷たい道 — 段 6 P4-2）
+    // rt.copy / rt.copy8 は x86 が rep movs に置き換えるので写さない（1.0× アタック便）。rt.matchlen / rt.jclean も手書きの本体に置き換えるので写さない（SIMD の核 段 1 / 2）。rt.out_node / out_fork / out_adv（出力の区間の冷たい道 — 段 6 P4-2）
     // （写すと spawn の切替点〔rt.task_go〕の割り当てが増え、退避が全部の spawn に乗る）
-    if b == -1 || irFnSHead(mut st, g) >= 0 || irBlkPHead(mut st, b) >= 0 || xIsEntry(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtMatchLen || (st.taskUse && (g == st.rtOutNode || g == st.rtOutFork || g == st.rtOutAdv)) {
+    if b == -1 || irFnSHead(mut st, g) >= 0 || irBlkPHead(mut st, b) >= 0 || xIsEntry(mut st, g) || g == st.rtCopy || g == st.rtCopy8 || g == st.rtMatchLen || g == st.rtJClean || (st.taskUse && (g == st.rtOutNode || g == st.rtOutFork || g == st.rtOutAdv)) {
         return 0
     }
     mut x := b
